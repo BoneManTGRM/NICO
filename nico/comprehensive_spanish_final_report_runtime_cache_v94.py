@@ -151,6 +151,20 @@ def _cache_info(value: Any) -> dict[str, int]:
     }
 
 
+def release_comprehensive_spanish_render_input_cache_v94() -> int:
+    """Release heavyweight canonical/render projections after one final-report attempt.
+
+    Translation caches contain only bounded strings and remain reusable. Render-input
+    entries retain the complete canonical object and its localized projection, so they
+    are attempt-scoped and must not survive the serialized final-report boundary.
+    """
+
+    with _RENDER_INPUT_LOCK:
+        released = len(_RENDER_INPUT_CACHE)
+        _RENDER_INPUT_CACHE.clear()
+    return released
+
+
 def spanish_final_report_runtime_cache_status() -> dict[str, Any]:
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
     from nico import comprehensive_spanish_exit_criteria_v88 as v88
@@ -190,6 +204,7 @@ def spanish_final_report_runtime_cache_status() -> dict[str, Any]:
         "render_input_cache_misses": render_misses,
         "preflight_translation_results_reused_by_renderer": True,
         "markdown_pdf_localized_inputs_reused_for_same_canonical_object": True,
+        "render_input_cache_attempt_scoped": True,
         "bounded_process_memory": True,
         "canonical_report_truth_unchanged": True,
         "scanner_truth_unchanged": True,
@@ -218,9 +233,6 @@ def install_comprehensive_spanish_final_report_runtime_cache_v94() -> dict[str, 
     from nico import comprehensive_spanish_exit_criteria_v88 as v88
     from nico import comprehensive_spanish_presentation_parity_v1 as presentation
 
-    # Ensure the v88 delegate chain has captured its strict underlying translators
-    # before wrapping them. This operation is idempotent and preserves all existing
-    # finality, language, evidence, and delivery gates.
     installer = getattr(v88, "install_comprehensive_spanish_exit_criteria_v88", None)
     if callable(installer):
         installer()
@@ -263,9 +275,6 @@ def install_comprehensive_spanish_final_report_runtime_cache_v94() -> dict[str, 
     canonical._render_inputs = render_inputs
     presentation._safe_es = safe
 
-    # Rebind the existing v88 surfaces once so any late compatibility alias points at
-    # the cached strict functions. The v88 binder compares against these module
-    # attributes, so later idempotent reassertions keep the cached versions as well.
     binder = getattr(v88, "_bind_translation_surfaces", None)
     if callable(binder):
         binder()
@@ -293,8 +302,8 @@ def reset_comprehensive_spanish_final_report_runtime_cache_v94_for_tests() -> No
         clear = getattr(value, "cache_clear", None)
         if callable(clear):
             clear()
+    release_comprehensive_spanish_render_input_cache_v94()
     with _RENDER_INPUT_LOCK:
-        _RENDER_INPUT_CACHE.clear()
         _RENDER_INPUT_HITS = 0
         _RENDER_INPUT_MISSES = 0
 
@@ -302,6 +311,7 @@ def reset_comprehensive_spanish_final_report_runtime_cache_v94_for_tests() -> No
 __all__ = [
     "VERSION",
     "install_comprehensive_spanish_final_report_runtime_cache_v94",
+    "release_comprehensive_spanish_render_input_cache_v94",
     "reset_comprehensive_spanish_final_report_runtime_cache_v94_for_tests",
     "spanish_final_report_runtime_cache_status",
 ]

@@ -303,6 +303,40 @@ def _reassert_terminal_report_language_authority() -> dict[str, Any]:
     return state
 
 
+def _populate_premium_stage_summaries(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Derive the final stage population without rendering Markdown, HTML, or PDF.
+
+    ``install_client_surface_structure_cleanup_v1`` binds the premium stage builder
+    before this helper is called. Using that same runtime builder preserves the exact
+    stage population and client-surface cleanup that the old first render produced,
+    while avoiding an entire throw-away Spanish Markdown/HTML/PDF render.
+    """
+
+    from nico import v2_premium_report_renderer as premium
+
+    result = deepcopy(dict(package))
+    canonical = (
+        deepcopy(dict(result.get("json") or {}))
+        if isinstance(result.get("json"), Mapping)
+        else {}
+    )
+    stages = [
+        deepcopy(dict(item))
+        for item in premium._canonical_stages(canonical)
+        if isinstance(item, Mapping)
+    ]
+    assessment = (
+        deepcopy(dict(canonical.get("assessment") or {}))
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    canonical["stage_summaries"] = deepcopy(stages)
+    assessment["stage_summaries"] = deepcopy(stages)
+    canonical["assessment"] = assessment
+    result["json"] = canonical
+    return result
+
+
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Build one bounded client package from canonical finding and scanner truth.
 
@@ -314,52 +348,60 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """
 
     from nico import client_report_completion_v2 as completion
-
-    reconciled = _phase2_review_truth_node(_reconcile(package))
-    prepared = repair_canonical_truth(reconciled)
-    prepared = _phase2_review_truth_node(_reconcile(prepared))
-    # The final truth prepare wrapper is itself a stage-evidence normalization
-    # boundary. Install the structured-value cleaner before preparation so no
-    # retained mapping can be irreversibly converted to Python object text.
-    install_client_surface_structure_cleanup_v1()
-    # Scanner applicability, scanner-outcome truth, canonical finding identity,
-    # and the structured remediation register must exist before the premium
-    # compiler derives stages, scores, executive findings, and artifact content.
-    prepared = completion.prepare_client_report_package(prepared)
-    # Preparation extensions can legitimately rebind shared renderers. Reassert
-    # the client-surface and worksheet-title contracts at the exact render boundary.
-    install_client_surface_structure_cleanup_v1()
-    install_human_review_worksheet_title_contract_v1()
-    prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
-
-    # The first pass derives the complete canonical stage population. Normalize
-    # only the derived client-facing stage fields, then render the final package
-    # from that cleaned population. Complete roadmap, trend, scanner, finding,
-    # and remediation source objects remain retained in canonical JSON.
-    derived = rebuild_single_pass_premium_artifacts(prepared)
-    final_input = _phase2_review_truth_node(project_client_stage_summaries(derived))
-    # The first render may pass through extensions that rebind the stage builder.
-    # Reassert the exact worksheet title contract before the final artifact render.
-    install_human_review_worksheet_title_contract_v1()
-    rendered = rebuild_single_pass_premium_artifacts(final_input)
-
-    canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
-    repaired = (
-        repair_localized_rendered_report(rendered)
-        if _is_spanish(canonical)
-        else repair_rendered_report(rendered)
+    from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
+        release_comprehensive_spanish_render_input_cache_v94,
     )
-    # Reconcile once more after report-quality repair, then sanitize every
-    # mutable rendered surface before the exact-artifact finalizer computes the
-    # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No
-    # renderer or sanitizer may change retained bytes after that binding point.
-    repaired = _phase2_review_truth_node(_reconcile(repaired))
-    sanitized = _sanitize_published_artifacts(repaired)
-    # Some compatibility extensions legitimately rebind global report helpers during
-    # preparation/rendering. Reassert the terminal language producer and validator at
-    # the exact last mutable boundary, immediately before client-report finalization.
-    _reassert_terminal_report_language_authority()
-    return completion.finalize_client_report_package(sanitized)
+
+    try:
+        reconciled = _phase2_review_truth_node(_reconcile(package))
+        prepared = repair_canonical_truth(reconciled)
+        prepared = _phase2_review_truth_node(_reconcile(prepared))
+        # The final truth prepare wrapper is itself a stage-evidence normalization
+        # boundary. Install the structured-value cleaner before preparation so no
+        # retained mapping can be irreversibly converted to Python object text.
+        install_client_surface_structure_cleanup_v1()
+        # Scanner applicability, scanner-outcome truth, canonical finding identity,
+        # and the structured remediation register must exist before the premium
+        # compiler derives stages, scores, executive findings, and artifact content.
+        prepared = completion.prepare_client_report_package(prepared)
+        # Preparation extensions can legitimately rebind shared renderers. Reassert
+        # the client-surface and worksheet-title contracts at the exact render boundary.
+        install_client_surface_structure_cleanup_v1()
+        install_human_review_worksheet_title_contract_v1()
+
+        # Derive the complete canonical stage population directly through the same
+        # runtime-bound stage builder used by the renderer. The previous implementation
+        # performed a full throw-away premium render only to discover these stages, then
+        # rendered every Spanish artifact a second time. Populate and sanitize the stage
+        # contract first so the expensive renderer executes exactly once.
+        prepared = _populate_premium_stage_summaries(prepared)
+        prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
+        install_human_review_worksheet_title_contract_v1()
+        rendered = rebuild_single_pass_premium_artifacts(prepared)
+
+        canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
+        repaired = (
+            repair_localized_rendered_report(rendered)
+            if _is_spanish(canonical)
+            else repair_rendered_report(rendered)
+        )
+        # Reconcile once more after report-quality repair, then sanitize every
+        # mutable rendered surface before the exact-artifact finalizer computes the
+        # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No
+        # renderer or sanitizer may change retained bytes after that binding point.
+        repaired = _phase2_review_truth_node(_reconcile(repaired))
+        sanitized = _sanitize_published_artifacts(repaired)
+        # Some compatibility extensions legitimately rebind global report helpers during
+        # preparation/rendering. Reassert the terminal language producer and validator at
+        # the exact last mutable boundary, immediately before client-report finalization.
+        _reassert_terminal_report_language_authority()
+        return completion.finalize_client_report_package(sanitized)
+    finally:
+        # Render-input cache entries retain the entire canonical tree and its localized
+        # projection. Final-report execution is serialized, so those heavyweight objects
+        # are attempt-scoped and can be released on both success and failure. The bounded
+        # translation-string caches remain warm for later Spanish assessments.
+        release_comprehensive_spanish_render_input_cache_v94()
 
 
 __all__ = [
@@ -389,6 +431,7 @@ __all__ = [
     "_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH",
     "_phase2_review_truth_node",
     "_phase2_review_truth_text",
+    "_populate_premium_stage_summaries",
     "_rewrite_phase2_review_truth_pdf",
     "rebuild_client_artifacts",
 ]
