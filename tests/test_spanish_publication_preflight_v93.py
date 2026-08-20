@@ -11,6 +11,7 @@ from nico.comprehensive_decision_content_restoration_v66 import restore_decision
 from nico.comprehensive_spanish_publication_preflight_v93 import (
     assert_spanish_canonical_publication_preflight,
     inspect_spanish_canonical_publication_preflight,
+    install_spanish_publication_preflight_v93,
 )
 
 
@@ -94,6 +95,7 @@ def test_current_generated_complexity_family_is_preflighted_after_restoration() 
     assert manifest["spanish_requested"] is True
     assert manifest["canonical_restoration_complete"] is True
     assert manifest["additional_rich_finding_prose_guarded"] is True
+    assert manifest["fallback_targeted_contracts_installed"] is True
     assert manifest["failure_count"] == 0
     assert manifest["checked_presentation_values"] >= 20
     assert restored == before
@@ -104,6 +106,41 @@ def test_current_generated_complexity_family_is_preflighted_after_restoration() 
     )
     assert "La nueva ejecución sobre el SHA exacto" in translated
     assert "nico/comprehensive_review_work_v1.py:323" in translated
+
+
+def test_preflight_repairs_deterministic_canonical_scoring_fallback_copy() -> None:
+    result = install_spanish_publication_preflight_v93()
+    assert result["fallback_targeted_helper_bound"] is True
+    assert result["late_v88_rebind_safe"] is True
+    assert result["v88_bound"] is True
+
+    unavailable = canonical._translate_presentation_field(
+        "Canonical scoring evidence was unavailable at report-generation time.",
+        "unavailable_data_notes",
+    )
+    summary = canonical._translate_presentation_field(
+        "A canonical technical score was not available. The report retains stage evidence "
+        "and requires human review.",
+        "summary",
+    )
+
+    assert unavailable == (
+        "La evidencia de puntuación canónica no estaba disponible al momento de generar "
+        "el informe."
+    )
+    assert summary == (
+        "No estaba disponible una puntuación técnica canónica. El informe conserva la "
+        "evidencia de las etapas y requiere revisión humana."
+    )
+    assert canonical._looks_like_untranslated_english(unavailable) is False
+    assert canonical._looks_like_untranslated_english(summary) is False
+
+    # Rebinding v88 later must not discard v93's fallback helper repair.
+    v88.install_comprehensive_spanish_exit_criteria_v88()
+    assert canonical._translate_presentation_field(
+        "Canonical scoring evidence was unavailable at report-generation time.",
+        "unavailable_data_notes",
+    ) == unavailable
 
 
 def test_preflight_reports_all_missing_restored_contracts_in_one_failure(
