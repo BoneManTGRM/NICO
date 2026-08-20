@@ -8,9 +8,6 @@ _MAX_VISITED_NODES = 75_000
 _MAX_DEPTH = 18
 _MARKER = "__nico_spanish_publication_preflight_v93__"
 
-# The canonical v87 fail-closed set covers most renderer-owned prose. Rich finding cards
-# also publish these narrative fields directly, so validate them even though older v87
-# code did not classify every one as a strict prose key.
 _ADDITIONAL_CLIENT_PROSE_FIELDS = {
     "cost_of_inaction",
     "owner_role",
@@ -19,11 +16,6 @@ _ADDITIONAL_CLIENT_PROSE_FIELDS = {
     "technical_impact",
 }
 
-# Deterministic fallback copy emitted when a limited/synthetic assessment reaches
-# report generation without canonical score evidence. The aggregate preflight exposed
-# the first missing literal in an existing authoritative language-persistence test.
-# Patch v88's targeted helper rather than another public renderer alias so future v88
-# rebinds continue to use the same bounded fallback vocabulary.
 _FALLBACK_PRESENTATION_TRANSLATIONS: dict[str, str] = {
     "Canonical scoring evidence was unavailable at report-generation time.": (
         "La evidencia de puntuación canónica no estaba disponible al momento de generar "
@@ -73,12 +65,7 @@ def _translate_fallback_presentation_literal(value: Any) -> str | None:
 
 
 def install_spanish_publication_preflight_v93() -> dict[str, Any]:
-    """Extend v88's bounded vocabulary without creating another translator alias.
-
-    v88's field/direct/presentation wrappers resolve its targeted helper from module
-    globals at call time. Wrapping that helper keeps this fallback repair active even
-    when a later compatibility installer rebinds the public translator surfaces.
-    """
+    """Extend v88's bounded vocabulary without creating another translator alias."""
 
     global _ORIGINAL_TARGETED_TRANSLATOR
 
@@ -136,7 +123,6 @@ def _iter_report_bound_strings(
     budget[0] += 1
     if budget[0] > _MAX_VISITED_NODES or depth > _MAX_DEPTH:
         return
-
     if any(segment in canonical._RAW_CANONICAL_SUBTREES for segment in path):
         return
     if key in canonical._PROTECTED_FIELDS:
@@ -177,14 +163,7 @@ def _iter_report_bound_strings(
 def inspect_spanish_canonical_publication_preflight(
     canonical_report: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Validate fully restored canonical truth before any client artifact renders.
-
-    This runs after decision-content restoration and count reconciliation. Dynamic
-    complexity findings do not necessarily exist in retained stage input; inspecting
-    prior-stage state would therefore miss the exact family that caused the production
-    incident. Duplicate restored projections are checked once per field/value contract
-    so they cannot consume the bounded failure-detail budget.
-    """
+    """Validate fully restored canonical truth before any client artifact renders."""
 
     if not _spanish_requested(canonical_report):
         return {
@@ -199,8 +178,6 @@ def inspect_spanish_canonical_publication_preflight(
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
-
-    install_spanish_publication_preflight_v93()
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
 
