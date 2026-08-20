@@ -38,6 +38,16 @@ const SUCCESS_STAGE_STATUSES = new Set([
   "review_required",
 ]);
 
+const INVALID_STAGE_SENTINELS = new Set([
+  "unknown",
+  "unknown_stage",
+  "none",
+  "null",
+  "undefined",
+  "n/a",
+  "na",
+]);
+
 function boundedPercent(value: unknown): number | null {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -46,6 +56,16 @@ function boundedPercent(value: unknown): number | null {
 
 function stageStatus(value: Stage | undefined): string {
   return String(value?.status || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function normalizeStageId(value: unknown): string {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!normalized || INVALID_STAGE_SENTINELS.has(normalized)) return "";
+  return COMPREHENSIVE_STAGE_IDS.includes(
+    normalized as (typeof COMPREHENSIVE_STAGE_IDS)[number],
+  )
+    ? normalized
+    : "";
 }
 
 function completedStageCount(result: Result | null): number {
@@ -67,8 +87,24 @@ function completedStageCount(result: Result | null): number {
 }
 
 function currentStageIndex(result: Result | null): number {
-  const stageId = String(result?.current_stage || result?.record?.current_stage || "").trim();
-  return COMPREHENSIVE_STAGE_IDS.indexOf(stageId as (typeof COMPREHENSIVE_STAGE_IDS)[number]);
+  const explicit = normalizeStageId(
+    result?.current_stage || result?.record?.current_stage || "",
+  );
+  if (explicit) {
+    return COMPREHENSIVE_STAGE_IDS.indexOf(
+      explicit as (typeof COMPREHENSIVE_STAGE_IDS)[number],
+    );
+  }
+
+  // Recovery/status responses can be temporarily sparse while the exact durable run is
+  // reloaded. Never interpret sentinel values such as "unknown stage" as a real first
+  // stage. If completed-stage truth survived the snapshot, the next canonical stage is
+  // a safe presentation floor and does not claim any additional stage complete.
+  const completed = completedStageCount(result);
+  if (completed > 0 && completed < COMPREHENSIVE_STAGE_IDS.length) {
+    return completed;
+  }
+  return -1;
 }
 
 /**
@@ -78,8 +114,9 @@ function currentStageIndex(result: Result | null): number {
  * top-level display progress, nested canonical progress, explicit completed stages,
  * stage-result completion, or the current canonical stage position.
  *
- * The first active stage receives a 1% liveness floor so a running assessment no longer
- * looks frozen at 0%. This does not mutate canonical evidence or claim a stage complete.
+ * A sparse recovery snapshot is not allowed to reinterpret an invalid/sentinel current
+ * stage as a brand-new run. This is presentation continuity only; no evidence, scoring,
+ * completion, review, or delivery state is mutated.
  */
 export function progressPercent(
   phase: Phase,
