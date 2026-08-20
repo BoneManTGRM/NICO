@@ -13,6 +13,7 @@ from nico.comprehensive_background_terminal_order_v2 import (
     install_background_terminal_ordering,
 )
 from nico.comprehensive_blocked_run_recovery_v1 import (
+    is_recoverable_final_artifact_failure,
     rewind_blocked_run_for_final_artifact_recovery,
 )
 from nico.comprehensive_final_report_background_v1 import (
@@ -42,7 +43,7 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v14"
+VERSION = "nico.comprehensive_run_service.v15"
 
 _EXECUTIVE_BRIEFING_STAGE_ID = "risk_reduction_and_executive_briefing"
 _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
@@ -93,6 +94,29 @@ def _prior_stage_results_for_stage(
         }
 
     return deepcopy(retained_stage_results)
+
+
+def _final_report_status_maintenance_required(record: Mapping[str, Any]) -> bool:
+    """Keep the durable final-report lease alive/recoverable during status polling.
+
+    The public UI and production acceptance proof poll canonical run status while final
+    report generation is detached. After a process/container replacement, the prior
+    worker and watchdog disappear but the exact durable run and lease remain. A status
+    read at the final-report boundary therefore performs one bounded continuation tick:
+    active/fresh leases are a no-op, stale leases are reclaimed by the coordinator, and
+    recoverable terminal final-report failures consume only the existing one-attempt
+    recovery budget. No earlier scanner stage is rerun.
+    """
+
+    completed = list(record.get("completed_stages") or [])
+    if FINAL_REPORT_STAGE_ID in completed or len(completed) >= len(COMPREHENSIVE_STAGES):
+        return False
+    next_stage = COMPREHENSIVE_STAGES[len(completed)]
+    if next_stage != FINAL_REPORT_STAGE_ID:
+        return False
+    if record.get("terminal") is True:
+        return is_recoverable_final_artifact_failure(record)
+    return True
 
 
 class ComprehensiveRunService:
@@ -158,7 +182,10 @@ class ComprehensiveRunService:
         return self._store.create(record)
 
     def load(self, run_id: str) -> dict[str, Any]:
-        return self._store.load(run_id)
+        record = self._store.load(run_id)
+        if _final_report_status_maintenance_required(record):
+            return self.resume(run_id, max_stages=1)
+        return record
 
     def resume(
         self,

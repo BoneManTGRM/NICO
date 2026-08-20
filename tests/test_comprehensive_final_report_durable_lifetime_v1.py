@@ -7,9 +7,6 @@ import time
 from pathlib import Path
 
 import nico.comprehensive_final_report_execution_boundary_v4 as boundary
-from nico.comprehensive_blocked_run_recovery_v1 import (
-    rewind_blocked_run_for_final_artifact_recovery,
-)
 from nico.comprehensive_final_report_background_v1 import (
     FinalReportPublicationCoordinator,
     reset_final_report_publication_tasks_for_tests,
@@ -239,19 +236,33 @@ def test_fresh_heartbeat_cannot_keep_final_report_running_past_deadline(
     record = _record("comprun_deadline")
     store.create(record)
     coordinator = FinalReportPublicationCoordinator(store)
-    worker_started = threading.Event()
-    release_worker = threading.Event()
+    first_started = threading.Event()
+    second_started = threading.Event()
+    release_first = threading.Event()
+    release_second = threading.Event()
+    call_lock = threading.Lock()
+    calls = 0
 
     def stalled_executor(context: dict) -> dict:
-        worker_started.set()
-        assert release_worker.wait(3.0)
-        return _valid_result(context)
+        nonlocal calls
+        with call_lock:
+            calls += 1
+            attempt = calls
+        if attempt == 1:
+            first_started.set()
+            assert release_first.wait(3.0)
+            return _valid_result(context)
+        if attempt == 2:
+            second_started.set()
+            assert release_second.wait(3.0)
+            return _valid_result(context)
+        raise AssertionError("bounded final-report recovery launched more than once")
 
     claimed = coordinator.advance(record, stalled_executor, _context(record))
-    assert worker_started.wait(1.0)
+    assert first_started.wait(1.0)
     marker = claimed["stage_results"][FINAL_REPORT_STAGE_ID]
-    lease_id = marker["stage_execution"]["lease_id"]
-    job = store.load_final_report_job(lease_id)
+    first_lease_id = marker["stage_execution"]["lease_id"]
+    job = store.load_final_report_job(first_lease_id)
     assert job is not None
 
     old_started = time.time() - 180.0
@@ -259,38 +270,40 @@ def test_fresh_heartbeat_cannot_keep_final_report_running_past_deadline(
         cursor = connection.cursor()
         cursor.execute(
             "UPDATE nico_comprehensive_final_report_jobs SET started_epoch = ?, heartbeat_epoch = ?, status = ? WHERE lease_id = ?",
-            (old_started, time.time(), "running", lease_id),
+            (old_started, time.time(), "running", first_lease_id),
         )
         connection.commit()
 
-    expired = coordinator.advance(claimed, stalled_executor, _context(claimed))
-    result = expired["stage_results"][FINAL_REPORT_STAGE_ID]
-    assert expired["terminal"] is True
-    assert expired["status"] == "blocked"
-    assert result["status"] == "blocked"
-    assert result["reason"] == "final_report_publication_deadline_exceeded"
-    assert result["retryable"] is True
-    assert result["recovery_supported"] is True
-    assert result["recovery_scope"] == "final_report_only"
-    assert result["human_review_required"] is True
-    assert result["client_delivery_allowed"] is False
-    assert store.load_final_report_job(lease_id)["status"] == "expired"
+    recovered = coordinator.advance(claimed, stalled_executor, _context(claimed))
+    recovered_marker = recovered["stage_results"][FINAL_REPORT_STAGE_ID]
+    second_lease_id = recovered_marker["stage_execution"]["lease_id"]
 
-    recovered = rewind_blocked_run_for_final_artifact_recovery(expired)
     assert recovered["terminal"] is False
     assert recovered["status"] == "running"
+    assert recovered_marker["status"] == "running"
+    assert recovered_marker["reason"] == "final_report_background_publication_in_progress"
+    assert second_lease_id != first_lease_id
     assert recovered["completed_stages"] == record["completed_stages"]
-    assert FINAL_REPORT_STAGE_ID not in recovered["stage_results"]
     assert recovered["recovery_history"][-1]["source_reason"] == (
         "final_report_publication_deadline_exceeded"
     )
     assert recovered["recovery_history"][-1]["recovery_scope"] == "final_report_only"
+    assert store.load_final_report_job(first_lease_id)["status"] == "expired"
+    assert second_started.wait(1.0)
 
-    release_worker.set()
+    release_second.set()
+    completed = _wait_for_final(store, record["identity"]["run_id"])
+    completed_result = completed["stage_results"][FINAL_REPORT_STAGE_ID]
+    assert completed_result["status"] == "complete"
+    assert completed_result["stage_execution"]["publication_lease_id"] == second_lease_id
+    assert store.load_final_report_job(second_lease_id)["status"] == "complete"
+
+    release_first.set()
     time.sleep(0.05)
     persisted = store.load(record["identity"]["run_id"])
     persisted_result = persisted["stage_results"][FINAL_REPORT_STAGE_ID]
-    assert persisted["terminal"] is True
-    assert persisted["status"] == "blocked"
-    assert persisted_result["reason"] == "final_report_publication_deadline_exceeded"
+    assert persisted_result["status"] == "complete"
+    assert persisted_result["stage_execution"]["publication_lease_id"] == second_lease_id
+    assert store.load_final_report_job(first_lease_id)["status"] == "expired"
+    assert calls == 2
     reset_final_report_publication_tasks_for_tests()

@@ -8,7 +8,15 @@ from typing import Any, Callable, Iterator, Protocol
 
 from nico.comprehensive_run_record import restore_comprehensive_run_record, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_run_store.v3"
+VERSION = "nico.comprehensive_run_store.v4"
+_FINAL_REPORT_JOB_TERMINAL_STATUSES = (
+    "complete",
+    "blocked",
+    "failed",
+    "cancelled",
+    "superseded",
+    "expired",
+)
 
 
 class ConnectionLike(Protocol):
@@ -305,28 +313,43 @@ class ComprehensiveRunStore:
         updated_at: str,
         started_epoch: float | None = None,
     ) -> bool:
+        """Update one lease without allowing a terminal state to be reopened.
+
+        The terminal-status fence is enforced in the same SQL write as the heartbeat
+        update. This closes the cross-thread and cross-process read-then-write race where
+        a stale heartbeat or provider finalizer could otherwise change an already
+        ``expired`` lease back to ``rendering`` or another terminal outcome.
+        """
+
         lease = str(lease_id or "").strip()
         normalized_status = str(status or "").strip().lower()
         if not lease or not normalized_status:
             raise ValueError("final_report_lease_and_status_required")
         p = self.placeholder
+        terminal_placeholders = ",".join([p] * len(_FINAL_REPORT_JOB_TERMINAL_STATUSES))
+        terminal_guard = (
+            f"lease_id = {p} AND "
+            f"(status NOT IN ({terminal_placeholders}) OR status = {p})"
+        )
         if started_epoch is None:
             statement = f"""
                 UPDATE nico_comprehensive_final_report_jobs
                 SET status = {p}, heartbeat_epoch = {p}, updated_at = {p}
-                WHERE lease_id = {p}
+                WHERE {terminal_guard}
             """
             values = (
                 normalized_status,
                 float(heartbeat_epoch),
                 str(updated_at),
                 lease,
+                *_FINAL_REPORT_JOB_TERMINAL_STATUSES,
+                normalized_status,
             )
         else:
             statement = f"""
                 UPDATE nico_comprehensive_final_report_jobs
                 SET status = {p}, started_epoch = {p}, heartbeat_epoch = {p}, updated_at = {p}
-                WHERE lease_id = {p}
+                WHERE {terminal_guard}
             """
             values = (
                 normalized_status,
@@ -334,6 +357,8 @@ class ComprehensiveRunStore:
                 float(heartbeat_epoch),
                 str(updated_at),
                 lease,
+                *_FINAL_REPORT_JOB_TERMINAL_STATUSES,
+                normalized_status,
             )
         with self._connection() as connection:
             cursor = connection.cursor()
