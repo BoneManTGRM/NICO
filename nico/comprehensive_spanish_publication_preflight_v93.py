@@ -7,6 +7,17 @@ _MAX_FAILURE_DETAILS = 50
 _MAX_VISITED_NODES = 75_000
 _MAX_DEPTH = 18
 
+# The canonical v87 fail-closed set covers most renderer-owned prose. Rich finding cards
+# also publish these narrative fields directly, so validate them even though older v87
+# code did not classify every one as a strict prose key.
+_ADDITIONAL_CLIENT_PROSE_FIELDS = {
+    "cost_of_inaction",
+    "owner_role",
+    "residual_risk",
+    "technical_consequence",
+    "technical_impact",
+}
+
 
 def _text(value: Any, limit: int = 600) -> str:
     normalized = " ".join(str(value or "").split()).strip()
@@ -80,7 +91,8 @@ def _iter_report_bound_strings(
                 return
         return
 
-    if isinstance(value, str) and key in canonical._PRESENTATION_PROSE_FIELDS:
+    strict_fields = canonical._PRESENTATION_PROSE_FIELDS | _ADDITIONAL_CLIENT_PROSE_FIELDS
+    if isinstance(value, str) and key in strict_fields:
         yield ".".join(path) or key, key, value
 
 
@@ -122,7 +134,14 @@ def inspect_spanish_canonical_publication_preflight(
     ):
         checked += 1
         try:
-            canonical._translate_presentation_field(source, key)
+            translated = canonical._translate_presentation_field(source, key)
+            if (
+                key in _ADDITIONAL_CLIENT_PROSE_FIELDS
+                and canonical._looks_like_untranslated_english(translated)
+            ):
+                raise ValueError(
+                    f"missing Spanish presentation translation for {key}: {source[:180]}"
+                )
         except ValueError as exc:
             failure_count += 1
             if len(failures) < _MAX_FAILURE_DETAILS:
@@ -148,6 +167,7 @@ def inspect_spanish_canonical_publication_preflight(
         "maximum_visited_nodes": _MAX_VISITED_NODES,
         "maximum_failure_details": _MAX_FAILURE_DETAILS,
         "canonical_restoration_complete": True,
+        "additional_rich_finding_prose_guarded": True,
         "presentation_only": True,
         "canonical_evidence_unchanged": True,
         "human_review_required": True,
