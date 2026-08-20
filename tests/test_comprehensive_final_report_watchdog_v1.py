@@ -14,6 +14,7 @@ from nico.comprehensive_run_record import (
     apply_comprehensive_stage_result,
     create_comprehensive_run_record,
 )
+from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.comprehensive_run_store import ComprehensiveRunStore
 
 
@@ -247,6 +248,78 @@ def test_watchdog_stops_after_single_bounded_recovery_attempt(
     persisted = store.load(record["identity"]["run_id"])
     assert persisted["status"] == "blocked"
     assert persisted["terminal"] is True
+    assert calls == 2
+    background.reset_final_report_publication_tasks_for_tests()
+
+
+def test_status_load_reclaims_stale_final_report_lease_after_process_restart(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    background.reset_final_report_publication_tasks_for_tests()
+    monkeypatch.setattr(background, "_heartbeat_seconds", lambda: 0.02)
+    monkeypatch.setattr(background, "_orphan_seconds", lambda: 0.05)
+    monkeypatch.setattr(background, "_max_publication_seconds", lambda: 5.0)
+    monkeypatch.setattr(background, "_max_queue_seconds", lambda: 5.0)
+    store = _store(tmp_path)
+    record = _record("comprun_status_restart_recovery")
+    store.create(record)
+
+    first_started = threading.Event()
+    release_first = threading.Event()
+    second_started = threading.Event()
+    call_lock = threading.Lock()
+    calls = 0
+
+    def final_report_capability(context: dict) -> dict:
+        nonlocal calls
+        with call_lock:
+            calls += 1
+            attempt = calls
+        if attempt == 1:
+            first_started.set()
+            assert release_first.wait(3.0)
+            return _valid_result(context, suffix="stale-process")
+        if attempt == 2:
+            second_started.set()
+            return _valid_result(context, suffix="restart-recovered")
+        raise AssertionError("status maintenance launched an unexpected extra renderer")
+
+    service = ComprehensiveRunService(
+        store,
+        {"final_report_generation": final_report_capability},
+    )
+    claimed = service.resume(record["identity"]["run_id"], max_stages=1)
+    assert first_started.wait(1.0)
+    first_lease = claimed["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
+
+    # Simulate a replaced process: the local worker/watchdog disappears while the
+    # durable exact-run marker and lease row survive in Postgres/SQLite.
+    background.reset_final_report_publication_tasks_for_tests()
+    assert store.update_final_report_job(
+        first_lease,
+        status="rendering",
+        heartbeat_epoch=1.0,
+        updated_at="2026-08-20T00:00:01+00:00",
+    ) is True
+
+    replacement_service = ComprehensiveRunService(
+        store,
+        {"final_report_generation": final_report_capability},
+    )
+    replacement_service.load(record["identity"]["run_id"])
+    assert second_started.wait(1.0), "status polling must reclaim a stale durable final-report lease"
+    completed = _wait_for_complete(store, record["identity"]["run_id"])
+    assert completed["stage_results"][FINAL_REPORT_STAGE_ID]["report_package"]["report_id"].endswith(
+        "_restart-recovered"
+    )
+
+    release_first.set()
+    time.sleep(0.1)
+    persisted = store.load(record["identity"]["run_id"])
+    assert persisted["stage_results"][FINAL_REPORT_STAGE_ID]["report_package"]["report_id"].endswith(
+        "_restart-recovered"
+    )
     assert calls == 2
     background.reset_final_report_publication_tasks_for_tests()
 
