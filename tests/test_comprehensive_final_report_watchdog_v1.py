@@ -7,9 +7,6 @@ import time
 from pathlib import Path
 
 import nico.comprehensive_final_report_background_v1 as background
-from nico.comprehensive_blocked_run_recovery_v1 import (
-    rewind_blocked_run_for_final_artifact_recovery,
-)
 from nico.comprehensive_final_report_background_v1 import FinalReportPublicationCoordinator
 from nico.comprehensive_final_report_execution_boundary_v4 import FINAL_REPORT_STAGE_ID
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
@@ -76,6 +73,7 @@ def _context(record: dict) -> dict:
             for stage_id in completed
             if stage_id in stage_results
         },
+        "recovery_history": list(record.get("recovery_history") or []),
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -101,17 +99,6 @@ def _valid_result(context: dict, *, suffix: str = "ok") -> dict:
     }
 
 
-def _wait_for_terminal(store: ComprehensiveRunStore, run_id: str, timeout: float = 2.0) -> dict:
-    deadline = time.time() + timeout
-    last = store.load(run_id)
-    while time.time() < deadline:
-        last = store.load(run_id)
-        if last.get("terminal") is True:
-            return last
-        time.sleep(0.02)
-    raise AssertionError(f"run did not become terminal: {run_id}: {last.get('status')}")
-
-
 def _wait_for_complete(store: ComprehensiveRunStore, run_id: str, timeout: float = 2.0) -> dict:
     deadline = time.time() + timeout
     last = store.load(run_id)
@@ -123,90 +110,77 @@ def _wait_for_complete(store: ComprehensiveRunStore, run_id: str, timeout: float
     raise AssertionError(f"final report did not complete: {run_id}: {last.get('status')}")
 
 
+def _wait_for_exhausted_failure(
+    store: ComprehensiveRunStore,
+    run_id: str,
+    *,
+    timeout: float = 2.0,
+) -> dict:
+    deadline = time.time() + timeout
+    last = store.load(run_id)
+    while time.time() < deadline:
+        last = store.load(run_id)
+        history = list(last.get("recovery_history") or [])
+        result = (last.get("stage_results") or {}).get(FINAL_REPORT_STAGE_ID) or {}
+        if (
+            last.get("terminal") is True
+            and last.get("status") == "blocked"
+            and len(history) == 1
+            and result.get("reason") == "final_report_publication_deadline_exceeded"
+        ):
+            return last
+        time.sleep(0.02)
+    raise AssertionError(f"bounded recovery did not exhaust: {run_id}: {last.get('status')}")
+
+
 def _accelerate_watchdog(monkeypatch) -> None:
     monkeypatch.setattr(background, "_heartbeat_seconds", lambda: 0.02)
     monkeypatch.setattr(background, "_max_publication_seconds", lambda: 0.12)
     monkeypatch.setattr(background, "_max_queue_seconds", lambda: 5.0)
 
 
-def test_watchdog_expires_hung_renderer_without_second_advance(tmp_path: Path, monkeypatch) -> None:
+def test_watchdog_automatically_recovers_hung_renderer_without_second_advance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     background.reset_final_report_publication_tasks_for_tests()
     _accelerate_watchdog(monkeypatch)
     store = _store(tmp_path)
-    record = _record("comprun_watchdog_hung")
-    store.create(record)
-    coordinator = FinalReportPublicationCoordinator(store)
-    started = threading.Event()
-    release = threading.Event()
-
-    def hung_executor(context: dict) -> dict:
-        started.set()
-        assert release.wait(3.0)
-        return _valid_result(context, suffix="late")
-
-    claimed = coordinator.advance(record, hung_executor, _context(record))
-    assert started.wait(1.0)
-    lease_id = claimed["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
-
-    terminal = _wait_for_terminal(store, record["identity"]["run_id"])
-    result = terminal["stage_results"][FINAL_REPORT_STAGE_ID]
-    assert terminal["status"] == "blocked"
-    assert result["status"] == "blocked"
-    assert result["reason"] == "final_report_publication_deadline_exceeded"
-    assert result["stage_execution"]["deadline_enforcement_mode"] == (
-        "autonomous_watchdog_and_advance"
-    )
-    assert store.load_final_report_job(lease_id)["status"] == "expired"
-
-    release.set()
-    time.sleep(0.1)
-    persisted = store.load(record["identity"]["run_id"])
-    assert persisted["status"] == "blocked"
-    assert persisted["stage_results"][FINAL_REPORT_STAGE_ID]["reason"] == (
-        "final_report_publication_deadline_exceeded"
-    )
-    assert store.load_final_report_job(lease_id)["status"] == "expired"
-    background.reset_final_report_publication_tasks_for_tests()
-
-
-def test_expired_renderer_reclaims_capacity_and_late_result_is_fenced(tmp_path: Path, monkeypatch) -> None:
-    background.reset_final_report_publication_tasks_for_tests()
-    _accelerate_watchdog(monkeypatch)
-    store = _store(tmp_path)
-    record = _record("comprun_watchdog_recovery")
+    record = _record("comprun_watchdog_auto_recovery")
     store.create(record)
     coordinator = FinalReportPublicationCoordinator(store)
 
     first_started = threading.Event()
     release_first = threading.Event()
     second_started = threading.Event()
+    call_lock = threading.Lock()
+    calls = 0
 
-    def first_executor(context: dict) -> dict:
-        first_started.set()
-        assert release_first.wait(3.0)
-        return _valid_result(context, suffix="stale")
+    def executor(context: dict) -> dict:
+        nonlocal calls
+        with call_lock:
+            calls += 1
+            attempt = calls
+        if attempt == 1:
+            first_started.set()
+            assert release_first.wait(3.0)
+            return _valid_result(context, suffix="stale")
+        if attempt == 2:
+            second_started.set()
+            return _valid_result(context, suffix="recovered")
+        raise AssertionError("bounded final-report recovery launched more than once")
 
-    claimed = coordinator.advance(record, first_executor, _context(record))
+    claimed = coordinator.advance(record, executor, _context(record))
     assert first_started.wait(1.0)
     first_lease = claimed["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
-    blocked = _wait_for_terminal(store, record["identity"]["run_id"])
-    assert blocked["stage_results"][FINAL_REPORT_STAGE_ID]["reason"] == (
-        "final_report_publication_deadline_exceeded"
-    )
 
-    recovered = rewind_blocked_run_for_final_artifact_recovery(blocked)
-    recovered = store.save(recovered, expected_revision=int(blocked["revision"]))
-
-    def second_executor(context: dict) -> dict:
-        second_started.set()
-        return _valid_result(context, suffix="recovered")
-
-    coordinator.advance(recovered, second_executor, _context(recovered))
-    assert second_started.wait(1.0), "expired renderer must not keep logical capacity forever"
+    assert second_started.wait(1.5), "watchdog must relaunch the bounded recovery automatically"
     completed = _wait_for_complete(store, record["identity"]["run_id"])
+    assert len(completed.get("recovery_history") or []) == 1
     assert completed["stage_results"][FINAL_REPORT_STAGE_ID]["report_package"]["report_id"].endswith(
         "_recovered"
     )
+    assert store.load_final_report_job(first_lease)["status"] == "expired"
 
     release_first.set()
     time.sleep(0.1)
@@ -214,5 +188,99 @@ def test_expired_renderer_reclaims_capacity_and_late_result_is_fenced(tmp_path: 
     assert persisted["stage_results"][FINAL_REPORT_STAGE_ID]["report_package"]["report_id"].endswith(
         "_recovered"
     )
+    assert calls == 2
     assert store.load_final_report_job(first_lease)["status"] == "expired"
     background.reset_final_report_publication_tasks_for_tests()
+
+
+def test_watchdog_stops_after_single_bounded_recovery_attempt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    background.reset_final_report_publication_tasks_for_tests()
+    _accelerate_watchdog(monkeypatch)
+    store = _store(tmp_path)
+    record = _record("comprun_watchdog_exhausted")
+    store.create(record)
+    coordinator = FinalReportPublicationCoordinator(store)
+
+    release_first = threading.Event()
+    release_second = threading.Event()
+    first_started = threading.Event()
+    second_started = threading.Event()
+    third_started = threading.Event()
+    call_lock = threading.Lock()
+    calls = 0
+
+    def executor(context: dict) -> dict:
+        nonlocal calls
+        with call_lock:
+            calls += 1
+            attempt = calls
+        if attempt == 1:
+            first_started.set()
+            assert release_first.wait(3.0)
+            return _valid_result(context, suffix="late-first")
+        if attempt == 2:
+            second_started.set()
+            assert release_second.wait(3.0)
+            return _valid_result(context, suffix="late-second")
+        third_started.set()
+        return _valid_result(context, suffix="unexpected-third")
+
+    coordinator.advance(record, executor, _context(record))
+    assert first_started.wait(1.0)
+    assert second_started.wait(1.5)
+    terminal = _wait_for_exhausted_failure(store, record["identity"]["run_id"])
+    assert len(terminal.get("recovery_history") or []) == 1
+    assert terminal["stage_results"][FINAL_REPORT_STAGE_ID]["status"] == "blocked"
+    assert terminal["stage_results"][FINAL_REPORT_STAGE_ID]["reason"] == (
+        "final_report_publication_deadline_exceeded"
+    )
+    time.sleep(0.2)
+    assert calls == 2
+    assert not third_started.is_set()
+
+    release_first.set()
+    release_second.set()
+    time.sleep(0.1)
+    persisted = store.load(record["identity"]["run_id"])
+    assert persisted["status"] == "blocked"
+    assert persisted["terminal"] is True
+    assert calls == 2
+    background.reset_final_report_publication_tasks_for_tests()
+
+
+def test_final_report_job_terminal_status_cannot_be_reopened(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    lease_id = "frpub_terminal_fence"
+    store.create_final_report_job(
+        lease_id=lease_id,
+        run_id="comprun_terminal_fence",
+        started_epoch=10.0,
+        heartbeat_epoch=10.0,
+        updated_at="2026-08-20T00:00:00+00:00",
+        status="rendering",
+    )
+    assert store.update_final_report_job(
+        lease_id,
+        status="expired",
+        heartbeat_epoch=20.0,
+        updated_at="2026-08-20T00:00:20+00:00",
+    ) is True
+    assert store.update_final_report_job(
+        lease_id,
+        status="rendering",
+        heartbeat_epoch=30.0,
+        updated_at="2026-08-20T00:00:30+00:00",
+    ) is False
+    assert store.update_final_report_job(
+        lease_id,
+        status="failed",
+        heartbeat_epoch=40.0,
+        updated_at="2026-08-20T00:00:40+00:00",
+    ) is False
+    job = store.load_final_report_job(lease_id)
+    assert job is not None
+    assert job["status"] == "expired"
+    assert job["heartbeat_epoch"] == 20.0
