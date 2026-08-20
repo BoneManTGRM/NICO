@@ -30,6 +30,18 @@ FORBIDDEN_PDF_MARKERS = (
     "NICO Comprehensive Technical Assessment",
     "missing Spanish presentation translation",
     "v2_production_publication_failed",
+    "Finding ID:",
+    "Category / status:",
+    "Exact source:",
+    "Analyzer / rule:",
+    "Technical consequence:",
+    "Business consequence:",
+    "Specific correction:",
+    "Owner / effort:",
+    "Cost of inaction:",
+    "Residual risk:",
+    "Acceptance / exit criteria:",
+    "Final exit criteria:",
 )
 
 
