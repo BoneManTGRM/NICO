@@ -75,3 +75,14 @@ def test_spanish_public_entrypoint_is_comprehensive_only() -> None:
     assert "tier=express" not in home.casefold()
     assert "Express" not in assessment
     assert "NICO Comprehensive" in assessment
+
+
+def test_spanish_copy_cannot_silently_inherit_new_english_fields() -> None:
+    source = Path("apps/web/app/assessment/assessmentCopy.ts").read_text(encoding="utf-8")
+
+    assert "const EN_STAGE_LABELS = {" in source
+    assert "Record<keyof typeof EN_STAGE_LABELS, string>" in source
+    assert "type CompleteLocalizedCopy = { [K in keyof typeof EN]: unknown };" in source
+    assert "satisfies CompleteLocalizedCopy" in source
+    assert "const ES: Copy" not in source
+    assert "...EN," not in source
