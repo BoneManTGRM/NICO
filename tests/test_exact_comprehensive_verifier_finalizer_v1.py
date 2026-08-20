@@ -5,21 +5,39 @@ from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/exact-comprehensive-verifier-finalizer.yml")
 SOURCE = Path(".github/workflows/verify-comprehensive-recovery-9984.yml")
+MARKER = "[verify-comprun-9984]"
 
 
-def test_finalizer_observes_completion_of_exact_verifier_on_main() -> None:
+def test_finalizer_observes_only_requested_exact_verifier_on_main() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
+    source = SOURCE.read_text(encoding="utf-8")
 
     assert "workflow_run:" in text
     assert "Verify Comprehensive Recovery 9984" in text
     assert "types:\n      - completed" in text
     assert "github.event.workflow_run.head_branch == 'main'" in text
+    assert "github.event.workflow_run.head_commit.message" in text
+    assert MARKER in text
+    assert MARKER in source
+    assert f"contains(github.event.head_commit.message, '{MARKER}')" in source
     assert "RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}" in text
     assert "SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}" in text
+    assert "SOURCE_COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}" in text
     assert "cancel-in-progress: false" in text
 
 
-def test_finalizer_only_repairs_missing_or_pending_terminal_status() -> None:
+def test_finalizer_does_not_create_status_for_intentionally_skipped_normal_push() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "if marker not in source_commit_message:" in text
+    assert "Exact verifier was not requested for this release" in text
+    guard = text.index("if marker not in source_commit_message:")
+    status_read = text.index("statuses = request_json(")
+    status_write = text.index('f"https://api.github.com/repos/{repository}/statuses/{sha}"')
+    assert guard < status_read < status_write
+
+
+def test_finalizer_only_repairs_missing_or_pending_requested_terminal_status() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
     assert 'if observed in {"success", "failure", "error"}:' in text
@@ -50,6 +68,4 @@ def test_original_verifier_can_outlive_its_explicit_status_path_without_finalize
     assert "for attempt in range(1, 31):" in source
     assert 'post_status("success"' in source
     assert 'post_status("failure"' in source
-    # This proves why a workflow_run finalizer is required: the original job can hit
-    # the outer watchdog before Python reaches either explicit post_status call.
     assert "if: failure()" not in source

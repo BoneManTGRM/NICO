@@ -19,7 +19,13 @@ concurrency:
 jobs:
   finalize:
     name: Finalize exact Comprehensive verifier status
-    if: github.event.workflow_run.head_branch == 'main'
+    # Verify Comprehensive Recovery 9984 is registered on every main push, but its
+    # actual verifier job runs only for the incident marker. Do not turn an
+    # intentionally skipped source workflow on an ordinary release into a false
+    # production failure.
+    if: >-
+      github.event.workflow_run.head_branch == 'main' &&
+      contains(github.event.workflow_run.head_commit.message, '[verify-comprun-9984]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -27,6 +33,7 @@ jobs:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
       SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
       STATUS_CONTEXT: NICO Exact Comprehensive 9984
       PROOF_PR_NUMBER: '1237'
 
@@ -47,8 +54,17 @@ jobs:
           token = os.environ["GITHUB_TOKEN"]
           source_conclusion = os.environ["SOURCE_CONCLUSION"].strip().lower()
           source_run_id = os.environ["SOURCE_RUN_ID"].strip()
+          source_commit_message = os.environ["SOURCE_COMMIT_MESSAGE"]
           status_context = os.environ["STATUS_CONTEXT"]
           proof_pr = os.environ["PROOF_PR_NUMBER"]
+          marker = "[verify-comprun-9984]"
+
+          # Defense in depth for workflow-expression or payload drift. Ordinary main
+          # pushes intentionally skip the incident-scoped verifier and must not create
+          # an Exact Comprehensive status at all.
+          if marker not in source_commit_message:
+              print("Exact verifier was not requested for this release; no status finalization needed.")
+              raise SystemExit(0)
 
           headers = {
               "Authorization": f"Bearer {token}",
@@ -109,8 +125,8 @@ jobs:
               raise SystemExit(0)
 
           if source_conclusion == "success":
-              # A successful workflow that left no terminal status is internally
-              # contradictory. Fail closed rather than manufacturing success.
+              # A successful marked verifier workflow that left no terminal status is
+              # internally contradictory. Fail closed rather than manufacturing success.
               state = "failure"
               description = "Verifier completed without publishing an exact-run terminal status"
           else:
@@ -142,7 +158,7 @@ jobs:
                       f"- Source conclusion: `{source_conclusion or 'unknown'}`\n"
                       f"- Prior exact-verifier status: `{observed}`\n"
                       "- Finalized status: `failure`\n\n"
-                      "The verifier ended without publishing terminal exact-run proof. "
+                      "The requested verifier ended without publishing terminal exact-run proof. "
                       "This is fail-closed orchestration evidence, not a successful recovery."
                   )
               },
