@@ -125,9 +125,22 @@ function repairPrematurePackageBlock(locale: AssessmentLocale): void {
   value.dataset.nicoActivePackageStatusTruth = "pending";
 }
 
+function bindDocumentLanguage(locale: AssessmentLocale): () => void {
+  const root = document.documentElement;
+  const previous = root.lang || "en";
+  root.lang = locale === "es-MX" ? "es-MX" : "en";
+  root.dataset.nicoAssessmentDocumentLanguage = root.lang;
+
+  return () => {
+    root.lang = previous;
+    delete root.dataset.nicoAssessmentDocumentLanguage;
+  };
+}
+
 export default function AssessmentDynamicSpanishLocalization({locale}: {locale: "en" | "es-MX"}) {
   useEffect(() => {
-    if (locale !== "es-MX") return;
+    const restoreDocumentLanguage = bindDocumentLanguage(locale);
+    if (locale !== "es-MX") return restoreDocumentLanguage;
 
     translateTree(document.body);
     repairPrematurePackageBlock(locale);
@@ -145,7 +158,10 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
       childList: true,
       characterData: true,
     });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      restoreDocumentLanguage();
+    };
   }, [locale]);
 
   return null;
@@ -153,6 +169,7 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
 
 export {
   LIVE_SPANISH_LABELS,
+  bindDocumentLanguage,
   normalizedKey,
   repairPrematurePackageBlock,
   translateTextNode,
