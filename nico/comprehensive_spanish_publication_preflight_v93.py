@@ -6,7 +6,8 @@ VERSION = "nico.comprehensive-spanish-publication-preflight.v93"
 _MAX_FAILURE_DETAILS = 50
 _MAX_VISITED_NODES = 75_000
 _MAX_DEPTH = 18
-_MARKER = "__nico_spanish_publication_preflight_v93__"
+_TARGET_MARKER = "__nico_spanish_publication_preflight_v93_target__"
+_RICH_MARKER = "__nico_spanish_publication_preflight_v93_rich__"
 
 _ADDITIONAL_CLIENT_PROSE_FIELDS = {
     "cost_of_inaction",
@@ -33,7 +34,45 @@ _FALLBACK_PRESENTATION_TRANSLATIONS_CASEFOLD = {
     source.casefold(): target
     for source, target in _FALLBACK_PRESENTATION_TRANSLATIONS.items()
 }
+
+# v67's compact rich-finding renderer receives a Spanish boolean for its section title,
+# but its field labels are renderer-owned Markdown literals rather than canonical data.
+# Normalize those exact labels before v87's final presentation pass. Machine values and
+# source anchors are never changed.
+_RICH_FINDING_MARKDOWN_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("- Finding ID:", "- ID del hallazgo:"),
+    ("- Category / status:", "- Categoría / estado:"),
+    ("- Exact source:", "- Fuente exacta:"),
+    ("- Analyzer / rule:", "- Analizador / regla:"),
+    ("- Evidence quality:", "- Calidad de la evidencia:"),
+    ("- Observed evidence:", "- Evidencia observada:"),
+    ("- Interpretation:", "- Interpretación:"),
+    ("- Technical consequence:", "- Consecuencia técnica:"),
+    ("- Business consequence:", "- Consecuencia empresarial:"),
+    ("- Specific correction:", "- Corrección específica:"),
+    ("- Owner / effort:", "- Responsable / esfuerzo:"),
+    ("- Cost of inaction:", "- Costo de no actuar:"),
+    ("- Residual risk:", "- Riesgo residual:"),
+    ("- Disposition:", "- Disposición:"),
+    ("- Verification:", "- Verificación:"),
+    ("- Acceptance / exit criteria:", "- Criterios de aceptación / salida:"),
+    ("- Rollback:", "- Reversión:"),
+    ("- Final exit criteria:", "- Criterios finales de salida:"),
+    ("Exact source not retained", "Fuente exacta no conservada"),
+    ("Rule not retained", "Regla no conservada"),
+    ("Evidence requires review", "La evidencia requiere revisión"),
+    ("Requires review", "Requiere revisión"),
+    ("Unassigned", "Sin asignar"),
+    ("Unestimated", "Sin estimar"),
+    ("Not quantified", "No cuantificado"),
+    (
+        "PROPOSED · EXACT SOURCE REVIEW AND HUMAN APPROVAL REQUIRED",
+        "PROPUESTO · REVISIÓN DE FUENTE EXACTA Y APROBACIÓN HUMANA REQUERIDAS",
+    ),
+)
+
 _ORIGINAL_TARGETED_TRANSLATOR: Callable[[Any], str | None] | None = None
+_ORIGINAL_STRUCTURED_REPAIR: Callable[[Any], str] | None = None
 
 
 def _text(value: Any, limit: int = 600) -> str:
@@ -64,40 +103,70 @@ def _translate_fallback_presentation_literal(value: Any) -> str | None:
     return _FALLBACK_PRESENTATION_TRANSLATIONS_CASEFOLD.get(text.casefold())
 
 
+def _localize_rich_finding_markdown(value: Any) -> str:
+    text = str(value or "")
+    for source, target in _RICH_FINDING_MARKDOWN_REPLACEMENTS:
+        text = text.replace(source, target)
+    return text
+
+
 def install_spanish_publication_preflight_v93() -> dict[str, Any]:
-    """Extend v88's bounded vocabulary without creating another translator alias."""
+    """Extend v88's stable helper layer without adding another public alias chain."""
 
     global _ORIGINAL_TARGETED_TRANSLATOR
+    global _ORIGINAL_STRUCTURED_REPAIR
 
     from nico import comprehensive_spanish_exit_criteria_v88 as v88
 
-    current = v88._translate_targeted_presentation_literal
-    if getattr(current, _MARKER, False):
-        bound = True
-    else:
+    targeted_current = v88._translate_targeted_presentation_literal
+    if not getattr(targeted_current, _TARGET_MARKER, False):
         if _ORIGINAL_TARGETED_TRANSLATOR is None:
-            _ORIGINAL_TARGETED_TRANSLATOR = current
-        base = _ORIGINAL_TARGETED_TRANSLATOR
-        if base is None:
+            _ORIGINAL_TARGETED_TRANSLATOR = targeted_current
+        targeted_base = _ORIGINAL_TARGETED_TRANSLATOR
+        if targeted_base is None:
             raise RuntimeError("Spanish publication preflight has no v88 targeted base")
 
         def targeted(value: Any) -> str | None:
             translated = _translate_fallback_presentation_literal(value)
             if translated is not None:
                 return translated
-            return base(value)
+            return targeted_base(value)
 
-        setattr(targeted, _MARKER, True)
-        setattr(targeted, "_nico_previous", base)
+        setattr(targeted, _TARGET_MARKER, True)
+        setattr(targeted, "_nico_previous", targeted_base)
         v88._translate_targeted_presentation_literal = targeted
-        bound = True
+
+    repair_current = v88._repair_known_structured_spans
+    if not getattr(repair_current, _RICH_MARKER, False):
+        if _ORIGINAL_STRUCTURED_REPAIR is None:
+            _ORIGINAL_STRUCTURED_REPAIR = repair_current
+        repair_base = _ORIGINAL_STRUCTURED_REPAIR
+        if repair_base is None:
+            raise RuntimeError("Spanish publication preflight has no v88 structured base")
+
+        def structured_repair(value: Any) -> str:
+            return _localize_rich_finding_markdown(repair_base(value))
+
+        setattr(structured_repair, _RICH_MARKER, True)
+        setattr(structured_repair, "_nico_previous", repair_base)
+        v88._repair_known_structured_spans = structured_repair
 
     v88_result = v88.install_comprehensive_spanish_exit_criteria_v88()
     return {
         "status": "installed",
         "version": VERSION,
-        "fallback_targeted_helper_bound": bound,
+        "fallback_targeted_helper_bound": getattr(
+            v88._translate_targeted_presentation_literal,
+            _TARGET_MARKER,
+            False,
+        ),
+        "rich_finding_markdown_helper_bound": getattr(
+            v88._repair_known_structured_spans,
+            _RICH_MARKER,
+            False,
+        ),
         "fallback_contract_count": len(_FALLBACK_PRESENTATION_TRANSLATIONS),
+        "rich_finding_label_contract_count": len(_RICH_FINDING_MARKDOWN_REPLACEMENTS),
         "v88_bound": v88_result.get("bound") is True,
         "late_v88_rebind_safe": True,
         "presentation_only": True,
@@ -114,8 +183,6 @@ def _iter_report_bound_strings(
     depth: int = 0,
     budget: list[int] | None = None,
 ) -> Iterable[tuple[str, str, str]]:
-    """Mirror v87's canonical presentation traversal without copying evidence trees."""
-
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
 
     if budget is None:
@@ -163,8 +230,6 @@ def _iter_report_bound_strings(
 def inspect_spanish_canonical_publication_preflight(
     canonical_report: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Validate fully restored canonical truth before any client artifact renders."""
-
     if not _spanish_requested(canonical_report):
         return {
             "status": "not_applicable",
@@ -238,6 +303,7 @@ def inspect_spanish_canonical_publication_preflight(
         "additional_rich_finding_prose_guarded": True,
         "duplicate_restoration_surfaces_deduplicated": True,
         "fallback_targeted_contracts_installed": True,
+        "rich_finding_labels_localized": True,
         "presentation_only": True,
         "canonical_evidence_unchanged": True,
         "human_review_required": True,
