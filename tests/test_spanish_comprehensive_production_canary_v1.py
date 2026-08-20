@@ -60,6 +60,20 @@ def test_spanish_production_workflow_is_a_persistent_main_release_gate() -> None
     assert '-H "Accept: application/vnd.github+json"' in text
 
 
+def test_spanish_canary_has_time_to_publish_terminal_status_after_proof_timeout() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    # The proof step must terminate materially before the job-level watchdog so the
+    # always/failure finalizers can upload evidence and replace the pending commit state.
+    assert "timeout-minutes: 180" in text
+    assert "timeout-minutes: 100" in text
+    assert "--timeout-seconds 5400" in text
+    assert "continue-on-error: true" in text
+    assert "if: always()" in text
+    assert "if: failure()" in text
+    assert "sudo tee /etc/apt/apt-mirrors.txt" in text
+
+
 def test_spanish_canary_does_not_approve_or_deliver_client_artifacts() -> None:
     script = SCRIPT.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
