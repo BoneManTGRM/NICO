@@ -428,6 +428,7 @@ class FinalReportPublicationCoordinator:
             if int(latest.get("revision") or 0) != int(record.get("revision") or 0):
                 return latest
             record = latest
+            self._safe_job_update(lease_id, status="superseded")
 
         return self._claim_and_launch(record, executor, context)
 
@@ -500,7 +501,9 @@ class FinalReportPublicationCoordinator:
             )
         except ComprehensiveRunConflict:
             return self._store.load(run_id)
-        return self._claim_and_launch(persisted, executor, context)
+        retry_context = dict(context)
+        retry_context["recovery_history"] = list(persisted.get("recovery_history") or [])
+        return self._claim_and_launch(persisted, executor, retry_context)
 
     def _claim_and_launch(
         self,
