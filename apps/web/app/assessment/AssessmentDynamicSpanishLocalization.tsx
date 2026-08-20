@@ -125,10 +125,25 @@ function repairPrematurePackageBlock(locale: AssessmentLocale): void {
   value.dataset.nicoActivePackageStatusTruth = "pending";
 }
 
+function bindDocumentLanguage(locale: AssessmentLocale): () => void {
+  const root = document.documentElement;
+  const previous = root.lang || "en";
+  root.lang = locale;
+  root.dataset.nicoAssessmentDocumentLanguage = root.lang;
+
+  return () => {
+    root.lang = previous;
+    delete root.dataset.nicoAssessmentDocumentLanguage;
+  };
+}
+
 export default function AssessmentDynamicSpanishLocalization({locale}: {locale: "en" | "es-MX"}) {
   useEffect(() => {
+    // Preserve the long-standing English-route contract exactly. Root layout already
+    // declares English, and this client boundary exists only to localize Spanish pages.
     if (locale !== "es-MX") return;
 
+    const restoreDocumentLanguage = bindDocumentLanguage(locale);
     translateTree(document.body);
     repairPrematurePackageBlock(locale);
     const observer = new MutationObserver((records) => {
@@ -145,7 +160,10 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
       childList: true,
       characterData: true,
     });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      restoreDocumentLanguage();
+    };
   }, [locale]);
 
   return null;
@@ -153,6 +171,7 @@ export default function AssessmentDynamicSpanishLocalization({locale}: {locale: 
 
 export {
   LIVE_SPANISH_LABELS,
+  bindDocumentLanguage,
   normalizedKey,
   repairPrematurePackageBlock,
   translateTextNode,
