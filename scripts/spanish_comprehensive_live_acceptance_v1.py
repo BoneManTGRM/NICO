@@ -21,6 +21,11 @@ SPANISH_REPO_LABEL = "Propietario/nombre del repositorio o URL de GitHub"
 SPANISH_CLIENT_LABEL = "Nombre del cliente, opcional"
 SPANISH_PROJECT_LABEL = "Nombre del proyecto, opcional"
 SPANISH_TERMINAL_PHASE = "Revisión interna requerida"
+SPANISH_HYDRATED_WORKSPACE_SELECTOR = (
+    recovery.WORKSPACE_SELECTOR
+    + '[data-assessment-hydrated="true"]'
+    + '[data-assessment-client-copy-verified="true"]'
+)
 SPANISH_PDF_MARKERS = (
     "Evaluación Técnica Integral",
     "Resumen ejecutivo",
@@ -78,6 +83,30 @@ def _pdf_text(pdf_bytes: bytes) -> str:
     reader = PdfReader(io.BytesIO(pdf_bytes))
     return " ".join(
         " ".join(page.extract_text() or "" for page in reader.pages).split()
+    )
+
+
+def _wait_for_spanish_hydration(page: Any, timeout_ms: int) -> None:
+    """Wait for the real client boundary before asserting localized document semantics.
+
+    The assessment workspace is server-rendered and can become visible before React
+    effects bind the route locale. A production proof that asserts ``<html lang>`` at
+    that earlier boundary is timing-dependent even when the deployed Spanish client is
+    correct. Require NICO's explicit hydrated/copy-verified marker, then require the
+    Spanish document-language binder itself. This keeps the proof fail-closed without
+    accepting the pre-hydration English root as a false production failure.
+    """
+
+    page.locator(SPANISH_HYDRATED_WORKSPACE_SELECTOR).first.wait_for(
+        state="visible",
+        timeout=timeout_ms,
+    )
+    page.wait_for_function(
+        """() => (
+          document.documentElement.lang === 'es-MX'
+          && document.documentElement.dataset.nicoAssessmentDocumentLanguage === 'es-MX'
+        )""",
+        timeout=timeout_ms,
     )
 
 
@@ -179,8 +208,7 @@ def run_proof(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             wait_until="domcontentloaded",
             timeout=args.navigation_timeout_ms,
         )
-        workspace = page.locator(recovery.WORKSPACE_SELECTOR).first
-        workspace.wait_for(state="visible", timeout=args.navigation_timeout_ms)
+        _wait_for_spanish_hydration(page, args.navigation_timeout_ms)
         assert page.evaluate("() => document.documentElement.lang") == "es-MX"
 
         page.get_by_label(SPANISH_REPO_LABEL).fill(args.repository)
