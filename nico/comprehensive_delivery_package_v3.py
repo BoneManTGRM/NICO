@@ -11,7 +11,7 @@ from typing import Any
 
 from nico.comprehensive_delivery_package_v2 import build_comprehensive_delivery_package as build_v2
 
-VERSION = "nico.comprehensive_approved_delivery.v3.1"
+VERSION = "nico.comprehensive_delivery_package.v3.1"
 _REPORT_PATH = "01_nico_comprehensive_report.pdf"
 _MANIFEST_PATH = "11_evidence_manifest.json"
 
