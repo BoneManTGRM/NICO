@@ -93,6 +93,7 @@ def test_current_generated_complexity_family_is_preflighted_after_restoration() 
     assert manifest["status"] == "complete"
     assert manifest["spanish_requested"] is True
     assert manifest["canonical_restoration_complete"] is True
+    assert manifest["additional_rich_finding_prose_guarded"] is True
     assert manifest["failure_count"] == 0
     assert manifest["checked_presentation_values"] >= 20
     assert restored == before
@@ -153,6 +154,35 @@ def test_preflight_reports_all_missing_restored_contracts_in_one_failure(
     assert "acceptance_criteria" in message
     assert "rollback" in message
     assert "recommendation" in message
+
+
+def test_preflight_guards_rich_finding_fields_rendered_outside_legacy_strict_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def untranslated(value: str, key: str) -> str:
+        return value
+
+    monkeypatch.setattr(canonical, "_translate_presentation_field", untranslated)
+    restored = {
+        "report_language": "es-MX",
+        "identity": {"report_language": "es-MX"},
+        "findings_register": [
+            {
+                "technical_impact": "The hotspot remains complex and difficult to change safely.",
+                "cost_of_inaction": "The maintenance cost will grow while this condition remains.",
+                "residual_risk": "The regression risk remains after partial remediation.",
+            }
+        ],
+    }
+
+    manifest = inspect_spanish_canonical_publication_preflight(restored)
+    assert manifest["status"] == "blocked"
+    assert manifest["failure_count"] == 3
+    assert {item["field"] for item in manifest["failure_details"]} == {
+        "technical_impact",
+        "cost_of_inaction",
+        "residual_risk",
+    }
 
 
 def test_preflight_does_not_touch_english_or_raw_machine_subtrees(
