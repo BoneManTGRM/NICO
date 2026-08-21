@@ -36,11 +36,16 @@ def test_atomic_json_is_mode_0600(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="production container uses POSIX process groups")
-def test_hard_termination_stops_descendant_process_group(tmp_path: Path) -> None:
+def test_hard_termination_stops_sigterm_resistant_descendant_group(tmp_path: Path) -> None:
     child_pid_path = tmp_path / "child.pid"
+    descendant = (
+        "import signal,time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "time.sleep(60)"
+    )
     script = (
         "import pathlib,subprocess,sys,time; "
-        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+        f"child=subprocess.Popen([sys.executable,'-c',{descendant!r}]); "
         "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8'); "
         "time.sleep(60)"
     )
@@ -51,6 +56,7 @@ def test_hard_termination_stops_descendant_process_group(tmp_path: Path) -> None
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
+    setattr(process, "_nico_isolated_process_group", process.pid)
     try:
         deadline = time.time() + 3.0
         while not child_pid_path.exists() and time.time() < deadline:
@@ -71,14 +77,20 @@ def test_hard_termination_stops_descendant_process_group(tmp_path: Path) -> None
             process.wait(timeout=2)
 
 
-def test_renderer_capacity_is_not_released_while_isolated_process_is_alive(
+def test_renderer_capacity_waits_for_physical_exit_then_releases_once(
     monkeypatch,
 ) -> None:
     released: list[bool] = []
+
+    def release_once(state: dict) -> None:
+        if state.get("slot_acquired") and not state.get("slot_released"):
+            state["slot_released"] = True
+            released.append(True)
+
     monkeypatch.setattr(
         hardening,
         "_ORIGINAL_RELEASE_LOCAL_TASK_CAPACITY",
-        lambda state: released.append(True),
+        release_once,
     )
     process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(60)"],
@@ -98,12 +110,19 @@ def test_renderer_capacity_is_not_released_while_isolated_process_is_alive(
         assert released == []
         assert state["capacity_release_blocked_until_worker_exit"] is True
         assert state["physical_worker_exit_confirmed"] is False
+        assert state["capacity_exit_reaper_started"] is True
 
         assert terminate_process(process, grace_seconds=0.2) is True
-        hardening._release_local_task_capacity_after_physical_exit(state)
+        deadline = time.time() + 2.0
+        while not released and time.time() < deadline:
+            time.sleep(0.02)
         assert released == [True]
         assert state["physical_worker_exit_confirmed"] is True
         assert state["capacity_release_blocked_until_worker_exit"] is False
+        assert state["capacity_exit_reaper_completed"] is True
+
+        hardening._release_local_task_capacity_after_physical_exit(state)
+        assert released == [True]
     finally:
         if process.poll() is None:
             process.kill()
