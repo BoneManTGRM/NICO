@@ -10,11 +10,50 @@ from nico.comprehensive_final_report_process_isolation_v1 import (
 from nico.comprehensive_production_proof_lifecycle_v1 import (
     install_comprehensive_production_proof_lifecycle_v1,
 )
+from nico.comprehensive_spanish_assessment_scope_v97 import (
+    install_comprehensive_spanish_assessment_scope_v97,
+)
 from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.spanish_final_report_bootstrap.v4"
+VERSION = "nico.api.spanish_final_report_bootstrap.v5"
+
+# Bind the exact production assessment-scope presentation contract before the parent
+# process installs the shared Spanish render cache. This keeps the parent preflight and
+# the isolated final-report worker on the same es-MX vocabulary without changing any
+# canonical evidence, scoring, human-review, or client-delivery authority.
+SPANISH_ASSESSMENT_SCOPE = install_comprehensive_spanish_assessment_scope_v97()
+setattr(
+    app.state,
+    "nico_spanish_assessment_scope",
+    SPANISH_ASSESSMENT_SCOPE,
+)
+
+if SPANISH_ASSESSMENT_SCOPE.get("status") not in {
+    "installed",
+    "already_installed",
+}:
+    raise RuntimeError(
+        "Spanish assessment-scope contract did not install: "
+        f"{SPANISH_ASSESSMENT_SCOPE}"
+    )
+if SPANISH_ASSESSMENT_SCOPE.get("bound") is not True:
+    raise RuntimeError("Spanish assessment-scope contract is not bound")
+if (
+    SPANISH_ASSESSMENT_SCOPE.get(
+        "production_assessment_scope_translation_supported"
+    )
+    is not True
+):
+    raise RuntimeError("Spanish production assessment scope is not translatable")
+if (
+    SPANISH_ASSESSMENT_SCOPE.get(
+        "unknown_assessment_scope_contract_unregistered"
+    )
+    is not True
+):
+    raise RuntimeError("Spanish assessment-scope contract registered unapproved prose")
 
 # Install after terminal authority and every report/language compatibility layer so
 # the live v88/v89/v90 Spanish translation surfaces all share the same bounded cache.
@@ -151,6 +190,7 @@ __all__ = [
     "FINAL_REPORT_PROCESS_ISOLATION",
     "FINAL_REPORT_PROCESS_ISOLATION_HARDENING",
     "PRODUCTION_PROOF_LIFECYCLE",
+    "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
     "VERSION",
     "app",
