@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Rebuild clean Phase 4 approved-delivery module
+      - name: Rebuild clean Phase 4 delivery modules
         shell: bash
         run: |
           set -euo pipefail
@@ -87,7 +87,7 @@ jobs:
                   result = {
                       "status": "invalid",
                       "validation_errors": [
-                          "phase4_base_validation_error:"
+                          "phase4_inherited_validation_failed:"
                           + _bounded_validation_error_code(exc)
                       ],
                       "client_delivery_allowed": False,
@@ -112,23 +112,44 @@ jobs:
 
           target = Path('nico/comprehensive_approved_delivery_v4.py')
           target.write_text(text, encoding='utf-8')
-          PY
-          python -m py_compile nico/comprehensive_approved_delivery_v4.py
 
-      - name: Run focused approval-integrity regressions
+          contract = Path('nico/comprehensive_client_delivery_contract_v1.py')
+          contract_text = contract.read_text(encoding='utf-8')
+          old_code = 'internal_or_test_package_not_client_final'
+          new_code = 'internal_or_test_assessment_not_client_final'
+          if old_code not in contract_text:
+              raise SystemExit('client-final classification replacement point missing')
+          contract.write_text(contract_text.replace(old_code, new_code), encoding='utf-8')
+          PY
+          python -m py_compile \
+            nico/comprehensive_approved_delivery_v4.py \
+            nico/comprehensive_client_delivery_contract_v1.py
+
+      - name: Install focused test dependencies
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+
+      - name: Run focused Phase 4 regressions
+        shell: bash
+        run: |
+          set -o pipefail
           pytest -q \
             tests/test_phase4_approved_delivery_v4.py \
-            tests/test_phase4_stale_evidence_guard_v1.py
+            tests/test_phase4_stale_evidence_guard_v1.py \
+            tests/test_phase4_client_delivery_contract_v1.py \
+            2>&1 | tee /tmp/phase4-focused-tests.log
 
-      - name: Upload corrected module
+      - name: Upload corrected modules and focused evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: phase4-clean-approved-delivery-module
-          path: nico/comprehensive_approved_delivery_v4.py
+          name: phase4-clean-delivery-contract-modules
+          path: |
+            nico/comprehensive_approved_delivery_v4.py
+            nico/comprehensive_client_delivery_contract_v1.py
+            /tmp/phase4-focused-tests.log
           if-no-files-found: error
           retention-days: 1
