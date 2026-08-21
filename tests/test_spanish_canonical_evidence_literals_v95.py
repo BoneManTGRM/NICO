@@ -9,6 +9,9 @@ from nico.comprehensive_spanish_canonical_evidence_literals_v95 import (
     install_comprehensive_spanish_canonical_evidence_literals_v95,
     serialized_canonical_evidence_literal,
 )
+from nico.comprehensive_spanish_publication_preflight_v93 import (
+    inspect_spanish_canonical_publication_preflight,
+)
 
 
 INCIDENT_EVIDENCE = (
@@ -37,6 +40,24 @@ def test_guard_preserves_incident_evidence_byte_for_byte() -> None:
 
     for value in INCIDENT_EVIDENCE:
         assert canonical._translate_presentation_field(value, "evidence") == value
+
+
+def test_production_incident_evidence_passes_aggregate_spanish_preflight() -> None:
+    install_comprehensive_spanish_canonical_evidence_literals_v95()
+    report = {
+        "report_language": "es-MX",
+        "identity": {"report_language": "es-MX"},
+        "stage_summaries": [
+            {
+                "stage_id": "repository_and_delivery_evidence",
+                "evidence": list(INCIDENT_EVIDENCE),
+            }
+        ],
+    }
+    manifest = inspect_spanish_canonical_publication_preflight(report)
+    assert manifest["status"] == "complete"
+    assert manifest["failure_count"] == 0
+    assert manifest["checked_presentation_values"] == len(INCIDENT_EVIDENCE)
 
 
 def test_guard_does_not_exempt_report_owned_flattened_presentation_prose() -> None:
