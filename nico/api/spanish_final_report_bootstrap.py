@@ -49,11 +49,11 @@ if (
     raise RuntimeError("Spanish production assessment scope is not translatable")
 if (
     SPANISH_ASSESSMENT_SCOPE.get(
-        "unknown_assessment_scope_prose_still_fail_closed"
+        "unknown_assessment_scope_contract_unregistered"
     )
     is not True
 ):
-    raise RuntimeError("Spanish assessment-scope contract weakened fail-closed behavior")
+    raise RuntimeError("Spanish assessment-scope contract registered unapproved prose")
 
 # Install after terminal authority and every report/language compatibility layer so
 # the live v88/v89/v90 Spanish translation surfaces all share the same bounded cache.
