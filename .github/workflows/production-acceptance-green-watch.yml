@@ -22,7 +22,7 @@ jobs:
     env:
       TRACKING_ISSUE_NUMBER: "1125"
       REQUIRED_STATUS_CONTEXTS: >-
-        ["Vercel","successful-cat - NICO","NICO Two-Service Production Acceptance","NICO Mobile Restart Production Proof","NICO iOS WebKit Paint Proof"]
+        ["Vercel","successful-cat - NICO","NICO Two-Service Production Acceptance","NICO Mobile Restart Production Proof","NICO iOS WebKit Paint Proof","NICO Spanish Comprehensive Production Proof"]
     steps:
       - name: Check exact main statuses and complete the watch
         env:
