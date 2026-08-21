@@ -17,6 +17,10 @@ _SERIALIZED_EVIDENCE_RE = re.compile(
     re.DOTALL,
 )
 _INDEX_RE = re.compile(r"\[\d+\]")
+_REMOTE_TITLE_PATH_RE = re.compile(
+    r"(?:^|\.)(?:sample_)?(?:pull_requests?|releases?)\[\d+\]\.title$",
+    re.IGNORECASE,
+)
 
 # v87 owns the authoritative presentation-field vocabulary. These additional rich
 # finding fields are guarded by the v93 preflight even though they are not in v87's
@@ -29,17 +33,6 @@ _ADDITIONAL_PRESENTATION_FIELDS = {
     "technical_impact",
 }
 
-# ``title`` is normally presentation prose, but titles captured from remote repository
-# history are exact source evidence. Keep the exemption bounded to provenance paths;
-# report-owned titles and summaries still use the strict Spanish translator.
-_EXACT_SOURCE_TITLE_PATH_TOKENS = (
-    "pull_request",
-    "pull_requests",
-    "sample_pull_requests",
-    "release",
-    "releases",
-)
-
 _ORIGINAL_FIELD_TRANSLATOR: Callable[[str, str], str] | None = None
 
 
@@ -49,10 +42,8 @@ def _normalized_source_leaf(path: str) -> str:
 
 
 def _remote_exact_title_path(path: str) -> bool:
-    normalized = str(path or "").casefold()
-    if _normalized_source_leaf(normalized) != "title":
-        return False
-    return any(token in normalized for token in _EXACT_SOURCE_TITLE_PATH_TOKENS)
+    normalized = str(path or "").strip()
+    return bool(_REMOTE_TITLE_PATH_RE.search(normalized))
 
 
 def serialized_canonical_evidence_literal(value: Any, key: Any) -> bool:
@@ -87,8 +78,10 @@ def serialized_canonical_evidence_literal(value: Any, key: Any) -> bool:
     if source_leaf not in presentation_fields:
         return True
 
-    # Captured pull-request/release titles are repository evidence even though ``title``
-    # is also used by report-owned presentation objects elsewhere.
+    # Captured remote pull-request/release titles are repository evidence even though
+    # ``title`` is also used by report-owned presentation objects elsewhere. The path
+    # grammar requires an indexed provenance collection so arbitrary report titles do
+    # not receive the exemption.
     if source_leaf == "title" and _remote_exact_title_path(source_path):
         return True
 
