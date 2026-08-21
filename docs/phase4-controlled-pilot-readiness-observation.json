@@ -1,0 +1,52 @@
+{
+  "artifact_schema": "nico.phase4_controlled_pilot_readiness_observation.v1",
+  "phase": 4,
+  "title": "Production client-delivery hardening, security, and end-to-end proof",
+  "base_main_sha": "02e58a0d95244f2789348694265a4ec660022861",
+  "product": "NICO Comprehensive",
+  "one_client_report": true,
+  "implementation_state": "implementation_candidate_pending_exact_head_ci",
+  "software_contracts": {
+    "client_project_scope_identity_retained": true,
+    "read_only_repository_access_required": true,
+    "immutable_assessed_commit_required": true,
+    "required_scanner_failure_blocks_acceptance": true,
+    "candidate_lineage_and_technical_triage_required": true,
+    "mandatory_individual_review_must_complete": true,
+    "human_approval_is_explicit_and_attributable": true,
+    "automation_final_approval_rejected": true,
+    "approval_binds_exact_artifact_digests": true,
+    "material_change_invalidates_stale_approval": true,
+    "cross_client_project_run_mismatch_blocks_delivery": true,
+    "internal_or_test_package_cannot_be_client_final": true,
+    "one_report_rule_enforced": true,
+    "generator_truth_distinguishes_assessed_commit_from_nico_build_and_mutable_history": true,
+    "unsupported_ecosystems_are_not_assessed": true
+  },
+  "local_verification": {
+    "command": "PYTHONPATH=/mnt/data/phase4work pytest -q tests/test_phase4_client_delivery_contract_v1.py",
+    "result": "22 passed",
+    "fixtures": [
+      "external Python service",
+      "external Node/TypeScript application",
+      "external mixed Python/TypeScript repository"
+    ],
+    "scope": "repository-agnostic contract only; repository-wide and GitHub Actions evidence pending"
+  },
+  "controlled_paying_client_pilot_decision": "not_yet_proven",
+  "open_evidence": [
+    "exact PR-head required GitHub checks",
+    "exact merge-SHA deployment identity",
+    "fresh real external authorized repository run",
+    "protected human approval and delivery on that exact run",
+    "post-download immutable package revalidation",
+    "empirical combined specialist review time"
+  ],
+  "claims_not_made": [
+    "broad commercial readiness",
+    "superiority over competitors",
+    "support for untested ecosystems",
+    "deployment identity when infrastructure does not expose it",
+    "four-hour specialist target achieved in real client work"
+  ]
+}
