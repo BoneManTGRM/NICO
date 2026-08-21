@@ -8,6 +8,7 @@ from nico import comprehensive_spanish_canonical_report_v87 as canonical
 from nico.comprehensive_spanish_assessment_scope_v97 import (
     PRODUCTION_ASSESSMENT_SCOPE,
     PRODUCTION_ASSESSMENT_SCOPE_ES,
+    UNKNOWN_ASSESSMENT_SCOPE_SENTINEL,
     install_comprehensive_spanish_assessment_scope_v97,
 )
 from nico.comprehensive_spanish_canonical_acceptance_normalization_v96 import (
@@ -53,14 +54,14 @@ def test_terminal_period_normalized_scope_translates_without_broadening() -> Non
 
 
 def test_unknown_assessment_scope_remains_fail_closed() -> None:
-    install_comprehensive_spanish_assessment_scope_v97()
-    unknown = (
-        "Review an unrelated future system and silently publish an unapproved scope "
-        "without a Spanish presentation contract."
-    )
+    state = install_comprehensive_spanish_assessment_scope_v97()
+    assert state["unknown_assessment_scope_prose_still_fail_closed"] is True
 
     with pytest.raises(ValueError, match="missing Spanish presentation translation"):
-        canonical._translate_presentation_field(unknown, "assessment_scope")
+        canonical._translate_presentation_field(
+            UNKNOWN_ASSESSMENT_SCOPE_SENTINEL,
+            "assessment_scope",
+        )
 
 
 def test_full_worker_order_preflight_accepts_the_production_scope() -> None:
