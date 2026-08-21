@@ -17,6 +17,7 @@ from typing import Any, Mapping, MutableMapping
 VERSION = "nico.comprehensive_final_report_process_worker.v1"
 DEFAULT_BOOTSTRAP = "nico.api.spanish_final_report_bootstrap:app"
 _CHILD_ENV = "NICO_FINAL_REPORT_ISOLATED_CHILD"
+_PROCESS_GROUP_ATTR = "_nico_isolated_process_group"
 
 
 class IsolatedFinalReportCancelled(RuntimeError):
@@ -118,25 +119,31 @@ def execute_child(input_path: Path, output_path: Path, *, bootstrap: str) -> int
         return 1
 
 
+def _isolated_process_group(process: subprocess.Popen[Any]) -> int:
+    if os.name != "posix":
+        return 0
+    try:
+        return int(getattr(process, _PROCESS_GROUP_ATTR, 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _signal_worker(process: subprocess.Popen[Any], *, force: bool) -> None:
     """Signal only this isolated worker/session, never the parent web process group."""
 
+    process_group = _isolated_process_group(process)
+    if process_group:
+        try:
+            os.killpg(
+                process_group,
+                signal.SIGKILL if force else signal.SIGTERM,
+            )
+        except ProcessLookupError:
+            pass
+        else:
+            return
     if process.poll() is not None:
         return
-    if os.name == "posix":
-        try:
-            process_group = os.getpgid(process.pid)
-        except (ProcessLookupError, OSError):
-            return
-        if process_group == process.pid:
-            try:
-                os.killpg(
-                    process_group,
-                    signal.SIGKILL if force else signal.SIGTERM,
-                )
-            except ProcessLookupError:
-                return
-            return
     try:
         process.kill() if force else process.terminate()
     except ProcessLookupError:
@@ -150,14 +157,25 @@ def terminate_process(
 ) -> bool:
     """Terminate the isolated worker and its descendants, then confirm physical exit."""
 
-    if process.poll() is not None:
-        return True
-    _signal_worker(process, force=False)
-    deadline = time.monotonic() + max(0.1, float(grace_seconds))
-    while process.poll() is None and time.monotonic() < deadline:
-        time.sleep(0.05)
+    process_group = _isolated_process_group(process)
     if process.poll() is None:
+        _signal_worker(process, force=False)
+        deadline = time.monotonic() + max(0.1, float(grace_seconds))
+        while process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+    # A provider may spawn descendants that survive its own SIGTERM or even outlive
+    # the direct child. Because the production worker owns a dedicated process group,
+    # force-clean that group before renderer capacity can be reused.
+    if process_group:
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    elif process.poll() is None:
         _signal_worker(process, force=True)
+
+    if process.poll() is None:
         try:
             process.wait(timeout=max(0.5, float(grace_seconds)))
         except subprocess.TimeoutExpired:
@@ -214,6 +232,8 @@ def run_isolated_final_report(
             close_fds=True,
             start_new_session=os.name == "posix",
         )
+        if os.name == "posix":
+            setattr(process, _PROCESS_GROUP_ATTR, process.pid)
         state["worker_process"] = process
         state["worker_pid"] = process.pid
         state["worker_model"] = "isolated_subprocess"
@@ -272,11 +292,12 @@ def run_isolated_final_report(
                 "private_file_transport": True,
             }
         finally:
-            if process.poll() is None:
-                terminated = terminate_process(process)
-                state["worker_terminated"] = terminated
-                if not terminated:
-                    state["worker_termination_failed"] = True
+            # Run cleanup even after a normal child exit so no renderer descendant can
+            # escape the dedicated process group and outlive the publication attempt.
+            terminated = terminate_process(process)
+            state["worker_terminated"] = terminated
+            if not terminated:
+                state["worker_termination_failed"] = True
             if process.poll() is None:
                 # Retain the live Popen object so the parent capacity gate cannot
                 # mistake an unconfirmed termination for physical worker exit.
