@@ -4,11 +4,14 @@ from nico.api.terminal_authority_bootstrap import app
 from nico.comprehensive_final_report_process_isolation_v1 import (
     install_comprehensive_final_report_process_isolation_v1,
 )
+from nico.comprehensive_production_proof_lifecycle_v1 import (
+    install_comprehensive_production_proof_lifecycle_v1,
+)
 from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.spanish_final_report_bootstrap.v2"
+VERSION = "nico.api.spanish_final_report_bootstrap.v3"
 
 # Install after terminal authority and every report/language compatibility layer so
 # the live v88/v89/v90 Spanish translation surfaces all share the same bounded cache.
@@ -53,9 +56,9 @@ if SPANISH_FINAL_REPORT_RUNTIME_CACHE.get("client_delivery_allowed") is not Fals
     raise RuntimeError("Spanish final-report cache must block unapproved client delivery")
 
 # Final-report publication is now executed in a killable subprocess rather than an
-# unkillable in-process renderer thread. Install this last so the child process imports
-# the exact same authoritative Spanish/terminal bootstrap before rendering. The runtime
-# patch also projects durable queue/render heartbeat state to the browser.
+# unkillable in-process renderer thread. Install it after the Spanish runtime guards so
+# the child imports the same authoritative report surfaces. The runtime also projects
+# durable queue/render heartbeat state to the browser.
 FINAL_REPORT_PROCESS_ISOLATION = install_comprehensive_final_report_process_isolation_v1(app)
 setattr(
     app.state,
@@ -82,9 +85,37 @@ if FINAL_REPORT_PROCESS_ISOLATION.get("human_review_required") is not True:
 if FINAL_REPORT_PROCESS_ISOLATION.get("client_delivery_allowed") is not False:
     raise RuntimeError("Final-report process isolation must block unapproved client delivery")
 
+# Synthetic production acceptance must never become anonymous client-shaped work. Bind
+# a reserved proof scope, cancel/reap superseded proof runs, and keep the endpoint
+# incapable of cancelling normal customer/project runs.
+PRODUCTION_PROOF_LIFECYCLE = install_comprehensive_production_proof_lifecycle_v1(app)
+setattr(
+    app.state,
+    "nico_comprehensive_production_proof_lifecycle",
+    PRODUCTION_PROOF_LIFECYCLE,
+)
+if PRODUCTION_PROOF_LIFECYCLE.get("bound") is not True:
+    raise RuntimeError(
+        "Comprehensive production-proof lifecycle did not install: "
+        f"{PRODUCTION_PROOF_LIFECYCLE}"
+    )
+for required in (
+    "reserved_proof_scope",
+    "prior_proof_reaper_bound",
+    "proof_cancel_route_bound",
+    "client_run_scope_untouched",
+):
+    if PRODUCTION_PROOF_LIFECYCLE.get(required) is not True:
+        raise RuntimeError(f"Production-proof lifecycle missing contract: {required}")
+if PRODUCTION_PROOF_LIFECYCLE.get("human_review_required") is not True:
+    raise RuntimeError("Production-proof lifecycle must preserve human review")
+if PRODUCTION_PROOF_LIFECYCLE.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Production-proof lifecycle must block client delivery")
+
 
 __all__ = [
     "FINAL_REPORT_PROCESS_ISOLATION",
+    "PRODUCTION_PROOF_LIFECYCLE",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
     "VERSION",
     "app",
