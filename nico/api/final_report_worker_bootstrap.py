@@ -1,19 +1,53 @@
 from __future__ import annotations
 
 from nico.api.terminal_authority_bootstrap import app
+from nico.comprehensive_spanish_canonical_evidence_literals_v95 import (
+    install_comprehensive_spanish_canonical_evidence_literals_v95,
+)
 from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v1"
+VERSION = "nico.api.final_report_worker_bootstrap.v2"
 
 # This module is the isolated final-report renderer entry point. It deliberately starts
 # from the same terminal report/language authority used by production, then adds only
-# the bounded Spanish render cache needed by the final renderer. Parent-process worker
-# orchestration, physical-exit hardening, and synthetic production-proof lifecycle are
-# intentionally not installed in this child. Reinstalling those web-process concerns
-# inside every renderer process duplicates app state and can create a self-referential
-# final-report runtime around an already isolated renderer.
+# child-process presentation/runtime controls required by the final renderer. Parent
+# process worker orchestration, physical-exit hardening, and synthetic production-proof
+# lifecycle remain outside this child.
+#
+# Install the canonical-evidence guard before v94 wraps the field translator in its
+# process-local cache. This preserves exact repository/scanner evidence flattened under
+# an ``evidence`` presentation field while leaving real report-owned prose fail-closed.
+SPANISH_CANONICAL_EVIDENCE_LITERALS = (
+    install_comprehensive_spanish_canonical_evidence_literals_v95()
+)
+setattr(
+    app.state,
+    "nico_spanish_canonical_evidence_literals",
+    SPANISH_CANONICAL_EVIDENCE_LITERALS,
+)
+
+if SPANISH_CANONICAL_EVIDENCE_LITERALS.get("status") not in {
+    "installed",
+    "already_installed",
+}:
+    raise RuntimeError(
+        "Spanish canonical-evidence literal guard did not install in renderer worker: "
+        f"{SPANISH_CANONICAL_EVIDENCE_LITERALS}"
+    )
+if SPANISH_CANONICAL_EVIDENCE_LITERALS.get("bound") is not True:
+    raise RuntimeError("Spanish canonical-evidence literal guard is not bound")
+if (
+    SPANISH_CANONICAL_EVIDENCE_LITERALS.get(
+        "report_owned_presentation_prose_still_fail_closed"
+    )
+    is not True
+):
+    raise RuntimeError("Spanish renderer no longer fails closed on presentation prose")
+if SPANISH_CANONICAL_EVIDENCE_LITERALS.get("canonical_evidence_byte_preserving") is not True:
+    raise RuntimeError("Spanish renderer does not preserve canonical evidence literals")
+
 SPANISH_FINAL_REPORT_RUNTIME_CACHE = (
     install_comprehensive_spanish_final_report_runtime_cache_v94()
 )
@@ -56,7 +90,10 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "artifact_schema": VERSION,
     "status": "ready",
     "same_terminal_report_authority_as_production": True,
+    "spanish_canonical_evidence_literals_bound": True,
     "spanish_final_report_runtime_cache_bound": True,
+    "canonical_evidence_literals_preserved": True,
+    "presentation_prose_still_fail_closed": True,
     "process_isolation_owned_by_parent": True,
     "physical_exit_hardening_owned_by_parent": True,
     "production_proof_lifecycle_owned_by_parent": True,
@@ -69,6 +106,7 @@ setattr(app.state, "nico_final_report_worker_runtime", FINAL_REPORT_WORKER_RUNTI
 
 __all__ = [
     "FINAL_REPORT_WORKER_RUNTIME",
+    "SPANISH_CANONICAL_EVIDENCE_LITERALS",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
     "VERSION",
     "app",
