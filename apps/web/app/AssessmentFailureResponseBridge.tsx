@@ -1,7 +1,12 @@
 "use client";
 
 import {useEffect} from "react";
-import {ASSESSMENT_FAILURE_EVENT, type AssessmentFailureEvidence} from "./AssessmentApiTransportBridge";
+import {
+  ASSESSMENT_FAILURE_EVENT,
+  boundedWorkerFailure,
+  type AssessmentFailureEvidence,
+  type AssessmentWorkerFailureEvidence,
+} from "./AssessmentApiTransportBridge";
 
 const EXPRESS_ROUTE = /^\/api\/nico\/assessment\/express-run(?:\/[^/?#]+\/status)?$/;
 const COMPREHENSIVE_ROUTE = /^\/api\/nico\/assessment\/(?:comprehensive-intake|comprehensive-run\/[^/?#]+(?:\/continue)?)$/;
@@ -10,7 +15,14 @@ const TERMINAL_FAILURES = new Set(["blocked", "failed", "error", "interrupted", 
 const NORMAL_REVIEW_REASONS = new Set(["pending_human_approval", "internal_approval_required", "pending_internal_approval"]);
 
 type JsonRecord = Record<string, unknown>;
-type ProgressRecord = {step?: unknown; status?: unknown; message?: unknown; evidence?: unknown};
+type ProgressRecord = {
+  step?: unknown;
+  status?: unknown;
+  message?: unknown;
+  evidence?: unknown;
+  code?: unknown;
+  worker?: AssessmentWorkerFailureEvidence | null;
+};
 
 function requestUrl(input: RequestInfo | URL): URL | null {
   try {
@@ -61,8 +73,10 @@ function stageResultFailure(value: unknown): ProgressRecord | null {
     return {
       step,
       status,
-      message: text(stage.message, stage.reason, stage.summary),
+      code: text(stage.error_code, stage.failure_code, stage.code, stage.reason),
+      message: text(stage.message, stage.error_message, stage.reason, stage.summary),
       evidence: stage.evidence,
+      worker: boundedWorkerFailure(stage, stage.stage_execution),
     };
   }
   return null;
@@ -109,10 +123,16 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
   const reportContract = record(source.report_contract || payload.report_contract || runRecord.report_contract);
   const scanner = record(source.scanner || payload.scanner);
   const progress = progressItems(source.progress || payload.progress || runRecord.progress);
-  const failedProgress = terminalProgress(progress)
-    || stageResultFailure(runRecord.stage_results)
+  const failedStageResult = stageResultFailure(runRecord.stage_results)
     || stageResultFailure(source.stage_results)
     || stageResultFailure(payload.stage_results);
+  const failedProgress = terminalProgress(progress) || failedStageResult;
+  const worker = boundedWorkerFailure(
+    failedStageResult?.worker,
+    source,
+    payload,
+    runRecord,
+  );
 
   const lifecycleStatus = text(
     source.status,
@@ -165,6 +185,14 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
     payload.error,
     "A required assessment stage failed or was blocked.",
   ), 320);
+  const technicalReason = bounded(text(
+    worker?.error,
+    source.technical_reason,
+    payload.technical_reason,
+    source.error_message,
+    payload.error_message,
+    failureReason,
+  ), 1200);
   const code = bounded(text(
     source.error_code,
     payload.error_code,
@@ -172,6 +200,7 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
     payload.failure_code,
     source.code,
     payload.code,
+    failedStageResult?.code,
     reportContract.reason,
     reportContract.report_contract_reason,
     reportContract.status,
@@ -196,6 +225,8 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
     current_stage: failedStage,
     failure_reason: failureReason,
     attention_summary: failureReason,
+    technical_reason: technicalReason,
+    worker_failure: worker,
     run_id: runId,
     progress: normalizedProgress,
     http_status: originalHttpStatus(response),
@@ -209,10 +240,11 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
     route,
     status,
     code,
-    message: failureReason,
+    message: technicalReason,
     run_id: runId,
     assessment_type: assessmentTypeForRoute(route, source, payload),
     progress: progressRows(normalizedProgress),
+    worker,
   };
   window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT, {detail: evidence}));
 
