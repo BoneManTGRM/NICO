@@ -16,6 +16,16 @@ const TERMINAL_EXPRESS_STATUSES = new Set(["blocked", "failed", "error", "interr
 
 export const ASSESSMENT_FAILURE_EVENT = "nico:assessment-request-failed";
 
+export type AssessmentWorkerFailureEvidence = {
+  model: string;
+  exit_code: number | null;
+  exit_signal: string;
+  error_type: string;
+  error: string;
+  failure_class: string;
+  bootstrap: string;
+};
+
 export type AssessmentFailureEvidence = {
   http_status: number;
   route: string;
@@ -25,6 +35,7 @@ export type AssessmentFailureEvidence = {
   run_id: string;
   assessment_type: string;
   progress: Array<{step: string; status: string; message: string}>;
+  worker?: AssessmentWorkerFailureEvidence | null;
 };
 
 function requestUrl(input: RequestInfo | URL): string {
@@ -37,6 +48,68 @@ function boundedText(value: unknown, limit = 320): string {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
   if (!normalized) return "";
   return normalized.length <= limit ? normalized : `${normalized.slice(0, limit - 3)}...`;
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+export function boundedWorkerFailure(...values: unknown[]): AssessmentWorkerFailureEvidence | null {
+  const candidates: Array<Record<string, unknown>> = [];
+  values.forEach((value) => {
+    const candidate = jsonRecord(value);
+    if (!Object.keys(candidate).length) return;
+    candidates.push(candidate);
+    const execution = jsonRecord(candidate.stage_execution);
+    if (Object.keys(execution).length) candidates.push(execution);
+    const normalized = jsonRecord(candidate.worker_failure);
+    if (Object.keys(normalized).length) candidates.push(normalized);
+  });
+
+  const pick = (keys: string[], limit: number) => {
+    for (const candidate of candidates) {
+      for (const key of keys) {
+        const value = boundedText(candidate[key], limit);
+        if (value) return value;
+      }
+    }
+    return "";
+  };
+
+  let rawExitCode: unknown;
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(candidate, "worker_exit_code")) {
+      rawExitCode = candidate.worker_exit_code;
+      break;
+    }
+    if (Object.prototype.hasOwnProperty.call(candidate, "exit_code")) {
+      rawExitCode = candidate.exit_code;
+      break;
+    }
+  }
+  const parsedExitCode = Number(rawExitCode);
+  const exitCode = Number.isInteger(parsedExitCode) ? parsedExitCode : null;
+  const worker: AssessmentWorkerFailureEvidence = {
+    model: pick(["worker_model", "model"], 80),
+    exit_code: exitCode,
+    exit_signal: pick(["worker_exit_signal", "exit_signal"], 80),
+    error_type: pick(["worker_error_type", "error_type"], 160),
+    error: pick(["worker_error", "error"], 1200),
+    failure_class: pick(["worker_failure_class", "failure_class"], 120),
+    bootstrap: pick(["worker_bootstrap", "bootstrap"], 240),
+  };
+  if (
+    !worker.model
+    && worker.exit_code === null
+    && !worker.exit_signal
+    && !worker.error_type
+    && !worker.error
+    && !worker.failure_class
+    && !worker.bootstrap
+  ) return null;
+  return worker;
 }
 
 function boundedProgress(value: unknown): AssessmentFailureEvidence["progress"] {
@@ -68,16 +141,18 @@ async function publishFailure(response: Response, route: string) {
   }
 
   const detail = payloadDetail(payload);
+  const worker = boundedWorkerFailure(detail, payload);
   const evidence: AssessmentFailureEvidence = {
     http_status: response.status,
     route,
     status: boundedText(detail.status || payload.status, 40) || "error",
     code: boundedText(detail.code || payload.code, 80) || `http_${response.status}`,
-    message: boundedText(detail.message || payload.message || payload.error, 320)
+    message: boundedText(worker?.error || detail.message || payload.message || payload.error, 1200)
       || `Assessment request failed with HTTP ${response.status}.`,
     run_id: boundedText(detail.run_id || payload.run_id, 120),
     assessment_type: boundedText(detail.assessment_type || payload.assessment_type, 40),
     progress: boundedProgress(detail.progress || payload.progress),
+    worker,
   };
 
   window.dispatchEvent(new CustomEvent(ASSESSMENT_FAILURE_EVENT, {detail: evidence}));
