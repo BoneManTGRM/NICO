@@ -3,185 +3,88 @@ name: Phase 8 Operational Acceptance
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  harden-phase4-contract:
-    runs-on: ubuntu-24.04
+  acceptance-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PHASE8_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Check out exact PR head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Checkout exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: '3.11'
-
-      - name: Apply focused Phase 4 contract hardening
-        shell: bash
+          python-version: "3.11"
+      - name: Install test dependencies
         run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label} replacement count={count}')
-              return text.replace(old, new, 1)
-
-          contract = Path('nico/comprehensive_client_delivery_contract_v1.py')
-          text = contract.read_text(encoding='utf-8')
-          text = replace_once(
-              text,
-              'import hashlib\nimport json\n',
-              'import hashlib\nimport io\nimport json\n',
-              'io import',
-          )
-          text = replace_once(
-              text,
-              'from typing import Any\n',
-              'from typing import Any\n\nfrom pypdf import PdfReader\n',
-              'PdfReader import',
-          )
-          text = replace_once(
-              text,
-              '_AUTOMATION = {"automation", "automated reviewer", "bot", "nico automation", "system", "system reviewer"}\n',
-              '_AUTOMATION = {"automation", "automated reviewer", "bot", "nico automation", "system", "system reviewer"}\n_AUTHORIZED_REVIEWER_ROLES = {\n    "cybersecurity specialist",\n    "cybersecurity reviewer",\n    "security specialist",\n    "security reviewer",\n}\n_AUTHORIZED_REVIEWER_BASES = {\n    "protected_admin_write_and_explicit_review_authorization",\n}\n',
-              'reviewer authority constants',
-          )
-          text = replace_once(
-              text,
-              '''    try:\n        pdf = base64.b64decode(_text(package.get("pdf_base64")), validate=True)\n    except Exception:\n        pdf = b""\n''',
-              '''    try:\n        pdf = base64.b64decode(_text(package.get("pdf_base64")), validate=True)\n        if not pdf.startswith(b"%PDF-"):\n            raise ValueError("pdf_header_invalid")\n        reader = PdfReader(io.BytesIO(pdf), strict=False)\n        if len(reader.pages) < 1:\n            raise ValueError("pdf_page_count_invalid")\n    except Exception:\n        pdf = b""\n''',
-              'PDF structural validation',
-          )
-          text = replace_once(
-              text,
-              '''    _require(isinstance(executions, list) and bool(executions), "required_scanner_execution_missing")\n    failed: list[str] = []\n''',
-              '''    _require(isinstance(executions, list) and bool(executions), "required_scanner_execution_missing")\n    required_values = contract.get("required_scanners")\n    required_scanners = (\n        sorted(\n            {\n                _text(value).casefold()\n                for value in required_values\n                if _text(value)\n            }\n        )\n        if isinstance(required_values, Sequence)\n        and not isinstance(required_values, (str, bytes, bytearray))\n        else []\n    )\n    executed_scanners = {\n        _text(item.get("scanner") or item.get("name")).casefold()\n        for item in executions\n        if isinstance(item, Mapping)\n        and _text(item.get("scanner") or item.get("name"))\n    }\n    missing_required = [\n        scanner for scanner in required_scanners if scanner not in executed_scanners\n    ]\n    _require(\n        not missing_required,\n        "required_scanner_execution_missing",\n        ",".join(missing_required),\n    )\n    failed: list[str] = []\n''',
-              'required scanner reconciliation',
-          )
-          text = replace_once(
-              text,
-              '''    pending_individual: list[str] = []\n    triaged = 0\n    for row in findings:\n''',
-              '''    pending_individual: list[str] = []\n    candidate_ids: list[str] = []\n    triaged = 0\n    for row in findings:\n''',
-              'candidate identity collection',
-          )
-          text = replace_once(
-              text,
-              '''        _require(bool(candidate_id), "candidate_identity_missing")\n        lineage = _mapping(row.get("lineage"))\n''',
-              '''        _require(bool(candidate_id), "candidate_identity_missing")\n        candidate_ids.append(candidate_id)\n        lineage = _mapping(row.get("lineage"))\n''',
-              'candidate identity append',
-          )
-          text = replace_once(
-              text,
-              '''    _require(not pending_individual, "mandatory_individual_review_unresolved", ",".join(pending_individual))\n    return {"total_candidates": len(findings), "technical_triage_completed": triaged, "mandatory_individual_review_pending": len(pending_individual)}\n''',
-              '''    _require(not pending_individual, "mandatory_individual_review_unresolved", ",".join(pending_individual))\n    _require(\n        len(candidate_ids) == len(set(candidate_ids)),\n        "duplicate_candidate_identity",\n    )\n    candidate_set = set(candidate_ids)\n    disposition_ids = {_text(value) for value in dispositions if _text(value)}\n    unexpected_dispositions = sorted(disposition_ids - candidate_set)\n    missing_dispositions = sorted(candidate_set - disposition_ids)\n    _require(\n        not unexpected_dispositions,\n        "candidate_disposition_register_mismatch",\n        ",".join(unexpected_dispositions),\n    )\n    _require(\n        not missing_dispositions,\n        "human_dispositions_pending",\n        ",".join(missing_dispositions),\n    )\n    return {\n        "total_candidates": len(findings),\n        "technical_triage_completed": triaged,\n        "mandatory_individual_review_pending": len(pending_individual),\n        "human_dispositions_pending": len(missing_dispositions),\n    }\n''',
-              'candidate disposition reconciliation',
-          )
-          text = replace_once(
-              text,
-              '''    digests = artifact_digests(record)\n    for name in _REQUIRED_ARTIFACTS:\n''',
-              '''    digests = artifact_digests(record)\n    if _text(package.get("pdf_base64")) and "pdf" not in digests:\n        _require(False, "final_pdf_invalid")\n    for name in _REQUIRED_ARTIFACTS:\n''',
-              'invalid PDF rejection',
-          )
-          text = replace_once(
-              text,
-              '''    reviewer, role, decision = _text(reviewer), _text(reviewer_role), _text(decision).casefold()\n    _require(bool(reviewer), "missing_reviewer_identity")\n    _require(reviewer.casefold() not in _AUTOMATION, "automation_cannot_create_final_human_approval")\n    _require(bool(role), "missing_reviewer_role")\n    _require(any(marker in role.casefold() for marker in ("security", "cyber", "reviewer")), "reviewer_role_not_authorized")\n    _require(decision in {"approved", "rejected", "request_more_evidence"}, "invalid_review_decision")\n    _require(bool(_text(decided_at)), "missing_review_timestamp")\n    _require(bool(_text(decision_reason)), "reviewer_notes_required")\n    _require(bool(_text(authorization_basis)), "reviewer_authorization_basis_missing")\n    payload = {\n        "reviewer_identity": reviewer, "reviewer_role": role, "authorization_basis": _text(authorization_basis),\n''',
-              '''    reviewer, role, decision = _text(reviewer), _text(reviewer_role), _text(decision).casefold()\n    basis = _text(authorization_basis)\n    _require(bool(reviewer), "missing_reviewer_identity")\n    _require(reviewer.casefold() not in _AUTOMATION, "automation_cannot_create_final_human_approval")\n    _require(bool(role), "missing_reviewer_role")\n    _require(role.casefold() in _AUTHORIZED_REVIEWER_ROLES, "reviewer_role_not_authorized")\n    _require(decision in {"approved", "rejected", "request_more_evidence"}, "invalid_review_decision")\n    _require(bool(_text(decided_at)), "missing_review_timestamp")\n    _require(bool(_text(decision_reason)), "reviewer_notes_required")\n    _require(bool(basis), "reviewer_authorization_basis_missing")\n    _require(basis in _AUTHORIZED_REVIEWER_BASES, "reviewer_authorization_basis_invalid")\n    payload = {\n        "reviewer_identity": reviewer, "reviewer_role": role, "authorization_basis": basis,\n''',
-              'reviewer authority validation',
-          )
-          contract.write_text(text, encoding='utf-8')
-
-          tests = Path('tests/test_phase4_client_delivery_contract_v1.py')
-          test_text = tests.read_text(encoding='utf-8')
-          test_text = replace_once(
-              test_text,
-              'import base64\nfrom copy import deepcopy\n',
-              'import base64\nimport io\nfrom copy import deepcopy\n',
-              'test io import',
-          )
-          test_text = replace_once(
-              test_text,
-              'import pytest\n',
-              'import pytest\nfrom pypdf import PdfWriter\n',
-              'test PdfWriter import',
-          )
-          test_text = replace_once(
-              test_text,
-              '\n\ndef _record(ecosystem: str = "python") -> dict:\n',
-              '''\n\ndef _pdf() -> str:\n    buffer = io.BytesIO()\n    writer = PdfWriter()\n    writer.add_blank_page(width=612, height=792)\n    writer.write(buffer)\n    return base64.b64encode(buffer.getvalue()).decode("ascii")\n\n\ndef _record(ecosystem: str = "python") -> dict:\n''',
-              'valid test PDF helper',
-          )
-          test_text = replace_once(
-              test_text,
-              '"pdf_base64": base64.b64encode(b"%PDF-1.4\\nphase4-fixture\\n%%EOF").decode("ascii"),',
-              '"pdf_base64": _pdf(),',
-              'test PDF fixture',
-          )
-          test_text = replace_once(
-              test_text,
-              '@pytest.mark.parametrize(("field", "value"), [("reviewer", "automation"), ("reviewer_role", "sales representative")])',
-              '@pytest.mark.parametrize(("field", "value"), [("reviewer", "automation"), ("reviewer_role", "sales representative"), ("reviewer_role", "security sales representative")])',
-              'reviewer spoof cases',
-          )
-          insertion = '''\n\ndef test_every_declared_required_scanner_has_a_retained_execution() -> None:\n    record = _record()\n    record["scanner_execution_contract"]["required_scanners"].append("semgrep")\n    result = validate_full_lifecycle(record)\n    assert result["status"] == "blocked"\n    assert "required_scanner_execution_missing" in result["validation_errors"]\n\n\ndef test_candidate_dispositions_reconcile_exactly_with_the_canonical_register() -> None:\n    missing = _record()\n    candidate = missing["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"]["findings"][0]\n    candidate["review_requires_individual_attention"] = False\n    candidate.pop("human_disposition", None)\n    missing["review_work_ledger"]["dispositions"].clear()\n    missing["review_work_ledger"]["human_dispositions_pending"] = 0\n    missing_result = validate_full_lifecycle(missing)\n    assert missing_result["status"] == "blocked"\n    assert "human_dispositions_pending" in missing_result["validation_errors"]\n\n    unexpected = _record()\n    unexpected["review_work_ledger"]["dispositions"]["candidate-ghost"] = {\n        "decision": "false_positive",\n        "reviewer": "Alice Security",\n        "reviewer_role": "Cybersecurity specialist",\n    }\n    unexpected_result = validate_full_lifecycle(unexpected)\n    assert unexpected_result["status"] == "blocked"\n    assert "candidate_disposition_register_mismatch" in unexpected_result["validation_errors"]\n\n\ndef test_structurally_invalid_pdf_is_not_digestable_as_a_client_final_artifact() -> None:\n    record = _record()\n    package = record["stage_results"]["final_comprehensive_report_generation"]["report_package"]\n    package["pdf_base64"] = base64.b64encode(b"not-a-pdf").decode("ascii")\n    result = validate_full_lifecycle(record)\n    assert result["status"] == "blocked"\n    assert "final_pdf_invalid" in result["validation_errors"]\n\n\ndef test_self_asserted_reviewer_authorization_basis_is_rejected() -> None:\n    record = _record()\n    manifest = _manifest(record)\n    with pytest.raises(ClientDeliveryContractError, match="reviewer_authorization_basis_invalid"):\n        build_approval_receipt(\n            record,\n            manifest,\n            reviewer="Alice Security",\n            reviewer_role="Cybersecurity specialist",\n            decision="approved",\n            decided_at="2026-08-21T15:00:00+00:00",\n            decision_reason="Exact evidence and residual risk were reviewed and accepted.",\n            authorization_basis="self_asserted",\n        )\n\n'''
-          marker = '\n\ndef test_operational_workload_target_is_visible_but_never_a_score_or_approval_shortcut() -> None:\n'
-          if test_text.count(marker) != 1:
-              raise SystemExit('test insertion marker missing')
-          test_text = test_text.replace(marker, insertion + marker, 1)
-          tests.write_text(test_text, encoding='utf-8')
-          PY
-          python -m py_compile \
-            nico/comprehensive_client_delivery_contract_v1.py \
-            tests/test_phase4_client_delivery_contract_v1.py
-
-      - name: Install focused test dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
-      - name: Run focused Phase 4 and approval-integrity regressions
-        shell: bash
+      - name: Run Phase 8 truth and acceptance tests twice
         run: |
-          set -o pipefail
           pytest -q \
-            tests/test_phase4_client_delivery_contract_v1.py \
-            tests/test_phase4_approved_delivery_v4.py \
-            tests/test_phase4_stale_evidence_guard_v1.py \
-            tests/test_phase4_runtime_binding_v1.py \
-            2>&1 | tee /tmp/phase4-hardening-tests.log
-
-      - name: Commit verified hardening and restore Phase 8 workflow
-        shell: bash
-        env:
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+            tests/test_final_assessment_truth_v1.py \
+            tests/test_comprehensive_phase7_truth_gateway.py \
+            tests/test_phase8_report_quality_v1.py \
+            tests/test_phase8_operational_acceptance_v1.py
+          pytest -q \
+            tests/test_final_assessment_truth_v1.py \
+            tests/test_comprehensive_phase7_truth_gateway.py \
+            tests/test_phase8_report_quality_v1.py \
+            tests/test_phase8_operational_acceptance_v1.py
+      - name: Generate exact-revision operational evidence pass one
         run: |
-          set -euo pipefail
-          git show 3dceeed7a757fb17cbe0c9007431167214227e3e:.github/workflows/phase8-operational-acceptance.yml > .github/workflows/phase8-operational-acceptance.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            nico/comprehensive_client_delivery_contract_v1.py \
-            tests/test_phase4_client_delivery_contract_v1.py \
-            .github/workflows/phase8-operational-acceptance.yml
-          git diff --cached --check
-          git commit -m "Harden Phase 4 scanner, disposition, reviewer, and PDF contracts"
-          git push origin "HEAD:${HEAD_BRANCH}"
+          rm -rf phase8-evidence
+          python scripts/phase8_live_evidence.py
+          cp phase8-evidence/phase8-operational-manifest.json phase8-pass-one.json
+      - name: Generate exact-revision operational evidence pass two
+        run: |
+          rm -rf phase8-evidence
+          python scripts/phase8_live_evidence.py
+          cp phase8-evidence/phase8-operational-manifest.json phase8-pass-two.json
+      - name: Verify both complete bilingual passes
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Upload focused hardening evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+          one = json.loads(Path('phase8-pass-one.json').read_text())
+          two = json.loads(Path('phase8-pass-two.json').read_text())
+          expected = os.environ['PHASE8_REVISION']
+          required_surfaces = {'json', 'markdown', 'html', 'pdf', 'csv'}
+
+          for payload in (one, two):
+              assert payload['immutable_revision'] == expected
+              assert payload['scanner_ledger']['valid'] is True
+              assert payload['report_quality']['valid'] is True
+              assert set(payload['packages']) == {'en', 'es'}
+              assert all(payload['packages'][lang]['valid'] is True for lang in ('en', 'es'))
+              assert all(set(payload['artifact_inventory'][lang]) == required_surfaces for lang in ('en', 'es'))
+              assert payload['pdf_review']['reviewed_languages'] == ['en', 'es']
+              assert payload['pdf_review']['human_approval_required'] is True
+              assert payload['client_delivery_allowed'] is False
+
+          assert one['truth'] == two['truth']
+          print({'revision': expected, 'pass_one': one['manifest_sha256'], 'pass_two': two['manifest_sha256']})
+          PY
+      - name: Upload retained Phase 8 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase4-contract-hardening-evidence
-          path: /tmp/phase4-hardening-tests.log
-          if-no-files-found: warn
-          retention-days: 1
+          name: phase8-operational-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            phase8-evidence/
+            phase8-pass-one.json
+            phase8-pass-two.json

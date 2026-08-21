@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from pypdf import PdfReader
 
 VERSION = "nico.comprehensive_client_delivery_contract.v1"
 PRODUCT_NAME = "NICO Comprehensive"
@@ -13,6 +16,15 @@ CLIENT_FINAL_CLASSIFICATION = "client_final"
 _REQUIRED_ARTIFACTS = ("markdown", "html", "pdf", "json")
 _SCOPE_FIELDS = ("customer_id", "client_id", "project_id", "workspace_id", "organization_id", "tenant_id")
 _AUTOMATION = {"automation", "automated reviewer", "bot", "nico automation", "system", "system reviewer"}
+_AUTHORIZED_REVIEWER_ROLES = {
+    "cybersecurity specialist",
+    "cybersecurity reviewer",
+    "security specialist",
+    "security reviewer",
+}
+_AUTHORIZED_REVIEWER_BASES = {
+    "protected_admin_write_and_explicit_review_authorization",
+}
 
 
 class ClientDeliveryContractError(ValueError):
@@ -123,6 +135,11 @@ def artifact_digests(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     package = _report(record)
     try:
         pdf = base64.b64decode(_text(package.get("pdf_base64")), validate=True)
+        if not pdf.startswith(b"%PDF-"):
+            raise ValueError("pdf_header_invalid")
+        reader = PdfReader(io.BytesIO(pdf), strict=False)
+        if len(reader.pages) < 1:
+            raise ValueError("pdf_page_count_invalid")
     except Exception:
         pdf = b""
     values: dict[str, Any] = {"markdown": package.get("markdown"), "html": package.get("html"), "json": package.get("json"), "pdf": pdf}
@@ -174,6 +191,33 @@ def _scanner_contract(record: Mapping[str, Any]) -> dict[str, Any]:
         executions = _mapping(_stages(record).get("dependency_security_static_analysis")).get("scanner_executions")
     _require(_text(contract.get("support_status") or "supported").casefold() in {"supported", "applicable"}, "unsupported_ecosystem_not_assessed")
     _require(isinstance(executions, list) and bool(executions), "required_scanner_execution_missing")
+    required_values = contract.get("required_scanners")
+    required_scanners = (
+        sorted(
+            {
+                _text(value).casefold()
+                for value in required_values
+                if _text(value)
+            }
+        )
+        if isinstance(required_values, Sequence)
+        and not isinstance(required_values, (str, bytes, bytearray))
+        else []
+    )
+    executed_scanners = {
+        _text(item.get("scanner") or item.get("name")).casefold()
+        for item in executions
+        if isinstance(item, Mapping)
+        and _text(item.get("scanner") or item.get("name"))
+    }
+    missing_required = [
+        scanner for scanner in required_scanners if scanner not in executed_scanners
+    ]
+    _require(
+        not missing_required,
+        "required_scanner_execution_missing",
+        ",".join(missing_required),
+    )
     failed: list[str] = []
     unsupported: list[str] = []
     for item in executions:
@@ -205,11 +249,13 @@ def _candidate_contract(record: Mapping[str, Any]) -> dict[str, Any]:
     ledger = _mapping(record.get("review_work_ledger"))
     dispositions = _mapping(ledger.get("dispositions"))
     pending_individual: list[str] = []
+    candidate_ids: list[str] = []
     triaged = 0
     for row in findings:
         _require(isinstance(row, Mapping), "malformed_candidate_register")
         candidate_id = _text(row.get("candidate_id"))
         _require(bool(candidate_id), "candidate_identity_missing")
+        candidate_ids.append(candidate_id)
         lineage = _mapping(row.get("lineage"))
         _require(bool(_text(row.get("candidate_lineage_version") or lineage.get("version"))) and bool(_text(row.get("lineage_status") or lineage.get("status"))), "stale_candidate_lineage", candidate_id)
         triage = _mapping(row.get("technical_triage"))
@@ -221,7 +267,30 @@ def _candidate_contract(record: Mapping[str, Any]) -> dict[str, Any]:
         if row.get("review_requires_individual_attention") is True and not has_disposition:
             pending_individual.append(candidate_id)
     _require(not pending_individual, "mandatory_individual_review_unresolved", ",".join(pending_individual))
-    return {"total_candidates": len(findings), "technical_triage_completed": triaged, "mandatory_individual_review_pending": len(pending_individual)}
+    _require(
+        len(candidate_ids) == len(set(candidate_ids)),
+        "duplicate_candidate_identity",
+    )
+    candidate_set = set(candidate_ids)
+    disposition_ids = {_text(value) for value in dispositions if _text(value)}
+    unexpected_dispositions = sorted(disposition_ids - candidate_set)
+    missing_dispositions = sorted(candidate_set - disposition_ids)
+    _require(
+        not unexpected_dispositions,
+        "candidate_disposition_register_mismatch",
+        ",".join(unexpected_dispositions),
+    )
+    _require(
+        not missing_dispositions,
+        "human_dispositions_pending",
+        ",".join(missing_dispositions),
+    )
+    return {
+        "total_candidates": len(findings),
+        "technical_triage_completed": triaged,
+        "mandatory_individual_review_pending": len(pending_individual),
+        "human_dispositions_pending": len(missing_dispositions),
+    }
 
 
 def _review_contract(record: Mapping[str, Any], identity: Mapping[str, Any]) -> dict[str, Any]:
@@ -247,6 +316,8 @@ def _artifact_contract(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     _require(_text(package.get("package_classification") or CLIENT_FINAL_CLASSIFICATION) == CLIENT_FINAL_CLASSIFICATION, "internal_or_test_package_presented_as_client_final")
     _require(package.get("one_client_report", True) is True and int(package.get("client_pdf_count") or 1) == 1, "one_comprehensive_report_required")
     digests = artifact_digests(record)
+    if _text(package.get("pdf_base64")) and "pdf" not in digests:
+        _require(False, "final_pdf_invalid")
     for name in _REQUIRED_ARTIFACTS:
         _require(name in digests, "required_final_artifact_missing", name)
     return digests
@@ -285,16 +356,18 @@ def operational_metrics(record: Mapping[str, Any]) -> dict[str, Any]:
 
 def reviewer_binding(*, reviewer: str, reviewer_role: str, decision: str, decided_at: str, decision_reason: str, authorization_basis: str = "protected_admin_write_and_explicit_review_authorization") -> dict[str, Any]:
     reviewer, role, decision = _text(reviewer), _text(reviewer_role), _text(decision).casefold()
+    basis = _text(authorization_basis)
     _require(bool(reviewer), "missing_reviewer_identity")
     _require(reviewer.casefold() not in _AUTOMATION, "automation_cannot_create_final_human_approval")
     _require(bool(role), "missing_reviewer_role")
-    _require(any(marker in role.casefold() for marker in ("security", "cyber", "reviewer")), "reviewer_role_not_authorized")
+    _require(role.casefold() in _AUTHORIZED_REVIEWER_ROLES, "reviewer_role_not_authorized")
     _require(decision in {"approved", "rejected", "request_more_evidence"}, "invalid_review_decision")
     _require(bool(_text(decided_at)), "missing_review_timestamp")
     _require(bool(_text(decision_reason)), "reviewer_notes_required")
-    _require(bool(_text(authorization_basis)), "reviewer_authorization_basis_missing")
+    _require(bool(basis), "reviewer_authorization_basis_missing")
+    _require(basis in _AUTHORIZED_REVIEWER_BASES, "reviewer_authorization_basis_invalid")
     payload = {
-        "reviewer_identity": reviewer, "reviewer_role": role, "authorization_basis": _text(authorization_basis),
+        "reviewer_identity": reviewer, "reviewer_role": role, "authorization_basis": basis,
         "review_decision": decision, "review_timestamp": _text(decided_at),
         "residual_risk_decision": "accepted_with_recorded_reason" if decision == "approved" else "not_accepted",
         "reviewer_notes": _text(decision_reason), "reviewer_session_requirement": "not_applicable_protected_admin_token_boundary",

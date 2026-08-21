@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import base64
+import io
 from copy import deepcopy
 
 import pytest
+from pypdf import PdfWriter
 
 from nico.comprehensive_client_delivery_contract_v1 import (
     ClientDeliveryContractError,
@@ -15,6 +17,14 @@ from nico.comprehensive_client_delivery_contract_v1 import (
     validate_approval_receipt,
     validate_full_lifecycle,
 )
+
+
+def _pdf() -> str:
+    buffer = io.BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    writer.write(buffer)
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def _record(ecosystem: str = "python") -> dict:
@@ -87,7 +97,7 @@ def _record(ecosystem: str = "python") -> dict:
         "package_classification": "client_final",
         "markdown": f"# {PRODUCT_NAME}\n\nExact source: {candidate['path']}\n",
         "html": f"<html><body><h1>{PRODUCT_NAME}</h1></body></html>",
-        "pdf_base64": base64.b64encode(b"%PDF-1.4\nphase4-fixture\n%%EOF").decode("ascii"),
+        "pdf_base64": _pdf(),
         "json": canonical,
         "findings_csv": "finding_id,path\n" + candidate["finding_id"] + "," + candidate["path"] + "\n",
         "evidence_csv": "evidence_id,source\nev-1,scanner\n",
@@ -290,7 +300,7 @@ def test_material_regeneration_invalidates_stale_approval_receipt() -> None:
     assert "artifact_hash_mismatch" in result["validation_errors"]
 
 
-@pytest.mark.parametrize(("field", "value"), [("reviewer", "automation"), ("reviewer_role", "sales representative")])
+@pytest.mark.parametrize(("field", "value"), [("reviewer", "automation"), ("reviewer_role", "sales representative"), ("reviewer_role", "security sales representative")])
 def test_automation_or_unauthorized_role_cannot_approve(field: str, value: str) -> None:
     record = _record()
     manifest = _manifest(record)
@@ -304,6 +314,62 @@ def test_automation_or_unauthorized_role_cannot_approve(field: str, value: str) 
     kwargs[field] = value
     with pytest.raises(ClientDeliveryContractError):
         build_approval_receipt(record, manifest, **kwargs)
+
+
+def test_every_declared_required_scanner_has_a_retained_execution() -> None:
+    record = _record()
+    record["scanner_execution_contract"]["required_scanners"].append("semgrep")
+    result = validate_full_lifecycle(record)
+    assert result["status"] == "blocked"
+    assert "required_scanner_execution_missing" in result["validation_errors"]
+
+
+def test_candidate_dispositions_reconcile_exactly_with_the_canonical_register() -> None:
+    missing = _record()
+    candidate = missing["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"]["findings"][0]
+    candidate["review_requires_individual_attention"] = False
+    candidate.pop("human_disposition", None)
+    missing["review_work_ledger"]["dispositions"].clear()
+    missing["review_work_ledger"]["human_dispositions_pending"] = 0
+    missing_result = validate_full_lifecycle(missing)
+    assert missing_result["status"] == "blocked"
+    assert "human_dispositions_pending" in missing_result["validation_errors"]
+
+    unexpected = _record()
+    unexpected["review_work_ledger"]["dispositions"]["candidate-ghost"] = {
+        "decision": "false_positive",
+        "reviewer": "Alice Security",
+        "reviewer_role": "Cybersecurity specialist",
+    }
+    unexpected_result = validate_full_lifecycle(unexpected)
+    assert unexpected_result["status"] == "blocked"
+    assert "candidate_disposition_register_mismatch" in unexpected_result["validation_errors"]
+
+
+def test_structurally_invalid_pdf_is_not_digestable_as_a_client_final_artifact() -> None:
+    record = _record()
+    package = record["stage_results"]["final_comprehensive_report_generation"]["report_package"]
+    package["pdf_base64"] = base64.b64encode(b"not-a-pdf").decode("ascii")
+    result = validate_full_lifecycle(record)
+    assert result["status"] == "blocked"
+    assert "final_pdf_invalid" in result["validation_errors"]
+
+
+def test_self_asserted_reviewer_authorization_basis_is_rejected() -> None:
+    record = _record()
+    manifest = _manifest(record)
+    with pytest.raises(ClientDeliveryContractError, match="reviewer_authorization_basis_invalid"):
+        build_approval_receipt(
+            record,
+            manifest,
+            reviewer="Alice Security",
+            reviewer_role="Cybersecurity specialist",
+            decision="approved",
+            decided_at="2026-08-21T15:00:00+00:00",
+            decision_reason="Exact evidence and residual risk were reviewed and accepted.",
+            authorization_basis="self_asserted",
+        )
+
 
 
 def test_operational_workload_target_is_visible_but_never_a_score_or_approval_shortcut() -> None:
