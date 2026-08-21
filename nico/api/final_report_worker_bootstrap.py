@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from nico.api.terminal_authority_bootstrap import app
+from nico.comprehensive_spanish_assessment_scope_v97 import (
+    install_comprehensive_spanish_assessment_scope_v97,
+)
 from nico.comprehensive_spanish_canonical_acceptance_normalization_v96 import (
     install_comprehensive_spanish_canonical_acceptance_normalization_v96,
 )
@@ -11,7 +14,7 @@ from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v3"
+VERSION = "nico.api.final_report_worker_bootstrap.v4"
 
 # This module is the isolated final-report renderer entry point. It deliberately starts
 # from the same terminal report/language authority used by production, then adds only
@@ -21,8 +24,8 @@ VERSION = "nico.api.final_report_worker_bootstrap.v3"
 #
 # Canonical finding deduplication can remove terminal punctuation from semantically
 # equivalent acceptance criteria. Install the bounded v96 contract normalization before
-# the v95 evidence guard and before v94 caches the final field translator. This keeps
-# already-approved generator contracts translatable without weakening unknown-prose
+# the later Spanish field guards and before v94 caches the final field translator. This
+# keeps approved generator contracts translatable without weakening unknown-prose
 # fail-closed behavior.
 SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION = (
     install_comprehensive_spanish_canonical_acceptance_normalization_v96()
@@ -49,14 +52,53 @@ if (
     )
     is not True
 ):
-    raise RuntimeError("Spanish renderer cannot translate normalized complexity acceptance criteria")
+    raise RuntimeError(
+        "Spanish renderer cannot translate normalized complexity acceptance criteria"
+    )
 if (
     SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION.get(
         "unknown_presentation_prose_still_fail_closed"
     )
     is not True
 ):
-    raise RuntimeError("Spanish acceptance normalization weakened unknown-prose fail-closed behavior")
+    raise RuntimeError(
+        "Spanish acceptance normalization weakened unknown-prose fail-closed behavior"
+    )
+
+# The production scoring record contributes one report-owned assessment-scope sentence.
+# Bind its exact es-MX presentation contract before v94 captures the final translator.
+# Unknown scope prose remains owned by the existing fail-closed canonical boundary.
+SPANISH_ASSESSMENT_SCOPE = install_comprehensive_spanish_assessment_scope_v97()
+setattr(
+    app.state,
+    "nico_spanish_assessment_scope",
+    SPANISH_ASSESSMENT_SCOPE,
+)
+
+if SPANISH_ASSESSMENT_SCOPE.get("status") not in {
+    "installed",
+    "already_installed",
+}:
+    raise RuntimeError(
+        "Spanish assessment-scope contract did not install in renderer worker: "
+        f"{SPANISH_ASSESSMENT_SCOPE}"
+    )
+if SPANISH_ASSESSMENT_SCOPE.get("bound") is not True:
+    raise RuntimeError("Spanish assessment-scope contract is not bound")
+if (
+    SPANISH_ASSESSMENT_SCOPE.get(
+        "production_assessment_scope_translation_supported"
+    )
+    is not True
+):
+    raise RuntimeError("Spanish renderer cannot translate the production assessment scope")
+if (
+    SPANISH_ASSESSMENT_SCOPE.get(
+        "unknown_assessment_scope_contract_unregistered"
+    )
+    is not True
+):
+    raise RuntimeError("Spanish assessment-scope contract registered unapproved prose")
 
 # Install the canonical-evidence guard before v94 wraps the field translator in its
 # process-local cache. This preserves exact repository/scanner evidence flattened under
@@ -87,7 +129,10 @@ if (
     is not True
 ):
     raise RuntimeError("Spanish renderer no longer fails closed on presentation prose")
-if SPANISH_CANONICAL_EVIDENCE_LITERALS.get("canonical_evidence_byte_preserving") is not True:
+if (
+    SPANISH_CANONICAL_EVIDENCE_LITERALS.get("canonical_evidence_byte_preserving")
+    is not True
+):
     raise RuntimeError("Spanish renderer does not preserve canonical evidence literals")
 
 SPANISH_FINAL_REPORT_RUNTIME_CACHE = (
@@ -133,9 +178,11 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "status": "ready",
     "same_terminal_report_authority_as_production": True,
     "spanish_canonical_acceptance_normalization_bound": True,
+    "spanish_assessment_scope_contract_bound": True,
     "spanish_canonical_evidence_literals_bound": True,
     "spanish_final_report_runtime_cache_bound": True,
     "canonical_acceptance_terminal_period_loss_supported": True,
+    "production_assessment_scope_translation_supported": True,
     "canonical_evidence_literals_preserved": True,
     "presentation_prose_still_fail_closed": True,
     "process_isolation_owned_by_parent": True,
@@ -150,6 +197,7 @@ setattr(app.state, "nico_final_report_worker_runtime", FINAL_REPORT_WORKER_RUNTI
 
 __all__ = [
     "FINAL_REPORT_WORKER_RUNTIME",
+    "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION",
     "SPANISH_CANONICAL_EVIDENCE_LITERALS",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
