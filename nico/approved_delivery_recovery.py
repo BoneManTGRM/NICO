@@ -23,12 +23,6 @@ def _required_scope(customer_id: Any, project_id: Any) -> tuple[str, str] | None
     return customer, project
 
 
-def _scope_matches(value: dict[str, Any], customer_id: str, project_id: str) -> bool:
-    requested = _required_scope(customer_id, project_id)
-    stored = _required_scope(value.get("customer_id"), value.get("project_id"))
-    return requested is not None and stored == requested
-
-
 def _scope_blocked(run_id: str, error: str) -> dict[str, Any]:
     return {
         "status": "blocked",
@@ -171,8 +165,6 @@ def attach_verified_approved_delivery(result: dict[str, Any], *, include_pdf: bo
     if not isinstance(result, dict):
         return result
     run_id = str(result.get("run_id") or "").strip()
-    if not run_id:
-        return result
     customer_id = str(result.get("customer_id") or "").strip()
     project_id = str(result.get("project_id") or "").strip()
     status = approved_delivery_status(
@@ -189,6 +181,7 @@ def attach_verified_approved_delivery(result: dict[str, Any], *, include_pdf: bo
     }
     if not status.get("verified"):
         result["client_ready"] = False
+        result["client_delivery_allowed"] = False
         result["human_review_required"] = True
         result["client_delivery_status"] = "Client Delivery Blocked"
         result["delivery_verdict"] = "blocked"
@@ -207,6 +200,7 @@ def attach_verified_approved_delivery(result: dict[str, Any], *, include_pdf: bo
         existing_approval = result.get("approval") if isinstance(result.get("approval"), dict) else {}
         result["approval"] = {**existing_approval, **approval}
     result["client_ready"] = True
+    result["client_delivery_allowed"] = True
     result["human_review_required"] = False
     result["client_delivery_status"] = "Approved for Client Delivery"
     result["delivery_verdict"] = "approved"
