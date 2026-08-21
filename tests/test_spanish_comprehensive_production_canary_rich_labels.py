@@ -26,4 +26,5 @@ def test_spanish_production_pdf_canary_rejects_rich_finding_english_labels() -> 
         assert marker in source
 
     assert "forbidden = [marker for marker in FORBIDDEN_PDF_MARKERS if marker in rendered]" in source
-    assert 'assert not forbidden, f"Spanish PDF retained forbidden English/failure markers: {forbidden}"' in source
+    assert "assert not forbidden" in source
+    assert "Spanish PDF retained forbidden English/failure markers: {forbidden}" in source

@@ -100,14 +100,20 @@ def test_release_and_green_gates_require_spanish_production_proof() -> None:
     assert required_context in notifier
 
 
-def test_spanish_bootstrap_installs_proof_lifecycle_after_process_isolation() -> None:
+def test_spanish_bootstrap_installs_proof_lifecycle_after_full_process_hardening() -> None:
     source = Path("nico/api/spanish_final_report_bootstrap.py").read_text(
         encoding="utf-8"
     )
+    assert "install_comprehensive_final_report_process_isolation_v1" in source
+    assert "install_comprehensive_final_report_process_isolation_hardening_v2" in source
     assert "install_comprehensive_production_proof_lifecycle_v1" in source
     assert source.index("FINAL_REPORT_PROCESS_ISOLATION =") < source.index(
+        "FINAL_REPORT_PROCESS_ISOLATION_HARDENING ="
+    )
+    assert source.index("FINAL_REPORT_PROCESS_ISOLATION_HARDENING =") < source.index(
         "PRODUCTION_PROOF_LIFECYCLE ="
     )
+    assert "failed_termination_keeps_renderer_capacity_reserved" in source
     assert "prior_proof_reaper_bound" in source
     assert "proof_cancel_route_bound" in source
     assert "client_run_scope_untouched" in source

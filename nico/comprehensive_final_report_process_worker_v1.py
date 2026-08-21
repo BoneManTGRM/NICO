@@ -4,6 +4,7 @@ import argparse
 import importlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ from typing import Any, Mapping, MutableMapping
 VERSION = "nico.comprehensive_final_report_process_worker.v1"
 DEFAULT_BOOTSTRAP = "nico.api.spanish_final_report_bootstrap:app"
 _CHILD_ENV = "NICO_FINAL_REPORT_ISOLATED_CHILD"
+_PROCESS_GROUP_ATTR = "_nico_isolated_process_group"
 
 
 class IsolatedFinalReportCancelled(RuntimeError):
@@ -36,16 +38,26 @@ def _bounded(value: Any, limit: int = 2000) -> str:
 def _atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8") as handle:
-        json.dump(
-            value,
-            handle,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        handle.flush()
-        os.fsync(handle.fileno())
+    descriptor = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            json.dump(
+                value,
+                handle,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     os.chmod(temporary, 0o600)
     os.replace(temporary, path)
 
@@ -107,25 +119,63 @@ def execute_child(input_path: Path, output_path: Path, *, bootstrap: str) -> int
         return 1
 
 
+def _isolated_process_group(process: subprocess.Popen[Any]) -> int:
+    if os.name != "posix":
+        return 0
+    try:
+        return int(getattr(process, _PROCESS_GROUP_ATTR, 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _signal_worker(process: subprocess.Popen[Any], *, force: bool) -> None:
+    """Signal only this isolated worker/session, never the parent web process group."""
+
+    process_group = _isolated_process_group(process)
+    if process_group:
+        try:
+            os.killpg(
+                process_group,
+                signal.SIGKILL if force else signal.SIGTERM,
+            )
+        except ProcessLookupError:
+            pass
+        else:
+            return
+    if process.poll() is not None:
+        return
+    try:
+        process.kill() if force else process.terminate()
+    except ProcessLookupError:
+        return
+
+
 def terminate_process(
     process: subprocess.Popen[Any],
     *,
     grace_seconds: float = 5.0,
 ) -> bool:
-    if process.poll() is not None:
-        return True
-    try:
-        process.terminate()
-    except ProcessLookupError:
-        return True
-    deadline = time.monotonic() + max(0.1, float(grace_seconds))
-    while process.poll() is None and time.monotonic() < deadline:
-        time.sleep(0.05)
+    """Terminate the isolated worker and its descendants, then confirm physical exit."""
+
+    process_group = _isolated_process_group(process)
     if process.poll() is None:
+        _signal_worker(process, force=False)
+        deadline = time.monotonic() + max(0.1, float(grace_seconds))
+        while process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+    # A provider may spawn descendants that survive its own SIGTERM or even outlive
+    # the direct child. Because the production worker owns a dedicated process group,
+    # force-clean that group before renderer capacity can be reused.
+    if process_group:
         try:
-            process.kill()
+            os.killpg(process_group, signal.SIGKILL)
         except ProcessLookupError:
-            return True
+            pass
+    elif process.poll() is None:
+        _signal_worker(process, force=True)
+
+    if process.poll() is None:
         try:
             process.wait(timeout=max(0.5, float(grace_seconds)))
         except subprocess.TimeoutExpired:
@@ -144,8 +194,10 @@ def run_isolated_final_report(
 
     Input and output move through private JSON files instead of a pipe so large
     canonical evidence trees and PDF packages do not deadlock on OS pipe buffers. The
-    files are created by the trusted parent process, mode 0600, and never accept
-    network-supplied paths or arbitrary deserialization formats.
+    files are created by the trusted parent process as mode 0600 and never accept
+    network-supplied paths or arbitrary deserialization formats. On POSIX the child is
+    also a new process group so timeout cleanup terminates renderer descendants rather
+    than only the direct Python child.
     """
 
     if os.getenv(_CHILD_ENV) == "1":
@@ -178,11 +230,15 @@ def run_isolated_final_report(
             stderr=subprocess.DEVNULL,
             env=env,
             close_fds=True,
+            start_new_session=os.name == "posix",
         )
+        if os.name == "posix":
+            setattr(process, _PROCESS_GROUP_ATTR, process.pid)
         state["worker_process"] = process
         state["worker_pid"] = process.pid
         state["worker_model"] = "isolated_subprocess"
         state["worker_started_epoch"] = time.time()
+        state["worker_process_group"] = process.pid if os.name == "posix" else 0
         cancelled = False
         try:
             while process.poll() is None:
@@ -191,6 +247,7 @@ def run_isolated_final_report(
                     terminated = terminate_process(process)
                     state["worker_terminated"] = terminated
                     if not terminated:
+                        state["worker_termination_failed"] = True
                         raise IsolatedFinalReportWorkerError(
                             "isolated_final_report_worker_termination_failed"
                         )
@@ -229,13 +286,25 @@ def run_isolated_final_report(
                 "worker_elapsed_seconds": elapsed,
                 "killable_worker": True,
                 "hard_termination_supported": True,
+                "process_group_isolation": os.name == "posix",
+                "descendant_termination_supported": os.name == "posix",
                 "pipe_free_large_result_transport": True,
                 "private_file_transport": True,
             }
         finally:
+            # Run cleanup even after a normal child exit so no renderer descendant can
+            # escape the dedicated process group and outlive the publication attempt.
+            terminated = terminate_process(process)
+            state["worker_terminated"] = terminated
+            if not terminated:
+                state["worker_termination_failed"] = True
             if process.poll() is None:
-                state["worker_terminated"] = terminate_process(process)
-            state["worker_process"] = None
+                # Retain the live Popen object so the parent capacity gate cannot
+                # mistake an unconfirmed termination for physical worker exit.
+                state["worker_process"] = process
+            else:
+                state["worker_process"] = None
+                state["physical_worker_exit_confirmed"] = True
 
 
 def _parser() -> argparse.ArgumentParser:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from nico.api.terminal_authority_bootstrap import app
+from nico.comprehensive_final_report_process_isolation_hardening_v2 import (
+    install_comprehensive_final_report_process_isolation_hardening_v2,
+)
 from nico.comprehensive_final_report_process_isolation_v1 import (
     install_comprehensive_final_report_process_isolation_v1,
 )
@@ -11,7 +14,7 @@ from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.spanish_final_report_bootstrap.v3"
+VERSION = "nico.api.spanish_final_report_bootstrap.v4"
 
 # Install after terminal authority and every report/language compatibility layer so
 # the live v88/v89/v90 Spanish translation surfaces all share the same bounded cache.
@@ -55,10 +58,8 @@ if SPANISH_FINAL_REPORT_RUNTIME_CACHE.get("human_review_required") is not True:
 if SPANISH_FINAL_REPORT_RUNTIME_CACHE.get("client_delivery_allowed") is not False:
     raise RuntimeError("Spanish final-report cache must block unapproved client delivery")
 
-# Final-report publication is now executed in a killable subprocess rather than an
-# unkillable in-process renderer thread. Install it after the Spanish runtime guards so
-# the child imports the same authoritative report surfaces. The runtime also projects
-# durable queue/render heartbeat state to the browser.
+# Final-report publication executes in a killable subprocess. Install after
+# localization so the child imports the same authoritative Spanish/terminal bootstrap.
 FINAL_REPORT_PROCESS_ISOLATION = install_comprehensive_final_report_process_isolation_v1(app)
 setattr(
     app.state,
@@ -85,9 +86,42 @@ if FINAL_REPORT_PROCESS_ISOLATION.get("human_review_required") is not True:
 if FINAL_REPORT_PROCESS_ISOLATION.get("client_delivery_allowed") is not False:
     raise RuntimeError("Final-report process isolation must block unapproved client delivery")
 
-# Synthetic production acceptance must never become anonymous client-shaped work. Bind
-# a reserved proof scope, cancel/reap superseded proof runs, and keep the endpoint
-# incapable of cancelling normal customer/project runs.
+# Require confirmed physical process exit before renderer capacity can be reused. This
+# must be installed before proof cancellation so cancelled synthetic proof runs inherit
+# the same no-overlap renderer lifecycle as normal production assessments.
+FINAL_REPORT_PROCESS_ISOLATION_HARDENING = (
+    install_comprehensive_final_report_process_isolation_hardening_v2(app)
+)
+setattr(
+    app.state,
+    "nico_final_report_process_isolation_hardening",
+    FINAL_REPORT_PROCESS_ISOLATION_HARDENING,
+)
+
+if FINAL_REPORT_PROCESS_ISOLATION_HARDENING.get("bound") is not True:
+    raise RuntimeError(
+        "Final-report process isolation hardening did not install: "
+        f"{FINAL_REPORT_PROCESS_ISOLATION_HARDENING}"
+    )
+for required in (
+    "physical_worker_exit_required_before_capacity_release",
+    "failed_termination_keeps_renderer_capacity_reserved",
+    "process_group_descendant_cleanup_required",
+    "private_transport_permissions_required",
+):
+    if FINAL_REPORT_PROCESS_ISOLATION_HARDENING.get(required) is not True:
+        raise RuntimeError(
+            f"Final-report process isolation hardening missing contract: {required}"
+        )
+if FINAL_REPORT_PROCESS_ISOLATION_HARDENING.get("human_review_required") is not True:
+    raise RuntimeError("Final-report process isolation hardening must preserve human review")
+if FINAL_REPORT_PROCESS_ISOLATION_HARDENING.get("client_delivery_allowed") is not False:
+    raise RuntimeError(
+        "Final-report process isolation hardening must block unapproved client delivery"
+    )
+
+# Synthetic release acceptance uses a reserved server-side scope. Install this last so
+# proof cancellation and stale-proof reaping use the fully hardened renderer lifecycle.
 PRODUCTION_PROOF_LIFECYCLE = install_comprehensive_production_proof_lifecycle_v1(app)
 setattr(
     app.state,
@@ -115,6 +149,7 @@ if PRODUCTION_PROOF_LIFECYCLE.get("client_delivery_allowed") is not False:
 
 __all__ = [
     "FINAL_REPORT_PROCESS_ISOLATION",
+    "FINAL_REPORT_PROCESS_ISOLATION_HARDENING",
     "PRODUCTION_PROOF_LIFECYCLE",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
     "VERSION",
