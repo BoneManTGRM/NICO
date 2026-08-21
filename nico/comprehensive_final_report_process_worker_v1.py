@@ -41,7 +41,6 @@ def _atomic_json(path: Path, value: Any) -> None:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
-        default=str,
     ).encode("utf-8")
     with temporary.open("wb") as handle:
         handle.write(encoded)
