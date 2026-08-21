@@ -36,14 +36,14 @@ def _bounded(value: Any, limit: int = 2000) -> str:
 def _atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    encoded = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    with temporary.open("wb") as handle:
-        handle.write(encoded)
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(
+            value,
+            handle,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
         handle.flush()
         os.fsync(handle.fileno())
     os.chmod(temporary, 0o600)
