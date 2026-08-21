@@ -99,6 +99,17 @@ def test_release_and_green_gates_require_spanish_production_proof() -> None:
     assert required_context in watch
     assert required_context in notifier
 
+    # The old green watch pointed at an already-completed issue and the old notifier
+    # suppressed every future release after its first historical notification. Both
+    # monitors must instead be exact-main aware for the Spanish proof to be meaningful.
+    assert "statuses: write" in watch
+    assert "NICO Production Acceptance Green Watch" in watch
+    assert "TRACKING_ISSUE_NUMBER" not in watch
+    assert "NOTIFICATION_MARKER_PREFIX" in notifier
+    assert "nico-production-acceptance-green-notifier:v2:" in notifier
+    assert "notification_marker = f" in notifier
+    assert "main_sha" in notifier
+
 
 def test_spanish_bootstrap_installs_proof_lifecycle_after_full_process_hardening() -> None:
     # Keep this as an explicit exact-head regression: proof cleanup must inherit every
