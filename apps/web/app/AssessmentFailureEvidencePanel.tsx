@@ -124,6 +124,23 @@ export default function AssessmentFailureEvidencePanel() {
     () => failure?.progress.find((item) => TERMINAL_FAILURES.has(item.status.toLowerCase())) || null,
     [failure],
   );
+  const stageRows = useMemo(() => {
+    if (!failure) return [];
+    const seen = new Set<string>();
+    return failure.progress.filter((item) => {
+      const key = [
+        normalizedLabel(item.step),
+        normalizedLabel(item.status),
+        normalizedLabel(item.message),
+      ].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      const duplicatesPrimaryDiagnostic = TERMINAL_FAILURES.has(item.status.toLowerCase())
+        && normalizedLabel(item.message) === normalizedLabel(failure.message)
+        && (!failedStage || normalizedLabel(item.step) === normalizedLabel(failedStage.step));
+      return !duplicatesPrimaryDiagnostic;
+    });
+  }, [failure, failedStage]);
 
   if (!failure) return null;
 
@@ -139,6 +156,12 @@ export default function AssessmentFailureEvidencePanel() {
     run: "Identidad de ejecución",
     code: "Código diagnóstico",
     message: "Motivo técnico",
+    workerModel: "Modelo del proceso",
+    workerExit: "Código de salida del proceso",
+    workerSignal: "Señal de salida",
+    workerErrorType: "Tipo de error del proceso",
+    workerFailureClass: "Clase de fallo",
+    workerBootstrap: "Arranque del renderizador",
     missing: "no devuelto",
     details: "Ver detalles técnicos",
     stages: "Ver evidencia acotada de etapas",
@@ -157,6 +180,12 @@ export default function AssessmentFailureEvidencePanel() {
     run: "Run identity",
     code: "Diagnostic code",
     message: "Technical reason",
+    workerModel: "Worker model",
+    workerExit: "Worker exit code",
+    workerSignal: "Worker exit signal",
+    workerErrorType: "Worker error type",
+    workerFailureClass: "Worker failure class",
+    workerBootstrap: "Renderer bootstrap",
     missing: "not returned",
     details: "View technical details",
     stages: "View bounded stage evidence",
@@ -174,6 +203,7 @@ export default function AssessmentFailureEvidencePanel() {
     data-assessment-failure-evidence="true"
     data-assessment-failure-stage={failedStage?.step || "unknown_stage"}
     data-assessment-failure-code={failure.code}
+    data-assessment-worker-failure-class={failure.worker?.failure_class || ""}
     aria-live="assertive"
     lang={spanish ? "es-MX" : undefined}
   >
@@ -202,21 +232,29 @@ export default function AssessmentFailureEvidencePanel() {
       <dl>
         <div><dt>{copy.code}</dt><dd><code>{failure.code}</code></dd></div>
         <div><dt>{copy.message}</dt><dd>{failure.message}</dd></div>
+        {failure.worker ? <>
+          <div><dt>{copy.workerModel}</dt><dd><code>{failure.worker.model || copy.missing}</code></dd></div>
+          <div><dt>{copy.workerExit}</dt><dd>{failure.worker.exit_code ?? copy.missing}</dd></div>
+          <div><dt>{copy.workerSignal}</dt><dd><code>{failure.worker.exit_signal || copy.missing}</code></dd></div>
+          <div><dt>{copy.workerErrorType}</dt><dd><code>{failure.worker.error_type || copy.missing}</code></dd></div>
+          <div><dt>{copy.workerFailureClass}</dt><dd><code>{failure.worker.failure_class || copy.missing}</code></dd></div>
+          <div><dt>{copy.workerBootstrap}</dt><dd><code>{failure.worker.bootstrap || copy.missing}</code></dd></div>
+        </> : null}
         <div><dt>{copy.http}</dt><dd>{failure.http_status}</dd></div>
         <div><dt>{copy.type}</dt><dd>{failure.assessment_type || copy.missing}</dd></div>
         <div><dt>{copy.route}</dt><dd><code>{failure.route}</code></dd></div>
       </dl>
     </details>
 
-    {failure.progress.length ? <details className="help-details nico-failure-evidence__stages">
+    {stageRows.length ? <details className="help-details nico-failure-evidence__stages">
       <summary>{copy.stages}</summary>
       <div className="results-grid">
-        {failure.progress.map((item, index) => <article className="result-card" key={`${item.step}-${index}`}>
+        {stageRows.map((item, index) => <article className="result-card" key={`${item.step}-${index}`}>
           <div className="result-head"><b>{item.step.replaceAll("_", " ")}</b><span className={`status ${tone(item.status)}`}>{item.status}</span></div>
           <p>{item.message}</p>
         </article>)}
       </div>
-    </details> : <p className="warning-box">{copy.noSteps}</p>}
+    </details> : failure.progress.length ? null : <p className="warning-box">{copy.noSteps}</p>}
 
     <div className="nico-failure-evidence__boundary">
       <p>{copy.boundary}</p>
