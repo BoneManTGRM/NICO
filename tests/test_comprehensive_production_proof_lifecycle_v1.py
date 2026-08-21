@@ -64,15 +64,22 @@ def test_proof_cancel_rejects_normal_client_scope() -> None:
         )
 
 
-def test_spanish_proof_is_latest_release_only_and_reserved() -> None:
+def test_spanish_proof_queues_releases_and_preserves_reserved_scope() -> None:
     workflow = Path(".github/workflows/spanish-comprehensive-production-proof.yml").read_text(
         encoding="utf-8"
     )
     script = Path("scripts/spanish_comprehensive_live_acceptance_v1.py").read_text(
         encoding="utf-8"
     )
+    telemetry = Path("scripts/spanish_comprehensive_live_acceptance_v2.py").read_text(
+        encoding="utf-8"
+    )
     assert "group: nico-spanish-comprehensive-production" in workflow
-    assert "cancel-in-progress: true" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "cancel-in-progress: true" not in workflow
+    assert "scripts/spanish_comprehensive_live_acceptance_v2.py" in workflow
+    assert "spanish-comprehensive-live-proof.progress.json" in workflow
+    assert "SPANISH_PROOF_PROGRESS" in telemetry
     assert 'payload["production_proof_scope_verified"] is True' in workflow
     assert 'PROOF_CUSTOMER_ID = "nico_production_proof"' in script
     assert 'PROOF_PROJECT_ID = "spanish_comprehensive_production"' in script
