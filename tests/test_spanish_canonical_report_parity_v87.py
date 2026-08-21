@@ -1034,22 +1034,22 @@ install_comprehensive_spanish_client_surface_localization_v86()
 SMALL_ENGLISH_GOLDEN = {
     "markdown": ("763071604b1a2ca9fbe0f7394a0cbd58987a9dfd149104c0fb59a0a4ac6a7f71", 17916),
     "html": ("6c2a75e20a3075076f6e1821e0d1dcd008a85511c6b551716b143bbd6df493a8", 21521),
-    "pdf_base64": ("4af0bddefc2a6db78f396d1e9bbc47e163d15de1c936e09eb9abddf117bcd499", 169412),
-    "pdf_sha256": "45cbde36fbb3cc308ebf4239f4d584e4f21ba77f9247af4de1484561f54264ec",
+    "pdf_base64": ("92dafd57a299ff1a8e6cdc06c6dcbbb0490b36dc410472e240f340479a51ec10", 168532),
+    "pdf_sha256": "407c4a727a7d63f1d332db2082baf0c98e3148ed20e575caa08e7db313b4eac5",
     "page_count": 22,
 }
 RICH_ENGLISH_GOLDEN = {
     "markdown": ("cf32983fea08eb8f0987b8d86a0f30410644e142593b8a64e74b687f3a557a62", 20594),
     "html": ("41aa0dc2381268da90299fcbdff98ed40c43ea58e40b4900ec36ba70b9416e65", 24760),
-    "pdf_base64": ("a2cb496ab1bf1d0c74b56d53a064e5200ee8ebac306de96b436a5d18c57d3767", 254420),
-    "pdf_sha256": "ca45266b011dc2a88c542819236b6f843891049de730a3f3cc61b047fea8779e",
+    "pdf_base64": ("2d9e714ca0b6623a41485ba79968503a73056dbb3aadd1fdb82c5d203f0b99e7", 254400),
+    "pdf_sha256": "6b27250773a4ef164127364903502006eaa38567f7bacfc314fa246e063eeb65",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
     "markdown": ("f455d33de53683b5248d0a250dc7446d4f879a7d944f66ec1f359c0b378da9c2", 18652),
     "html": ("857ed713cfcefb0f74570ed76434eafb9124705d4a6d6095fea535283218879c", 22581),
-    "pdf_base64": ("5c3bb09143fab7a20b0f6eebf659035c5fec731105066bec8a2c3f950ecb1705", 166016),
-    "pdf_sha256": "365d8eabe77f1f5cf67a21aeb877d698fac12d570b5b2470a09cbfccb880b204",
+    "pdf_base64": ("03a5db9205d15d20367648086350f7b8f7a95fc978e645066e9f11994a62c86a", 165136),
+    "pdf_sha256": "c0784b66359c63dd6ef493d672ada23f3c27645d05d735dfd7d06e454e34c6e6",
     "page_count": 21,
 }
 
