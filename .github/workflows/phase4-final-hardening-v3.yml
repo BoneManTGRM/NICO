@@ -1,0 +1,68 @@
+name: Phase 4 final contract hardening
+
+on:
+  push:
+    branches:
+      - codex/phase4-client-delivery-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: contains(github.event.head_commit.message, '[phase4-final-hardening-v3]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Apply focused hardening
+        run: |
+          set -euo pipefail
+          python scripts/phase4_final_hardening_once.py
+          python -m py_compile \
+            nico/comprehensive_client_delivery_contract_v1.py \
+            tests/test_phase4_client_delivery_contract_v1.py
+          git diff --check
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run Phase 4 security and delivery regressions
+        run: |
+          pytest -q \
+            tests/test_phase4_client_delivery_contract_v1.py \
+            tests/test_phase4_approved_delivery_v4.py \
+            tests/test_phase4_stale_evidence_guard_v1.py \
+            tests/test_phase4_runtime_binding_v1.py \
+            tests/test_phase4_delivery_scope_fail_closed.py
+          bandit -q -r \
+            nico/comprehensive_client_delivery_contract_v1.py \
+            nico/comprehensive_approved_delivery_v4.py \
+            nico/phase4_client_delivery_runtime_v1.py \
+            nico/comprehensive_review_work_existing_app_v1.py
+
+      - name: Commit verified hardening and remove temporary files
+        run: |
+          set -euo pipefail
+          rm -f \
+            scripts/phase4_final_hardening_once.py \
+            .github/workflows/phase4-final-hardening-v3.yml \
+            .github/workflows/phase4-final-hardening.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Harden Phase 4 scanner, disposition, reviewer, and PDF contracts"
+          git push origin HEAD:codex/phase4-client-delivery-hardening
