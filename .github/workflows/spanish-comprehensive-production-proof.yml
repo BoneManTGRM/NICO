@@ -10,15 +10,12 @@ permissions:
   contents: read
   statuses: write
 
-# Final-report rendering is intentionally serialized in the production backend. A
-# per-SHA Actions concurrency group allowed every rapid main push to create another
-# fresh Spanish assessment at the same time, building a synthetic final-report queue
-# behind the one renderer. Serialize the proof across release SHAs instead. An older
-# queued proof can fail exact-release identity before it ever creates an assessment,
-# while the latest exact-main proof keeps the same fail-closed acceptance contract.
+# Only the newest release proof is useful. The browser proof now uses a reserved
+# server-side scope and cancels/reaps its own synthetic assessment, so an obsolete
+# release proof can be cancelled without leaving a client-shaped backend run behind.
 concurrency:
   group: nico-spanish-comprehensive-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   spanish-comprehensive:
@@ -189,6 +186,9 @@ jobs:
           assert payload["spanish_route_verified"] is True
           assert payload["document_language_verified"] is True
           assert payload["intake_report_language_verified"] is True
+          assert payload["production_proof_scope_verified"] is True
+          assert payload["production_proof_customer_id"] == "nico_production_proof"
+          assert payload["production_proof_project_id"] == "spanish_comprehensive_production"
           assert payload["start_request_count"] == 1
           assert payload["duplicate_intake_absent"] is True
           assert payload["terminal"]["phase"] == "Revisión interna requerida"
