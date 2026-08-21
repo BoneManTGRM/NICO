@@ -1,0 +1,79 @@
+{
+  "artifact_schema": "nico.phase4_controlled_pilot_readiness_observation.v1",
+  "phase": 4,
+  "title": "Production client-delivery hardening, security, and end-to-end proof",
+  "base_main_sha": "3dceeed7a757fb17cbe0c9007431167214227e3e",
+  "integrated_main_sha": "3dceeed7a757fb17cbe0c9007431167214227e3e",
+  "product": "NICO Comprehensive",
+  "one_client_report": true,
+  "implementation_state": "merge_candidate",
+  "software_contracts": {
+    "client_project_scope_identity_retained": true,
+    "read_only_repository_access_required": true,
+    "immutable_assessed_commit_required": true,
+    "every_declared_required_scanner_requires_a_retained_execution": true,
+    "required_scanner_failure_blocks_acceptance": true,
+    "candidate_lineage_and_technical_triage_required": true,
+    "canonical_candidate_and_disposition_ids_reconcile_exactly": true,
+    "mandatory_individual_review_must_complete": true,
+    "human_approval_is_explicit_and_attributable": true,
+    "reviewer_role_uses_an_exact_authorized_set": true,
+    "reviewer_authorization_basis_is_server_controlled": true,
+    "automation_final_approval_rejected": true,
+    "approval_binds_exact_artifact_digests": true,
+    "final_pdf_requires_a_parseable_document_with_at_least_one_page": true,
+    "material_change_invalidates_stale_approval": true,
+    "cross_client_project_run_mismatch_blocks_delivery": true,
+    "internal_or_test_package_cannot_be_client_final": true,
+    "one_report_rule_enforced": true,
+    "generator_truth_distinguishes_assessed_commit_from_nico_build_and_mutable_history": true,
+    "unsupported_ecosystems_are_not_assessed": true
+  },
+  "verification_evidence": {
+    "focused_hardening_workflow_run_id": 32519265594,
+    "focused_hardening_result": "36 passed, 1 warning",
+    "verified_implementation_head_before_status_sync": "fe1cfbc4174f86be1cb746c120d7f7e413755589",
+    "verified_workflow_conclusions": {
+      "NICO CI": "success",
+      "CodeQL Advanced": "success",
+      "Security Audit Evidence": "success",
+      "Audit Evidence": "success",
+      "Remediation Evidence": "success",
+      "Phase 8 Operational Acceptance": "success",
+      "Unified Production Acceptance": "success",
+      "Frontend Production Release Proof": "success",
+      "Mobile Restart Production Proof": "success",
+      "iOS WebKit Paint Proof": "success",
+      "Postgres Restart Proof": "success",
+      "Resilience Proof": "success",
+      "Phase 9 Client Delivery Proof": "success",
+      "Phase 9 Comprehensive Production Proof": "success",
+      "Phase 9 Production Report and Node Scanner Proof": "success",
+      "Phase 9 Bandit Reliability": "success",
+      "Recorded Golden Demonstration": "success"
+    },
+    "repository_agnostic_fixtures": [
+      "external Python service",
+      "external Node/TypeScript application",
+      "external mixed Python/TypeScript repository"
+    ],
+    "status_document_is_non_self_referential": true,
+    "merge_gate": "GitHub must independently show every required workflow successful on the exact head containing this observation before merge."
+  },
+  "controlled_paying_client_pilot_decision": "not_yet_proven",
+  "outside_pilot_evidence_remaining": [
+    "exact merge-SHA backend and frontend deployment identity where infrastructure exposes it",
+    "fresh real external authorized repository run",
+    "two authorized cybersecurity specialists exercising the exception-first workflow",
+    "explicit human approval of the exact immutable package",
+    "protected delivery and post-download immutable package revalidation",
+    "empirical combined specialist review time"
+  ],
+  "claims_not_made": [
+    "broad commercial readiness",
+    "superiority over competitors",
+    "support for untested ecosystems",
+    "deployment identity when infrastructure does not expose it",
+    "four-hour specialist target achieved in real client work"
+  ]
+}
