@@ -4,23 +4,28 @@ on:
   push:
     branches:
       - codex/fix-comprehensive-pdf-control-glyph
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 concurrency:
-  group: phase4-pdf-control-glyph-repair-${{ github.ref }}
+  group: phase4-pdf-control-glyph-repair-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   repair:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
     steps:
       - name: Check out repair branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 1
 
       - name: Apply narrow renderer repair and regression
@@ -123,4 +128,4 @@ def test_ci_boundary_pdf_lists_are_extractable_without_control_glyphs(
             tests/test_comprehensive_pdf_control_glyph_regression.py \
             .github/workflows/phase4-pdf-control-glyph-repair.yml
           git commit -m "Fix Comprehensive PDF control glyphs"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:${TARGET_BRANCH}"
