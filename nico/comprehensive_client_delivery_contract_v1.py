@@ -144,7 +144,7 @@ def _identity_scope(record: Mapping[str, Any]) -> dict[str, Any]:
     _require(bool(repository), "missing_authorized_repository")
     _require(len(commit) in {40, 64} and all(ch in "0123456789abcdefABCDEF" for ch in commit), "unresolved_assessed_commit")
     _require(bool(ledger_id), "missing_evidence_ledger_id")
-    _require(engagement["mode"] == "client", "internal_or_test_package_not_client_final")
+    _require(engagement["mode"] == "client", "internal_or_test_assessment_not_client_final")
     _require(bool(engagement["client_identity"]), "missing_mandatory_client_identity")
     _require(bool(engagement["project_identity"]), "missing_project_identity")
     _require(bool(engagement["customer_id"] and engagement["project_id"]), "missing_client_project_scope_identity")

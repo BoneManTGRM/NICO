@@ -3,172 +3,88 @@ name: Phase 8 Operational Acceptance
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  rebuild-phase4-approved-delivery:
-    runs-on: ubuntu-24.04
+  acceptance-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PHASE8_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Check out exact PR head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Checkout exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: '3.11'
-
-      - name: Rebuild clean Phase 4 delivery modules
-        shell: bash
+          python-version: "3.11"
+      - name: Install test dependencies
         run: |
-          set -euo pipefail
-          git show e82405fe728128e1b64e6631491bf471897cdc82:nico/comprehensive_approved_delivery_v4.py > /tmp/comprehensive_approved_delivery_v4.py
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('/tmp/comprehensive_approved_delivery_v4.py')
-          text = path.read_text(encoding='utf-8')
-
-          marker = '''def _review_metadata(manifest: Mapping[str, Any]) -> Mapping[str, Any]:
-              value = manifest.get("review")
-              return value if isinstance(value, Mapping) else {}
-          '''
-          helpers = marker + '''
-
-          def _bounded_validation_error_code(exc: ValueError) -> str:
-              raw = _text(exc).split(":", 1)[0]
-              normalized = "".join(
-                  char if char.isalnum() or char in {"_", "-"} else "_"
-                  for char in raw
-              )[:120]
-              return normalized or "value_error"
-
-
-          def _receipt_validation_record(
-              record: Mapping[str, Any],
-              manifest: Mapping[str, Any],
-          ) -> dict[str, Any]:
-              """Revalidate against the accepted edition's frozen history reference.
-
-              Attaching the immutable package recomputes the enclosing record hash. That
-              bookkeeping update must not invalidate the exact receipt it just enclosed;
-              all material report, evidence, candidate, disposition, identity, and version
-              fields are still rebuilt from the current record.
-              """
-
-              output = deepcopy(dict(record))
-              binding = manifest.get("phase4_approval_binding")
-              if not isinstance(binding, Mapping):
-                  return output
-              truth = binding.get("version_truth")
-              if not isinstance(truth, Mapping):
-                  return output
-              frozen = _text(truth.get("mutable_operational_history_reference"))
-              if not frozen:
-                  return output
-              output.pop("audit_chain_sha256", None)
-              output["integrity_sha256"] = frozen
-              return output
-          '''
-          if marker not in text:
-              raise SystemExit('review metadata insertion point missing')
-          text = text.replace(marker, helpers, 1)
-
-          old_validate = '''    result = dict(validate_v3(record, package))
-              errors = set(str(item) for item in result.get("validation_errors") or [])
-          '''
-          new_validate = '''    try:
-                  result = dict(validate_v3(record, package))
-              except ValueError as exc:
-                  result = {
-                      "status": "invalid",
-                      "validation_errors": [
-                          "phase4_inherited_validation_failed:"
-                          + _bounded_validation_error_code(exc)
-                      ],
-                      "client_delivery_allowed": False,
-                  }
-              errors = set(str(item) for item in result.get("validation_errors") or [])
-          '''
-          if old_validate not in text:
-              raise SystemExit('base validation replacement point missing')
-          text = text.replace(old_validate, new_validate, 1)
-
-          old_receipt = '''        validation = validate_approval_receipt(record, manifest, receipt)
-          '''
-          new_receipt = '''        validation = validate_approval_receipt(
-                      _receipt_validation_record(record, manifest),
-                      manifest,
-                      receipt,
-                  )
-          '''
-          if old_receipt not in text:
-              raise SystemExit('receipt validation replacement point missing')
-          text = text.replace(old_receipt, new_receipt, 1)
-
-          target = Path('nico/comprehensive_approved_delivery_v4.py')
-          target.write_text(text, encoding='utf-8')
-
-          contract = Path('nico/comprehensive_client_delivery_contract_v1.py')
-          contract_text = contract.read_text(encoding='utf-8')
-          old_code = 'internal_or_test_package_not_client_final'
-          new_code = 'internal_or_test_assessment_not_client_final'
-          if old_code not in contract_text:
-              raise SystemExit('client-final classification replacement point missing')
-          contract.write_text(contract_text.replace(old_code, new_code), encoding='utf-8')
-          PY
-          python -m py_compile \
-            nico/comprehensive_approved_delivery_v4.py \
-            nico/comprehensive_client_delivery_contract_v1.py
-
-      - name: Install focused test dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
-      - name: Run focused Phase 4 regressions
-        shell: bash
+      - name: Run Phase 8 truth and acceptance tests twice
         run: |
-          set -o pipefail
           pytest -q \
-            tests/test_phase4_approved_delivery_v4.py \
-            tests/test_phase4_stale_evidence_guard_v1.py \
-            tests/test_phase4_client_delivery_contract_v1.py \
-            2>&1 | tee /tmp/phase4-focused-tests.log
-
-      - name: Commit verified reconstruction and restore workflows
-        shell: bash
-        env:
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+            tests/test_final_assessment_truth_v1.py \
+            tests/test_comprehensive_phase7_truth_gateway.py \
+            tests/test_phase8_report_quality_v1.py \
+            tests/test_phase8_operational_acceptance_v1.py
+          pytest -q \
+            tests/test_final_assessment_truth_v1.py \
+            tests/test_comprehensive_phase7_truth_gateway.py \
+            tests/test_phase8_report_quality_v1.py \
+            tests/test_phase8_operational_acceptance_v1.py
+      - name: Generate exact-revision operational evidence pass one
         run: |
-          set -euo pipefail
-          git show 3dceeed7a757fb17cbe0c9007431167214227e3e:.github/workflows/phase8-operational-acceptance.yml > .github/workflows/phase8-operational-acceptance.yml
-          rm -f .github/workflows/temporary-phase4-module-rebuild.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            nico/comprehensive_approved_delivery_v4.py \
-            nico/comprehensive_client_delivery_contract_v1.py \
-            .github/workflows/phase8-operational-acceptance.yml \
-            .github/workflows/temporary-phase4-module-rebuild.yml
-          git diff --cached --check
-          git commit -m "Apply verified Phase 4 approval-integrity repair and restore CI"
-          git push origin "HEAD:${HEAD_BRANCH}"
+          rm -rf phase8-evidence
+          python scripts/phase8_live_evidence.py
+          cp phase8-evidence/phase8-operational-manifest.json phase8-pass-one.json
+      - name: Generate exact-revision operational evidence pass two
+        run: |
+          rm -rf phase8-evidence
+          python scripts/phase8_live_evidence.py
+          cp phase8-evidence/phase8-operational-manifest.json phase8-pass-two.json
+      - name: Verify both complete bilingual passes
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Upload focused evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+          one = json.loads(Path('phase8-pass-one.json').read_text())
+          two = json.loads(Path('phase8-pass-two.json').read_text())
+          expected = os.environ['PHASE8_REVISION']
+          required_surfaces = {'json', 'markdown', 'html', 'pdf', 'csv'}
+
+          for payload in (one, two):
+              assert payload['immutable_revision'] == expected
+              assert payload['scanner_ledger']['valid'] is True
+              assert payload['report_quality']['valid'] is True
+              assert set(payload['packages']) == {'en', 'es'}
+              assert all(payload['packages'][lang]['valid'] is True for lang in ('en', 'es'))
+              assert all(set(payload['artifact_inventory'][lang]) == required_surfaces for lang in ('en', 'es'))
+              assert payload['pdf_review']['reviewed_languages'] == ['en', 'es']
+              assert payload['pdf_review']['human_approval_required'] is True
+              assert payload['client_delivery_allowed'] is False
+
+          assert one['truth'] == two['truth']
+          print({'revision': expected, 'pass_one': one['manifest_sha256'], 'pass_two': two['manifest_sha256']})
+          PY
+      - name: Upload retained Phase 8 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase4-clean-delivery-contract-modules
-          path: |
-            nico/comprehensive_approved_delivery_v4.py
-            nico/comprehensive_client_delivery_contract_v1.py
-            /tmp/phase4-focused-tests.log
+          name: phase8-operational-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
           if-no-files-found: error
-          retention-days: 1
+          path: |
+            phase8-evidence/
+            phase8-pass-one.json
+            phase8-pass-two.json
