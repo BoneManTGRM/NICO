@@ -150,7 +150,7 @@ jobs:
         timeout-minutes: 100
         run: |
           set -euo pipefail
-          python scripts/spanish_comprehensive_live_acceptance_v1.py \
+          python scripts/spanish_comprehensive_live_acceptance_v2.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -234,7 +234,7 @@ jobs:
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
               "description": "Fresh es-MX Comprehensive final-report production proof failed",
-              "target_url": f"https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}",
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
           curl --fail-with-body --silent --show-error -X POST \
