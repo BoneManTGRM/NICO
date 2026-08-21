@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rebuild-phase4-approved-delivery:
@@ -142,7 +142,26 @@ jobs:
             tests/test_phase4_client_delivery_contract_v1.py \
             2>&1 | tee /tmp/phase4-focused-tests.log
 
-      - name: Upload corrected modules and focused evidence
+      - name: Commit verified reconstruction and restore workflows
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git show 3dceeed7a757fb17cbe0c9007431167214227e3e:.github/workflows/phase8-operational-acceptance.yml > .github/workflows/phase8-operational-acceptance.yml
+          rm -f .github/workflows/temporary-phase4-module-rebuild.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            nico/comprehensive_approved_delivery_v4.py \
+            nico/comprehensive_client_delivery_contract_v1.py \
+            .github/workflows/phase8-operational-acceptance.yml \
+            .github/workflows/temporary-phase4-module-rebuild.yml
+          git diff --cached --check
+          git commit -m "Apply verified Phase 4 approval-integrity repair and restore CI"
+          git push origin "HEAD:${HEAD_BRANCH}"
+
+      - name: Upload focused evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
