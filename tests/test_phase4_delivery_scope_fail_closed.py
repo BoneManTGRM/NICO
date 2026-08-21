@@ -81,6 +81,7 @@ def test_failed_recovery_clears_stale_delivery_truth():
         "status": "complete",
         "run_id": "fullrun_stale_delivery",
         "client_ready": True,
+        "client_delivery_allowed": True,
         "human_review_required": False,
         "client_delivery_status": "Approved for Client Delivery",
         "delivery_verdict": "approved",
@@ -97,12 +98,43 @@ def test_failed_recovery_clears_stale_delivery_truth():
     assert attached["approved_delivery_recovery"]["status"] == "blocked"
     assert attached["approved_delivery_recovery"]["verified"] is False
     assert attached["client_ready"] is False
+    assert attached["client_delivery_allowed"] is False
     assert attached["human_review_required"] is True
     assert attached["client_delivery_status"] == "Client Delivery Blocked"
     assert attached["delivery_verdict"] == "blocked"
     assert "approved_delivery" not in attached
     assert attached["reports"]["client_delivery_allowed"] is False
     assert attached["reports"]["human_review_required"] is True
+    assert "approved_delivery" not in attached["reports"]
+
+
+def test_failed_recovery_without_run_identity_clears_stale_delivery_truth():
+    result = {
+        "status": "complete",
+        "customer_id": "customer-real",
+        "project_id": "project-real",
+        "client_ready": True,
+        "client_delivery_allowed": True,
+        "human_review_required": False,
+        "delivery_verdict": "approved",
+        "approved_delivery": {"pdf_base64": "stale"},
+        "reports": {
+            "client_delivery_allowed": True,
+            "human_review_required": False,
+            "approved_delivery": {"pdf_base64": "stale"},
+        },
+    }
+
+    attached = recovery.attach_verified_approved_delivery(result)
+
+    assert attached["approved_delivery_recovery"]["status"] == "blocked"
+    assert attached["approved_delivery_recovery"]["verified"] is False
+    assert attached["client_ready"] is False
+    assert attached["client_delivery_allowed"] is False
+    assert attached["human_review_required"] is True
+    assert attached["delivery_verdict"] == "blocked"
+    assert "approved_delivery" not in attached
+    assert attached["reports"]["client_delivery_allowed"] is False
     assert "approved_delivery" not in attached["reports"]
 
 
