@@ -174,7 +174,8 @@ def test_failure_panel_displays_only_current_page_failure_without_hydration() ->
     assert 'failure.run_id' in source
     assert 'failure.http_status' in source
     assert 'failure.route' in source
-    assert 'failure.progress.map' in source
+    assert 'stageRows.map' in source
+    assert 'failure.progress.map' not in source
     assert '<details className="help-details nico-failure-evidence__details">' in source
     assert 'href={recoveryHref}' in source
     assert '`/operations/recovery?run_id=${encodeURIComponent(failure.run_id)}' in source
