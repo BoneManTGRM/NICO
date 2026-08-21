@@ -1,0 +1,83 @@
+name: Temporary Finalize PDF Goldens
+
+on:
+  push:
+    branches:
+      - codex/fix-comprehensive-pdf-control-glyph
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-finalize-pdf-goldens
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.repository == 'BoneManTGRM/NICO' &&
+      github.ref == 'refs/heads/codex/fix-comprehensive-pdf-control-glyph'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: codex/fix-comprehensive-pdf-control-glyph
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Replace only the verified PDF fingerprints
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test_spanish_canonical_report_parity_v87.py')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              '("4af0bddefc2a6db78f396d1e9bbc47e163d15de1c936e09eb9abddf117bcd499", 169412)':
+                  '("92dafd57a299ff1a8e6cdc06c6dcbbb0490b36dc410472e240f340479a51ec10", 168532)',
+              '"45cbde36fbb3cc308ebf4239f4d584e4f21ba77f9247af4de1484561f54264ec"':
+                  '"407c4a727a7d63f1d332db2082baf0c98e3148ed20e575caa08e7db313b4eac5"',
+              '("a2cb496ab1bf1d0c74b56d53a064e5200ee8ebac306de96b436a5d18c57d3767", 254420)':
+                  '("2d9e714ca0b6623a41485ba79968503a73056dbb3aadd1fdb82c5d203f0b99e7", 254400)',
+              '"ca45266b011dc2a88c542819236b6f843891049de730a3f3cc61b047fea8779e"':
+                  '"6b27250773a4ef164127364903502006eaa38567f7bacfc314fa246e063eeb65"',
+              '("5c3bb09143fab7a20b0f6eebf659035c5fec731105066bec8a2c3f950ecb1705", 166016)':
+                  '("03a5db9205d15d20367648086350f7b8f7a95fc978e645066e9f11994a62c86a", 165136)',
+              '"365d8eabe77f1f5cf67a21aeb877d698fac12d570b5b2470a09cbfccb880b204"':
+                  '"c0784b66359c63dd6ef493d672ada23f3c27645d05d735dfd7d06e454e34c6e6"',
+          }
+
+          changed = False
+          for old, new in replacements.items():
+              old_count = text.count(old)
+              new_count = text.count(new)
+              if old_count == 1 and new_count == 0:
+                  text = text.replace(old, new, 1)
+                  changed = True
+              elif old_count == 0 and new_count == 1:
+                  continue
+              else:
+                  raise SystemExit(
+                      f'unexpected golden replacement state: old={old_count} new={new_count} value={old}'
+                  )
+
+          if changed:
+              path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit the deterministic golden update
+        shell: bash
+        run: |
+          git diff --check
+          if git diff --quiet -- tests/test_spanish_canonical_report_parity_v87.py; then
+            echo 'Verified PDF fingerprints already present; no commit required.'
+            exit 0
+          fi
+          git config user.name 'nico-closure-bot'
+          git config user.email 'nico-closure-bot@users.noreply.github.com'
+          git add tests/test_spanish_canonical_report_parity_v87.py
+          git commit -m 'test: refresh deterministic PDF goldens'
+          git push origin HEAD:codex/fix-comprehensive-pdf-control-glyph
