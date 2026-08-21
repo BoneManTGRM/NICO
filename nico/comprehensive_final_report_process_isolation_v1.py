@@ -19,10 +19,10 @@ from nico.comprehensive_final_report_process_worker_v1 import (
     terminate_process,
 )
 
-VERSION = "nico.comprehensive_final_report_process_isolation.v1"
+VERSION = "nico.comprehensive_final_report_process_isolation.v2"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 _INSTALL_STATE = "nico_final_report_process_isolation_v1"
-_PATCH_MARKER = "__nico_final_report_process_isolation_v1__"
+_PATCH_MARKER = "__nico_comprehensive_final_report_process_isolation_v1__"
 _DEFAULT_TERMINATION_WAIT_SECONDS = 12.0
 
 _ORIGINAL_START_WORKER: Callable[..., Any] | None = None
@@ -123,17 +123,38 @@ def _process_worker_failure(
     state: Mapping[str, Any],
 ) -> dict[str, Any]:
     process = state.get("worker_process")
+    worker_pid = int(getattr(process, "pid", 0) or state.get("worker_pid") or 0)
+    try:
+        worker_exit_code = int(state.get("worker_exit_code"))
+    except (TypeError, ValueError):
+        worker_exit_code = 0
+    worker_exit_signal = _text(state.get("worker_exit_signal"))[:80]
+    worker_error_type = _text(state.get("worker_error_type")) or type(exc).__name__
+    worker_error = _text(state.get("worker_error")) or _text(exc)
+    worker_error = worker_error[:1200]
+    worker_bootstrap = _text(state.get("worker_bootstrap"))[:240]
+    failure_class = (
+        "process_signal"
+        if worker_exit_code < 0 or bool(worker_exit_signal)
+        else "child_exception"
+        if worker_error_type not in {"WorkerProcessExit", "WorkerPayloadError"}
+        else "worker_process_exit"
+    )
     process_execution = {
         "process_isolation_schema": VERSION,
         "worker_model": "isolated_subprocess",
         "killable_worker": True,
-        "worker_pid": int(getattr(process, "pid", 0) or state.get("worker_pid") or 0),
-        "worker_error_type": type(exc).__name__,
-        "worker_error": _text(exc)[:1200],
+        "worker_pid": worker_pid,
+        "worker_exit_code": worker_exit_code,
+        "worker_exit_signal": worker_exit_signal,
+        "worker_error_type": worker_error_type,
+        "worker_error": worker_error,
+        "worker_failure_class": failure_class,
+        "worker_bootstrap": worker_bootstrap,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
-    return boundary._blocked(
+    output = boundary._blocked(
         context,
         reason="detached_stage_execution_failed",
         message=(
@@ -145,6 +166,23 @@ def _process_worker_failure(
         recovery_supported=True,
         recovery_scope="final_report_only",
     )
+    # The public stage projection intentionally omits nested stage_execution objects.
+    # Retain a bounded primitive diagnostic summary at the stage top level so a future
+    # renderer failure is actionable instead of collapsing back to an opaque HTTP 200.
+    output.update(
+        {
+            "worker_model": "isolated_subprocess",
+            "worker_exit_code": worker_exit_code,
+            "worker_exit_signal": worker_exit_signal,
+            "worker_error_type": worker_error_type[:240],
+            "worker_error": worker_error[:1200],
+            "worker_failure_class": failure_class,
+            "worker_bootstrap": worker_bootstrap,
+            "worker_diagnostics_bounded": True,
+            "worker_traceback_exposed": False,
+        }
+    )
+    return output
 
 
 def _isolated_stop_local_task(
@@ -499,6 +537,8 @@ def install_comprehensive_final_report_process_isolation_v1(app: FastAPI) -> dic
         "recovery_waits_for_worker_termination": True,
         "logical_capacity_released_only_after_worker_exit": True,
         "active_stage_execution_projection": True,
+        "bounded_worker_failure_diagnostics_projected": True,
+        "worker_traceback_exposed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
