@@ -34,7 +34,8 @@ def test_english_route_is_a_thin_wrapper_around_the_single_canonical_page() -> N
 
 def test_spanish_home_routes_to_the_same_unified_assessment_workflow() -> None:
     source = SPANISH_HOME.read_text(encoding="utf-8")
-    assert 'redirect("/es/assessment?tier=express#assessment")' in source
+    assert 'redirect("/es/assessment?tier=comprehensive#assessment")' in source
+    assert "tier=express" not in source
 
 
 def test_shared_catalog_contains_one_comprehensive_assessment() -> None:

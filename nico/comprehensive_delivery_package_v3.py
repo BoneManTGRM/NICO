@@ -11,7 +11,7 @@ from typing import Any
 
 from nico.comprehensive_delivery_package_v2 import build_comprehensive_delivery_package as build_v2
 
-VERSION = "nico.comprehensive_delivery_package.v3"
+VERSION = "nico.comprehensive_delivery_package.v3.1"
 _REPORT_PATH = "01_nico_comprehensive_report.pdf"
 _MANIFEST_PATH = "11_evidence_manifest.json"
 
@@ -46,32 +46,122 @@ def _zip(entries: Mapping[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
-def _certificate_page(accepted: Mapping[str, Any]) -> bytes:
+def _report_language(
+    report_package: Mapping[str, Any],
+    delivery_package: Mapping[str, Any] | None = None,
+) -> str:
+    delivery_manifest = (
+        delivery_package.get("manifest")
+        if isinstance(delivery_package, Mapping)
+        and isinstance(delivery_package.get("manifest"), Mapping)
+        else {}
+    )
+    canonical = (
+        report_package.get("json")
+        if isinstance(report_package.get("json"), Mapping)
+        else {}
+    )
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    language = _text(
+        delivery_manifest.get("report_language")
+        or report_package.get("report_language")
+        or canonical.get("report_language")
+        or canonical.get("locale")
+        or assessment.get("report_language")
+        or assessment.get("locale")
+        or identity.get("report_language")
+        or "en"
+    )
+    return language or "en"
+
+
+def _is_spanish_language(report_language: str) -> bool:
+    return _text(report_language).casefold().replace("_", "-").startswith("es")
+
+
+def _certificate_page(
+    accepted: Mapping[str, Any],
+    *,
+    report_language: str = "en",
+) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     from reportlab.lib import colors
 
+    spanish = _is_spanish_language(report_language)
     review = accepted.get("review") if isinstance(accepted.get("review"), Mapping) else {}
-    rows = [
-        ["Final human approval", "APPROVED"],
-        ["Client-delivery authorization", "AUTHORIZED"],
-        ["Reviewer", _text(review.get("reviewer"))],
-        ["Reviewer role", _text(review.get("reviewer_role"))],
-        ["Approved at", _text(review.get("decided_at"))],
-        ["Decision reason", _text(review.get("reason"))],
-        ["Report artifact digest", _text(accepted.get("report_artifact_digest"))],
-        ["Accepted-edition manifest", _text(accepted.get("accepted_edition_manifest_sha256"))],
-        ["Approval certificate", _text(review.get("approval_certificate_sha256"))],
-        ["Review-work ledger", _text(accepted.get("review_work_ledger_sha256")) or "not applicable to legacy run"],
-        ["Review evidence source", _text(accepted.get("review_work_source_sha256")) or "not applicable to legacy run"],
-    ]
+    if spanish:
+        rows = [
+            ["Aprobación humana final", "APROBADA"],
+            ["Autorización de entrega al cliente", "AUTORIZADA"],
+            ["Revisor", _text(review.get("reviewer"))],
+            ["Rol del revisor", _text(review.get("reviewer_role"))],
+            ["Aprobado el", _text(review.get("decided_at"))],
+            ["Motivo de la decisión", _text(review.get("reason"))],
+            ["Digest del artefacto del informe", _text(accepted.get("report_artifact_digest"))],
+            ["Manifiesto de la edición aceptada", _text(accepted.get("accepted_edition_manifest_sha256"))],
+            ["Certificado de aprobación", _text(review.get("approval_certificate_sha256"))],
+            ["Libro de trabajo de revisión", _text(accepted.get("review_work_ledger_sha256")) or "no aplicable a una ejecución heredada"],
+            ["Fuente de evidencia de revisión", _text(accepted.get("review_work_source_sha256")) or "no aplicable a una ejecución heredada"],
+        ]
+        document_title = "NICO Comprehensive — Aprobación final y autorización de entrega al cliente"
+        heading = "Aprobación final y autorización de entrega al cliente"
+        introduction = (
+            "Las páginas anteriores del informe constituyen el análisis NICO Comprehensive exacto "
+            "revisado por una persona autorizada. Se inmovilizaron antes de autorizar la entrega al "
+            "cliente. Esta página de certificado registra el estado autoritativo posterior a la "
+            "revisión y la autorización de entrega sin regenerar ni modificar el análisis técnico."
+        )
+        boundary = (
+            "El triaje técnico automatizado de NICO permanece separado de la disposición humana "
+            "autorizada. La disposición humana permanece separada de la aprobación final del paquete. "
+            "La entrega al cliente se autorizó únicamente después de superar el control protegido de "
+            "aprobación final."
+        )
+    else:
+        rows = [
+            ["Final human approval", "APPROVED"],
+            ["Client-delivery authorization", "AUTHORIZED"],
+            ["Reviewer", _text(review.get("reviewer"))],
+            ["Reviewer role", _text(review.get("reviewer_role"))],
+            ["Approved at", _text(review.get("decided_at"))],
+            ["Decision reason", _text(review.get("reason"))],
+            ["Report artifact digest", _text(accepted.get("report_artifact_digest"))],
+            ["Accepted-edition manifest", _text(accepted.get("accepted_edition_manifest_sha256"))],
+            ["Approval certificate", _text(review.get("approval_certificate_sha256"))],
+            ["Review-work ledger", _text(accepted.get("review_work_ledger_sha256")) or "not applicable to legacy run"],
+            ["Review evidence source", _text(accepted.get("review_work_source_sha256")) or "not applicable to legacy run"],
+        ]
+        document_title = "NICO Comprehensive Final Approval and Client Delivery Authorization"
+        heading = "Final Approval and Client Delivery Authorization"
+        introduction = (
+            "The preceding report pages are the exact human-reviewed Comprehensive analysis. "
+            "They were frozen before client delivery authorization. This certificate page records "
+            "the authoritative post-review approval and delivery state without regenerating or "
+            "changing the technical analysis."
+        )
+        boundary = (
+            "NICO automated technical triage remains distinct from authorized human disposition. "
+            "Human disposition remains distinct from final package approval. Client delivery was "
+            "authorized only after the protected final approval gate succeeded."
+        )
+
     buffer = io.BytesIO()
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        title="NICO Comprehensive Final Approval and Client Delivery Authorization",
+        title=document_title,
         invariant=1,
     )
     table = Table(rows, colWidths=[170, 290])
@@ -91,30 +181,24 @@ def _certificate_page(accepted: Mapping[str, Any]) -> bytes:
     )
     story = [
         Paragraph("NICO Comprehensive", styles["Title"]),
-        Paragraph("Final Approval and Client Delivery Authorization", styles["Heading2"]),
+        Paragraph(heading, styles["Heading2"]),
         Spacer(1, 10),
-        Paragraph(
-            "The preceding report pages are the exact human-reviewed Comprehensive analysis. "
-            "They were frozen before client delivery authorization. This certificate page records "
-            "the authoritative post-review approval and delivery state without regenerating or "
-            "changing the technical analysis.",
-            styles["BodyText"],
-        ),
+        Paragraph(introduction, styles["BodyText"]),
         Spacer(1, 12),
         table,
         Spacer(1, 12),
-        Paragraph(
-            "NICO automated technical triage remains distinct from authorized human disposition. "
-            "Human disposition remains distinct from final package approval. Client delivery was "
-            "authorized only after the protected final approval gate succeeded.",
-            styles["BodyText"],
-        ),
+        Paragraph(boundary, styles["BodyText"]),
     ]
     doc.build(story)
     return buffer.getvalue()
 
 
-def _append_certificate(pdf_bytes: bytes, certificate_page: bytes) -> bytes:
+def _append_certificate(
+    pdf_bytes: bytes,
+    certificate_page: bytes,
+    *,
+    report_language: str = "en",
+) -> bytes:
     from pypdf import PdfReader, PdfWriter
 
     if not pdf_bytes.startswith(b"%PDF") or not certificate_page.startswith(b"%PDF"):
@@ -126,11 +210,20 @@ def _append_certificate(pdf_bytes: bytes, certificate_page: bytes) -> bytes:
         writer.add_page(page)
     for page in certificate.pages:
         writer.add_page(page)
+    spanish = _is_spanish_language(report_language)
     writer.add_metadata(
         {
-            "/Title": "NICO Comprehensive",
+            "/Title": (
+                "NICO Comprehensive — Entrega certificada"
+                if spanish
+                else "NICO Comprehensive"
+            ),
             "/Author": "NICO",
-            "/Producer": "NICO certified Comprehensive delivery",
+            "/Producer": (
+                "Entrega certificada de NICO Comprehensive"
+                if spanish
+                else "NICO certified Comprehensive delivery"
+            ),
         }
     )
     output = io.BytesIO()
@@ -155,6 +248,7 @@ def build_comprehensive_delivery_package(
     package = build_v2(report_package)
     if package.get("status") != "approved_for_delivery":
         return package
+    report_language = _report_language(report_package, package)
     encoded = _text(package.get("zip_base64"))
     try:
         archive = base64.b64decode(encoded, validate=True)
@@ -167,7 +261,11 @@ def build_comprehensive_delivery_package(
             if not name.endswith("/"):
                 entries[name] = source.read(name)
     original_pdf = entries.get(_REPORT_PATH, b"")
-    certified_pdf = _append_certificate(original_pdf, _certificate_page(accepted))
+    certified_pdf = _append_certificate(
+        original_pdf,
+        _certificate_page(accepted, report_language=report_language),
+        report_language=report_language,
+    )
     entries[_REPORT_PATH] = certified_pdf
 
     manifest = deepcopy(package.get("manifest") or {})
@@ -177,6 +275,7 @@ def build_comprehensive_delivery_package(
     manifest["final_human_approval_status"] = "approved"
     manifest["client_delivery_authorization_status"] = "authorized"
     manifest["approval_certificate_page_appended"] = True
+    manifest["approval_certificate_language"] = report_language
     manifest["report_analysis_regenerated_during_delivery_packaging"] = False
     manifest["client_delivery_allowed"] = True
     artifacts = []
@@ -204,6 +303,7 @@ def build_comprehensive_delivery_package(
         "final_human_approval_status": "approved",
         "client_delivery_authorization_status": "authorized",
         "approval_certificate_page_appended": True,
+        "approval_certificate_language": report_language,
         "report_analysis_regenerated_during_delivery_packaging": False,
         "human_review_required": True,
         "client_delivery_allowed": True,

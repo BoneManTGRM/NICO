@@ -1,6 +1,6 @@
 import type {Copy, Locale} from "./assessmentTypes";
 
-const EN_STAGE_LABELS: Record<string, string> = {
+const EN_STAGE_LABELS = {
   request_accepted: "Engagement accepted",
   scanner_worker: "Evidence scanner suite",
   authorization_and_scope: "Authorization and scope",
@@ -26,9 +26,9 @@ const EN_STAGE_LABELS: Record<string, string> = {
   cross_format_truth_verification: "Cross-format truth verification",
   human_review_request: "Internal technical review",
   client_acceptance_pending: "Client-ready authorization pending",
-};
+} as const;
 
-const ES_STAGE_LABELS: Record<string, string> = {
+const ES_STAGE_LABELS: Record<keyof typeof EN_STAGE_LABELS, string> = {
   request_accepted: "Encargo aceptado",
   scanner_worker: "Conjunto de analizadores de evidencia",
   authorization_and_scope: "Autorización y alcance",
@@ -56,7 +56,7 @@ const ES_STAGE_LABELS: Record<string, string> = {
   client_acceptance_pending: "Autorización para entrega pendiente",
 };
 
-const EN: Copy = {
+const EN = {
   heroEyebrow: "TECHNICAL ASSESSMENT AND ENGINEERING ADVISORY",
   title: "Decision-grade technical diligence, led by experts and bound to evidence.",
   lead: "NICO combines proprietary repository analysis with experienced technical review to identify engineering risk, quantify business impact, and produce a prioritized plan for action.",
@@ -112,10 +112,11 @@ const EN: Copy = {
   service: {label: "NICO assessment team", eyebrow: "ASSESSMENT ENGAGEMENT", heading: "Create assessment engagement", summary: "Configure the client, repository, strategic evidence, and authorization required for the NICO team to begin exact-snapshot technical diligence.", instructionsTitle: "How the engagement proceeds", instructions: ["Captures one exact repository snapshot and run identity.", "Collects technical evidence and prepares decision-grade analysis.", "Discloses missing or failed evidence rather than inferring it.", "Requires internal technical approval before client release."]},
   phases: {idle: "Awaiting engagement", checking: "Checking readiness", starting: "Creating engagement", running: "Assessment in progress", review_required: "Internal review required", complete: "Complete", unavailable: "Service unavailable", failed: "Assessment requires attention", timed_out: "Status check timed out"},
   stageLabels: EN_STAGE_LABELS,
-};
+} satisfies Copy;
 
-const ES: Copy = {
-  ...EN,
+type CompleteLocalizedCopy = { [K in keyof typeof EN]: unknown };
+
+const ES = {
   heroEyebrow: "EVALUACIÓN TÉCNICA Y ASESORÍA DE INGENIERÍA",
   title: "Diligencia técnica para decisiones, dirigida por expertos y vinculada a evidencia.",
   lead: "NICO combina análisis propietario del repositorio con revisión técnica experta para identificar riesgo de ingeniería, cuantificar el impacto comercial y producir un plan de acción priorizado.",
@@ -167,7 +168,7 @@ const ES: Copy = {
   service: {label: "Equipo de evaluación NICO", eyebrow: "ENCARGO DE EVALUACIÓN", heading: "Crear encargo de evaluación", summary: "Configura el cliente, repositorio, evidencia estratégica y autorización para que el equipo de NICO inicie la diligencia técnica sobre una instantánea exacta.", instructionsTitle: "Cómo avanza el encargo", instructions: ["Captura una instantánea exacta y un ID único.", "Reúne evidencia técnica y prepara análisis para decisiones.", "Declara evidencia faltante o fallida sin inferirla.", "Requiere revisión experta y aprobación antes de la entrega."]},
   phases: {idle: "En espera del encargo", checking: "Verificando preparación", starting: "Creando encargo", running: "Evaluación en curso", review_required: "Se requiere revisión experta", complete: "Completa", unavailable: "Servicio no disponible", failed: "La evaluación requiere atención", timed_out: "La comprobación agotó el tiempo"},
   stageLabels: ES_STAGE_LABELS,
-};
+} satisfies CompleteLocalizedCopy;
 
 export function copyFor(locale: Locale): Copy {
   return locale === "es-MX" ? ES : EN;
