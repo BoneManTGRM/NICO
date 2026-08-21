@@ -12,6 +12,10 @@ PRODUCTION_ASSESSMENT_SCOPE_ES = (
     "Revisar el repositorio y producir una hoja de ruta de remediación priorizada "
     "con hallazgos respaldados por evidencia."
 )
+UNKNOWN_ASSESSMENT_SCOPE_SENTINEL = (
+    "Review the repository and produce an unapproved remediation roadmap with "
+    "evidence-backed findings."
+)
 
 _ASSESSMENT_SCOPE_TRANSLATIONS: dict[str, str] = {
     PRODUCTION_ASSESSMENT_SCOPE: PRODUCTION_ASSESSMENT_SCOPE_ES,
@@ -79,12 +83,22 @@ def install_comprehensive_spanish_assessment_scope_v97() -> dict[str, Any]:
         PRODUCTION_ASSESSMENT_SCOPE,
         "assessment_scope",
     )
+    unknown_fail_closed = False
+    try:
+        canonical._translate_presentation_field(
+            UNKNOWN_ASSESSMENT_SCOPE_SENTINEL,
+            "assessment_scope",
+        )
+    except ValueError:
+        unknown_fail_closed = True
+
     bound = bool(
         v88_state.get("bound") is True
         and translated == PRODUCTION_ASSESSMENT_SCOPE_ES
         and normalized_translated
         == PRODUCTION_ASSESSMENT_SCOPE_ES.removesuffix(".")
         and canonical_translation == PRODUCTION_ASSESSMENT_SCOPE_ES
+        and unknown_fail_closed
     )
 
     return {
@@ -94,7 +108,7 @@ def install_comprehensive_spanish_assessment_scope_v97() -> dict[str, Any]:
         "production_assessment_scope_translation_supported": bound,
         "terminal_period_normalization_supported": bound,
         "approved_exact_contracts_only": True,
-        "unknown_assessment_scope_prose_still_fail_closed": True,
+        "unknown_assessment_scope_prose_still_fail_closed": unknown_fail_closed,
         "presentation_only": True,
         "canonical_report_truth_unchanged": True,
         "scanner_truth_unchanged": True,
@@ -108,6 +122,7 @@ def install_comprehensive_spanish_assessment_scope_v97() -> dict[str, Any]:
 __all__ = [
     "PRODUCTION_ASSESSMENT_SCOPE",
     "PRODUCTION_ASSESSMENT_SCOPE_ES",
+    "UNKNOWN_ASSESSMENT_SCOPE_SENTINEL",
     "VERSION",
     "install_comprehensive_spanish_assessment_scope_v97",
 ]
