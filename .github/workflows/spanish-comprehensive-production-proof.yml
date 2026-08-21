@@ -10,12 +10,13 @@ permissions:
   contents: read
   statuses: write
 
-# Only the newest release proof is useful. The browser proof now uses a reserved
-# server-side scope and cancels/reaps its own synthetic assessment, so an obsolete
-# release proof can be cancelled without leaving a client-shaped backend run behind.
+# A running exact-SHA release proof is immutable evidence and must finish. Newer pushes
+# queue behind it rather than cancelling the only production run that can explain or
+# close the current release. The proof still cancels/reaps its own synthetic assessment
+# on an actual failure or external runner interruption.
 concurrency:
   group: nico-spanish-comprehensive-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   spanish-comprehensive:
@@ -29,6 +30,8 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       RELEASE_SHA: ${{ github.sha }}
       STATUS_CONTEXT: NICO Spanish Comprehensive Production Proof
+      PYTHONUNBUFFERED: "1"
+      NICO_SPANISH_PROOF_TELEMETRY_SECONDS: "30"
 
     steps:
       - name: Check out exact release commit
@@ -162,6 +165,7 @@ jobs:
           path: |
             audit-results/spanish-comprehensive-frontend-release.json
             audit-results/spanish-comprehensive-live-proof.json
+            audit-results/spanish-comprehensive-live-proof.progress.json
             audit-results/spanish-comprehensive-live-proof.png
           if-no-files-found: warn
           retention-days: 90
@@ -230,7 +234,7 @@ jobs:
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
               "description": "Fresh es-MX Comprehensive final-report production proof failed",
-              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "target_url": f"https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}",
           }))
           PY
           curl --fail-with-body --silent --show-error -X POST \
