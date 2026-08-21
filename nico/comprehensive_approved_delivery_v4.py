@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
+from nico.comprehensive_approved_delivery_v1 import require_new_report_after_evidence_request
 from nico.comprehensive_approved_delivery_v3 import (
     build_approved_delivery_package as build_v3,
     validate_approved_delivery_package as validate_v3,
@@ -183,6 +184,7 @@ def _enhance_delivery_archive(
             "phase4_approval_receipt_path": _RECEIPT_PATH,
             "phase4_approval_receipt_sha256": _sha256(receipt_bytes),
             "artifacts": artifacts,
+            "artifact_count": len(artifacts),
             "one_client_report": True,
             "client_pdf_count": 1,
             "human_review_required": True,
@@ -256,6 +258,7 @@ def build_approved_delivery_package(
         "zip_base64": base64.b64encode(archive).decode("ascii"),
         "zip_sha256": _sha256(archive),
         "zip_size_bytes": len(archive),
+        "artifact_count": len(delivery_manifest.get("artifacts") or []),
         "manifest": delivery_manifest,
         "certificate": certificate,
         "phase4_approval_receipt": receipt,
@@ -361,7 +364,9 @@ def attach_approved_delivery_package(
     updated = deepcopy(dict(record))
     if _text(_review_metadata(manifest).get("decision")).casefold() != "approved":
         updated.pop("approved_delivery_package", None)
+        updated["client_delivery_allowed"] = False
         return updated
+    require_new_report_after_evidence_request(updated, manifest)
     bound = bind_phase4_approval_manifest(updated, manifest)
     updated["accepted_edition"] = deepcopy(bound)
     delivery = build_approved_delivery_package(updated, bound)
