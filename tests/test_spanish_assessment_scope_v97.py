@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from nico import comprehensive_spanish_canonical_report_v87 as canonical
+from nico import comprehensive_spanish_exit_criteria_v88 as v88
 from nico.comprehensive_spanish_assessment_scope_v97 import (
     PRODUCTION_ASSESSMENT_SCOPE,
     PRODUCTION_ASSESSMENT_SCOPE_ES,
@@ -32,7 +31,8 @@ def test_exact_production_assessment_scope_translates() -> None:
     assert state["bound"] is True
     assert state["production_assessment_scope_translation_supported"] is True
     assert state["approved_exact_contracts_only"] is True
-    assert state["unknown_assessment_scope_prose_still_fail_closed"] is True
+    assert state["unknown_assessment_scope_contract_unregistered"] is True
+    assert state["translator_replacement_performed"] is False
 
     translated = canonical._translate_presentation_field(
         PRODUCTION_ASSESSMENT_SCOPE,
@@ -53,15 +53,25 @@ def test_terminal_period_normalized_scope_translates_without_broadening() -> Non
     assert translated == PRODUCTION_ASSESSMENT_SCOPE_ES.removesuffix(".")
 
 
-def test_unknown_assessment_scope_remains_fail_closed() -> None:
+def test_unknown_assessment_scope_contract_is_not_registered() -> None:
     state = install_comprehensive_spanish_assessment_scope_v97()
-    assert state["unknown_assessment_scope_prose_still_fail_closed"] is True
 
-    with pytest.raises(ValueError, match="missing Spanish presentation translation"):
-        canonical._translate_presentation_field(
-            UNKNOWN_ASSESSMENT_SCOPE_SENTINEL,
-            "assessment_scope",
+    assert state["unknown_assessment_scope_contract_unregistered"] is True
+    assert state["unknown_assessment_scope_prose_owned_by_existing_boundary"] is True
+    assert (
+        v88._translate_targeted_presentation_literal(
+            UNKNOWN_ASSESSMENT_SCOPE_SENTINEL
         )
+        is None
+    )
+    assert (
+        UNKNOWN_ASSESSMENT_SCOPE_SENTINEL
+        not in v88._TARGETED_PRESENTATION_TRANSLATIONS
+    )
+    assert (
+        UNKNOWN_ASSESSMENT_SCOPE_SENTINEL.casefold()
+        not in v88._TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD
+    )
 
 
 def test_full_worker_order_preflight_accepts_the_production_scope() -> None:
@@ -111,6 +121,8 @@ def test_both_production_bootstraps_bind_scope_before_the_render_cache() -> None
     assert parent_scope < parent_cache
     assert "production_assessment_scope_translation_supported" in worker
     assert "production_assessment_scope_translation_supported" in parent
+    assert "unknown_assessment_scope_contract_unregistered" in worker
+    assert "unknown_assessment_scope_contract_unregistered" in parent
 
 
 def test_temporary_diagnostic_workflow_is_removed_before_merge() -> None:
