@@ -66,18 +66,21 @@ def test_v89_binds_exact_ci_boundary_pdf_producer() -> None:
     assert producer._boundary_pdf_page is v89._boundary_pdf_page_v89
 
 
-def test_exact_production_ci_boundary_del_glyph_is_removed_without_losing_truth() -> None:
+def test_exact_production_ci_boundary_prevents_del_glyph_without_losing_truth() -> None:
     v89.install_comprehensive_ci_pdf_control_safety_v89()
     original = v89._ORIGINAL_BOUNDARY_PDF_PAGE
     assert original is not None
 
     raw = original(_canonical("en"), spanish=False)
     raw_text = _pdf_text(raw)
-    assert "\x7f" in raw_text
+    assert "\x7f" not in raw_text
+    assert all(marker in raw_text for marker in _EN_MARKERS)
+    assert all(marker not in raw_text for marker in _ES_MARKERS)
 
     repaired = producer._boundary_pdf_page(_canonical("en"), spanish=False)
     repaired_text = _pdf_text(repaired)
 
+    assert repaired == raw
     assert "\x7f" not in repaired_text
     assert all(marker in repaired_text for marker in _EN_MARKERS)
     assert all(marker not in repaired_text for marker in _ES_MARKERS)
@@ -106,4 +109,5 @@ def test_clean_pdf_bytes_are_not_rewritten() -> None:
     clean_again = v89.sanitize_ci_pdf_control_glyphs(clean)
 
     assert "\x7f" not in _pdf_text(clean)
+    assert clean == raw
     assert clean_again == clean
