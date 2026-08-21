@@ -31,11 +31,13 @@ An approved delivery now retains a deterministic Phase 4 receipt binding:
 
 Automation cannot satisfy the final human reviewer identity contract. Unsupported or unproven deployment-version fields remain `unavailable`; the receipt does not convert absence into deployment proof.
 
+The accepted edition freezes the operational-history reference used by the receipt. Attaching the immutable package may recompute the enclosing run-record integrity hash, but that bookkeeping update does not invalidate the receipt it just enclosed. Material report, evidence, candidate, disposition, client/project, repository, commit, review, and generator-version truth is still recomputed and must match exactly.
+
 ## Fail-closed behavior
 
 The controlled-client contract rejects missing authorization or identity, non-read-only access, repository/scope mismatch, unresolved or mismatched commits, required scanner failure, unsupported ecosystems, malformed candidate registers, stale/missing lineage, incomplete triage, unresolved mandatory individual review, cross-client/project/run review state, missing required artifacts, alternate report products, internal/test packages presented as client final, unauthorized reviewer roles, automation approvers, artifact mutation, stale receipts, and delivery-package or evidence-manifest hash mismatch.
 
-Any material report, evidence, candidate, disposition, score-bearing canonical JSON, or identity change changes a bound digest and invalidates the old receipt. The protected download validator re-evaluates the record against the exact immutable receipt rather than trusting a prior boolean.
+Any material report, evidence, candidate, disposition, score-bearing canonical JSON, or identity change changes a bound digest and invalidates the old receipt. The protected download validator re-evaluates the record against the exact immutable receipt rather than trusting a prior boolean. Expected inherited validation failures, including stale or cross-scope review state, are returned as bounded invalid-package evidence rather than escaping as unhandled exceptions.
 
 ## Repository-agnostic acceptance fixtures
 

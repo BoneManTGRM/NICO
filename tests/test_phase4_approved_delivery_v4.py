@@ -243,6 +243,9 @@ def test_phase4_approved_delivery_binds_full_identity_and_receipt_inside_one_rep
         assert "12_phase4_approval_receipt.json" in zipped.namelist()
         assert "11_evidence_manifest.json" in zipped.namelist()
 
+    assert attached["integrity_sha256"] != receipt["version_truth"][
+        "mutable_operational_history_reference"
+    ]
     validation = validate_approved_delivery_package(attached, delivery)
     assert validation["status"] == "valid"
     assert validation["validation_errors"] == []
@@ -253,9 +256,17 @@ def test_cross_project_mutation_invalidates_delivery() -> None:
     attached = attach_approved_delivery_package(decision_record, manifest)
     tampered = deepcopy(attached)
     tampered["identity"]["project_id"] = "other-project"
-    validation = validate_approved_delivery_package(tampered, tampered["approved_delivery_package"])
+    validation = validate_approved_delivery_package(
+        tampered,
+        tampered["approved_delivery_package"],
+    )
     assert validation["status"] == "invalid"
-    assert any("project" in item for item in validation["validation_errors"])
+    assert "cross_project_id_review_mismatch" in validation["validation_errors"]
+    assert "phase4_project_id_mismatch" in validation["validation_errors"]
+    assert any(
+        item.startswith("phase4_inherited_validation_failed:")
+        for item in validation["validation_errors"]
+    )
 
 
 def test_report_regeneration_after_approval_invalidates_receipt() -> None:
@@ -282,5 +293,5 @@ def test_internal_assessment_cannot_become_phase4_client_final() -> None:
     decision_record = deepcopy(decision_record)
     evidence = decision_record["human_evidence"]["modules"]["stakeholder_context"]["evidence"]
     evidence["engagement_mode"] = ["internal"]
-    with pytest.raises(ValueError, match="internal_or_test_package_not_client_final"):
+    with pytest.raises(ValueError, match="internal_or_test_assessment_not_client_final"):
         attach_approved_delivery_package(decision_record, manifest)

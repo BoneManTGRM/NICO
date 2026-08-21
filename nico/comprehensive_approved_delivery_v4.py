@@ -65,11 +65,51 @@ def _review_metadata(manifest: Mapping[str, Any]) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _bounded_validation_error_code(exc: ValueError) -> str:
+    raw = _text(exc).split(":", 1)[0]
+    normalized = "".join(
+        char if char.isalnum() or char in {"_", "-"} else "_"
+        for char in raw
+    )[:120]
+    return normalized or "value_error"
+
+
+def _receipt_validation_record(
+    record: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Use the accepted edition's frozen operational-history reference.
+
+    Attaching the approved package legitimately recomputes the enclosing run-record
+    integrity hash. That bookkeeping change must not invalidate the exact receipt it
+    just enclosed. All material report, evidence, candidate, disposition, identity,
+    and version fields are still rebuilt from the current record.
+    """
+
+    output = deepcopy(dict(record))
+    binding = manifest.get("phase4_approval_binding")
+    if not isinstance(binding, Mapping):
+        return output
+    truth = binding.get("version_truth")
+    if not isinstance(truth, Mapping):
+        return output
+    frozen = _text(truth.get("mutable_operational_history_reference"))
+    if not frozen:
+        return output
+    output.pop("audit_chain_sha256", None)
+    output["integrity_sha256"] = frozen
+    return output
+
+
 def bind_phase4_approval_manifest(
     record: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Retain client/project/authorization/version truth without changing report bytes."""
+    """Retain client/project/authorization/version truth in the accepted edition.
+
+    The existing report artifacts remain untouched. The accepted-edition certificate
+    is recomputed because the Phase 4 identity binding is itself approval evidence.
+    """
 
     output = deepcopy(dict(manifest))
     review = deepcopy(dict(_review_metadata(output)))
@@ -80,6 +120,8 @@ def bind_phase4_approval_manifest(
     reason = _text(review.get("reason"))
     decided_at = _text(review.get("decided_at"))
     if decision == "approved":
+        # build_approval_receipt performs the authoritative human/role checks. This
+        # preliminary metadata is bound before the final receipt is generated.
         from nico.comprehensive_client_delivery_contract_v1 import reviewer_binding
 
         human = reviewer_binding(
@@ -121,19 +163,16 @@ def bind_phase4_approval_manifest(
         "client_delivery_allowed": decision == "approved" and output.get("accepted_edition") is True,
     }
     phase4_binding["binding_sha256"] = canonical_sha256(phase4_binding)
-    output.update(
-        {
-            "phase4_approval_binding": phase4_binding,
-            "client_identity": binding["client_identity"],
-            "project_identity": binding["project_identity"],
-            "customer_id": binding["customer_id"],
-            "client_id": binding["client_id"],
-            "project_id": binding["project_id"],
-            "package_classification": CLIENT_FINAL_CLASSIFICATION,
-            "one_product": PRODUCT_NAME,
-            "one_client_report": True,
-        }
-    )
+    output["phase4_approval_binding"] = phase4_binding
+    output["client_identity"] = binding["client_identity"]
+    output["project_identity"] = binding["project_identity"]
+    output["customer_id"] = binding["customer_id"]
+    output["client_id"] = binding["client_id"]
+    output["project_id"] = binding["project_id"]
+    output["package_classification"] = CLIENT_FINAL_CLASSIFICATION
+    output["one_product"] = PRODUCT_NAME
+    output["one_client_report"] = True
+
     review.pop("approval_certificate_sha256", None)
     review["authorization_basis"] = human["authorization_basis"]
     review["residual_risk_decision"] = human["residual_risk_decision"]
@@ -161,250 +200,4 @@ def _enhance_delivery_archive(
     receipt_bytes = _json_bytes(receipt)
     entries[_RECEIPT_PATH] = receipt_bytes
 
-    manifest = deepcopy(dict(delivery.get("manifest") or {}))
-    artifacts = [
-        deepcopy(dict(item))
-        for item in manifest.get("artifacts") or []
-        if isinstance(item, Mapping) and _text(item.get("path")) != _RECEIPT_PATH
-    ]
-    artifacts.append(
-        {
-            "path": _RECEIPT_PATH,
-            "kind": "phase4_immutable_approval_receipt",
-            "sha256": _sha256(receipt_bytes),
-            "size_bytes": len(receipt_bytes),
-        }
-    )
-    artifacts.sort(key=lambda item: _text(item.get("path")))
-    manifest.update(
-        {
-            "artifact_schema": VERSION,
-            "product_name": PRODUCT_NAME,
-            "package_classification": CLIENT_FINAL_CLASSIFICATION,
-            "phase4_approval_receipt_path": _RECEIPT_PATH,
-            "phase4_approval_receipt_sha256": _sha256(receipt_bytes),
-            "artifacts": artifacts,
-            "artifact_count": len(artifacts),
-            "one_client_report": True,
-            "client_pdf_count": 1,
-            "human_review_required": True,
-            "client_delivery_allowed": True,
-        }
-    )
-    manifest_bytes = _json_bytes(manifest)
-    entries[_MANIFEST_PATH] = manifest_bytes
-    return _zip(entries), manifest, _sha256(manifest_bytes)
-
-
-def build_approved_delivery_package(
-    record: Mapping[str, Any],
-    manifest: Mapping[str, Any],
-) -> dict[str, Any]:
-    bound = bind_phase4_approval_manifest(record, manifest)
-    record_for_delivery = deepcopy(dict(record))
-    record_for_delivery["accepted_edition"] = deepcopy(bound)
-    delivery = build_v3(record_for_delivery, bound)
-    review = _review_metadata(bound)
-    receipt = build_approval_receipt(
-        record_for_delivery,
-        bound,
-        reviewer=_text(review.get("reviewer")),
-        reviewer_role=_text(review.get("reviewer_role")),
-        decision=_text(review.get("decision")),
-        decided_at=_text(review.get("decided_at")),
-        decision_reason=_text(review.get("reason")),
-        authorization_basis=_text(review.get("authorization_basis"))
-        or "protected_admin_write_and_explicit_review_authorization",
-    )
-    archive, delivery_manifest, evidence_manifest_sha = _enhance_delivery_archive(delivery, receipt)
-    certificate = deepcopy(dict(delivery.get("certificate") or {}))
-    certificate.update(
-        {
-            "artifact_schema": VERSION,
-            "client_identity": receipt["client_identity"],
-            "project_identity": receipt["project_identity"],
-            "customer_id": receipt["customer_id"],
-            "client_id": receipt["client_id"],
-            "project_id": receipt["project_id"],
-            "assessment_run_id": receipt["assessment_run_id"],
-            "repository": receipt["repository"],
-            "assessed_repository_commit": receipt["assessed_repository_commit"],
-            "approval_record_id": receipt["review"]["approval_record_id"],
-            "reviewer_identity": receipt["review"]["reviewer_identity"],
-            "reviewer_role": receipt["review"]["reviewer_role"],
-            "authorization_basis": receipt["review"]["authorization_basis"],
-            "residual_risk_decision": receipt["review"]["residual_risk_decision"],
-            "pdf_sha256": receipt["pdf_sha256"],
-            "canonical_json_sha256": receipt["canonical_json_sha256"],
-            "evidence_manifest_sha256": evidence_manifest_sha,
-            "phase4_approval_receipt_sha256": receipt["approval_receipt_sha256"],
-            "candidate_register_sha256": receipt["candidate_register_sha256"],
-            "candidate_disposition_state_sha256": receipt["candidate_disposition_state_sha256"],
-            "version_truth": deepcopy(receipt["version_truth"]),
-            "package_classification": CLIENT_FINAL_CLASSIFICATION,
-            "one_client_report": True,
-            "client_pdf_count": 1,
-            "human_review_required": True,
-            "client_delivery_allowed": True,
-        }
-    )
-    certificate["delivery_package_sha256"] = _sha256(archive)
-    certificate["delivery_package_size_bytes"] = len(archive)
-    certificate.pop("delivery_authorization_certificate_sha256", None)
-    certificate["delivery_authorization_certificate_sha256"] = canonical_sha256(certificate)
-    return {
-        **dict(delivery),
-        "artifact_schema": VERSION,
-        "zip_base64": base64.b64encode(archive).decode("ascii"),
-        "zip_sha256": _sha256(archive),
-        "zip_size_bytes": len(archive),
-        "artifact_count": len(delivery_manifest.get("artifacts") or []),
-        "manifest": delivery_manifest,
-        "certificate": certificate,
-        "phase4_approval_receipt": receipt,
-        "phase4_approval_receipt_sha256": receipt["approval_receipt_sha256"],
-        "product_name": PRODUCT_NAME,
-        "package_classification": CLIENT_FINAL_CLASSIFICATION,
-        "one_client_report": True,
-        "client_pdf_count": 1,
-        "human_review_required": True,
-        "client_delivery_allowed": True,
-    }
-
-
-def validate_approved_delivery_package(
-    record: Mapping[str, Any],
-    package: Any,
-) -> dict[str, Any]:
-    result = dict(validate_v3(record, package))
-    errors = set(str(item) for item in result.get("validation_errors") or [])
-    if not isinstance(package, Mapping):
-        errors.add("phase4_delivery_package_must_be_mapping")
-        return {
-            **result,
-            "status": "invalid",
-            "validation_errors": sorted(errors),
-            "client_delivery_allowed": False,
-        }
-    manifest = record.get("accepted_edition")
-    receipt = package.get("phase4_approval_receipt")
-    if not isinstance(manifest, Mapping):
-        errors.add("phase4_accepted_edition_missing")
-    if not isinstance(receipt, Mapping):
-        errors.add("phase4_approval_receipt_missing")
-    if isinstance(manifest, Mapping) and isinstance(receipt, Mapping):
-        validation = validate_approval_receipt(record, manifest, receipt)
-        errors.update(validation.get("validation_errors") or [])
-    if _text(package.get("product_name")) != PRODUCT_NAME:
-        errors.add("phase4_wrong_product")
-    if _text(package.get("package_classification")) != CLIENT_FINAL_CLASSIFICATION:
-        errors.add("phase4_internal_or_test_package_blocked")
-    if package.get("one_client_report") is not True or int(package.get("client_pdf_count") or 0) != 1:
-        errors.add("phase4_one_report_rule_violated")
-
-    try:
-        archive_bytes = base64.b64decode(_text(package.get("zip_base64")), validate=True)
-        if _sha256(archive_bytes) != _text(package.get("zip_sha256")):
-            errors.add("phase4_delivery_archive_hash_mismatch")
-        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:
-            names = archive.namelist()
-            pdfs = [name for name in names if name.casefold().endswith(".pdf")]
-            if len(pdfs) != 1:
-                errors.add("phase4_one_report_rule_violated")
-            if _RECEIPT_PATH not in names:
-                errors.add("phase4_receipt_not_in_immutable_package")
-            elif isinstance(receipt, Mapping):
-                if archive.read(_RECEIPT_PATH) != _json_bytes(receipt):
-                    errors.add("phase4_receipt_archive_mismatch")
-            if _MANIFEST_PATH not in names:
-                errors.add("phase4_evidence_manifest_missing")
-            else:
-                manifest_sha = _sha256(archive.read(_MANIFEST_PATH))
-                certificate = package.get("certificate")
-                if not isinstance(certificate, Mapping) or _text(
-                    certificate.get("evidence_manifest_sha256")
-                ) != manifest_sha:
-                    errors.add("phase4_evidence_manifest_hash_mismatch")
-    except Exception:
-        errors.add("phase4_delivery_archive_invalid")
-
-    certificate = package.get("certificate")
-    binding = engagement_binding(record)
-    if not isinstance(certificate, Mapping):
-        errors.add("phase4_delivery_certificate_missing")
-    else:
-        for key, expected in (
-            ("client_identity", binding["client_identity"]),
-            ("project_identity", binding["project_identity"]),
-            ("project_id", binding["project_id"]),
-        ):
-            if _text(certificate.get(key)) != _text(expected):
-                errors.add(f"phase4_{key}_mismatch")
-        candidate = deepcopy(dict(certificate))
-        supplied_hash = _text(candidate.pop("delivery_authorization_certificate_sha256", ""))
-        if supplied_hash != canonical_sha256(candidate):
-            errors.add("phase4_delivery_certificate_hash_mismatch")
-        if _text(certificate.get("delivery_package_sha256")) != _text(package.get("zip_sha256")):
-            errors.add("phase4_certificate_archive_binding_mismatch")
-
-    return {
-        **result,
-        "artifact_schema": VERSION,
-        "status": "valid" if not errors else "invalid",
-        "validation_errors": sorted(errors),
-        "one_client_report": True,
-        "client_delivery_allowed": not errors,
-    }
-
-
-def attach_approved_delivery_package(
-    record: Mapping[str, Any],
-    manifest: Mapping[str, Any],
-) -> dict[str, Any]:
-    updated = deepcopy(dict(record))
-    if _text(_review_metadata(manifest).get("decision")).casefold() != "approved":
-        updated.pop("approved_delivery_package", None)
-        updated["client_delivery_allowed"] = False
-        return updated
-    require_new_report_after_evidence_request(updated, manifest)
-    bound = bind_phase4_approval_manifest(updated, manifest)
-    updated["accepted_edition"] = deepcopy(bound)
-    delivery = build_approved_delivery_package(updated, bound)
-    updated["approved_delivery_package"] = delivery
-    updated["client_delivery_allowed"] = True
-    context = deepcopy(dict(updated.get("review_context") or {}))
-    context.update(
-        {
-            "phase4_approval_receipt_sha256": delivery["phase4_approval_receipt_sha256"],
-            "delivery_authorization_certificate_sha256": delivery["certificate"][
-                "delivery_authorization_certificate_sha256"
-            ],
-            "client_identity": delivery["certificate"]["client_identity"],
-            "project_identity": delivery["certificate"]["project_identity"],
-            "package_classification": CLIENT_FINAL_CLASSIFICATION,
-            "one_client_report": True,
-            "client_pdf_count": 1,
-            "human_review_required": True,
-            "client_delivery_allowed": True,
-        }
-    )
-    updated["review_context"] = context
-    validation = validate_approved_delivery_package(updated, delivery)
-    if validation["status"] != "valid":
-        raise ValueError(
-            "invalid_phase4_approved_delivery_package:"
-            + ",".join(validation["validation_errors"])
-        )
-    from nico.comprehensive_run_record import _record_hash
-
-    updated["integrity_sha256"] = _record_hash(updated)
-    return updated
-
-
-__all__ = [
-    "VERSION",
-    "attach_approved_delivery_package",
-    "bind_phase4_approval_manifest",
-    "build_approved_delivery_package",
-    "validate_approved_delivery_package",
-]
+    manifest = deepcopy(dict(delivery.ge²È="24}Í¡„ÈÔØ¡…É¡¥Ù”¤(€€€•ÉÑ¥™¥…Ñ•l‰‘•±¥Ù•Éå}Á…­…•}Í¥é•}‰åÑ•Ì‰t€ô±•¸¡…É¡¥Ù”¤(€€€•ÉÑ¥™¥…Ñ”¹Á½À ‰‘•±¥Ù•Éå}…ÕÑ¡½É¥é…Ñ¥½¹}•ÉÑ¥™¥…Ñ•}Í¡„ÈÔØˆ°9½¹”¤(€€€•ÉÑ¥™¥…Ñ•l‰‘•±¥Ù•Éå}…ÕÑ¡½É¥é…Ñ¥½¹}•ÉÑ¥™¥…Ñ•}Í¡„ÈÔØ‰t€ô…¹½¹¥…±}Í¡„ÈÔØ¡•ÉÑ¥™¥…Ñ”¤(€€€É•ÑÕÉ¸ì(€€€€€€€€¨©‘¥Ð¡‘•±¥Ù•Éä¤°(€€€€€€€€‰…ÉÑ¥™…Ñ}Í¡•µ„ˆèYIM%=8°(€€€€€€€€‰é¥Á}‰…Í”ØÐˆè‰…Í”ØÐ¹ˆØÑ•¹½‘”¡…É¡¥Ù”¤¹‘•½‘” ‰…Í¥¤ˆ¤°(€€€€€€€€‰é¥Á}Í¡„ÈÔØˆè}Í¡„ÈÔØ¡…É¡¥Ù”¤°(€€€€€€€€‰é¥Á}Í¥é•}‰åÑ•Ìˆè±•¸¡…É¡¥Ù”¤°(€€€€€€€€‰…ÉÑ¥™…Ñ}½Õ¹Ðˆè±•¸¡‘•±¥Ù•Éå}µ…¹¥™•ÍÐ¹•Ð ‰…ÉÑ¥™…ÑÌˆ¤½Èmt¤°(€€€€€€€€‰µ…¹¥™•ÍÐˆè‘•±¥Ù•Éå}µ…¹¥™•ÍÐ°(€€€€€€€€‰•ÉÑ¥™¥…Ñ”ˆè•ÉÑ¥™¥…Ñ”°(€€€€€€€€‰Á¡…Í”Ñ}…ÁÁÉ½Ù…±}É••¥ÁÐˆèÉ••¥ÁÐ°(€€€€€€€€‰Á¡…Í”Ñ}…ÁÁÉ½Ù…±}É••¥ÁÑ}Í¡„ÈÔØˆèÉ••¥ÁÑl‰…ÁÁÉ½Ù…±}É••¥ÁÑ}Í¡„ÈÔØ‰t°(€€€€€€€€‰ÁÉ½‘ÕÑ}¹…µ”ˆèAI=UQ}95°(€€€€€€€€‰Á…­…•}±…ÍÍ¥™¥…Ñ¥½¸ˆè1%9Q}%91}1MM%%Q%=8°(€€€€€€€€‰½¹•}±¥•¹Ñ}É•Á½ÉÐˆèQÉÕ”°(€€€€€€€€‰±¥•¹Ñ}Á‘™}½Õ¹Ðˆè€Ä°(€€€€€€€€‰¡Õµ…¹}É•Ù¥•Ý}É•ÅÕ¥É•ˆèQÉÕ”°(€€€€€€€€‰±¥•¹Ñ}‘•±¥Ù•Éå}…±±½Ý•ˆèQÉÕ”°(€€€ô(()‘•˜Ù…±¥‘…Ñ•}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…” (€€€É•½Éè5…ÁÁ¥¹mÍÑÈ°¹åt°(€€€Á…­…”è¹ä°(¤€´ø‘¥ÑmÍÑÈ°¹åtè(€€€ÑÉäè(€€€€€€€É•ÍÕ±Ð€ô‘¥Ð¡Ù…±¥‘…Ñ•}ØÌ¡É•½É°Á…­…”¤¤(€€€€€€€•ÉÉ½ÉÌ€ôÍ•Ð¡ÍÑÈ¡¥Ñ•´¤™½È¥Ñ•´¥¸É•ÍÕ±Ð¹•Ð ‰Ù…±¥‘…Ñ¥½¹}•ÉÉ½ÉÌˆ¤½Èmt¤(€€€•á•ÁÐY…±Õ•ÉÉ½È…Ì•áŒè(€€€€€€€É•ÍÕ±Ð€ôì(€€€€€€€€€€€€‰ÍÑ…ÑÕÌˆè€‰¥¹Ù…±¥ˆ°(€€€€€€€€€€€€‰Ù…±¥‘…Ñ¥½¹}•ÉÉ½ÉÌˆèmt°(€€€€€€€€€€€€‰±¥•¹Ñ}‘•±¥Ù•Éå}…±±½Ý•ˆè…±Í”°(€€€€€€€ô(€€€€€€€•ÉÉ½ÉÌ€ôì(€€€€€€€€€€€€‰Á¡…Í”Ñ}¥¹¡•É¥Ñ•‘}Ù…±¥‘…Ñ¥½¹}™…¥±•èˆ(€€€€€€€€€€€€¬}‰½Õ¹‘•‘}Ù…±¥‘…Ñ¥½¹}•ÉÉ½É}½‘”¡•áŒ¤(€€€€€€€ô(€€€¥˜¹½Ð¥Í¥¹ÍÑ…¹”¡Á…­…”°5…ÁÁ¥¹œ¤è(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}‘•±¥Ù•Éå}Á…­…•}µÕÍÑ}‰•}µ…ÁÁ¥¹œˆ¤(€€€€€€€É•ÑÕÉ¸ì(€€€€€€€€€€€€¨©É•ÍÕ±Ð°(€€€€€€€€€€€€‰ÍÑ…ÑÕÌˆè€‰¥¹Ù…±¥ˆ°(€€€€€€€€€€€€‰Ù…±¥‘…Ñ¥½¹}•ÉÉ½ÉÌˆèÍ½ÉÑ•¡•ÉÉ½ÉÌ¤°(€€€€€€€€€€€€‰±¥•¹Ñ}‘•±¥Ù•Éå}…±±½Ý•ˆè…±Í”°(€€€€€€€ô(€€€µ…¹¥™•ÍÐ€ôÉ•½É¹•Ð ‰…•ÁÑ•‘}•‘¥Ñ¥½¸ˆ¤(€€€É••¥ÁÐ€ôÁ…­…”¹•Ð ‰Á¡…Í”Ñ}…ÁÁÉ½Ù…±}É••¥ÁÐˆ¤(€€€¥˜¹½Ð¥Í¥¹ÍÑ…¹”¡µ…¹¥™•ÍÐ°5…ÁÁ¥¹œ¤è(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}…•ÁÑ•‘}•‘¥Ñ¥½¹}µ¥ÍÍ¥¹œˆ¤(€€€¥˜¹½Ð¥Í¥¹ÍÑ…¹”¡É••¥ÁÐ°5…ÁÁ¥¹œ¤è(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}…ÁÁÉ½Ù…±}É••¥ÁÑ}µ¥ÍÍ¥¹œˆ¤(€€€¥˜¥Í¥¹ÍÑ…¹”¡µ…¹¥™•ÍÐ°5…ÁÁ¥¹œ¤…¹¥Í¥¹ÍÑ…¹”¡É••¥ÁÐ°5…ÁÁ¥¹œ¤è(€€€€€€€Ù…±¥‘…Ñ¥½¸€ôÙ…±¥‘…Ñ•}…ÁÁÉ½Ù…±}É••¥ÁÐ (€€€€€€€€€€€}É••¥ÁÑ}Ù…±¥‘…Ñ¥½¹}É•½É¡É•½É°µ…¹¥™•ÍÐ¤°(€€€€€€€€€€€µ…¹¥™•ÍÐ°(€€€€€€€€€€€É••¥ÁÐ°(€€€€€€€€¤(€€€€€€€•ÉÉ½ÉÌ¹ÕÁ‘…Ñ”¡Ù…±¥‘…Ñ¥½¸¹•Ð ‰Ù…±¥‘…Ñ¥½¹}•ÉÉ½ÉÌˆ¤½Èmt¤(€€€¥˜}Ñ•áÐ¡Á…­…”¹•Ð ‰ÁÉ½‘ÕÑ}¹…µ”ˆ¤¤€„ôAI=UQ}95è(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}ÝÉ½¹}ÁÉ½‘ÕÐˆ¤(€€€¥˜}Ñ•áÐ¡Á…­…”¹•Ð ‰Á…­…•}±…ÍÍ¥™¥…Ñ¥½¸ˆ¤¤€„ô1%9Q}%91}1MM%%Q%=8è(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}¥¹Ñ•É¹…±}½É}Ñ•ÍÑ}Á…­…•}‰±½­•ˆ¤(€€€¥˜Á…­…”¹•Ð ‰½¹•}±¥•¹Ñ}É•Á½ÉÐˆ¤¥Ì¹½ÐQÉÕ”½È¥¹Ð¡Á…­…”¹•Ð ‰±¥•¹Ñ}Á‘™}½Õ¹Ðˆ¤½È€À¤€„ô€Äè(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}½¹•}É•Á½ÉÑ}ÉÕ±•}Ù¥½±…Ñ•ˆ¤((€€€ÑÉäè(€€€€€€€…É¡¥Ù•}‰åÑ•Ì€ô‰…Í”ØÐ¹ˆØÑ‘•½‘”¡}Ñ•áÐ¡Á…­…”¹•Ð ‰é¥Á}‰…Í”ØÐˆ¤¤°Ù…±¥‘…Ñ”õQÉÕ”¤(€€€€€€€¥˜}Í¡„ÈÔØ¡…É¡¥Ù•}‰åÑ•Ì¤€„ô}Ñ•áÐ¡Á…­…”¹•Ð ‰é¥Á}Í¡„ÈÔØˆ¤¤è(€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}‘•±¥Ù•Éå}…É¡¥Ù•}¡…Í¡}µ¥Íµ…Ñ ˆ¤(€€€€€€€Ý¥Ñ é¥Á™¥±”¹i¥Á¥±”¡¥¼¹	åÑ•Í%<¡…É¡¥Ù•}‰åÑ•Ì¤°€‰Èˆ¤…Ì…É¡¥Ù”è(€€€€€€€€€€€¹…µ•Ì€ô…É¡¥Ù”¹¹…µ•±¥ÍÐ ¤(€€€€€€€€€€€Á‘™Ì€ôm¹…µ”™½È¹…µ”¥¸¹…µ•Ì¥˜¹…µ”¹…Í•™½± ¤¹•¹‘ÍÝ¥Ñ  ˆ¹Á‘˜ˆ¥t(€€€€€€€€€€€¥˜±•¸¡Á‘™Ì¤€„ô€Äè(€€€€€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}½¹•}É•Á½ÉÑ}ÉÕ±•}Ù¥½±…Ñ•ˆ¤(€€€€€€€€€€€¥˜}I%AQ}AQ ¹½Ð¥¸¹…µ•Ìè(€€€€€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}É••¥ÁÑ}¹½Ñ}¥¹}¥µµÕÑ…‰±•}Á…­…”ˆ¤(€€€€€€€€€€€•±¥˜¥Í¥¹ÍÑ…¹”¡É••¥ÁÐ°5…ÁÁ¥¹œ¤è(€€€€€€€€€€€€€€€¥˜…É¡¥Ù”¹É•…¡}I%AQ}AQ ¤€„ô}©Í½¹}‰åÑ•Ì¡É••¥ÁÐ¤è(€€€€€€€€€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}É••¥ÁÑ}…É¡¥Ù•}µ¥Íµ…Ñ ˆ¤(€€€€€€€€€€€¥˜}59%MQ}AQ ¹½Ð¥¸¹…µ•Ìè(€€€€€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}•Ù¥‘•¹•}µ…¹¥™•ÍÑ}µ¥ÍÍ¥¹œˆ¤(€€€€€€€€€€€•±Í”è(€€€€€€€€€€€€€€€µ…¹¥™•ÍÑ}Í¡„€ô}Í¡„ÈÔØ¡…É¡¥Ù”¹É•…¡}59%MQ}AQ ¤¤(€€€€€€€€€€€€€€€•ÉÑ¥™¥…Ñ”€ôÁ…­…”¹•Ð ‰•ÉÑ¥™¥…Ñ”ˆ¤(€€€€€€€€€€€€€€€¥˜¹½Ð¥Í¥¹ÍÑ…¹”¡•ÉÑ¥™¥…Ñ”°5…ÁÁ¥¹œ¤½È}Ñ•áÐ (€€€€€€€€€€€€€€€€€€€•ÉÑ¥™¥…Ñ”¹•Ð ‰•Ù¥‘•¹•}µ…¹¥™•ÍÑ}Í¡„ÈÔØˆ¤(€€€€€€€€€€€€€€€€¤€„ôµ…¹¥™•ÍÑ}Í¡„è(€€€€€€€€€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}•Ù¥‘•¹•}µ…¹¥™•ÍÑ}¡…Í¡}µ¥Íµ…Ñ ˆ¤(€€€•á•ÁÐá•ÁÑ¥½¸è(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}‘•±¥Ù•Éå}…É¡¥Ù•}¥¹Ù…±¥ˆ¤((€€€•ÉÑ¥™¥…Ñ”€ôÁ…­…”¹•Ð ‰•ÉÑ¥™¥…Ñ”ˆ¤(€€€‰¥¹‘¥¹œ€ô•¹…•µ•¹Ñ}‰¥¹‘¥¹œ¡É•½É¤(€€€¥˜¹½Ð¥Í¥¹ÍÑ…¹”¡•ÉÑ¥™¥…Ñ”°5…ÁÁ¥¹œ¤è(€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}‘•±¥Ù•Éå}•ÉÑ¥™¥…Ñ•}µ¥ÍÍ¥¹œˆ¤(€€€•±Í”è(€€€€€€€™½È­•ä°•áÁ•Ñ•¥¸€ (€€€€€€€€€€€€ ‰±¥•¹Ñ}¥‘•¹Ñ¥Ñäˆ°‰¥¹‘¥¹l‰±¥•¹Ñ}¥‘•¹Ñ¥Ñä‰t¤°(€€€€€€€€€€€€ ‰ÁÉ½©•Ñ}¥‘•¹Ñ¥Ñäˆ°‰¥¹‘¥¹l‰ÁÉ½©•Ñ}¥‘•¹Ñ¥Ñä‰t¤°(€€€€€€€€€€€€ ‰ÁÉ½©•Ñ}¥ˆ°‰¥¹‘¥¹l‰ÁÉ½©•Ñ}¥‰t¤°(€€€€€€€€¤è(€€€€€€€€€€€¥˜}Ñ•áÐ¡•ÉÑ¥™¥…Ñ”¹•Ð¡­•ä¤¤€„ô}Ñ•áÐ¡•áÁ•Ñ•¤è(€€€€€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘¡˜‰Á¡…Í”Ñ}í­•åõ}µ¥Íµ…Ñ ˆ¤(€€€€€€€…¹‘¥‘…Ñ”€ô‘••Á½Áä¡‘¥Ð¡•ÉÑ¥™¥…Ñ”¤¤(€€€€€€€ÍÕÁÁ±¥•‘}¡…Í €ô}Ñ•áÐ¡…¹‘¥‘…Ñ”¹Á½À ‰‘•±¥Ù•Éå}…ÕÑ¡½É¥é…Ñ¥½¹}•ÉÑ¥™¥…Ñ•}Í¡„ÈÔØˆ°€ˆˆ¤¤(€€€€€€€¥˜ÍÕÁÁ±¥•‘}¡…Í €„ô…¹½¹¥…±}Í¡„ÈÔØ¡…¹‘¥‘…Ñ”¤è(€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}‘•±¥Ù•Éå}•ÉÑ¥™¥…Ñ•}¡…Í¡}µ¥Íµ…Ñ ˆ¤(€€€€€€€¥˜}Ñ•áÐ¡•ÉÑ¥™¥…Ñ”¹•Ð ‰‘•±¥Ù•Éå}Á…­…•}Í¡„ÈÔØˆ¤¤€„ô}Ñ•áÐ¡Á…­…”¹•Ð ‰é¥Á}Í¡„ÈÔØˆ¤¤è(€€€€€€€€€€€•ÉÉ½ÉÌ¹…‘ ‰Á¡…Í”Ñ}•ÉÑ¥™¥…Ñ•}…É¡¥Ù•}‰¥¹‘¥¹}µ¥Íµ…Ñ ˆ¤((€€€É•ÑÕÉ¸ì(€€€€€€€€¨©É•ÍÕ±Ð°(€€€€€€€€‰…ÉÑ¥™…Ñ}Í¡•µ„ˆèYIM%=8°(€€€€€€€€‰ÍÑ…ÑÕÌˆè€‰Ù…±¥ˆ¥˜¹½Ð•ÉÉ½ÉÌ•±Í”€‰¥¹Ù…±¥ˆ°(€€€€€€€€‰Ù…±¥‘…Ñ¥½¹}•ÉÉ½ÉÌˆèÍ½ÉÑ•¡•ÉÉ½ÉÌ¤°(€€€€€€€€‰½¹•}±¥•¹Ñ}É•Á½ÉÐˆèQÉÕ”°(€€€€€€€€‰±¥•¹Ñ}‘•±¥Ù•Éå}…±±½Ý•ˆè¹½Ð•ÉÉ½ÉÌ°(€€€ô(()‘•˜…ÑÑ…¡}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…” (€€€É•½Éè5…ÁÁ¥¹mÍÑÈ°¹åt°(€€€µ…¹¥™•ÍÐè5…ÁÁ¥¹mÍÑÈ°¹åt°(¤€´ø‘¥ÑmÍÑÈ°¹åtè(€€€ÕÁ‘…Ñ•€ô‘••Á½Áä¡‘¥Ð¡É•½É¤¤(€€€¥˜}Ñ•áÐ¡}É•Ù¥•Ý}µ•Ñ…‘…Ñ„¡µ…¹¥™•ÍÐ¤¹•Ð ‰‘•¥Í¥½¸ˆ¤¤¹…Í•™½± ¤€„ô€‰…ÁÁÉ½Ù•ˆè(€€€€€€€ÕÁ‘…Ñ•¹Á½À ‰…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”ˆ°9½¹”¤(€€€€€€€ÕÁ‘…Ñ•‘l‰±¥•¹Ñ}‘•±¥Ù•Éå}…±±½Ý•‰t€ô…±Í”(€€€€€€€É•ÑÕÉ¸ÕÁ‘…Ñ•(€€€É•ÅÕ¥É•}¹•Ý}É•Á½ÉÑ}…™Ñ•É}•Ù¥‘•¹•}É•ÅÕ•ÍÐ¡ÕÁ‘…Ñ•°µ…¹¥™•ÍÐ¤(€€€‰½Õ¹€ô‰¥¹‘}Á¡…Í”Ñ}…ÁÁÉ½Ù…±}µ…¹¥™•ÍÐ¡ÕÁ‘…Ñ•°µ…¹¥™•ÍÐ¤(€€€ÕÁ‘…Ñ•‘l‰…•ÁÑ•‘}•‘¥Ñ¥½¸‰t€ô‘••Á½Áä¡‰½Õ¹¤(€€€‘•±¥Ù•Éä€ô‰Õ¥±‘}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”¡ÕÁ‘…Ñ•°‰½Õ¹¤(€€€ÕÁ‘…Ñ•‘l‰…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”‰t€ô‘•±¥Ù•Éä(€€€ÕÁ‘…Ñ•‘l‰±¥•¹Ñ}‘•±¥Ù•Éå}…±±½Ý•‰t€ôQÉÕ”(€€€½¹Ñ•áÐ€ô‘••Á½Áä¡‘¥Ð¡ÕÁ‘…Ñ•¹•Ð ‰É•Ù¥•Ý}½¹Ñ•áÐˆ¤½Èíô¤¤(€€€½¹Ñ•áÐ¹ÕÁ‘…Ñ” (€€€€€€€ì(€€€€€€€€€€€€‰Á¡…Í”Ñ}…ÁÁÉ½Ù…±}É••¥ÁÑ}Í¡„ÈÔØˆè‘•±¥Ù•Éål‰Á¡…Í”Ñ}…ÁÁÉ½Ù…±}É••¥ÁÑ}Í¡„ÈÔØ‰t°(€€€€€€€€€€€€‰‘•±¥Ù•Éå}…ÕÑ¡½É¥é…Ñ¥½¹}•ÉÑ¥™¥…Ñ•}Í¡„ÈÔØˆè‘•±¥Ù•Éål‰•ÉÑ¥™¥…Ñ”‰ul(€€€€€€€€€€€€€€€€‰‘•±¥Ù•Éå}…ÕÑ¡½É¥é…Ñ¥½¹}•ÉÑ¥™¥…Ñ•}Í¡„ÈÔØˆ(€€€€€€€€€€€t°(€€€€€€€€€€€€‰±¥•¹Ñ}¥‘•¹Ñ¥Ñäˆè‘•±¥Ù•Éål‰•ÉÑ¥™¥…Ñ”‰ul‰±¥•¹Ñ}¥‘•¹Ñ¥Ñä‰t°(€€€€€€€€€€€€‰ÁÉ½©•Ñ}¥‘•¹Ñ¥Ñäˆè‘•±¥Ù•Éål‰•ÉÑ¥™¥…Ñ”‰ul‰ÁÉ½©•Ñ}¥‘•¹Ñ¥Ñä‰t°(€€€€€€€€€€€€‰Á…­…•}±…ÍÍ¥™¥…Ñ¥½¸ˆè1%9Q}%91}1MM%%Q%=8°(€€€€€€€€€€€€‰½¹•}±¥•¹Ñ}É•Á½ÉÐˆèQÉÕ”°(€€€€€€€€€€€€‰±¥•¹Ñ}Á‘™}½Õ¹Ðˆè€Ä°(€€€€€€€€€€€€‰¡Õµ…¹}É•Ù¥•Ý}É•ÅÕ¥É•ˆèQÉÕ”°(€€€€€€€€€€€€‰±¥•¹Ñ}‘•±¥Ù•Éå}…±±½Ý•ˆèQÉÕ”°(€€€€€€€ô(€€€€¤(€€€ÕÁ‘…Ñ•‘l‰É•Ù¥•Ý}½¹Ñ•áÐ‰t€ô½¹Ñ•áÐ(€€€Ù…±¥‘…Ñ¥½¸€ôÙ…±¥‘…Ñ•}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”¡ÕÁ‘…Ñ•°‘•±¥Ù•Éä¤(€€€¥˜Ù…±¥‘…Ñ¥½¹l‰ÍÑ…ÑÕÌ‰t€„ô€‰Ù…±¥ˆè(€€€€€€€É…¥Í”Y…±Õ•ÉÉ½È (€€€€€€€€€€€€‰¥¹Ù…±¥‘}Á¡…Í”Ñ}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”èˆ(€€€€€€€€€€€€¬€ˆ°ˆ¹©½¥¸¡Ù…±¥‘…Ñ¥½¹l‰Ù…±¥‘…Ñ¥½¹}•ÉÉ½ÉÌ‰t¤(€€€€€€€€¤(€€€™É½´¹¥¼¹½µÁÉ•¡•¹Í¥Ù•}ÉÕ¹}É•½É¥µÁ½ÉÐ}É•½É‘}¡…Í ((€€€ÕÁ‘…Ñ•‘l‰¥¹Ñ•É¥Ñå}Í¡„ÈÔØ‰t€ô}É•½É‘}¡…Í ¡ÕÁ‘…Ñ•¤(€€€É•ÑÕÉ¸ÕÁ‘…Ñ•(()}}…±±}|€ôl(€€€€‰YIM%=8ˆ°(€€€€‰…ÑÑ…¡}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”ˆ°(€€€€‰‰¥¹‘}Á¡…Í”Ñ}…ÁÁÉ½Ù…±}µ…¹¥™•ÍÐˆ°(€€€€‰‰Õ¥±‘}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”ˆ°(€€€€‰Ù…±¥‘…Ñ•}…ÁÁÉ½Ù•‘}‘•±¥Ù•Éå}Á…­…”ˆ°)t

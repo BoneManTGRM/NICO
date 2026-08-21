@@ -5,7 +5,7 @@
   "base_main_sha": "02e58a0d95244f2789348694265a4ec660022861",
   "product": "NICO Comprehensive",
   "one_client_report": true,
-  "implementation_state": "implementation_candidate_pending_exact_head_ci",
+  "implementation_state": "implementation_candidate_pending_exact_head_ci_after_validation_repair",
   "software_contracts": {
     "client_project_scope_identity_retained": true,
     "read_only_repository_access_required": true,
@@ -35,6 +35,7 @@
   },
   "controlled_paying_client_pilot_decision": "not_yet_proven",
   "open_evidence": [
+    "exact PR-head required GitHub checks after validation repair",
     "exact PR-head required GitHub checks",
     "exact merge-SHA deployment identity",
     "fresh real external authorized repository run",
@@ -48,5 +49,14 @@
     "support for untested ecosystems",
     "deployment identity when infrastructure does not expose it",
     "four-hour specialist target achieved in real client work"
-  ]
+  ],
+  "integrated_main_sha": "3dceeed7a757fb17cbe0c9007431167214227e3e",
+  "exact_head_validation_repair": {
+    "state": "pending_exact_head_ci",
+    "causal_repairs": [
+      "approved receipt remains valid after enclosing run-record integrity recomputation",
+      "cross-scope inherited validation failures return bounded invalid-package evidence",
+      "merged Phase 4 tenant-scope fail-closed work package #1263 integrated"
+    ]
+  }
 }
