@@ -19,6 +19,8 @@ def test_spanish_canary_starts_a_real_es_mx_comprehensive_run() -> None:
     assert 'payload.get("report_language")' in text
     assert 'languages == ["es-MX"]' in text
     assert 'recovery._start_count(requests) == 1' in text
+    assert 'PROOF_CUSTOMER_ID = "nico_production_proof"' in text
+    assert 'PROOF_PROJECT_ID = "spanish_comprehensive_production"' in text
 
 
 def test_spanish_canary_waits_for_hydrated_locale_contract_before_interaction() -> None:
@@ -53,19 +55,21 @@ def test_spanish_canary_proves_final_pdf_language_and_safety_boundaries() -> Non
     assert 'pdf.headers.get("x-nico-run-id") == run_id' in text
 
 
-def test_spanish_production_workflow_is_a_persistent_main_release_gate() -> None:
+def test_spanish_production_workflow_is_a_latest_main_release_gate() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
     assert "name: Spanish Comprehensive Production Proof" in text
     assert "branches:\n      - main" in text
     assert "workflow_dispatch:" in text
     assert "statuses: write" in text
-    assert "cancel-in-progress: false" in text
+    assert "group: nico-spanish-comprehensive-production" in text
+    assert "cancel-in-progress: true" in text
     assert "NICO Spanish Comprehensive Production Proof" in text
     assert "Wait for exact frontend and backend deployments" in text
     assert "Verify exact frontend release identity" in text
     assert "scripts/spanish_comprehensive_live_acceptance_v1.py" in text
     assert 'payload["report_language_requested"] == "es-MX"' in text
+    assert 'payload["production_proof_scope_verified"] is True' in text
     assert 'payload["terminal"]["phase"] == "Revisión interna requerida"' in text
     assert 'payload["spanish_pdf_presentation_verified"] is True' in text
     assert 'payload["human_review_required"] is True' in text
@@ -87,6 +91,17 @@ def test_spanish_canary_has_time_to_publish_terminal_status_after_proof_timeout(
     assert "if: always()" in text
     assert "if: failure()" in text
     assert "sudo tee /etc/apt/apt-mirrors.txt" in text
+
+
+def test_spanish_canary_cleans_interrupted_reserved_proof_runs() -> None:
+    text = SCRIPT.read_text(encoding="utf-8")
+
+    assert "ProductionProofInterrupted" in text
+    assert "signal.SIGTERM" in text
+    assert "signal.SIGINT" in text
+    assert "production-proof-cancel" in text
+    assert "if run_id and not proof_completed" in text
+    assert "_cancel_proof_run(page, origin, run_id)" in text
 
 
 def test_spanish_canary_does_not_approve_or_deliver_client_artifacts() -> None:

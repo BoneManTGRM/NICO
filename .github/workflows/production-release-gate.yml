@@ -68,7 +68,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/check_production_release.py \
+          python scripts/check_production_release_with_spanish.py \
             --repository "${GITHUB_REPOSITORY}" \
             --sha "${RELEASE_SHA}" \
             --backend-url "${NICO_PRODUCTION_API_URL}" \

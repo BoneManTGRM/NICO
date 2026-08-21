@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Notify once when all required production contexts pass
+      - name: Notify once per exact main when all required production contexts pass
         env:
           GITHUB_TOKEN: ${{ github.token }}
           NICO_REPOSITORY: ${{ github.repository }}
@@ -34,7 +34,6 @@ jobs:
           import json
           import os
           import urllib.error
-          import urllib.parse
           import urllib.request
           from datetime import UTC, datetime
 
@@ -43,14 +42,14 @@ jobs:
           REPOSITORY = os.environ["NICO_REPOSITORY"]
           OWNER = os.environ["NICO_REPOSITORY_OWNER"]
           WORKFLOW_RUN_ID = os.environ["NICO_WORKFLOW_RUN_ID"]
-          NOTIFICATION_MARKER = "<!-- nico-production-acceptance-green-notifier:v1 -->"
-          NOTIFICATION_TITLE = "NICO production acceptance is fully green"
+          NOTIFICATION_MARKER_PREFIX = "<!-- nico-production-acceptance-green-notifier:v2:"
           REQUIRED_CONTEXTS = (
               "Vercel",
               "successful-cat - NICO",
               "NICO Two-Service Production Acceptance",
               "NICO Mobile Restart Production Proof",
               "NICO iOS WebKit Paint Proof",
+              "NICO Spanish Comprehensive Production Proof",
           )
 
 
@@ -81,6 +80,10 @@ jobs:
               return json.loads(raw) if raw else {}
 
 
+          branch = api_request("GET", f"/repos/{REPOSITORY}/branches/main")
+          main_sha = str(branch["commit"]["sha"])
+          notification_marker = f"{NOTIFICATION_MARKER_PREFIX}{main_sha} -->"
+
           recent_issues = api_request(
               "GET",
               f"/repos/{REPOSITORY}/issues?state=all&per_page=100&sort=created&direction=desc",
@@ -88,16 +91,14 @@ jobs:
           for item in recent_issues:
               if item.get("pull_request"):
                   continue
-              if NOTIFICATION_MARKER in str(item.get("body") or ""):
+              if notification_marker in str(item.get("body") or ""):
                   print(
-                      "Green notification already exists:",
+                      "Green notification already exists for exact main:",
                       item.get("html_url") or item.get("url"),
                       flush=True,
                   )
                   raise SystemExit(0)
 
-          branch = api_request("GET", f"/repos/{REPOSITORY}/branches/main")
-          main_sha = str(branch["commit"]["sha"])
           status_payload = api_request(
               "GET",
               f"/repos/{REPOSITORY}/commits/{main_sha}/status?per_page=100",
@@ -144,7 +145,7 @@ jobs:
           )
           body = "\n".join(
               [
-                  NOTIFICATION_MARKER,
+                  notification_marker,
                   f"@{OWNER}",
                   "",
                   "NICO production acceptance is fully green for the exact current `main` commit.",
@@ -157,7 +158,7 @@ jobs:
                   "| --- | --- |",
                   *rows,
                   "",
-                  "This notification is emitted once. The workflow will not create a duplicate issue.",
+                  "This notification is unique to this exact main SHA.",
               ]
           )
 
@@ -165,7 +166,7 @@ jobs:
               "POST",
               f"/repos/{REPOSITORY}/issues",
               {
-                  "title": NOTIFICATION_TITLE,
+                  "title": f"NICO production acceptance is fully green: {main_sha[:12]}",
                   "body": body,
               },
           )

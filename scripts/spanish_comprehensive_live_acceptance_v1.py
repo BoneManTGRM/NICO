@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import io
 import json
+import signal
 import time
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,8 @@ SPANISH_REPO_LABEL = "Propietario/nombre del repositorio o URL de GitHub"
 SPANISH_CLIENT_LABEL = "Nombre del cliente, opcional"
 SPANISH_PROJECT_LABEL = "Nombre del proyecto, opcional"
 SPANISH_TERMINAL_PHASE = "Revisión interna requerida"
+PROOF_CUSTOMER_ID = "nico_production_proof"
+PROOF_PROJECT_ID = "spanish_comprehensive_production"
 SPANISH_HYDRATED_WORKSPACE_SELECTOR = (
     recovery.WORKSPACE_SELECTOR
     + '[data-assessment-hydrated="true"]'
@@ -48,6 +51,10 @@ FORBIDDEN_PDF_MARKERS = (
     "Acceptance / exit criteria:",
     "Final exit criteria:",
 )
+
+
+class ProductionProofInterrupted(RuntimeError):
+    pass
 
 
 def _bounded(value: Any, limit: int = 800) -> str:
@@ -87,15 +94,7 @@ def _pdf_text(pdf_bytes: bytes) -> str:
 
 
 def _wait_for_spanish_hydration(page: Any, timeout_ms: int) -> None:
-    """Wait for the real client boundary before asserting localized document semantics.
-
-    The assessment workspace is server-rendered and can become visible before React
-    effects bind the route locale. A production proof that asserts ``<html lang>`` at
-    that earlier boundary is timing-dependent even when the deployed Spanish client is
-    correct. Require NICO's explicit hydrated/copy-verified marker, then require the
-    Spanish document-language binder itself. This keeps the proof fail-closed without
-    accepting the pre-hydration English root as a false production failure.
-    """
+    """Wait for the real client boundary before asserting localized semantics."""
 
     page.locator(SPANISH_HYDRATED_WORKSPACE_SELECTOR).first.wait_for(
         state="visible",
@@ -108,6 +107,79 @@ def _wait_for_spanish_hydration(page: Any, timeout_ms: int) -> None:
         )""",
         timeout=timeout_ms,
     )
+
+
+def _install_reserved_proof_scope(page: Any) -> None:
+    """Keep browser behavior real while reserving server-side synthetic proof scope."""
+
+    def rewrite_intake(route: Any, request: Any) -> None:
+        if request.method != "POST":
+            route.continue_()
+            return
+        try:
+            payload = json.loads(request.post_data or "{}")
+        except json.JSONDecodeError:
+            route.continue_()
+            return
+        if not isinstance(payload, dict):
+            route.continue_()
+            return
+        payload["customer_id"] = PROOF_CUSTOMER_ID
+        payload["project_id"] = PROOF_PROJECT_ID
+        headers = dict(request.headers)
+        headers.pop("content-length", None)
+        headers["content-type"] = "application/json"
+        route.continue_(
+            headers=headers,
+            post_data=json.dumps(payload, separators=(",", ":")),
+        )
+
+    page.route("**/api/nico/assessment/comprehensive-intake", rewrite_intake)
+
+
+def _verify_proof_scope(page: Any, frontend_origin: str, run_id: str) -> dict[str, Any]:
+    response = page.request.get(
+        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
+        headers={"Accept": "application/json", "Cache-Control": "no-store"},
+        timeout=60_000,
+    )
+    assert response.ok, f"Production-proof scope status returned HTTP {response.status}"
+    payload = response.json()
+    assert payload.get("run_id") == run_id
+    assert payload.get("customer_id") == PROOF_CUSTOMER_ID, payload
+    assert payload.get("project_id") == PROOF_PROJECT_ID, payload
+    return {
+        "production_proof_scope_verified": True,
+        "production_proof_customer_id": PROOF_CUSTOMER_ID,
+        "production_proof_project_id": PROOF_PROJECT_ID,
+    }
+
+
+def _cancel_proof_run(page: Any, frontend_origin: str, run_id: str) -> dict[str, Any]:
+    try:
+        response = page.request.post(
+            f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/production-proof-cancel",
+            headers={"Accept": "application/json", "Cache-Control": "no-store"},
+            timeout=60_000,
+        )
+        payload = response.json() if response.ok else {}
+        return {
+            "attempted": True,
+            "http_status": response.status,
+            "succeeded": bool(
+                response.ok
+                and str(payload.get("status") or "")
+                in {"cancelled", "already_terminal"}
+            ),
+            "status": str(payload.get("status") or ""),
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "http_status": 0,
+            "succeeded": False,
+            "error": f"{type(exc).__name__}: {_bounded(exc, 400)}",
+        }
 
 
 def _verify_spanish_terminal_artifacts(
@@ -127,7 +199,9 @@ def _verify_spanish_terminal_artifacts(
     )
     status_bytes = status.body()
     assert status.ok, f"Projected Spanish terminal status returned HTTP {status.status}"
-    assert len(status_bytes) < 200_000, f"Projected terminal status was {len(status_bytes)} bytes"
+    assert len(status_bytes) < 200_000, (
+        f"Projected terminal status was {len(status_bytes)} bytes"
+    )
     payload = status.json()
     reports = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
     assert payload.get("run_id") == run_id
@@ -156,7 +230,9 @@ def _verify_spanish_terminal_artifacts(
     missing = [marker for marker in SPANISH_PDF_MARKERS if marker not in rendered]
     forbidden = [marker for marker in FORBIDDEN_PDF_MARKERS if marker in rendered]
     assert not missing, f"Spanish PDF omitted required presentation markers: {missing}"
-    assert not forbidden, f"Spanish PDF retained forbidden English/failure markers: {forbidden}"
+    assert not forbidden, (
+        f"Spanish PDF retained forbidden English/failure markers: {forbidden}"
+    )
 
     return {
         "terminal_manifest_size_bytes": len(status_bytes),
@@ -183,6 +259,10 @@ def run_proof(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
     )
     page = context.new_page()
     requests: list[dict[str, str]] = []
+    run_id = ""
+    proof_completed = False
+    origin = args.frontend_url.rstrip("/")
+    _install_reserved_proof_scope(page)
 
     def record_request(request: Any) -> None:
         parsed = urlparse(request.url)
@@ -201,7 +281,6 @@ def run_proof(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
 
     page.on("request", record_request)
     started_at = time.time()
-    origin = args.frontend_url.rstrip("/")
     try:
         page.goto(
             f"{origin}{SPANISH_ROUTE}?tier=comprehensive&spanish_production_probe={time.time_ns()}#assessment",
@@ -218,9 +297,13 @@ def run_proof(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
         page.locator(recovery.ACTION_SELECTOR).click()
 
         run_id, initial_stored = recovery._wait_for_run_id(page, 180.0)
+        args.proof_run_id = run_id
         assert recovery._start_count(requests) == 1
         languages = _intake_languages(requests)
-        assert languages == ["es-MX"], f"Spanish intake did not persist report_language=es-MX: {languages}"
+        assert languages == ["es-MX"], (
+            f"Spanish intake did not persist report_language=es-MX: {languages}"
+        )
+        proof_scope = _verify_proof_scope(page, origin, run_id)
 
         recovery._wait_for_terminal(page, run_id, args.timeout_seconds)
         terminal = recovery._wait_for_terminal_ui_ready(
@@ -251,6 +334,7 @@ def run_proof(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
         except Exception as exc:
             screenshot_error = f"{type(exc).__name__}: {_bounded(exc, 320)}"
 
+        proof_completed = True
         return {
             "artifact_schema": VERSION,
             "status": "passed",
@@ -262,6 +346,7 @@ def run_proof(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             "spanish_route_verified": True,
             "document_language_verified": True,
             "intake_report_language_verified": True,
+            **proof_scope,
             "start_request_count": recovery._start_count(requests),
             "duplicate_intake_absent": True,
             "initial_persistence": initial_stored,
@@ -279,6 +364,8 @@ def run_proof(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             "screenshot_error": screenshot_error,
         }
     finally:
+        if run_id and not proof_completed:
+            args.proof_cleanup = _cancel_proof_run(page, origin, run_id)
         context.close()
 
 
@@ -295,32 +382,48 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _raise_interrupted(signum: int, _frame: Any) -> None:
+    raise ProductionProofInterrupted(f"production_proof_interrupted_by_signal:{signum}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    args.proof_run_id = ""
+    args.proof_cleanup = {"attempted": False}
+    previous_handlers: dict[int, Any] = {}
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        previous_handlers[signum] = signal.getsignal(signum)
+        signal.signal(signum, _raise_interrupted)
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            try:
-                result = run_proof(browser, args)
-            finally:
-                browser.close()
-    except Exception as exc:
-        failure = {
-            "artifact_schema": VERSION,
-            "status": "failed",
-            "frontend_url": args.frontend_url.rstrip("/"),
-            "repository": args.repository,
-            "expected_sha": args.expected_sha,
-            "report_language_requested": "es-MX",
-            "error": f"{type(exc).__name__}: {_bounded(exc, 1_500)}",
-            "finished_at_epoch": time.time(),
-        }
-        _write(args.output, failure)
-        raise
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True)
+                try:
+                    result = run_proof(browser, args)
+                finally:
+                    browser.close()
+        except Exception as exc:
+            failure = {
+                "artifact_schema": VERSION,
+                "status": "failed",
+                "frontend_url": args.frontend_url.rstrip("/"),
+                "repository": args.repository,
+                "expected_sha": args.expected_sha,
+                "run_id": str(args.proof_run_id or ""),
+                "report_language_requested": "es-MX",
+                "production_proof_cleanup": dict(args.proof_cleanup or {}),
+                "error": f"{type(exc).__name__}: {_bounded(exc, 1_500)}",
+                "finished_at_epoch": time.time(),
+            }
+            _write(args.output, failure)
+            raise
 
-    _write(args.output, result)
-    print(json.dumps(result, sort_keys=True))
-    return 0
+        _write(args.output, result)
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":

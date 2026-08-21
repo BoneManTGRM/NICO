@@ -7,41 +7,39 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  statuses: read
+  statuses: write
 
 concurrency:
   group: nico-production-acceptance-green-watch
   cancel-in-progress: true
 
 jobs:
-  notify-when-green:
-    name: Notify when exact-main production acceptance is fully green
+  verify-exact-main:
+    name: Derive exact-main production acceptance status
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      TRACKING_ISSUE_NUMBER: "1125"
+      STATUS_CONTEXT: NICO Production Acceptance Green Watch
       REQUIRED_STATUS_CONTEXTS: >-
-        ["Vercel","successful-cat - NICO","NICO Two-Service Production Acceptance","NICO Mobile Restart Production Proof","NICO iOS WebKit Paint Proof"]
+        ["Vercel","successful-cat - NICO","NICO Two-Service Production Acceptance","NICO Mobile Restart Production Proof","NICO iOS WebKit Paint Proof","NICO Spanish Comprehensive Production Proof"]
     steps:
-      - name: Check exact main statuses and complete the watch
+      - name: Publish derived exact-main acceptance status
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           python - <<'PY'
           from __future__ import annotations
 
           import json
           import os
-          import sys
           import urllib.error
-          import urllib.parse
           import urllib.request
 
           repository = os.environ["GITHUB_REPOSITORY"]
           token = os.environ["GITHUB_TOKEN"]
-          issue_number = int(os.environ["TRACKING_ISSUE_NUMBER"])
           required_contexts = json.loads(os.environ["REQUIRED_STATUS_CONTEXTS"])
+          status_context = os.environ["STATUS_CONTEXT"]
           api_root = "https://api.github.com"
 
           def request(method: str, path: str, payload: dict | None = None) -> dict:
@@ -71,11 +69,6 @@ jobs:
                   ) from exc
               return json.loads(raw) if raw else {}
 
-          issue = request("GET", f"/repos/{repository}/issues/{issue_number}")
-          if issue.get("state") != "open":
-              print(f"Watch issue #{issue_number} is already closed; no further notification is needed.")
-              sys.exit(0)
-
           main_commit = request("GET", f"/repos/{repository}/commits/main")
           sha = str(main_commit.get("sha") or "").strip()
           if len(sha) != 40:
@@ -92,45 +85,49 @@ jobs:
                   latest_by_context[context] = item
 
           observed = {
-              context: str((latest_by_context.get(context) or {}).get("state") or "missing")
+              context: str((latest_by_context.get(context) or {}).get("state") or "missing").lower()
               for context in required_contexts
           }
-          print(json.dumps({"main_sha": sha, "required_statuses": observed}, sort_keys=True))
-
-          not_green = {
+          blocking = {
               context: state
               for context, state in observed.items()
               if state != "success"
           }
-          if not_green:
-              print(
-                  "Production acceptance is not fully green yet: "
-                  + json.dumps(not_green, sort_keys=True)
-              )
-              sys.exit(0)
+          hard_failures = {
+              context: state
+              for context, state in blocking.items()
+              if state in {"error", "failure"}
+          }
+          if not blocking:
+              derived_state = "success"
+              description = "All exact-main production acceptance contexts are successful"
+          elif hard_failures:
+              derived_state = "failure"
+              description = "One or more exact-main production acceptance contexts failed"
+          else:
+              derived_state = "pending"
+              description = "Waiting for exact-main production acceptance contexts"
 
-          rows = "\n".join(
-              f"| `{context}` | `{observed[context]}` |"
-              for context in required_contexts
-          )
-          comment = (
-              f"@BoneManTGRM NICO production acceptance is fully green for exact `main` "
-              f"commit `{sha}`.\n\n"
-              "| Required production context | State |\n"
-              "|---|---|\n"
-              f"{rows}\n\n"
-              "The watch is now complete. This notification does not alter report truth, "
-              "human-review requirements, approval state, or client-delivery authorization."
-          )
+          target_url = f"https://github.com/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
           request(
               "POST",
-              f"/repos/{repository}/issues/{issue_number}/comments",
-              {"body": comment},
+              f"/repos/{repository}/statuses/{sha}",
+              {
+                  "state": derived_state,
+                  "context": status_context,
+                  "description": description[:140],
+                  "target_url": target_url,
+              },
           )
-          request(
-              "PATCH",
-              f"/repos/{repository}/issues/{issue_number}",
-              {"state": "closed", "state_reason": "completed"},
+          print(
+              json.dumps(
+                  {
+                      "main_sha": sha,
+                      "derived_state": derived_state,
+                      "required_statuses": observed,
+                      "blocking": blocking,
+                  },
+                  sort_keys=True,
+              )
           )
-          print(f"Notified issue #{issue_number} and closed the one-time watch for {sha}.")
           PY
