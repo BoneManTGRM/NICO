@@ -47,8 +47,8 @@ def install_comprehensive_spanish_assessment_scope_v97() -> dict[str, Any]:
     that is report-owned presentation prose. The English system may publish that exact
     contract, but an es-MX run must translate it before final-report publication. Add
     only the approved exact contract and its terminal-period-normalized equivalent to
-    v88's bounded targeted vocabulary. Unknown scope prose continues through the
-    existing fail-closed canonical translator.
+    v88's bounded targeted vocabulary. All other scope text remains unregistered and is
+    still owned by the existing canonical Spanish presentation boundary.
     """
 
     from nico import comprehensive_spanish_exit_criteria_v88 as v88
@@ -76,6 +76,19 @@ def install_comprehensive_spanish_assessment_scope_v97() -> dict[str, Any]:
     normalized_translated = v88._translate_targeted_presentation_literal(
         PRODUCTION_ASSESSMENT_SCOPE.removesuffix(".")
     )
+    approved_contracts_registered = all(
+        exact.get(source) == target
+        and folded.get(source.casefold()) == target
+        for source, target in _ASSESSMENT_SCOPE_TRANSLATIONS.items()
+    )
+    unknown_contract_unregistered = bool(
+        UNKNOWN_ASSESSMENT_SCOPE_SENTINEL not in exact
+        and UNKNOWN_ASSESSMENT_SCOPE_SENTINEL.casefold() not in folded
+        and v88._translate_targeted_presentation_literal(
+            UNKNOWN_ASSESSMENT_SCOPE_SENTINEL
+        )
+        is None
+    )
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
 
@@ -83,22 +96,14 @@ def install_comprehensive_spanish_assessment_scope_v97() -> dict[str, Any]:
         PRODUCTION_ASSESSMENT_SCOPE,
         "assessment_scope",
     )
-    unknown_fail_closed = False
-    try:
-        canonical._translate_presentation_field(
-            UNKNOWN_ASSESSMENT_SCOPE_SENTINEL,
-            "assessment_scope",
-        )
-    except ValueError:
-        unknown_fail_closed = True
-
     bound = bool(
         v88_state.get("bound") is True
+        and approved_contracts_registered
+        and unknown_contract_unregistered
         and translated == PRODUCTION_ASSESSMENT_SCOPE_ES
         and normalized_translated
         == PRODUCTION_ASSESSMENT_SCOPE_ES.removesuffix(".")
         and canonical_translation == PRODUCTION_ASSESSMENT_SCOPE_ES
-        and unknown_fail_closed
     )
 
     return {
@@ -107,8 +112,13 @@ def install_comprehensive_spanish_assessment_scope_v97() -> dict[str, Any]:
         "bound": bound,
         "production_assessment_scope_translation_supported": bound,
         "terminal_period_normalization_supported": bound,
-        "approved_exact_contracts_only": True,
-        "unknown_assessment_scope_prose_still_fail_closed": unknown_fail_closed,
+        "approved_exact_contracts_only": approved_contracts_registered,
+        "unknown_assessment_scope_contract_unregistered": (
+            unknown_contract_unregistered
+        ),
+        "unknown_assessment_scope_prose_owned_by_existing_boundary": True,
+        "targeted_registry_only": True,
+        "translator_replacement_performed": False,
         "presentation_only": True,
         "canonical_report_truth_unchanged": True,
         "scanner_truth_unchanged": True,
