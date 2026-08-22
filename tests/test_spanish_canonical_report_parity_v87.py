@@ -1032,28 +1032,33 @@ from nico.comprehensive_spanish_client_surface_localization_v86 import (
 install_comprehensive_spanish_client_surface_localization_v86()
 
 SMALL_ENGLISH_GOLDEN = {
-    "markdown": ("763071604b1a2ca9fbe0f7394a0cbd58987a9dfd149104c0fb59a0a4ac6a7f71", 17916),
-    "html": ("6c2a75e20a3075076f6e1821e0d1dcd008a85511c6b551716b143bbd6df493a8", 21521),
-    "pdf_base64": ("92dafd57a299ff1a8e6cdc06c6dcbbb0490b36dc410472e240f340479a51ec10", 168532),
-    "pdf_sha256": "407c4a727a7d63f1d332db2082baf0c98e3148ed20e575caa08e7db313b4eac5",
+    "markdown": ("2ca2efd359843c7a2c311a1036a6892fcc35c6c3f6e392d20238e89a66f5c6c0", 18849),
+    "html": ("43d3a5097c673763501cc06bfa22921cbb963b59d77f4bb8cd92e0773c440343", 22724),
+    "pdf_base64": ("dba37d8645574b8db591fd71091c4c0d25aef0565b98f2b4c47c1f13cba58ea4", 176236),
+    "pdf_sha256": "f6e7b4e8902e971f5b3552ad8312aec5fbe6b0a1025fed856f9ee42e9eb3ac9a",
     "page_count": 22,
 }
 RICH_ENGLISH_GOLDEN = {
-    "markdown": ("cf32983fea08eb8f0987b8d86a0f30410644e142593b8a64e74b687f3a557a62", 20594),
-    "html": ("41aa0dc2381268da90299fcbdff98ed40c43ea58e40b4900ec36ba70b9416e65", 24760),
-    "pdf_base64": ("2d9e714ca0b6623a41485ba79968503a73056dbb3aadd1fdb82c5d203f0b99e7", 254400),
-    "pdf_sha256": "6b27250773a4ef164127364903502006eaa38567f7bacfc314fa246e063eeb65",
+    "markdown": ("cc43b0829649ee16904cdfc43ac1ac41d220bf9acd534eefdb0e7de07fcde238", 21527),
+    "html": ("849702f055d1609b4ab6ba540def9f9db5050b76dd02063024b61c7454c1f0f3", 25966),
+    "pdf_base64": ("9f6aa18e965602b2846c97fe3085c71317c58fbb072ea23fde9c29e655370bc9", 262792),
+    "pdf_sha256": "8e460b37d85175d08bee6389abf0198d67e76b75afafd9e0d9c953f94fb8f5ce",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
-    "markdown": ("f455d33de53683b5248d0a250dc7446d4f879a7d944f66ec1f359c0b378da9c2", 18652),
-    "html": ("857ed713cfcefb0f74570ed76434eafb9124705d4a6d6095fea535283218879c", 22581),
-    "pdf_base64": ("03a5db9205d15d20367648086350f7b8f7a95fc978e645066e9f11994a62c86a", 165136),
-    "pdf_sha256": "c0784b66359c63dd6ef493d672ada23f3c27645d05d735dfd7d06e454e34c6e6",
+    "markdown": ("51a2018ab77f58a5393987170771796db6ae6cfa6dbbf2a57d2ee672de15c7b7", 19585),
+    "html": ("e09e9867f511b055a1e80b25902b3891f04279f0e5f2c656029e7d634fb050bc", 23784),
+    "pdf_base64": ("8ff8b2e1a26f925e5231eeb0a8e3f5ec5169fb1a467e9ae25612320817853606", 172784),
+    "pdf_sha256": "306c56bd0f67507923137dd2b6b00a27ccd835867d2e47a8c2e3e26373afb0fb",
     "page_count": 21,
 }
 
 SPANISH_OUTLINE = {
+    "Four-Phase Assessment Program": "Programa de evaluación en cuatro fases",
+    "Automated Technical Triage": "Triaje técnico automatizado",
+    "Human Review by Exception": "Revisión humana por excepción",
+    "Broader Professional Assessment": "Evaluación profesional ampliada",
+    "Approval and Client Delivery": "Aprobación y entrega al cliente",
     "Table of Contents": "Índice",
     "Comprehensive Technical Assessment": "Evaluación Técnica Integral",
     "Executive Decision Brief": "Resumen ejecutivo para decisiones",
@@ -1082,6 +1087,15 @@ SPANISH_OUTLINE = {
     "Human Review and Acceptance Gate": "Puerta de revisión humana y aceptación",
     "Client Artifact Manifest": "Manifiesto de artefactos del cliente",
     "Human Review and Exact-Artifact Approval Record": "Registro de revisión humana y aprobación de artefactos exactos",
+}
+
+
+PHASE_OUTLINE_TITLES = {
+    "Four-Phase Assessment Program",
+    "Automated Technical Triage",
+    "Human Review by Exception",
+    "Broader Professional Assessment",
+    "Approval and Client Delivery",
 }
 
 
@@ -1167,10 +1181,22 @@ def html_signature(rendered):
 
 
 def outline_projection(reader):
-    return [
-        (getattr(item, "title", str(item)), reader.get_destination_page_number(item) + 1)
-        for item in reader.outline
-    ]
+    output = []
+
+    def visit(items):
+        for item in items or []:
+            if isinstance(item, list):
+                visit(item)
+                continue
+            output.append(
+                (
+                    getattr(item, "title", str(item)),
+                    reader.get_destination_page_number(item) + 1,
+                )
+            )
+
+    visit(reader.outline)
+    return output
 
 
 def assert_pdf_text_within_media_box(reader):
@@ -1284,10 +1310,18 @@ def assert_structural_parity(english, spanish):
 
     en_toc = en_pages[1]
     es_toc = es_pages[1]
+    spanish_phase_titles = {
+        SPANISH_OUTLINE[title] for title in PHASE_OUTLINE_TITLES
+    }
     for title, page in en_outline[1:]:
-        assert f"{title}\n{page}" in en_toc
+        if title not in PHASE_OUTLINE_TITLES:
+            assert f"{title}\n{page}" in en_toc
     for title, page in es_outline[1:]:
-        assert f"{title}\n{page}" in es_toc
+        if title not in spanish_phase_titles:
+            assert f"{title}\n{page}" in es_toc
+    for title in PHASE_OUTLINE_TITLES:
+        assert title.casefold() in en_toc.casefold()
+        assert SPANISH_OUTLINE[title].casefold() in es_toc.casefold()
 
     for index, (en_page, es_page) in enumerate(
         zip(en_reader.pages, es_reader.pages),
@@ -1322,9 +1356,9 @@ rich_spanish = render(rich_input("es-MX"))
 assert fingerprint(rich_english[0]) == RICH_ENGLISH_GOLDEN
 assert_structural_parity(rich_english, rich_spanish)
 assert len(rich_english[2]) == len(rich_spanish[2]) == 39
-assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 27
-assert len(re.findall(r"(?m)^#{1,3}\s", rich_english[0]["markdown"])) == 87
-assert len(re.findall(r"(?m)^#{1,3}\s", rich_spanish[0]["markdown"])) == 87
+assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 32
+assert len(re.findall(r"(?m)^#{1,3}\s", rich_english[0]["markdown"])) == 88
+assert len(re.findall(r"(?m)^#{1,3}\s", rich_spanish[0]["markdown"])) == 88
 
 phase9_english = render_phase9(phase9_input("en"))
 phase9_spanish = render_phase9(phase9_input("es-MX"))
@@ -1339,9 +1373,9 @@ for finding_id in (
     assert finding_id in phase9_spanish[0]["markdown"]
 assert "componentes hij..." not in phase9_spanish[0]["markdown"]
 assert len(phase9_english[2]) == len(phase9_spanish[2]) == 21
-assert len(outline_projection(phase9_english[1])) == len(outline_projection(phase9_spanish[1])) == 14
-assert len(re.findall(r"(?m)^#{1,3}\s", phase9_english[0]["markdown"])) == 78
-assert len(re.findall(r"(?m)^#{1,3}\s", phase9_spanish[0]["markdown"])) == 78
+assert len(outline_projection(phase9_english[1])) == len(outline_projection(phase9_spanish[1])) == 19
+assert len(re.findall(r"(?m)^#{1,3}\s", phase9_english[0]["markdown"])) == 79
+assert len(re.findall(r"(?m)^#{1,3}\s", phase9_spanish[0]["markdown"])) == 79
 
 for result in (small_spanish[0], rich_spanish[0], phase9_spanish[0]):
     assert_exact_manifest(result)

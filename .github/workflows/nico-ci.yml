@@ -2,222 +2,320 @@ name: NICO CI
 
 on:
   push:
-    branches:
-      - codex/four-phase-reports-in-system
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: pr1269-parity-finalization
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-stable-v11
   cancel-in-progress: true
 
 jobs:
-  pr1269_finalize:
-    name: pr1269-finalize
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
     steps:
-      - name: Check out the exact PR branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: codex/four-phase-reports-in-system
-          fetch-depth: 2
-          persist-credentials: true
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Finalize deterministic Spanish parity and PDF navigation contracts
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          import textwrap
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version: "3.11"
 
-          path = Path("tests/test_spanish_canonical_report_parity_v87.py")
-          text = path.read_text(encoding="utf-8")
+    - name: Set up Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version: "20"
 
-          def replace_mapping(name: str, replacement: str) -> None:
-              global text
-              pattern = rf"(?ms)^{re.escape(name)} = \{{.*?^\}}\n"
-              normalized = textwrap.dedent(replacement).strip() + "\n"
-              text, count = re.subn(pattern, normalized, text, count=1)
-              if count != 1:
-                  raise SystemExit(f"expected one {name} mapping, replaced {count}")
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install --no-deps -e .
 
-          replace_mapping(
-              "SMALL_ENGLISH_GOLDEN",
-              """
-              SMALL_ENGLISH_GOLDEN = {
-                  "markdown": ("2ca2efd359843c7a2c311a1036a6892fcc35c6c3f6e392d20238e89a66f5c6c0", 18849),
-                  "html": ("43d3a5097c673763501cc06bfa22921cbb963b59d77f4bb8cd92e0773c440343", 22724),
-                  "pdf_base64": ("dba37d8645574b8db591fd71091c4c0d25aef0565b98f2b4c47c1f13cba58ea4", 176236),
-                  "pdf_sha256": "f6e7b4e8902e971f5b3552ad8312aec5fbe6b0a1025fed856f9ee42e9eb3ac9a",
-                  "page_count": 22,
-              }
-              """,
-          )
-          replace_mapping(
-              "RICH_ENGLISH_GOLDEN",
-              """
-              RICH_ENGLISH_GOLDEN = {
-                  "markdown": ("cc43b0829649ee16904cdfc43ac1ac41d220bf9acd534eefdb0e7de07fcde238", 21527),
-                  "html": ("849702f055d1609b4ab6ba540def9f9db5050b76dd02063024b61c7454c1f0f3", 25966),
-                  "pdf_base64": ("9f6aa18e965602b2846c97fe3085c71317c58fbb072ea23fde9c29e655370bc9", 262792),
-                  "pdf_sha256": "8e460b37d85175d08bee6389abf0198d67e76b75afafd9e0d9c953f94fb8f5ce",
-                  "page_count": 39,
-              }
-              """,
-          )
-          replace_mapping(
-              "PHASE9_ENGLISH_GOLDEN",
-              """
-              PHASE9_ENGLISH_GOLDEN = {
-                  "markdown": ("51a2018ab77f58a5393987170771796db6ae6cfa6dbbf2a57d2ee672de15c7b7", 19585),
-                  "html": ("e09e9867f511b055a1e80b25902b3891f04279f0e5f2c656029e7d634fb050bc", 23784),
-                  "pdf_base64": ("8ff8b2e1a26f925e5231eeb0a8e3f5ec5169fb1a467e9ae25612320817853606", 172784),
-                  "pdf_sha256": "306c56bd0f67507923137dd2b6b00a27ccd835867d2e47a8c2e3e26373afb0fb",
-                  "page_count": 21,
-              }
-              """,
-          )
+    - name: Verify package entry points
+      run: |
+        nico --help
+        python - <<'PY'
+        from importlib.metadata import entry_points
+        from nico.api.production import app
+        from nico.api_runner import main as api_main
 
-          outline_anchor = "SPANISH_OUTLINE = {\n"
-          outline_entries = (
-              '    "Four-Phase Assessment Program": "Programa de evaluación en cuatro fases",\n'
-              '    "Automated Technical Triage": "Triaje técnico automatizado",\n'
-              '    "Human Review by Exception": "Revisión humana por excepción",\n'
-              '    "Broader Professional Assessment": "Evaluación profesional ampliada",\n'
-              '    "Approval and Client Delivery": "Aprobación y entrega al cliente",\n'
-          )
-          if '"Four-Phase Assessment Program"' not in text:
-              if outline_anchor not in text:
-                  raise SystemExit("SPANISH_OUTLINE mapping was not found")
-              text = text.replace(outline_anchor, outline_anchor + outline_entries, 1)
+        scripts = {item.name: item.value for item in entry_points(group="console_scripts")}
+        assert scripts.get("nico") == "nico.__main__:main"
+        assert scripts.get("nico-api") == "nico.api_runner:main"
+        assert app is not None
+        assert callable(api_main)
+        print("NICO package entry points and complete production API import verified.")
+        PY
 
-          old_projection = textwrap.dedent(
-              """
-              def outline_projection(reader):
-                  return [
-                      (getattr(item, "title", str(item)), reader.get_destination_page_number(item) + 1)
-                      for item in reader.outline
-                  ]
-              """
-          ).strip()
-          new_projection = textwrap.dedent(
-              """
-              def outline_projection(reader):
-                  output = []
+    - name: Install frontend dependencies
+      working-directory: apps/web
+      run: npm install --legacy-peer-deps
 
-                  def visit(items):
-                      for item in items or []:
-                          if isinstance(item, list):
-                              visit(item)
-                              continue
-                          output.append(
-                              (
-                                  getattr(item, "title", str(item)),
-                                  reader.get_destination_page_number(item) + 1,
-                              )
-                          )
+    - name: Run frontend typecheck
+      working-directory: apps/web
+      run: npm run lint
 
-                  visit(reader.outline)
-                  return output
-              """
-          ).strip()
-          if old_projection not in text:
-              raise SystemExit("outline_projection source contract was not found")
-          text = text.replace(old_projection, new_projection, 1)
+    - name: Run frontend production build
+      working-directory: apps/web
+      run: npm run build
 
-          phase_titles = textwrap.dedent(
-              """
-              PHASE_OUTLINE_TITLES = {
-                  "Four-Phase Assessment Program",
-                  "Automated Technical Triage",
-                  "Human Review by Exception",
-                  "Broader Professional Assessment",
-                  "Approval and Client Delivery",
-              }
-              """
-          ).strip()
-          render_anchor = "\n\ndef render(package):\n"
-          if "PHASE_OUTLINE_TITLES = {" not in text:
-              if render_anchor not in text:
-                  raise SystemExit("render insertion anchor was not found")
-              text = text.replace(
-                  render_anchor,
-                  "\n\n" + phase_titles + "\n\n\ndef render(package):\n",
-                  1,
-              )
+    - name: Compile critical files
+      run: |
+        python -m py_compile nico/assessment.py
+        python -m py_compile nico/cli.py
+        python -m py_compile nico/api/main.py
+        python -m py_compile nico/hosted_assessment.py
+        python -m py_compile nico/service_workflows.py
+        python -m py_compile nico/storage.py
+        python -m py_compile nico/scanner_worker.py
+        python -m py_compile nico/evidence.py
+        python -m py_compile nico/approval_queue.py
+        python -m py_compile nico/repair_intelligence.py
+        python -m py_compile nico/reports.py
+        python -m py_compile nico/github_app.py
+        python -m py_compile nico/customer_access.py
+        python -m py_compile nico/tenancy.py
+        python -m py_compile nico/modules/reporting.py
+        python -m py_compile nico/modules/dependency_audit.py
+        python -m py_compile nico/modules/synthesis.py
+        python -m py_compile nico/modules/maturity.py
+        python -m py_compile nico/modules/roadmap.py
+        python -m py_compile nico/modules/express_pack.py
+        python -m py_compile nico/phase5_report_truth_v1.py
+        python -m py_compile nico/phase5_report_truth_v2.py
+        python -m py_compile nico/phase6_final_remediation_v1.py
+        python -m py_compile nico/phase6_canonical_truth_v2.py
+        python -m py_compile scripts/build_phase6_verification_package.py
 
-          old_toc = (
-              '    en_toc = en_pages[1]\n'
-              '    es_toc = es_pages[1]\n'
-              '    for title, page in en_outline[1:]:\n'
-              '        assert f"{title}\\n{page}" in en_toc\n'
-              '    for title, page in es_outline[1:]:\n'
-              '        assert f"{title}\\n{page}" in es_toc'
-          )
-          new_toc = (
-              '    en_toc = en_pages[1]\n'
-              '    es_toc = es_pages[1]\n'
-              '    spanish_phase_titles = {\n'
-              '        SPANISH_OUTLINE[title] for title in PHASE_OUTLINE_TITLES\n'
-              '    }\n'
-              '    for title, page in en_outline[1:]:\n'
-              '        if title not in PHASE_OUTLINE_TITLES:\n'
-              '            assert f"{title}\\n{page}" in en_toc\n'
-              '    for title, page in es_outline[1:]:\n'
-              '        if title not in spanish_phase_titles:\n'
-              '            assert f"{title}\\n{page}" in es_toc\n'
-              '    for title in PHASE_OUTLINE_TITLES:\n'
-              '        assert title.casefold() in en_toc.casefold()\n'
-              '        assert SPANISH_OUTLINE[title].casefold() in es_toc.casefold()'
-          )
-          if old_toc not in text:
-              raise SystemExit("table-of-contents assertion contract was not found")
-          text = text.replace(old_toc, new_toc, 1)
+    - name: Run Python dependency audit evidence
+      run: |
+        mkdir -p audit-results
+        python -m pip_audit --format json --output audit-results/pip-audit-results.json || true
+        test -f audit-results/pip-audit-results.json || echo '{"status":"pip-audit unavailable"}' > audit-results/pip-audit-results.json
 
-          exact_replacements = {
-              "assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 27":
-                  "assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 32",
-              "assert len(outline_projection(phase9_english[1])) == len(outline_projection(phase9_spanish[1])) == 14":
-                  "assert len(outline_projection(phase9_english[1])) == len(outline_projection(phase9_spanish[1])) == 19",
-              "assert len(re.findall(r\"(?m)^#{1,3}\\s\", rich_english[0][\"markdown\"])) == 87":
-                  "assert len(re.findall(r\"(?m)^#{1,3}\\s\", rich_english[0][\"markdown\"])) == 88",
-              "assert len(re.findall(r\"(?m)^#{1,3}\\s\", rich_spanish[0][\"markdown\"])) == 87":
-                  "assert len(re.findall(r\"(?m)^#{1,3}\\s\", rich_spanish[0][\"markdown\"])) == 88",
-              "assert len(re.findall(r\"(?m)^#{1,3}\\s\", phase9_english[0][\"markdown\"])) == 78":
-                  "assert len(re.findall(r\"(?m)^#{1,3}\\s\", phase9_english[0][\"markdown\"])) == 79",
-              "assert len(re.findall(r\"(?m)^#{1,3}\\s\", phase9_spanish[0][\"markdown\"])) == 78":
-                  "assert len(re.findall(r\"(?m)^#{1,3}\\s\", phase9_spanish[0][\"markdown\"])) == 79",
-          }
-          for old, new in exact_replacements.items():
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"expected one assertion {old!r}, found {count}")
-              text = text.replace(old, new, 1)
+    - name: Verify hosted scanner installer strictly
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        NICO_SCANNER_INSTALL_STRICT: "true"
+      run: |
+        export NICO_SCANNER_INSTALL_DIR="$RUNNER_TEMP/nico-scanners"
+        export PATH="$NICO_SCANNER_INSTALL_DIR:$PATH"
+        python scripts/install_hosted_scanner_binaries.py
+        command -v osv-scanner
+        command -v gitleaks
+        command -v trufflehog
 
-          path.write_text(text, encoding="utf-8")
+    - name: Run Docker build check
+      timeout-minutes: 20
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        DOCKER_BUILDKIT: "1"
+      run: |
+        docker build --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci .
+        docker run --rm --entrypoint sh nico-ci:ci -c 'test -w /data && command -v nico && command -v nico-api && python -c "from nico.api.production import app; assert app"'
 
-          diagnostic = Path("tests/test_pr1269_four_phase_fingerprint_diagnostic.py")
-          if diagnostic.exists():
-              diagnostic.unlink()
+    - name: Run file integrity regression test
+      run: |
+        python -m pytest tests/test_phase3_file_integrity.py -v
 
-          temporary_workflow = Path(".github/workflows/pr1269-autofix-ci.yml")
-          if temporary_workflow.exists():
-              temporary_workflow.unlink()
-          PY
+    - name: Upload audit results
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: always()
+      with:
+        name: audit-results
+        path: audit-results/
 
-          git show HEAD^:.github/workflows/nico-ci.yml > .github/workflows/nico-ci.yml
-          python -m py_compile tests/test_spanish_canonical_report_parity_v87.py
-          git diff --check
+  test_shards:
+    name: test-shard-${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
-      - name: Commit and push the finalized parity contract
-        shell: bash
-        run: |
-          git config user.name "NICO CI Finalizer"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "Finalize four-phase report parity contract"
-          git push origin HEAD:codex/four-phase-reports-in-system
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version: "3.11"
+
+    - name: Set up Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version: "20"
+
+    - name: Install test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install --no-deps -e .
+        cd apps/web && npm install --legacy-peer-deps
+
+    - name: Run isolated test files
+      env:
+        NICO_TEST_SHARD: ${{ matrix.shard }}
+        NICO_TEST_SHARDS: "12"
+        PYTHONHASHSEED: "0"
+        PYTHONFAULTHANDLER: "1"
+        PYTHONUNBUFFERED: "1"
+      run: |
+        python - <<'PY'
+        from __future__ import annotations
+
+        from pathlib import Path
+        import hashlib
+        import json
+        import os
+        import signal
+        import subprocess
+        import sys
+
+        shard = int(os.environ["NICO_TEST_SHARD"])
+        total = int(os.environ["NICO_TEST_SHARDS"])
+        files = sorted(
+            Path("tests").rglob("test_*.py"),
+            key=lambda path: (-path.stat().st_size, str(path)),
+        )
+        if not files:
+            raise SystemExit("No NICO test files were discovered")
+
+        buckets: list[list[Path]] = [[] for _ in range(total)]
+        loads = [0 for _ in range(total)]
+        for path in files:
+            target = min(range(total), key=lambda index: (loads[index], index))
+            buckets[target].append(path)
+            loads[target] += path.stat().st_size
+
+        assigned = [path for bucket in buckets for path in bucket]
+        if len(assigned) != len(files) or len(set(assigned)) != len(files) or set(assigned) != set(files):
+            raise SystemExit("NICO test sharding did not assign every file exactly once")
+
+        selected = sorted(buckets[shard], key=str)
+        manifest = Path(f"pytest-shard-{shard}.txt")
+        manifest.write_text("\n".join(str(path) for path in selected) + "\n", encoding="utf-8")
+        result_dir = Path(f"pytest-file-results-{shard}")
+        result_dir.mkdir(parents=True, exist_ok=True)
+        log_path = Path(f"pytest-shard-{shard}.log")
+        timeout_path = Path(f"pytest-timeout-{shard}.txt")
+        summary_path = Path(f"pytest-summary-{shard}.json")
+
+        print(
+            f"Running NICO test shard {shard + 1}/{total}: "
+            f"{len(selected)} isolated files, source bytes={loads[shard]}",
+            flush=True,
+        )
+
+        failures: list[dict[str, object]] = []
+        completed: list[dict[str, object]] = []
+        with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
+            for index, path in enumerate(selected, start=1):
+                identity = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:12]
+                junit_path = result_dir / f"{index:04d}-{identity}.xml"
+                marker = f"[{index}/{len(selected)}] {path}"
+                print(marker, flush=True)
+                log_file.write(f"\n===== {marker} =====\n")
+                log_file.flush()
+                command = [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    str(path),
+                    "-v",
+                    "--tb=short",
+                    f"--junitxml={junit_path}",
+                ]
+                process = subprocess.Popen(
+                    command,
+                    start_new_session=True,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                timed_out = False
+                try:
+                    returncode = process.wait(timeout=5 * 60)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    timeout_note = (
+                        f"TIMEOUT file={path} limit_seconds=300 process_group={process.pid}\n"
+                    )
+                    with timeout_path.open("a", encoding="utf-8") as timeout_file:
+                        timeout_file.write(timeout_note)
+                    log_file.write(timeout_note)
+                    log_file.flush()
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=10)
+                    returncode = 124
+
+                record = {
+                    "file": str(path),
+                    "returncode": int(returncode),
+                    "timed_out": timed_out,
+                    "junit": str(junit_path),
+                }
+                completed.append(record)
+                if returncode != 0:
+                    failures.append(record)
+                print(
+                    f"{marker} -> {'TIMEOUT' if timed_out else returncode}",
+                    flush=True,
+                )
+
+        summary = {
+            "shard": shard,
+            "shards": total,
+            "assigned_files": len(selected),
+            "completed_files": len(completed),
+            "failed_files": failures,
+            "coverage_complete": len(completed) == len(selected),
+        }
+        summary_path.write_text(
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if failures or len(completed) != len(selected):
+            raise SystemExit(1)
+        PY
+
+    - name: Upload shard results
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: always()
+      with:
+        name: pytest-results-${{ matrix.shard }}
+        path: |
+          pytest-file-results-${{ matrix.shard }}/
+          pytest-shard-${{ matrix.shard }}.txt
+          pytest-shard-${{ matrix.shard }}.log
+          pytest-summary-${{ matrix.shard }}.json
+          pytest-timeout-${{ matrix.shard }}.txt
+
+  test:
+    name: test
+    needs: [quality, test_shards]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Require every NICO CI boundary
+      env:
+        QUALITY_RESULT: ${{ needs.quality.result }}
+        SHARDS_RESULT: ${{ needs.test_shards.result }}
+      run: |
+        test "$QUALITY_RESULT" = "success"
+        test "$SHARDS_RESULT" = "success"
+        echo "NICO quality checks and every isolated test file passed."
