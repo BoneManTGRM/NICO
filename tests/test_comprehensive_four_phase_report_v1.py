@@ -13,6 +13,7 @@ from reportlab.pdfgen import canvas
 from nico.comprehensive_four_phase_report_v1 import (
     apply_four_phase_pdf,
     apply_four_phase_program,
+    assert_four_phase_pdf,
     build_four_phase_program,
     finalize_four_phase_report_package,
     install_comprehensive_four_phase_report_v1,
@@ -104,6 +105,20 @@ def _canonical_payload_digest(canonical: dict) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _outline_titles(reader: PdfReader) -> list[str]:
+    output: list[str] = []
+
+    def collect(items: list) -> None:
+        for item in items:
+            if isinstance(item, list):
+                collect(item)
+            else:
+                output.append(str(getattr(item, "title", item)))
+
+    collect(reader.outline)
+    return output
+
+
 def test_four_phase_program_preserves_truth_boundaries() -> None:
     program = build_four_phase_program(_canonical())
     assert program["phase_count"] == 4
@@ -164,18 +179,10 @@ def test_four_phase_pdf_updates_toc_without_changing_page_count() -> None:
     assert "Human Review by Exception" in toc_text
     assert "Broader Professional Assessment" in toc_text
     assert "Approval and Client Delivery" in toc_text
-    outline_titles: list[str] = []
-
-    def collect(items: list) -> None:
-        for item in items:
-            if isinstance(item, list):
-                collect(item)
-            else:
-                outline_titles.append(str(getattr(item, "title", item)))
-
-    collect(rendered_reader.outline)
+    outline_titles = _outline_titles(rendered_reader)
     assert "Four-Phase Assessment Program" in outline_titles
     assert "Automated Technical Triage" in outline_titles
+    assert assert_four_phase_pdf(rendered, canonical)["target_page_number"] == 2
     assert apply_four_phase_pdf(rendered, canonical) == rendered
 
 
@@ -199,6 +206,19 @@ def test_finalizer_publishes_all_four_phases_across_surfaces() -> None:
     assert second["pdf_sha256"] == result["pdf_sha256"]
     assert second["markdown_sha256"] == result["markdown_sha256"]
     assert second["html_sha256"] == result["html_sha256"]
+
+
+def test_deferred_finalizer_preserves_pdf_until_terminal_composition() -> None:
+    package = _package(_canonical())
+    before = package["pdf_base64"]
+    result = finalize_four_phase_report_package(package, publish_pdf=False)
+    assert result["pdf_base64"] == before
+    completion = result["client_report_completion"]
+    assert completion["four_phase_program_in_json"] is True
+    assert completion["four_phase_program_in_markdown"] is True
+    assert completion["four_phase_program_in_html"] is True
+    assert completion["four_phase_program_in_pdf"] is False
+    assert completion["four_phase_pdf_publication_deferred"] is True
 
 
 def test_finalizer_rebinds_canonical_json_artifact_digest_after_phase_insertion() -> None:
@@ -233,12 +253,14 @@ def test_finalizer_rebinds_canonical_json_artifact_digest_after_phase_insertion(
     assert second == result
 
 
-def test_installer_publishes_before_exact_artifact_manifest_binding() -> None:
+def test_installer_publishes_at_terminal_pre_digest_boundary() -> None:
     from nico import comprehensive_artifact_manifest_approval_v1 as manifest
 
     state = install_comprehensive_four_phase_report_v1()
     assert state["bound"] is True
+    assert state["terminal_pdf_append_bound"] is True
     assert state["publication_precedes_exact_artifact_binding"] is True
+    assert state["terminal_pdf_publication_before_digest_binding"] is True
 
     result = manifest.attach_artifact_manifest(_package(_canonical()))
     canonical = result["json"]
@@ -247,9 +269,16 @@ def test_installer_publishes_before_exact_artifact_manifest_binding() -> None:
     assert result["client_delivery_allowed"] is False
 
     pdf = base64.b64decode(result["pdf_base64"])
-    pdf_text = "\n".join(
-        page.extract_text() or ""
-        for page in PdfReader(io.BytesIO(pdf)).pages
+    reader = PdfReader(io.BytesIO(pdf))
+    pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    proof = assert_four_phase_pdf(pdf, canonical)
+    assert proof["target_page_number"] == 2
+    assert pdf_text.count("FOUR-PHASE ASSESSMENT PROGRAM") == 1
+    assert "FOUR-PHASE ASSESSMENT PROGRAM" in (
+        reader.pages[1].extract_text() or ""
+    )
+    assert "FOUR-PHASE ASSESSMENT PROGRAM" not in (
+        reader.pages[2].extract_text() or ""
     )
     for title in (
         "Automated Technical Triage",
@@ -260,6 +289,13 @@ def test_installer_publishes_before_exact_artifact_manifest_binding() -> None:
         assert title in result["markdown"]
         assert title in result["html"]
         assert title in pdf_text
+        assert title in _outline_titles(reader)
+
+    completion = result["client_report_completion"]
+    assert completion["four_phase_program_in_pdf"] is True
+    assert completion["four_phase_pdf_bookmarks_present"] is True
+    assert completion["four_phase_terminal_pdf_publication"] is True
+    assert completion["four_phase_toc_page_number"] == 2
 
     contents = {
         "findings_csv": result["findings_csv"].encode("utf-8"),

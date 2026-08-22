@@ -146,19 +146,104 @@ def _overlay(
     return buffer.getvalue()
 
 
+def _page_lines(page: Any) -> list[str]:
+    return [
+        _text(line, 240)
+        for line in str(page.extract_text() or "").splitlines()
+        if _text(line, 240)
+    ]
+
+
+def four_phase_target_page_index(reader: Any, *, spanish: bool) -> int:
+    """Resolve the real final table-of-contents page, not a pre-navigation index."""
+
+    exact_titles = {"Índice"} if spanish else {"Table of Contents"}
+    for index, page in enumerate(reader.pages):
+        if any(line in exact_titles for line in _page_lines(page)[:12]):
+            return index
+    return 1 if len(reader.pages) >= 2 else 0
+
+
+def _outline_titles(items: Any) -> list[str]:
+    output: list[str] = []
+    for item in items or []:
+        if isinstance(item, list):
+            output.extend(_outline_titles(item))
+        else:
+            output.append(_text(getattr(item, "title", item), 240))
+    return output
+
+
+def _program(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = canonical.get("four_phase_program")
+    return value if isinstance(value, Mapping) else build_four_phase_program(canonical)
+
+
+def assert_four_phase_pdf(
+    pdf: bytes,
+    canonical: Mapping[str, Any],
+    *,
+    spanish: bool | None = None,
+) -> dict[str, Any]:
+    """Fail closed unless the final PDF has one TOC matrix and complete bookmarks."""
+
+    from pypdf import PdfReader
+
+    spanish = _spanish(canonical) if spanish is None else spanish
+    reader = PdfReader(io.BytesIO(pdf))
+    if not reader.pages:
+        raise ValueError("NICO Comprehensive four-phase publication requires a PDF page")
+
+    target_index = four_phase_target_page_index(reader, spanish=spanish)
+    marker = _ES if spanish else _EN
+    target_text = _text(reader.pages[target_index].extract_text(), 200_000)
+    program = _program(canonical)
+    phase_titles = [
+        _text(phase.get("title_es" if spanish else "title_en"))
+        for phase in program.get("phases") or []
+    ]
+    missing_on_target = [
+        value
+        for value in (marker, *phase_titles)
+        if value.casefold() not in target_text.casefold()
+    ]
+    if missing_on_target:
+        raise ValueError(
+            "four-phase PDF table-of-contents publication omitted: "
+            + ", ".join(missing_on_target)
+        )
+
+    all_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    if all_text.casefold().count(marker.casefold()) != 1:
+        raise ValueError("four-phase PDF matrix must appear exactly once")
+
+    outline_titles = _outline_titles(reader.outline)
+    outline_keys = {title.casefold() for title in outline_titles}
+    missing_bookmarks = [
+        value
+        for value in (marker, *phase_titles)
+        if value.casefold() not in outline_keys
+    ]
+    if missing_bookmarks:
+        raise ValueError(
+            "four-phase PDF bookmarks omitted: " + ", ".join(missing_bookmarks)
+        )
+    return {
+        "target_page_index": target_index,
+        "target_page_number": target_index + 1,
+        "page_count": len(reader.pages),
+        "matrix_count": 1,
+        "bookmark_count": len(phase_titles) + 1,
+    }
+
+
 def apply_four_phase_pdf(
     pdf: bytes,
     canonical: Mapping[str, Any],
     *,
     spanish: bool | None = None,
 ) -> bytes:
-    """Publish the phase matrix without changing the PDF page count.
-
-    Full NICO Comprehensive reports place the matrix on their table-of-contents page.
-    Sparse contract fixtures and emergency one-page report packages do not have that
-    page; those retain the same one-page boundary and receive the matrix on page one
-    instead of failing an otherwise valid exact-artifact manifest operation.
-    """
+    """Publish the phase matrix on the final TOC without changing page count."""
 
     from pypdf import PdfReader, PdfWriter
 
@@ -167,35 +252,35 @@ def apply_four_phase_pdf(
     if not reader.pages:
         raise ValueError("NICO Comprehensive four-phase publication requires a PDF page")
 
-    target_index = 1 if len(reader.pages) >= 2 else 0
+    target_index = four_phase_target_page_index(reader, spanish=spanish)
     marker = _ES if spanish else _EN
-    target_text = _text(reader.pages[target_index].extract_text(), 40000)
-    if marker.casefold() in target_text.casefold():
+    program = _program(canonical)
+    phase_titles = [
+        _text(phase.get("title_es" if spanish else "title_en"))
+        for phase in program.get("phases") or []
+    ]
+    target_text = _text(reader.pages[target_index].extract_text(), 200_000)
+    matrix_present = marker.casefold() in target_text.casefold()
+    existing_outline = _outline_titles(reader.outline)
+    existing_keys = {title.casefold() for title in existing_outline}
+    all_bookmarks_present = all(
+        value.casefold() in existing_keys for value in (marker, *phase_titles)
+    )
+    if matrix_present and all_bookmarks_present:
         return pdf
 
-    target_page = reader.pages[target_index]
-    size = (
-        float(target_page.mediabox.width),
-        float(target_page.mediabox.height),
-    )
-    overlay = PdfReader(io.BytesIO(_overlay(canonical, spanish, size)))
-    target_page.merge_page(overlay.pages[0])
+    if not matrix_present:
+        target_page = reader.pages[target_index]
+        size = (
+            float(target_page.mediabox.width),
+            float(target_page.mediabox.height),
+        )
+        overlay = PdfReader(io.BytesIO(_overlay(canonical, spanish, size)))
+        target_page.merge_page(overlay.pages[0])
 
     writer = PdfWriter()
     writer.append(reader, import_outline=True)
-    outline_titles: list[str] = []
-
-    def collect(items: Any) -> None:
-        for item in items or []:
-            if isinstance(item, list):
-                collect(item)
-            else:
-                outline_titles.append(
-                    _text(getattr(item, "title", item)).casefold()
-                )
-
-    collect(reader.outline)
-    if marker.casefold() not in outline_titles:
+    if marker.casefold() not in existing_keys:
         parent = writer.add_outline_item(marker, target_index)
         markers = (
             (
@@ -217,12 +302,6 @@ def apply_four_phase_pdf(
             if len(reader.pages) >= 2
             else (0, 0, 0, 0)
         )
-        program = canonical.get("four_phase_program")
-        program = (
-            program
-            if isinstance(program, Mapping)
-            else build_four_phase_program(canonical)
-        )
         for phase, pair, fallback in zip(
             program.get("phases") or [],
             markers,
@@ -234,7 +313,7 @@ def apply_four_phase_pdf(
                     for index, page in enumerate(reader.pages)
                     if any(
                         value.casefold()
-                        in _text(page.extract_text(), 30000).casefold()
+                        in _text(page.extract_text(), 30_000).casefold()
                         for value in pair
                     )
                 ),
@@ -245,10 +324,20 @@ def apply_four_phase_pdf(
                 page_index,
                 parent=parent,
             )
+    else:
+        for title in phase_titles:
+            if title.casefold() not in existing_keys:
+                writer.add_outline_item(title, target_index)
 
     output = io.BytesIO()
     writer.write(output)
-    return output.getvalue()
+    rendered = output.getvalue()
+    assert_four_phase_pdf(rendered, canonical, spanish=spanish)
+    return rendered
 
 
-__all__ = ["apply_four_phase_pdf"]
+__all__ = [
+    "apply_four_phase_pdf",
+    "assert_four_phase_pdf",
+    "four_phase_target_page_index",
+]
