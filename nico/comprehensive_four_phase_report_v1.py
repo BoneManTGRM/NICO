@@ -4,7 +4,6 @@ import base64
 import hashlib
 import io
 import json
-import sys
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable, Mapping
@@ -22,14 +21,26 @@ from nico.comprehensive_four_phase_model_v1 import (
 from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
 
 _MARKER = "__nico_comprehensive_four_phase_report_v1__"
+_ATTACH_MARKER = "__nico_comprehensive_four_phase_manifest_input_v1__"
 
 
 def _html(markdown: str, canonical: Mapping[str, Any], spanish: bool) -> str:
     try:
         from nico.client_ready_html_v1 import render_client_html
 
-        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
-        title = "Evaluación Técnica Integral NICO" if spanish else f"NICO Comprehensive Technical Assessment - {_text(identity.get('repository'))}"
+        identity = (
+            canonical.get("identity")
+            if isinstance(canonical.get("identity"), Mapping)
+            else {}
+        )
+        title = (
+            "Evaluación Técnica Integral NICO"
+            if spanish
+            else (
+                "NICO Comprehensive Technical Assessment - "
+                + _text(identity.get("repository"))
+            )
+        )
         return render_client_html(markdown, title, spanish=spanish)
     except Exception:
         return "<html><body><pre>" + markdown + "</pre></body></html>"
@@ -41,7 +52,12 @@ def _canonical_hash(canonical: Mapping[str, Any]) -> str:
 
         return base_report._canonical_hash(dict(canonical))
     except Exception:
-        payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        payload = json.dumps(
+            canonical,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
         return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -63,12 +79,12 @@ def _canonical_payload_digest(canonical: Mapping[str, Any]) -> str:
 def _synchronize_canonical_json_artifact_digest(
     canonical: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Keep both canonical-json manifest copies bound to final four-phase truth.
+    """Keep existing canonical-json projections bound to final four-phase truth.
 
-    The upstream finalizer creates the self-excluding canonical payload digest before
-    this report extension adds the four-phase program. Rebind only the canonical JSON
-    artifact entries after that final truth is present. Other artifact digests, the
-    detached manifest self-digest, scores, findings, and approval state remain intact.
+    Normal production publication now runs before the exact-artifact manifest is
+    built, so that manifest computes every final digest from the already extended
+    package. This compatibility step only repairs any earlier canonical-json
+    projection supplied by a caller; the terminal manifest remains authoritative.
     """
 
     output = deepcopy(dict(canonical))
@@ -100,6 +116,8 @@ def _synchronize_canonical_json_artifact_digest(
 
 
 def finalize_four_phase_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Publish the four-phase program into the existing Comprehensive package."""
+
     from pypdf import PdfReader
 
     result = deepcopy(dict(package))
@@ -109,13 +127,19 @@ def finalize_four_phase_report_package(package: Mapping[str, Any]) -> dict[str, 
     canonical = _synchronize_canonical_json_artifact_digest(canonical)
     spanish = _spanish(canonical)
     markdown = repair_four_phase_markdown(
-        str(result.get("markdown") or ""), canonical, spanish=spanish
+        str(result.get("markdown") or ""),
+        canonical,
+        spanish=spanish,
     )
     rendered_html = _html(markdown, canonical, spanish)
     encoded = str(result.get("pdf_base64") or "").strip()
     if not encoded:
         raise ValueError("NICO Comprehensive four-phase publication requires a PDF")
-    pdf = apply_four_phase_pdf(base64.b64decode(encoded), canonical, spanish=spanish)
+    pdf = apply_four_phase_pdf(
+        base64.b64decode(encoded),
+        canonical,
+        spanish=spanish,
+    )
     reader = PdfReader(io.BytesIO(pdf))
     extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
     required = [
@@ -138,6 +162,7 @@ def finalize_four_phase_report_package(package: Mapping[str, Any]) -> dict[str, 
                 f"four-phase {surface_name} publication omitted phases: "
                 + ", ".join(missing)
             )
+
     count = len(reader.pages)
     result.update(
         {
@@ -146,8 +171,8 @@ def finalize_four_phase_report_package(package: Mapping[str, Any]) -> dict[str, 
             "html": rendered_html,
             "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
-            "markdown_sha256": hashlib.sha256(markdown.encode()).hexdigest(),
-            "html_sha256": hashlib.sha256(rendered_html.encode()).hexdigest(),
+            "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
             "pdf_page_count": count,
             "core_report_page_count": count,
             "final_package_page_count": count,
@@ -179,53 +204,50 @@ def finalize_four_phase_report_package(package: Mapping[str, Any]) -> dict[str, 
     return result
 
 
-def _replace_aliases(original: Any, replacement: Any) -> int:
-    count = 0
-    for module in list(sys.modules.values()):
-        try:
-            if (
-                module is not None
-                and getattr(module, "finalize_client_report_package", None) is original
-            ):
-                setattr(module, "finalize_client_report_package", replacement)
-                count += 1
-        except Exception:
-            continue
-    return count
-
-
 def install_comprehensive_four_phase_report_v1() -> dict[str, Any]:
-    from nico import client_report_completion_v2 as completion
+    """Publish four-phase truth before immutable artifact digests are bound.
 
-    current: Callable[..., dict[str, Any]] = completion.finalize_client_report_package
-    if getattr(current, _MARKER, False):
+    The exact-artifact manifest is NICO's terminal byte-identity boundary. Canonical
+    truth, Markdown, HTML, PDF navigation, and the page-two phase matrix must exist
+    before that boundary computes hashes. Patching the manifest input also avoids a
+    locale-order mutation: English and Spanish both consume the same pre-manifest
+    producer instead of wrapping a locale-specific terminal finalizer after output.
+    """
+
+    from nico import comprehensive_artifact_manifest_approval_v1 as manifest
+
+    current: Callable[..., dict[str, Any]] = manifest.attach_artifact_manifest
+    if getattr(current, _ATTACH_MARKER, False):
         return {
             "status": "already_installed",
             "version": VERSION,
             "bound": True,
             "phase_count": 4,
+            "publication_precedes_exact_artifact_binding": True,
+            "detached_manifest_recomputed_after_four_phase_publication": True,
         }
 
     @wraps(current)
-    def finalize(package: Mapping[str, Any]) -> dict[str, Any]:
-        return finalize_four_phase_report_package(current(package))
+    def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
+        prepared = finalize_four_phase_report_package(package)
+        return current(prepared)
 
-    setattr(finalize, _MARKER, True)
-    setattr(finalize, "_nico_previous", current)
-    completion.finalize_client_report_package = finalize
-    rebound = _replace_aliases(current, finalize)
+    setattr(attach_artifact_manifest, _ATTACH_MARKER, True)
+    setattr(attach_artifact_manifest, "_nico_previous", current)
+    manifest.attach_artifact_manifest = attach_artifact_manifest
     return {
         "status": "installed",
         "version": VERSION,
-        "bound": completion.finalize_client_report_package is finalize,
-        "aliases_rebound": rebound,
+        "bound": manifest.attach_artifact_manifest is attach_artifact_manifest,
         "phase_count": 4,
         "english_and_spanish_supported": True,
         "four_phase_program_in_json": True,
         "four_phase_program_in_markdown": True,
         "four_phase_program_in_html": True,
         "four_phase_program_in_pdf": True,
-        "page_count_unchanged": True,
+        "page_count_unchanged_before_manifest_supplement": True,
+        "publication_precedes_exact_artifact_binding": True,
+        "detached_manifest_recomputed_after_four_phase_publication": True,
         "one_client_report": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
