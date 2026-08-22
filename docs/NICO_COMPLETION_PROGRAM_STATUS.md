@@ -31,6 +31,22 @@ The protected reviewer workflow provides six logical queues, filtering/search/so
 
 The approximately four combined specialist-hour target remains an empirical efficiency target. A real two-specialist measurement is still pending issue #1169 and must not be fabricated from synthetic or CI timing.
 
+### Preserved Phase 2 work-package history
+
+The historical observation in `docs/client-ready-report-accuracy-observation.json` remains retained for auditability. At that earlier dependency boundary:
+
+**PHASE 2 WORK PACKAGE 1: COMPLETE**
+
+The exact next declared package was:
+
+`expandable_deterministic_clusters`
+
+Declaration state:
+
+`declared_not_started`
+
+That declaration is historical, not the present state. The package was subsequently implemented and verified inside the completed Phase 2 software architecture. Retaining these strings preserves the work-package evidence trail without reopening or downgrading completed Phase 2 work.
+
 ## Phase 3: broader professional assessment
 
 **ENGINEERING STATUS: SATISFIED**
