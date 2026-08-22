@@ -179,6 +179,53 @@ def _program(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else build_four_phase_program(canonical)
 
 
+def _phase_bookmark_targets(
+    page_count: int,
+) -> tuple[tuple[tuple[str, ...], int], ...]:
+    return (
+        (
+            (
+                "Review-Required Candidate Register",
+                "Registro de candidatos que requieren revisión",
+                "Dependency, Security, and Static Analysis",
+                "Dependencias, seguridad y análisis estático",
+                "Dependency / Library Ecosystem",
+                "Ecosistema de dependencias y bibliotecas",
+            ),
+            min(6, max(0, page_count - 1)),
+        ),
+        (
+            (
+                "Human Review and Acceptance Gate",
+                "Puerta de revisión humana y aceptación",
+                "Review-Required Candidate Register",
+                "Registro de candidatos que requieren revisión",
+            ),
+            max(0, page_count - 3),
+        ),
+        (
+            (
+                "Functional QA",
+                "QA funcional",
+                "Platform Parity",
+                "Paridad de plataformas",
+                "Historical Trends and Change Failure",
+                "Tendencias históricas y fallos de cambio",
+            ),
+            min(11, max(0, page_count - 1)),
+        ),
+        (
+            (
+                "Human Review and Exact-Artifact Approval Record",
+                "Registro de revisión humana y aprobación de artefactos exactos",
+                "Human Review and Acceptance Gate",
+                "Puerta de revisión humana y aceptación",
+            ),
+            max(0, page_count - 1),
+        ),
+    )
+
+
 def assert_four_phase_pdf(
     pdf: bytes,
     canonical: Mapping[str, Any],
@@ -282,42 +329,22 @@ def apply_four_phase_pdf(
     writer.append(reader, import_outline=True)
     if marker.casefold() not in existing_keys:
         parent = writer.add_outline_item(marker, target_index)
-        markers = (
-            (
-                "Review-Required Candidate Register",
-                "Registro de candidatos que requieren revisión",
-            ),
-            ("Functional QA", "QA funcional"),
-            (
-                "Historical Trends and Change Failure",
-                "Tendencias históricas y fallos de cambio",
-            ),
-            (
-                "Human Review and Acceptance Gate",
-                "Revisión humana y puerta de aceptación",
-            ),
-        )
-        fallbacks = (
-            (27, 32, 33, max(1, len(reader.pages) - 3))
-            if len(reader.pages) >= 2
-            else (0, 0, 0, 0)
-        )
-        for phase, pair, fallback in zip(
+        for phase, (candidates, fallback) in zip(
             program.get("phases") or [],
-            markers,
-            fallbacks,
+            _phase_bookmark_targets(len(reader.pages)),
         ):
             page_index = next(
                 (
                     index
                     for index, page in enumerate(reader.pages)
-                    if any(
+                    if index != target_index
+                    and any(
                         value.casefold()
                         in _text(page.extract_text(), 30_000).casefold()
-                        for value in pair
+                        for value in candidates
                     )
                 ),
-                max(0, min(fallback, len(reader.pages) - 1)),
+                fallback,
             )
             writer.add_outline_item(
                 _text(phase.get("title_es" if spanish else "title_en")),
