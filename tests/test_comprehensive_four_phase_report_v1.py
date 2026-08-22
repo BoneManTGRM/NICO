@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
+import json
 from copy import deepcopy
 
 from pypdf import PdfReader
@@ -73,6 +75,29 @@ def _pdf() -> bytes:
         page.showPage()
     page.save()
     return buffer.getvalue()
+
+
+def _package(canonical: dict) -> dict:
+    return {
+        "json": canonical,
+        "markdown": "# NICO Comprehensive\n\n## Executive Decision Brief\n\nBody.\n",
+        "html": "<html><body>Body.</body></html>",
+        "pdf_base64": base64.b64encode(_pdf()).decode("ascii"),
+        "client_report_completion": {},
+    }
+
+
+def _canonical_payload_digest(canonical: dict) -> str:
+    payload = deepcopy(canonical)
+    payload.pop("artifacts", None)
+    payload.pop("artifact_manifest", None)
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def test_four_phase_program_preserves_truth_boundaries() -> None:
@@ -149,15 +174,7 @@ def test_four_phase_pdf_updates_toc_without_changing_page_count() -> None:
 
 
 def test_finalizer_publishes_all_four_phases_across_surfaces() -> None:
-    canonical = _canonical()
-    package = {
-        "json": canonical,
-        "markdown": "# NICO Comprehensive\n\n## Executive Decision Brief\n\nBody.\n",
-        "html": "<html><body>Body.</body></html>",
-        "pdf_base64": base64.b64encode(_pdf()).decode("ascii"),
-        "client_report_completion": {},
-    }
-    result = finalize_four_phase_report_package(package)
+    result = finalize_four_phase_report_package(_package(_canonical()))
     assert result["json"]["four_phase_program"]["phase_count"] == 4
     assert result["client_report_completion"]["all_four_phases_present"] is True
     assert result["client_report_completion"]["phase4_human_approval_boundary_preserved"] is True
@@ -171,3 +188,30 @@ def test_finalizer_publishes_all_four_phases_across_surfaces() -> None:
     assert second["pdf_sha256"] == result["pdf_sha256"]
     assert second["markdown_sha256"] == result["markdown_sha256"]
     assert second["html_sha256"] == result["html_sha256"]
+
+
+def test_finalizer_rebinds_canonical_json_artifact_digest_after_phase_insertion() -> None:
+    canonical = _canonical()
+    canonical["artifacts"] = [
+        {
+            "artifact_type": "canonical_json",
+            "sha256": "stale-before-four-phase-publication",
+            "digest_scope": "canonical_truth_payload_excluding_artifact_self_reference",
+        }
+    ]
+    canonical["artifact_manifest"] = {
+        "artifact_schema": "nico.comprehensive-artifact-manifest.v1",
+        "artifacts": deepcopy(canonical["artifacts"]),
+    }
+
+    result = finalize_four_phase_report_package(_package(canonical))
+    expected = _canonical_payload_digest(result["json"])
+
+    assert result["json"]["artifacts"][0]["sha256"] == expected
+    assert result["json"]["artifact_manifest"]["artifacts"][0]["sha256"] == expected
+    assert result["json"]["four_phase_program"]["phase_count"] == 4
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False
+
+    second = finalize_four_phase_report_package(deepcopy(result))
+    assert second == result
