@@ -217,7 +217,7 @@ def _boundary_pdf_page(
         elif line.startswith("### "):
             story.append(Paragraph(html.escape(line[4:]), subheading))
         elif line.startswith("- "):
-            story.append(Paragraph("• " + html.escape(line[2:]), bullet))
+            story.append(Paragraph("- " + html.escape(line[2:]), bullet))
         else:
             story.append(Paragraph(escaped, body))
 
