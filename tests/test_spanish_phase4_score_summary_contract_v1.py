@@ -66,6 +66,35 @@ def test_original_score_summary_contract_remains_supported() -> None:
     assert "Technical maturity" not in translated
 
 
+def test_candidate_count_evidence_boundary_is_fully_localized() -> None:
+    installation = _install_spanish_presentation_score_summary_contract()
+    assert installation["bound"] is True
+
+    translated = presentation._translate_presentation_field(
+        "Candidate counts are not presented as confirmed defect volume.",
+        "evidence",
+    )
+
+    assert (
+        translated
+        == "Los conteos de candidatos no se presentan como volumen de defectos confirmados."
+    )
+    assert "Candidate counts" not in translated
+    assert "confirmed defect" not in translated
+
+
+def test_unknown_candidate_count_claim_still_fails_closed() -> None:
+    unsupported = (
+        "Candidate counts are presented as confirmed defect volume without human review."
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="missing Spanish presentation translation for evidence",
+    ):
+        presentation._translate_presentation_field(unsupported, "evidence")
+
+
 def test_unknown_score_summary_extension_still_fails_closed() -> None:
     unsupported = (
         _base_summary()
