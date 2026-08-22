@@ -1,0 +1,63 @@
+{
+  "artifact_schema": "nico.phase3_completion_observation.v1",
+  "phase": 3,
+  "title": "Broader professional assessment inside NICO Comprehensive",
+  "product": "NICO Comprehensive",
+  "one_public_product": true,
+  "one_client_report": true,
+  "status": "satisfied",
+  "implementation": {
+    "primary_pull_request": 1174,
+    "primary_head_sha": "fe2945e21f01a6920fb91a59a062fcf8c9b411a3",
+    "primary_merge_sha": "5d0cf427b2f5e25cec9f8e3518bc5d6bfbbcabdf",
+    "verified_functional_main_sha_before_closure_sync": "d6fb7fa90491cf726fff76af70d94fa9c531ff7e",
+    "parallel_assessment_pipeline_created": false,
+    "canonical_scoring_replaced": false,
+    "report_pipeline_replaced": false
+  },
+  "negative_paths_proven": {
+    "repository_tests_do_not_become_runtime_acceptance": true,
+    "source_indicators_do_not_become_device_parity": true,
+    "missing_authoritative_requirements_remain_missing": true,
+    "stakeholder_notes_do_not_become_stakeholder_authority": true,
+    "roadmap_remains_framework_until_authorized": true,
+    "staffing_does_not_invent_commercial_values": true,
+    "internal_placeholder_identity_cannot_be_client_final": true
+  },
+  "positive_supplied_evidence_paths_proven": {
+    "functional_qa_supplied_results_retained": true,
+    "platform_scope_and_observations_ingested": true,
+    "authoritative_requirements_classification_retained": true,
+    "stakeholder_objectives_and_constraints_retained": true,
+    "roadmap_uses_supplied_requirements_and_constraints": true,
+    "staffing_role_and_effort_framework_generated_without_rates_or_budget": true,
+    "existing_comprehensive_report_sections_receive_structured_evidence": true
+  },
+  "test_evidence": {
+    "primary_test_file": "tests/test_phase3_professional_assessment_v1.py",
+    "positive_and_negative_path_regressions": true,
+    "one_registry_and_existing_report_pipeline_preserved": true,
+    "internal_placeholder_client_final_rejected": true
+  },
+  "human_boundaries": {
+    "stakeholder_authority_remains_human": true,
+    "runtime_acceptance_requires_observed_evidence": true,
+    "automation_can_create_human_disposition": false,
+    "automation_can_create_final_approval": false,
+    "automation_can_authorize_client_delivery": false
+  },
+  "exact_current_head_activation_gate": {
+    "type": "dynamic_completion_bound_comprehensive_workflow",
+    "status_document_is_non_self_referential": true,
+    "required_contexts": [
+      "Vercel",
+      "successful-cat - NICO",
+      "NICO Mobile Restart Production Proof",
+      "NICO iOS WebKit Paint Proof",
+      "NICO Spanish Comprehensive Production Proof",
+      "NICO Two-Service Production Acceptance",
+      "NICO Production Acceptance Green Watch"
+    ],
+    "rule": "The four-phase completion-bound Comprehensive package is valid only when all contexts are successful on the exact accepted current-main SHA."
+  }
+}

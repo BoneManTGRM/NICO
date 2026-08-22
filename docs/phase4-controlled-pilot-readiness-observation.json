@@ -1,12 +1,41 @@
 {
-  "artifact_schema": "nico.phase4_controlled_pilot_readiness_observation.v1",
+  "artifact_schema": "nico.phase4_controlled_pilot_readiness_observation.v2",
   "phase": 4,
-  "title": "Production client-delivery hardening, security, and end-to-end proof",
-  "base_main_sha": "3dceeed7a757fb17cbe0c9007431167214227e3e",
-  "integrated_main_sha": "3dceeed7a757fb17cbe0c9007431167214227e3e",
+  "title": "Production client-delivery hardening, security, durability, and end-to-end proof",
   "product": "NICO Comprehensive",
   "one_client_report": true,
-  "implementation_state": "merge_candidate",
+  "engineering_status": "satisfied",
+  "production_operability_durability_status": "satisfied",
+  "controlled_outside_repository_pilot_status": "not_executed",
+  "implementation": {
+    "primary_hardening_pull_request": {
+      "number": 1262,
+      "head_sha": "abb894d48acc5e7c0ddb6b9c41f375c5f7c1552c",
+      "merge_sha": "7480a16e852e62f3ebfde07356d1c093a17dca4d"
+    },
+    "tenant_scope_closure_pull_request": {
+      "number": 1263,
+      "head_sha": "fc215a2f7a4f1e8f033224a65247c7f3f3add542",
+      "merge_sha": "3dceeed7a757fb17cbe0c9007431167214227e3e"
+    },
+    "report_and_production_repairs": [
+      {
+        "number": 1264,
+        "merge_sha": "bfb60cd8a380fdaafd13da322926336d6e1b38f7"
+      },
+      {
+        "number": 1265,
+        "merge_sha": "2fb4066e1f2fa5c47272020dbdcc54ee99bf2684"
+      },
+      {
+        "number": 1266,
+        "head_sha": "731ee441bdb29606ac983cd9162c3eb9f26bc6ba",
+        "merge_sha": "d6fb7fa90491cf726fff76af70d94fa9c531ff7e"
+      }
+    ],
+    "focused_hardening_test_result": "36 passed, 1 warning",
+    "status_document_is_non_self_referential": true
+  },
   "software_contracts": {
     "client_project_scope_identity_retained": true,
     "read_only_repository_access_required": true,
@@ -27,53 +56,77 @@
     "internal_or_test_package_cannot_be_client_final": true,
     "one_report_rule_enforced": true,
     "generator_truth_distinguishes_assessed_commit_from_nico_build_and_mutable_history": true,
-    "unsupported_ecosystems_are_not_assessed": true
+    "unsupported_ecosystems_are_not_assessed": true,
+    "protected_delivery_requires_complete_human_review": true,
+    "post_download_digest_revalidation_supported": true,
+    "fail_closed_negative_acceptance_matrix_retained": true
   },
-  "verification_evidence": {
-    "focused_hardening_workflow_run_id": 32519265594,
-    "focused_hardening_result": "36 passed, 1 warning",
-    "verified_implementation_head_before_status_sync": "fe1cfbc4174f86be1cb746c120d7f7e413755589",
-    "verified_workflow_conclusions": {
-      "NICO CI": "success",
-      "CodeQL Advanced": "success",
-      "Security Audit Evidence": "success",
-      "Audit Evidence": "success",
-      "Remediation Evidence": "success",
-      "Phase 8 Operational Acceptance": "success",
-      "Unified Production Acceptance": "success",
-      "Frontend Production Release Proof": "success",
-      "Mobile Restart Production Proof": "success",
-      "iOS WebKit Paint Proof": "success",
-      "Postgres Restart Proof": "success",
-      "Resilience Proof": "success",
-      "Phase 9 Client Delivery Proof": "success",
-      "Phase 9 Comprehensive Production Proof": "success",
-      "Phase 9 Production Report and Node Scanner Proof": "success",
-      "Phase 9 Bandit Reliability": "success",
-      "Recorded Golden Demonstration": "success"
-    },
-    "repository_agnostic_fixtures": [
-      "external Python service",
-      "external Node/TypeScript application",
-      "external mixed Python/TypeScript repository"
-    ],
-    "status_document_is_non_self_referential": true,
-    "merge_gate": "GitHub must independently show every required workflow successful on the exact head containing this observation before merge."
+  "durability_recovery_validation": {
+    "postgres_restart_proof": true,
+    "mobile_restart_recovery": true,
+    "application_restart_recovery": true,
+    "deployment_transition_survival": true,
+    "long_running_assessment_lease_and_heartbeat": true,
+    "interrupted_assessment_safe_continuation_or_failure": true,
+    "artifact_retrievability_after_restart": true,
+    "manifest_retrievability_after_restart": true,
+    "reviewer_state_durability": true,
+    "approval_state_durability": true,
+    "audit_log_durability": true,
+    "bounded_retry_timeout_and_failure_behavior": true,
+    "cross_tenant_recovery_isolation": true,
+    "stale_incomplete_run_recovery": true
   },
-  "controlled_paying_client_pilot_decision": "not_yet_proven",
+  "security_validation": {
+    "repository_authorization": true,
+    "read_only_enforcement": true,
+    "authentication_and_reviewer_authorization": true,
+    "server_side_privilege_enforcement": true,
+    "client_project_run_isolation": true,
+    "evidence_and_report_access_authorization": true,
+    "artifact_download_authorization": true,
+    "idor_and_identifier_manipulation": true,
+    "secret_handling_and_no_secret_logging": true,
+    "artifact_and_approval_integrity": true,
+    "stale_session_and_authorization_failure_closed": true,
+    "automation_approval_rejected": true
+  },
+  "repository_agnostic_fixtures": [
+    "external Python service",
+    "external Node/TypeScript application",
+    "external mixed Python/TypeScript repository"
+  ],
+  "exact_head_verification": {
+    "last_fully_green_pr_head": "731ee441bdb29606ac983cd9162c3eb9f26bc6ba",
+    "workflow_families_successful": 17,
+    "unresolved_review_threads": 0,
+    "verified_functional_main_before_closure_sync": "d6fb7fa90491cf726fff76af70d94fa9c531ff7e",
+    "dynamic_current_main_required": true,
+    "required_contexts": [
+      "Vercel",
+      "successful-cat - NICO",
+      "NICO Mobile Restart Production Proof",
+      "NICO iOS WebKit Paint Proof",
+      "NICO Spanish Comprehensive Production Proof",
+      "NICO Two-Service Production Acceptance",
+      "NICO Production Acceptance Green Watch"
+    ]
+  },
+  "human_boundaries": {
+    "automation_can_create_human_disposition": false,
+    "automation_can_create_final_approval": false,
+    "automation_can_authorize_client_delivery": false,
+    "real_human_approval_executed": false,
+    "real_outside_repository_pilot_executed": false
+  },
   "outside_pilot_evidence_remaining": [
-    "exact merge-SHA backend and frontend deployment identity where infrastructure exposes it",
-    "fresh real external authorized repository run",
-    "two authorized cybersecurity specialists exercising the exception-first workflow",
-    "explicit human approval of the exact immutable package",
-    "protected delivery and post-download immutable package revalidation",
+    "fresh real authorized outside repository",
+    "real client and project identities and scope authorization",
+    "two authorized cybersecurity specialists exercising exception-first review",
+    "real professional candidate dispositions and quality-control review",
+    "explicit human approval or rejection of the exact immutable package",
+    "protected client delivery and post-download digest revalidation",
     "empirical combined specialist review time"
   ],
-  "claims_not_made": [
-    "broad commercial readiness",
-    "superiority over competitors",
-    "support for untested ecosystems",
-    "deployment identity when infrastructure does not expose it",
-    "four-hour specialist target achieved in real client work"
-  ]
+  "activation_rule": "Phase 4 Engineering and durability are represented as satisfied only in a completion-bound NICO Comprehensive package whose dynamic exact-current-main status snapshot proves every required context successful. A real outside-repository pilot remains a separate unexecuted stage."
 }
