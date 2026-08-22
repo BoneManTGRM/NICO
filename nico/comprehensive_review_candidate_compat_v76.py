@@ -154,6 +154,16 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
 
     install_comprehensive_spanish_exit_criteria_v88()
 
+    # Publish the real four-phase program inside every ordinary NICO Comprehensive
+    # package after every late bilingual renderer and validator has been installed.
+    # This updates canonical JSON, Markdown, HTML, and the existing client PDF without
+    # creating a second report product or weakening human approval and delivery gates.
+    from nico.comprehensive_four_phase_report_v1 import (
+        install_comprehensive_four_phase_report_v1,
+    )
+
+    four_phase_report_result = install_comprehensive_four_phase_report_v1()
+
     return {
         "status": "installed",
         "version": VERSION,
@@ -166,6 +176,7 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
         "report_language_publication_contract_installer": (
             report_language_publication_contract_result
         ),
+        "four_phase_report_installer": four_phase_report_result,
         "legacy_spanish_alias_bound": (
             legacy.repair_spanish_review_candidate_markdown
             is repair_spanish_review_candidate_markdown
@@ -186,6 +197,8 @@ def install_comprehensive_review_candidate_compat_v76() -> dict[str, Any]:
             )
             is True
         ),
+        "four_phase_report_bound": four_phase_report_result.get("bound") is True,
+        "all_four_phases_in_one_comprehensive_report": True,
         "exact_h2_matching_required": True,
         "evidence_summary_preserved": True,
         "dedicated_review_candidate_section": True,
