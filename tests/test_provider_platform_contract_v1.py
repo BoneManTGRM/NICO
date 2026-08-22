@@ -69,7 +69,6 @@ class FakeProvider:
 
 def test_tier1_provider_requires_exact_immutable_revision() -> None:
     provider = FakeProvider(resolved_revision="c" * 40)
-
     with pytest.raises(ProviderContractViolation, match="revision mismatch"):
         validate_provider(provider)
 
@@ -87,7 +86,6 @@ def test_snapshot_capability_requires_hashed_provider_artifact() -> None:
         branch=identity.branch,
         immutable_revision=identity.immutable_revision,
     )
-
     with pytest.raises(ProviderContractViolation, match="hashed provider evidence artifact"):
         validate_provider(provider)
 
@@ -109,9 +107,40 @@ def test_missing_provider_capability_creates_limitation_not_fake_defect() -> Non
             deployments=False,
         )
     )
-
     limitations = capability_limitations(provider)
-
     assert any(item["affected_controls"] == ["pipeline_history"] for item in limitations)
     assert all(item["category"] == "provider_capability" for item in limitations)
     assert all("technical maturity is not penalized as zero" in item["confidence_effect"] for item in limitations)
+
+
+def _identity(*, provider: ProviderKind, instance: str, repository: str = "service") -> RepositoryIdentity:
+    return RepositoryIdentity(
+        provider=provider,
+        provider_instance=instance,
+        organization_or_workspace="engineering",
+        project="platform",
+        repository=repository,
+        repository_id="immutable-repository-42",
+        branch="main",
+        immutable_revision="a" * 40,
+    )
+
+
+def test_canonical_repository_key_separates_provider_instances() -> None:
+    hosted = _identity(provider=ProviderKind.GITLAB, instance="https://gitlab.com")
+    self_managed = _identity(provider=ProviderKind.GITLAB, instance="https://gitlab.example.com")
+    assert hosted.canonical_repository_key != self_managed.canonical_repository_key
+    assert hosted.resolved_provider_deployment.value == "hosted"
+    assert self_managed.resolved_provider_deployment.value == "self_managed"
+
+
+def test_repository_rename_does_not_change_immutable_lineage_key() -> None:
+    before = _identity(provider=ProviderKind.GITHUB, instance="https://github.com", repository="old-name")
+    after = _identity(provider=ProviderKind.GITHUB, instance="github.com/", repository="new-name")
+    assert before.canonical_repository_key == after.canonical_repository_key
+
+
+def test_provider_instance_identity_rejects_embedded_credentials() -> None:
+    identity = _identity(provider=ProviderKind.GITLAB, instance="https://token@gitlab.example.com")
+    with pytest.raises(ProviderContractViolation, match="must not contain credentials"):
+        identity.validate()

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Protocol, Sequence
+from urllib.parse import urlsplit, urlunsplit
 
 VERSION = "nico.provider_platform_contract.v1"
+IDENTITY_VERSION = "nico.repository_provider_identity.v2"
 
 
 class ProviderContractViolation(ValueError):
@@ -12,6 +15,7 @@ class ProviderContractViolation(ValueError):
 
 
 class ProviderKind(str, Enum):
+    # Wire values are retained for backward compatibility.
     GITHUB = "github"
     GITLAB = "gitlab"
     BITBUCKET_CLOUD = "bitbucket_cloud"
@@ -27,6 +31,85 @@ class ProviderKind(str, Enum):
     GERRIT = "gerrit"
     PERFORCE = "perforce"
     SUBVERSION = "subversion"
+
+
+class ProviderDeployment(str, Enum):
+    HOSTED = "hosted"
+    SELF_MANAGED = "self_managed"
+    EXTERNAL_CI = "external_ci"
+
+
+_HOSTED_PROVIDER_HOSTS: Mapping[ProviderKind, frozenset[str]] = {
+    ProviderKind.GITHUB: frozenset({"github.com", "api.github.com"}),
+    ProviderKind.GITLAB: frozenset({"gitlab.com"}),
+    ProviderKind.BITBUCKET_CLOUD: frozenset({"bitbucket.org", "api.bitbucket.org"}),
+    ProviderKind.AZURE_DEVOPS: frozenset({"dev.azure.com"}),
+}
+
+_EXTERNAL_CI_PROVIDERS = frozenset(
+    {
+        ProviderKind.JENKINS,
+        ProviderKind.CIRCLECI,
+        ProviderKind.BUILDKITE,
+        ProviderKind.TEAMCITY,
+    }
+)
+
+
+def normalize_provider_instance(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ProviderContractViolation("Provider instance is required")
+    candidate = raw if "://" in raw else f"https://{raw}"
+    parsed = urlsplit(candidate)
+    if not parsed.hostname:
+        raise ProviderContractViolation("Provider instance must contain a hostname")
+    if parsed.username or parsed.password:
+        raise ProviderContractViolation("Provider instance must not contain credentials")
+    if parsed.query or parsed.fragment:
+        raise ProviderContractViolation("Provider instance must not contain query or fragment data")
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https"}:
+        raise ProviderContractViolation("Provider instance must use HTTP or HTTPS identity syntax")
+    hostname = parsed.hostname.lower().rstrip(".")
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    path = "/" + "/".join(part for part in parsed.path.split("/") if part)
+    if path == "/":
+        path = ""
+    return urlunsplit((scheme, f"{hostname}{port}", path, "", ""))
+
+
+def provider_family(provider: ProviderKind) -> str:
+    if provider in {ProviderKind.BITBUCKET_CLOUD, ProviderKind.BITBUCKET_DATA_CENTER}:
+        return "bitbucket"
+    return provider.value
+
+
+def infer_provider_deployment(provider: ProviderKind, provider_instance: str) -> ProviderDeployment:
+    normalized = normalize_provider_instance(provider_instance)
+    host = urlsplit(normalized).hostname or ""
+    if provider in _EXTERNAL_CI_PROVIDERS:
+        return ProviderDeployment.EXTERNAL_CI
+    if provider is ProviderKind.BITBUCKET_DATA_CENTER:
+        return ProviderDeployment.SELF_MANAGED
+    if provider is ProviderKind.AWS_CODECOMMIT:
+        return ProviderDeployment.HOSTED
+    if provider is ProviderKind.AZURE_DEVOPS and (host == "dev.azure.com" or host.endswith(".visualstudio.com")):
+        return ProviderDeployment.HOSTED
+    if host in _HOSTED_PROVIDER_HOSTS.get(provider, frozenset()):
+        return ProviderDeployment.HOSTED
+    if provider in {
+        ProviderKind.GITHUB,
+        ProviderKind.GITLAB,
+        ProviderKind.AZURE_DEVOPS,
+        ProviderKind.GITEA,
+        ProviderKind.FORGEJO,
+        ProviderKind.GERRIT,
+        ProviderKind.PERFORCE,
+        ProviderKind.SUBVERSION,
+    }:
+        return ProviderDeployment.SELF_MANAGED
+    return ProviderDeployment.HOSTED
 
 
 @dataclass(frozen=True)
@@ -60,6 +143,42 @@ class RepositoryIdentity:
     snapshot_created_at: str = ""
     provider_evidence_artifact: str = ""
     provider_evidence_sha256: str = ""
+    provider_deployment: ProviderDeployment | None = None
+
+    @property
+    def normalized_provider_instance(self) -> str:
+        return normalize_provider_instance(self.provider_instance)
+
+    @property
+    def resolved_provider_deployment(self) -> ProviderDeployment:
+        inferred = infer_provider_deployment(self.provider, self.provider_instance)
+        if self.provider_deployment is None:
+            return inferred
+        if self.provider_deployment is not inferred:
+            raise ProviderContractViolation(
+                "Provider deployment contradicts provider kind or instance: "
+                f"declared={self.provider_deployment.value}; inferred={inferred.value}"
+            )
+        return self.provider_deployment
+
+    @property
+    def canonical_provider_instance_id(self) -> str:
+        digest = hashlib.sha256(self.normalized_provider_instance.encode("utf-8")).hexdigest()
+        return f"provider-instance-v2:{digest}"
+
+    @property
+    def canonical_repository_key(self) -> str:
+        if not str(self.repository_id or "").strip():
+            raise ProviderContractViolation("Immutable provider repository ID is required")
+        components = (
+            IDENTITY_VERSION,
+            provider_family(self.provider),
+            self.resolved_provider_deployment.value,
+            self.canonical_provider_instance_id,
+            str(self.repository_id).strip(),
+        )
+        digest = hashlib.sha256("\x1f".join(components).encode("utf-8")).hexdigest()
+        return f"nico-repository-v2:{digest}"
 
     def validate(self) -> None:
         required = {
@@ -72,6 +191,9 @@ class RepositoryIdentity:
         missing = [name for name, value in required.items() if not str(value or "").strip()]
         if missing:
             raise ProviderContractViolation(f"Repository identity is incomplete: {missing}")
+        # Evaluate canonical coordinates during validation so unsafe or ambiguous
+        # instance data cannot enter candidate lineage or approval bindings.
+        _ = self.canonical_repository_key
 
 
 @dataclass(frozen=True)
@@ -141,25 +263,15 @@ class SourceControlProvider(Protocol):
     capabilities: ProviderCapabilitySet
 
     def authenticate(self) -> Mapping[str, Any]: ...
-
     def get_repository_identity(self) -> RepositoryIdentity: ...
-
     def resolve_immutable_revision(self, revision: str | None = None) -> str: ...
-
     def snapshot_repository(self, revision: str) -> Mapping[str, Any]: ...
-
     def list_branches(self) -> Sequence[str]: ...
-
     def list_commits(self, *, limit: int = 100) -> Sequence[Mapping[str, Any]]: ...
-
     def list_change_requests(self, *, limit: int = 100) -> Sequence[ChangeRequest]: ...
-
     def list_pipeline_runs(self, *, revision: str | None = None, limit: int = 100) -> Sequence[PipelineRun]: ...
-
     def list_branch_policies(self) -> Sequence[BranchPolicy]: ...
-
     def list_deployments(self, *, limit: int = 100) -> Sequence[DeploymentReference]: ...
-
     def download_artifact(self, artifact_reference: str) -> bytes: ...
 
 
@@ -223,14 +335,19 @@ __all__ = [
     "BranchPolicy",
     "ChangeRequest",
     "DeploymentReference",
+    "IDENTITY_VERSION",
     "PipelineJob",
     "PipelineRun",
     "ProviderCapabilitySet",
     "ProviderContractViolation",
+    "ProviderDeployment",
     "ProviderKind",
     "RepositoryIdentity",
     "SourceControlProvider",
     "assert_tier1_conformance",
     "capability_limitations",
+    "infer_provider_deployment",
+    "normalize_provider_instance",
+    "provider_family",
     "validate_provider",
 ]
