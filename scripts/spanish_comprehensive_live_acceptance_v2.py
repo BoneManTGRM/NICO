@@ -17,6 +17,27 @@ _FAILURE_PHASES = {
     "Assessment requires attention",
     "La evaluación requiere atención",
 }
+_BACKEND_FAILURE_STATES = {
+    "blocked",
+    "failed",
+    "failure",
+    "error",
+    "cancelled",
+    "canceled",
+    "timed_out",
+    "timeout",
+}
+_BACKEND_FAILURE_MARKERS = (
+    "blocked",
+    "failed",
+    "failure",
+    "error",
+    "exception",
+    "cancelled",
+    "canceled",
+    "timed_out",
+    "timeout",
+)
 
 _OUTPUT_PATH = Path("audit-results/spanish-comprehensive-live-proof.json")
 _FRONTEND_ORIGIN = ""
@@ -219,6 +240,46 @@ def _snapshot(
     }
 
 
+def _backend_terminal_failure(snapshot: Mapping[str, Any]) -> str:
+    """Return an exact backend failure reason once durable telemetry is terminal.
+
+    UI projection can lag a terminal backend record. A terminal backend failure must
+    stop the production proof immediately instead of waiting for a stale UI phase or
+    the outer workflow timeout. Terminal success still requires the existing UI and
+    final-artifact validation path.
+    """
+
+    lifecycle = _record(snapshot.get("lifecycle"))
+    active = _record(snapshot.get("active_stage_execution"))
+    failure = _record(snapshot.get("failure"))
+    if lifecycle.get("terminal") is not True:
+        return ""
+
+    lifecycle_status = _text(lifecycle.get("status"), 80).casefold()
+    active_state = _text(active.get("state"), 80).casefold()
+    reason = _text(
+        failure.get("reason")
+        or failure.get("worker_error")
+        or failure.get("worker_error_type"),
+        1_200,
+    )
+    reason_is_failure = bool(
+        reason
+        and any(marker in reason.casefold() for marker in _BACKEND_FAILURE_MARKERS)
+    )
+    if (
+        lifecycle_status in _BACKEND_FAILURE_STATES
+        or active_state in _BACKEND_FAILURE_STATES
+        or reason_is_failure
+    ):
+        return reason or (
+            "backend terminal failure "
+            f"(lifecycle_status={lifecycle_status or 'unknown'}, "
+            f"active_state={active_state or 'unknown'})"
+        )
+    return ""
+
+
 def _emit(snapshot: dict[str, Any]) -> None:
     _write_progress(snapshot)
     print(
@@ -250,16 +311,23 @@ def _wait_for_terminal_with_telemetry(
 
         if now >= next_telemetry or terminal or failed:
             last_payload = _fetch_run_payload(page, run_id)
-            _emit(
-                _snapshot(
-                    page=page,
-                    run_id=run_id,
-                    payload=last_payload,
-                    started_monotonic=started,
-                    terminal=terminal,
-                )
+            snapshot = _snapshot(
+                page=page,
+                run_id=run_id,
+                payload=last_payload,
+                started_monotonic=started,
+                terminal=terminal,
             )
+            backend_failure = _backend_terminal_failure(snapshot)
+            if backend_failure:
+                snapshot["status"] = "terminal_failure_observed"
+            _emit(snapshot)
             next_telemetry = now + _telemetry_seconds()
+            if backend_failure:
+                raise AssertionError(
+                    f"Backend reached terminal Spanish run failure for {run_id}: "
+                    f"{backend_failure}; snapshot={_text(snapshot, 1_500)}"
+                )
 
         if terminal:
             return last_ui
@@ -284,6 +352,14 @@ def _wait_for_terminal_with_telemetry(
         started_monotonic=started,
         terminal=False,
     )
+    backend_failure = _backend_terminal_failure(snapshot)
+    if backend_failure:
+        snapshot["status"] = "terminal_failure_observed"
+        _emit(snapshot)
+        raise AssertionError(
+            f"Backend reached terminal Spanish run failure for {run_id}: "
+            f"{backend_failure}; snapshot={_text(snapshot, 1_500)}"
+        )
     snapshot["status"] = "timed_out"
     _emit(snapshot)
     raise AssertionError(
