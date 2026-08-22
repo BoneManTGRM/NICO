@@ -7,6 +7,12 @@ from typing import Any
 VERSION = "nico.spanish-cross-format-score-parity.v1"
 _MARKER = "__nico_spanish_cross_format_score_parity_v1__"
 _SCORE_SUMMARY_MARKER = "__nico_spanish_score_summary_contract_v1__"
+_CANDIDATE_COUNT_EVIDENCE = (
+    "Candidate counts are not presented as confirmed defect volume."
+)
+_CANDIDATE_COUNT_EVIDENCE_ES = (
+    "Los conteos de candidatos no se presentan como volumen de defectos confirmados."
+)
 
 
 def _install_phase2_review_work() -> dict[str, Any]:
@@ -18,13 +24,15 @@ def _install_phase2_review_work() -> dict[str, Any]:
 
 
 def _install_spanish_presentation_score_summary_contract() -> dict[str, Any]:
-    """Bind the current canonical score-truth sentence to a strict Spanish contract.
+    """Bind strict current score and candidate-count evidence translation contracts.
 
     The final Comprehensive presentation may append an operational-metrics sentence
-    to the original score summary. The canonical Spanish renderer intentionally fails
-    closed for unknown English prose, so this wrapper recognizes only that exact
-    extended contract, preserves every dynamic score/count, and delegates every other
-    value to the existing validator.
+    to the original score summary. The candidate register also emits one exact
+    evidence-boundary sentence separating raw candidate counts from confirmed
+    defect volume. The canonical Spanish renderer intentionally fails closed for
+    unknown English prose, so this wrapper recognizes only those exact contracts,
+    preserves every dynamic score/count, and delegates every other value to the
+    existing validator.
     """
 
     from nico import comprehensive_spanish_canonical_report_v87 as presentation
@@ -34,7 +42,9 @@ def _install_spanish_presentation_score_summary_contract() -> dict[str, Any]:
         return {
             "status": "already_installed",
             "bound": True,
-            "contract": "extended_operational_metrics_score_summary",
+            "contract": (
+                "extended_operational_metrics_score_summary_and_candidate_count_evidence"
+            ),
         }
 
     extended_score_summary = re.compile(
@@ -52,6 +62,9 @@ def _install_spanish_presentation_score_summary_contract() -> dict[str, Any]:
     @wraps(current)
     def localized_score_summary(value: str) -> str | None:
         stripped = str(value or "").strip()
+        if stripped == _CANDIDATE_COUNT_EVIDENCE:
+            return _CANDIDATE_COUNT_EVIDENCE_ES
+
         match = extended_score_summary.fullmatch(stripped)
         if match is None:
             return current(value)
@@ -74,9 +87,12 @@ def _install_spanish_presentation_score_summary_contract() -> dict[str, Any]:
     return {
         "status": "installed",
         "bound": presentation._structured_presentation_es is localized_score_summary,
-        "contract": "extended_operational_metrics_score_summary",
+        "contract": (
+            "extended_operational_metrics_score_summary_and_candidate_count_evidence"
+        ),
         "scores_preserved": True,
         "candidate_counts_preserved": True,
+        "confirmed_defect_boundary_preserved": True,
         "unknown_english_still_fails_closed": True,
     }
 
@@ -132,12 +148,24 @@ def install_spanish_cross_format_score_parity() -> dict[str, Any]:
         )
         result.update(
             {
-                "markdown_technical_matches": cross._score_near_label(markdown, technical, technical_labels),
-                "markdown_evidence_adjusted_matches": cross._score_near_label(markdown, adjusted, adjusted_labels),
-                "html_technical_matches": cross._score_near_label(html_text, technical, technical_labels),
-                "html_evidence_adjusted_matches": cross._score_near_label(html_text, adjusted, adjusted_labels),
-                "pdf_technical_matches": cross._score_near_label(pdf_text, technical, technical_labels),
-                "pdf_evidence_adjusted_matches": cross._score_near_label(pdf_text, adjusted, adjusted_labels),
+                "markdown_technical_matches": cross._score_near_label(
+                    markdown, technical, technical_labels
+                ),
+                "markdown_evidence_adjusted_matches": cross._score_near_label(
+                    markdown, adjusted, adjusted_labels
+                ),
+                "html_technical_matches": cross._score_near_label(
+                    html_text, technical, technical_labels
+                ),
+                "html_evidence_adjusted_matches": cross._score_near_label(
+                    html_text, adjusted, adjusted_labels
+                ),
+                "pdf_technical_matches": cross._score_near_label(
+                    pdf_text, technical, technical_labels
+                ),
+                "pdf_evidence_adjusted_matches": cross._score_near_label(
+                    pdf_text, adjusted, adjusted_labels
+                ),
                 "localized_score_labels_verified": True,
                 "verified_language": "es-MX",
             }
