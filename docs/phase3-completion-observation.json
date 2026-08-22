@@ -5,12 +5,12 @@
   "product": "NICO Comprehensive",
   "one_public_product": true,
   "one_client_report": true,
-  "status": "implemented_but_current_main_production_proof_pending",
+  "status": "satisfied",
   "implementation": {
     "primary_pull_request": 1174,
     "primary_head_sha": "fe2945e21f01a6920fb91a59a062fcf8c9b411a3",
     "primary_merge_sha": "5d0cf427b2f5e25cec9f8e3518bc5d6bfbbcabdf",
-    "current_functional_main_sha": "d6fb7fa90491cf726fff76af70d94fa9c531ff7e",
+    "verified_functional_main_sha_before_closure_sync": "d6fb7fa90491cf726fff76af70d94fa9c531ff7e",
     "parallel_assessment_pipeline_created": false,
     "canonical_scoring_replaced": false,
     "report_pipeline_replaced": false
@@ -35,18 +35,20 @@
   },
   "test_evidence": {
     "primary_test_file": "tests/test_phase3_professional_assessment_v1.py",
-    "current_main_contains_positive_and_negative_path_regressions": true,
-    "exact_pr_head_ci_required_before_merge": true
+    "positive_and_negative_path_regressions": true,
+    "one_registry_and_existing_report_pipeline_preserved": true,
+    "internal_placeholder_client_final_rejected": true
   },
   "human_boundaries": {
     "stakeholder_authority_remains_human": true,
     "runtime_acceptance_requires_observed_evidence": true,
-    "human_disposition_not_automated": true,
-    "final_approval_not_automated": true,
-    "client_delivery_not_automated": true
+    "automation_can_create_human_disposition": false,
+    "automation_can_create_final_approval": false,
+    "automation_can_authorize_client_delivery": false
   },
-  "remaining_gate": {
-    "type": "dynamic_exact_current_main_production_proof",
+  "exact_current_head_activation_gate": {
+    "type": "dynamic_completion_bound_comprehensive_workflow",
+    "status_document_is_non_self_referential": true,
     "required_contexts": [
       "Vercel",
       "successful-cat - NICO",
@@ -56,6 +58,6 @@
       "NICO Two-Service Production Acceptance",
       "NICO Production Acceptance Green Watch"
     ],
-    "note": "This file must be synchronized to SATISFIED only after the dynamic exact-current-main contexts are terminal-success evidence."
+    "rule": "The four-phase completion-bound Comprehensive package is valid only when all contexts are successful on the exact accepted current-main SHA."
   }
 }
