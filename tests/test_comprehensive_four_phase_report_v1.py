@@ -15,6 +15,7 @@ from nico.comprehensive_four_phase_report_v1 import (
     apply_four_phase_program,
     build_four_phase_program,
     finalize_four_phase_report_package,
+    install_comprehensive_four_phase_report_v1,
     repair_four_phase_markdown,
 )
 
@@ -25,6 +26,9 @@ def _canonical(*, language: str = "en") -> dict:
             "repository": "example/repository",
             "commit_sha": "a" * 40,
             "run_id": "comprun_test",
+            "customer_id": "customer_test",
+            "project_id": "project_test",
+            "evidence_ledger_id": "ledger_test",
             "report_language": language,
         },
         "locale": language,
@@ -107,7 +111,9 @@ def test_four_phase_program_preserves_truth_boundaries() -> None:
     assert program["phases"][0]["status"] == "complete"
     assert program["phases"][1]["status"] == "ready_pending_human_decision"
     assert program["phases"][2]["status"] == "complete_with_disclosed_limitations"
-    assert program["phases"][3]["status"] == "blocked_pending_authorized_human_approval"
+    assert program["phases"][3]["status"] == (
+        "blocked_pending_authorized_human_approval"
+    )
     assert program["human_review_required"] is True
     assert program["client_delivery_allowed"] is False
 
@@ -177,7 +183,12 @@ def test_finalizer_publishes_all_four_phases_across_surfaces() -> None:
     result = finalize_four_phase_report_package(_package(_canonical()))
     assert result["json"]["four_phase_program"]["phase_count"] == 4
     assert result["client_report_completion"]["all_four_phases_present"] is True
-    assert result["client_report_completion"]["phase4_human_approval_boundary_preserved"] is True
+    assert (
+        result["client_report_completion"][
+            "phase4_human_approval_boundary_preserved"
+        ]
+        is True
+    )
     assert result["client_delivery_allowed"] is False
     assert result["pdf_page_count"] == 6
     assert result["pdf_sha256"]
@@ -196,7 +207,9 @@ def test_finalizer_rebinds_canonical_json_artifact_digest_after_phase_insertion(
         {
             "artifact_type": "canonical_json",
             "sha256": "stale-before-four-phase-publication",
-            "digest_scope": "canonical_truth_payload_excluding_artifact_self_reference",
+            "digest_scope": (
+                "canonical_truth_payload_excluding_artifact_self_reference"
+            ),
         }
     ]
     canonical["artifact_manifest"] = {
@@ -208,10 +221,69 @@ def test_finalizer_rebinds_canonical_json_artifact_digest_after_phase_insertion(
     expected = _canonical_payload_digest(result["json"])
 
     assert result["json"]["artifacts"][0]["sha256"] == expected
-    assert result["json"]["artifact_manifest"]["artifacts"][0]["sha256"] == expected
+    assert (
+        result["json"]["artifact_manifest"]["artifacts"][0]["sha256"]
+        == expected
+    )
     assert result["json"]["four_phase_program"]["phase_count"] == 4
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
 
     second = finalize_four_phase_report_package(deepcopy(result))
     assert second == result
+
+
+def test_installer_publishes_before_exact_artifact_manifest_binding() -> None:
+    from nico import comprehensive_artifact_manifest_approval_v1 as manifest
+
+    state = install_comprehensive_four_phase_report_v1()
+    assert state["bound"] is True
+    assert state["publication_precedes_exact_artifact_binding"] is True
+
+    result = manifest.attach_artifact_manifest(_package(_canonical()))
+    canonical = result["json"]
+    assert canonical["four_phase_program"]["phase_count"] == 4
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False
+
+    pdf = base64.b64decode(result["pdf_base64"])
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+    for title in (
+        "Automated Technical Triage",
+        "Human Review by Exception",
+        "Broader Professional Assessment",
+        "Approval and Client Delivery",
+    ):
+        assert title in result["markdown"]
+        assert title in result["html"]
+        assert title in pdf_text
+
+    contents = {
+        "findings_csv": result["findings_csv"].encode("utf-8"),
+        "evidence_csv": result["evidence_csv"].encode("utf-8"),
+        "candidate_register_json": result["candidate_register_json"].encode(
+            "utf-8"
+        ),
+        "remediation_backlog_json": result["remediation_backlog_json"].encode(
+            "utf-8"
+        ),
+        "markdown_report": result["markdown"].encode("utf-8"),
+        "html_report": result["html"].encode("utf-8"),
+        "comprehensive_pdf": pdf,
+        "canonical_json": result["canonical_json"].encode("utf-8"),
+    }
+    for entry in result["artifact_manifest"]["artifacts"]:
+        artifact_type = entry["artifact_type"]
+        assert artifact_type in contents
+        content = contents[artifact_type]
+        assert hashlib.sha256(content).hexdigest() == entry["sha256"]
+        assert len(content) == entry["size_bytes"]
+
+    manifest_json = result["evidence_manifest_json"].encode("utf-8")
+    assert (
+        hashlib.sha256(manifest_json).hexdigest()
+        == result["evidence_manifest_sha256"]
+    )
