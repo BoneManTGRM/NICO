@@ -38,6 +38,40 @@ def _one(pattern: str, text: str, label: str) -> int:
     return int(match.group(1))
 
 
+def _require_score_separation(compact: str) -> None:
+    """Require explicit proof that operational workload does not change numeric scores.
+
+    Historical completion-bound reports used one fixed sentence. Current canonical
+    reports expose the same truth through structured ``score_effect`` fields. Accept
+    either representation, but fail closed if any structured field reports a value
+    other than ``none`` or if no score-separation evidence is present.
+    """
+
+    normalized = compact.lower()
+    structured_values = [
+        match.group(1).lower().replace("-", "_")
+        for match in re.finditer(
+            r"`?(?:score_effect|technical_score_effect)`?\s*:\s*([a-z0-9_-]+)",
+            normalized,
+            re.I,
+        )
+    ]
+    non_none = sorted({value for value in structured_values if value != "none"})
+    if non_none:
+        raise ValueError(
+            "Source Comprehensive report contains non-none score-effect evidence: "
+            + ", ".join(non_none)
+        )
+    if structured_values:
+        return
+
+    legacy_phrase = "no numeric technical-maturity or evidence-adjusted score effect"
+    if legacy_phrase in normalized:
+        return
+
+    raise ValueError("Source Comprehensive report is missing no score gaming")
+
+
 def extract_report(text: str, expected_sha: str) -> dict[str, Any]:
     compact = " ".join(text.split())
     if expected_sha not in compact:
@@ -46,11 +80,11 @@ def extract_report(text: str, expected_sha: str) -> dict[str, Any]:
         "technical/human separation": "Technical triage remains proposal-only",
         "explicit approval": "Only an authorized reviewer may change the status to APPROVED FINAL",
         "blocked delivery": "client delivery remains blocked",
-        "no score gaming": "no numeric technical-maturity or Evidence-Adjusted score effect",
     }
     for label, phrase in required.items():
         if phrase.lower() not in compact.lower():
             raise ValueError(f"Source Comprehensive report is missing {label}")
+    _require_score_separation(compact)
 
     report = {
         "fresh_required": _one(r"Current-evidence candidates requiring new technical triage:\s*(\d+)", compact, "fresh triage required"),
