@@ -5,14 +5,12 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from starlette.requests import Request
 
 from nico import provider_repository_enumeration_v1 as enumeration
 from nico.provider_platform_contract_v1 import ProviderKind
 from nico.provider_rollout_control_v1 import (
     STATE_KEY,
     ProviderRolloutConfig,
-    ProviderRolloutError,
     ProviderRolloutRegistry,
     ProviderRolloutState,
     install_provider_rollout_routes,
@@ -90,8 +88,27 @@ def _query(provider: str, **extra: str) -> dict[str, str]:
         "customer_id": "client-1",
         "project_id": "project-1",
         "session_id": "session-1",
+        "run_id": "comprun-1",
         **extra,
     }
+
+
+def _expected_binding(app: FastAPI, provider: ProviderKind) -> str:
+    registry = getattr(app.state, STATE_KEY)
+    assert isinstance(registry, ProviderRolloutRegistry)
+    return registry.preflight(
+        {
+            "provider": provider.value,
+            "client_id": "client-1",
+            "project_id": "project-1",
+            "session_id": "session-1",
+            "run_id": "comprun-1",
+            "locale": "en-US",
+            "execution_mode": "internal_test",
+            "ci_provider": provider.value,
+        },
+        operator_authorized=True,
+    )["connection_binding_id"]
 
 
 def test_repository_enumeration_route_requires_authorized_operator(
@@ -116,7 +133,7 @@ def test_repository_enumeration_route_requires_authorized_operator(
     assert called is False
 
 
-def test_github_repository_enumeration_is_operator_bound_and_normalized(
+def test_github_repository_enumeration_preserves_assessment_binding_and_normalizes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app = _app(monkeypatch)
@@ -146,6 +163,9 @@ def test_github_repository_enumeration_is_operator_bound_and_normalized(
     body = response.json()
     assert body["status"] == "authorized_operator_repository_enumeration"
     assert body["provider"] == "github"
+    assert body["run_id"] == "comprun-1"
+    assert body["binding_scope"] == "assessment_run"
+    assert body["connection_binding_id"] == _expected_binding(app, ProviderKind.GITHUB)
     assert body["repository_count"] == 1
     assert body["repositories"] == [
         {
@@ -159,7 +179,6 @@ def test_github_repository_enumeration_is_operator_bound_and_normalized(
             "web_url": "https://github.com/Acme/alpha",
         }
     ]
-    assert body["connection_binding_id"]
     assert body["operator_run_only"] is True
     assert body["customer_self_service"] is False
     assert body["credentials_server_side_only"] is True
@@ -219,7 +238,7 @@ def test_github_repository_enumeration_is_operator_bound_and_normalized(
         ),
     ),
 )
-def test_hosted_repository_enumeration_reuses_server_side_provider_clients(
+def test_hosted_repository_enumeration_reuses_server_clients_and_assessment_binding(
     monkeypatch: pytest.MonkeyPatch,
     provider: ProviderKind,
     query_extra: dict[str, str],
@@ -250,6 +269,8 @@ def test_hosted_repository_enumeration_reuses_server_side_provider_clients(
     assert response.status_code == 200
     body = response.json()
     assert body["provider"] == provider.value
+    assert body["connection_binding_id"] == _expected_binding(app, provider)
+    assert body["binding_scope"] == "assessment_run"
     assert body["repository_count"] == 1
     assert body["repositories"][0]["repository_locator"] == expected_locator
     assert body["operator_run_only"] is True
@@ -260,6 +281,33 @@ def test_hosted_repository_enumeration_reuses_server_side_provider_clients(
     assert clients[0].calls == [expected_args]
     assert clients[0].closed is True
     assert "must-not-appear-in-enumeration" not in repr(body)
+
+
+def test_existing_assessment_binding_mismatch_fails_closed_before_provider_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _app(monkeypatch)
+    used = False
+
+    def build_client(*args, **kwargs):
+        nonlocal used
+        used = True
+        raise AssertionError("binding mismatch must fail before provider client construction")
+
+    monkeypatch.setattr(enumeration, "build_hosted_provider_client", build_client)
+    response = TestClient(app).get(
+        enumeration.OPERATOR_REPOSITORIES_ROUTE,
+        params=_query(
+            "gitlab",
+            existing_connection_binding_id="nico-provider-connection-v2:not-the-current-binding",
+        ),
+        headers={"X-NICO-Admin-Token": "operator-token"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "provider_connection_binding_mismatch"
+    assert response.json()["detail"]["credential_detail_exposed"] is False
+    assert used is False
 
 
 def test_disabled_provider_enumeration_fails_closed_before_provider_client_use(
@@ -282,30 +330,15 @@ def test_disabled_provider_enumeration_fails_closed_before_provider_client_use(
         raise AssertionError("disabled provider must fail before client construction")
 
     monkeypatch.setattr(enumeration, "build_hosted_provider_client", build_client)
-    registry = getattr(app.state, STATE_KEY)
-    request = Request(
-        {
-            "type": "http",
-            "method": "GET",
-            "path": enumeration.OPERATOR_REPOSITORIES_ROUTE,
-            "headers": [],
-            "query_string": b"",
-            "server": ("testserver", 443),
-            "client": ("127.0.0.1", 12345),
-            "scheme": "https",
-            "app": app,
-        }
+    response = TestClient(app).get(
+        enumeration.OPERATOR_REPOSITORIES_ROUTE,
+        params=_query("gitlab"),
+        headers={"X-NICO-Admin-Token": "operator-token"},
     )
-    assert isinstance(registry, ProviderRolloutRegistry)
-    with pytest.raises(ProviderRolloutError, match="provider_operationally_disabled"):
-        enumeration.enumerate_authorized_repositories(
-            request,
-            provider_value="gitlab",
-            customer_id="client-1",
-            project_id="project-1",
-            session_id="session-1",
-            token="operator-token",
-        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "provider_operationally_disabled"
+    assert response.json()["detail"]["credential_detail_exposed"] is False
     assert used is False
 
 
