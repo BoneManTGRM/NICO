@@ -77,12 +77,26 @@ def test_production_claim_requires_exact_production_client_evidence() -> None:
     assert support.client_claim_allowed is True
 
 
-def test_disclosure_is_explicit_and_never_upgrades_fixture_evidence() -> None:
-    disclosure = provider_disclosure(ProviderKind.GITLAB)
+@pytest.mark.parametrize(
+    "provider",
+    (
+        ProviderKind.GITLAB,
+        ProviderKind.BITBUCKET_CLOUD,
+        ProviderKind.AZURE_DEVOPS,
+    ),
+)
+def test_hosted_engineering_parity_is_explicit_without_upgrading_client_claim(
+    provider: ProviderKind,
+) -> None:
+    disclosure = provider_disclosure(provider)
     assert disclosure["support_level"] == "fixture_only"
-    assert disclosure["maturity"] == "IMPLEMENTED_BUT_UNPROVEN"
+    assert disclosure["maturity"] == "ENGINEERING_PARITY_PROVEN"
     assert disclosure["client_claim_allowed"] is False
     assert disclosure["authenticated_conformance_run"] is None
+    assert disclosure["engineering_parity_evidence_reference"]
+    assert disclosure["real_provider_integration_evidence_reference"] is None
+    assert disclosure["controlled_pilot_evidence_reference"] is None
+    assert disclosure["production_client_evidence_reference"] is None
     assert disclosure["limitations"]
 
 
