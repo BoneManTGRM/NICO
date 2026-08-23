@@ -7,11 +7,9 @@ import {
   detectRepositoryProvider,
   normalizeRepositorySelection,
   providerOption,
-  readOperatorAdminToken,
   readRepositoryProvider,
   REPOSITORY_PROVIDER_OPTIONS,
   type RepositoryProvider,
-  writeOperatorAdminToken,
   writeRepositoryProvider,
 } from "./repositoryProvider";
 import type {Locale} from "./assessmentTypes";
@@ -67,10 +65,10 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
   const [operatorToken, setOperatorToken] = useState("");
   const [mount, setMount] = useState<HTMLElement | null>(null);
   const repositoryInput = useRef<HTMLInputElement | null>(null);
+  const operatorTokenRef = useRef("");
 
   useEffect(() => {
     setProvider(readRepositoryProvider());
-    setOperatorToken(readOperatorAdminToken());
   }, []);
 
   useEffect(() => {
@@ -158,7 +156,6 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
       if (boundInput) boundInput.placeholder = originalPlaceholder;
       mountNode?.remove();
       repositoryInput.current = null;
-      setMount(null);
     };
   }, [locale]);
 
@@ -183,7 +180,7 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
       const selectedProvider = detectRepositoryProvider(repository) || readRepositoryProvider();
       if (selectedProvider === "github") return originalFetch(input, init);
 
-      const token = readOperatorAdminToken();
+      const token = operatorTokenRef.current.trim();
       if (!token) return errorResponse(403, "authorized_nico_operator_required", operatorMessage(locale));
 
       let normalized;
@@ -235,8 +232,8 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
   }
 
   function updateOperatorToken(value: string) {
+    operatorTokenRef.current = value;
     setOperatorToken(value);
-    writeOperatorAdminToken(value);
   }
 
   if (!mount) return null;
@@ -271,8 +268,8 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
         </label>
         <p className={styles.operatorNote}>
           {locale === "es-MX"
-            ? "El token de operador se conserva solo durante esta sesión. Las credenciales del proveedor permanecen exclusivamente en el servidor."
-            : "The operator token is kept only for this session. Provider credentials remain server-side only."}
+            ? "El token de operador existe solo en memoria mientras esta página está abierta. Las credenciales del proveedor permanecen exclusivamente en el servidor."
+            : "The operator token exists only in memory while this page is open. Provider credentials remain server-side only."}
         </p>
       </div> : null}
     </div>,
