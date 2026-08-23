@@ -38,16 +38,22 @@ def test_workflow_banner_has_structural_english_and_mexican_spanish_parity() -> 
     assert source.count("number: \"03\"") == 2
 
 
-def test_navigation_exposes_equal_bilingual_brand_and_language_controls() -> None:
+def test_navigation_exposes_equal_bilingual_brand_and_state_preserving_language_controls() -> None:
     source = _read("apps/web/app/PrimaryNavigation.tsx")
+    locale = _read("apps/web/app/assessment/assessmentLocale.ts")
 
     assert "Evidence-bound technical assessment" in source
     assert "Evaluación técnica vinculada a evidencia" in source
     assert "Ejecutar evaluación" in source
     assert "Revisión final" in source
     assert "language-switcher" in source
-    assert "/es/assessment?tier=${assessment}#assessment" in source
-    assert "/assessment?tier=${assessment}#assessment" in source
+    assert "localePreservingHref(" in source
+    assert 'data-preserves-assessment-state="true"' in source
+    assert 'const assessmentPath = locale === "es-MX" ? "/es/assessment" : "/assessment"' in source
+    assert 'targetPath = `${spanish ? "/es/assessment" : "/assessment"}${suffix}`' in locale
+    assert 'params.set("tier", "comprehensive")' in locale
+    assert 'params.delete("run_id")' not in locale
+    assert 'params.delete("report_locale")' not in locale
 
 
 def test_shared_polish_covers_navigation_workflow_content_and_accessibility() -> None:
