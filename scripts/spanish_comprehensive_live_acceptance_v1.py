@@ -18,7 +18,7 @@ import mobile_restart_live_acceptance_v1 as recovery
 
 VERSION = "nico.spanish_comprehensive_live_acceptance.v1"
 SPANISH_ROUTE = "/es/assessment"
-SPANISH_REPO_LABEL = "Propietario/nombre del repositorio o URL de GitHub"
+SPANISH_REPO_LABEL = "URL o identificador del repositorio"
 SPANISH_CLIENT_LABEL = "Nombre del cliente, opcional"
 SPANISH_PROJECT_LABEL = "Nombre del proyecto, opcional"
 SPANISH_TERMINAL_PHASE = "Revisión interna requerida"
