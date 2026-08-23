@@ -154,9 +154,36 @@ class ProviderOnboardingBinding:
     credential_reference_fingerprint: str
 
 
-
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def _normalized_field_name(value: Any) -> str:
+    return "".join(
+        character
+        for character in str(value or "").casefold()
+        if character.isalnum()
+    )
+
+
+_NORMALIZED_SECRET_FIELDS = frozenset(
+    _normalized_field_name(field) for field in _SECRET_FIELDS
+)
+
+
+def _contains_secret_field(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            any(
+                secret_fragment in _normalized_field_name(raw_key)
+                for secret_fragment in _NORMALIZED_SECRET_FIELDS
+            )
+            or _contains_secret_field(item)
+            for raw_key, item in value.items()
+        )
+    if isinstance(value, (list, tuple, set)):
+        return any(_contains_secret_field(item) for item in value)
+    return False
 
 
 def _required(value: Any, field: str) -> str:
@@ -437,9 +464,9 @@ class ProviderRolloutRegistry:
     ) -> dict[str, Any]:
         if not isinstance(payload, Mapping):
             raise ProviderRolloutError("request_body_must_be_object")
-        keys = {str(key).casefold() for key in payload}
-        if keys & _SECRET_FIELDS:
+        if _contains_secret_field(payload):
             raise ProviderRolloutError("raw_provider_credentials_prohibited")
+        keys = {str(key).casefold() for key in payload}
         if keys & _TAMPERED_AUTHORITY_FIELDS:
             raise ProviderRolloutError("provider_authority_state_is_server_controlled")
 
@@ -513,7 +540,6 @@ class ProviderRolloutRegistry:
             "ci_provider": ci_provider,
             "repository_and_ci_provider_separate": ci_provider != provider.value,
             "credential_reference_bound": True,
-            "credential_reference_fingerprint": binding.credential_reference_fingerprint,
             "credential_reference_exposed": False,
             "rollout_state": capability["rollout_state"],
             "availability_state": capability["availability_state"],
@@ -648,6 +674,10 @@ def install_provider_rollout_routes(
                 payload = await request.json()
                 if not isinstance(payload, Mapping):
                     raise ProviderRolloutError("request_body_must_be_object")
+                if _contains_secret_field(payload):
+                    raise ProviderRolloutError(
+                        "provider_evidence_and_credentials_not_mutable_by_api"
+                    )
                 forbidden = {str(key).casefold() for key in payload} & (
                     _SECRET_FIELDS
                     | {
