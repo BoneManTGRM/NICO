@@ -16,18 +16,20 @@ STAGE_PAGES = {
 }
 
 
-def test_primary_navigation_opens_native_two_service_assessment_intake() -> None:
+def test_primary_navigation_opens_one_native_comprehensive_assessment_intake() -> None:
     navigation = NAVIGATION.read_text(encoding="utf-8")
     primary = navigation.split("export const PRIMARY_SERVICES = [", 1)[1].split("] as const;", 1)[0]
 
     assert 'label: "Run Assessment"' in primary
-    assert 'href: "/assessment?tier=express#assessment"' in primary
+    assert 'href: "/assessment?tier=comprehensive#assessment"' in primary
     assert 'data-primary-service-count="1"' in navigation
+    assert 'data-canonical-product="nico-comprehensive"' in navigation
     assert 'label: "Mid Assessment"' not in primary
     assert 'href: "/assessment?tier=mid#assessment"' not in primary
     assert 'href: "/mid-assessment"' not in primary
-    assert 'type AssessmentMode = "express" | "comprehensive"' in navigation
-    assert '["comprehensive", "mid", "full", "deep"]' in navigation
+    assert 'type AssessmentMode = "express" | "comprehensive"' not in navigation
+    assert '["comprehensive", "mid", "full", "deep"]' not in navigation
+    assert "tier=express" not in primary
     for legacy in (
         '{label: "Mid Review", href: "/mid-review"}',
         '{label: "Mid Report", href: "/mid-report"}',
@@ -107,7 +109,7 @@ def test_root_layout_keeps_provider_for_legacy_routes_without_mounting_legacy_pu
     children_index = layout.index("{children}", provider_start)
     provider_end = layout.index("</MidWorkspaceProvider>", children_index)
     assert provider_start < children_index < provider_end
-    assert 'href="/assessment?tier=express#assessment"' in layout
+    assert 'href="/assessment?tier=comprehensive#assessment"' in layout
     assert "NICO never approves findings or creates client delivery automatically" in layout
     for legacy_global in (
         "AssessmentMidLiveStatusTransport",
