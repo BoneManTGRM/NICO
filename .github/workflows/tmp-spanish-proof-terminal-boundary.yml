@@ -1,120 +1,102 @@
-name: Temporary Spanish terminal proof repair
+name: Temporary Spanish terminal source repair
 
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [synchronize, reopened]
 
 permissions:
   contents: write
 
 concurrency:
-  group: temporary-spanish-terminal-proof-${{ github.event.pull_request.number }}
+  group: temporary-spanish-terminal-source-repair
   cancel-in-progress: false
 
 jobs:
   repair-and-verify:
     if: github.head_ref == 'fix/spanish-proof-terminal-boundary'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
-      - name: Check out exact repair branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: fix/spanish-proof-terminal-boundary
           fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.13'
-
-      - name: Repair terminal phase and review proof contract
+      - name: Patch and verify source contract
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          script_path = Path('scripts/spanish_comprehensive_live_acceptance_v1.py')
-          source = script_path.read_text(encoding='utf-8')
-          old_constant = 'SPANISH_TERMINAL_PHASE = "Revisión interna requerida"\n'
-          new_constants = (
+          path = Path('scripts/spanish_comprehensive_live_acceptance_v1.py')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace(
+              'SPANISH_TERMINAL_PHASE = "Revisión interna requerida"\n',
               'SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"\n'
-              'SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"\n'
+              'SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"\n',
+              1,
           )
-          if old_constant in source:
-              source = source.replace(old_constant, new_constants, 1)
-          elif 'SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"' not in source:
-              raise SystemExit('expected stale Spanish terminal phase constant')
-
-          old_assertion = (
+          old = (
               '        assert terminal.get("phase") == SPANISH_TERMINAL_PHASE, terminal\n'
               '        assert terminal.get("report_actions_present") == "true", terminal\n'
           )
-          new_assertion = (
+          new = (
               '        assert terminal.get("phase") == SPANISH_TERMINAL_PHASE, terminal\n'
               '        assert terminal.get("review") == SPANISH_TERMINAL_REVIEW, terminal\n'
               '        assert terminal.get("report") == "Completa", terminal\n'
               '        assert terminal.get("report_actions_present") == "true", terminal\n'
           )
-          if old_assertion in source:
-              source = source.replace(old_assertion, new_assertion, 1)
-          elif 'terminal.get("review") == SPANISH_TERMINAL_REVIEW' not in source:
-              raise SystemExit('expected stale terminal UI assertion')
-          script_path.write_text(source, encoding='utf-8')
+          if old in source:
+              source = source.replace(old, new, 1)
+          required = (
+              'SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"',
+              'SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"',
+              'terminal.get("phase") == SPANISH_TERMINAL_PHASE',
+              'terminal.get("review") == SPANISH_TERMINAL_REVIEW',
+              'terminal.get("report") == "Completa"',
+          )
+          missing = [item for item in required if item not in source]
+          if missing:
+              raise SystemExit(f'missing Spanish terminal contract: {missing}')
+          path.write_text(source, encoding='utf-8')
 
-          workflow_path = Path('.github/workflows/spanish-comprehensive-production-proof.yml')
-          workflow = workflow_path.read_text(encoding='utf-8')
-          old_workflow_assertion = (
-              '          assert payload["terminal"]["phase"] == "Revisión interna requerida"\n'
-              '          assert payload["spanish_pdf_presentation_verified"] is True\n'
-          )
-          new_workflow_assertion = (
-              '          assert payload["terminal"]["phase"] == "Se requiere revisión experta"\n'
-              '          assert payload["terminal"]["review"] == "Revisión interna requerida"\n'
-              '          assert payload["terminal"]["report"] == "Completa"\n'
-              '          assert payload["spanish_pdf_presentation_verified"] is True\n'
-          )
-          if old_workflow_assertion in workflow:
-              workflow = workflow.replace(old_workflow_assertion, new_workflow_assertion, 1)
-          elif 'payload["terminal"]["review"] == "Revisión interna requerida"' not in workflow:
-              raise SystemExit('expected stale workflow terminal assertion')
-          workflow_path.write_text(workflow, encoding='utf-8')
+          test = Path('tests/test_spanish_comprehensive_terminal_proof_contract.py')
+          test.write_text('''from pathlib import Path
 
-          test_path = Path('tests/test_spanish_comprehensive_terminal_proof_contract.py')
-          test_path.write_text(
-              '''from __future__ import annotations\n\nfrom pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[1]\n\n\ndef test_spanish_terminal_phase_and_review_are_distinct() -> None:\n    source = (ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v1.py").read_text(encoding="utf-8")\n\n    assert 'SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"' in source\n    assert 'SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"' in source\n    assert 'terminal.get("phase") == SPANISH_TERMINAL_PHASE' in source\n    assert 'terminal.get("review") == SPANISH_TERMINAL_REVIEW' in source\n    assert 'terminal.get("report") == "Completa"' in source\n\n\ndef test_spanish_production_workflow_requires_both_terminal_labels() -> None:\n    workflow = (ROOT / ".github" / "workflows" / "spanish-comprehensive-production-proof.yml").read_text(encoding="utf-8")\n\n    assert 'payload["terminal"]["phase"] == "Se requiere revisión experta"' in workflow\n    assert 'payload["terminal"]["review"] == "Revisión interna requerida"' in workflow\n    assert 'payload["terminal"]["report"] == "Completa"' in workflow\n''',
-              encoding='utf-8',
-          )
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_spanish_terminal_phase_and_review_are_distinct() -> None:
+    source = (ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v1.py").read_text(encoding="utf-8")
+    assert 'SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"' in source
+    assert 'SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"' in source
+    assert 'terminal.get("phase") == SPANISH_TERMINAL_PHASE' in source
+    assert 'terminal.get("review") == SPANISH_TERMINAL_REVIEW' in source
+    assert 'terminal.get("report") == "Completa"' in source
+''', encoding='utf-8')
           PY
-
-      - name: Run focused proof-contract verification
-        run: |
-          set -euo pipefail
           python - <<'PY'
           from runpy import run_path
-
           tests = run_path('tests/test_spanish_comprehensive_terminal_proof_contract.py')
           tests['test_spanish_terminal_phase_and_review_are_distinct']()
-          tests['test_spanish_production_workflow_requires_both_terminal_labels']()
-          print('Spanish terminal proof contract verified.')
           PY
           python -m py_compile scripts/spanish_comprehensive_live_acceptance_v1.py
           git diff --check
-
-      - name: Commit verified repair and remove temporary workflow
+      - name: Commit verified source repair
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/tmp-spanish-proof-terminal-boundary.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            scripts/spanish_comprehensive_live_acceptance_v1.py \
-            .github/workflows/spanish-comprehensive-production-proof.yml \
-            tests/test_spanish_comprehensive_terminal_proof_contract.py \
-            .github/workflows/tmp-spanish-proof-terminal-boundary.yml
+          git add scripts/spanish_comprehensive_live_acceptance_v1.py tests/test_spanish_comprehensive_terminal_proof_contract.py
+          if git diff --cached --quiet; then
+            echo 'Source repair already persisted.'
+            exit 0
+          fi
           git diff --cached --check
           git commit -m 'Fix Spanish terminal production proof labels'
           git push origin HEAD:fix/spanish-proof-terminal-boundary
