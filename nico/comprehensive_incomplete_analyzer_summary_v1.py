@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import base64
 import io
 from functools import wraps
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 VERSION = "nico.comprehensive-incomplete-analyzer-summary.v1"
 _MARKDOWN_MARKER = "_nico_incomplete_analyzer_markdown_v1"
 _PDF_MARKER = "_nico_incomplete_analyzer_pdf_v1"
+_ACCURACY_MARKER = "_nico_incomplete_analyzer_accuracy_v1"
 _CANONICAL_LABEL = "Incomplete applicable analyzers"
 _SPANISH_LABEL = "Analizadores aplicables incompletos"
+_LEGACY_ENGLISH_ONLY_ERROR = (
+    "client report omitted the canonical incomplete analyzer count"
+)
 
 
 def _text(value: Any) -> str:
@@ -69,6 +74,134 @@ def canonical_summary_line(canonical: Mapping[str, Any], *, spanish: bool) -> st
     return f"{label}: {count}"
 
 
+def _report_is_spanish(canonical: Mapping[str, Any]) -> bool:
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    for value in (
+        identity.get("report_language"),
+        identity.get("requested_report_language"),
+        identity.get("requested_locale"),
+        identity.get("locale"),
+        canonical.get("report_language"),
+        canonical.get("locale"),
+        assessment.get("report_language"),
+        assessment.get("locale"),
+    ):
+        normalized = _text(value).casefold().replace("_", "-")
+        if normalized.startswith("es"):
+            return True
+        if normalized.startswith("en"):
+            return False
+    return False
+
+
+def _coverage_denominator(canonical: Mapping[str, Any]) -> int:
+    contract = (
+        canonical.get("client_readiness_contract")
+        if isinstance(canonical.get("client_readiness_contract"), Mapping)
+        else {}
+    )
+    for value in (
+        contract.get("coverage_denominator"),
+        canonical.get("coverage_denominator"),
+    ):
+        count = _count_value(value)
+        if count is not None:
+            return count
+    return 0
+
+
+def _rendered_surface_text(package: Mapping[str, Any]) -> str:
+    markdown = str(package.get("markdown") or "")
+    rendered_html = str(package.get("html") or "")
+    try:
+        from pypdf import PdfReader
+
+        pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
+        extracted = "\n".join(
+            page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+        )
+    except Exception:
+        extracted = ""
+    return "\n".join((markdown, rendered_html, extracted))
+
+
+def _validate_localized_accuracy(
+    current: Callable[[Mapping[str, Any]], dict[str, Any]],
+    package: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Preserve every legacy accuracy check while removing one English-only assumption.
+
+    The historical validator correctly requires the canonical analyzer count, but its
+    zero-incomplete check recognizes only the English presentation label. A valid es-MX
+    package is therefore rejected after rendering the localized count. Validate the
+    actual locale-specific line first, then supply an English-only compatibility probe
+    solely to the legacy validator so all of its remaining checks still execute. The
+    probe is never returned or published.
+    """
+
+    canonical = (
+        package.get("json")
+        if isinstance(package.get("json"), Mapping)
+        else {}
+    )
+    spanish = _report_is_spanish(canonical)
+    expected_line = canonical_summary_line(canonical, spanish=spanish)
+    scanner_backed = _coverage_denominator(canonical) >= 9
+    if scanner_backed and expected_line.casefold() not in _rendered_surface_text(
+        package
+    ).casefold():
+        raise ValueError(
+            "client report omitted the locale-specific canonical incomplete analyzer "
+            f"count: {expected_line}"
+        )
+
+    compatibility_probe_used = False
+    try:
+        result = current(package)
+    except ValueError as exc:
+        if (
+            not scanner_backed
+            or not spanish
+            or _text(exc) != _LEGACY_ENGLISH_ONLY_ERROR
+        ):
+            raise
+        compatibility_probe = dict(package)
+        compatibility_probe["markdown"] = (
+            str(package.get("markdown") or "").rstrip()
+            + "\n\n"
+            + canonical_summary_line(canonical, spanish=False)
+            + "\n"
+        )
+        result = current(compatibility_probe)
+        compatibility_probe_used = True
+
+    validated = dict(result)
+    validated.update(
+        {
+            "canonical_incomplete_analyzer_count": (
+                canonical_incomplete_analyzer_count(canonical)
+            ),
+            "canonical_incomplete_analyzer_summary": expected_line,
+            "canonical_incomplete_analyzer_summary_language": (
+                "es-MX" if spanish else "en"
+            ),
+            "locale_aware_incomplete_analyzer_validation": True,
+            "legacy_english_only_probe_used": compatibility_probe_used,
+            "legacy_english_only_probe_published": False,
+        }
+    )
+    return validated
+
+
 def _ensure_markdown_summary(
     markdown: str,
     canonical: Mapping[str, Any],
@@ -88,7 +221,11 @@ def _ensure_markdown_summary(
         if marker in output:
             return output.replace(marker, f"{line}\n{marker}", 1)
 
-    heading = "## Evidence Package Summary" if not spanish else "## Resumen del paquete de evidencia"
+    heading = (
+        "## Evidence Package Summary"
+        if not spanish
+        else "## Resumen del paquete de evidencia"
+    )
     if heading in output:
         start = output.index(heading) + len(heading)
         return output[:start] + f"\n\n{line}" + output[start:]
@@ -151,6 +288,7 @@ def install_comprehensive_incomplete_analyzer_summary() -> dict[str, Any]:
 
     from nico import client_report_completion_v2 as completion
     from nico import comprehensive_client_ready_projection_v1 as projection
+    from nico import comprehensive_client_report_render_v60 as report_render
 
     current_markdown = projection.compact_client_markdown
     if not getattr(current_markdown, _MARKDOWN_MARKER, False):
@@ -200,6 +338,21 @@ def install_comprehensive_incomplete_analyzer_summary() -> dict[str, Any]:
         setattr(pdf_wrapped, "_nico_previous", current_pdf)
         projection.render_evidence_review_gate_pdf = pdf_wrapped
 
+    current_accuracy = report_render.validate_existing_report_accuracy
+    if not getattr(current_accuracy, _ACCURACY_MARKER, False):
+
+        @wraps(current_accuracy)
+        def validate_existing_report_accuracy(
+            package: Mapping[str, Any],
+        ) -> dict[str, Any]:
+            return _validate_localized_accuracy(current_accuracy, package)
+
+        setattr(validate_existing_report_accuracy, _ACCURACY_MARKER, True)
+        setattr(validate_existing_report_accuracy, "_nico_previous", current_accuracy)
+        report_render.validate_existing_report_accuracy = (
+            validate_existing_report_accuracy
+        )
+
     completion.compact_client_markdown = projection.compact_client_markdown
     completion.render_evidence_review_gate_pdf = (
         projection.render_evidence_review_gate_pdf
@@ -218,6 +371,11 @@ def install_comprehensive_incomplete_analyzer_summary() -> dict[str, Any]:
             _PDF_MARKER,
             False,
         ),
+        "accuracy_validator_bound": getattr(
+            report_render.validate_existing_report_accuracy,
+            _ACCURACY_MARKER,
+            False,
+        ),
         "completion_markdown_alias_bound": (
             completion.compact_client_markdown
             is projection.compact_client_markdown
@@ -230,6 +388,7 @@ def install_comprehensive_incomplete_analyzer_summary() -> dict[str, Any]:
         "canonical_count_required_in_html": True,
         "canonical_count_required_in_pdf": True,
         "localized_spanish_label_retained": True,
+        "legacy_english_only_validator_not_authoritative": True,
         "scanner_candidates_not_promoted": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
