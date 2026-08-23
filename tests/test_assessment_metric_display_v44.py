@@ -7,13 +7,18 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "apps/web/app/assessment/AssessmentMetricDisplayV44.tsx"
 CSS = ROOT / "apps/web/app/assessment/assessment-metric-display-v44.css"
 ROUTE = ROOT / "apps/web/app/assessment/page.tsx"
+SPANISH_ROUTE = ROOT / "apps/web/app/es/assessment/page.tsx"
 PAGE = ROOT / "apps/web/app/assessment/AssessmentPage.tsx"
 
 
 def test_metric_display_is_bound_through_the_canonical_page_for_both_locales() -> None:
-    route = ROUTE.read_text(encoding="utf-8").strip()
+    route = ROUTE.read_text(encoding="utf-8")
+    spanish_route = SPANISH_ROUTE.read_text(encoding="utf-8")
     source = PAGE.read_text(encoding="utf-8")
-    assert route == 'export {default} from "./AssessmentPage";'
+    assert 'import AssessmentPage from "./AssessmentPage"' in route
+    assert '<AssessmentPage locale="en-US" />' in route
+    assert 'import AssessmentPage from "../../assessment/AssessmentPage"' in spanish_route
+    assert '<AssessmentPage locale="es-MX" />' in spanish_route
     assert 'import AssessmentMetricDisplayV44 from "./AssessmentMetricDisplayV44"' in source
     assert "<AssessmentMetricDisplayV44 />" in source
 

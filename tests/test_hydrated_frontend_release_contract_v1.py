@@ -24,15 +24,18 @@ def load_acceptance_module():
     return module
 
 
-def test_live_routes_use_the_single_canonical_hydrated_assessment_page() -> None:
-    route = ROUTE.read_text(encoding="utf-8").strip()
+def test_live_routes_use_one_canonical_hydrated_assessment_page_with_locale_only_wrappers() -> None:
+    route = ROUTE.read_text(encoding="utf-8")
     spanish_route = SPANISH_ROUTE.read_text(encoding="utf-8")
 
-    assert route == 'export {default} from "./AssessmentPage";'
+    assert 'import AssessmentPage from "./AssessmentPage"' in route
+    assert '<AssessmentPage locale="en-US" />' in route
     assert "AssessmentWorkspace" not in route
     assert "AssessmentMetricDisplayV44" not in route
-    assert 'import AssessmentPage from "../../assessment/page"' in spanish_route
+    assert 'import AssessmentPage from "../../assessment/AssessmentPage"' in spanish_route
     assert '<AssessmentPage locale="es-MX" />' in spanish_route
+    assert "AssessmentWorkspace" not in spanish_route
+    assert "useAssessmentRun" not in spanish_route
 
 
 def test_assessment_page_binds_client_hydration_to_server_release_sha() -> None:
