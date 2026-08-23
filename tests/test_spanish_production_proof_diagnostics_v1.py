@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "spanish-comprehensive-production-proof.yml"
 TELEMETRY = ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v2.py"
+TERMINAL = ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v3.py"
 
 
 def test_running_exact_sha_spanish_proof_is_not_cancelled_by_new_pushes() -> None:
@@ -17,12 +18,17 @@ def test_running_exact_sha_spanish_proof_is_not_cancelled_by_new_pushes() -> Non
     assert "NICO_SPANISH_PROOF_TELEMETRY_SECONDS" in source
 
 
-def test_workflow_runs_telemetry_wrapper_and_uploads_progress_evidence() -> None:
+def test_workflow_runs_terminal_wrapper_and_uploads_progress_evidence() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
+    terminal = TERMINAL.read_text(encoding="utf-8")
 
-    assert "python scripts/spanish_comprehensive_live_acceptance_v2.py" in source
+    assert "python scripts/spanish_comprehensive_live_acceptance_v3.py" in source
     assert "spanish-comprehensive-live-proof.progress.json" in source
     assert "if: always()" in source
+    # v3 owns exact terminal presentation expectations while delegating the bounded
+    # worker/deadline telemetry instrumentation to v2. This preserves one proof run
+    # and one diagnostic stream rather than duplicating execution.
+    assert "from scripts import spanish_comprehensive_live_acceptance_v2" in terminal or "spanish_comprehensive_live_acceptance_v2" in terminal
 
 
 def test_telemetry_projects_bounded_worker_and_deadline_diagnostics() -> None:
