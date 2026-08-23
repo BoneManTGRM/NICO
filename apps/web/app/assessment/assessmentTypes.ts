@@ -2,8 +2,11 @@ export const POLL_INTERVAL_MS = 3000;
 export const MAX_POLL_ATTEMPTS = 360;
 
 export type CanonicalLocale = "en-US" | "es-MX";
-export type LegacyLocale = "en";
-export type Locale = CanonicalLocale | LegacyLocale;
+export type LegacyLocale = "en" | "es-MX";
+// Existing copy catalogs and assessment business logic remain presentation-only
+// consumers of the historical English token. Canonical external locale identity
+// is represented separately by CanonicalLocale.
+export type Locale = LegacyLocale;
 export type ReportLocale = CanonicalLocale;
 export type Service = "express" | "comprehensive";
 export type AssessmentState = "running" | "analyzing" | "generating_report" | "review_required" | "client_ready" | "failed" | "cancelled";
