@@ -15,7 +15,7 @@ def test_spanish_canary_starts_a_real_es_mx_comprehensive_run() -> None:
     assert 'SPANISH_ROUTE = "/es/assessment"' in text
     assert 'locale="es-MX"' in text
     assert 'SPANISH_REPO_LABEL = "Propietario/nombre del repositorio o URL de GitHub"' in text
-    assert 'SPANISH_TERMINAL_PHASE = "Revisión interna requerida"' in text
+    assert 'SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"' in text
     assert 'item.get("path") != "/api/nico/assessment/comprehensive-intake"' in text
     assert 'payload.get("report_language")' in text
     assert 'languages == ["es-MX"]' in text
@@ -76,7 +76,7 @@ def test_spanish_production_workflow_is_an_exact_main_release_gate() -> None:
     assert "SPANISH_PROOF_PROGRESS" in telemetry
     assert 'payload["report_language_requested"] == "es-MX"' in text
     assert 'payload["production_proof_scope_verified"] is True' in text
-    assert 'payload["terminal"]["phase"] == "Revisión interna requerida"' in text
+    assert 'payload["terminal"]["phase"] == "Se requiere revisión experta"' in text
     assert 'payload["spanish_pdf_presentation_verified"] is True' in text
     assert 'payload["human_review_required"] is True' in text
     assert 'payload["client_delivery_allowed"] is False' in text
