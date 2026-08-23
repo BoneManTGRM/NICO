@@ -27,12 +27,19 @@ def test_navigation_keeps_one_canonical_primary_assessment_destination() -> None
 
     assert primary.count('key: "') == 1
     assert set(re.findall(r'label: "([^"]+)"', primary)) == {"Run Assessment"}
-    assert 'href: "/assessment?tier=express#assessment"' in primary
+    assert 'href: "/assessment?tier=comprehensive#assessment"' in primary
     assert 'href: "/operations"' not in primary
     assert 'href: "/retainer-ops"' not in primary
     assert 'data-primary-service-count="1"' in source
-    for legacy_label in ("Express Assessment", "Mid Assessment", "Full Assessment", "Start Job"):
-        assert legacy_label not in primary
+    assert 'data-canonical-product="nico-comprehensive"' in source
+    for disallowed in (
+        "Express Assessment",
+        "Mid Assessment",
+        "Full Assessment",
+        "Start Job",
+        "tier=express",
+    ):
+        assert disallowed not in primary
 
 
 def test_more_menu_exposes_only_help_and_authorized_operator_destinations() -> None:
@@ -62,14 +69,17 @@ def test_more_menu_exposes_only_help_and_authorized_operator_destinations() -> N
 
     assert "Secondary navigation" in source
     assert "The primary assessment workflow remains under Run Assessment" in source
-    assert 'className="global-brand" href="/assessment?tier=express#assessment"' in source
+    assert '<a className="global-brand" href={assessmentHref}' in source
 
 
 def test_spanish_route_localizes_the_simplified_navigation_shell() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
-    assert 'const spanishActive = pathname.startsWith("/es")' in source
-    assert 'const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment"' in source
+    assert 'const spanishActive = pathname.startsWith("/es") || queryLocale === "es-MX"' in source
+    assert "localePreservingHref(" in source
+    assert "currentSearch" in source
+    assert "currentHash" in source
+    assert 'data-preserves-assessment-state="true"' in source
     assert '"run-job": "Ejecutar evaluación"' in source
     for translated in (
         "Navegación secundaria",
@@ -87,24 +97,30 @@ def test_spanish_route_localizes_the_simplified_navigation_shell() -> None:
     assert 'lang={spanishActive ? "es-MX" : undefined}' in source
 
 
-def test_run_assessment_uses_one_query_selected_native_intake() -> None:
+def test_run_assessment_uses_one_comprehensive_intake_and_preserves_route_state() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
     for required in [
-        'type AssessmentMode = "express" | "comprehensive"',
-        'new URLSearchParams(window.location.search).get("tier")',
-        '["comprehensive", "mid", "full", "deep"].includes',
-        "window.addEventListener(ASSESSMENT_TIER_EVENT",
+        'params.set("tier", "comprehensive")',
         'window.addEventListener("popstate"',
         'pathname.startsWith("/assessment")',
         'pathname.startsWith("/es/assessment")',
         'pathname.startsWith("/operations")',
         'pathname.startsWith("/retainer-ops")',
         'aria-current={active ? "page" : undefined}',
+        "new URLSearchParams(isAssessmentPath(pathname) ? search : \"\")",
+        "localePreservingHref(",
     ]:
         assert required in source
-    assert "MutationObserver" not in source
-    assert "requestedButton.click()" not in source
+    for removed in (
+        'type AssessmentMode = "express" | "comprehensive"',
+        '["comprehensive", "mid", "full", "deep"].includes',
+        "ASSESSMENT_TIER_EVENT",
+        "MutationObserver",
+        "requestedButton.click()",
+        "tier=express",
+    ):
+        assert removed not in source
 
 
 def test_layout_preserves_safety_disclosures_and_loads_final_polish() -> None:
