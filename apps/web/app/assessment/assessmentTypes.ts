@@ -1,7 +1,10 @@
 export const POLL_INTERVAL_MS = 3000;
 export const MAX_POLL_ATTEMPTS = 360;
 
-export type Locale = "en" | "es-MX";
+export type CanonicalLocale = "en-US" | "es-MX";
+export type LegacyLocale = "en";
+export type Locale = CanonicalLocale | LegacyLocale;
+export type ReportLocale = CanonicalLocale;
 export type Service = "express" | "comprehensive";
 export type AssessmentState = "running" | "analyzing" | "generating_report" | "review_required" | "client_ready" | "failed" | "cancelled";
 export type Phase = "idle" | "checking" | "starting" | "running" | "review_required" | "complete" | "unavailable" | "failed" | "timed_out";
