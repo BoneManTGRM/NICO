@@ -25,8 +25,9 @@ def test_shared_page_uses_canonical_locale_identity_without_parallel_business_lo
     types = source("apps/web/app/assessment/assessmentTypes.ts")
 
     assert 'export type CanonicalLocale = "en-US" | "es-MX"' in types
+    assert 'export type Locale = LegacyLocale' in types
     assert 'locale = "en-US"' in page
-    assert "<AssessmentWorkspace locale={locale} />" in page
+    assert "<AssessmentWorkspace locale={presentationLocale} />" in page
     assert 'locale === "es-MX" ? "es-MX" : "en"' in page
 
 
