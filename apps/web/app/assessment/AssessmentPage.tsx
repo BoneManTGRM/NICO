@@ -3,6 +3,7 @@ import AssessmentRuntimeTruthRepair from "./AssessmentRuntimeTruthRepair";
 import AssessmentMetricDisplayV44 from "./AssessmentMetricDisplayV44";
 import AssessmentHydrationContract from "./AssessmentHydrationContract";
 import AssessmentDynamicSpanishLocalization from "./AssessmentDynamicSpanishLocalization";
+import type {CanonicalLocale} from "./assessmentTypes";
 import "./assessment-inline-readiness.css";
 
 export const ASSESSMENT_CLIENT_COPY_CONTRACT = "expert-engagement-hydrated-v1";
@@ -16,16 +17,17 @@ function releaseSha(): string {
   ).trim();
 }
 
-export default function AssessmentPage({locale = "en"}: {locale?: "en" | "es-MX"}) {
+export default function AssessmentPage({locale = "en-US"}: {locale?: CanonicalLocale}) {
   const exactReleaseSha = releaseSha();
+  const legacyPresentationLocale = locale === "es-MX" ? "es-MX" : "en";
   return <>
     <AssessmentRuntimeTruthRepair />
     {/* Legacy source-contract marker: <AssessmentDynamicSpanishLocalization /> */}
-    <AssessmentDynamicSpanishLocalization locale={locale} />
+    <AssessmentDynamicSpanishLocalization locale={legacyPresentationLocale} />
     <AssessmentMetricDisplayV44 />
     <AssessmentWorkspace locale={locale} />
     <AssessmentHydrationContract
-      locale={locale}
+      locale={legacyPresentationLocale}
       releaseSha={exactReleaseSha}
       clientCopyContract={ASSESSMENT_CLIENT_COPY_CONTRACT}
     />
