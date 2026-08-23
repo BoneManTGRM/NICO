@@ -91,12 +91,6 @@ function isAssessmentPath(pathname: string): boolean {
   return pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment");
 }
 
-function isOperatorPath(pathname: string): boolean {
-  return pathname.startsWith("/operations")
-    || pathname.startsWith("/retainer-ops")
-    || pathname.startsWith("/guided-workflow");
-}
-
 function withLanguage(href: string, spanish: boolean): string {
   if (!spanish || (!href.startsWith("/operations") && !href.startsWith("/retainer-ops") && !href.startsWith("/guided-workflow"))) return href;
   const [pathAndQuery, hash = ""] = href.split("#", 2);
@@ -147,21 +141,16 @@ export default function PrimaryNavigation() {
     currentHash,
     currentLocale,
   );
-
-  // Legacy source-contract marker retained only for historical tests:
-  // className="global-brand" href="/assessment?tier=express#assessment"
   const languageHref = localePreservingHref(
     pathname,
     currentSearch,
     currentHash,
     targetLocale,
   );
-  const operatorWorkspace = isOperatorPath(pathname);
   const languageLabel = spanishActive ? "English" : "Español";
   const languageCode = spanishActive ? "EN" : "ES";
   const secondaryGroups = spanishActive ? SPANISH_SECONDARY_GROUPS : SECONDARY_GROUPS;
   const secondaryActive = activeService === "operations" || activeService === "retainer" || pathname.startsWith("/guided-workflow");
-  void operatorWorkspace;
 
   return <>
     <OperatorWorkspaceLocale />
