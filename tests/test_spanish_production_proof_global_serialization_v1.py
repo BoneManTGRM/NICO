@@ -21,9 +21,12 @@ def test_queued_release_policy_does_not_weaken_exact_release_or_delivery_gates()
     assert 'RELEASE_SHA: ${{ github.sha }}' in source
     assert "Verify exact frontend release identity" in source
     assert "Wait for exact frontend and backend deployments" in source
-    assert "scripts/spanish_comprehensive_live_acceptance_v2.py" in source
+    assert "scripts/spanish_comprehensive_live_acceptance_v3.py" in source
     assert "spanish-comprehensive-live-proof.progress.json" in source
     assert 'payload["production_proof_scope_verified"] is True' in source
+    assert 'payload["terminal"]["phase"] == "Se requiere revisión experta"' in source
+    assert 'payload["terminal"]["review"] == "Revisión interna requerida"' in source
+    assert 'payload["terminal"]["report"] == "Completa"' in source
     assert 'payload["spanish_pdf_presentation_verified"] is True' in source
     assert 'payload["human_review_required"] is True' in source
     assert 'payload["client_delivery_allowed"] is False' in source
