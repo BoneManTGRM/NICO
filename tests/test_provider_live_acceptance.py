@@ -44,10 +44,30 @@ class FakeCollector:
                     "path_with_namespace": repository_id,
                     "namespace": "group",
                     "default_branch": "main",
+                    "web_url": "https://gitlab.example.com/group/repo",
                 },
                 "revision": exact,
+                "source_tree": [
+                    {
+                        "id": "f" * 40,
+                        "path": "src/app.py",
+                        "type": "blob",
+                        "mode": "100644",
+                    }
+                ],
                 "merge_requests": [],
                 "pipelines": [{"id": 1, "sha": exact, "ref": "main", "status": "success"}],
+                "capability_status": [
+                    {"capability": "repository", "state": "supported", "reason": ""},
+                    {"capability": "commits", "state": "supported", "reason": ""},
+                    {"capability": "branches", "state": "supported", "reason": ""},
+                    {"capability": "tree", "state": "supported", "reason": ""},
+                    {"capability": "blobs", "state": "supported", "reason": ""},
+                    {"capability": "source_links", "state": "supported", "reason": ""},
+                ],
+                "pagination_complete": True,
+                "collection_limitations": [],
+                "snapshot_manifest_sha256": "sha256:" + "1" * 64,
                 "scopes": ["read_api", "read_repository"],
                 "collected_at": f"2026-07-21T00:00:0{self.index}Z",
             },
@@ -72,12 +92,22 @@ def test_two_pass_acceptance_preserves_identity_without_exporting_secret(monkeyp
     )
 
     assert result["status"] == "passed"
+    assert result["artifact_schema"] == "nico.provider_live_acceptance.v2"
+    assert result["provider_support_maturity"] == "REAL_PROVIDER_INTEGRATION_PROVEN"
+    assert result["live_production_claim"] is False
+    assert result["client_claim_allowed"] is False
+    assert result["controlled_pilot_proven"] is False
+    assert result["production_client_proven"] is False
     assert result["passes_completed"] == 2
     assert all(result["proof"].values())
     assert len({item["repository_id"] for item in result["runs"]}) == 1
     assert len({item["revision"] for item in result["runs"]}) == 1
+    assert all(item["source_object_count"] == 1 for item in result["runs"])
+    assert all(item["exact_source_locator_count"] == 1 for item in result["runs"])
     assert "never-export-me" not in str(result)
     assert result["credential_metadata"]["secret_present"] is True
+    assert result["human_review_required"] is True
+    assert result["human_approval_proven"] is False
     assert result["client_delivery_allowed"] is False
     assert collector.closed is True
 
