@@ -1,4 +1,4 @@
-import AssessmentPage from "../../assessment/page";
+import AssessmentPage from "../../assessment/AssessmentPage";
 import SpanishDocumentLanguage from "./SpanishDocumentLanguage";
 
 export const metadata = {
