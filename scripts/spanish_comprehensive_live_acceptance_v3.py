@@ -6,6 +6,7 @@ from typing import Any
 
 import spanish_comprehensive_live_acceptance_v1 as base
 import spanish_comprehensive_live_acceptance_v2 as telemetry
+from provider_neutral_repository_locator_contract_v1 import SPANISH_REPOSITORY_LABEL
 
 VERSION = "nico.spanish_comprehensive_live_acceptance.v3"
 SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"
@@ -15,8 +16,9 @@ _MARKER = "__nico_spanish_terminal_boundary_v3__"
 
 
 def install_spanish_terminal_boundary() -> None:
-    """Bind exact localized terminal semantics without changing assessment truth."""
+    """Bind current localized repository and terminal semantics to exact proof."""
 
+    base.SPANISH_REPO_LABEL = SPANISH_REPOSITORY_LABEL
     base.SPANISH_TERMINAL_PHASE = SPANISH_TERMINAL_PHASE
     current = base.recovery._wait_for_terminal_ui_ready
     if getattr(current, _MARKER, False):
