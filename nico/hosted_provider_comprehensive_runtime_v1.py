@@ -92,12 +92,33 @@ def _provider(value: Any) -> ProviderKind:
     return selected
 
 
+def _safe_segment(value: Any, error: str = "provider_repository_invalid") -> str:
+    normalized = str(value or "").strip()
+    if (
+        not normalized
+        or normalized in {".", ".."}
+        or not _SAFE_SEGMENT_RE.fullmatch(normalized)
+    ):
+        raise ValueError(error)
+    return normalized
+
+
 def _safe_path(value: Any, *, minimum_parts: int = 2) -> str:
-    normalized = str(value or "").strip().strip("/")
-    parts = normalized.split("/") if normalized else []
-    if len(parts) < minimum_parts or any(not _SAFE_SEGMENT_RE.fullmatch(part) for part in parts):
+    raw = str(value or "").strip()
+    if not raw or raw.startswith("/") or raw.endswith("/"):
         raise ValueError("provider_repository_invalid")
-    return "/".join(parts)
+    if (
+        "://" in raw
+        or "\\" in raw
+        or "\x00" in raw
+        or "\r" in raw
+        or "\n" in raw
+    ):
+        raise ValueError("provider_repository_invalid")
+    parts = raw.split("/")
+    if len(parts) < minimum_parts:
+        raise ValueError("provider_repository_invalid")
+    return "/".join(_safe_segment(part) for part in parts)
 
 
 def canonical_repository_label(
@@ -112,12 +133,19 @@ def canonical_repository_label(
     if provider is ProviderKind.GITLAB:
         return "gitlab.com/" + _safe_path(repository)
     if provider is ProviderKind.BITBUCKET_CLOUD:
-        return "bitbucket.org/" + _safe_path(repository, minimum_parts=2)
+        path = _safe_path(repository, minimum_parts=2)
+        if len(path.split("/")) != 2:
+            raise ValueError("bitbucket_repository_coordinates_invalid")
+        return "bitbucket.org/" + path
     if provider is ProviderKind.AZURE_DEVOPS:
-        org = _required(organization, "provider_organization")
-        project_name = _required(project, "provider_project")
-        if not _SAFE_SEGMENT_RE.fullmatch(org) or not _SAFE_SEGMENT_RE.fullmatch(project_name):
-            raise ValueError("azure_provider_coordinates_invalid")
+        org = _safe_segment(
+            _required(organization, "provider_organization"),
+            "azure_provider_coordinates_invalid",
+        )
+        project_name = _safe_segment(
+            _required(project, "provider_project"),
+            "azure_provider_coordinates_invalid",
+        )
         repo = _safe_path(repository, minimum_parts=1)
         if "/" in repo:
             raise ValueError("azure_repository_name_invalid")
@@ -128,11 +156,23 @@ def canonical_repository_label(
 def _hosted_url(value: str, *, host: str, default: str) -> str:
     raw = _text(value) or default
     parsed = urlparse(raw)
+    try:
+        explicit_port = parsed.port
+    except ValueError as exc:
+        raise ValueError("hosted_provider_instance_invalid") from exc
     if parsed.scheme != "https" or (parsed.hostname or "").casefold() != host:
         raise ValueError("hosted_provider_instance_invalid")
-    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+    if (
+        parsed.username
+        or parsed.password
+        or explicit_port is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
         raise ValueError("hosted_provider_instance_invalid")
-    return raw.rstrip("/")
+    return f"https://{host}"
 
 
 def _credential(
@@ -393,38 +433,58 @@ def _load_collection(snapshot: Mapping[str, Any], store: StorageAdapter) -> Mapp
     return payload
 
 
-def _hosted_clone_spec(repository: str) -> tuple[ProviderKind, str, str, str] | None:
-    label = str(repository or "").strip().strip("/")
-    if label.startswith("gitlab.com/"):
-        path = _safe_path(label[len("gitlab.com/"):])
-        return ProviderKind.GITLAB, f"https://gitlab.com/{path}.git", "oauth2", _TOKEN_ENV[ProviderKind.GITLAB]
-    if label.startswith("bitbucket.org/"):
-        path = _safe_path(label[len("bitbucket.org/"):], minimum_parts=2)
-        return ProviderKind.BITBUCKET_CLOUD, f"https://bitbucket.org/{path}.git", "x-token-auth", _TOKEN_ENV[ProviderKind.BITBUCKET_CLOUD]
-    if label.startswith("dev.azure.com/"):
-        parts = label.split("/")
-        if len(parts) != 6 or parts[3] != "_git" or any(not _SAFE_SEGMENT_RE.fullmatch(part) for part in (parts[1], parts[2], parts[4])):
-            raise ValueError("azure_repository_label_invalid")
-        # canonical label is dev.azure.com/org/project/_git/repo (five path tokens total)
-    return None
-
-
-def _azure_clone_spec(repository: str) -> tuple[ProviderKind, str, str, str] | None:
-    label = str(repository or "").strip().strip("/")
-    if not label.startswith("dev.azure.com/"):
-        return None
-    parts = label.split("/")
-    if len(parts) != 5 or parts[3] != "_git":
-        raise ValueError("azure_repository_label_invalid")
-    for value in (parts[1], parts[2], parts[4]):
-        if not _SAFE_SEGMENT_RE.fullmatch(value):
-            raise ValueError("azure_repository_label_invalid")
-    return ProviderKind.AZURE_DEVOPS, f"https://{label}", "nico", _TOKEN_ENV[ProviderKind.AZURE_DEVOPS]
-
-
 def _clone_spec(repository: str) -> tuple[ProviderKind, str, str, str] | None:
-    azure = _azure_clone_spec(repository)
-    return azure or _hosted_clone_spec(repository)
+    label = str(repository or "").strip()
+    if not label:
+        return None
+    if (
+        label.startswith("/")
+        or label.endswith("/")
+        or "://" in label
+        or "\\" in label
+        or "\x00" in label
+        or "\r" in label
+        or "\n" in label
+    ):
+        raise ValueError("provider_repository_label_invalid")
+    parts = label.split("/")
+    host = parts[0].casefold()
+
+    if host == "gitlab.com":
+        path = _safe_path("/".join(parts[1:]))
+        return (
+            ProviderKind.GITLAB,
+            f"https://gitlab.com/{path}.git",
+            "oauth2",
+            _TOKEN_ENV[ProviderKind.GITLAB],
+        )
+
+    if host == "bitbucket.org":
+        if len(parts) != 3:
+            raise ValueError("bitbucket_repository_label_invalid")
+        workspace = _safe_segment(parts[1], "bitbucket_repository_label_invalid")
+        repo = _safe_segment(parts[2], "bitbucket_repository_label_invalid")
+        return (
+            ProviderKind.BITBUCKET_CLOUD,
+            f"https://bitbucket.org/{workspace}/{repo}.git",
+            "x-token-auth",
+            _TOKEN_ENV[ProviderKind.BITBUCKET_CLOUD],
+        )
+
+    if host == "dev.azure.com":
+        if len(parts) != 5 or parts[3] != "_git":
+            raise ValueError("azure_repository_label_invalid")
+        organization = _safe_segment(parts[1], "azure_repository_label_invalid")
+        project = _safe_segment(parts[2], "azure_repository_label_invalid")
+        repo = _safe_segment(parts[4], "azure_repository_label_invalid")
+        return (
+            ProviderKind.AZURE_DEVOPS,
+            f"https://dev.azure.com/{organization}/{project}/_git/{repo}",
+            "nico",
+            _TOKEN_ENV[ProviderKind.AZURE_DEVOPS],
+        )
+
+    return None
 
 
 def _git_run(command: list[str], *, cwd: Path | None, env: Mapping[str, str], timeout: int = 90, runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> subprocess.CompletedProcess[str]:
