@@ -14,12 +14,7 @@ from nico.hosted_provider_comprehensive_runtime_v1 import (
     capture_hosted_provider_snapshot,
     checkout_hosted_provider_snapshot,
 )
-from nico.hosted_provider_comprehensive_safety_patch_v1 import (
-    install_hosted_provider_comprehensive_safety_patch,
-)
 from nico.provider_platform_contract_v1 import ProviderKind
-
-install_hosted_provider_comprehensive_safety_patch()
 
 
 class MemoryStore:
@@ -96,6 +91,7 @@ def test_major_provider_labels_are_provider_safe_and_unambiguous() -> None:
         (ProviderKind.GITLAB, "https://evil.example/repo"),
         (ProviderKind.GITLAB, "group\\repo"),
         (ProviderKind.BITBUCKET_CLOUD, "workspace"),
+        (ProviderKind.BITBUCKET_CLOUD, "workspace/repo/extra"),
         (ProviderKind.AZURE_DEVOPS, "repo/extra"),
     ),
 )
@@ -109,12 +105,26 @@ def test_provider_repository_coordinates_fail_closed(provider: ProviderKind, rep
         )
 
 
+def test_azure_provider_coordinates_reject_dot_segments() -> None:
+    for organization, project in (("..", "Project"), ("Org", ".")):
+        with pytest.raises(ValueError, match="azure_provider_coordinates_invalid"):
+            canonical_repository_label(
+                ProviderKind.AZURE_DEVOPS,
+                "repo",
+                organization=organization,
+                project=project,
+            )
+
+
 def test_hosted_provider_instance_cannot_be_arbitrary_or_downgraded() -> None:
     assert _hosted_url("https://gitlab.com", host="gitlab.com", default="https://gitlab.com") == "https://gitlab.com"
     for unsafe in (
         "http://gitlab.com",
         "https://evil.example",
+        "https://gitlab.com.evil.example",
         "https://user:pass@gitlab.com",
+        "https://gitlab.com:443",
+        "https://gitlab.com/api/v4",
         "https://gitlab.com?redirect=https://evil.example",
         "https://gitlab.com#fragment",
     ):
@@ -210,6 +220,24 @@ def test_clone_specs_use_https_without_embedding_credentials() -> None:
         assert "token" not in spec[1].casefold()
 
 
+def test_clone_specs_require_exact_host_token_and_canonical_shape() -> None:
+    assert _clone_spec("evil.example/gitlab.com/group/repo") is None
+    assert _clone_spec("gitlab.com.evil/group/repo") is None
+    assert _clone_spec("bitbucket.org.evil/workspace/repo") is None
+    assert _clone_spec("dev.azure.com.evil/Org/Project/_git/repo") is None
+
+    for malformed in (
+        "https://gitlab.com/group/repo",
+        "gitlab.com/group/../repo",
+        "gitlab.com/group/./repo",
+        "bitbucket.org/workspace/repo/extra",
+        "dev.azure.com/Org/Project/_git/repo/extra",
+        "dev.azure.com/../Project/_git/repo",
+    ):
+        with pytest.raises(ValueError):
+            _clone_spec(malformed)
+
+
 def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     revision = "e" * 40
     commands: list[list[str]] = []
@@ -264,6 +292,7 @@ def test_production_bootstrap_binds_provider_parity_without_saas_surface() -> No
     assert '"customer_self_service": False' in runtime
     assert '"human_review_required": True' in runtime
     assert '"client_delivery_allowed": False' in runtime
+    assert 'normalized in {".", ".."}' in runtime
     assert 'part in {"", ".", ".."}' in safety
     assert "verify=False" not in runtime
     assert "shell=True" not in runtime
