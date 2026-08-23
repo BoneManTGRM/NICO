@@ -18,17 +18,20 @@ def shared_source() -> str:
 
 def test_spanish_route_reuses_the_canonical_assessment_component_with_locale_prop() -> None:
     source = SPANISH_PAGE.read_text(encoding="utf-8")
-    assert 'import AssessmentPage from "../../assessment/page"' in source
+    assert 'import AssessmentPage from "../../assessment/AssessmentPage"' in source
     assert '<AssessmentPage locale="es-MX" />' in source
     assert "SpanishAssessmentLocalization" not in source
+    assert "useAssessmentRun" not in source
 
 
 def test_english_route_is_a_thin_wrapper_around_the_single_canonical_page() -> None:
-    route = ENGLISH_ROUTE.read_text(encoding="utf-8").strip()
+    route = ENGLISH_ROUTE.read_text(encoding="utf-8")
     page = CANONICAL_PAGE.read_text(encoding="utf-8")
-    assert route == 'export {default} from "./AssessmentPage";'
+    assert 'import AssessmentPage from "./AssessmentPage"' in route
+    assert '<AssessmentPage locale="en-US" />' in route
     assert 'import AssessmentWorkspace from "./AssessmentWorkspace"' in page
-    assert '<AssessmentWorkspace locale={locale} />' in page
+    assert '<AssessmentWorkspace locale={presentationLocale} />' in page
+    assert 'locale === "es-MX" ? "es-MX" : "en"' in page
     assert "<AssessmentHydrationContract" in page
 
 
