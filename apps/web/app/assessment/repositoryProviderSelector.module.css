@@ -1,0 +1,89 @@
+.providerBlock {
+  display: grid;
+  gap: 12px;
+}
+
+.providerField,
+.repositoryField,
+.operatorField {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  color: #dbe4f0;
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.providerField select,
+.repositoryField input,
+.operatorField input {
+  width: 100%;
+  border: 1px solid rgba(71, 85, 105, 0.86);
+  border-radius: 11px;
+  background: rgba(2, 6, 23, 0.72);
+  color: #f8fafc;
+  font: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.providerField select,
+.repositoryField input {
+  min-height: 52px;
+  padding: 13px 15px;
+  font-size: 15px;
+}
+
+.operatorField input {
+  min-height: 46px;
+  padding: 11px 13px;
+}
+
+.providerField select:focus,
+.repositoryField input:focus,
+.operatorField input:focus {
+  border-color: rgba(56, 189, 248, 0.82);
+  background: #020617;
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.11);
+}
+
+.providerField select:disabled,
+.repositoryField input:disabled,
+.operatorField input:disabled {
+  cursor: not-allowed;
+  opacity: 0.66;
+}
+
+.hint {
+  color: #8796aa;
+  font-size: 11px;
+  font-weight: 430;
+  line-height: 1.45;
+}
+
+.operatorPanel {
+  display: grid;
+  gap: 8px;
+  padding: 12px 13px;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  border-radius: 12px;
+  background: rgba(14, 28, 48, 0.48);
+}
+
+.operatorNote {
+  margin: 0;
+  color: #9fb0c5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (min-width: 760px) {
+  .providerBlock {
+    grid-template-columns: minmax(180px, 0.34fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .operatorPanel {
+    grid-column: 1 / -1;
+  }
+}
