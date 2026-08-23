@@ -21,6 +21,7 @@ STATE_SELECTOR = 'section[data-assessment-run-state="true"]'
 ACTION_SELECTOR = '[data-assessment-primary-action="true"]'
 AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
 REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
+REPOSITORY_LABEL = "Repository URL or identifier"
 ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"
 BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection"
 BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
@@ -282,7 +283,7 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
         )
         workspace = page.locator(WORKSPACE_SELECTOR).first
         workspace.wait_for(state="visible", timeout=args.navigation_timeout_ms)
-        page.get_by_label("Repository owner/name or GitHub URL").fill(args.repository)
+        page.get_by_label(REPOSITORY_LABEL).fill(args.repository)
         # This production smoke is an internal assessment. Non-empty client/project
         # values invoke Phase 3 client-engagement validation and must never be
         # synthetic labels used only to identify an automated proof run.
