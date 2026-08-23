@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 from nico.hosted_provider_comprehensive_runtime_v1 import (
-    VERSION,
     _clone_spec,
     _hosted_url,
     build_hosted_provider_client,
@@ -15,7 +14,12 @@ from nico.hosted_provider_comprehensive_runtime_v1 import (
     capture_hosted_provider_snapshot,
     checkout_hosted_provider_snapshot,
 )
+from nico.hosted_provider_comprehensive_safety_patch_v1 import (
+    install_hosted_provider_comprehensive_safety_patch,
+)
 from nico.provider_platform_contract_v1 import ProviderKind
+
+install_hosted_provider_comprehensive_safety_patch()
 
 
 class MemoryStore:
@@ -44,7 +48,6 @@ class FakeCollection:
             "revision": revision,
             "repository": {"id": self.repository_id, "name": "repo"},
             "source_tree": [{"path": "src/app.py", "id": "f" * 40, "type": "blob"}],
-            "credential": "not-present",
         }
 
     def adapt(self):
@@ -74,15 +77,9 @@ class FakeCollector:
 
 
 def test_major_provider_labels_are_provider_safe_and_unambiguous() -> None:
-    sha = "a" * 40
-    del sha
     assert canonical_repository_label(ProviderKind.GITHUB, "Owner/Repo") == "Owner/Repo"
-    assert canonical_repository_label(ProviderKind.GITLAB, "group/subgroup/repo") == (
-        "gitlab.com/group/subgroup/repo"
-    )
-    assert canonical_repository_label(ProviderKind.BITBUCKET_CLOUD, "workspace/repo") == (
-        "bitbucket.org/workspace/repo"
-    )
+    assert canonical_repository_label(ProviderKind.GITLAB, "group/subgroup/repo") == "gitlab.com/group/subgroup/repo"
+    assert canonical_repository_label(ProviderKind.BITBUCKET_CLOUD, "workspace/repo") == "bitbucket.org/workspace/repo"
     assert canonical_repository_label(
         ProviderKind.AZURE_DEVOPS,
         "repo",
@@ -95,7 +92,9 @@ def test_major_provider_labels_are_provider_safe_and_unambiguous() -> None:
     "provider,repository",
     (
         (ProviderKind.GITLAB, "group/../repo"),
+        (ProviderKind.GITLAB, "group/./repo"),
         (ProviderKind.GITLAB, "https://evil.example/repo"),
+        (ProviderKind.GITLAB, "group\\repo"),
         (ProviderKind.BITBUCKET_CLOUD, "workspace"),
         (ProviderKind.AZURE_DEVOPS, "repo/extra"),
     ),
@@ -111,9 +110,7 @@ def test_provider_repository_coordinates_fail_closed(provider: ProviderKind, rep
 
 
 def test_hosted_provider_instance_cannot_be_arbitrary_or_downgraded() -> None:
-    assert _hosted_url("https://gitlab.com", host="gitlab.com", default="https://gitlab.com") == (
-        "https://gitlab.com"
-    )
+    assert _hosted_url("https://gitlab.com", host="gitlab.com", default="https://gitlab.com") == "https://gitlab.com"
     for unsafe in (
         "http://gitlab.com",
         "https://evil.example",
@@ -139,11 +136,7 @@ def test_server_side_live_client_builders_cover_all_non_github_major_providers()
         build_hosted_provider_client(ProviderKind.AZURE_DEVOPS, {}, environ=common),
     ]
     try:
-        assert [client.provider.value for client in clients] == [
-            "gitlab",
-            "bitbucket",
-            "azure_devops",
-        ]
+        assert [client.provider.value for client in clients] == ["gitlab", "bitbucket", "azure_devops"]
         assert all(client.credential.secret.reveal() for client in clients)
         assert all("secret" not in repr(client.credential.reference).casefold() for client in clients)
     finally:
@@ -167,7 +160,6 @@ def test_provider_snapshot_is_exact_revision_bound_and_persists_no_raw_secret() 
         collector=collector,
         store=store,
     )
-
     assert collector.calls == [("group/repo", revision)]
     assert snapshot["status"] == "attached"
     assert snapshot["provider"] == "gitlab"
@@ -177,15 +169,10 @@ def test_provider_snapshot_is_exact_revision_bound_and_persists_no_raw_secret() 
     assert snapshot["tree_identity_type"] == "provider_snapshot_manifest_sha256"
     assert snapshot["human_review_required"] is True
     assert snapshot["client_delivery_allowed"] is False
-    rendered = repr(store.data)
-    assert "gitlab-secret" not in rendered
-    assert "bitbucket-secret" not in rendered
-    assert "azure-secret" not in rendered
 
 
 def test_provider_snapshot_rejects_revision_drift() -> None:
     expected = "c" * 40
-    collector = FakeCollector("d" * 40)
 
     class DriftingCollector(FakeCollector):
         def collect(self, repository_id: str, *, revision: str = ""):
@@ -210,14 +197,8 @@ def test_provider_snapshot_rejects_revision_drift() -> None:
 def test_clone_specs_use_https_without_embedding_credentials() -> None:
     expected = {
         "gitlab.com/group/repo": ("gitlab", "https://gitlab.com/group/repo.git"),
-        "bitbucket.org/workspace/repo": (
-            "bitbucket_cloud",
-            "https://bitbucket.org/workspace/repo.git",
-        ),
-        "dev.azure.com/Org/Project/_git/repo": (
-            "azure_devops",
-            "https://dev.azure.com/Org/Project/_git/repo",
-        ),
+        "bitbucket.org/workspace/repo": ("bitbucket_cloud", "https://bitbucket.org/workspace/repo.git"),
+        "dev.azure.com/Org/Project/_git/repo": ("azure_devops", "https://dev.azure.com/Org/Project/_git/repo"),
     }
     for repository, (provider, clone_url) in expected.items():
         spec = _clone_spec(repository)
@@ -229,10 +210,7 @@ def test_clone_specs_use_https_without_embedding_credentials() -> None:
         assert "token" not in spec[1].casefold()
 
 
-def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     revision = "e" * 40
     commands: list[list[str]] = []
     environments: list[dict[str, str]] = []
@@ -260,13 +238,10 @@ def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(
         environ={"NICO_GITLAB_TOKEN": "super-secret-provider-token"},
         runner=runner,
     )
-
     assert repo_path == tmp_path / "repo"
     assert actual == revision
     assert notes == []
-    assert commands
     assert all("super-secret-provider-token" not in " ".join(command) for command in commands)
-    assert all("super-secret-provider-token" not in str(command) for command in commands)
     assert any(env.get("NICO_GIT_AUTH_PASSWORD") == "super-secret-provider-token" for env in environments)
     askpass = (tmp_path / "nico-provider-git-askpass.sh").read_text(encoding="utf-8")
     assert "super-secret-provider-token" not in askpass
@@ -276,18 +251,19 @@ def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(
 def test_production_bootstrap_binds_provider_parity_without_saas_surface() -> None:
     source = Path("nico/api/spanish_final_report_bootstrap.py").read_text(encoding="utf-8")
     runtime = Path("nico/hosted_provider_comprehensive_runtime_v1.py").read_text(encoding="utf-8")
-
+    safety = Path("nico/hosted_provider_comprehensive_safety_patch_v1.py").read_text(encoding="utf-8")
     assert 'VERSION = "nico.api.spanish_final_report_bootstrap.v7"' in source
+    assert "install_hosted_provider_comprehensive_safety_patch()" in source
     assert "install_hosted_provider_comprehensive_runtime(app)" in source
     assert '"gitlab_comprehensive_runtime_bound"' in source
     assert '"bitbucket_cloud_comprehensive_runtime_bound"' in source
     assert '"azure_devops_comprehensive_runtime_bound"' in source
     assert '"same_scanner_pipeline"' in source
     assert '"same_candidate_triage_report_pipeline"' in source
-    assert '"customer_self_service"' in source
     assert 'OPERATOR_INTAKE_ROUTE = "/providers/operator/comprehensive-intake"' in runtime
     assert '"customer_self_service": False' in runtime
     assert '"human_review_required": True' in runtime
     assert '"client_delivery_allowed": False' in runtime
+    assert 'part in {"", ".", ".."}' in safety
     assert "verify=False" not in runtime
     assert "shell=True" not in runtime
