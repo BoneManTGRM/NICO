@@ -3,24 +3,16 @@ from __future__ import annotations
 
 from typing import Any
 
-VERSION = "nico.provider_neutral_repository_locator_contract.v1"
+VERSION = "nico.provider_neutral_repository_locator_contract.v2"
 LEGACY_ENGLISH_REPOSITORY_LABEL = "Repository owner/name or GitHub URL"
 ENGLISH_REPOSITORY_LABEL = "Repository URL or identifier"
 SPANISH_REPOSITORY_LABEL = "URL o identificador del repositorio"
 _MARKER = "__nico_provider_neutral_repository_locator_v1__"
 
 
-def install_provider_neutral_repository_locator(single_dispatch: Any) -> None:
-    """Keep legacy proof entrypoints bound to the current provider-neutral UI.
+def install_provider_neutral_repository_locator_on_page_type(page_type: Any) -> None:
+    """Map only the retired GitHub-only proof label to the current repository field."""
 
-    The production form intentionally stopped presenting a GitHub-only repository
-    label when hosted-provider parity shipped. Older recovery proof code still
-    asks its wrapped page for that historical label. Patch only the internal
-    proof-page adapter so the proof continues to exercise the real current field;
-    never add the obsolete GitHub-only label back to the application.
-    """
-
-    page_type = single_dispatch._SingleDispatchPage
     current = getattr(page_type, "get_by_label", None)
     if getattr(current, _MARKER, False):
         return
@@ -38,3 +30,18 @@ def install_provider_neutral_repository_locator(single_dispatch: Any) -> None:
     setattr(get_by_label, _MARKER, True)
     setattr(get_by_label, "_nico_previous", current)
     setattr(page_type, "get_by_label", get_by_label)
+
+
+def install_provider_neutral_repository_locator(single_dispatch: Any) -> None:
+    """Keep legacy proof entrypoints bound to the current provider-neutral UI.
+
+    The production form intentionally stopped presenting a GitHub-only repository
+    label when hosted-provider parity shipped. Older recovery proof code still
+    asks its wrapped page for that historical label. Patch only the internal
+    proof-page adapter so the proof continues to exercise the real current field;
+    never add the obsolete GitHub-only label back to the application.
+    """
+
+    install_provider_neutral_repository_locator_on_page_type(
+        single_dispatch._SingleDispatchPage
+    )
