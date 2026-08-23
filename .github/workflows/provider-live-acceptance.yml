@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   live-provider:
-    name: Two-pass live provider acceptance
+    name: Two-pass real provider integration proof
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: provider-live-acceptance
@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir -e .
 
-      - name: Validate read-only live acceptance contract
+      - name: Validate read-only live integration contract
         run: |
           set -euo pipefail
           python -m py_compile scripts/provider_live_acceptance.py
@@ -68,7 +68,11 @@ jobs:
           assert 'passes < 2' in source
           assert 'provider_acceptance_must_be_read_only' in source
           assert 'provider_acceptance_revision_drift' in source
+          assert 'provider_acceptance_source_tree_missing' in source
+          assert 'provider_acceptance_exact_source_missing' in source
           assert 'raw_credential_absent' in source
+          assert 'live_production_claim": False' in source
+          assert 'client_claim_allowed": False' in source
           assert 'client_delivery_allowed": False' in source
           PY
 
@@ -97,7 +101,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Require passing live evidence
+      - name: Require passing real-provider integration evidence
         if: always()
         env:
           ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
@@ -109,15 +113,23 @@ jobs:
           from pathlib import Path
 
           payload = json.loads(Path("audit-results/provider-live-acceptance.json").read_text(encoding="utf-8"))
+          assert payload["artifact_schema"] == "nico.provider_live_acceptance.v2"
           assert payload["status"] == "passed"
-          assert payload["live_production_claim"] is True
+          assert payload["provider_support_maturity"] == "REAL_PROVIDER_INTEGRATION_PROVEN"
+          assert payload["live_production_claim"] is False
+          assert payload["client_claim_allowed"] is False
+          assert payload["controlled_pilot_proven"] is False
+          assert payload["production_client_proven"] is False
           assert payload["passes_required"] == 2
           assert payload["passes_completed"] == 2
           assert len(payload["runs"]) == 2
           assert all(payload["proof"].values())
           assert len({item["revision"] for item in payload["runs"]}) == 1
           assert len({item["repository_id"] for item in payload["runs"]}) == 1
+          assert all(item["source_object_count"] > 0 for item in payload["runs"])
+          assert all(item["exact_source_locator_count"] > 0 for item in payload["runs"])
           assert payload["human_review_required"] is True
+          assert payload["human_approval_proven"] is False
           assert payload["client_delivery_allowed"] is False
           metadata = payload["credential_metadata"]
           assert set(metadata) == {

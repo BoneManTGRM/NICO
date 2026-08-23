@@ -104,7 +104,7 @@ class BitbucketCloudIssueClient(BaseProviderClient):
             following = str(_mapping(payload).get("next") or "").strip()
             if not following:
                 return None
-            return following, None
+            return following, {}
 
         issues = self._paginate(
             url=url,
