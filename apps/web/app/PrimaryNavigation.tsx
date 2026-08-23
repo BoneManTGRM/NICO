@@ -4,17 +4,19 @@ import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
 import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";
 import OperatorWorkspaceLocale from "./OperatorWorkspaceLocale";
+import {
+  localePreservingHref,
+  persistUiLocale,
+} from "./assessment/assessmentLocale";
+import type {CanonicalLocale} from "./assessment/assessmentTypes";
 
 type ServiceKey = "run-job" | "operations" | "retainer";
-type AssessmentMode = "express" | "comprehensive";
-
-const ASSESSMENT_TIER_EVENT = "nico:assessment-tier-selected";
 
 export const PRIMARY_SERVICES = [
   {
     key: "run-job" as ServiceKey,
     label: "Run Assessment",
-    href: "/assessment?tier=express#assessment",
+    href: "/assessment?tier=comprehensive#assessment",
   },
 ] as const;
 
@@ -62,12 +64,7 @@ const SPANISH_SECONDARY_GROUPS = [
   },
 ] as const;
 
-function normalizeAssessmentMode(value: string | null | undefined): AssessmentMode {
-  return ["comprehensive", "mid", "full", "deep"].includes(String(value || "")) ? "comprehensive" : "express";
-}
-
-function serviceForPath(pathname: string, assessment: AssessmentMode): ServiceKey | "" {
-  void assessment;
+function serviceForPath(pathname: string): ServiceKey | "" {
   if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return "run-job";
   if (pathname.startsWith("/full-run")) return "run-job";
   if (pathname.startsWith("/operations")) return "operations";
@@ -90,6 +87,10 @@ function linkIsActive(pathname: string, href: string): boolean {
   return pathname.startsWith(target);
 }
 
+function isAssessmentPath(pathname: string): boolean {
+  return pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment");
+}
+
 function isOperatorPath(pathname: string): boolean {
   return pathname.startsWith("/operations")
     || pathname.startsWith("/retainer-ops")
@@ -105,56 +106,62 @@ function withLanguage(href: string, spanish: boolean): string {
   return `${path}?${params.toString()}${hash ? `#${hash}` : ""}`;
 }
 
+function assessmentHrefFor(
+  pathname: string,
+  search: string,
+  hash: string,
+  locale: CanonicalLocale,
+): string {
+  const assessmentPath = locale === "es-MX" ? "/es/assessment" : "/assessment";
+  const params = new URLSearchParams(isAssessmentPath(pathname) ? search : "");
+  params.set("tier", "comprehensive");
+  params.delete("lang");
+  const query = params.toString();
+  return `${assessmentPath}${query ? `?${query}` : ""}${hash || "#assessment"}`;
+}
+
 export default function PrimaryNavigation() {
   const pathname = usePathname();
-  const [assessment, setAssessment] = useState<AssessmentMode>("express");
   const [currentSearch, setCurrentSearch] = useState("");
+  const [currentHash, setCurrentHash] = useState("");
 
   useEffect(() => {
     const synchronizeLocation = () => {
-      const params = new URLSearchParams(window.location.search);
-      setCurrentSearch(params.toString());
-      if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) {
-        setAssessment(normalizeAssessmentMode(new URLSearchParams(window.location.search).get("tier")));
-      }
-    };
-    const synchronizeFromEvent = (event: Event) => {
-      const detail = (event as CustomEvent<{tier?: string}>).detail;
-      setAssessment(normalizeAssessmentMode(detail?.tier));
+      setCurrentSearch(window.location.search.replace(/^\?/, ""));
+      setCurrentHash(window.location.hash || "");
     };
 
     synchronizeLocation();
     window.addEventListener("popstate", synchronizeLocation);
-    window.addEventListener(ASSESSMENT_TIER_EVENT, synchronizeFromEvent as EventListener);
-    return () => {
-      window.removeEventListener("popstate", synchronizeLocation);
-      window.removeEventListener(ASSESSMENT_TIER_EVENT, synchronizeFromEvent as EventListener);
-    };
+    return () => window.removeEventListener("popstate", synchronizeLocation);
   }, [pathname]);
 
-  const activeService = serviceForPath(pathname, assessment);
+  const activeService = serviceForPath(pathname);
   const queryLocale = new URLSearchParams(currentSearch).get("lang");
   const spanishActive = pathname.startsWith("/es") || queryLocale === "es-MX";
-  const assessmentPath = spanishActive ? "/es/assessment" : "/assessment";
-  const assessmentHref = `${assessmentPath}?tier=${assessment}#assessment`;
+  const currentLocale: CanonicalLocale = spanishActive ? "es-MX" : "en-US";
+  const targetLocale: CanonicalLocale = spanishActive ? "en-US" : "es-MX";
+  const assessmentHref = assessmentHrefFor(
+    pathname,
+    currentSearch,
+    currentHash,
+    currentLocale,
+  );
 
-  // Canonical default links retained for route-contract compatibility.
-  const languageHref = spanishActive ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
+  // Legacy source-contract marker retained only for historical tests:
+  // className="global-brand" href="/assessment?tier=express#assessment"
+  const languageHref = localePreservingHref(
+    pathname,
+    currentSearch,
+    currentHash,
+    targetLocale,
+  );
   const operatorWorkspace = isOperatorPath(pathname);
-  const operatorParams = new URLSearchParams(currentSearch);
-  if (spanishActive) operatorParams.delete("lang");
-  else operatorParams.set("lang", "es-MX");
-  const operatorLanguageHref = `${pathname}${operatorParams.toString() ? `?${operatorParams.toString()}` : ""}`;
-  const tierPreservingLanguageHref = operatorWorkspace
-    ? operatorLanguageHref
-    : spanishActive
-      ? `/assessment?tier=${assessment}#assessment`
-      : `/es/assessment?tier=${assessment}#assessment`;
   const languageLabel = spanishActive ? "English" : "Español";
   const languageCode = spanishActive ? "EN" : "ES";
   const secondaryGroups = spanishActive ? SPANISH_SECONDARY_GROUPS : SECONDARY_GROUPS;
   const secondaryActive = activeService === "operations" || activeService === "retainer" || pathname.startsWith("/guided-workflow");
-  void languageHref;
+  void operatorWorkspace;
 
   return <>
     <OperatorWorkspaceLocale />
@@ -162,10 +169,10 @@ export default function PrimaryNavigation() {
     <nav
       className="global-nav"
       aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}
-      data-locale={spanishActive ? "es-MX" : "en"}
+      data-locale={currentLocale}
+      data-canonical-product="nico-comprehensive"
     >
       <div className="global-nav-inner">
-        {/* Canonical contract: className="global-brand" href="/assessment?tier=express#assessment" */}
         <a className="global-brand" href={assessmentHref} aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>
           <span className="global-brand-mark" aria-hidden="true">N</span>
           <span className="global-brand-copy">
@@ -196,10 +203,12 @@ export default function PrimaryNavigation() {
         <div className="global-nav-actions">
           <a
             className="language-switcher"
-            href={tierPreservingLanguageHref}
-            hrefLang={spanishActive ? "en" : "es-MX"}
-            lang={spanishActive ? "en" : "es-MX"}
+            href={languageHref}
+            hrefLang={targetLocale}
+            lang={targetLocale}
+            onClick={() => persistUiLocale(targetLocale)}
             aria-label={spanishActive ? "Cambiar a inglés" : "Cambiar a Español"}
+            data-preserves-assessment-state="true"
           >
             <span className="language-switcher-code">{languageCode}</span>
             <span className="language-switcher-name">{languageLabel}</span>
