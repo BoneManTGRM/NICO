@@ -8,6 +8,7 @@ from pypdf import PdfReader
 
 from nico import client_report_completion_v2 as completion
 from nico import comprehensive_client_ready_projection_v1 as projection
+from nico import comprehensive_client_report_render_v60 as report_render
 from nico.comprehensive_client_report_render_v60 import (
     validate_existing_report_accuracy,
 )
@@ -72,11 +73,12 @@ def _extracted(pdf: bytes) -> str:
     )
 
 
-def test_installer_binds_projection_and_completion_aliases() -> None:
+def test_installer_binds_projection_completion_and_accuracy_aliases() -> None:
     state = install_comprehensive_incomplete_analyzer_summary()
 
     assert state["markdown_bound"] is True
     assert state["pdf_bound"] is True
+    assert state["accuracy_validator_bound"] is True
     assert state["completion_markdown_alias_bound"] is True
     assert state["completion_pdf_alias_bound"] is True
     assert completion.compact_client_markdown is projection.compact_client_markdown
@@ -126,6 +128,57 @@ def test_spanish_summary_is_localized_once_without_english_presentation_copy() -
     assert "Incomplete applicable analyzers: 0" not in markdown
     assert extracted.count("Analizadores aplicables incompletos: 0") == 1
     assert "Incomplete applicable analyzers: 0" not in extracted
+
+
+def test_spanish_accuracy_gate_accepts_localized_count_without_publishing_english_probe() -> None:
+    install_comprehensive_incomplete_analyzer_summary()
+    canonical = _canonical(0)
+    canonical["report_language"] = "es-MX"
+    canonical["locale"] = "es-MX"
+    canonical["identity"]["report_language"] = "es-MX"
+    existing = "\n".join(
+        (
+            "# NICO COMPREHENSIVE",
+            "Canonical Technical Scorecard",
+            "Analyzer execution coverage is 100%",
+            "Maturity Exceptional",
+            "Evidence Appendix",
+            "Human Review and Acceptance Gate",
+            "## Estado de entrega",
+            "Bloqueada.",
+        )
+    )
+    markdown = completion.compact_client_markdown(
+        existing,
+        canonical,
+        _register(),
+        spanish=True,
+    )
+    pdf = completion.render_evidence_review_gate_pdf(
+        canonical,
+        _register(),
+        spanish=True,
+    )
+    package = {
+        "json": canonical,
+        "markdown": markdown,
+        "html": f"<main>{markdown}</main>",
+        "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+    }
+
+    result = report_render.validate_existing_report_accuracy(package)
+
+    assert result["canonical_incomplete_analyzer_count"] == 0
+    assert result["canonical_incomplete_analyzer_summary"] == (
+        "Analizadores aplicables incompletos: 0"
+    )
+    assert result["canonical_incomplete_analyzer_summary_language"] == "es-MX"
+    assert result["locale_aware_incomplete_analyzer_validation"] is True
+    assert result["legacy_english_only_probe_used"] is True
+    assert result["legacy_english_only_probe_published"] is False
+    assert "Incomplete applicable analyzers: 0" not in markdown
+    assert "Incomplete applicable analyzers: 0" not in str(package["html"])
+    assert "Incomplete applicable analyzers: 0" not in _extracted(pdf)
 
 
 def test_nonzero_incomplete_count_is_not_silently_rewritten_to_zero() -> None:
