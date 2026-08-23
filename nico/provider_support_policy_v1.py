@@ -103,6 +103,11 @@ _DEFAULT_UNSUPPORTED = {
     for provider in ProviderKind
 }
 
+_HOSTED_ENGINEERING_PARITY_EVIDENCE = (
+    "tests/test_hosted_provider_operator_comprehensive_parity_v1.py::"
+    "test_authorized_hosted_provider_intake_reaches_same_comprehensive_orchestration"
+)
+
 DEFAULT_SUPPORT: Mapping[ProviderKind, ProviderSupport] = {
     **_DEFAULT_UNSUPPORTED,
     ProviderKind.GITHUB: ProviderSupport(
@@ -117,20 +122,32 @@ DEFAULT_SUPPORT: Mapping[ProviderKind, ProviderSupport] = {
     ProviderKind.GITLAB: ProviderSupport(
         ProviderKind.GITLAB,
         SupportLevel.FIXTURE_ONLY,
-        limitations=("No authenticated conformance evidence retained.",),
-        maturity=ProviderSupportMaturity.IMPLEMENTED_BUT_UNPROVEN,
+        limitations=(
+            "GitHub-equivalent NICO Comprehensive engineering parity is retained; "
+            "authenticated live-provider integration evidence is not retained.",
+        ),
+        maturity=ProviderSupportMaturity.ENGINEERING_PARITY_PROVEN,
+        engineering_parity_evidence_reference=_HOSTED_ENGINEERING_PARITY_EVIDENCE,
     ),
     ProviderKind.BITBUCKET_CLOUD: ProviderSupport(
         ProviderKind.BITBUCKET_CLOUD,
         SupportLevel.FIXTURE_ONLY,
-        limitations=("No authenticated conformance evidence retained.",),
-        maturity=ProviderSupportMaturity.IMPLEMENTED_BUT_UNPROVEN,
+        limitations=(
+            "GitHub-equivalent NICO Comprehensive engineering parity is retained; "
+            "authenticated live-provider integration evidence is not retained.",
+        ),
+        maturity=ProviderSupportMaturity.ENGINEERING_PARITY_PROVEN,
+        engineering_parity_evidence_reference=_HOSTED_ENGINEERING_PARITY_EVIDENCE,
     ),
     ProviderKind.AZURE_DEVOPS: ProviderSupport(
         ProviderKind.AZURE_DEVOPS,
         SupportLevel.FIXTURE_ONLY,
-        limitations=("No authenticated conformance evidence retained.",),
-        maturity=ProviderSupportMaturity.IMPLEMENTED_BUT_UNPROVEN,
+        limitations=(
+            "GitHub-equivalent NICO Comprehensive engineering parity is retained; "
+            "authenticated live-provider integration evidence is not retained.",
+        ),
+        maturity=ProviderSupportMaturity.ENGINEERING_PARITY_PROVEN,
+        engineering_parity_evidence_reference=_HOSTED_ENGINEERING_PARITY_EVIDENCE,
     ),
     ProviderKind.GITEA: ProviderSupport(
         ProviderKind.GITEA,
