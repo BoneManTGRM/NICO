@@ -8,8 +8,11 @@ from typing import Any
 
 import two_service_live_acceptance as acceptance
 import two_service_live_acceptance_v3 as unified
+from provider_neutral_repository_locator_contract_v1 import (
+    install_provider_neutral_repository_locator_on_page_type,
+)
 
-VERSION = "nico.unified_production_acceptance.canonical_terminal_rendering.v6"
+VERSION = "nico.unified_production_acceptance.canonical_terminal_rendering.v7"
 ASSESSMENT_WORKSPACE_SELECTOR = (
     'main[data-workspace="assessment"]'
     '[data-engagement-type="comprehensive"]'
@@ -426,6 +429,9 @@ def install_unified_workspace_contract() -> None:
     unified.PUBLIC_RUN_LABELS = PUBLIC_RUN_LABELS
     unified.PUBLIC_HEADINGS = PUBLIC_HEADINGS
     unified._ExpectedCommitPage.get_by_role = _canonical_get_by_role
+    install_provider_neutral_repository_locator_on_page_type(
+        unified._ExpectedCommitPage
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
