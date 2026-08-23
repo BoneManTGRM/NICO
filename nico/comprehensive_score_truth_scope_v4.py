@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from nico import comprehensive_native_providers_v4 as scoring
+from nico.provider_control_objective_parity_v1 import (
+    install_provider_control_objective_parity,
+)
 
-VERSION = "nico.comprehensive-score-truth-scope.v4"
+VERSION = "nico.comprehensive-score-truth-scope.v5"
 
 
 def _safe_sync_score_container(
@@ -64,12 +67,27 @@ def _safe_sync_score_container(
 
 
 def install_score_truth_scope() -> dict[str, Any]:
+    control_objective_parity = install_provider_control_objective_parity()
     scoring._sync_score_container = _safe_sync_score_container
     return {
         "version": VERSION,
-        "bound": scoring._sync_score_container is _safe_sync_score_container,
+        "bound": (
+            scoring._sync_score_container is _safe_sync_score_container
+            and control_objective_parity.get("bound") is True
+        ),
         "section_score_contracts_preserved": True,
         "overall_score_aliases_synchronized": True,
+        "provider_neutral_control_objectives": (
+            control_objective_parity.get("provider_neutral_control_objectives") is True
+        ),
+        "unavailable_or_unassessed_capability_treated_as_failed": (
+            control_objective_parity.get(
+                "unavailable_or_unassessed_capability_treated_as_failed"
+            )
+            is False
+        ),
+        "mutable_operational_history_affects_technical_score": False,
+        "control_objective_parity": control_objective_parity,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
