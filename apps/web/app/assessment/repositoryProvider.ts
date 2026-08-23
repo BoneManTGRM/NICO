@@ -14,7 +14,6 @@ export type NormalizedRepositorySelection = {
 };
 
 export const REPOSITORY_PROVIDER_STORAGE_KEY = "nico.comprehensive.repository-provider.v1";
-export const OPERATOR_ADMIN_TOKEN_STORAGE_KEY = "nico.operator.admin-token.session.v1";
 
 export const REPOSITORY_PROVIDER_OPTIONS: readonly RepositoryProviderOption[] = [
   {value: "github", label: "GitHub", placeholder: "owner/repository"},
@@ -24,6 +23,7 @@ export const REPOSITORY_PROVIDER_OPTIONS: readonly RepositoryProviderOption[] = 
 ] as const;
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_.-]+$/;
+const VISUAL_STUDIO_HOST = /^([a-z0-9-]+)\.visualstudio\.com$/i;
 
 function safeSegment(value: string, field: string): string {
   const normalized = value.trim();
@@ -65,7 +65,7 @@ export function detectRepositoryProvider(value: string): RepositoryProvider | nu
   if (host === "github.com") return "github";
   if (host === "gitlab.com") return "gitlab";
   if (host === "bitbucket.org") return "bitbucket_cloud";
-  if (host === "dev.azure.com" || /^[a-z0-9.-]+\.visualstudio\.com$/i.test(host)) return "azure_devops";
+  if (host === "dev.azure.com" || VISUAL_STUDIO_HOST.test(host)) return "azure_devops";
   return null;
 }
 
@@ -131,7 +131,7 @@ export function normalizeRepositorySelection(
     if (parts.length !== 4 || parts[2].toLowerCase() !== "_git") throw new Error("azure_repository_url_invalid");
     return normalizeShorthand(selectedProvider, `${parts[0]}/${parts[1]}/${stripGitSuffix(parts[3])}`);
   }
-  const visualStudio = host.match(/^([a-z0-9.-]+)\.visualstudio\.com$/i);
+  const visualStudio = host.match(VISUAL_STUDIO_HOST);
   if (!visualStudio || parts.length !== 3 || parts[1].toLowerCase() !== "_git") {
     throw new Error("azure_repository_url_invalid");
   }
@@ -149,18 +149,6 @@ export function readRepositoryProvider(): RepositoryProvider {
 export function writeRepositoryProvider(provider: RepositoryProvider): void {
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(REPOSITORY_PROVIDER_STORAGE_KEY, provider);
-}
-
-export function readOperatorAdminToken(): string {
-  if (typeof window === "undefined") return "";
-  return String(window.sessionStorage.getItem(OPERATOR_ADMIN_TOKEN_STORAGE_KEY) || "").trim();
-}
-
-export function writeOperatorAdminToken(token: string): void {
-  if (typeof window === "undefined") return;
-  const normalized = token.trim();
-  if (normalized) window.sessionStorage.setItem(OPERATOR_ADMIN_TOKEN_STORAGE_KEY, normalized);
-  else window.sessionStorage.removeItem(OPERATOR_ADMIN_TOKEN_STORAGE_KEY);
 }
 
 export function providerOption(provider: RepositoryProvider): RepositoryProviderOption {
