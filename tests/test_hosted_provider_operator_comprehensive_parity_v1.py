@@ -20,7 +20,7 @@ from nico.comprehensive_run_store import ComprehensiveRunStore
 from nico.provider_platform_contract_v1 import ProviderKind
 from nico.provider_rollout_control_v1 import (
     HOSTED_PROVIDER_ORDER,
-    ROLLOUT_STATE_KEY,
+    STATE_KEY as ROLLOUT_STATE_KEY,
     ProviderRolloutConfig,
     ProviderRolloutRegistry,
     ProviderRolloutState,
