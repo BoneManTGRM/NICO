@@ -22,6 +22,9 @@ from nico.hosted_provider_comprehensive_runtime_v1 import (
 from nico.hosted_provider_comprehensive_safety_patch_v1 import (
     install_hosted_provider_comprehensive_safety_patch,
 )
+from nico.provider_repository_enumeration_v1 import (
+    install_provider_repository_enumeration,
+)
 from nico.provider_rollout_control_v1 import install_provider_rollout_routes
 
 VERSION = "nico.api.spanish_final_report_bootstrap.v7"
@@ -114,6 +117,27 @@ if PROVIDER_ROLLOUT_CONTROL.get("human_review_required") is not True:
 if PROVIDER_ROLLOUT_CONTROL.get("client_delivery_allowed") is not False:
     raise RuntimeError("Provider rollout control must block client delivery")
 
+PROVIDER_REPOSITORY_ENUMERATION = install_provider_repository_enumeration(app)
+setattr(app.state, "nico_provider_repository_enumeration", PROVIDER_REPOSITORY_ENUMERATION)
+if PROVIDER_REPOSITORY_ENUMERATION.get("status") != "installed":
+    raise RuntimeError(f"Provider repository enumeration did not install: {PROVIDER_REPOSITORY_ENUMERATION}")
+if PROVIDER_REPOSITORY_ENUMERATION.get("provider_count") != 4:
+    raise RuntimeError("Provider repository enumeration must cover four hosted providers")
+if PROVIDER_REPOSITORY_ENUMERATION.get("route_count") != 1:
+    raise RuntimeError("Provider repository enumeration route is missing or duplicated")
+for required in (
+    "server_side_provider_clients",
+    "server_side_credentials_only",
+    "operator_authorization_required",
+    "human_review_required",
+):
+    if PROVIDER_REPOSITORY_ENUMERATION.get(required) is not True:
+        raise RuntimeError(f"Provider repository enumeration missing contract: {required}")
+if PROVIDER_REPOSITORY_ENUMERATION.get("customer_self_service") is not False:
+    raise RuntimeError("Provider repository enumeration must not expose customer self-service")
+if PROVIDER_REPOSITORY_ENUMERATION.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Provider repository enumeration must block client delivery")
+
 HOSTED_PROVIDER_COMPREHENSIVE_SAFETY = install_hosted_provider_comprehensive_safety_patch()
 setattr(app.state, "nico_hosted_provider_comprehensive_safety", HOSTED_PROVIDER_COMPREHENSIVE_SAFETY)
 for required in (
@@ -162,6 +186,7 @@ __all__ = [
     "HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME",
     "HOSTED_PROVIDER_COMPREHENSIVE_SAFETY",
     "PRODUCTION_PROOF_LIFECYCLE",
+    "PROVIDER_REPOSITORY_ENUMERATION",
     "PROVIDER_ROLLOUT_CONTROL",
     "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
