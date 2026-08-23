@@ -16,8 +16,9 @@ from nico.comprehensive_spanish_assessment_scope_v97 import (
 from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
+from nico.provider_rollout_control_v1 import install_provider_rollout_routes
 
-VERSION = "nico.api.spanish_final_report_bootstrap.v5"
+VERSION = "nico.api.spanish_final_report_bootstrap.v6"
 
 # Bind the exact production assessment-scope presentation contract before the parent
 # process installs the shared Spanish render cache. This keeps the parent preflight and
@@ -185,11 +186,40 @@ if PRODUCTION_PROOF_LIFECYCLE.get("human_review_required") is not True:
 if PRODUCTION_PROOF_LIFECYCLE.get("client_delivery_allowed") is not False:
     raise RuntimeError("Production-proof lifecycle must block client delivery")
 
+# The hosted-provider rollout authority is mounted on the same final production app.
+# It exposes capability truth and preflight only; raw credentials remain server-side,
+# support maturity cannot be upgraded by API input, and client delivery stays blocked.
+PROVIDER_ROLLOUT_CONTROL = install_provider_rollout_routes(app)
+setattr(
+    app.state,
+    "nico_provider_rollout_control",
+    PROVIDER_ROLLOUT_CONTROL,
+)
+if PROVIDER_ROLLOUT_CONTROL.get("status") != "installed":
+    raise RuntimeError(
+        "Provider rollout control did not install: "
+        f"{PROVIDER_ROLLOUT_CONTROL}"
+    )
+if PROVIDER_ROLLOUT_CONTROL.get("provider_count") != 4:
+    raise RuntimeError("Provider rollout control must declare four hosted providers")
+if any(
+    count != 1
+    for count in PROVIDER_ROLLOUT_CONTROL.get("route_counts", {}).values()
+):
+    raise RuntimeError("Provider rollout control routes are missing or duplicated")
+if PROVIDER_ROLLOUT_CONTROL.get("credentials_server_side_only") is not True:
+    raise RuntimeError("Provider rollout control must keep credentials server-side")
+if PROVIDER_ROLLOUT_CONTROL.get("human_review_required") is not True:
+    raise RuntimeError("Provider rollout control must preserve human review")
+if PROVIDER_ROLLOUT_CONTROL.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Provider rollout control must block client delivery")
+
 
 __all__ = [
     "FINAL_REPORT_PROCESS_ISOLATION",
     "FINAL_REPORT_PROCESS_ISOLATION_HARDENING",
     "PRODUCTION_PROOF_LIFECYCLE",
+    "PROVIDER_ROLLOUT_CONTROL",
     "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
     "VERSION",
