@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
-from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
@@ -11,7 +10,11 @@ from nico.admin_security import require_admin_write
 from nico.hosted_assessment import GITHUB_API, GitHubAssessmentClient
 from nico.hosted_provider_comprehensive_runtime_v1 import build_hosted_provider_client
 from nico.provider_platform_contract_v1 import ProviderKind
-from nico.provider_rollout_control_v1 import ProviderRolloutRegistry, STATE_KEY as ROLLOUT_STATE_KEY
+from nico.provider_rollout_control_v1 import (
+    ProviderRolloutError,
+    ProviderRolloutRegistry,
+    STATE_KEY as ROLLOUT_STATE_KEY,
+)
 
 VERSION = "nico.provider-repository-enumeration.v1"
 OPERATOR_REPOSITORIES_ROUTE = "/providers/operator/repositories"
@@ -60,6 +63,21 @@ def _operator_required(token: str) -> None:
                 "client_delivery_allowed": False,
             },
         )
+
+
+def _rollout_http_error(exc: ProviderRolloutError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={
+            "code": exc.code,
+            "message": "Repository enumeration was blocked by server-authoritative provider policy.",
+            "credential_detail_exposed": False,
+            "operator_run_only": True,
+            "customer_self_service": False,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+    )
 
 
 def _github_authorized_repositories() -> list[Mapping[str, Any]]:
@@ -120,27 +138,33 @@ def _repository_summary(
     if provider is ProviderKind.BITBUCKET_CLOUD:
         locator = _text(item.get("full_name"))
         if not locator:
-            workspace = _text((item.get("workspace") or {}).get("slug") if isinstance(item.get("workspace"), Mapping) else "")
+            workspace = _text(
+                (item.get("workspace") or {}).get("slug")
+                if isinstance(item.get("workspace"), Mapping)
+                else ""
+            )
             slug = _text(item.get("slug"))
             locator = f"{workspace}/{slug}" if workspace and slug else ""
         locator = _required(locator, "bitbucket_repository_full_name")
+        links = item.get("links") if isinstance(item.get("links"), Mapping) else {}
+        html_link = links.get("html") if isinstance(links.get("html"), Mapping) else {}
+        mainbranch = item.get("mainbranch") if isinstance(item.get("mainbranch"), Mapping) else {}
         return {
             "provider": provider.value,
             "repository_id": _text(item.get("uuid")) or locator,
             "repository_locator": locator,
             "display_name": _text(item.get("name")) or locator.rsplit("/", 1)[-1],
-            "default_branch": _text((item.get("mainbranch") or {}).get("name") if isinstance(item.get("mainbranch"), Mapping) else "") or None,
+            "default_branch": _text(mainbranch.get("name")) or None,
             "private": bool(item.get("is_private")),
             "archived": False,
-            "web_url": _text((item.get("links") or {}).get("html", {}).get("href") if isinstance(item.get("links"), Mapping) and isinstance((item.get("links") or {}).get("html"), Mapping) else "") or None,
+            "web_url": _text(html_link.get("href")) or None,
         }
     if provider is ProviderKind.AZURE_DEVOPS:
         name = _required(item.get("name"), "azure_repository_name")
-        locator = name
         return {
             "provider": provider.value,
             "repository_id": _text(item.get("id")) or name,
-            "repository_locator": locator,
+            "repository_locator": name,
             "display_name": name,
             "default_branch": _text(item.get("defaultBranch")).removeprefix("refs/heads/") or None,
             "private": True,
@@ -160,6 +184,8 @@ def enumerate_authorized_repositories(
     project_id: str,
     session_id: str,
     token: str,
+    run_id: str = "",
+    existing_connection_binding_id: str = "",
     workspace: str = "",
     provider_organization: str = "",
     provider_project: str = "",
@@ -169,23 +195,25 @@ def enumerate_authorized_repositories(
     customer = _required(customer_id, "customer_id")
     project = _required(project_id, "project_id")
     session = _required(session_id, "session_id")
+    assessment_run_id = _text(run_id)
 
     registry = getattr(request.app.state, ROLLOUT_STATE_KEY, None)
     if not isinstance(registry, ProviderRolloutRegistry):
         raise ValueError("provider_rollout_control_unavailable")
-    preflight = registry.preflight(
-        {
-            "provider": provider.value,
-            "client_id": customer,
-            "project_id": project,
-            "session_id": session,
-            "run_id": f"repoenum_{uuid4().hex}",
-            "locale": "en-US",
-            "execution_mode": "internal_test",
-            "ci_provider": provider.value,
-        },
-        operator_authorized=True,
-    )
+    preflight_payload: dict[str, Any] = {
+        "provider": provider.value,
+        "client_id": customer,
+        "project_id": project,
+        "session_id": session,
+        "run_id": assessment_run_id,
+        "locale": "en-US",
+        "execution_mode": "internal_test",
+        "ci_provider": provider.value,
+    }
+    existing_binding = _text(existing_connection_binding_id)
+    if existing_binding:
+        preflight_payload["existing_connection_binding_id"] = existing_binding
+    preflight = registry.preflight(preflight_payload, operator_authorized=True)
 
     if provider is ProviderKind.GITHUB:
         raw = _github_authorized_repositories()
@@ -213,7 +241,12 @@ def enumerate_authorized_repositories(
         for item in raw
         if isinstance(item, Mapping)
     ]
-    summaries.sort(key=lambda item: (str(item.get("repository_locator") or "").casefold(), str(item.get("repository_id") or "")))
+    summaries.sort(
+        key=lambda item: (
+            str(item.get("repository_locator") or "").casefold(),
+            str(item.get("repository_id") or ""),
+        )
+    )
     total = len(summaries)
     returned = summaries[:_MAX_RETURNED_REPOSITORIES]
     return {
@@ -223,7 +256,9 @@ def enumerate_authorized_repositories(
         "customer_id": customer,
         "project_id": project,
         "session_id": session,
+        "run_id": assessment_run_id or None,
         "connection_binding_id": preflight.get("connection_binding_id"),
+        "binding_scope": "assessment_run" if assessment_run_id else "operator_session",
         "repository_count": total,
         "returned_repository_count": len(returned),
         "truncated": total > len(returned),
@@ -252,6 +287,8 @@ def install_provider_repository_enumeration(app: FastAPI) -> dict[str, Any]:
             customer_id: str = Query(...),
             project_id: str = Query(...),
             session_id: str = Query(...),
+            run_id: str = Query(default=""),
+            existing_connection_binding_id: str = Query(default=""),
             workspace: str = Query(default=""),
             provider_organization: str = Query(default=""),
             provider_project: str = Query(default=""),
@@ -266,12 +303,16 @@ def install_provider_repository_enumeration(app: FastAPI) -> dict[str, Any]:
                     project_id=project_id,
                     session_id=session_id,
                     token=x_nico_admin_token,
+                    run_id=run_id,
+                    existing_connection_binding_id=existing_connection_binding_id,
                     workspace=workspace,
                     provider_organization=provider_organization,
                     provider_project=provider_project,
                 )
             except HTTPException:
                 raise
+            except ProviderRolloutError as exc:
+                raise _rollout_http_error(exc) from exc
             except Exception as exc:
                 raise api_routes._translate_error(exc) from exc
 
@@ -288,6 +329,7 @@ def install_provider_repository_enumeration(app: FastAPI) -> dict[str, Any]:
         "server_side_provider_clients": True,
         "server_side_credentials_only": True,
         "operator_authorization_required": True,
+        "assessment_binding_preserved_when_run_id_supplied": True,
         "customer_self_service": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
