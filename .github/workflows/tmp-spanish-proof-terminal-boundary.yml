@@ -92,8 +92,14 @@ jobs:
       - name: Run focused proof-contract verification
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check pytest
-          pytest -q tests/test_spanish_comprehensive_terminal_proof_contract.py
+          python - <<'PY'
+          from runpy import run_path
+
+          tests = run_path('tests/test_spanish_comprehensive_terminal_proof_contract.py')
+          tests['test_spanish_terminal_phase_and_review_are_distinct']()
+          tests['test_spanish_production_workflow_requires_both_terminal_labels']()
+          print('Spanish terminal proof contract verified.')
+          PY
           python -m py_compile scripts/spanish_comprehensive_live_acceptance_v1.py
           git diff --check
 
