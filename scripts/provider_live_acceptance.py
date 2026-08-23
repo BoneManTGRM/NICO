@@ -11,6 +11,7 @@ from typing import Any, Mapping
 from nico.provider_credentials import EnvironmentCredentialResolver, build_reference
 from nico.provider_enterprise_clients import BitbucketDataCenterClient
 from nico.provider_live_clients import AzureDevOpsClient, BitbucketCloudClient, GitLabClient, RetryPolicy
+from nico.provider_support_policy_v1 import ProviderSupportMaturity
 
 
 class LiveAcceptanceError(RuntimeError):
@@ -55,7 +56,13 @@ def _host(url: str) -> str:
 
 def build_collector(provider: str):
     token = provider.lower().replace("-", "_")
-    policy = RetryPolicy(max_attempts=4, base_delay_seconds=1, max_delay_seconds=30, timeout_seconds=45, max_pages=200)
+    policy = RetryPolicy(
+        max_attempts=4,
+        base_delay_seconds=1,
+        max_delay_seconds=30,
+        timeout_seconds=45,
+        max_pages=200,
+    )
     if token == "gitlab":
         instance = _required_environment("NICO_GITLAB_URL")
         credential = _credential(
@@ -109,14 +116,28 @@ def build_collector(provider: str):
     raise LiveAcceptanceError(f"provider_acceptance_unsupported:{provider}")
 
 
+def _records(envelope: Any, name: str) -> list[dict[str, Any]]:
+    return [asdict(item) for item in getattr(envelope, name, ())]
+
+
 def _canonical_envelope(result: Any) -> dict[str, Any]:
     envelope = result.envelope
     return {
         "identity": asdict(envelope.identity),
         "access": asdict(envelope.access),
         "snapshot": asdict(envelope.snapshot),
-        "change_requests": [asdict(item) for item in envelope.change_requests],
-        "ci_runs": [asdict(item) for item in envelope.ci_runs],
+        "change_requests": _records(envelope, "change_requests"),
+        "ci_runs": _records(envelope, "ci_runs"),
+        "source_objects": _records(envelope, "source_objects"),
+        "tags": _records(envelope, "tags"),
+        "exact_source_locators": _records(envelope, "exact_source_locators"),
+        "ci_jobs": _records(envelope, "ci_jobs"),
+        "environments": _records(envelope, "environments"),
+        "deployments": _records(envelope, "deployments"),
+        "releases": _records(envelope, "releases"),
+        "capability_status": _records(envelope, "capability_status"),
+        "pagination_complete": bool(getattr(envelope, "pagination_complete", True)),
+        "collection_limitations": list(getattr(envelope, "collection_limitations", ())),
         "warnings": list(result.warnings),
     }
 
@@ -132,7 +153,12 @@ def _json_safe(value: Any) -> Any:
 
 
 def _fingerprint(payload: Mapping[str, Any]) -> str:
-    rendered = json.dumps(_json_safe(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    rendered = json.dumps(
+        _json_safe(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
     return f"sha256:{sha256(rendered.encode('utf-8')).hexdigest()}"
 
 
@@ -152,14 +178,20 @@ def run_acceptance(*, provider: str, repository: str, revision: str, passes: int
                 raise LiveAcceptanceError("provider_acceptance_revision_drift")
             adapted = collection.adapt()
             if adapted.warnings:
-                raise LiveAcceptanceError("provider_acceptance_canonical_warnings:" + ",".join(adapted.warnings))
+                raise LiveAcceptanceError(
+                    "provider_acceptance_canonical_warnings:" + ",".join(adapted.warnings)
+                )
             envelope = _canonical_envelope(adapted)
             if envelope["snapshot"]["revision"] != pinned_revision:
                 raise LiveAcceptanceError("provider_acceptance_snapshot_revision_mismatch")
             if envelope["access"]["read_only"] is not True:
                 raise LiveAcceptanceError("provider_acceptance_must_be_read_only")
-            if envelope["access"]["partial_access"] is True:
-                raise LiveAcceptanceError("provider_acceptance_partial_access")
+            if envelope["pagination_complete"] is not True:
+                raise LiveAcceptanceError("provider_acceptance_pagination_incomplete")
+            if not envelope["source_objects"]:
+                raise LiveAcceptanceError("provider_acceptance_source_tree_missing")
+            if not envelope["exact_source_locators"]:
+                raise LiveAcceptanceError("provider_acceptance_exact_source_missing")
             runs.append(
                 {
                     "pass": index + 1,
@@ -171,8 +203,18 @@ def run_acceptance(*, provider: str, repository: str, revision: str, passes: int
                     "requests_made": collection.requests_made,
                     "canonical_fingerprint": _fingerprint(envelope),
                     "source_fingerprint": envelope["snapshot"]["source_fingerprint"],
+                    "source_object_count": len(envelope["source_objects"]),
+                    "exact_source_locator_count": len(envelope["exact_source_locators"]),
+                    "tag_count": len(envelope["tags"]),
                     "change_request_count": len(envelope["change_requests"]),
                     "ci_run_count": len(envelope["ci_runs"]),
+                    "ci_job_count": len(envelope["ci_jobs"]),
+                    "environment_count": len(envelope["environments"]),
+                    "deployment_count": len(envelope["deployments"]),
+                    "release_count": len(envelope["releases"]),
+                    "partial_access": bool(envelope["access"]["partial_access"]),
+                    "collection_limitations": list(envelope["collection_limitations"]),
+                    "capability_status": list(envelope["capability_status"]),
                     "warnings": [],
                 }
             )
@@ -182,17 +224,25 @@ def run_acceptance(*, provider: str, repository: str, revision: str, passes: int
     repository_ids = {item["repository_id"] for item in runs}
     revisions = {item["revision"] for item in runs}
     source_fingerprints = {item["source_fingerprint"] for item in runs}
+    source_counts = {item["source_object_count"] for item in runs}
+    exact_source_counts = {item["exact_source_locator_count"] for item in runs}
     if len(repository_ids) != 1:
         raise LiveAcceptanceError("provider_acceptance_repository_identity_drift")
     if len(revisions) != 1:
         raise LiveAcceptanceError("provider_acceptance_revision_drift")
     if len(source_fingerprints) != 1:
         raise LiveAcceptanceError("provider_acceptance_source_fingerprint_drift")
+    if len(source_counts) != 1 or len(exact_source_counts) != 1:
+        raise LiveAcceptanceError("provider_acceptance_source_inventory_drift")
 
     return {
-        "artifact_schema": "nico.provider_live_acceptance.v1",
+        "artifact_schema": "nico.provider_live_acceptance.v2",
         "status": "passed",
-        "live_production_claim": True,
+        "provider_support_maturity": ProviderSupportMaturity.REAL_PROVIDER_INTEGRATION_PROVEN.value,
+        "live_production_claim": False,
+        "client_claim_allowed": False,
+        "controlled_pilot_proven": False,
+        "production_client_proven": False,
         "provider": provider,
         "repository": repository,
         "expected_revision": pinned_revision,
@@ -204,6 +254,8 @@ def run_acceptance(*, provider: str, repository: str, revision: str, passes: int
             "repository_identity_preserved": len(repository_ids) == 1,
             "immutable_revision_preserved": len(revisions) == 1,
             "source_fingerprint_preserved": len(source_fingerprints) == 1,
+            "source_inventory_preserved": len(source_counts) == 1,
+            "exact_source_inventory_preserved": len(exact_source_counts) == 1,
             "read_only_access": True,
             "pagination_completed": True,
             "canonical_warnings_absent": True,
@@ -211,13 +263,20 @@ def run_acceptance(*, provider: str, repository: str, revision: str, passes: int
         },
         "credential_metadata": safe_credential,
         "human_review_required": True,
+        "human_approval_proven": False,
         "client_delivery_allowed": False,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run live NICO provider acceptance twice against one immutable revision.")
-    parser.add_argument("--provider", required=True, choices=("gitlab", "bitbucket_cloud", "bitbucket_data_center", "azure_devops"))
+    parser = argparse.ArgumentParser(
+        description="Run live NICO provider integration proof twice against one immutable revision."
+    )
+    parser.add_argument(
+        "--provider",
+        required=True,
+        choices=("gitlab", "bitbucket_cloud", "bitbucket_data_center", "azure_devops"),
+    )
     parser.add_argument("--repository", required=True)
     parser.add_argument("--revision", default="")
     parser.add_argument("--passes", type=int, default=2)
@@ -233,13 +292,17 @@ def main() -> int:
         )
     except Exception as exc:
         result = {
-            "artifact_schema": "nico.provider_live_acceptance.v1",
+            "artifact_schema": "nico.provider_live_acceptance.v2",
             "status": "failed",
+            "provider_support_maturity": ProviderSupportMaturity.IMPLEMENTED_BUT_UNPROVEN.value,
+            "live_production_claim": False,
+            "client_claim_allowed": False,
             "provider": args.provider,
             "repository": args.repository,
             "error_type": type(exc).__name__,
             "error_code": str(exc),
             "human_review_required": True,
+            "human_approval_proven": False,
             "client_delivery_allowed": False,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -248,7 +311,10 @@ def main() -> int:
         return 1
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(_json_safe(result), indent=2, sort_keys=True), encoding="utf-8")
+    args.output.write_text(
+        json.dumps(_json_safe(result), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     print(json.dumps(_json_safe(result), indent=2, sort_keys=True))
     return 0
 
