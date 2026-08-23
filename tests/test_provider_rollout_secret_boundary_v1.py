@@ -42,7 +42,7 @@ def _payload() -> dict[str, object]:
         "session_id": "session-1",
         "run_id": "comprun-1",
         "locale": "en-US",
-        "onboarding_mode": "internal_test",
+        "execution_mode": "internal_test",
     }
 
 
@@ -56,21 +56,26 @@ def _payload() -> dict[str, object]:
     ),
 )
 def test_nested_raw_credentials_are_rejected_without_echoing_secret(
+    monkeypatch: pytest.MonkeyPatch,
     payload_fragment: dict[str, object],
 ) -> None:
+    monkeypatch.setenv("NICO_ADMIN_TOKEN", "operator-token")
     app = FastAPI()
     install_provider_rollout_routes(app, registry=_registry())
     client = TestClient(app)
     secret = "nested-provider-secret"
 
     response = client.post(
-        "/providers/onboarding/preflight",
+        "/providers/operator/preflight",
+        headers={"X-NICO-Admin-Token": "operator-token"},
         json={**_payload(), **payload_fragment},
     )
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "raw_provider_credentials_prohibited"
     assert response.json()["detail"]["credential_detail_exposed"] is False
+    assert response.json()["detail"]["operator_run_only"] is True
+    assert response.json()["detail"]["customer_self_service"] is False
     assert secret not in response.text
 
 
@@ -108,3 +113,16 @@ def test_rollout_admin_route_rejects_nested_credentials_without_echo(
     )
     assert response.json()["detail"]["credential_detail_exposed"] is False
     assert secret not in response.text
+
+
+def test_no_public_provider_control_route_is_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NICO_ADMIN_TOKEN", "operator-token")
+    app = FastAPI()
+    install_provider_rollout_routes(app, registry=_registry())
+    paths = {getattr(route, "path", "") for route in app.routes}
+
+    assert "/providers/operator/preflight" in paths
+    assert "/providers/operator/capabilities" in paths
+    assert "/providers/onboarding/preflight" not in paths
