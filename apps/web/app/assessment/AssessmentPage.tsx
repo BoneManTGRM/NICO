@@ -3,6 +3,7 @@ import AssessmentRuntimeTruthRepair from "./AssessmentRuntimeTruthRepair";
 import AssessmentMetricDisplayV44 from "./AssessmentMetricDisplayV44";
 import AssessmentHydrationContract from "./AssessmentHydrationContract";
 import AssessmentDynamicSpanishLocalization from "./AssessmentDynamicSpanishLocalization";
+import AssessmentProviderParityBridge from "./AssessmentProviderParityBridge";
 import type {CanonicalLocale, Locale} from "./assessmentTypes";
 import "./assessment-inline-readiness.css";
 
@@ -25,6 +26,7 @@ export default function AssessmentPage({locale = "en-US"}: {locale?: CanonicalLo
     {/* Legacy source-contract marker: <AssessmentDynamicSpanishLocalization /> */}
     <AssessmentDynamicSpanishLocalization locale={presentationLocale} />
     <AssessmentMetricDisplayV44 />
+    <AssessmentProviderParityBridge locale={presentationLocale} />
     <AssessmentWorkspace locale={presentationLocale} />
     <AssessmentHydrationContract
       locale={presentationLocale}
