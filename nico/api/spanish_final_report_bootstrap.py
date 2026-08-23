@@ -16,9 +16,12 @@ from nico.comprehensive_spanish_assessment_scope_v97 import (
 from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
+from nico.hosted_provider_comprehensive_runtime_v1 import (
+    install_hosted_provider_comprehensive_runtime,
+)
 from nico.provider_rollout_control_v1 import install_provider_rollout_routes
 
-VERSION = "nico.api.spanish_final_report_bootstrap.v6"
+VERSION = "nico.api.spanish_final_report_bootstrap.v7"
 
 # Bind the exact production assessment-scope presentation contract before the parent
 # process installs the shared Spanish render cache. This keeps the parent preflight and
@@ -186,9 +189,9 @@ if PRODUCTION_PROOF_LIFECYCLE.get("human_review_required") is not True:
 if PRODUCTION_PROOF_LIFECYCLE.get("client_delivery_allowed") is not False:
     raise RuntimeError("Production-proof lifecycle must block client delivery")
 
-# The hosted-provider rollout authority is mounted on the same final production app.
-# It exposes capability truth and preflight only; raw credentials remain server-side,
-# support maturity cannot be upgraded by API input, and client delivery stays blocked.
+# Provider rollout authority is operator-only. It controls support/capability truth,
+# server-side credential references, and provider-specific enablement without exposing
+# any customer self-service provider surface.
 PROVIDER_ROLLOUT_CONTROL = install_provider_rollout_routes(app)
 setattr(
     app.state,
@@ -214,10 +217,52 @@ if PROVIDER_ROLLOUT_CONTROL.get("human_review_required") is not True:
 if PROVIDER_ROLLOUT_CONTROL.get("client_delivery_allowed") is not False:
     raise RuntimeError("Provider rollout control must block client delivery")
 
+# Connect each major hosted provider to the same canonical NICO Comprehensive runtime.
+# GitHub retains its existing production path. GitLab.com, Bitbucket Cloud, and Azure
+# DevOps acquire an immutable provider revision, feed the same repository-evidence and
+# scanner stages, then continue through the existing candidate, triage, review, report,
+# approval, and delivery boundaries. This is an authorized-operator surface only.
+HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME = install_hosted_provider_comprehensive_runtime(app)
+setattr(
+    app.state,
+    "nico_hosted_provider_comprehensive_runtime",
+    HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME,
+)
+if HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME.get("status") != "installed":
+    raise RuntimeError(
+        "Hosted-provider Comprehensive runtime did not install: "
+        f"{HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME}"
+    )
+for required in (
+    "github_regression_path_preserved",
+    "gitlab_comprehensive_runtime_bound",
+    "bitbucket_cloud_comprehensive_runtime_bound",
+    "azure_devops_comprehensive_runtime_bound",
+    "same_scanner_pipeline",
+    "same_candidate_triage_report_pipeline",
+    "operator_run_only",
+    "credentials_server_side_only",
+    "exact_revision_required",
+    "human_review_required",
+):
+    if HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME.get(required) is not True:
+        raise RuntimeError(
+            f"Hosted-provider Comprehensive runtime missing contract: {required}"
+        )
+if HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME.get("major_hosted_provider_count") != 4:
+    raise RuntimeError("Hosted-provider Comprehensive runtime must bind four major providers")
+if HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME.get("customer_self_service") is not False:
+    raise RuntimeError("Hosted-provider Comprehensive runtime must not expose SaaS self-service")
+if HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Hosted-provider Comprehensive runtime must block unapproved client delivery")
+if HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME.get("operator_intake_route_count") != 1:
+    raise RuntimeError("Hosted-provider operator Comprehensive intake route is missing or duplicated")
+
 
 __all__ = [
     "FINAL_REPORT_PROCESS_ISOLATION",
     "FINAL_REPORT_PROCESS_ISOLATION_HARDENING",
+    "HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME",
     "PRODUCTION_PROOF_LIFECYCLE",
     "PROVIDER_ROLLOUT_CONTROL",
     "SPANISH_ASSESSMENT_SCOPE",
