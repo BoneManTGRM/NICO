@@ -195,7 +195,7 @@ jobs:
           assert payload["production_proof_project_id"] == "spanish_comprehensive_production"
           assert payload["start_request_count"] == 1
           assert payload["duplicate_intake_absent"] is True
-          assert payload["terminal"]["phase"] == "Revisión interna requerida"
+          assert payload["terminal"]["phase"] == "Se requiere revisión experta"
           assert payload["spanish_pdf_presentation_verified"] is True
           assert payload["forbidden_pdf_markers_absent"] is True
           assert payload["pdf_signature_verified"] is True
