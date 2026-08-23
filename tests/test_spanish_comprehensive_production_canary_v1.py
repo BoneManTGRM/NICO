@@ -15,7 +15,7 @@ def test_spanish_canary_starts_a_real_es_mx_comprehensive_run() -> None:
 
     assert 'SPANISH_ROUTE = "/es/assessment"' in text
     assert 'locale="es-MX"' in text
-    assert 'SPANISH_REPO_LABEL = "Propietario/nombre del repositorio o URL de GitHub"' in text
+    assert 'SPANISH_REPO_LABEL = "URL o identificador del repositorio"' in text
     assert 'SPANISH_TERMINAL_PHASE = "Revisión interna requerida"' in text
     assert 'item.get("path") != "/api/nico/assessment/comprehensive-intake"' in text
     assert 'payload.get("report_language")' in text
