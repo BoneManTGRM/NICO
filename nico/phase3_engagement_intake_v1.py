@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from nico import comprehensive_api_routes as api_routes
 
-VERSION = "nico.phase3_engagement_intake.v4"
+VERSION = "nico.phase3_engagement_intake.v5"
 INTAKE_PATCH = "_nico_phase3_engagement_intake_v1"
 REVIEW_PATCH = "_nico_phase3_review_identity_v1"
 RECOVERY_PATCH = "_nico_phase3_recovery_identity_v1"
@@ -35,13 +35,37 @@ def _module(payload: Mapping[str, Any]) -> dict[str, Any]:
     return deepcopy(dict(raw)) if isinstance(raw, Mapping) else {}
 
 
+def _client_mode(payload: Mapping[str, Any], client: str, project: str) -> bool:
+    """Resolve client mode from authoritative scope when the caller supplied it.
+
+    Public Comprehensive intake now keeps optional client/project labels as display
+    metadata while sending the canonical default scope explicitly. Those labels must
+    therefore never escalate the request into a client-final engagement or make the
+    three lightweight context fields mandatory. Explicit non-placeholder scope remains
+    the authority for real client mode. Legacy callers that omit scope keys retain the
+    original label-driven behavior for compatibility.
+    """
+
+    scope_supplied = "customer_id" in payload or "project_id" in payload
+    if not scope_supplied:
+        return bool(client or project)
+
+    customer = _text(payload.get("customer_id"), 240).casefold()
+    project_id = _text(payload.get("project_id"), 240).casefold()
+    customer_is_client = customer not in PLACEHOLDER_CUSTOMERS
+    project_is_client = project_id not in PLACEHOLDER_PROJECTS
+    if customer_is_client != project_is_client:
+        raise ValueError("client_project_scope_identity_required")
+    return customer_is_client and project_is_client
+
+
 def validate_and_enrich_intake(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Bind client identity and scope without changing the ten-module evidence schema."""
 
     body = deepcopy(dict(payload))
     client = _text(body.get("client_name"), 300)
     project = _text(body.get("project_name"), 300)
-    client_mode = bool(client or project)
+    client_mode = _client_mode(body, client, project)
     human = (
         deepcopy(dict(body.get("human_evidence") or {}))
         if isinstance(body.get("human_evidence"), Mapping)
@@ -218,6 +242,8 @@ def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str,
         "status": "installed",
         "client_and_project_required_for_client_mode": True,
         "primary_contact_access_scope_required": True,
+        "client_mode_requires_authoritative_non_placeholder_scope": True,
+        "optional_display_labels_do_not_enable_client_mode": True,
         "internal_assessment_allowed": True,
         "internal_placeholder_client_delivery_blocked": True,
         "existing_human_evidence_modules_reused": True,
