@@ -112,7 +112,7 @@ def test_spanish_provider_bridge_has_no_user_facing_english_error_fallbacks():
     assert '"La solicitud de evaluación no contiene JSON válido."' in bridge
     assert '"Ingresa un token de operador NICO válido para usar GitLab, Bitbucket o Azure DevOps."' in bridge
     assert '"La URL o el identificador del repositorio no coincide con el proveedor seleccionado. Revisa el formato y vuelve a intentarlo."' in bridge
-    assert '"Las credenciales del proveedor permanecen exclusivamente en el servidor y deben estar configuradas allí antes de iniciar la evaluación."' in bridge
+    assert "Las credenciales del proveedor permanecen exclusivamente en el servidor y deben estar configuradas allí antes de iniciar la evaluación." in bridge
 
 
 def test_browser_code_never_contains_provider_credentials():
