@@ -6,7 +6,7 @@ import styles from "./repositoryProviderSelector.module.css";
 import {
   detectRepositoryProvider,
   normalizeRepositorySelection,
-  providerOption,
+  providerPlaceholder,
   readRepositoryProvider,
   REPOSITORY_PROVIDER_OPTIONS,
   type RepositoryProvider,
@@ -56,8 +56,14 @@ function repositoryFieldLabel(locale: Locale): string {
 
 function operatorMessage(locale: Locale): string {
   return locale === "es-MX"
-    ? "Se requiere la autorización del operador NICO para usar GitLab, Bitbucket o Azure DevOps."
-    : "NICO operator authorization is required for GitLab, Bitbucket, or Azure DevOps.";
+    ? "Ingresa un token de operador NICO válido para usar GitLab, Bitbucket o Azure DevOps."
+    : "Enter a valid NICO operator token to use GitLab, Bitbucket, or Azure DevOps.";
+}
+
+function invalidIntakeMessage(locale: Locale): string {
+  return locale === "es-MX"
+    ? "La solicitud de evaluación no contiene JSON válido."
+    : "The assessment intake body is not valid JSON.";
 }
 
 export default function AssessmentProviderParityBridge({locale}: {locale: Locale}) {
@@ -74,8 +80,8 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
   useEffect(() => {
     writeRepositoryProvider(provider);
     const input = repositoryInput.current;
-    if (input) input.placeholder = providerOption(provider).placeholder;
-  }, [provider]);
+    if (input) input.placeholder = providerPlaceholder(provider, locale);
+  }, [provider, locale]);
 
   useEffect(() => {
     let observer: MutationObserver | null = null;
@@ -110,7 +116,7 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
         originalLabelText = firstText.nodeValue || "";
         firstText.nodeValue = repositoryFieldLabel(locale);
       }
-      input.placeholder = providerOption(readRepositoryProvider()).placeholder;
+      input.placeholder = providerPlaceholder(readRepositoryProvider(), locale);
 
       const onRepositoryInput = () => {
         const detected = detectRepositoryProvider(input.value);
@@ -119,7 +125,9 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
           writeRepositoryProvider(detected);
         }
         window.requestAnimationFrame(() => {
-          if (input.isConnected) input.placeholder = providerOption(detected || readRepositoryProvider()).placeholder;
+          if (input.isConnected) {
+            input.placeholder = providerPlaceholder(detected || readRepositoryProvider(), locale);
+          }
         });
       };
       input.addEventListener("input", onRepositoryInput);
@@ -173,7 +181,11 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid");
         payload = parsed as Record<string, unknown>;
       } catch {
-        return errorResponse(422, "assessment_intake_body_invalid_json", "The assessment intake body is not valid JSON.");
+        return errorResponse(
+          422,
+          "assessment_intake_body_invalid_json",
+          invalidIntakeMessage(locale),
+        );
       }
 
       const repository = String(payload.repository || "").trim();
@@ -191,8 +203,8 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
           422,
           error instanceof Error ? error.message : "provider_repository_invalid",
           locale === "es-MX"
-            ? "La URL o el identificador del repositorio no coincide con el proveedor seleccionado."
-            : "The repository URL or identifier does not match the selected provider.",
+            ? "La URL o el identificador del repositorio no coincide con el proveedor seleccionado. Revisa el formato y vuelve a intentarlo."
+            : "The repository URL or identifier does not match the selected provider. Check the format and try again.",
         );
       }
 
@@ -268,8 +280,8 @@ export default function AssessmentProviderParityBridge({locale}: {locale: Locale
         </label>
         <p className={styles.operatorNote}>
           {locale === "es-MX"
-            ? "El token de operador existe solo en memoria mientras esta página está abierta. Las credenciales del proveedor permanecen exclusivamente en el servidor."
-            : "The operator token exists only in memory while this page is open. Provider credentials remain server-side only."}
+            ? "El token de operador existe solo en memoria mientras esta página está abierta. Las credenciales del proveedor permanecen exclusivamente en el servidor y deben estar configuradas allí antes de iniciar la evaluación."
+            : "The operator token exists only in memory while this page is open. Provider credentials remain server-side only and must already be configured there before the assessment starts."}
         </p>
       </div> : null}
     </div>,
