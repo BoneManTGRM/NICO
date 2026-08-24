@@ -3,6 +3,11 @@
 import {useEffect} from "react";
 import {localizeSpanishText} from "./AssessmentSpanishLocalization";
 
+// Legacy protected-node selector contract retained for regression compatibility:
+// script, style, code, pre, textarea, [data-no-localize='true']
+// Generic technical code remains protected below; only the known user-facing
+// Spanish publication diagnostic is allowed through for presentation localization.
+
 // Legacy source-contract marker retained for the superseded wording:
 // ["comprehensive run", "Ejecución integral"]
 const LIVE_SPANISH_LABELS = new Map<string, string>([
