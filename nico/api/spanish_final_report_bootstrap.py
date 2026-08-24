@@ -13,6 +13,9 @@ from nico.comprehensive_production_proof_lifecycle_v1 import (
 from nico.comprehensive_spanish_assessment_scope_v97 import (
     install_comprehensive_spanish_assessment_scope_v97,
 )
+from nico.comprehensive_spanish_current_copy_worker_v98 import (
+    install_comprehensive_spanish_current_copy_worker_v98,
+)
 from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
@@ -27,7 +30,7 @@ from nico.provider_repository_enumeration_v1 import (
 )
 from nico.provider_rollout_control_v1 import install_provider_rollout_routes
 
-VERSION = "nico.api.spanish_final_report_bootstrap.v7"
+VERSION = "nico.api.spanish_final_report_bootstrap.v8"
 
 SPANISH_ASSESSMENT_SCOPE = install_comprehensive_spanish_assessment_scope_v97()
 setattr(app.state, "nico_spanish_assessment_scope", SPANISH_ASSESSMENT_SCOPE)
@@ -39,6 +42,22 @@ if SPANISH_ASSESSMENT_SCOPE.get("production_assessment_scope_translation_support
     raise RuntimeError("Spanish production assessment scope is not translatable")
 if SPANISH_ASSESSMENT_SCOPE.get("unknown_assessment_scope_contract_unregistered") is not True:
     raise RuntimeError("Spanish assessment-scope contract registered unapproved prose")
+
+# Bind the current report's approved Spanish presentation phrases before v94 captures
+# process-local translator references. The detached renderer installs the same contract
+# independently, so parent and child cannot drift on newly added report-owned copy.
+SPANISH_CURRENT_REPORT_COPY = install_comprehensive_spanish_current_copy_worker_v98()
+setattr(app.state, "nico_spanish_current_report_copy", SPANISH_CURRENT_REPORT_COPY)
+if SPANISH_CURRENT_REPORT_COPY.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError(
+        f"Spanish current-report copy contract did not install: {SPANISH_CURRENT_REPORT_COPY}"
+    )
+if SPANISH_CURRENT_REPORT_COPY.get("bound") is not True:
+    raise RuntimeError("Spanish current-report copy contract is not bound")
+if SPANISH_CURRENT_REPORT_COPY.get("current_report_copy_contract_bound") is not True:
+    raise RuntimeError("Spanish current report copy is not translatable")
+if SPANISH_CURRENT_REPORT_COPY.get("unknown_prose_still_delegates_fail_closed") is not True:
+    raise RuntimeError("Spanish current-report copy weakened fail-closed behavior")
 
 SPANISH_FINAL_REPORT_RUNTIME_CACHE = install_comprehensive_spanish_final_report_runtime_cache_v94()
 setattr(app.state, "nico_spanish_final_report_runtime_cache", SPANISH_FINAL_REPORT_RUNTIME_CACHE)
@@ -189,6 +208,7 @@ __all__ = [
     "PROVIDER_REPOSITORY_ENUMERATION",
     "PROVIDER_ROLLOUT_CONTROL",
     "SPANISH_ASSESSMENT_SCOPE",
+    "SPANISH_CURRENT_REPORT_COPY",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
     "VERSION",
     "app",
