@@ -6,9 +6,56 @@ import re
 from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
-VERSION = "nico.comprehensive-client-review-companion.v2.1"
+VERSION = "nico.comprehensive-client-review-companion.v2.2"
 MIN_CLIENT_REVIEW_PAGES = 8
 MAX_CLIENT_REVIEW_PAGES = 45
+
+# These late review-companion strings are assembled from canonical stage summaries
+# after the broader report localization pass. Keep the translations at this final
+# presentation boundary as well so Spanish correctness does not depend on bootstrap
+# monkey-patch ordering.
+_SPANISH_DYNAMIC_PHRASES = {
+    "Review-Required Candidate Register": "Registro de candidatos que requieren revisión",
+    "Material confirmado findings": "Hallazgos materiales confirmados",
+    "verificada material findings": "hallazgos materiales verificados",
+    "Confirmed material findings": "Hallazgos materiales confirmados",
+    "Exact-commit executable source signals were analyzed without promoting comments, strings, detector definitions, examples, or tests.": (
+        "Se analizaron las señales ejecutables del código fuente del commit exacto sin convertir comentarios, cadenas, "
+        "definiciones de detectores, ejemplos ni pruebas en defectos."
+    ),
+    "Authoritative manifests and contextual dependency evidence were reconciled by package, installed version, advisory, fixed version, path, scope, and reachability.": (
+        "Los manifiestos autoritativos y la evidencia contextual de dependencias se conciliaron por paquete, versión instalada, "
+        "aviso, versión corregida, ruta, alcance y accesibilidad."
+    ),
+    "History-aware secret evidence was separated into verified material findings, review-required candidates, explicit example placeholders, and non-production observations.": (
+        "La evidencia de secretos con conocimiento del historial se separó en hallazgos materiales verificados, candidatos que requieren "
+        "revisión, marcadores explícitos de ejemplo y observaciones ajenas a producción."
+    ),
+    "Sustainable delivery capacity is derived from immutable architecture maintainability and workflow automation; mutable activity volume is unscored context.": (
+        "La capacidad de entrega sostenible se deriva de la mantenibilidad inmutable de la arquitectura y la automatización de los flujos "
+        "de trabajo; el volumen de actividad mutable es contexto sin puntuación."
+    ),
+    "Strengthen architecture boundaries, test/release automation, functional QA evidence, and remediation verification.": (
+        "Reforzar los límites de arquitectura, la automatización de pruebas y publicaciones, la evidencia de QA funcional y la verificación de remediaciones."
+    ),
+    "Non-success deployment classification": "Clasificación de despliegues no exitosos",
+    "Not available": "No disponible",
+    "Job success rate": "Tasa de éxito de trabajos",
+    "Successful workflow runs": "Ejecuciones exitosas de flujos de trabajo",
+    "Non-success workflow runs": "Ejecuciones no exitosas de flujos de trabajo",
+    "Jobs observed": "Trabajos observados",
+    "Jobs observado": "Trabajos observados",
+    "Deployments observed": "Despliegues observados",
+    "Deployments observado": "Despliegues observados",
+    "Successful deployments": "Despliegues exitosos",
+    "Non-success deployments": "Despliegues no exitosos",
+    "Cybersecurity specialist": "Especialista en ciberseguridad",
+    "Code audit": "Auditoría de código",
+    "Exceptional": "Excepcional",
+    "immutable native-control vector=not applicable; provider-neutral objective coverage is reported separately.": (
+        "vector inmutable de controles nativos=no aplica; la cobertura de objetivos neutral al proveedor se informa por separado."
+    ),
+}
 
 _SECTION_SPECS = (
     {
@@ -147,6 +194,21 @@ def _text(value: Any, limit: int = 1200) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
+def _localize_spanish_dynamic(value: Any) -> str:
+    """Localize late NICO-authored display copy without depending on patch order."""
+
+    from nico import comprehensive_spanish_presentation_parity_v1 as presentation
+
+    text = _text(value, 12000)
+    for source, target in sorted(
+        _SPANISH_DYNAMIC_PHRASES.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        text = text.replace(source, target)
+    return presentation._safe_es(text)
+
+
 def _values(value: Any, *, limit: int, item_limit: int = 700) -> list[str]:
     if isinstance(value, Mapping):
         raw_values: Iterable[Any] = (
@@ -275,6 +337,15 @@ def review_sections(canonical: Mapping[str, Any], *, spanish: bool) -> list[dict
                 "questions": list(spec["questions_es"] if spanish else spec["questions"]),
             }
         )
+    if spanish:
+        for section in output:
+            for field in ("status", "summary"):
+                section[field] = _localize_spanish_dynamic(section.get(field))
+            for field in ("evidence", "findings", "limitations"):
+                section[field] = [
+                    _localize_spanish_dynamic(item)
+                    for item in section.get(field, [])
+                ]
     return output
 
 
