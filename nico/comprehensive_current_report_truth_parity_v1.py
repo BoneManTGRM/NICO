@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.4"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.5"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -215,12 +215,14 @@ def _install_spanish_phrase_completion() -> bool:
     return True
 
 
-def strict_spanish_presentation_v1(value: Any) -> str:
+def strict_spanish_presentation_v1(value: Any, key: str = "summary") -> str:
     """Strict field/source-aware projection for late renderer-owned es-MX copy.
 
     Protected technical/source atoms stay exact. Registered structured generator copy
-    is projected first, compatibility translations second, and the canonical Spanish
-    translator is the final fail-closed authority for any remaining human-facing prose.
+    is projected first, compatibility translations second, and the canonical field
+    translator is the final fail-closed authority for the actual presentation field.
+    The companion's `status` is a display label, so it is validated as a label rather
+    than as canonical machine status state.
     """
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical_spanish
@@ -234,7 +236,8 @@ def strict_spanish_presentation_v1(value: Any) -> str:
         return raw
     prepared = localize_current_report_copy_v98(raw)
     prepared = presentation._safe_es(prepared)
-    return canonical_spanish._translate_presentation(prepared)
+    strict_key = "label" if key == "status" else str(key or "summary")
+    return canonical_spanish._translate_presentation_field(prepared, strict_key)
 
 
 def _install_review_companion_localization() -> bool:
@@ -256,11 +259,13 @@ def _install_review_companion_localization() -> bool:
             item = dict(raw)
             for field in ("status", "summary"):
                 if item.get(field) not in (None, ""):
-                    item[field] = strict_spanish_presentation_v1(item[field])
+                    item[field] = strict_spanish_presentation_v1(item[field], field)
             for field in ("evidence", "findings", "limitations"):
                 values = item.get(field)
                 if isinstance(values, list):
-                    item[field] = [strict_spanish_presentation_v1(value) for value in values]
+                    item[field] = [
+                        strict_spanish_presentation_v1(value, field) for value in values
+                    ]
             localized.append(item)
         return localized
 
