@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.8"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.9"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -370,20 +370,14 @@ def _install_outline_matching() -> bool:
 def _install_spanish_phrase_completion() -> bool:
     from nico import comprehensive_spanish_presentation_parity_v1 as spanish
 
+    # Keep current-report static copy on the existing bounded v98/current-presentation
+    # boundary. Do not append it into v87's global replacement tuple: v87 is invoked on
+    # full Markdown and every PDF text operand, so expanding that hot global loop makes
+    # report generation scale with unrelated current-copy phrases. v98 reads this same
+    # phrase contract dynamically before v87 and unknown copy still falls through to
+    # v87's strict fail-closed translator.
     spanish._ES_EXTRA_EXACT.update(_ES_EXACT)
     spanish._ES_PHRASES.update(_ES_PHRASES)
-
-    # v87 snapshots presentation replacements at import time. Keep the bounded
-    # current-report phrases available to the strict canonical translator even when
-    # v87 was imported earlier by the parent or detached worker bootstrap.
-    from nico import comprehensive_spanish_canonical_report_v87 as canonical_spanish
-
-    existing = {source for source, _target in canonical_spanish._PRESENTATION_REPLACEMENTS}
-    additions = tuple(
-        (source, target) for source, target in _ES_PHRASES.items() if source not in existing
-    )
-    if additions:
-        canonical_spanish._PRESENTATION_REPLACEMENTS += additions
     return True
 
 
