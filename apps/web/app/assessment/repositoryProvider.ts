@@ -4,6 +4,7 @@ export type RepositoryProviderOption = {
   value: RepositoryProvider;
   label: string;
   placeholder: string;
+  placeholderEs: string;
 };
 
 export type NormalizedRepositorySelection = {
@@ -16,10 +17,30 @@ export type NormalizedRepositorySelection = {
 export const REPOSITORY_PROVIDER_STORAGE_KEY = "nico.comprehensive.repository-provider.v1";
 
 export const REPOSITORY_PROVIDER_OPTIONS: readonly RepositoryProviderOption[] = [
-  {value: "github", label: "GitHub", placeholder: "owner/repository"},
-  {value: "gitlab", label: "GitLab", placeholder: "group/project"},
-  {value: "bitbucket_cloud", label: "Bitbucket", placeholder: "workspace/repository"},
-  {value: "azure_devops", label: "Azure DevOps", placeholder: "organization/project/repository"},
+  {
+    value: "github",
+    label: "GitHub",
+    placeholder: "owner/repository",
+    placeholderEs: "propietario/repositorio",
+  },
+  {
+    value: "gitlab",
+    label: "GitLab",
+    placeholder: "group/project",
+    placeholderEs: "grupo/proyecto",
+  },
+  {
+    value: "bitbucket_cloud",
+    label: "Bitbucket",
+    placeholder: "workspace/repository",
+    placeholderEs: "espacio-trabajo/repositorio",
+  },
+  {
+    value: "azure_devops",
+    label: "Azure DevOps",
+    placeholder: "organization/project/repository",
+    placeholderEs: "organizacion/proyecto/repositorio",
+  },
 ] as const;
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -153,4 +174,9 @@ export function writeRepositoryProvider(provider: RepositoryProvider): void {
 
 export function providerOption(provider: RepositoryProvider): RepositoryProviderOption {
   return REPOSITORY_PROVIDER_OPTIONS.find((option) => option.value === provider) || REPOSITORY_PROVIDER_OPTIONS[0];
+}
+
+export function providerPlaceholder(provider: RepositoryProvider, locale: "en" | "es-MX"): string {
+  const option = providerOption(provider);
+  return locale === "es-MX" ? option.placeholderEs : option.placeholder;
 }
