@@ -9,11 +9,12 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.6"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.7"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
 _REVIEW_LOCALIZATION_MARKER = "__nico_current_report_truth_review_localization_v1__"
+_DYNAMIC_LOCALIZER_MARKER = "__nico_current_report_truth_dynamic_localizer_v1__"
 
 _ES_EXACT = {
     "Exceptional": "Excepcional",
@@ -259,6 +260,29 @@ def _install_review_companion_localization() -> bool:
 
     from nico import comprehensive_client_review_companion_v2 as companion
 
+    # The companion historically ended its exact late-phrase pass with permissive
+    # `_safe_es`, which can translate one English word inside an otherwise registered
+    # full sentence. Preserve its explicit dynamic phrase ownership but remove that
+    # partial-word cleanup. The field-aware wrapper below remains the fail-closed
+    # authority for every renderer-owned field.
+    current_dynamic = companion._localize_spanish_dynamic
+    if not getattr(current_dynamic, _DYNAMIC_LOCALIZER_MARKER, False):
+
+        @wraps(current_dynamic)
+        def bounded_dynamic(value: Any) -> str:
+            text = companion._text(value, 12000)
+            for source, target in sorted(
+                companion._SPANISH_DYNAMIC_PHRASES.items(),
+                key=lambda item: len(item[0]),
+                reverse=True,
+            ):
+                text = text.replace(source, target)
+            return text
+
+        setattr(bounded_dynamic, _DYNAMIC_LOCALIZER_MARKER, True)
+        setattr(bounded_dynamic, "_nico_previous", current_dynamic)
+        companion._localize_spanish_dynamic = bounded_dynamic
+
     current = companion.review_sections
     if getattr(current, _REVIEW_LOCALIZATION_MARKER, False):
         return True
@@ -350,6 +374,7 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
         "case_insensitive_toc_matching": outline,
         "spanish_embedded_phrase_localization": spanish,
         "late_review_companion_localization": review_localization,
+        "late_review_partial_word_translation_disabled": True,
         "unknown_report_owned_review_copy_fails_closed": True,
         "raw_canonical_truth_is_not_misclassified_as_final_presentation": True,
         "empty_native_ci_vector_not_rendered_as_zero_over_zero": ci,
