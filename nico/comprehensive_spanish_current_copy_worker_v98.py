@@ -4,7 +4,7 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.4"
+VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.5"
 _ONE_ARG_MARKER = "__nico_spanish_current_copy_worker_one_v98__"
 _TWO_ARG_MARKER = "__nico_spanish_current_copy_worker_two_v98__"
 
@@ -39,9 +39,19 @@ _PROVIDER_COVERAGE_RE = re.compile(
 _PROVIDER_ASSURANCE_RE = re.compile(
     r"CI control assurance incomplete; no pass/fail claim was made for: (?P<objectives>[^.]+)\."
 )
+_TECHNICAL_MATURITY_RE = re.compile(
+    r"Technical maturity remains based on exact-commit technical controls\. "
+    r"Evidence-Adjusted readiness is (?P<adjusted>\d+(?:\.\d+)?)/100 versus technical maturity "
+    r"(?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
+    r"(?P<review_required>\d+) review-required candidates and "
+    r"(?P<confirmed>\d+) confirmed material findings as explicit review context\."
+)
 _CANDIDATE_VOLUME_RE = re.compile(
     r"Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or "
     r"(?:Evidence-Adjusted|Ajuste por evidencia) score effect\."
+)
+_CANDIDATE_VOLUME_SECURITY_RE = re.compile(
+    r"Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores\."
 )
 _ANALYZER_COMPLETION_RE = re.compile(
     r"(?P<completed>\d+) of (?P<applicable>\d+) applicable analyzers completed; "
@@ -74,7 +84,9 @@ _STRUCTURED_TRIGGER_TOKENS = (
     "Explicit permissions control:",
     "Provider-neutral immutable CI objective coverage:",
     "CI control assurance incomplete;",
+    "Technical maturity remains based on exact-commit technical controls.",
     "Candidate volume and reviewer workload are operational review metrics",
+    "Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.",
     "applicable analyzers completed;",
     "Review-required scanner candidates:",
     *_STATIC_GENERATOR_COPY.keys(),
@@ -130,6 +142,16 @@ def _translate_structured_current_report_copy(text: str) -> str:
             f"{match.group('objectives')}."
         )
 
+    def technical_maturity(match: re.Match[str]) -> str:
+        return (
+            "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
+            f"La preparación ajustada por evidencia es {match.group('adjusted')}/100 "
+            f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
+            f"conserva {match.group('review_required')} candidatos que requieren revisión y "
+            f"{match.group('confirmed')} hallazgos materiales confirmados como contexto "
+            "explícito de revisión."
+        )
+
     def analyzer_completion(match: re.Match[str]) -> str:
         return (
             "Analizadores aplicables completados: "
@@ -156,9 +178,16 @@ def _translate_structured_current_report_copy(text: str) -> str:
         output = _PROVIDER_COVERAGE_RE.sub(coverage, output)
     if "CI control assurance incomplete;" in output:
         output = _PROVIDER_ASSURANCE_RE.sub(assurance, output)
+    if "Technical maturity remains based on exact-commit technical controls." in output:
+        output = _TECHNICAL_MATURITY_RE.sub(technical_maturity, output)
     if "Candidate volume and reviewer workload are operational review metrics" in output:
         output = _CANDIDATE_VOLUME_RE.sub(
             "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación de Ajuste por evidencia.",
+            output,
+        )
+    if "Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores." in output:
+        output = _CANDIDATE_VOLUME_SECURITY_RE.sub(
+            "El volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican las puntuaciones numéricas de seguridad ni de preparación.",
             output,
         )
     if "applicable analyzers completed;" in output:
@@ -264,18 +293,27 @@ def install_comprehensive_spanish_current_copy_worker_v98() -> dict[str, Any]:
         and presentation_module._safe_es is safe
     )
     sample = localize_current_report_copy_v98(
-        "Explicit permissions control: passed. Provider-neutral immutable CI objective coverage: 100%. "
+        "Technical maturity remains based on exact-commit technical controls. "
+        "Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. "
+        "NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. "
         "Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. "
+        "Explicit permissions control: passed. Provider-neutral immutable CI objective coverage: 100%. "
         "1 of 1 applicable analyzers completed; 0 are incomplete. Candidate triage is separate: 2 review-required candidates and 0 confirmed material findings are retained. "
         "Review-required scanner candidates: 3."
     )
     sample_ok = (
-        "Explicit permissions control" not in sample
+        "Technical maturity remains based on exact-commit technical controls" not in sample
+        and "Evidence-Adjusted readiness is 93/100" not in sample
+        and "NICO retains 691 review-required candidates" not in sample
+        and "Explicit permissions control" not in sample
         and "Provider-neutral immutable CI objective coverage" not in sample
         and "Candidate volume and reviewer workload" not in sample
         and "applicable analyzers completed" not in sample
         and "Candidate triage is separate" not in sample
         and "Review-required scanner candidates" not in sample
+        and "La madurez técnica sigue basándose en controles técnicos del commit exacto." in sample
+        and "La preparación ajustada por evidencia es 93/100 frente a una madurez técnica de 93/100." in sample
+        and "NICO conserva 691 candidatos que requieren revisión y 0 hallazgos materiales confirmados" in sample
         and "Control de permisos explícitos: aprobado." in sample
         and "Cobertura de objetivos inmutables de CI independiente del proveedor: 100%." in sample
         and "El volumen de candidatos y la carga de trabajo del revisor" in sample
@@ -290,6 +328,7 @@ def install_comprehensive_spanish_current_copy_worker_v98() -> dict[str, Any]:
         "bound": bound,
         "current_report_copy_contract_bound": sample_ok,
         "structured_provider_ci_copy_bound": True,
+        "structured_maturity_review_context_bound": True,
         "structured_analyzer_summary_bound": True,
         "structured_review_required_scanner_count_bound": True,
         "worker_safe_before_renderer_cache": True,
