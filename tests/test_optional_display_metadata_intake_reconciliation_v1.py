@@ -27,6 +27,23 @@ def test_public_optional_client_project_labels_remain_internal_metadata() -> Non
     assert "project_identity" not in evidence
 
 
+def test_reserved_spanish_production_proof_scope_remains_non_client() -> None:
+    enriched = validate_and_enrich_intake(
+        {
+            "repository": "BoneManTGRM/NICO",
+            "customer_id": "nico_production_proof",
+            "project_id": "spanish_comprehensive_production",
+            "client_name": "",
+            "project_name": "",
+            "authorization_confirmed": True,
+            "human_evidence": {},
+        }
+    )
+
+    assert enriched["phase3_engagement_mode"] == "internal"
+    assert enriched["human_evidence"]["stakeholder_context"]["evidence"]["engagement_mode"] == ["internal"]
+
+
 def test_authoritative_client_scope_still_requires_client_context() -> None:
     with pytest.raises(ValueError, match="client_engagement_context_required"):
         validate_and_enrich_intake(
