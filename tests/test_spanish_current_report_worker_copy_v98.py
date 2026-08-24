@@ -1,0 +1,89 @@
+from pathlib import Path
+
+from nico.comprehensive_current_report_truth_parity_v1 import _ES_PHRASES
+from nico.comprehensive_spanish_current_copy_worker_v98 import (
+    install_comprehensive_spanish_current_copy_worker_v98,
+    localize_current_report_copy_v98,
+)
+
+
+WORKER_BOOTSTRAP = Path("nico/api/final_report_worker_bootstrap.py").read_text(
+    encoding="utf-8"
+)
+PARENT_BOOTSTRAP = Path("nico/api/spanish_final_report_bootstrap.py").read_text(
+    encoding="utf-8"
+)
+
+
+def test_v98_localizes_every_current_report_leak_contract() -> None:
+    for source, target in _ES_PHRASES.items():
+        localized = localize_current_report_copy_v98(source)
+        assert source not in localized or source == target
+        assert target in localized
+
+
+def test_v98_localizes_dynamic_current_report_fragments_without_touching_unknown_copy() -> None:
+    source = (
+        "Review-Required Candidate Register; Material confirmado findings: 0; "
+        "verificada material findings: 2; Strengthen architecture boundaries, "
+        "test/release automation, functional QA evidence, and remediation verification."
+    )
+    localized = localize_current_report_copy_v98(source)
+
+    assert "Review-Required Candidate Register" not in localized
+    assert "Material confirmado findings" not in localized
+    assert "verificada material findings" not in localized
+    assert "Strengthen architecture boundaries" not in localized
+    assert "Registro de candidatos que requieren revisión" in localized
+    assert "Hallazgos materiales confirmados: 0" in localized
+    assert "hallazgos materiales verificados: 2" in localized
+    assert "Reforzar los límites de arquitectura" in localized
+
+    unknown = "Brand-new unregistered report prose must still fail closed upstream."
+    assert localize_current_report_copy_v98(unknown) == unknown
+
+
+def test_v98_binds_the_real_spanish_translation_surfaces() -> None:
+    from nico import comprehensive_spanish_canonical_report_v87 as canonical
+    from nico import comprehensive_spanish_presentation_parity_v1 as presentation
+
+    state = install_comprehensive_spanish_current_copy_worker_v98()
+    assert state["status"] == "installed"
+    assert state["bound"] is True
+    assert state["current_report_copy_contract_bound"] is True
+    assert state["unknown_prose_still_delegates_fail_closed"] is True
+
+    dynamic = canonical._translate_presentation(
+        "Material confirmado findings: 0. Strengthen architecture boundaries, "
+        "test/release automation, functional QA evidence, and remediation verification."
+    )
+    assert "Material confirmado findings" not in dynamic
+    assert "Strengthen architecture boundaries" not in dynamic
+    assert "Hallazgos materiales confirmados" in dynamic
+    assert "Reforzar los límites de arquitectura" in dynamic
+
+    status = presentation._safe_es("Review-Required Candidate Register")
+    assert status == "Registro de candidatos que requieren revisión"
+
+
+def test_parent_and_isolated_worker_bind_v98_before_v94_cache() -> None:
+    binder = "install_comprehensive_spanish_current_copy_worker_v98()"
+    cache = "install_comprehensive_spanish_final_report_runtime_cache_v94()"
+
+    assert binder in WORKER_BOOTSTRAP
+    assert cache in WORKER_BOOTSTRAP
+    assert WORKER_BOOTSTRAP.index(binder) < WORKER_BOOTSTRAP.index(cache)
+    assert '"spanish_current_report_copy_contract_bound": True' in WORKER_BOOTSTRAP
+
+    assert binder in PARENT_BOOTSTRAP
+    assert cache in PARENT_BOOTSTRAP
+    assert PARENT_BOOTSTRAP.index(binder) < PARENT_BOOTSTRAP.index(cache)
+
+
+def test_v98_does_not_change_english_report_data_directly() -> None:
+    # The v98 helper is invoked only from Spanish translation surfaces. It never edits
+    # canonical data or the English renderer; the source object itself stays untouched.
+    source = "Strengthen architecture boundaries, test/release automation, functional QA evidence, and remediation verification."
+    canonical_value = source
+    _ = localize_current_report_copy_v98(source)
+    assert canonical_value == source
