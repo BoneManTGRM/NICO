@@ -4,7 +4,7 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.1"
+VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.2"
 _ONE_ARG_MARKER = "__nico_spanish_current_copy_worker_one_v98__"
 _TWO_ARG_MARKER = "__nico_spanish_current_copy_worker_two_v98__"
 
@@ -42,6 +42,12 @@ _PROVIDER_ASSURANCE_RE = re.compile(
 _CANDIDATE_VOLUME_RE = re.compile(
     r"Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or "
     r"(?:Evidence-Adjusted|Ajuste por evidencia) score effect\."
+)
+_ANALYZER_COMPLETION_RE = re.compile(
+    r"(?P<completed>\d+) of (?P<applicable>\d+) applicable analyzers completed; "
+    r"(?P<incomplete>\d+) are incomplete\. Candidate triage is separate: "
+    r"(?P<review_required>\d+) review-required candidates and "
+    r"(?P<confirmed>\d+) confirmed material findings are retained\."
 )
 
 _STATIC_GENERATOR_COPY = {
@@ -99,6 +105,16 @@ def _translate_structured_current_report_copy(text: str) -> str:
             f"{match.group('objectives')}."
         )
 
+    def analyzer_completion(match: re.Match[str]) -> str:
+        return (
+            "Analizadores aplicables completados: "
+            f"{match.group('completed')} de {match.group('applicable')}; "
+            f"incompletos: {match.group('incomplete')}. "
+            "La clasificación técnica de candidatos se mantiene separada: se conservan "
+            f"{match.group('review_required')} candidatos que requieren revisión y "
+            f"{match.group('confirmed')} hallazgos materiales confirmados."
+        )
+
     output = str(text or "")
     output = _PROVIDER_WORKFLOW_FILES_RE.sub(workflow_files, output)
     output = _PROVIDER_EXACT_SHA_RE.sub(exact_sha, output)
@@ -109,6 +125,7 @@ def _translate_structured_current_report_copy(text: str) -> str:
         "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación de Ajuste por evidencia.",
         output,
     )
+    output = _ANALYZER_COMPLETION_RE.sub(analyzer_completion, output)
     for source, target in _STATIC_GENERATOR_COPY.items():
         output = output.replace(source, target)
     return output
@@ -205,15 +222,20 @@ def install_comprehensive_spanish_current_copy_worker_v98() -> dict[str, Any]:
     )
     sample = localize_current_report_copy_v98(
         "Explicit permissions control: passed. Provider-neutral immutable CI objective coverage: 100%. "
-        "Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect."
+        "Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. "
+        "1 of 1 applicable analyzers completed; 0 are incomplete. Candidate triage is separate: 2 review-required candidates and 0 confirmed material findings are retained."
     )
     sample_ok = (
         "Explicit permissions control" not in sample
         and "Provider-neutral immutable CI objective coverage" not in sample
         and "Candidate volume and reviewer workload" not in sample
+        and "applicable analyzers completed" not in sample
+        and "Candidate triage is separate" not in sample
         and "Control de permisos explícitos: aprobado." in sample
         and "Cobertura de objetivos inmutables de CI independiente del proveedor: 100%." in sample
         and "El volumen de candidatos y la carga de trabajo del revisor" in sample
+        and "Analizadores aplicables completados: 1 de 1; incompletos: 0." in sample
+        and "2 candidatos que requieren revisión" in sample
     )
 
     return {
@@ -222,6 +244,7 @@ def install_comprehensive_spanish_current_copy_worker_v98() -> dict[str, Any]:
         "bound": bound,
         "current_report_copy_contract_bound": sample_ok,
         "structured_provider_ci_copy_bound": True,
+        "structured_analyzer_summary_bound": True,
         "worker_safe_before_renderer_cache": True,
         "unknown_prose_still_delegates_fail_closed": True,
         "canonical_report_truth_unchanged": True,
