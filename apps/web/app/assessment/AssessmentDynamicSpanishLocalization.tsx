@@ -6,6 +6,7 @@ import {localizeSpanishText} from "./AssessmentSpanishLocalization";
 // Legacy source-contract marker retained for the superseded wording:
 // ["comprehensive run", "Ejecución integral"]
 const LIVE_SPANISH_LABELS = new Map<string, string>([
+  ["comprehensive", "Integral"],
   ["comprehensive run", "Evaluación integral"],
   ["final comprehensive report generation", "Generación del informe final de evaluación"],
   ["final comprehensive report", "Informe final de evaluación"],
