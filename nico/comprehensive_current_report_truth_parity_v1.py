@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.10"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.11"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -358,7 +358,7 @@ def _install_outline_matching() -> bool:
                 raw,
             )
             if match:
-                return title
+                return match.group(0).strip()
         return resolved
 
     setattr(outline_title, _OUTLINE_MARKER, True)
