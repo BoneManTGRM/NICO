@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.9"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.10"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -384,12 +384,11 @@ def _install_spanish_phrase_completion() -> bool:
 def strict_spanish_presentation_v1(value: Any, key: str = "summary") -> str:
     """Strict field/source-aware projection for late renderer-owned es-MX copy.
 
-    Protected technical/source atoms stay exact. Explicitly tagged external provenance
-    remains byte-for-byte exact. Structured current-report generator copy is projected
-    first. The canonical field translator then gets first authority over complete
-    registered sentences, preventing permissive word replacement from corrupting an
-    exact translation into mixed language. A conservative late language detector rejects
-    residual unknown English renderer copy that the legacy heuristic does not recognize.
+    Protected technical/source atoms stay exact and explicitly tagged external
+    provenance remains byte-for-byte exact. Structured current-report copy and the
+    existing bounded Spanish presentation projection run first. Only residual English
+    invokes the heavyweight canonical field translator. Residual unknown renderer copy
+    after that fallback still fails closed.
     """
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical_spanish
@@ -406,6 +405,14 @@ def strict_spanish_presentation_v1(value: Any, key: str = "summary") -> str:
 
     prepared = localize_current_report_copy_v98(raw)
     strict_key = "label" if key == "status" else str(key or "summary")
+
+    # Most late review copy is already owned by the bounded current/presentation
+    # translators. Keep that path cheap, but retain the canonical translator as a
+    # strict fallback whenever residual English is detected.
+    rendered = presentation._safe_es(prepared)
+    if not _looks_like_unregistered_english_presentation(rendered, strict_key):
+        return rendered
+
     translated = canonical_spanish._translate_presentation_field(prepared, strict_key)
     rendered = presentation._safe_es(translated)
     if _looks_like_unregistered_english_presentation(rendered, strict_key):
@@ -536,6 +543,7 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
         "late_review_companion_localization": review_localization,
         "late_review_partial_word_translation_disabled": True,
         "late_unknown_english_detector": True,
+        "late_canonical_translation_is_residual_only": True,
         "explicit_external_provenance_preserved": True,
         "unknown_report_owned_review_copy_fails_closed": True,
         "raw_canonical_truth_is_not_misclassified_as_final_presentation": True,
