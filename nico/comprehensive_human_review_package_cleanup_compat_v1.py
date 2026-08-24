@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.11"
+VERSION = "nico.comprehensive-human-review-package-cleanup-compat.v1.12"
 _MARKER = "__nico_comprehensive_human_review_package_cleanup_compat_v1__"
 _LEGACY_PLACEHOLDERS = {
     "",
@@ -57,6 +57,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     from nico.comprehensive_client_surface_structure_cleanup_v1 import (
         install_client_surface_structure_cleanup_v1,
     )
+    from nico.comprehensive_current_report_truth_parity_v1 import (
+        install_comprehensive_current_report_truth_parity_v1,
+    )
     from nico.comprehensive_exact_source_index_validation_v1 import (
         install_exact_source_index_validation_v1,
     )
@@ -104,6 +107,9 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         spanish_presentation_parity = (
             install_comprehensive_spanish_presentation_parity_v2()
         )
+        current_report_truth_parity = (
+            install_comprehensive_current_report_truth_parity_v1()
+        )
         return {
             "status": "already_installed",
             "version": VERSION,
@@ -120,6 +126,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
             "client_identity_publication_guard_v2": identity_publication_guard,
             "full_data_worksheet_localization": full_data_worksheet_localization,
             "spanish_presentation_parity": spanish_presentation_parity,
+            "current_report_truth_parity": current_report_truth_parity,
         }
 
     @wraps(current)
@@ -153,6 +160,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
     spanish_presentation_parity = (
         install_comprehensive_spanish_presentation_parity_v2()
     )
+    current_report_truth_parity = install_comprehensive_current_report_truth_parity_v1()
     return {
         "status": "installed",
         "version": VERSION,
@@ -171,6 +179,7 @@ def install_comprehensive_human_review_package_cleanup_compat_v1() -> dict[str, 
         "client_identity_publication_guard_v2": identity_publication_guard,
         "full_data_worksheet_localization": full_data_worksheet_localization,
         "spanish_presentation_parity": spanish_presentation_parity,
+        "current_report_truth_parity": current_report_truth_parity,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,

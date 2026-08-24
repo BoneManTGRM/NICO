@@ -66,10 +66,25 @@ def build_four_phase_program(canonical: Mapping[str, Any]) -> dict[str, Any]:
         and metrics["incomplete_analyzers"] == 0
     )
     lifecycle = source.get("lifecycle") if isinstance(source.get("lifecycle"), Mapping) else {}
-    review_ready = source.get("review_package_ready") is True or lifecycle.get("review_package_ready") is True
     reviewed = source.get("human_review_completed") is True
     delivery = source.get("client_delivery_allowed") is True
-    state = _text(source.get("assessment_state") or "review_required")
+    state = _text(source.get("assessment_state") or "review_required").casefold()
+    human_review_required = source.get("human_review_required") is not False
+    explicitly_review_ready = (
+        source.get("review_package_ready") is True
+        or lifecycle.get("review_package_ready") is True
+    )
+    # The four-phase projection is published before the detached exact-artifact
+    # approval supplement sets lifecycle.review_package_ready.  At that boundary,
+    # a complete exact-commit triage in review_required state is already the
+    # evidence that the package is ready to enter authorized human review.  Do
+    # not freeze the earlier projection as NOT READY merely because the later
+    # lifecycle flag has not been attached yet.
+    review_ready = explicitly_review_ready or (
+        p1
+        and human_review_required
+        and state in {"review_required", "complete", "completed"}
+    )
     limitations = source.get("decision_content_limitations")
     limitations = limitations if isinstance(limitations, list) else []
     phases = [
@@ -119,7 +134,7 @@ def build_four_phase_program(canonical: Mapping[str, Any]) -> dict[str, Any]:
         "phases": phases,
         "one_public_product": True,
         "one_client_report": True,
-        "human_review_required": source.get("human_review_required") is not False,
+        "human_review_required": human_review_required,
         "human_approval_completed": reviewed,
         "client_delivery_allowed": delivery,
     }
@@ -152,7 +167,10 @@ def _status(status: str, spanish: bool) -> str:
     labels = {
         "complete": ("COMPLETE", "COMPLETA"),
         "limited": ("LIMITED", "LIMITADA"),
-        "ready_pending_human_decision": ("READY - HUMAN DECISION PENDING", "LISTA - DECISIÓN HUMANA PENDIENTE"),
+        "ready_pending_human_decision": (
+            "READY FOR REVIEW - HUMAN DISPOSITIONS PENDING",
+            "LISTA PARA REVISIÓN - DISPOSICIONES HUMANAS PENDIENTES",
+        ),
         "not_ready": ("NOT READY", "NO LISTA"),
         "complete_with_disclosed_limitations": ("COMPLETE - LIMITATIONS DISCLOSED", "COMPLETA - LIMITACIONES DECLARADAS"),
         "blocked_pending_authorized_human_approval": ("BLOCKED - AUTHORIZED HUMAN APPROVAL REQUIRED", "BLOQUEADA - REQUIERE APROBACIÓN HUMANA AUTORIZADA"),
