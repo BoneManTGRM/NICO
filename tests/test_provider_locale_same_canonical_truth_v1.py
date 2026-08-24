@@ -4,6 +4,8 @@ import base64
 import hashlib
 from copy import deepcopy
 
+import pytest
+
 from nico.comprehensive_report_spanish_artifacts_v51 import _localize_package
 from nico.provider_locale_semantic_parity_v1 import (
     assert_locale_semantic_parity,
@@ -11,10 +13,11 @@ from nico.provider_locale_semantic_parity_v1 import (
 )
 
 
-def _frozen_canonical() -> dict:
+def _frozen_canonical(*, provider: str, repository: str) -> dict:
     return {
         "identity": {
-            "repository": "gitlab.com/group/repo",
+            "provider": provider,
+            "repository": repository,
             "commit_sha": "a" * 40,
             "run_id": "comprun_locale_pair",
             "report_language": "en-US",
@@ -40,8 +43,19 @@ def _frozen_canonical() -> dict:
     }
 
 
-def test_spanish_artifacts_render_from_same_frozen_locale_neutral_canonical_truth() -> None:
-    english = _frozen_canonical()
+@pytest.mark.parametrize(
+    ("provider", "repository"),
+    (
+        ("gitlab", "gitlab.com/group/repo"),
+        ("bitbucket_cloud", "bitbucket.org/workspace/repo"),
+        ("azure_devops", "dev.azure.com/org/project/_git/repo"),
+    ),
+)
+def test_priority1_spanish_artifacts_render_from_same_frozen_locale_neutral_canonical_truth(
+    provider: str,
+    repository: str,
+) -> None:
+    english = _frozen_canonical(provider=provider, repository=repository)
     frozen_digest = locale_neutral_truth_sha256(english)
     result = {
         "report_package": {
@@ -55,6 +69,7 @@ def test_spanish_artifacts_render_from_same_frozen_locale_neutral_canonical_trut
     spanish = package["json"]
 
     assert assert_locale_semantic_parity(english, spanish) == frozen_digest
+    assert spanish["identity"]["provider"] == english["identity"]["provider"]
     assert spanish["identity"]["repository"] == english["identity"]["repository"]
     assert spanish["identity"]["commit_sha"] == english["identity"]["commit_sha"]
     assert spanish["identity"]["run_id"] == english["identity"]["run_id"]
@@ -75,7 +90,7 @@ def test_spanish_artifacts_render_from_same_frozen_locale_neutral_canonical_trut
 
 
 def test_locale_neutral_comparison_detects_score_or_identity_drift() -> None:
-    english = _frozen_canonical()
+    english = _frozen_canonical(provider="gitlab", repository="gitlab.com/group/repo")
     spanish = deepcopy(english)
     spanish["report_language"] = "es-MX"
     spanish["locale"] = "es-MX"
@@ -83,9 +98,5 @@ def test_locale_neutral_comparison_detects_score_or_identity_drift() -> None:
     assert_locale_semantic_parity(english, spanish)
 
     spanish["assessment"]["technical_score"] = 92
-    try:
+    with pytest.raises(ValueError, match="locale_canonical_semantic_mismatch"):
         assert_locale_semantic_parity(english, spanish)
-    except ValueError as exc:
-        assert "locale_canonical_semantic_mismatch" in str(exc)
-    else:
-        raise AssertionError("semantic score drift must fail closed")
