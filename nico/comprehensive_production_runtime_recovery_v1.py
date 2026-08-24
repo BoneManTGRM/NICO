@@ -10,8 +10,9 @@ from nico import repository_snapshot
 
 VERSION = "nico.comprehensive_production_runtime_recovery.v1"
 _MARKER = "_nico_comprehensive_production_runtime_recovery_v1"
-_DEFAULT_QUEUE_CAP_SECONDS = 180.0
+_DEFAULT_QUEUE_CAP_SECONDS = 1200.0
 _DEFAULT_RENDER_CAP_SECONDS = 900.0
+_MIN_QUEUE_GRACE_SECONDS = 120.0
 
 
 def _public_default_head(repository: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -162,11 +163,22 @@ def _install_final_report_deadline_caps() -> dict[str, Any]:
     original_queue = final_report_background._max_queue_seconds
     original_render = final_report_background._max_publication_seconds
 
-    def bounded_queue_seconds() -> float:
-        return min(float(original_queue()), _DEFAULT_QUEUE_CAP_SECONDS)
-
     def bounded_render_seconds() -> float:
         return min(float(original_render()), _DEFAULT_RENDER_CAP_SECONDS)
+
+    def bounded_queue_seconds() -> float:
+        # Queue capacity is a separate bounded phase from renderer execution. A queued
+        # report must be allowed to survive at least one fully legal predecessor render,
+        # otherwise a healthy single-slot renderer can deterministically fail the next
+        # exact run before capacity can become available.
+        minimum_safe_queue_seconds = min(
+            bounded_render_seconds() + _MIN_QUEUE_GRACE_SECONDS,
+            _DEFAULT_QUEUE_CAP_SECONDS,
+        )
+        return min(
+            max(float(original_queue()), minimum_safe_queue_seconds),
+            _DEFAULT_QUEUE_CAP_SECONDS,
+        )
 
     final_report_background._max_queue_seconds = bounded_queue_seconds
     final_report_background._max_publication_seconds = bounded_render_seconds
@@ -176,6 +188,7 @@ def _install_final_report_deadline_caps() -> dict[str, Any]:
         "changed": True,
         "max_queue_seconds": bounded_queue_seconds(),
         "max_publication_seconds": bounded_render_seconds(),
+        "minimum_queue_grace_seconds": _MIN_QUEUE_GRACE_SECONDS,
     }
 
 
