@@ -53,6 +53,8 @@ jobs:
           assert 'Acquire::https::Timeout "20";' in workflow
           assert 'timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium' in workflow
           assert 'if: failure() || cancelled()' in workflow
+          assert 'Wait for exact-SHA Spanish production proof' in workflow
+          assert 'NICO Spanish Comprehensive Production Proof' in workflow
           PY
 
   live-production:
@@ -130,6 +132,52 @@ jobs:
               time.sleep(20)
           else:
               raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
+          PY
+
+      - name: Wait for exact-SHA Spanish production proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["RELEASE_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+          required_context = "NICO Spanish Comprehensive Production Proof"
+          deadline = time.time() + 150 * 60
+          last_state = "missing"
+          while time.time() < deadline:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nico-mobile-wait-for-spanish-proof",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              last_state = "missing"
+              for item in payload.get("statuses") or []:
+                  if str(item.get("context") or "") == required_context:
+                      last_state = str(item.get("state") or "unknown")
+                      break
+              print(f"Spanish prerequisite status: {last_state}", flush=True)
+              if last_state == "success":
+                  break
+              if last_state in {"error", "failure"}:
+                  raise SystemExit(
+                      f"The exact-SHA Spanish production proof failed before Mobile proof: {last_state}"
+                  )
+              time.sleep(20)
+          else:
+              raise SystemExit(
+                  f"Timed out waiting for exact-SHA Spanish production proof: {last_state}"
+              )
           PY
 
       - name: Verify exact frontend release identity
