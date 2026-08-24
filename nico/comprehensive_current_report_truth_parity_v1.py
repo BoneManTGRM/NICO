@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.3"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.4"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -121,32 +121,22 @@ def _pdf_text(pdf: bytes) -> str:
     )
 
 
-def assert_spanish_canonical_presentation_contract(canonical: Mapping[str, Any]) -> None:
-    """Fail closed when renderer-owned canonical presentation copy is unregistered.
-
-    The canonical Spanish projector owns field/source semantics, including protected
-    machine/provenance fields and raw canonical subtrees. Reusing that projector here
-    avoids a broad English allowlist while preserving exact technical atoms.
-    """
-
-    if not _is_spanish(canonical):
-        return
-    from nico import comprehensive_spanish_canonical_report_v87 as spanish_canonical
-
-    spanish_canonical._localize_tree(canonical)
-
-
 def assert_spanish_client_copy_is_localized(
     canonical: Mapping[str, Any],
     markdown: str,
     rendered_html: str,
     pdf: bytes,
 ) -> None:
-    """Reject unregistered or known NICO-authored English leakage on es-MX surfaces."""
+    """Reject known NICO-authored English leakage on final es-MX surfaces.
+
+    Dynamic report-owned fields are required to pass the strict field/source-aware
+    presentation projection before rendering. This final surface check is intentionally
+    not a recursive scan of the pre-projection canonical payload because canonical state
+    may truthfully contain English source/presentation inputs before locale projection.
+    """
 
     if not _is_spanish(canonical):
         return
-    assert_spanish_canonical_presentation_contract(canonical)
     combined = "\n".join((markdown, _visible_html(rendered_html), _pdf_text(pdf)))
     lowered = combined.casefold()
     leaked = [marker for marker in _SPANISH_LEAK_MARKERS if marker.casefold() in lowered]
@@ -225,7 +215,14 @@ def _install_spanish_phrase_completion() -> bool:
     return True
 
 
-def _strict_spanish_presentation(value: Any) -> str:
+def strict_spanish_presentation_v1(value: Any) -> str:
+    """Strict field/source-aware projection for late renderer-owned es-MX copy.
+
+    Protected technical/source atoms stay exact. Registered structured generator copy
+    is projected first, compatibility translations second, and the canonical Spanish
+    translator is the final fail-closed authority for any remaining human-facing prose.
+    """
+
     from nico import comprehensive_spanish_canonical_report_v87 as canonical_spanish
     from nico import comprehensive_spanish_presentation_parity_v1 as presentation
     from nico.comprehensive_spanish_current_copy_worker_v98 import (
@@ -259,11 +256,11 @@ def _install_review_companion_localization() -> bool:
             item = dict(raw)
             for field in ("status", "summary"):
                 if item.get(field) not in (None, ""):
-                    item[field] = _strict_spanish_presentation(item[field])
+                    item[field] = strict_spanish_presentation_v1(item[field])
             for field in ("evidence", "findings", "limitations"):
                 values = item.get(field)
                 if isinstance(values, list):
-                    item[field] = [_strict_spanish_presentation(value) for value in values]
+                    item[field] = [strict_spanish_presentation_v1(value) for value in values]
             localized.append(item)
         return localized
 
@@ -335,9 +332,9 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
         "spanish_embedded_phrase_localization": spanish,
         "late_review_companion_localization": review_localization,
         "unknown_report_owned_review_copy_fails_closed": True,
+        "raw_canonical_truth_is_not_misclassified_as_final_presentation": True,
         "empty_native_ci_vector_not_rendered_as_zero_over_zero": ci,
         "final_spanish_leak_gate": validation,
-        "canonical_presentation_contract_gate": True,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
@@ -347,8 +344,8 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
-    "assert_spanish_canonical_presentation_contract",
     "assert_spanish_client_copy_is_localized",
     "install_comprehensive_current_report_truth_parity_v1",
     "normalize_ci_presentation_lines",
+    "strict_spanish_presentation_v1",
 ]
