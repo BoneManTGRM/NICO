@@ -1,6 +1,17 @@
 import type {Copy, Phase, Result, Section} from "./assessmentTypes";
 
 export function scopeId(prefix: string, value: string, fallback: string): string {
+  // Client and project fields in the public Comprehensive form are optional display
+  // metadata, not authority to mint new tenant/scope identities. Keep the canonical
+  // public intake scope stable when those labels are populated; the original names
+  // are still sent separately as client_name/project_name for report presentation.
+  if (
+    (prefix === "customer" && fallback === "default_customer") ||
+    (prefix === "project" && fallback === "default_project")
+  ) {
+    return fallback;
+  }
+
   const slug = value
     .trim()
     .toLowerCase()
