@@ -25,14 +25,29 @@ def test_major_hosted_provider_machine_values_and_operator_labels_are_exposed():
     assert '"URL o identificador del repositorio"' in bridge
 
 
-def test_provider_examples_match_the_operator_runtime_coordinates():
+def test_provider_examples_match_the_operator_runtime_coordinates_in_both_locales():
     provider = _text(PROVIDER)
     assert 'placeholder: "owner/repository"' in provider
     assert 'placeholder: "group/project"' in provider
     assert 'placeholder: "workspace/repository"' in provider
     assert 'placeholder: "organization/project/repository"' in provider
+    assert 'placeholderEs: "propietario/repositorio"' in provider
+    assert 'placeholderEs: "grupo/proyecto"' in provider
+    assert 'placeholderEs: "espacio-trabajo/repositorio"' in provider
+    assert 'placeholderEs: "organizacion/proyecto/repositorio"' in provider
     assert 'provider_organization: parts[0]' in provider
     assert 'provider_project: parts[1]' in provider
+
+
+def test_provider_placeholder_selection_is_presentation_only_and_locale_aware():
+    provider = _text(PROVIDER)
+    bridge = _text(BRIDGE)
+    assert 'export function providerPlaceholder(provider: RepositoryProvider, locale: "en" | "es-MX")' in provider
+    assert 'locale === "es-MX" ? option.placeholderEs : option.placeholder' in provider
+    assert 'input.placeholder = providerPlaceholder(provider, locale)' in bridge
+    assert 'providerPlaceholder(readRepositoryProvider(), locale)' in bridge
+    assert 'providerPlaceholder(detected || readRepositoryProvider(), locale)' in bridge
+    assert 'provider, locale' in bridge
 
 
 def test_full_url_detection_uses_exact_approved_hosts_not_substring_matching():
@@ -89,6 +104,15 @@ def test_github_keeps_existing_proven_intake_while_other_providers_use_operator_
     assert 'provider: normalized.provider' in bridge
     assert 'nextBody.provider_organization = normalized.provider_organization' in bridge
     assert 'nextBody.provider_project = normalized.provider_project' in bridge
+
+
+def test_spanish_provider_bridge_has_no_user_facing_english_error_fallbacks():
+    bridge = _text(BRIDGE)
+    assert 'invalidIntakeMessage(locale)' in bridge
+    assert '"La solicitud de evaluación no contiene JSON válido."' in bridge
+    assert '"Ingresa un token de operador NICO válido para usar GitLab, Bitbucket o Azure DevOps."' in bridge
+    assert '"La URL o el identificador del repositorio no coincide con el proveedor seleccionado. Revisa el formato y vuelve a intentarlo."' in bridge
+    assert '"Las credenciales del proveedor permanecen exclusivamente en el servidor y deben estar configuradas allí antes de iniciar la evaluación."' in bridge
 
 
 def test_browser_code_never_contains_provider_credentials():
