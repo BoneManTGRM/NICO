@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.1"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -44,6 +44,8 @@ _ES_PHRASES = {
     "Strengthen architecture boundaries, test/release automation, functional QA evidence, and remediation verification.": (
         "Reforzar los límites de arquitectura, la automatización de pruebas y publicaciones, la evidencia de QA funcional y la verificación de remediaciones."
     ),
+    "Non-success deployment classification": "Clasificación de despliegues no exitosos",
+    "Not available": "No disponible",
     "Job success rate": "Tasa de éxito de trabajos",
     "Successful workflow runs": "Ejecuciones exitosas de flujos de trabajo",
     "Non-success workflow runs": "Ejecuciones no exitosas de flujos de trabajo",
@@ -70,6 +72,7 @@ _SPANISH_LEAK_MARKERS = (
     "Exact-commit executable source signals were analyzed",
     "Authoritative manifests and contextual dependency evidence were reconciled",
     "History-aware secret evidence was separated",
+    "Non-success deployment classification",
     "Job success rate",
     "Successful workflow runs",
     "Non-success workflow runs",
