@@ -9,14 +9,28 @@ from fastapi import FastAPI
 
 from nico import comprehensive_api_routes as api_routes
 
-VERSION = "nico.phase3_engagement_intake.v5"
+VERSION = "nico.phase3_engagement_intake.v6"
 INTAKE_PATCH = "_nico_phase3_engagement_intake_v1"
 REVIEW_PATCH = "_nico_phase3_review_identity_v1"
 RECOVERY_PATCH = "_nico_phase3_recovery_identity_v1"
 ENGAGEMENT_MODULE = "stakeholder_context"
 ENGAGEMENT_FIELDS = ("access_method", "primary_technical_contact", "authorized_scope")
-PLACEHOLDER_CUSTOMERS = {"", "default_customer", "internal", "internal_customer"}
-PLACEHOLDER_PROJECTS = {"", "default_project", "internal", "internal_project"}
+# These scopes are explicitly non-client. The reserved production-proof pair exists only
+# for isolated release verification and is protected independently by the proof lifecycle.
+PLACEHOLDER_CUSTOMERS = {
+    "",
+    "default_customer",
+    "internal",
+    "internal_customer",
+    "nico_production_proof",
+}
+PLACEHOLDER_PROJECTS = {
+    "",
+    "default_project",
+    "internal",
+    "internal_project",
+    "spanish_comprehensive_production",
+}
 
 
 def _text(value: Any, limit: int = 600) -> str:
@@ -42,7 +56,8 @@ def _client_mode(payload: Mapping[str, Any], client: str, project: str) -> bool:
     metadata while sending the canonical default scope explicitly. Those labels must
     therefore never escalate the request into a client-final engagement or make the
     three lightweight context fields mandatory. Explicit non-placeholder scope remains
-    the authority for real client mode. Legacy callers that omit scope keys retain the
+    the authority for real client mode. The reserved synthetic production-proof scope
+    is also explicitly non-client. Legacy callers that omit scope keys retain the
     original label-driven behavior for compatibility.
     """
 
@@ -244,6 +259,7 @@ def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str,
         "primary_contact_access_scope_required": True,
         "client_mode_requires_authoritative_non_placeholder_scope": True,
         "optional_display_labels_do_not_enable_client_mode": True,
+        "reserved_production_proof_scope_is_non_client": True,
         "internal_assessment_allowed": True,
         "internal_placeholder_client_delivery_blocked": True,
         "existing_human_evidence_modules_reused": True,
