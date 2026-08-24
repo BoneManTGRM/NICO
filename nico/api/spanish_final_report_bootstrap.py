@@ -30,7 +30,7 @@ from nico.provider_repository_enumeration_v1 import (
 )
 from nico.provider_rollout_control_v1 import install_provider_rollout_routes
 
-VERSION = "nico.api.spanish_final_report_bootstrap.v8"
+VERSION = "nico.api.spanish_final_report_bootstrap.v7"
 
 SPANISH_ASSESSMENT_SCOPE = install_comprehensive_spanish_assessment_scope_v97()
 setattr(app.state, "nico_spanish_assessment_scope", SPANISH_ASSESSMENT_SCOPE)
