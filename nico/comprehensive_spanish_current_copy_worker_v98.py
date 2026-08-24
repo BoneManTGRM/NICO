@@ -4,7 +4,7 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.3"
+VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.4"
 _ONE_ARG_MARKER = "__nico_spanish_current_copy_worker_one_v98__"
 _TWO_ARG_MARKER = "__nico_spanish_current_copy_worker_two_v98__"
 
@@ -68,6 +68,17 @@ _STATIC_GENERATOR_COPY = {
         "Se evaluaron los límites explícitos de permisos del flujo de trabajo y no se demostraron en el commit evaluado."
     ),
 }
+_STRUCTURED_TRIGGER_TOKENS = (
+    "Workflow files at assessed commit:",
+    "Workflow configuration exact-SHA match:",
+    "Explicit permissions control:",
+    "Provider-neutral immutable CI objective coverage:",
+    "CI control assurance incomplete;",
+    "Candidate volume and reviewer workload are operational review metrics",
+    "applicable analyzers completed;",
+    "Review-required scanner candidates:",
+    *_STATIC_GENERATOR_COPY.keys(),
+)
 
 
 def _current_report_phrase_pairs() -> tuple[tuple[str, str], ...]:
@@ -85,6 +96,16 @@ def _current_report_phrase_pairs() -> tuple[tuple[str, str], ...]:
 
 
 def _translate_structured_current_report_copy(text: str) -> str:
+    output = str(text or "")
+
+    # This function sits on the hot Spanish presentation path. Most renderer values do
+    # not belong to these newly added generator families. Avoid repeatedly scanning
+    # every heading, atom, paragraph, and PDF fragment with all structured regexes when
+    # none of their canonical generator markers is present. Unknown variants remain
+    # untouched and therefore continue to the existing strict fail-closed translator.
+    if not any(token in output for token in _STRUCTURED_TRIGGER_TOKENS):
+        return output
+
     def workflow_files(match: re.Match[str]) -> str:
         return f"Archivos de flujo de trabajo en el commit evaluado: {match.group('count')}."
 
@@ -125,23 +146,31 @@ def _translate_structured_current_report_copy(text: str) -> str:
             f"{match.group('count')}{match.group('period')}"
         )
 
-    output = str(text or "")
-    output = _PROVIDER_WORKFLOW_FILES_RE.sub(workflow_files, output)
-    output = _PROVIDER_EXACT_SHA_RE.sub(exact_sha, output)
-    output = _PROVIDER_PERMISSION_RE.sub(permission, output)
-    output = _PROVIDER_COVERAGE_RE.sub(coverage, output)
-    output = _PROVIDER_ASSURANCE_RE.sub(assurance, output)
-    output = _CANDIDATE_VOLUME_RE.sub(
-        "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación de Ajuste por evidencia.",
-        output,
-    )
-    output = _ANALYZER_COMPLETION_RE.sub(analyzer_completion, output)
-    output = _REVIEW_REQUIRED_SCANNER_CANDIDATES_RE.sub(
-        review_required_scanner_candidates,
-        output,
-    )
+    if "Workflow files at assessed commit:" in output:
+        output = _PROVIDER_WORKFLOW_FILES_RE.sub(workflow_files, output)
+    if "Workflow configuration exact-SHA match:" in output:
+        output = _PROVIDER_EXACT_SHA_RE.sub(exact_sha, output)
+    if "Explicit permissions control:" in output:
+        output = _PROVIDER_PERMISSION_RE.sub(permission, output)
+    if "Provider-neutral immutable CI objective coverage:" in output:
+        output = _PROVIDER_COVERAGE_RE.sub(coverage, output)
+    if "CI control assurance incomplete;" in output:
+        output = _PROVIDER_ASSURANCE_RE.sub(assurance, output)
+    if "Candidate volume and reviewer workload are operational review metrics" in output:
+        output = _CANDIDATE_VOLUME_RE.sub(
+            "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación de Ajuste por evidencia.",
+            output,
+        )
+    if "applicable analyzers completed;" in output:
+        output = _ANALYZER_COMPLETION_RE.sub(analyzer_completion, output)
+    if "Review-required scanner candidates:" in output:
+        output = _REVIEW_REQUIRED_SCANNER_CANDIDATES_RE.sub(
+            review_required_scanner_candidates,
+            output,
+        )
     for source, target in _STATIC_GENERATOR_COPY.items():
-        output = output.replace(source, target)
+        if source in output:
+            output = output.replace(source, target)
     return output
 
 
