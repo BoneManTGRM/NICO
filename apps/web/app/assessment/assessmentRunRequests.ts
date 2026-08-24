@@ -54,6 +54,31 @@ const BACKEND_UNAVAILABLE_CODES = new Set([
 const RECOVERABLE_READINESS_REASONS = new Set([
   "comprehensive_database_unavailable",
 ]);
+const PROVIDER_REPOSITORY_INPUT_CODES = new Set([
+  "provider_repository_invalid",
+  "provider_repository_host_not_supported",
+  "provider_repository_selection_mismatch",
+  "github_repository_coordinates_invalid",
+  "github_repository_url_invalid",
+  "gitlab_repository_coordinates_invalid",
+  "gitlab_repository_url_invalid",
+  "bitbucket_repository_coordinates_invalid",
+  "bitbucket_repository_url_invalid",
+  "azure_provider_coordinates_invalid",
+  "azure_repository_url_invalid",
+  "azure_repository_name_invalid",
+]);
+const PROVIDER_CONFIGURATION_BLOCK_CODES = new Set([
+  "provider_credential_reference_missing",
+  "provider_operationally_disabled",
+  "provider_rollout_control_unavailable",
+]);
+const PROVIDER_SNAPSHOT_CODES = new Set([
+  "repository_snapshot_unavailable",
+  "provider_snapshot_revision_invalid",
+  "provider_snapshot_revision_mismatch",
+  "provider_snapshot_revision_unavailable",
+]);
 
 type AttemptResult =
   | {retry: true}
@@ -323,6 +348,90 @@ export async function requestWithRetry(
   });
 }
 
+function spanishCopy(copy: ReturnType<typeof copyFor>): boolean {
+  return copy === copyFor("es-MX");
+}
+
+function preRunIssueMessage(
+  apiError: AssessmentApiError | null,
+  code: string,
+  copy: ReturnType<typeof copyFor>,
+): string {
+  const spanish = spanishCopy(copy);
+
+  if (code === "authorized_nico_operator_required") {
+    return spanish
+      ? "Ingresa un token de operador NICO válido para usar GitLab, Bitbucket o Azure DevOps."
+      : "Enter a valid NICO operator token to use GitLab, Bitbucket, or Azure DevOps.";
+  }
+  if (PROVIDER_REPOSITORY_INPUT_CODES.has(code)) {
+    return spanish
+      ? "La URL o el identificador del repositorio no coincide con el proveedor seleccionado. Revisa el formato y vuelve a intentarlo."
+      : "The repository URL or identifier does not match the selected provider. Check the format and try again.";
+  }
+  if (code === "provider_credential_reference_missing") {
+    return spanish
+      ? "NICO no tiene configurada una credencial del servidor para este proveedor. Configúrala antes de iniciar la evaluación."
+      : "NICO does not have a server-side credential configured for this provider. Configure it before starting the assessment.";
+  }
+  if (code === "provider_operationally_disabled") {
+    return spanish
+      ? "El proveedor seleccionado está deshabilitado en la configuración operativa de NICO."
+      : "The selected provider is disabled in NICO's operational configuration.";
+  }
+  if (code === "provider_rollout_control_unavailable") {
+    return spanish
+      ? "El control operativo de proveedores de NICO no está disponible en este momento."
+      : "NICO's provider operational control is not currently available.";
+  }
+  if (PROVIDER_SNAPSHOT_CODES.has(code)) {
+    return spanish
+      ? "NICO no pudo capturar la revisión inmutable del repositorio seleccionado. Verifica el repositorio y el acceso del proveedor."
+      : "NICO could not capture the selected repository's immutable revision. Verify the repository and provider access.";
+  }
+  if (code === "raw_provider_credentials_prohibited") {
+    return spanish
+      ? "Las credenciales del proveedor deben permanecer en el servidor. No pegues tokens o contraseñas del proveedor en la solicitud."
+      : "Provider credentials must remain server-side. Do not place provider tokens or passwords in the request.";
+  }
+  if (code === "explicit_authorization_required") {
+    return spanish
+      ? "Confirma la autorización del repositorio antes de crear el encargo."
+      : "Confirm repository authorization before creating the engagement.";
+  }
+  if (code === "provider_not_supported") {
+    return spanish
+      ? "El proveedor seleccionado no es compatible con este flujo de evaluación."
+      : "The selected provider is not supported by this assessment flow.";
+  }
+  if (code === "invalid_explicit_commit_sha") {
+    return spanish
+      ? "El SHA de commit inmutable solicitado no es válido."
+      : "The requested immutable commit SHA is invalid.";
+  }
+  if (
+    code === "assessment_intake_body_unavailable" ||
+    code === "assessment_intake_body_invalid_json" ||
+    code === "assessment_intake_body_invalid"
+  ) {
+    return spanish
+      ? "La solicitud de evaluación no pudo validarse antes de crear el encargo."
+      : "The assessment request could not be validated before the engagement was created.";
+  }
+  if (code === "assessment_expected_commit_sha_conflict") {
+    return spanish
+      ? "La solicitud contiene un conflicto con el commit inmutable esperado."
+      : "The request conflicts with the expected immutable commit.";
+  }
+
+  // Do not leak arbitrary English backend prose into es-MX presentation. English may
+  // retain the bounded backend message; Spanish falls back to its canonical copy unless
+  // the error code has an approved localized presentation above.
+  return spanish
+    ? copy.runCreationFailureMessage
+    : apiError?.message || copy.runCreationFailureMessage;
+}
+
 export function issueFor(
   caught: unknown,
   copy: ReturnType<typeof copyFor>,
@@ -341,6 +450,18 @@ export function issueFor(
       code,
       requestId,
       retryable: true,
+      runCreated,
+    };
+  }
+
+  if (PROVIDER_CONFIGURATION_BLOCK_CODES.has(code)) {
+    return {
+      kind: "configuration_blocked",
+      title: copy.serviceUnavailableTitle,
+      message: preRunIssueMessage(apiError, code, copy),
+      code,
+      requestId,
+      retryable,
       runCreated,
     };
   }
@@ -381,7 +502,7 @@ export function issueFor(
   return {
     kind: "run_failed",
     title: copy.runFailureTitle,
-    message: copy.runCreationFailureMessage,
+    message: preRunIssueMessage(apiError, code, copy),
     code,
     requestId,
     retryable,
