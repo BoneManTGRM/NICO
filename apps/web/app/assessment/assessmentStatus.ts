@@ -109,11 +109,45 @@ export function compactIdentifier(
   return `${normalized.slice(0, lead)}…${normalized.slice(-tail)}`;
 }
 
+function localizedBand(value: string, copy: Copy): string | null {
+  const spanish = copy.heroEyebrow.startsWith("EVALUACIÓN");
+  const english: Record<string, string> = {
+    exceptional: "Exceptional",
+    strong: "Strong",
+    moderate: "Moderate",
+    weak: "Weak",
+    critical: "Critical",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    severe: "Severe",
+    informational: "Informational",
+  };
+  const spanishLabels: Record<string, string> = {
+    exceptional: "Excepcional",
+    strong: "Sólido",
+    moderate: "Moderado",
+    weak: "Débil",
+    critical: "Crítico",
+    low: "Bajo",
+    medium: "Medio",
+    high: "Alto",
+    severe: "Severo",
+    informational: "Informativo",
+  };
+  const labels = spanish ? spanishLabels : english;
+  return labels[value] || null;
+}
+
 export function formatStatus(status: unknown, copy: Copy): string {
   const raw = String(status || "").trim();
   const value = raw.toLowerCase().replace(/[\s-]+/g, "_");
   if (!value) {
     return copy.notVerified;
+  }
+  const band = localizedBand(value, copy);
+  if (band) {
+    return band;
   }
   if (value.includes("review_limited") && value.includes("not_scored")) {
     return copy.reviewLimitedNotScored;

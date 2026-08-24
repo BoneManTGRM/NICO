@@ -38,6 +38,32 @@ function stringDetailCode(value: unknown): string {
   return SAFE_STRING_DETAIL_CODE.test(candidate) ? candidate : "";
 }
 
+function safeClientErrorMessage(
+  data: {detail?: string | {message?: unknown; code?: unknown}; error?: string},
+  copy: Copy,
+  status: number,
+): string {
+  const stringCode = stringDetailCode(data.detail);
+  if (typeof data.detail === "string") {
+    // Machine diagnostics such as
+    // client_engagement_context_required:access_method,... are useful for logs and
+    // routing but are not client-facing prose. Keep the parsed code separately and
+    // present localized bounded copy in the UI.
+    return stringCode ? copy.backendError : data.detail;
+  }
+
+  const detail =
+    data.detail && typeof data.detail === "object" ? data.detail : {};
+  if (String(detail.code || "").trim()) {
+    return copy.backendError;
+  }
+  return String(
+    detail.message ||
+      data.error ||
+      `${copy.backendError} (${status})`,
+  );
+}
+
 export async function parseJson(
   response: Response,
   copy: Copy,
@@ -66,15 +92,7 @@ export async function parseJson(
     const detail =
       data.detail && typeof data.detail === "object" ? data.detail : {};
     const stringCode = stringDetailCode(data.detail);
-    const message =
-      typeof data.detail === "string"
-        ? data.detail
-        : String(
-            detail.message ||
-              detail.code ||
-              data.error ||
-              `${copy.backendError} (${response.status})`,
-          );
+    const message = safeClientErrorMessage(data, copy, response.status);
     throw new AssessmentApiError(message, {
       status: response.status,
       code: String(
