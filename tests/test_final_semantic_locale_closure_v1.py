@@ -68,7 +68,7 @@ def test_repository_evidence_and_evidence_reconciliation_are_distinct_canonical_
 
 def test_canonical_manifest_preserves_english_and_covers_spanish_navigation_titles() -> None:
     expected = {
-        "Code audit": "Auditoría de código",
+        "Code Audit": "Auditoría de código",
         "Executive Risk Register and Decision Briefing": (
             "Registro ejecutivo de riesgos y resumen para decisiones"
         ),
