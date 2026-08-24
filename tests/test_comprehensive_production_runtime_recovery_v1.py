@@ -69,8 +69,23 @@ def test_final_report_queue_and_render_deadlines_cannot_expand_to_multi_hour_sta
     monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_MAX_PUBLICATION_SECONDS", "7200")
     recovery.install_comprehensive_production_runtime_recovery()
 
-    assert background._max_queue_seconds() <= 180.0
-    assert background._max_publication_seconds() <= 900.0
+    queue_seconds = background._max_queue_seconds()
+    publication_seconds = background._max_publication_seconds()
+    assert queue_seconds <= recovery._DEFAULT_QUEUE_CAP_SECONDS
+    assert publication_seconds <= recovery._DEFAULT_RENDER_CAP_SECONDS
+    assert queue_seconds >= publication_seconds + recovery._MIN_QUEUE_GRACE_SECONDS
+
+
+def test_final_report_queue_cannot_expire_before_one_healthy_bounded_render(monkeypatch) -> None:
+    monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_MAX_QUEUE_SECONDS", "120")
+    monkeypatch.setenv("NICO_COMPREHENSIVE_FINAL_REPORT_MAX_PUBLICATION_SECONDS", "900")
+    recovery.install_comprehensive_production_runtime_recovery()
+
+    publication_seconds = background._max_publication_seconds()
+    queue_seconds = background._max_queue_seconds()
+    assert publication_seconds == 900.0
+    assert queue_seconds >= publication_seconds + recovery._MIN_QUEUE_GRACE_SECONDS
+    assert queue_seconds <= recovery._DEFAULT_QUEUE_CAP_SECONDS
 
 
 def test_spanish_bootstrap_wires_same_shared_recovery_layer() -> None:
