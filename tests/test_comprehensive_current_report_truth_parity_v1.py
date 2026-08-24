@@ -116,6 +116,7 @@ def test_embedded_spanish_client_copy_is_localized_without_changing_source_token
         "maturity_level: Exceptional": "maturity_level: Excepcional",
         "Job success rate: 100%.": "Tasa de éxito de trabajos: 100%.",
         "Material confirmado findings: 0.": "Hallazgos materiales confirmados: 0.",
+        "Non-success deployment classification: Not available.": "Clasificación de despliegues no exitosos: No disponible.",
     }
     for source, expected in samples.items():
         translated = _safe_es(source)
@@ -142,6 +143,15 @@ def test_spanish_final_surface_gate_rejects_reintroduced_english_copy() -> None:
             "Resumen ejecutivo",
             "<p>Resumen ejecutivo</p>",
             leaked_pdf,
+        )
+
+    deployment_leak = _pdf("Non-success deployment classification: Not available.")
+    with pytest.raises(ValueError, match="English presentation copy"):
+        assert_spanish_client_copy_is_localized(
+            canonical,
+            "Resumen ejecutivo",
+            "<p>Resumen ejecutivo</p>",
+            deployment_leak,
         )
 
 
