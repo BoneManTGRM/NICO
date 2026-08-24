@@ -21,7 +21,7 @@ const TEXT = {
     summary: "Add only the evidence available for this engagement. Missing modules remain Not assessed and are never inferred from repository code.",
     modules: "Evidence modules",
     mobileOptional: "Optional",
-    mobileContextLabel: "Client context",
+    mobileContextLabel: "Optional client context",
     chooseModule: "Choose an evidence module",
     added: (count: number, total: number) => `${count} of ${total} modules added`,
     selected: "Selected module",
@@ -40,9 +40,9 @@ const TEXT = {
     removeModule: "Remove from intake",
     emptyTitle: "No evidence added for this module",
     emptyBody: "Add human-observed information when it is available, or exclude the module only when an explicit rationale exists.",
-    mobileStable: "The full optional evidence editor is not loaded on phones or touch-first devices. Internal repository assessment can continue without it. When client/project identity is supplied, complete the lightweight client engagement context below.",
-    mobileClientTitle: "Client engagement context",
-    mobileClientBody: "Required only for actual client work. These fields bind access, the primary technical contact, and authorized scope without loading the full optional evidence workspace.",
+    mobileStable: "The full optional evidence editor is not loaded on phones or touch-first devices. Client and project names above are optional display metadata and do not make the fields below required. Add only the client context available for this assessment.",
+    mobileClientTitle: "Optional client context",
+    mobileClientBody: "For the standard public assessment, Access Method, Primary Technical Contact, and Authorized Scope are optional context. Missing values remain unassessed and are never inferred or fabricated.",
     field: (name: string) => name === "access_method"
       ? "Access Method"
       : name === "primary_technical_contact"
@@ -57,7 +57,7 @@ const TEXT = {
     summary: "Agrega únicamente la evidencia disponible para este encargo. Los módulos faltantes permanecen como No evaluados y nunca se infieren del repositorio.",
     modules: "Módulos de evidencia",
     mobileOptional: "Opcional",
-    mobileContextLabel: "Contexto del cliente",
+    mobileContextLabel: "Contexto opcional del cliente",
     chooseModule: "Elige un módulo de evidencia",
     added: (count: number, total: number) => `${count} de ${total} módulos agregados`,
     selected: "Módulo seleccionado",
@@ -76,9 +76,9 @@ const TEXT = {
     removeModule: "Quitar de la captura",
     emptyTitle: "No se agregó evidencia para este módulo",
     emptyBody: "Agrega información observada por una persona cuando esté disponible, o excluye el módulo únicamente con una justificación explícita.",
-    mobileStable: "El editor completo de evidencia opcional no se carga en teléfonos ni dispositivos principalmente táctiles. La evaluación interna del repositorio puede continuar sin él. Cuando se proporciona identidad de cliente/proyecto, complete el contexto ligero del encargo a continuación.",
-    mobileClientTitle: "Contexto del encargo del cliente",
-    mobileClientBody: "Requerido únicamente para trabajo real de cliente. Estos campos vinculan acceso, contacto técnico principal y alcance autorizado sin cargar el espacio completo de evidencia opcional.",
+    mobileStable: "El editor completo de evidencia opcional no se carga en teléfonos ni dispositivos principalmente táctiles. Los nombres de cliente y proyecto de arriba son metadatos de presentación opcionales y no hacen obligatorios los campos de abajo. Agrega únicamente el contexto del cliente disponible para esta evaluación.",
+    mobileClientTitle: "Contexto opcional del cliente",
+    mobileClientBody: "En la evaluación pública estándar, Método de acceso, Contacto técnico principal y Alcance autorizado son contexto opcional. Los valores faltantes permanecen sin evaluar y nunca se infieren ni se inventan.",
     field: (name: string) => name === "access_method"
       ? "Método de acceso"
       : name === "primary_technical_contact"
