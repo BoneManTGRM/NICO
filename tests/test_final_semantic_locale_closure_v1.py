@@ -120,6 +120,21 @@ def test_candidate_volume_score_effect_sentence_is_fully_spanish() -> None:
         assert "Ajuste por evidencia" in localized
 
 
+def test_analyzer_completion_summary_is_structured_and_count_preserving() -> None:
+    source = (
+        "12 of 17 applicable analyzers completed; 5 are incomplete. "
+        "Candidate triage is separate: 23 review-required candidates and "
+        "4 confirmed material findings are retained."
+    )
+    localized = localize_current_report_copy_v98(source)
+
+    assert "applicable analyzers completed" not in localized
+    assert "Candidate triage is separate" not in localized
+    assert "Analizadores aplicables completados: 12 de 17; incompletos: 5." in localized
+    assert "23 candidatos que requieren revisión" in localized
+    assert "4 hallazgos materiales confirmados" in localized
+
+
 def test_current_copy_preprojection_does_not_create_a_broad_english_allowlist() -> None:
     unknown = "Brand-new unregistered renderer-owned sentence must fail closed."
     assert localize_current_report_copy_v98(unknown) == unknown
