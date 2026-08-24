@@ -18,7 +18,7 @@ def test_compact_mobile_does_not_present_optional_modules_as_zero_of_ten() -> No
     assert "{copy.mobileOptional}" in compact
     assert "{copy.mobileContextLabel}" in compact
     assert 'mobileOptional: "Opcional"' in FORM
-    assert 'mobileContextLabel: "Contexto del cliente"' in FORM
+    assert 'mobileContextLabel: "Contexto opcional del cliente"' in FORM
 
     # Desktop/full evidence mode retains the real 10-module progress indicator.
     assert "<strong>{addedCount}/{STRATEGIC_EVIDENCE_DEFINITIONS.length}</strong>" in FORM

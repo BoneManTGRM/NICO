@@ -301,9 +301,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const internalReviewHref = internalReviewHrefFor(result, locale);
     const preflightIssue = issue && !issue.runCreated ? issue : null;
     const runIssue = issue && issue.runCreated ? issue : null;
+    // A failure before intake has no exact run identity and already renders inline in
+    // the form. Do not manufacture a second terminal-looking run panel for that same
+    // no-run error. Once an exact run exists, its persisted state remains authoritative.
     const showStatePanel = Boolean(result?.run_id)
       || Boolean(runIssue)
-      || ["starting", "running", "review_required", "complete", "failed", "timed_out"].includes(phase);
+      || phase === "starting";
     return {internalReview, reviewStatus, clientReadyStatus, internalReviewHref, preflightIssue, runIssue, showStatePanel};
   }
 
