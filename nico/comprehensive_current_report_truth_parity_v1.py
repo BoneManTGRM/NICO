@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.2"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.3"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -18,6 +18,7 @@ _REVIEW_LOCALIZATION_MARKER = "__nico_current_report_truth_review_localization_v
 _ES_EXACT = {
     "Exceptional": "Excepcional",
     "Code audit": "Auditoría de código",
+    "Code Audit": "Auditoría de código",
     "Cybersecurity specialist": "Especialista en ciberseguridad",
 }
 
@@ -58,6 +59,7 @@ _ES_PHRASES = {
     "Non-success deployments": "Despliegues no exitosos",
     "Cybersecurity specialist": "Especialista en ciberseguridad",
     "Code audit": "Auditoría de código",
+    "Code Audit": "Auditoría de código",
     "Exceptional": "Excepcional",
     "immutable native-control vector=not applicable; provider-neutral objective coverage is reported separately.": (
         "vector inmutable de controles nativos=no aplica; la cobertura de objetivos neutral al proveedor se informa por separado."
@@ -81,6 +83,9 @@ _SPANISH_LEAK_MARKERS = (
     "Deployments observado",
     "Successful deployments",
     "Non-success deployments",
+    "Explicit permissions control",
+    "Provider-neutral immutable CI objective coverage",
+    "Candidate volume and reviewer workload are operational review metrics",
     "Cybersecurity specialist",
     "maturity_level: Exceptional",
 )
@@ -116,16 +121,32 @@ def _pdf_text(pdf: bytes) -> str:
     )
 
 
+def assert_spanish_canonical_presentation_contract(canonical: Mapping[str, Any]) -> None:
+    """Fail closed when renderer-owned canonical presentation copy is unregistered.
+
+    The canonical Spanish projector owns field/source semantics, including protected
+    machine/provenance fields and raw canonical subtrees. Reusing that projector here
+    avoids a broad English allowlist while preserving exact technical atoms.
+    """
+
+    if not _is_spanish(canonical):
+        return
+    from nico import comprehensive_spanish_canonical_report_v87 as spanish_canonical
+
+    spanish_canonical._localize_tree(canonical)
+
+
 def assert_spanish_client_copy_is_localized(
     canonical: Mapping[str, Any],
     markdown: str,
     rendered_html: str,
     pdf: bytes,
 ) -> None:
-    """Reject known NICO-authored English leakage on an es-MX final surface."""
+    """Reject unregistered or known NICO-authored English leakage on es-MX surfaces."""
 
     if not _is_spanish(canonical):
         return
+    assert_spanish_canonical_presentation_contract(canonical)
     combined = "\n".join((markdown, _visible_html(rendered_html), _pdf_text(pdf)))
     lowered = combined.casefold()
     leaked = [marker for marker in _SPANISH_LEAK_MARKERS if marker.casefold() in lowered]
@@ -151,6 +172,23 @@ def normalize_ci_presentation_lines(lines: list[str]) -> list[str]:
     return output
 
 
+def _install_semantic_manifest_authority() -> bool:
+    from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
+    from nico import comprehensive_spanish_presentation_parity_v1 as spanish
+    from nico.comprehensive_report_semantic_manifest_v1 import (
+        CANONICAL_TOC_TITLES,
+        SECTION_TITLE_ES_BY_EN,
+    )
+
+    cleanup._TOC_TITLES = tuple(CANONICAL_TOC_TITLES)
+    spanish._TITLE_MAP.clear()
+    spanish._TITLE_MAP.update(SECTION_TITLE_ES_BY_EN)
+    return bool(
+        cleanup._TOC_TITLES == tuple(CANONICAL_TOC_TITLES)
+        and tuple(spanish._TITLE_MAP) == tuple(SECTION_TITLE_ES_BY_EN)
+    )
+
+
 def _install_outline_matching() -> bool:
     from nico import comprehensive_human_review_package_cleanup_v1 as cleanup
 
@@ -170,7 +208,7 @@ def _install_outline_matching() -> bool:
                 raw,
             )
             if match:
-                return match.group(0).strip()
+                return title
         return resolved
 
     setattr(outline_title, _OUTLINE_MARKER, True)
@@ -187,11 +225,25 @@ def _install_spanish_phrase_completion() -> bool:
     return True
 
 
+def _strict_spanish_presentation(value: Any) -> str:
+    from nico import comprehensive_spanish_canonical_report_v87 as canonical_spanish
+    from nico import comprehensive_spanish_presentation_parity_v1 as presentation
+    from nico.comprehensive_spanish_current_copy_worker_v98 import (
+        localize_current_report_copy_v98,
+    )
+
+    raw = str(value or "")
+    if presentation._looks_like_source_atom(raw):
+        return raw
+    prepared = localize_current_report_copy_v98(raw)
+    prepared = presentation._safe_es(prepared)
+    return canonical_spanish._translate_presentation(prepared)
+
+
 def _install_review_companion_localization() -> bool:
-    """Localize dynamic review-companion evidence after late report reconstruction."""
+    """Strictly localize dynamic review-companion copy after late reconstruction."""
 
     from nico import comprehensive_client_review_companion_v2 as companion
-    from nico import comprehensive_spanish_presentation_parity_v1 as presentation
 
     current = companion.review_sections
     if getattr(current, _REVIEW_LOCALIZATION_MARKER, False):
@@ -207,11 +259,11 @@ def _install_review_companion_localization() -> bool:
             item = dict(raw)
             for field in ("status", "summary"):
                 if item.get(field) not in (None, ""):
-                    item[field] = presentation._safe_es(item[field])
+                    item[field] = _strict_spanish_presentation(item[field])
             for field in ("evidence", "findings", "limitations"):
                 values = item.get(field)
                 if isinstance(values, list):
-                    item[field] = [presentation._safe_es(value) for value in values]
+                    item[field] = [_strict_spanish_presentation(value) for value in values]
             localized.append(item)
         return localized
 
@@ -269,6 +321,7 @@ def _install_final_spanish_leak_gate() -> bool:
 def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
     """Close current EN/es-MX presentation defects without changing canonical truth."""
 
+    manifest = _install_semantic_manifest_authority()
     outline = _install_outline_matching()
     spanish = _install_spanish_phrase_completion()
     review_localization = _install_review_companion_localization()
@@ -277,11 +330,14 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
+        "canonical_semantic_report_manifest": manifest,
         "case_insensitive_toc_matching": outline,
         "spanish_embedded_phrase_localization": spanish,
         "late_review_companion_localization": review_localization,
+        "unknown_report_owned_review_copy_fails_closed": True,
         "empty_native_ci_vector_not_rendered_as_zero_over_zero": ci,
         "final_spanish_leak_gate": validation,
+        "canonical_presentation_contract_gate": True,
         "scores_unchanged": True,
         "candidate_dispositions_unchanged": True,
         "human_review_required": True,
@@ -291,6 +347,7 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
+    "assert_spanish_canonical_presentation_contract",
     "assert_spanish_client_copy_is_localized",
     "install_comprehensive_current_report_truth_parity_v1",
     "normalize_ci_presentation_lines",
