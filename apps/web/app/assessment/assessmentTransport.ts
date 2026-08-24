@@ -1,6 +1,7 @@
 import type {Copy, Result} from "./assessmentTypes";
 
 const TRANSIENT_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const SAFE_STRING_DETAIL_CODE = /^[a-z][a-z0-9_]*$/;
 
 export class AssessmentApiError extends Error {
   readonly status: number;
@@ -31,6 +32,12 @@ export function apiUrl(path: string): string {
   return new URL(`/api/nico${path}`, window.location.origin).href;
 }
 
+function stringDetailCode(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const candidate = value.split(":", 1)[0].trim().toLowerCase();
+  return SAFE_STRING_DETAIL_CODE.test(candidate) ? candidate : "";
+}
+
 export async function parseJson(
   response: Response,
   copy: Copy,
@@ -58,6 +65,7 @@ export async function parseJson(
   if (!response.ok) {
     const detail =
       data.detail && typeof data.detail === "object" ? data.detail : {};
+    const stringCode = stringDetailCode(data.detail);
     const message =
       typeof data.detail === "string"
         ? data.detail
@@ -69,7 +77,12 @@ export async function parseJson(
           );
     throw new AssessmentApiError(message, {
       status: response.status,
-      code: String(detail.code || data.error || "assessment_request_failed"),
+      code: String(
+        detail.code ||
+          stringCode ||
+          data.error ||
+          "assessment_request_failed",
+      ),
       retryable:
         typeof detail.retryable === "boolean"
           ? detail.retryable
