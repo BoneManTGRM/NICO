@@ -9,10 +9,11 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.1"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.2"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
+_REVIEW_LOCALIZATION_MARKER = "__nico_current_report_truth_review_localization_v1__"
 
 _ES_EXACT = {
     "Exceptional": "Excepcional",
@@ -186,6 +187,40 @@ def _install_spanish_phrase_completion() -> bool:
     return True
 
 
+def _install_review_companion_localization() -> bool:
+    """Localize dynamic review-companion evidence after late report reconstruction."""
+
+    from nico import comprehensive_client_review_companion_v2 as companion
+    from nico import comprehensive_spanish_presentation_parity_v1 as presentation
+
+    current = companion.review_sections
+    if getattr(current, _REVIEW_LOCALIZATION_MARKER, False):
+        return True
+
+    @wraps(current)
+    def review_sections(canonical: Mapping[str, Any], *, spanish: bool) -> list[dict[str, Any]]:
+        sections = list(current(canonical, spanish=spanish))
+        if not spanish:
+            return sections
+        localized: list[dict[str, Any]] = []
+        for raw in sections:
+            item = dict(raw)
+            for field in ("status", "summary"):
+                if item.get(field) not in (None, ""):
+                    item[field] = presentation._safe_es(item[field])
+            for field in ("evidence", "findings", "limitations"):
+                values = item.get(field)
+                if isinstance(values, list):
+                    item[field] = [presentation._safe_es(value) for value in values]
+            localized.append(item)
+        return localized
+
+    setattr(review_sections, _REVIEW_LOCALIZATION_MARKER, True)
+    setattr(review_sections, "_nico_previous", current)
+    companion.review_sections = review_sections
+    return True
+
+
 def _install_ci_presentation_truth() -> bool:
     from nico import comprehensive_client_truth_final_v1 as client_truth
 
@@ -236,6 +271,7 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
 
     outline = _install_outline_matching()
     spanish = _install_spanish_phrase_completion()
+    review_localization = _install_review_companion_localization()
     ci = _install_ci_presentation_truth()
     validation = _install_final_spanish_leak_gate()
     return {
@@ -243,6 +279,7 @@ def install_comprehensive_current_report_truth_parity_v1() -> dict[str, Any]:
         "version": VERSION,
         "case_insensitive_toc_matching": outline,
         "spanish_embedded_phrase_localization": spanish,
+        "late_review_companion_localization": review_localization,
         "empty_native_ci_vector_not_rendered_as_zero_over_zero": ci,
         "final_spanish_leak_gate": validation,
         "scores_unchanged": True,
