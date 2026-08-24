@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.5"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.6"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -212,17 +212,31 @@ def _install_spanish_phrase_completion() -> bool:
 
     spanish._ES_EXTRA_EXACT.update(_ES_EXACT)
     spanish._ES_PHRASES.update(_ES_PHRASES)
+
+    # v87 snapshots presentation replacements at import time. Keep the bounded
+    # current-report phrases available to the strict canonical translator even when
+    # v87 was imported earlier by the parent or detached worker bootstrap.
+    from nico import comprehensive_spanish_canonical_report_v87 as canonical_spanish
+
+    existing = {source for source, _target in canonical_spanish._PRESENTATION_REPLACEMENTS}
+    additions = tuple(
+        (source, target) for source, target in _ES_PHRASES.items() if source not in existing
+    )
+    if additions:
+        canonical_spanish._PRESENTATION_REPLACEMENTS += additions
     return True
 
 
 def strict_spanish_presentation_v1(value: Any, key: str = "summary") -> str:
     """Strict field/source-aware projection for late renderer-owned es-MX copy.
 
-    Protected technical/source atoms stay exact. Registered structured generator copy
-    is projected first, compatibility translations second, and the canonical field
-    translator is the final fail-closed authority for the actual presentation field.
-    The companion's `status` is a display label, so it is validated as a label rather
-    than as canonical machine status state.
+    Protected technical/source atoms stay exact. Structured current-report generator
+    copy is projected first. The canonical field translator then gets first authority
+    over complete registered sentences, preventing a permissive word replacement from
+    corrupting an exact translation into mixed language. Compatibility replacement is
+    only applied after the strict field contract accepts the phrase. The companion's
+    `status` is a display label, so it is validated as a label rather than canonical
+    machine status state.
     """
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical_spanish
@@ -235,9 +249,9 @@ def strict_spanish_presentation_v1(value: Any, key: str = "summary") -> str:
     if presentation._looks_like_source_atom(raw):
         return raw
     prepared = localize_current_report_copy_v98(raw)
-    prepared = presentation._safe_es(prepared)
     strict_key = "label" if key == "status" else str(key or "summary")
-    return canonical_spanish._translate_presentation_field(prepared, strict_key)
+    translated = canonical_spanish._translate_presentation_field(prepared, strict_key)
+    return presentation._safe_es(translated)
 
 
 def _install_review_companion_localization() -> bool:
