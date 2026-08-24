@@ -20,6 +20,8 @@ const TEXT = {
     title: "Add context the repository cannot provide",
     summary: "Add only the evidence available for this engagement. Missing modules remain Not assessed and are never inferred from repository code.",
     modules: "Evidence modules",
+    mobileOptional: "Optional",
+    mobileContextLabel: "Client context",
     chooseModule: "Choose an evidence module",
     added: (count: number, total: number) => `${count} of ${total} modules added`,
     selected: "Selected module",
@@ -54,6 +56,8 @@ const TEXT = {
     title: "Agrega el contexto que el repositorio no puede proporcionar",
     summary: "Agrega únicamente la evidencia disponible para este encargo. Los módulos faltantes permanecen como No evaluados y nunca se infieren del repositorio.",
     modules: "Módulos de evidencia",
+    mobileOptional: "Opcional",
+    mobileContextLabel: "Contexto del cliente",
     chooseModule: "Elige un módulo de evidencia",
     added: (count: number, total: number) => `${count} de ${total} módulos agregados`,
     selected: "Módulo seleccionado",
@@ -173,9 +177,9 @@ export default function StrategicEvidenceForm({
           <h3 id="strategic-evidence-title">{copy.title}</h3>
           <p>{copy.summary}</p>
         </div>
-        <div className={styles.progressSummary} aria-label={copy.added(addedCount, STRATEGIC_EVIDENCE_DEFINITIONS.length)}>
-          <strong>{addedCount}/{STRATEGIC_EVIDENCE_DEFINITIONS.length}</strong>
-          <span>{copy.modules}</span>
+        <div className={styles.progressSummary} aria-label={`${copy.mobileOptional}: ${copy.mobileContextLabel}`}>
+          <strong>{copy.mobileOptional}</strong>
+          <span>{copy.mobileContextLabel}</span>
         </div>
       </div>
       <p className="muted" data-mobile-evidence-note="true">{copy.mobileStable}</p>
