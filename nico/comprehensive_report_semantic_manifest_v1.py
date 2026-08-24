@@ -32,13 +32,14 @@ def _section(
 
 
 # One ordered semantic inventory owns both locale projections. Physical pagination may
-# differ by locale; logical section identity and order may not.
+# differ by locale; logical section identity and order may not. Existing English titles
+# are retained unless a canonical structural defect requires changing both projections.
 REPORT_SECTION_MANIFEST: tuple[dict[str, Any], ...] = (
     _section("comprehensive_technical_assessment", "Comprehensive Technical Assessment", "Evaluación Técnica Integral", "Assessment identity and canonical scope."),
     _section("executive_decision_brief", "Executive Decision Brief", "Resumen ejecutivo para decisiones", "Decision-grade summary of material assessment truth."),
     _section("priority_constraints_and_decision_risks", "Priority Constraints and Decision Risks", "Restricciones prioritarias y riesgos de decisión", "Priority constraints, blockers, and decision risks."),
     _section("canonical_technical_scorecard", "Canonical Technical Scorecard", "Cuadro de puntuación técnica", "Canonical technical and evidence-adjusted score presentation."),
-    _section("code_audit", "Code Audit", "Auditoría de código", "Exact-commit code audit evidence and conclusions."),
+    _section("code_audit", "Code audit", "Auditoría de código", "Exact-commit code audit evidence and conclusions."),
     _section("dependency_library_ecosystem", "Dependency / Library Ecosystem", "Ecosistema de dependencias y bibliotecas", "Dependency and library ecosystem evidence."),
     _section("secrets_exposure_review", "Secrets Exposure Review", "Revisión de exposición de secretos", "Secrets exposure evidence and limitations."),
     _section("static_analysis", "Static Analysis", "Análisis estático", "Static-analysis evidence and findings."),
