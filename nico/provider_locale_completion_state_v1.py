@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from nico.provider_platform_contract_v1 import ProviderKind
 from nico.provider_support_policy_v1 import (
@@ -113,6 +113,7 @@ def build_provider_locale_completion_state(
         if external.authorized_real_credentials_available
         else True
     )
+    priority2_external_gate = not external.priority2_authorized_infrastructure_available
 
     packages = {
         "A": _work_package("A", engineering_complete=True, status="complete", evidence="issue-708-provider-neutral-contracts"),
@@ -128,7 +129,7 @@ def build_provider_locale_completion_state(
         "K": _work_package("K", engineering_complete=True, status="complete", evidence=_ENGINEERING_EVIDENCE["K"]),
         "L": _work_package("L", engineering_complete=True, status="engineering_complete_pending_exact_artifact_proof" if not production.spanish_comprehensive_proof else "complete", evidence=_ENGINEERING_EVIDENCE["L"], blocker=None if production.spanish_comprehensive_proof else "exact-current-main locale artifact proof not supplied"),
         "M": _work_package("M", engineering_complete=True, status="complete", evidence=_ENGINEERING_EVIDENCE["M"]),
-        "N": _work_package("N", engineering_complete=not external.priority2_authorized_infrastructure_available, status="blocked_external" if not external.priority2_authorized_infrastructure_available else "authorized_infrastructure_requires_real_validation", blocker="authorized Priority-2 provider infrastructure unavailable" if not external.priority2_authorized_infrastructure_available else "real Priority-2 integration evidence required"),
+        "N": _work_package("N", engineering_complete=priority2_external_gate, status="blocked_external" if priority2_external_gate else "authorized_infrastructure_requires_real_validation", blocker="authorized Priority-2 provider infrastructure unavailable" if priority2_external_gate else "real Priority-2 integration evidence required"),
         "O": _work_package("O", engineering_complete=True, status="complete", evidence=_ENGINEERING_EVIDENCE["O"]),
         "P": _work_package("P", engineering_complete=True, status="complete" if production.complete else "awaiting_exact_main_production_acceptance", blocker=None if production.complete else "one or more exact-current-main production gates are not supplied as passing"),
         "Q": _work_package("Q", engineering_complete=True, status="complete", evidence=_ENGINEERING_EVIDENCE["Q"]),
@@ -140,6 +141,7 @@ def build_provider_locale_completion_state(
         engineering_complete
         and priority1_complete
         and real_provider_gate
+        and priority2_external_gate
         and production.complete
     )
 
@@ -150,7 +152,7 @@ def build_provider_locale_completion_state(
         blockers.append("authorized_real_provider_integration_incomplete")
     if not production.complete:
         blockers.append("exact_current_main_production_acceptance_incomplete")
-    if external.priority2_authorized_infrastructure_available:
+    if not priority2_external_gate:
         blockers.append("priority2_authorized_infrastructure_requires_validation")
 
     return {
@@ -162,6 +164,7 @@ def build_provider_locale_completion_state(
         "priority1_provider_engineering_parity": parity,
         "priority1_real_provider_integration": real_provider,
         "real_provider_integration_required_now": external.authorized_real_credentials_available,
+        "priority2_external_infrastructure_available": external.priority2_authorized_infrastructure_available,
         "provider_disclosures": {
             provider.value: provider_disclosure(provider)
             for provider in (ProviderKind.GITHUB, *_PRIORITY1)
