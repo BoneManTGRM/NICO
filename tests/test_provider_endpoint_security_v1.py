@@ -69,10 +69,7 @@ def test_private_dns_answer_requires_explicit_cidr_allowlist() -> None:
 
 @pytest.mark.parametrize("address", ("127.0.0.1", "169.254.1.1", "0.0.0.0", "224.0.0.1"))
 def test_loopback_link_local_unspecified_and_multicast_are_never_allowed(address: str) -> None:
-    policy = self_managed_endpoint_policy(
-        allowed_hosts=("git.internal.example",),
-        allowed_private_cidrs=("0.0.0.0/0",),
-    )
+    policy = self_managed_endpoint_policy(allowed_hosts=("git.internal.example",))
     with pytest.raises(ProviderEndpointSecurityError, match="resolved_ip_unsafe"):
         validate_provider_endpoint(
             "https://git.internal.example",
