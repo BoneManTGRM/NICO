@@ -119,14 +119,17 @@ def _install_repository_snapshot_fallback() -> dict[str, Any]:
         return {
             "status": "attached",
             "repository": repository,
+            "source": "public_git_read_only",
             "default_branch": "HEAD",
             "requested_ref": "HEAD",
             "expected_commit_sha": commit_sha,
             "commit_binding_source": "public_default_head_resolved_once",
             "repository_metadata_available": False,
             "repository_confirmed_private": False,
+            "repository_visibility": "public_verified_by_anonymous_git",
             "api_commit_lookup_attempts": 0,
             "public_git_fallback_attempted": True,
+            "public_git_fallback_used": True,
             "public_git_default_head_fallback_attempted": True,
             "commit_capture_method": "public_git_default_head",
             "commit_sha": commit_sha,
@@ -136,9 +139,12 @@ def _install_repository_snapshot_fallback() -> dict[str, Any]:
                 or (commit_body.get("author") or {}).get("date")
                 or ""
             ),
-            "commit_message": str(commit_body.get("message") or "").strip(),
+            "commit_message": str(commit_body.get("message") or "").strip()[:180],
+            "repository_pushed_at": "",
             "exact_commit_verified": True,
             "immutable_snapshot": True,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
             "unavailable_data_notes": [
                 "GitHub API metadata was unavailable, so NICO resolved the public repository default HEAD once through isolated credential-free HTTPS Git and bound the assessment to that exact immutable commit."
             ],
