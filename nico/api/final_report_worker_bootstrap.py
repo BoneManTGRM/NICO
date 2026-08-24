@@ -10,11 +10,14 @@ from nico.comprehensive_spanish_canonical_acceptance_normalization_v96 import (
 from nico.comprehensive_spanish_canonical_evidence_literals_v95 import (
     install_comprehensive_spanish_canonical_evidence_literals_v95,
 )
+from nico.comprehensive_spanish_current_copy_worker_v98 import (
+    install_comprehensive_spanish_current_copy_worker_v98,
+)
 from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v4"
+VERSION = "nico.api.final_report_worker_bootstrap.v5"
 
 # This module is the isolated final-report renderer entry point. It deliberately starts
 # from the same terminal report/language authority used by production, then adds only
@@ -135,6 +138,24 @@ if (
 ):
     raise RuntimeError("Spanish renderer does not preserve canonical evidence literals")
 
+# The current-report parity validator added new approved presentation phrases after the
+# isolated renderer/cache architecture already existed. Bind those phrases inside this
+# child process before v94 captures the final translators. Otherwise the parent can know
+# the translations while the detached renderer still fails closed on the old English.
+SPANISH_CURRENT_REPORT_COPY = install_comprehensive_spanish_current_copy_worker_v98()
+setattr(app.state, "nico_spanish_current_report_copy", SPANISH_CURRENT_REPORT_COPY)
+if SPANISH_CURRENT_REPORT_COPY.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError(
+        "Spanish current-report copy contract did not install in renderer worker: "
+        f"{SPANISH_CURRENT_REPORT_COPY}"
+    )
+if SPANISH_CURRENT_REPORT_COPY.get("bound") is not True:
+    raise RuntimeError("Spanish current-report copy contract is not bound")
+if SPANISH_CURRENT_REPORT_COPY.get("current_report_copy_contract_bound") is not True:
+    raise RuntimeError("Spanish renderer cannot localize current report presentation copy")
+if SPANISH_CURRENT_REPORT_COPY.get("unknown_prose_still_delegates_fail_closed") is not True:
+    raise RuntimeError("Spanish current-report copy contract weakened fail-closed behavior")
+
 SPANISH_FINAL_REPORT_RUNTIME_CACHE = (
     install_comprehensive_spanish_final_report_runtime_cache_v94()
 )
@@ -180,10 +201,12 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "spanish_canonical_acceptance_normalization_bound": True,
     "spanish_assessment_scope_contract_bound": True,
     "spanish_canonical_evidence_literals_bound": True,
+    "spanish_current_report_copy_contract_bound": True,
     "spanish_final_report_runtime_cache_bound": True,
     "canonical_acceptance_terminal_period_loss_supported": True,
     "production_assessment_scope_translation_supported": True,
     "canonical_evidence_literals_preserved": True,
+    "current_report_copy_worker_safe": True,
     "presentation_prose_still_fail_closed": True,
     "process_isolation_owned_by_parent": True,
     "physical_exit_hardening_owned_by_parent": True,
@@ -200,6 +223,7 @@ __all__ = [
     "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION",
     "SPANISH_CANONICAL_EVIDENCE_LITERALS",
+    "SPANISH_CURRENT_REPORT_COPY",
     "SPANISH_FINAL_REPORT_RUNTIME_CACHE",
     "VERSION",
     "app",
