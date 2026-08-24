@@ -10,6 +10,9 @@ from nico.comprehensive_final_report_process_isolation_v1 import (
 from nico.comprehensive_production_proof_lifecycle_v1 import (
     install_comprehensive_production_proof_lifecycle_v1,
 )
+from nico.comprehensive_production_runtime_recovery_v1 import (
+    install_comprehensive_production_runtime_recovery,
+)
 from nico.comprehensive_spanish_assessment_scope_v97 import (
     install_comprehensive_spanish_assessment_scope_v97,
 )
@@ -31,6 +34,13 @@ from nico.provider_repository_enumeration_v1 import (
 from nico.provider_rollout_control_v1 import install_provider_rollout_routes
 
 VERSION = "nico.api.spanish_final_report_bootstrap.v7"
+
+PRODUCTION_RUNTIME_RECOVERY = install_comprehensive_production_runtime_recovery()
+setattr(app.state, "nico_comprehensive_production_runtime_recovery", PRODUCTION_RUNTIME_RECOVERY)
+if PRODUCTION_RUNTIME_RECOVERY.get("bound") is not True:
+    raise RuntimeError(
+        f"Comprehensive production runtime recovery did not install: {PRODUCTION_RUNTIME_RECOVERY}"
+    )
 
 SPANISH_ASSESSMENT_SCOPE = install_comprehensive_spanish_assessment_scope_v97()
 setattr(app.state, "nico_spanish_assessment_scope", SPANISH_ASSESSMENT_SCOPE)
@@ -205,6 +215,7 @@ __all__ = [
     "HOSTED_PROVIDER_COMPREHENSIVE_RUNTIME",
     "HOSTED_PROVIDER_COMPREHENSIVE_SAFETY",
     "PRODUCTION_PROOF_LIFECYCLE",
+    "PRODUCTION_RUNTIME_RECOVERY",
     "PROVIDER_REPOSITORY_ENUMERATION",
     "PROVIDER_ROLLOUT_CONTROL",
     "SPANISH_ASSESSMENT_SCOPE",
