@@ -31,6 +31,11 @@ def test_known_spanish_publication_diagnostic_is_localized() -> None:
     assert "Se analizaron las señales ejecutables del código fuente del commit exacto" in SOURCE
 
 
+def test_spanish_runtime_localizes_customer_facing_assessment_type() -> None:
+    assert '["comprehensive", "Integral"]' in SOURCE
+    assert '["comprehensive run", "Evaluación integral"]' in SOURCE
+
+
 def test_machine_identifiers_stay_exact_except_known_display_diagnostic() -> None:
     assert 'value.includes("v2_production_publication_failed")' in SOURCE
     assert 'const inCode = Boolean(parent.closest("code"));' in SOURCE
