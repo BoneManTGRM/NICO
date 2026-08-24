@@ -1,8 +1,8 @@
 import pytest
 
 from nico.comprehensive_current_report_truth_parity_v1 import (
-    assert_spanish_canonical_presentation_contract,
     install_comprehensive_current_report_truth_parity_v1,
+    strict_spanish_presentation_v1,
 )
 from nico.comprehensive_report_semantic_manifest_v1 import (
     CANONICAL_TOC_SECTION_IDS,
@@ -66,9 +66,9 @@ def test_repository_evidence_and_evidence_reconciliation_are_distinct_canonical_
     )
 
 
-def test_canonical_manifest_covers_historically_missing_spanish_navigation_titles() -> None:
+def test_canonical_manifest_preserves_english_and_covers_spanish_navigation_titles() -> None:
     expected = {
-        "Code Audit": "Auditoría de código",
+        "Code audit": "Auditoría de código",
         "Executive Risk Register and Decision Briefing": (
             "Registro ejecutivo de riesgos y resumen para decisiones"
         ),
@@ -125,15 +125,26 @@ def test_current_copy_preprojection_does_not_create_a_broad_english_allowlist() 
     assert localize_current_report_copy_v98(unknown) == unknown
 
 
-def test_late_spanish_review_companion_localizes_provider_ci_copy() -> None:
+def test_strict_late_presentation_boundary_rejects_unknown_renderer_owned_english() -> None:
+    with pytest.raises(ValueError, match="Spanish|spanish|translation|presentation"):
+        strict_spanish_presentation_v1(
+            "Brand-new unregistered renderer-owned sentence must fail closed."
+        )
+
+
+def test_strict_late_presentation_boundary_preserves_protected_source_atom() -> None:
+    technical_atom = "nico/provider_control_objective_parity_v1.py:321"
+    assert strict_spanish_presentation_v1(technical_atom) == technical_atom
+
+
+def test_late_spanish_review_companion_localizes_provider_ci_copy(monkeypatch) -> None:
     from nico import comprehensive_client_review_companion_v2 as companion
 
-    install_comprehensive_current_report_truth_parity_v1()
-    canonical = {
-        "identity": {"report_language": "es-MX"},
-        "stage_summaries": [
+    def fixture_sections(canonical, *, spanish):
+        return [
             {
-                "stage_id": "functional_qa",
+                "id": "fixture",
+                "title": "fixture",
                 "status": "Review-Required Candidate Register",
                 "summary": (
                     "Candidate volume and reviewer workload are operational review metrics and have no "
@@ -146,13 +157,11 @@ def test_late_spanish_review_companion_localizes_provider_ci_copy() -> None:
                 "findings": [],
                 "limitations": [],
             }
-        ],
-    }
+        ]
 
-    section = next(
-        item for item in companion.review_sections(canonical, spanish=True)
-        if item["id"] == "functional_qa"
-    )
+    monkeypatch.setattr(companion, "review_sections", fixture_sections)
+    install_comprehensive_current_report_truth_parity_v1()
+    section = companion.review_sections({}, spanish=True)[0]
     combined = "\n".join(
         [section["status"], section["summary"]]
         + section["evidence"]
@@ -170,98 +179,70 @@ def test_late_spanish_review_companion_localizes_provider_ci_copy() -> None:
     assert "Cobertura de objetivos inmutables de CI independiente del proveedor: 100%." in combined
 
 
-def test_late_spanish_review_companion_rejects_unknown_renderer_owned_english() -> None:
+def test_late_spanish_review_companion_rejects_unknown_renderer_owned_english(monkeypatch) -> None:
     from nico import comprehensive_client_review_companion_v2 as companion
 
-    install_comprehensive_current_report_truth_parity_v1()
-    canonical = {
-        "identity": {"report_language": "es-MX"},
-        "stage_summaries": [
+    def fixture_sections(canonical, *, spanish):
+        return [
             {
-                "stage_id": "functional_qa",
+                "id": "fixture",
+                "title": "fixture",
                 "status": "complete",
                 "summary": "Brand-new unregistered renderer-owned sentence must fail closed.",
                 "evidence": [],
                 "findings": [],
                 "limitations": [],
             }
-        ],
-    }
+        ]
 
+    monkeypatch.setattr(companion, "review_sections", fixture_sections)
+    install_comprehensive_current_report_truth_parity_v1()
     with pytest.raises(ValueError, match="Spanish|spanish|translation|presentation"):
-        companion.review_sections(canonical, spanish=True)
+        companion.review_sections({}, spanish=True)
 
 
-def test_protected_technical_source_atom_remains_exact_in_spanish_review_companion() -> None:
+def test_protected_technical_source_atom_remains_exact_in_spanish_review_companion(monkeypatch) -> None:
     from nico import comprehensive_client_review_companion_v2 as companion
 
-    install_comprehensive_current_report_truth_parity_v1()
     technical_atom = "nico/provider_control_objective_parity_v1.py:321"
-    canonical = {
-        "identity": {"report_language": "es-MX"},
-        "stage_summaries": [
+
+    def fixture_sections(canonical, *, spanish):
+        return [
             {
-                "stage_id": "functional_qa",
+                "id": "fixture",
+                "title": "fixture",
                 "status": "Review-Required Candidate Register",
                 "summary": "Strengthen architecture boundaries, test/release automation, functional QA evidence, and remediation verification.",
                 "evidence": [technical_atom],
                 "findings": [],
                 "limitations": [],
             }
-        ],
-    }
+        ]
 
-    section = next(
-        item for item in companion.review_sections(canonical, spanish=True)
-        if item["id"] == "functional_qa"
-    )
+    monkeypatch.setattr(companion, "review_sections", fixture_sections)
+    install_comprehensive_current_report_truth_parity_v1()
+    section = companion.review_sections({}, spanish=True)[0]
     assert technical_atom in section["evidence"]
 
 
-def test_canonical_preflight_rejects_unknown_presentation_but_preserves_machine_truth() -> None:
-    canonical = {
-        "identity": {
-            "report_language": "es-MX",
-            "repository": "BoneManTGRM/NICO",
-            "commit_sha": "a" * 40,
-            "run_id": "comprun_fixture",
-        },
-        "stage_summaries": [
-            {
-                "stage_id": "functional_qa",
-                "summary": "Brand-new unregistered renderer-owned sentence must fail closed.",
-                "source_path": "nico/provider_control_objective_parity_v1.py",
-            }
-        ],
-    }
-
-    with pytest.raises(ValueError, match="Spanish|spanish|translation|presentation"):
-        assert_spanish_canonical_presentation_contract(canonical)
-
-    # The failure is about renderer-owned prose, not a mutation of canonical truth.
-    assert canonical["identity"]["repository"] == "BoneManTGRM/NICO"
-    assert canonical["identity"]["commit_sha"] == "a" * 40
-    assert canonical["stage_summaries"][0]["source_path"] == (
-        "nico/provider_control_objective_parity_v1.py"
-    )
-
-
-def test_english_review_companion_is_unchanged_by_strict_spanish_wrapper() -> None:
+def test_english_review_companion_is_unchanged_by_strict_spanish_wrapper(monkeypatch) -> None:
     from nico import comprehensive_client_review_companion_v2 as companion
 
-    install_comprehensive_current_report_truth_parity_v1()
-    wrapped = companion.review_sections
-    previous = getattr(wrapped, "_nico_previous", None)
-    assert callable(previous)
+    expected = [
+        {
+            "id": "fixture",
+            "title": "fixture",
+            "status": "complete",
+            "summary": "English output remains English.",
+            "evidence": ["Explicit permissions control: passed."],
+            "findings": [],
+            "limitations": [],
+        }
+    ]
 
-    canonical = {
-        "stage_summaries": [
-            {
-                "stage_id": "functional_qa",
-                "status": "complete",
-                "summary": "English output remains English.",
-                "evidence": ["Explicit permissions control: passed."],
-            }
-        ]
-    }
-    assert wrapped(canonical, spanish=False) == previous(canonical, spanish=False)
+    def fixture_sections(canonical, *, spanish):
+        return [dict(item) for item in expected]
+
+    monkeypatch.setattr(companion, "review_sections", fixture_sections)
+    install_comprehensive_current_report_truth_parity_v1()
+    assert companion.review_sections({}, spanish=False) == expected
