@@ -60,6 +60,53 @@ def _localized_pdf_contract(run_id: str, report_language: str) -> tuple[str, str
     return artifact_url_suffix, expected_filename
 
 
+def _content_disposition_filename(value: str) -> str:
+    encoded = re.search(r"filename\*=UTF-8''([^;]+)", value, re.I)
+    quoted = re.search(r'filename="([^"]+)"', value, re.I)
+    plain = re.search(r"filename=([^;]+)", value, re.I)
+    candidate = (
+        encoded.group(1)
+        if encoded
+        else quoted.group(1)
+        if quoted
+        else plain.group(1).strip().strip('"')
+        if plain
+        else ""
+    )
+    return unquote(candidate).strip()
+
+
+def _validate_response_filename(
+    content_disposition: str,
+    run_id: str,
+    report_language: str,
+) -> str:
+    """Verify the server's canonical repository-qualified PDF filename.
+
+    The UI gesture contract intentionally remains exact-run and locale-bound. The
+    localized report endpoint can add repository provenance to Content-Disposition,
+    so the response filename is validated by its canonical prefix and immutable
+    run/locale/lifecycle suffix rather than by equality with the UI fallback name.
+    """
+
+    assert report_language in {"en", "es-MX"}
+    filename = _content_disposition_filename(content_disposition)
+    assert filename, {"content_disposition": content_disposition}
+    expected_suffix = (
+        f"-{run_id}-{report_language}-"
+        "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    )
+    assert filename.startswith("nico-comprehensive-assessment-"), {
+        "response_filename": filename,
+        "expected_prefix": "nico-comprehensive-assessment-",
+    }
+    assert filename.endswith(expected_suffix), {
+        "response_filename": filename,
+        "expected_suffix": expected_suffix,
+    }
+    return filename
+
+
 def _fetch_captured_pdf(page: Any, requested_url: str, run_id: str) -> dict[str, Any]:
     response = page.request.get(
         requested_url,
@@ -179,11 +226,13 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         pdf_bytes = captured["pdf_bytes"]
         observed_sha = str(captured["pdf_sha256"])
         content_disposition = str(captured["content_disposition"])
+        response_filename = ""
         if content_disposition:
-            assert expected_filename in content_disposition, {
-                "content_disposition": content_disposition,
-                "expected_filename": expected_filename,
-            }
+            response_filename = _validate_response_filename(
+                content_disposition,
+                run_id,
+                report_language,
+            )
         direct_sha = str(direct.get("pdf_sha256") or "").lower()
         assert direct.get("pdf_run_identity_verified") is True, direct
         assert direct.get("pdf_signature_verified") is True, direct
@@ -197,6 +246,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_download_sha256": observed_sha,
             "ui_review_pdf_suggested_filename": expected_filename,
             "ui_review_pdf_requested_filename": requested_filename,
+            "ui_review_pdf_response_filename": response_filename,
             "ui_review_pdf_requested_href": requested_href,
             "ui_review_pdf_report_language": report_language,
             "ui_review_pdf_exact_run_filename_verified": True,
