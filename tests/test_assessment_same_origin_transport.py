@@ -152,8 +152,9 @@ def test_review_pdf_download_preserves_the_original_mobile_user_gesture() -> Non
     assert 'document.addEventListener("click", handleReviewPdfClick, true)' in source
     assert 'event.stopImmediatePropagation()' in source
     assert 'runId.startsWith("comprun_")' in source
-    assert '/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf' in source
-    assert 'link.download = `nico-comprehensive-${runId}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`' in source
+    assert '/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}/pdf' in source
+    assert 'startExactRunDownload(runId, activeReportLanguage());' in source
+    assert 'link.download = `nico-comprehensive-${runId}-${reportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`' in source
     assert 'FINAL-PENDING-APPROVAL.pdf' not in source
     assert 'link.click();' in source
     assert 'fetch(' not in source
