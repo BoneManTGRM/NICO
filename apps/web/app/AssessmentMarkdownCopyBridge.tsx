@@ -1,0 +1,209 @@
+"use client";
+
+import {useEffect, useRef} from "react";
+
+const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
+const COPY_MARKDOWN_LABEL = /(?:copy\s+markdown|copiar\s+markdown)/i;
+const STATUS_ATTR = "data-nico-markdown-action-status";
+
+type CacheEntry = {
+  runId: string;
+  markdown: string;
+  promise: Promise<string> | null;
+};
+
+function spanish(): boolean {
+  return window.location.pathname.startsWith("/es/")
+    || document.documentElement.lang.toLowerCase().startsWith("es");
+}
+
+function visibleRunId(): string {
+  const fromQuery = new URL(window.location.href).searchParams.get("run_id")?.trim() || "";
+  if (fromQuery.startsWith("comprun_")) return fromQuery;
+
+  for (const selector of [
+    ".nico-identifier-value code[title]",
+    "[data-mobile-compact-terminal='true'] code[title]",
+    "[data-assessment-run-state='true'] h2[title]",
+  ]) {
+    for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+      const value = String(node.getAttribute("title") || "").trim();
+      if (value.startsWith("comprun_")) return value;
+    }
+  }
+  return "";
+}
+
+function markdownHref(runId: string): string {
+  return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`;
+}
+
+function showStatus(container: Element | null, message: string, failure = false): void {
+  if (!container) return;
+  let status = container.querySelector<HTMLElement>(`[${STATUS_ATTR}]`);
+  if (!status) {
+    status = document.createElement("span");
+    status.setAttribute(STATUS_ATTR, "true");
+    status.className = "muted";
+    container.appendChild(status);
+  }
+  status.setAttribute("role", failure ? "alert" : "status");
+  status.textContent = message;
+  window.setTimeout(() => {
+    if (status?.isConnected && status.textContent === message) status.remove();
+  }, failure ? 8_000 : 2_500);
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (!text.trim()) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // A bounded legacy path keeps WebKit and hardened desktop browser profiles usable
+    // when the Clipboard API is unavailable or denied.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  textarea.remove();
+  return copied;
+}
+
+async function loadMarkdown(entry: CacheEntry): Promise<string> {
+  if (entry.markdown) return entry.markdown;
+  if (entry.promise) return entry.promise;
+
+  entry.promise = (async () => {
+    const response = await fetch(markdownHref(entry.runId), {
+      method: "GET",
+      cache: "no-store",
+      headers: {Accept: "text/markdown"},
+    });
+    if (!response.ok) throw new Error(`markdown_http_${response.status}`);
+    const markdown = await response.text();
+    if (!markdown.trim()) throw new Error("markdown_empty");
+    entry.markdown = markdown;
+    return markdown;
+  })();
+
+  try {
+    return await entry.promise;
+  } finally {
+    entry.promise = null;
+  }
+}
+
+/**
+ * Keep the terminal Copy Markdown action usable across desktop Chromium and WebKit.
+ *
+ * The exact-run Markdown is prefetched when the terminal action bar becomes available,
+ * so the normal click only performs the clipboard write and preserves browser user
+ * activation. A click can retry a failed prefetch, but every outcome is visible; the
+ * control never remains in the old "looks enabled but silently does nothing" state.
+ */
+export default function AssessmentMarkdownCopyBridge() {
+  const cache = useRef<CacheEntry | null>(null);
+  const guardedUntil = useRef(0);
+
+  useEffect(() => {
+    function entryForVisibleRun(): CacheEntry | null {
+      const runId = visibleRunId();
+      if (!runId) return null;
+      if (!cache.current || cache.current.runId !== runId) {
+        cache.current = {runId, markdown: "", promise: null};
+      }
+      return cache.current;
+    }
+
+    function prefetch(): void {
+      const actions = document.querySelector(REPORT_ACTIONS_SELECTOR);
+      if (!actions) return;
+      const entry = entryForVisibleRun();
+      if (!entry || entry.markdown || entry.promise) return;
+      void loadMarkdown(entry).catch(() => {
+        // Explicit click below retries and renders the localized failure state.
+      });
+    }
+
+    async function handleCopyMarkdownClick(event: MouseEvent): Promise<void> {
+      const target = event.target instanceof Element ? event.target : null;
+      const button = target?.closest("button");
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+      const actions = button.closest(REPORT_ACTIONS_SELECTOR);
+      if (!actions || !COPY_MARKDOWN_LABEL.test(String(button.textContent || "").trim())) return;
+
+      const now = Date.now();
+      if (now < guardedUntil.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        return;
+      }
+      guardedUntil.current = now + 1_200;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const entry = entryForVisibleRun();
+      if (!entry) {
+        showStatus(
+          actions,
+          spanish() ? "No se pudo determinar la ejecución exacta." : "The exact run could not be determined.",
+          true,
+        );
+        return;
+      }
+
+      try {
+        if (!entry.markdown) {
+          showStatus(actions, spanish() ? "Preparando Markdown…" : "Preparing Markdown…");
+        }
+        const markdown = entry.markdown || await loadMarkdown(entry);
+        if (!await copyText(markdown)) throw new Error("clipboard_write_failed");
+        showStatus(actions, spanish() ? "Markdown copiado." : "Markdown copied.");
+      } catch {
+        showStatus(
+          actions,
+          spanish()
+            ? "No se pudo copiar Markdown. Vuelve a intentarlo."
+            : "Markdown could not be copied. Try again.",
+          true,
+        );
+      }
+    }
+
+    document.addEventListener("click", handleCopyMarkdownClick, true);
+    const observer = new MutationObserver(() => window.requestAnimationFrame(prefetch));
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["disabled", "data-assessment-report-ready"],
+    });
+    prefetch();
+
+    return () => {
+      document.removeEventListener("click", handleCopyMarkdownClick, true);
+      observer.disconnect();
+    };
+  }, []);
+
+  return null;
+}
+
+export {copyText, markdownHref, visibleRunId};
