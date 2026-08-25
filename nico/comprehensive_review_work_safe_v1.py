@@ -249,8 +249,7 @@ def _validate_group_disposition(record: Mapping[str, Any], payload: Mapping[str,
     if not isinstance(cluster, Mapping):
         raise ValueError("review_work_cluster_id_invalid")
     if (
-        cluster.get("grouped_review_eligible") is not True
-        or cluster.get("homogeneous_evidence") is not True
+        cluster.get("homogeneous_evidence") is not True
         or cluster.get("homogeneous_verdict") is not True
     ):
         raise ValueError("review_work_group_disposition_requires_homogeneous_group")
@@ -281,6 +280,8 @@ def _validate_group_disposition(record: Mapping[str, Any], payload: Mapping[str,
             "review_work_group_disposition_contains_non_bulk_reviewable_candidates:"
             + ",".join(sorted(set(unsafe)))
         )
+    if cluster.get("grouped_review_eligible") is not True:
+        raise ValueError("review_work_group_disposition_requires_homogeneous_group")
 
 
 def apply_review_work_action(
