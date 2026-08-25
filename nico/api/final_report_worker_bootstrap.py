@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from nico.api.terminal_authority_bootstrap import app
+from nico.comprehensive_canonical_truth_hash_compat_v1 import (
+    install_canonical_truth_hash_compat,
+)
 from nico.comprehensive_spanish_assessment_scope_v97 import (
     install_comprehensive_spanish_assessment_scope_v97,
 )
@@ -17,7 +20,7 @@ from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v5"
+VERSION = "nico.api.final_report_worker_bootstrap.v6"
 
 # This module is the isolated final-report renderer entry point. It deliberately starts
 # from the same terminal report/language authority used by production, then adds only
@@ -194,6 +197,18 @@ if SPANISH_FINAL_REPORT_RUNTIME_CACHE.get("human_review_required") is not True:
 if SPANISH_FINAL_REPORT_RUNTIME_CACHE.get("client_delivery_allowed") is not False:
     raise RuntimeError("Renderer worker must block unapproved client delivery")
 
+# The renderer worker is a separate process, so parent-process monkey patches do not
+# automatically cross this boundary. Bind the canonical truth hash only after every
+# worker-local report wrapper above has been installed. This makes the hash describe the
+# final canonical JSON actually returned to and persisted by the parent, preventing new
+# terminal runs from being born with a stale pre-normalization hash.
+CANONICAL_TRUTH_HASH_COMPAT = install_canonical_truth_hash_compat()
+setattr(app.state, "nico_worker_canonical_truth_hash_compat", CANONICAL_TRUTH_HASH_COMPAT)
+if CANONICAL_TRUTH_HASH_COMPAT.get("builder_hash_sync_bound") is not True:
+    raise RuntimeError("Renderer worker did not bind canonical truth hash synchronization")
+if CANONICAL_TRUTH_HASH_COMPAT.get("unknown_hash_mismatch_fails_closed") is not True:
+    raise RuntimeError("Renderer worker weakened unknown canonical hash mismatches")
+
 FINAL_REPORT_WORKER_RUNTIME = {
     "artifact_schema": VERSION,
     "status": "ready",
@@ -203,6 +218,7 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "spanish_canonical_evidence_literals_bound": True,
     "spanish_current_report_copy_contract_bound": True,
     "spanish_final_report_runtime_cache_bound": True,
+    "canonical_truth_hash_sync_bound": True,
     "canonical_acceptance_terminal_period_loss_supported": True,
     "production_assessment_scope_translation_supported": True,
     "canonical_evidence_literals_preserved": True,
@@ -219,6 +235,7 @@ setattr(app.state, "nico_final_report_worker_runtime", FINAL_REPORT_WORKER_RUNTI
 
 
 __all__ = [
+    "CANONICAL_TRUTH_HASH_COMPAT",
     "FINAL_REPORT_WORKER_RUNTIME",
     "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION",
