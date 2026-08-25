@@ -57,7 +57,12 @@ def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
     }
     pyproject = PYPROJECT.read_text(encoding="utf-8")
 
-    assert "pypdf==6.15.0" in requirements
+    pinned_pypdf = next(
+        requirement.split("==", 1)[1]
+        for requirement in requirements
+        if requirement.startswith("pypdf==")
+    )
+    assert _semver_core(pinned_pypdf) >= (6, 15, 0)
     assert "pypdf==6.14.2" not in requirements
     assert '"pypdf>=6.15.0,<7"' in pyproject
     assert '"pypdf>=6.14.2,<7"' not in pyproject
