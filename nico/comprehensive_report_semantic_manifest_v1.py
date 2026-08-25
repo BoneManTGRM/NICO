@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-VERSION = "nico.comprehensive-report-semantic-manifest.v1.1"
+VERSION = "nico.comprehensive-report-semantic-manifest.v1.2"
 
 
 def _section(
@@ -65,6 +65,15 @@ REPORT_SECTION_MANIFEST: tuple[dict[str, Any], ...] = (
     _section("six_month_roadmap", "Six-Month Roadmap", "Hoja de ruta de seis meses", "Evidence-bound roadmap guidance pending stakeholder authority."),
     _section("staffing_sequencing_cost", "Staffing, Sequencing, and Cost", "Personal, secuencia y costo", "Role, sequencing, and cost context without invented commitments."),
     _section("compact_finding_remediation_register", "Compact Finding and Remediation Register", "Registro compacto de hallazgos y remediación", "Compact material finding and remediation register."),
+    _section(
+        "compact_finding_remediation_register_continuation",
+        "Compact Finding and Remediation Register · continuation",
+        "Registro compacto de hallazgos y remediación · continuación",
+        "Localized continuation title for the compact finding and remediation register.",
+        toc=False,
+        review_package=False,
+        required=False,
+    ),
     _section("complete_exact_source_index", "Complete Exact-Source Index", "Índice completo de fuentes exactas", "Exact-source identity index for retained findings."),
     _section("client_evidence_summary", "Client Evidence Summary", "Resumen de evidencia del cliente", "Client-supplied evidence and remaining gaps."),
     _section("human_review_acceptance_gate", "Human Review and Acceptance Gate", "Puerta de revisión humana y aceptación", "Explicit human-review and acceptance boundary."),
