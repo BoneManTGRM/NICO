@@ -6,7 +6,7 @@ import re
 from copy import deepcopy
 from typing import Any, Mapping
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 
 from nico.comprehensive_report_package import (
     _canonical_hash,
@@ -23,6 +23,7 @@ from nico.comprehensive_spanish_canonical_report_v87 import (
 
 VERSION = "nico.comprehensive_same_run_locale_report.v1"
 ROUTE = "/assessment/comprehensive-run/{run_id}/localized-report/{report_language}"
+PDF_ROUTE = f"{ROUTE}/pdf"
 SUPPORTED_REPORT_LANGUAGES = ("en", "es-MX")
 
 
@@ -85,7 +86,9 @@ def _english_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
     html = _semantic_html(markdown, title)
     encoded, error, page_count = _pdf(identity, assessment, stages, generated_at)
     if error or not encoded:
-        raise ValueError(f"canonical English PDF renderer failed: {error or 'empty PDF'}")
+        raise ValueError(
+            f"canonical English PDF renderer failed: {error or 'empty PDF'}"
+        )
     pdf_bytes = base64.b64decode(encoded)
     if not pdf_bytes.startswith(b"%PDF"):
         raise ValueError("canonical English PDF renderer returned an invalid PDF")
@@ -99,7 +102,11 @@ def _english_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _spanish_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
     repository = str(identity.get("repository") or "repository")
     markdown = render_spanish_markdown(canonical)
     title = f"Evaluación Técnica Integral NICO — {repository}"
@@ -114,7 +121,9 @@ def _spanish_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _render_target(canonical: Mapping[str, Any], report_language: str) -> dict[str, Any]:
+def _render_target(
+    canonical: Mapping[str, Any], report_language: str
+) -> dict[str, Any]:
     if report_language == "en":
         return _english_artifacts(canonical)
     if report_language == "es-MX":
@@ -123,12 +132,20 @@ def _render_target(canonical: Mapping[str, Any], report_language: str) -> dict[s
 
 
 def _safe_repository(value: Any) -> str:
-    normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "repository")).strip("-")
+    normalized = re.sub(
+        r"[^A-Za-z0-9_.-]+", "-", str(value or "repository")
+    ).strip("-")
     return normalized or "repository"
 
 
-def _localized_filename(*, canonical: Mapping[str, Any], run_id: str, report_language: str) -> str:
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+def _localized_filename(
+    *, canonical: Mapping[str, Any], run_id: str, report_language: str
+) -> str:
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
     repository = _safe_repository(identity.get("repository"))
     locale = "en" if report_language == "en" else "es-MX"
     return (
@@ -141,7 +158,7 @@ def build_same_run_locale_report(
     status: Mapping[str, Any],
     report_language: str,
 ) -> dict[str, Any]:
-    """Render a second presentation locale from one terminal immutable run.
+    """Render a presentation locale from one terminal immutable run.
 
     This function is deliberately read-only. It neither resumes the assessment nor
     changes review, approval, acceptance, or delivery state. Both language outputs are
@@ -152,8 +169,12 @@ def build_same_run_locale_report(
     if status.get("terminal") is not True:
         raise ValueError("terminal_report_required")
 
-    reports = status.get("reports") if isinstance(status.get("reports"), Mapping) else {}
-    canonical = reports.get("json") if isinstance(reports.get("json"), Mapping) else {}
+    reports = (
+        status.get("reports") if isinstance(status.get("reports"), Mapping) else {}
+    )
+    canonical = (
+        reports.get("json") if isinstance(reports.get("json"), Mapping) else {}
+    )
     if not canonical:
         raise ValueError("terminal_canonical_report_json_required")
 
@@ -163,12 +184,19 @@ def build_same_run_locale_report(
     if expected_truth_sha256 and expected_truth_sha256 != canonical_truth_sha256:
         raise ValueError("canonical_truth_hash_mismatch")
 
-    source_language = _normalize_report_language(status.get("report_language") or "en")
+    source_language = _normalize_report_language(
+        status.get("report_language") or "en"
+    )
     if target_language == source_language:
         markdown = reports.get("markdown")
         html = reports.get("html")
         encoded_pdf = reports.get("pdf_base64")
-        if isinstance(markdown, str) and isinstance(html, str) and isinstance(encoded_pdf, str) and encoded_pdf:
+        if (
+            isinstance(markdown, str)
+            and isinstance(html, str)
+            and isinstance(encoded_pdf, str)
+            and encoded_pdf
+        ):
             try:
                 pdf_bytes = base64.b64decode(encoded_pdf, validate=True)
             except Exception as exc:
@@ -187,7 +215,12 @@ def build_same_run_locale_report(
     else:
         artifacts = _render_target(canonical_copy, target_language)
 
-    run_id = str(status.get("run_id") or (canonical_copy.get("identity") or {}).get("run_id") or "")
+    identity = (
+        canonical_copy.get("identity")
+        if isinstance(canonical_copy.get("identity"), Mapping)
+        else {}
+    )
+    run_id = str(status.get("run_id") or identity.get("run_id") or "")
     if not run_id:
         raise ValueError("run_id_required")
 
@@ -233,36 +266,80 @@ def build_same_run_locale_report(
     return result
 
 
+def build_same_run_locale_pdf_response(
+    status: Mapping[str, Any], report_language: str
+) -> Response:
+    projection = build_same_run_locale_report(status, report_language)
+    report = projection["report"]
+    try:
+        pdf_bytes = base64.b64decode(report["pdf_base64"], validate=True)
+    except Exception as exc:
+        raise ValueError("localized_report_pdf_invalid") from exc
+    if not pdf_bytes.startswith(b"%PDF"):
+        raise ValueError("localized_report_pdf_invalid")
+
+    expected_sha256 = str(report.get("pdf_sha256") or "")
+    actual_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    if expected_sha256 and expected_sha256 != actual_sha256:
+        raise ValueError("localized_report_pdf_hash_mismatch")
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{report["pdf_filename"]}"',
+            "X-NICO-Run-ID": str(projection["run_id"]),
+            "X-NICO-Report-Language": str(projection["report_language"]),
+            "X-NICO-Canonical-Truth-SHA256": str(
+                projection["canonical_truth_sha256"]
+            ),
+            "X-NICO-Assessment-Rerun": "false",
+        },
+    )
+
+
+def _controller_status(target: FastAPI, run_id: str) -> Mapping[str, Any]:
+    controller = getattr(target.state, "comprehensive_api_controller", None)
+    if controller is None or not callable(getattr(controller, "status", None)):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "blocked",
+                "reason": "comprehensive_controller_unavailable",
+            },
+        )
+    try:
+        return controller.status(run_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "status": "not_found",
+                "reason": "comprehensive_run_not_found",
+            },
+        ) from exc
+
+
+def _projection_http_error(exc: ValueError) -> HTTPException:
+    reason = str(exc)
+    status_code = 422 if reason == "unsupported_report_language" else 409
+    return HTTPException(
+        status_code=status_code,
+        detail={"status": "blocked", "reason": reason},
+    )
+
+
 def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
-    """Install one read-only bilingual report projection route exactly once."""
+    """Install read-only bilingual report projection routes exactly once."""
 
     if _route_count(target, "GET", ROUTE) == 0:
 
         def localized_report(run_id: str, report_language: str) -> dict[str, Any]:
-            controller = getattr(target.state, "comprehensive_api_controller", None)
-            if controller is None or not callable(getattr(controller, "status", None)):
-                raise HTTPException(
-                    status_code=503,
-                    detail={
-                        "status": "blocked",
-                        "reason": "comprehensive_controller_unavailable",
-                    },
-                )
             try:
-                status = controller.status(run_id)
+                status = _controller_status(target, run_id)
                 return build_same_run_locale_report(status, report_language)
-            except KeyError as exc:
-                raise HTTPException(
-                    status_code=404,
-                    detail={"status": "not_found", "reason": "comprehensive_run_not_found"},
-                ) from exc
             except ValueError as exc:
-                reason = str(exc)
-                status_code = 422 if reason == "unsupported_report_language" else 409
-                raise HTTPException(
-                    status_code=status_code,
-                    detail={"status": "blocked", "reason": reason},
-                ) from exc
+                raise _projection_http_error(exc) from exc
 
         target.add_api_route(
             ROUTE,
@@ -272,11 +349,32 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
         )
         target.openapi_schema = None
 
+    if _route_count(target, "GET", PDF_ROUTE) == 0:
+
+        def localized_report_pdf(run_id: str, report_language: str) -> Response:
+            try:
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+            except ValueError as exc:
+                raise _projection_http_error(exc) from exc
+
+        target.add_api_route(
+            PDF_ROUTE,
+            localized_report_pdf,
+            methods=["GET"],
+            tags=["comprehensive"],
+            response_class=Response,
+        )
+        target.openapi_schema = None
+
     route_count = _route_count(target, "GET", ROUTE)
+    pdf_route_count = _route_count(target, "GET", PDF_ROUTE)
     status = {
         "artifact_schema": VERSION,
         "route": ROUTE,
         "route_count": route_count,
+        "pdf_route": PDF_ROUTE,
+        "pdf_route_count": pdf_route_count,
         "supported_report_languages": list(SUPPORTED_REPORT_LANGUAGES),
         "same_canonical_run": True,
         "assessment_rerun": False,
@@ -289,9 +387,11 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
 
 
 __all__ = [
+    "PDF_ROUTE",
     "ROUTE",
     "SUPPORTED_REPORT_LANGUAGES",
     "VERSION",
+    "build_same_run_locale_pdf_response",
     "build_same_run_locale_report",
     "install_same_run_locale_report",
 ]
