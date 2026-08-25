@@ -38,7 +38,11 @@ function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): v
   const link = document.createElement("a");
   link.href = exactRunPdfHref(runId, reportLanguage);
   link.download = `nico-comprehensive-${runId}-${reportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`;
-  link.rel = "noopener";
+  // Keep artifact retrieval observational even when WebKit ignores the download
+  // attribute for a streamed response. A separate browsing context prevents the
+  // completed assessment SPA from being replaced by the PDF document.
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
   link.hidden = true;
   link.setAttribute("data-nico-review-pdf-download", "true");
   document.body.appendChild(link);
@@ -56,6 +60,8 @@ function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): v
  * localized artifact route validates exact run identity, canonical truth, strict
  * base64, the PDF signature, and SHA-256. This bridge therefore hands the
  * same-origin download directly to the browser without rerunning the assessment.
+ * The separate browsing context is deliberate: if a browser elects to display the
+ * PDF instead of downloading it, the completed NICO assessment remains mounted.
  */
 export default function AssessmentReviewPdfDownload() {
   const guardedUntil = useRef(0);
