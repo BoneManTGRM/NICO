@@ -5,6 +5,8 @@ import re
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
 
+# Keep the established evidence-schema identifier: production Chromium/WebKit
+# workflows consume this version and the stronger lifecycle fields are additive.
 VERSION = "nico.mobile-pdf-download-action-proof.v1"
 REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
 # Compatibility marker for the existing workflow contract. The legacy Playwright
@@ -81,13 +83,7 @@ def _validate_response_filename(
     run_id: str,
     report_language: str,
 ) -> str:
-    """Verify the server's canonical repository-qualified PDF filename.
-
-    The UI gesture contract intentionally remains exact-run and locale-bound. The
-    localized report endpoint can add repository provenance to Content-Disposition,
-    so the response filename is validated by its canonical prefix and immutable
-    run/locale/lifecycle suffix rather than by equality with the UI fallback name.
-    """
+    """Verify the server's canonical repository-qualified PDF filename."""
 
     assert report_language in {"en", "es-MX"}
     filename = _content_disposition_filename(content_disposition)
@@ -156,15 +152,16 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         )
         expected_origin = urlparse(frontend_origin)
 
-        # The production bridge creates a same-origin hidden anchor and invokes it
-        # inside the original mobile click. Browser-managed download requests are
-        # not a reliable Playwright page-request event, so prove the real gesture
-        # target from the anchor itself, then independently validate that exact URL.
+        # Prove the real user-gesture target from the transient anchor, then fetch that
+        # exact immutable URL independently. The separate browsing context is part of
+        # the lifecycle contract: if WebKit displays application/pdf instead of honoring
+        # download, it must not replace or unload the completed assessment tab.
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
               window.__nicoReviewPdfDownloadHref = '';
               window.__nicoReviewPdfDownloadRel = '';
+              window.__nicoReviewPdfDownloadTarget = '';
               window.__nicoReviewPdfObserver?.disconnect?.();
               const observer = new MutationObserver(records => {
                 for (const record of records) {
@@ -177,6 +174,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                       window.__nicoReviewPdfDownloadAttribute = link.getAttribute('download') || '';
                       window.__nicoReviewPdfDownloadHref = link.getAttribute('href') || '';
                       window.__nicoReviewPdfDownloadRel = link.getAttribute('rel') || '';
+                      window.__nicoReviewPdfDownloadTarget = link.getAttribute('target') || '';
                       observer.disconnect();
                       return;
                     }
@@ -188,6 +186,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             }"""
         )
 
+        original_page_url = str(page.url)
         try:
             pdf_button.click()
             page.wait_for_function(
@@ -206,6 +205,9 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         requested_rel = str(
             page.evaluate("() => String(window.__nicoReviewPdfDownloadRel || '')")
         )
+        requested_target = str(
+            page.evaluate("() => String(window.__nicoReviewPdfDownloadTarget || '')")
+        )
         assert requested_href, "Review PDF action did not create an exact-run download href"
         requested_url = urljoin(frontend_origin.rstrip("/") + "/", requested_href)
         parsed_requested = urlparse(requested_url)
@@ -218,7 +220,9 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "requested_filename": requested_filename,
             "expected_filename": expected_filename,
         }
-        assert requested_rel == "noopener", requested_rel
+        rel_tokens = {token.casefold() for token in requested_rel.split() if token.strip()}
+        assert {"noopener", "noreferrer"}.issubset(rel_tokens), requested_rel
+        assert requested_target == "_blank", requested_target
         assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename, requested_filename
         assert "FINAL-PENDING-APPROVAL" not in requested_filename, requested_filename
 
@@ -237,6 +241,10 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         assert direct.get("pdf_run_identity_verified") is True, direct
         assert direct.get("pdf_signature_verified") is True, direct
         page.wait_for_timeout(250)
+        assert page.url == original_page_url, {
+            "original_page_url": original_page_url,
+            "observed_page_url": page.url,
+        }
         assert _artifact_status_cleared(page), "Review PDF action remained stuck on Preparing file"
 
         return {
@@ -259,6 +267,9 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_artifact_status_cleared": True,
             "ui_review_pdf_original_user_gesture_preserved": True,
             "ui_review_pdf_lifecycle_filename_verified": True,
+            "ui_review_pdf_target_blank_verified": True,
+            "ui_review_pdf_noopener_noreferrer_verified": True,
+            "ui_review_pdf_original_assessment_page_preserved": True,
             "ui_review_pdf_proof_version": VERSION,
         }
 
