@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from scripts import mobile_pdf_download_action_proof_v1 as proof
 
 
@@ -25,6 +27,33 @@ def test_mobile_pdf_download_proof_tracks_localized_report_contract() -> None:
         "nico-comprehensive-comprun_contract-es-MX-"
         "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
     )
+
+
+def test_server_content_disposition_accepts_repository_qualified_exact_run_filename() -> None:
+    proof._assert_server_content_disposition(
+        'attachment; filename="nico-comprehensive-assessment-BoneManTGRM-NICO-'
+        'comprun_contract-en-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"',
+        run_id="comprun_contract",
+        report_language="en",
+    )
+
+
+def test_server_content_disposition_remains_exact_run_and_pdf_fail_closed() -> None:
+    with pytest.raises(AssertionError):
+        proof._assert_server_content_disposition(
+            'attachment; filename="nico-comprehensive-assessment-BoneManTGRM-NICO-'
+            'comprun_other-en-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"',
+            run_id="comprun_contract",
+            report_language="en",
+        )
+
+    with pytest.raises(AssertionError):
+        proof._assert_server_content_disposition(
+            'attachment; filename="nico-comprehensive-assessment-BoneManTGRM-NICO-'
+            'comprun_contract-en-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf.json"',
+            run_id="comprun_contract",
+            report_language="en",
+        )
 
 
 def test_mobile_pdf_download_proof_uses_real_anchor_contract_not_download_events() -> None:
