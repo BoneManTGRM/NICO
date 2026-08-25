@@ -59,6 +59,10 @@ function exactRunPdfHref(runId: string, reportLanguage: ReportLanguage = "en"): 
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}/pdf`;
 }
 
+function exactRunPdfFilename(runId: string, reportLanguage: ReportLanguage): string {
+  return `nico-comprehensive-${runId}-${reportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`;
+}
+
 function exactRunMarkdownHref(runId: string): string {
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`;
 }
@@ -82,6 +86,10 @@ function actionStatus(container: Element | null, message: string, failure = fals
 
 function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): void {
   const href = exactRunPdfHref(runId, reportLanguage);
+  const filename = exactRunPdfFilename(runId, reportLanguage);
+  // Keep the lifecycle-safe suggested filename visible to the browser/proof contract
+  // even though the canonical server Content-Disposition remains authoritative.
+  document.documentElement.dataset.nicoReviewPdfFilename = filename;
   // Execute browser navigation directly inside the original trusted click. Using a
   // synthetic hidden anchor alone proved insufficient on some desktop/WebKit paths:
   // the server returned 200 while the user saw no visible result. A real browsing
@@ -250,4 +258,4 @@ export default function AssessmentReviewPdfDownload() {
   return null;
 }
 
-export {activeReportLanguage, exactRunMarkdownHref, exactRunPdfHref, visibleRunId, writeClipboard};
+export {activeReportLanguage, exactRunMarkdownHref, exactRunPdfFilename, exactRunPdfHref, visibleRunId, writeClipboard};
