@@ -11,6 +11,19 @@ from nico.comprehensive_canonical_truth_hash_compat_v1 import (
 from nico.comprehensive_report_package import _canonical_hash
 
 
+_TRUE_KEYS = (
+    "finding_register_deduplicated",
+    "scanner_state_reconciled",
+    "cross_format_score_truth_synchronized",
+    "pre_render_truth_reconciliation",
+)
+_COUNT_KEYS = (
+    "unique_finding_count",
+    "exact_source_finding_count",
+    "operational_finding_count",
+)
+
+
 def _canonical() -> dict:
     return {
         "service_id": "comprehensive",
@@ -104,6 +117,54 @@ def test_known_historical_post_render_metadata_drift_recovers_exact_stored_truth
     assert status == before
 
 
+def test_partial_known_historical_metadata_signature_recovers() -> None:
+    status, original, expected = _historically_drifted_status()
+    keep = {"scanner_state_reconciled", "unique_finding_count"}
+    for key in (*_TRUE_KEYS, *_COUNT_KEYS):
+        if key not in keep:
+            status["reports"]["json"].pop(key, None)
+
+    recovered, reconciled = reconcile_known_post_render_hash_drift(status)
+
+    assert reconciled is True
+    assert recovered["reports"]["json"] == original
+    assert _canonical_hash(recovered["reports"]["json"]) == expected
+
+
+def test_single_known_historical_metadata_field_recovers() -> None:
+    status, original, expected = _historically_drifted_status()
+    keep = {"pre_render_truth_reconciliation"}
+    for key in (*_TRUE_KEYS, *_COUNT_KEYS):
+        if key not in keep:
+            status["reports"]["json"].pop(key, None)
+
+    recovered, reconciled = reconcile_known_post_render_hash_drift(status)
+
+    assert reconciled is True
+    assert recovered["reports"]["json"] == original
+    assert _canonical_hash(recovered["reports"]["json"]) == expected
+
+
+def test_recovery_removes_only_the_subset_needed_for_exact_stored_hash() -> None:
+    original = _canonical()
+    original["finding_register_deduplicated"] = True
+    expected = _canonical_hash(original)
+    drifted = deepcopy(original)
+    drifted["scanner_state_reconciled"] = True
+    status = {
+        "reports": {
+            "canonical_truth_sha256": expected,
+            "json": drifted,
+        }
+    }
+
+    recovered, reconciled = reconcile_known_post_render_hash_drift(status)
+
+    assert reconciled is True
+    assert recovered["reports"]["json"] == original
+    assert recovered["reports"]["json"]["finding_register_deduplicated"] is True
+
+
 def test_unknown_canonical_truth_mismatch_remains_fail_closed() -> None:
     status, _, _ = _historically_drifted_status()
     status["reports"]["canonical_truth_sha256"] = "0" * 64
@@ -115,14 +176,57 @@ def test_unknown_canonical_truth_mismatch_remains_fail_closed() -> None:
     assert _canonical_hash(recovered["reports"]["json"]) != "0" * 64
 
 
-def test_recovery_requires_complete_exact_known_metadata_signature() -> None:
+def test_partial_known_drift_plus_unknown_field_remains_fail_closed() -> None:
     status, _, _ = _historically_drifted_status()
-    del status["reports"]["json"]["scanner_state_reconciled"]
+    keep = {"scanner_state_reconciled", "unique_finding_count"}
+    for key in (*_TRUE_KEYS, *_COUNT_KEYS):
+        if key not in keep:
+            status["reports"]["json"].pop(key, None)
+    status["reports"]["json"]["assessor_only_flag"] = True
+    before = deepcopy(status)
 
     recovered, reconciled = reconcile_known_post_render_hash_drift(status)
 
     assert reconciled is False
-    assert recovered == status
+    assert recovered == before
+
+
+def test_known_field_with_unexpected_value_remains_fail_closed() -> None:
+    status, _, _ = _historically_drifted_status()
+    status["reports"]["json"]["scanner_state_reconciled"] = False
+    before = deepcopy(status)
+
+    recovered, reconciled = reconcile_known_post_render_hash_drift(status)
+
+    assert reconciled is False
+    assert recovered == before
+
+
+def test_invalid_count_value_is_not_removed() -> None:
+    status, _, _ = _historically_drifted_status()
+    status["reports"]["json"]["unique_finding_count"] = "0"
+    before = deepcopy(status)
+
+    recovered, reconciled = reconcile_known_post_render_hash_drift(status)
+
+    assert reconciled is False
+    assert recovered == before
+
+
+def test_mismatch_without_known_post_render_metadata_remains_fail_closed() -> None:
+    original = _canonical()
+    status = {
+        "reports": {
+            "canonical_truth_sha256": "0" * 64,
+            "json": original,
+        }
+    }
+    before = deepcopy(status)
+
+    recovered, reconciled = reconcile_known_post_render_hash_drift(status)
+
+    assert reconciled is False
+    assert recovered == before
 
 
 def test_installed_compat_restores_affected_frozen_pdf_without_weakening_truth(monkeypatch) -> None:
