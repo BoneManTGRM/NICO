@@ -5,7 +5,7 @@ from copy import deepcopy
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-VERSION = "nico.comprehensive_report_review_integrity.v1"
+VERSION = "nico.comprehensive_report_review_integrity.v1.1"
 _DISPLAY_METADATA: ContextVar[dict[str, str]] = ContextVar(
     "nico_comprehensive_display_metadata",
     default={},
@@ -58,8 +58,9 @@ def _display_values(record: Mapping[str, Any]) -> dict[str, str]:
 
 def _install_intake_display_metadata() -> dict[str, bool]:
     import nico.comprehensive_api_routes as routes
+    import nico.comprehensive_run_service as run_service_module
     from nico.comprehensive_api_controller import ComprehensiveApiController
-    from nico.comprehensive_run_service import ComprehensiveRunService
+    from nico.comprehensive_run_record import _record_hash
 
     if not getattr(routes._intake, "_nico_display_metadata_v1", False):
         original_intake = routes._intake
@@ -107,35 +108,36 @@ def _install_intake_display_metadata() -> dict[str, bool]:
         controller_start_with_display_metadata._nico_display_metadata_v1 = True
         ComprehensiveApiController.start = controller_start_with_display_metadata
 
-    if not getattr(ComprehensiveRunService.start, "_nico_display_metadata_v1", False):
-        original_service_start = ComprehensiveRunService.start
+    # Persist optional display metadata in the initial canonical record before the
+    # durable store creates it. This preserves the store's one-revision-per-save
+    # contract and keeps the record integrity hash valid.
+    if not getattr(run_service_module.create_comprehensive_run_record, "_nico_display_metadata_v1", False):
+        original_create_record = run_service_module.create_comprehensive_run_record
 
-        def service_start_with_display_metadata(self, *args, **kwargs):
-            record = original_service_start(self, *args, **kwargs)
+        def create_record_with_display_metadata(*args, **kwargs):
+            record = original_create_record(*args, **kwargs)
             values = dict(_DISPLAY_METADATA.get() or {})
             customer_name = _text(values.get("customer_name"), 180)
             project_name = _text(values.get("project_name"), 180)
             if not customer_name and not project_name:
                 return record
-            updated = deepcopy(record)
-            identity = dict(updated.get("identity") or {})
+            identity = dict(record.get("identity") or {})
             if customer_name:
                 identity["customer_name"] = customer_name
             if project_name:
                 identity["project_name"] = project_name
-            updated["identity"] = identity
-            return self._store.save(
-                updated,
-                expected_revision=int(record.get("revision") or 0),
-            )
+            record["identity"] = identity
+            record["integrity_sha256"] = _record_hash(record)
+            return record
 
-        service_start_with_display_metadata._nico_display_metadata_v1 = True
-        ComprehensiveRunService.start = service_start_with_display_metadata
+        create_record_with_display_metadata._nico_display_metadata_v1 = True
+        run_service_module.create_comprehensive_run_record = create_record_with_display_metadata
 
     return {
         "intake_display_metadata_bound": True,
         "direct_start_display_metadata_bound": True,
-        "display_metadata_persisted_in_canonical_run_identity": True,
+        "display_metadata_persisted_in_initial_canonical_write": True,
+        "post_create_revision_write_removed": True,
     }
 
 
