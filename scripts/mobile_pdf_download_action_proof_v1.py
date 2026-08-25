@@ -109,6 +109,10 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         )
         expected_origin = urlparse(frontend_origin)
 
+        # The production bridge creates a same-origin hidden anchor and invokes it
+        # inside the original mobile click. Browser-managed download requests are
+        # not a reliable Playwright page-request event, so prove the real gesture
+        # target from the anchor itself, then independently validate that exact URL.
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
@@ -137,14 +141,8 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             }"""
         )
 
-        browser_request_url = ""
         try:
-            with page.expect_request(
-                lambda request: unquote(urlparse(request.url).path) == artifact_url_suffix,
-                timeout=45_000,
-            ) as request_info:
-                pdf_button.click()
-            browser_request_url = str(request_info.value.url or "")
+            pdf_button.click()
             page.wait_for_function(
                 "() => Boolean(window.__nicoReviewPdfDownloadHref)",
                 timeout=5_000,
@@ -164,15 +162,11 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         assert requested_href, "Review PDF action did not create an exact-run download href"
         requested_url = urljoin(frontend_origin.rstrip("/") + "/", requested_href)
         parsed_requested = urlparse(requested_url)
-        parsed_browser_request = urlparse(browser_request_url)
         assert parsed_requested.scheme == expected_origin.scheme, requested_url
         assert parsed_requested.netloc == expected_origin.netloc, requested_url
         assert unquote(parsed_requested.path) == artifact_url_suffix, (
             f"UI review PDF action did not target the exact localized run artifact: {requested_href}"
         )
-        assert parsed_browser_request.scheme == expected_origin.scheme, browser_request_url
-        assert parsed_browser_request.netloc == expected_origin.netloc, browser_request_url
-        assert unquote(parsed_browser_request.path) == artifact_url_suffix, browser_request_url
         assert requested_filename == expected_filename, {
             "requested_filename": requested_filename,
             "expected_filename": expected_filename,
@@ -204,7 +198,6 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_suggested_filename": expected_filename,
             "ui_review_pdf_requested_filename": requested_filename,
             "ui_review_pdf_requested_href": requested_href,
-            "ui_review_pdf_browser_request_url": browser_request_url,
             "ui_review_pdf_report_language": report_language,
             "ui_review_pdf_exact_run_filename_verified": True,
             "ui_review_pdf_exact_run_href_verified": True,
