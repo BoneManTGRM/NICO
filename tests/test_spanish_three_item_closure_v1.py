@@ -4,6 +4,7 @@ import base64
 from copy import deepcopy
 
 from nico import comprehensive_same_run_locale_report_v1 as same_run
+from nico import comprehensive_spanish_canonical_report_v87 as spanish_renderer
 from nico import comprehensive_spanish_presentation_parity_v1 as spanish
 from nico.comprehensive_current_report_truth_parity_v1 import (
     install_comprehensive_current_report_truth_parity_v1,
@@ -48,6 +49,50 @@ def test_repository_and_reconciliation_sections_share_one_locale_manifest() -> N
     assert SECTION_TITLE_ES_BY_EN["Evidence Reconciliation and Scoring"] == (
         "Conciliación y puntuación de evidencia"
     )
+
+
+def test_same_run_locale_renderers_consume_identical_stage_topology() -> None:
+    canonical = {
+        "identity": {
+            "run_id": "comprun_topology_parity",
+            "repository": "BoneManTGRM/NICO",
+            "commit_sha": "a" * 40,
+            "generated_at": "2026-08-25T14:33:26Z",
+        },
+        "assessment": {},
+        "stage_summaries": [
+            {
+                "stage_id": "repository_delivery_evidence",
+                "title": "Repository and Delivery Evidence",
+                "status": "COMPLETE",
+                "summary": "Exact-commit repository evidence retained.",
+            },
+            {
+                "stage_id": "evidence_reconciliation_and_scoring",
+                "title": "Evidence Reconciliation and Scoring",
+                "status": "COMPLETE",
+                "summary": "Canonical evidence and score truth reconciled.",
+            },
+        ],
+    }
+
+    _, _, english_stages, _ = same_run._render_inputs(canonical)
+    _, _, spanish_stages, _ = spanish_renderer._render_inputs(canonical)
+
+    expected_ids = [
+        "repository_delivery_evidence",
+        "evidence_reconciliation_and_scoring",
+    ]
+    assert [item["stage_id"] for item in english_stages] == expected_ids
+    assert [item["stage_id"] for item in spanish_stages] == expected_ids
+    assert [item["title"] for item in english_stages] == [
+        "Repository and Delivery Evidence",
+        "Evidence Reconciliation and Scoring",
+    ]
+    assert [item["title"] for item in spanish_stages] == [
+        "Evidencia del repositorio y de entrega",
+        "Conciliación y puntuación de evidencia",
+    ]
 
 
 def test_locale_change_reuses_same_frozen_run_without_assessment_rerun(monkeypatch) -> None:
