@@ -24,7 +24,7 @@ jobs:
           data = json.load(open('diagnostics.json', encoding='utf-8'))
           keys = (
               'status','configured','reason','persistence_adapter','storage_source',
-              'database_url_source','persistence_proof_source','durability_verified',
+              'database_url_source','durability_verified',
               'survives_container_replacement_verified','run_store_shared_across_workers',
               'runtime_recovery_supported','same_canonical_store_recovery_only',
               'automatic_cross_store_fallback','human_review_required','client_delivery_allowed',
@@ -35,8 +35,8 @@ jobs:
       - name: Verify exact completed run still serves real PDFs
         shell: bash
         env:
-          BASE_URL: https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/comprun_f1edb5b77b/localized-report
-          EXPECTED_RUN_ID: comprun_f1edb5b77b
+          BASE_URL: https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/comprun_f1edb5b77bd747ee90d4ee59f85aa8e7/localized-report
+          EXPECTED_RUN_ID: comprun_f1edb5b77bd747ee90d4ee59f85aa8e7
         run: |
           set -euo pipefail
 
