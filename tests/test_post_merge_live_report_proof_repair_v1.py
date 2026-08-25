@@ -18,15 +18,16 @@ def test_mobile_download_proof_binds_ui_href_to_preverified_exact_run_artifact()
     source = DOWNLOAD_PROOF.read_text(encoding="utf-8")
 
     assert "window.__nicoReviewPdfDownloadHref" in source
-    assert "page.expect_request(" in source
+    assert "MutationObserver" in source
+    assert 'data-nico-review-pdf-download="true"' in source
     assert "unquote(parsed_requested.path) == artifact_url_suffix" in source
-    assert "unquote(parsed_browser_request.path) == artifact_url_suffix" in source
     assert "_fetch_captured_pdf(page, requested_url, run_id)" in source
     assert 'direct.get("pdf_run_identity_verified") is True' in source
     assert 'direct.get("pdf_signature_verified") is True' in source
     assert '"ui_review_pdf_matches_preverified_artifact": bool(direct_sha and observed_sha == direct_sha)' in source
     assert '"ui_review_pdf_exact_run_href_verified": True' in source
     assert "with page.expect_download" not in source
+    assert "with page.expect_request" not in source
     assert 'page.on("response", capture_response)' not in source
     assert 'assert responses, "UI review PDF response was not observed"' not in source
 
