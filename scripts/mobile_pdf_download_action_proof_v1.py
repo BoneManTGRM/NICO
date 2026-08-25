@@ -5,7 +5,7 @@ import re
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
 
-VERSION = "nico.mobile-pdf-download-action-proof.v1"
+VERSION = "nico.mobile-pdf-download-action-proof.v2"
 REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
 # Compatibility marker for the existing workflow contract. The legacy Playwright
 # download object is intentionally not used as an integrity gate because Chromium
@@ -138,7 +138,7 @@ def _fetch_captured_pdf(page: Any, requested_url: str, run_id: str) -> dict[str,
 
 def install_ui_pdf_download_proof(recovery: Any) -> None:
     current = recovery._verify_manifest_and_pdf
-    if getattr(current, "_nico_ui_pdf_download_proof_v1", False):
+    if getattr(current, "_nico_ui_pdf_download_proof_v2", False):
         return
 
     def verify_manifest_and_pdf(page: Any, frontend_origin: str, run_id: str) -> dict[str, Any]:
@@ -160,11 +160,15 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         # inside the original mobile click. Browser-managed download requests are
         # not a reliable Playwright page-request event, so prove the real gesture
         # target from the anchor itself, then independently validate that exact URL.
+        # The separate browsing context is part of the lifecycle contract: if WebKit
+        # elects to display application/pdf instead of honoring download, it must not
+        # replace or unload the completed NICO assessment tab.
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
               window.__nicoReviewPdfDownloadHref = '';
               window.__nicoReviewPdfDownloadRel = '';
+              window.__nicoReviewPdfDownloadTarget = '';
               window.__nicoReviewPdfObserver?.disconnect?.();
               const observer = new MutationObserver(records => {
                 for (const record of records) {
@@ -177,6 +181,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                       window.__nicoReviewPdfDownloadAttribute = link.getAttribute('download') || '';
                       window.__nicoReviewPdfDownloadHref = link.getAttribute('href') || '';
                       window.__nicoReviewPdfDownloadRel = link.getAttribute('rel') || '';
+                      window.__nicoReviewPdfDownloadTarget = link.getAttribute('target') || '';
                       observer.disconnect();
                       return;
                     }
@@ -188,6 +193,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             }"""
         )
 
+        original_page_url = str(page.url)
         try:
             pdf_button.click()
             page.wait_for_function(
@@ -206,6 +212,9 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         requested_rel = str(
             page.evaluate("() => String(window.__nicoReviewPdfDownloadRel || '')")
         )
+        requested_target = str(
+            page.evaluate("() => String(window.__nicoReviewPdfDownloadTarget || '')")
+        )
         assert requested_href, "Review PDF action did not create an exact-run download href"
         requested_url = urljoin(frontend_origin.rstrip("/") + "/", requested_href)
         parsed_requested = urlparse(requested_url)
@@ -218,7 +227,9 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "requested_filename": requested_filename,
             "expected_filename": expected_filename,
         }
-        assert requested_rel == "noopener", requested_rel
+        rel_tokens = {token.casefold() for token in requested_rel.split() if token.strip()}
+        assert {"noopener", "noreferrer"}.issubset(rel_tokens), requested_rel
+        assert requested_target == "_blank", requested_target
         assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename, requested_filename
         assert "FINAL-PENDING-APPROVAL" not in requested_filename, requested_filename
 
@@ -237,6 +248,10 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         assert direct.get("pdf_run_identity_verified") is True, direct
         assert direct.get("pdf_signature_verified") is True, direct
         page.wait_for_timeout(250)
+        assert page.url == original_page_url, {
+            "original_page_url": original_page_url,
+            "observed_page_url": page.url,
+        }
         assert _artifact_status_cleared(page), "Review PDF action remained stuck on Preparing file"
 
         return {
@@ -259,10 +274,13 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_artifact_status_cleared": True,
             "ui_review_pdf_original_user_gesture_preserved": True,
             "ui_review_pdf_lifecycle_filename_verified": True,
+            "ui_review_pdf_target_blank_verified": True,
+            "ui_review_pdf_noopener_noreferrer_verified": True,
+            "ui_review_pdf_original_assessment_page_preserved": True,
             "ui_review_pdf_proof_version": VERSION,
         }
 
-    setattr(verify_manifest_and_pdf, "_nico_ui_pdf_download_proof_v1", True)
+    setattr(verify_manifest_and_pdf, "_nico_ui_pdf_download_proof_v2", True)
     setattr(verify_manifest_and_pdf, "_nico_previous", current)
     recovery._verify_manifest_and_pdf = verify_manifest_and_pdf
 
