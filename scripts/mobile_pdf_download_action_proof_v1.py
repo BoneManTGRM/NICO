@@ -60,6 +60,36 @@ def _localized_pdf_contract(run_id: str, report_language: str) -> tuple[str, str
     return artifact_url_suffix, expected_filename
 
 
+def _assert_server_content_disposition(
+    content_disposition: str,
+    *,
+    run_id: str,
+    report_language: str,
+) -> None:
+    """Validate the server-owned exact-run filename without requiring UI-name identity.
+
+    The browser bridge owns its compact suggested filename, while the localized report
+    endpoint intentionally includes the assessed repository in Content-Disposition.
+    Both names must remain exact-run, locale-bound draft PDFs. Requiring the two strings
+    to be identical creates a false production-proof failure even when the PDF is valid.
+    """
+
+    if not content_disposition:
+        return
+    normalized = unquote(content_disposition)
+    assert run_id in normalized, {
+        "content_disposition": content_disposition,
+        "expected_run_id": run_id,
+    }
+    assert f"-{report_language}-" in normalized, {
+        "content_disposition": content_disposition,
+        "expected_report_language": report_language,
+    }
+    assert "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf" in normalized, content_disposition
+    assert "FINAL-PENDING-APPROVAL" not in normalized, content_disposition
+    assert ".pdf.json" not in normalized.lower(), content_disposition
+
+
 def _fetch_captured_pdf(page: Any, requested_url: str, run_id: str) -> dict[str, Any]:
     response = page.request.get(
         requested_url,
@@ -179,11 +209,11 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         pdf_bytes = captured["pdf_bytes"]
         observed_sha = str(captured["pdf_sha256"])
         content_disposition = str(captured["content_disposition"])
-        if content_disposition:
-            assert expected_filename in content_disposition, {
-                "content_disposition": content_disposition,
-                "expected_filename": expected_filename,
-            }
+        _assert_server_content_disposition(
+            content_disposition,
+            run_id=run_id,
+            report_language=report_language,
+        )
         direct_sha = str(direct.get("pdf_sha256") or "").lower()
         assert direct.get("pdf_run_identity_verified") is True, direct
         assert direct.get("pdf_signature_verified") is True, direct
@@ -217,4 +247,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
     recovery._verify_manifest_and_pdf = verify_manifest_and_pdf
 
 
-__all__ = ["VERSION", "install_ui_pdf_download_proof"]
+__all__ = [
+    "VERSION",
+    "install_ui_pdf_download_proof",
+]
