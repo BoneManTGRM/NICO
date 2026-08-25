@@ -8,7 +8,7 @@ from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-from nico.comprehensive_commercial_ship_projection_v2 import (
+from nico.comprehensive_commercial_ship_projection_v3 import (
     compact_sparse_limitation_pages,
     project_canonical_for_client_presentation,
 )
