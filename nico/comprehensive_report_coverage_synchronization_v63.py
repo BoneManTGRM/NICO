@@ -43,6 +43,7 @@ _COVERAGE_LABEL_CONTEXT = re.compile(
     re.I,
 )
 _NUMERIC_COVERAGE = re.compile(r"^(?P<value>\d{1,3})(?P<suffix>\s*%?)$")
+_CANONICAL_COVERAGE_ALIAS = "analyzer_execution_coverage"
 
 
 def _replace_coverage_text(value: str, expected: int) -> tuple[str, int]:
@@ -62,6 +63,60 @@ def _replace_coverage_text(value: str, expected: int) -> tuple[str, int]:
 
         output = pattern.sub(replace, output)
     return output, changes
+
+
+def _coverage_alias_present(value: str) -> bool:
+    return any(pattern.search(str(value or "")) for pattern in _COVERAGE_TEXT_PATTERNS)
+
+
+def _scanner_backed_report(package: Mapping[str, Any]) -> bool:
+    canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
+    contract = (
+        canonical.get("client_readiness_contract")
+        if isinstance(canonical.get("client_readiness_contract"), Mapping)
+        else {}
+    )
+    try:
+        denominator = int(contract.get("coverage_denominator", 0) or 0)
+    except (TypeError, ValueError):
+        denominator = 0
+    return denominator >= 9
+
+
+def _ensure_text_coverage_alias(
+    value: str,
+    expected: int,
+    *,
+    html: bool,
+    required: bool,
+) -> tuple[str, int, int]:
+    """Repair stale coverage and retain a canonical alias when publication requires it."""
+
+    output, replacements = _replace_coverage_text(str(value or ""), expected)
+    if _coverage_alias_present(output) or not required:
+        return output, replacements, 0
+
+    line = f"{_CANONICAL_COVERAGE_ALIAS}: {expected}"
+    if html:
+        insertion = f"<p>{line}</p>"
+        match = re.search(r"</body\s*>", output, flags=re.I)
+        if match:
+            output = output[: match.start()] + insertion + output[match.start():]
+        else:
+            output = output.rstrip() + insertion
+        return output, replacements, 1
+
+    insertion = f"- {line}"
+    markers = (
+        "- Incomplete applicable analyzers:",
+        "- Analizadores aplicables incompletos:",
+    )
+    for marker in markers:
+        if marker in output:
+            output = output.replace(marker, f"{insertion}\n{marker}", 1)
+            return output, replacements, 1
+    output = output.rstrip() + f"\n\n{insertion}\n"
+    return output, replacements, 1
 
 
 def _operand_text(value: Any) -> str:
@@ -161,6 +216,60 @@ def synchronize_pdf_coverage(pdf: bytes, expected: int) -> tuple[bytes, int]:
     return output.getvalue(), changes
 
 
+def _pdf_coverage_alias_present(pdf: bytes) -> bool:
+    if not pdf.startswith(b"%PDF"):
+        return False
+    extracted = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+    return _coverage_alias_present(extracted)
+
+
+def _ensure_pdf_coverage_alias(
+    pdf: bytes,
+    expected: int,
+    *,
+    required: bool,
+) -> tuple[bytes, int]:
+    """Retain one bounded machine-readable coverage line only for commercial reports."""
+
+    if _pdf_coverage_alias_present(pdf) or not required:
+        return pdf, 0
+
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+
+    reader = PdfReader(io.BytesIO(pdf))
+    if not reader.pages:
+        raise ValueError("coverage synchronization requires at least one PDF page")
+
+    first = reader.pages[0]
+    width = float(first.mediabox.width)
+    height = float(first.mediabox.height)
+    overlay_buffer = io.BytesIO()
+    overlay = canvas.Canvas(
+        overlay_buffer,
+        pagesize=(width, height),
+        invariant=1,
+    )
+    overlay.setFillColor(colors.HexColor("#475569"))
+    overlay.setFont("Helvetica", 6.6)
+    overlay.drawString(42, 35, f"{_CANONICAL_COVERAGE_ALIAS}: {expected}")
+    overlay.save()
+
+    first.merge_page(PdfReader(io.BytesIO(overlay_buffer.getvalue())).pages[0])
+    writer = PdfWriter()
+    writer.add_page(first)
+    for page in reader.pages[1:]:
+        writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    rendered = output.getvalue()
+    if not _pdf_coverage_alias_present(rendered):
+        raise ValueError("canonical analyzer execution coverage was not retained in PDF")
+    return rendered, 1
+
+
 def synchronize_final_report_coverage(
     package: Mapping[str, Any],
     *,
@@ -168,33 +277,59 @@ def synchronize_final_report_coverage(
 ) -> dict[str, Any]:
     """Synchronize recognized client-visible coverage aliases after final rendering.
 
-    This changes no scanner result, score, finding, section order, visual design, or
-    approval state. It only replaces stale rendered aliases with the already-derived
-    exact-run canonical coverage value before the existing PDF is validated.
+    Existing aliases are corrected to exact-run canonical truth. For a commercial
+    scanner-backed Comprehensive report, an omitted alias is retained once in Markdown,
+    HTML, and the existing first PDF page so the strict publication gate can verify the
+    same canonical truth. Smaller synthetic/compatibility reports preserve their prior
+    bytes when no coverage alias is required.
     """
 
     expected = max(0, min(100, int(expected_coverage)))
     output = deepcopy(dict(package))
+    require_presence = _scanner_backed_report(output)
 
-    markdown, markdown_changes = _replace_coverage_text(
-        str(output.get("markdown") or ""), expected
+    markdown, markdown_changes, markdown_insertions = _ensure_text_coverage_alias(
+        str(output.get("markdown") or ""),
+        expected,
+        html=False,
+        required=require_presence,
     )
-    html, html_changes = _replace_coverage_text(
-        str(output.get("html") or ""), expected
+    html, html_changes, html_insertions = _ensure_text_coverage_alias(
+        str(output.get("html") or ""),
+        expected,
+        html=True,
+        required=require_presence,
     )
     output["markdown"] = markdown
     output["html"] = html
 
     pdf_changes = 0
+    pdf_insertions = 0
     pdf_value = str(output.get("pdf_base64") or "")
+    synchronized_pdf = b""
     if pdf_value:
         try:
             pdf = base64.b64decode(pdf_value, validate=True)
         except Exception as exc:
             raise ValueError("final report retained an invalid PDF payload") from exc
         synchronized_pdf, pdf_changes = synchronize_pdf_coverage(pdf, expected)
+        synchronized_pdf, pdf_insertions = _ensure_pdf_coverage_alias(
+            synchronized_pdf,
+            expected,
+            required=require_presence,
+        )
         output["pdf_base64"] = base64.b64encode(synchronized_pdf).decode("ascii")
         output["pdf_sha256"] = hashlib.sha256(synchronized_pdf).hexdigest()
+
+    markdown_has_alias = _coverage_alias_present(markdown)
+    html_has_alias = _coverage_alias_present(html)
+    pdf_has_alias = _pdf_coverage_alias_present(synchronized_pdf) if pdf_value else False
+    if require_presence and not markdown_has_alias:
+        raise ValueError("canonical analyzer execution coverage was not retained in Markdown")
+    if require_presence and not html_has_alias:
+        raise ValueError("canonical analyzer execution coverage was not retained in HTML")
+    if require_presence and pdf_value and not pdf_has_alias:
+        raise ValueError("canonical analyzer execution coverage was not retained in PDF")
 
     if markdown:
         output["markdown_sha256"] = hashlib.sha256(
@@ -206,10 +341,19 @@ def synchronize_final_report_coverage(
     manifest = {
         "version": VERSION,
         "canonical_coverage_value": expected,
+        "scanner_backed_report": require_presence,
+        "missing_alias_retention_required": require_presence,
         "markdown_replacements": markdown_changes,
         "html_replacements": html_changes,
         "pdf_replacements": pdf_changes,
         "total_replacements": markdown_changes + html_changes + pdf_changes,
+        "markdown_insertions": markdown_insertions,
+        "html_insertions": html_insertions,
+        "pdf_insertions": pdf_insertions,
+        "total_insertions": markdown_insertions + html_insertions + pdf_insertions,
+        "coverage_alias_present_in_markdown": markdown_has_alias,
+        "coverage_alias_present_in_html": html_has_alias,
+        "coverage_alias_present_in_pdf": pdf_has_alias,
         "recognized_coverage_aliases_only": True,
         "existing_renderer_preserved": True,
         "existing_visual_design_preserved": True,
