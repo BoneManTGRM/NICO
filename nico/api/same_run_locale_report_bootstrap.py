@@ -5,8 +5,8 @@ from nico.comprehensive_canonical_truth_hash_compat_v1 import (
     VERSION as CANONICAL_TRUTH_HASH_COMPAT_VERSION,
     install_canonical_truth_hash_compat,
 )
-from nico.comprehensive_commercial_ship_projection_v2 import (
-    install_comprehensive_commercial_ship_projection_v2,
+from nico.comprehensive_commercial_ship_projection_v3 import (
+    install_comprehensive_commercial_ship_projection_v3,
 )
 from nico.comprehensive_same_run_locale_report_v1 import (
     PDF_ROUTE,
@@ -16,11 +16,11 @@ from nico.comprehensive_same_run_locale_report_v1 import (
 )
 
 
-VERSION = "nico.api.same_run_locale_report_bootstrap.v4"
+VERSION = "nico.api.same_run_locale_report_bootstrap.v5"
 
 app = spanish_final_report_app
 CANONICAL_TRUTH_HASH_COMPAT = install_canonical_truth_hash_compat()
-COMMERCIAL_SHIP_PROJECTION = install_comprehensive_commercial_ship_projection_v2()
+COMMERCIAL_SHIP_PROJECTION = install_comprehensive_commercial_ship_projection_v3()
 SAME_RUN_LOCALE_REPORT = install_same_run_locale_report(app)
 
 if CANONICAL_TRUTH_HASH_COMPAT.get("builder_hash_sync_bound") is not True:
@@ -37,6 +37,10 @@ if COMMERCIAL_SHIP_PROJECTION.get("bound") is not True:
     raise RuntimeError("Commercial ship presentation projection must be bound")
 if COMMERCIAL_SHIP_PROJECTION.get("deployment_metric_detection_order_independent") is not True:
     raise RuntimeError("Deployment taxonomy projection must recognize canonical metric aliases regardless of word order")
+if COMMERCIAL_SHIP_PROJECTION.get("final_assembled_source_pdf_preserved") is not True:
+    raise RuntimeError("Commercial ship projection must preserve the final assembled source PDF")
+if COMMERCIAL_SHIP_PROJECTION.get("toc_page_labels_and_bookmarks_rebuilt_after_compaction") is not True:
+    raise RuntimeError("Pagination compaction must run before final TOC/page-label/bookmark generation")
 if COMMERCIAL_SHIP_PROJECTION.get("canonical_truth_mutated") is not False:
     raise RuntimeError("Commercial ship presentation projection must not mutate canonical truth")
 if COMMERCIAL_SHIP_PROJECTION.get("assessment_rerun") is not False:
