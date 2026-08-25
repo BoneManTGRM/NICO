@@ -1,9 +1,8 @@
-import Link from "next/link";
-import FinalReviewWorkspace from "./FinalReviewWorkspace";
+import ComprehensiveFinalReviewWorkspace from "./ComprehensiveFinalReviewWorkspace";
 
 /*
 Legacy source-level review contracts retained for compatibility tests while the
-visible workspace uses the simplified one-action approval flow.
+visible production workspace is Comprehensive-only and exact-run bound.
 type="password"
 "X-NICO-Admin-Token": adminToken.trim()
 <option value="express">Express</option>
@@ -39,12 +38,5 @@ Final-review endpoint returned invalid JSON
 */
 
 export default function FinalReviewOperationsPage() {
-  return <>
-    <FinalReviewWorkspace />
-    <nav aria-label="Technical review workspaces" style={{background: "#071018", padding: "0 24px 40px", textAlign: "center"}}>
-      <Link href="/operations/reviewer-queue" style={{color: "#9be2d5", fontWeight: 800}}>
-        Open the read-only exception-first technical review queue
-      </Link>
-    </nav>
-  </>;
+  return <ComprehensiveFinalReviewWorkspace />;
 }
