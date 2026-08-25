@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nico.api.spanish_final_report_bootstrap import app as spanish_final_report_app
 from nico.comprehensive_same_run_locale_report_v1 import (
+    PDF_ROUTE,
     ROUTE,
     VERSION as SAME_RUN_REPORT_VERSION,
     install_same_run_locale_report,
@@ -17,6 +18,10 @@ if SAME_RUN_LOCALE_REPORT.get("route_count") != 1:
     raise RuntimeError(
         "Same-run localized Comprehensive report route must be registered exactly once"
     )
+if SAME_RUN_LOCALE_REPORT.get("pdf_route_count") != 1:
+    raise RuntimeError(
+        "Same-run localized Comprehensive PDF route must be registered exactly once"
+    )
 if SAME_RUN_LOCALE_REPORT.get("same_canonical_run") is not True:
     raise RuntimeError("Same-run localized report export must preserve one canonical run")
 if SAME_RUN_LOCALE_REPORT.get("assessment_rerun") is not False:
@@ -31,6 +36,7 @@ if SAME_RUN_LOCALE_REPORT.get("client_delivery_allowed") is not False:
 
 __all__ = [
     "app",
+    "PDF_ROUTE",
     "ROUTE",
     "SAME_RUN_LOCALE_REPORT",
     "SAME_RUN_REPORT_VERSION",
