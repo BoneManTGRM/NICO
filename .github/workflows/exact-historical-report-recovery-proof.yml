@@ -1,0 +1,57 @@
+name: Exact Historical Report Recovery Proof
+
+on:
+  push:
+    branches:
+      - proof/exact-historical-report-recovery
+
+permissions:
+  contents: read
+
+jobs:
+  exact-historical-report-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact completed run still serves real PDFs
+        shell: bash
+        env:
+          BASE_URL: https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/comprun_f1edb5b77b/localized-report
+          EXPECTED_RUN_ID: comprun_f1edb5b77b
+        run: |
+          set -euo pipefail
+
+          verify_pdf() {
+            local locale="$1"
+            local url="${BASE_URL}/${locale}/pdf"
+            local headers="headers-${locale}.txt"
+            local body="report-${locale}.bin"
+            local http_status
+
+            http_status="$(curl --silent --show-error --connect-timeout 20 --max-time 240 \
+              -D "$headers" -o "$body" -w '%{http_code}' "$url")"
+            echo "${locale}: HTTP ${http_status}"
+
+            if [[ "$http_status" != "200" ]]; then
+              echo "${locale}: unexpected response body follows"
+              head -c 1000 "$body" || true
+              echo
+              exit 1
+            fi
+
+            [[ "$(head -c 5 "$body")" == "%PDF-" ]]
+            grep -Eqi '^content-type:[[:space:]]*application/pdf([;[:space:]]|$)' "$headers"
+            grep -Eqi '^content-disposition:.*\.pdf' "$headers"
+            grep -Eqi "^x-nico-run-id:[[:space:]]*${EXPECTED_RUN_ID}[[:space:]]*$" "$headers"
+            grep -Eqi "^x-nico-report-language:[[:space:]]*${locale}[[:space:]]*$" "$headers"
+            grep -Eqi '^x-nico-assessment-rerun:[[:space:]]*false[[:space:]]*$' "$headers"
+            grep -Eqi '^x-nico-human-review-required:[[:space:]]*true[[:space:]]*$' "$headers"
+            grep -Eqi '^x-nico-client-delivery-allowed:[[:space:]]*false[[:space:]]*$' "$headers"
+            grep -Eqi '^x-nico-canonical-truth-sha256:[[:space:]]*[0-9a-f]{64}[[:space:]]*$' "$headers"
+
+            echo "${locale}: PDF signature, filename, exact run identity, truth hash, and review/delivery boundaries verified"
+            sha256sum "$body"
+          }
+
+          verify_pdf en
+          verify_pdf es-MX
