@@ -60,6 +60,7 @@ def _install_intake_display_metadata() -> dict[str, bool]:
     import nico.comprehensive_api_routes as routes
     import nico.comprehensive_run_service as run_service_module
     from nico.comprehensive_api_controller import ComprehensiveApiController
+    from nico.comprehensive_run_record import _record_hash
 
     if not getattr(routes._intake, "_nico_display_metadata_v1", False):
         original_intake = routes._intake
@@ -108,37 +109,10 @@ def _install_intake_display_metadata() -> dict[str, bool]:
         ComprehensiveApiController.start = controller_start_with_display_metadata
 
     # Persist optional display metadata in the initial canonical record before the
-    # store creates it. The prior implementation performed a second store.save()
-    # immediately after create(), which violated the store's one-revision-per-save
-    # contract and left the record integrity hash stale. A single initial write keeps
-    # canonical scope IDs unchanged while making the display fields durable.
+    # durable store creates it. This preserves the store's one-revision-per-save
+    # contract and keeps the record integrity hash valid.
     if not getattr(run_service_module.create_comprehensive_run_record, "_nico_display_metadata_v1", False):
         original_create_record = run_service_module.create_comprehensive_run_record
-
-        def create_record_with_display_metadata(*args, **kwargs):
-            record = original_create_record(*args, **kwargs)
-            values = dict(_DISPLAY_METADATA.get() or {})
-            customer_name = _text(values.get("customer_name"), 180)
-            project_name = _text(values.get("project_name"), 180)
-            if not customer_name and not project_name:
-                return record
-
-            identity = dict(record.get("identity") or {})
-            if customer_name:
-                identity["customer_name"] = customer_name
-            if project_name:
-                identity["project_name"] = project_name
-            record["identity"] = identity
-            record["integrity_sha256"] = run_service_module.create_comprehensive_run_record.__globals__.get(
-                "_record_hash",
-                lambda value: value.get("integrity_sha256", ""),
-            )(record)
-            return record
-
-        # _record_hash lives in comprehensive_run_record, not in the run service
-        # module globals. Import it once here so the wrapper always recomputes the
-        # canonical hash before the first durable create.
-        from nico.comprehensive_run_record import _record_hash
 
         def create_record_with_display_metadata(*args, **kwargs):
             record = original_create_record(*args, **kwargs)
