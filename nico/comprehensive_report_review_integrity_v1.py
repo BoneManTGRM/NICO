@@ -369,9 +369,10 @@ def _install_exception_first_delivery_contract() -> dict[str, bool]:
         return {
             "total_candidates": len(findings),
             "technical_triage_completed": triaged,
-            "mandatory_individual_review_pending": len(pending_required),
-            "human_dispositions_pending": len(pending_required),
-            "automated_not_actionable_candidates_do_not_require_blanket_human_disposition": True,
+            "required_human_dispositions": len(required_ids),
+            "required_human_dispositions_pending": len(pending_required),
+            "actual_human_disposition_record_count": len(disposition_ids),
+            "exception_first_review": True,
         }
 
     candidate_contract_exception_first._nico_exception_first_v1 = True
@@ -385,24 +386,24 @@ def _install_exception_first_delivery_contract() -> dict[str, bool]:
 def install_comprehensive_report_review_integrity_v1() -> dict[str, Any]:
     global _INSTALLED, _STATE
     if _INSTALLED:
-        return dict(_STATE)
+        return {**_STATE, "status": "already_installed"}
 
-    intake = _install_intake_display_metadata()
-    report = _install_final_report_identity_projection()
-    sections = _install_required_report_sections()
-    delivery = _install_exception_first_delivery_contract()
-    _STATE = {
+    state = {
         "artifact_schema": VERSION,
         "status": "installed",
-        **intake,
-        **report,
-        **sections,
-        **delivery,
+        **_install_intake_display_metadata(),
+        **_install_final_report_identity_projection(),
+        **_install_required_report_sections(),
+        **_install_exception_first_delivery_contract(),
+        "server_side_approval_readiness_remains_authoritative": True,
+        "canonical_scope_ids_unchanged": True,
+        "canonical_scores_unchanged": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
     _INSTALLED = True
-    return dict(_STATE)
+    _STATE = dict(state)
+    return state
 
 
 __all__ = ["VERSION", "install_comprehensive_report_review_integrity_v1"]
