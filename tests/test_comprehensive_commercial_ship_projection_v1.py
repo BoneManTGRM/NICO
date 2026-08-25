@@ -174,14 +174,89 @@ def test_sparse_roadmap_staffing_pages_compact_without_losing_text() -> None:
     assert "Human Review and Acceptance Gate" in text
 
 
-def test_review_pdf_bridge_keeps_completed_app_out_of_pdf_browsing_context() -> None:
+def _pdf_with_sparse_ordinary_sections() -> bytes:
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    header = "NICO Comprehensive · comprun_dynamic_fixture · AUTOMATED DRAFT"
+    sections = [
+        ("Code audit", "Executable code-risk findings: 0."),
+        ("Dependency / Library Ecosystem", "Review-required dependency candidates: 21."),
+        ("Secrets Exposure Review", "Review-required secret candidates: 19."),
+        ("Static Analysis", "Review-required static candidates: 664."),
+        ("CI/CD Analysis", "Workflow configuration exact-SHA match: True."),
+        ("Architecture & Technical Debt", "Complexity risk remains pending human review."),
+        ("Velocity / Complexity", "Mutable activity volume remains unscored context."),
+    ]
+    for title, evidence in sections:
+        document.drawString(54, 760, header)
+        document.drawString(54, 720, title)
+        document.drawString(54, 690, evidence)
+        document.drawString(54, 670, "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED")
+        document.showPage()
+
+    document.drawString(54, 760, header)
+    document.drawString(54, 720, "Human Review and Acceptance Gate")
+    document.drawString(54, 690, "Only an authorized human reviewer may approve the exact artifact.")
+    document.save()
+    return buffer.getvalue()
+
+
+def test_sparse_ordinary_sections_reflow_without_touching_review_gate() -> None:
+    original = _pdf_with_sparse_ordinary_sections()
+    compacted, manifest = compact_sparse_limitation_pages(original)
+
+    assert manifest["status"] == "compacted"
+    assert manifest["original_pages"] == 8
+    assert manifest["final_pages"] < 8
+    assert manifest["pages_removed"] >= 3
+    assert manifest["truth_preserved"] is True
+    assert manifest["canonical_truth_mutated"] is False
+
+    text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(compacted)).pages
+    )
+    for marker in (
+        "Code audit",
+        "Dependency / Library Ecosystem",
+        "Secrets Exposure Review",
+        "Static Analysis",
+        "CI/CD Analysis",
+        "Architecture & Technical Debt",
+        "Velocity / Complexity",
+        "Human Review and Acceptance Gate",
+        "Only an authorized human reviewer may approve the exact artifact.",
+    ):
+        assert marker in text
+
+
+def test_review_pdf_and_markdown_bridge_never_silently_noops() -> None:
     source = Path("apps/web/app/AssessmentReviewPdfDownload.tsx").read_text(
         encoding="utf-8"
     )
 
-    assert 'link.target = "_blank"' in source
-    assert 'link.rel = "noopener noreferrer"' in source
-    assert "link.click()" in source
-    assert "fetch(" not in source
-    assert "window.location =" not in source
-    assert "window.location.href =" not in source
+    assert 'window.open(href, "_blank", "noopener,noreferrer")' in source
+    assert "window.location.assign(href)" in source
+    assert "fetchMarkdown" in source
+    assert "navigator.clipboard.writeText" in source
+    assert 'document.execCommand("copy")' in source
+    assert "Markdown copied." in source
+    assert "Markdown could not be copied." in source
+    assert "visibleRunId" in source
+
+
+def test_real_runtime_and_renderer_install_report_metadata_integrity() -> None:
+    production = Path("nico/api/same_run_locale_report_bootstrap.py").read_text(
+        encoding="utf-8"
+    )
+    worker = Path("nico/api/final_report_worker_bootstrap.py").read_text(
+        encoding="utf-8"
+    )
+
+    for source in (production, worker):
+        assert "install_comprehensive_report_review_integrity_v1" in source
+        assert "REPORT_REVIEW_INTEGRITY" in source
+        assert "primary_technical_contact_projected_from_human_evidence" in source
+        assert "client_delivery_allowed" in source
+
+    assert "display_metadata_persisted_in_initial_canonical_write" in production
+    assert '"report_review_integrity_bound": True' in worker
