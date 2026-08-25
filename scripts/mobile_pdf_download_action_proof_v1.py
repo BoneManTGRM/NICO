@@ -5,7 +5,9 @@ import re
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
 
-VERSION = "nico.mobile-pdf-download-action-proof.v2"
+# Keep the established evidence-schema identifier: production Chromium/WebKit
+# workflows consume this version and the stronger lifecycle fields are additive.
+VERSION = "nico.mobile-pdf-download-action-proof.v1"
 REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
 # Compatibility marker for the existing workflow contract. The legacy Playwright
 # download object is intentionally not used as an integrity gate because Chromium
@@ -81,13 +83,7 @@ def _validate_response_filename(
     run_id: str,
     report_language: str,
 ) -> str:
-    """Verify the server's canonical repository-qualified PDF filename.
-
-    The UI gesture contract intentionally remains exact-run and locale-bound. The
-    localized report endpoint can add repository provenance to Content-Disposition,
-    so the response filename is validated by its canonical prefix and immutable
-    run/locale/lifecycle suffix rather than by equality with the UI fallback name.
-    """
+    """Verify the server's canonical repository-qualified PDF filename."""
 
     assert report_language in {"en", "es-MX"}
     filename = _content_disposition_filename(content_disposition)
@@ -138,7 +134,7 @@ def _fetch_captured_pdf(page: Any, requested_url: str, run_id: str) -> dict[str,
 
 def install_ui_pdf_download_proof(recovery: Any) -> None:
     current = recovery._verify_manifest_and_pdf
-    if getattr(current, "_nico_ui_pdf_download_proof_v2", False):
+    if getattr(current, "_nico_ui_pdf_download_proof_v1", False):
         return
 
     def verify_manifest_and_pdf(page: Any, frontend_origin: str, run_id: str) -> dict[str, Any]:
@@ -156,13 +152,10 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         )
         expected_origin = urlparse(frontend_origin)
 
-        # The production bridge creates a same-origin hidden anchor and invokes it
-        # inside the original mobile click. Browser-managed download requests are
-        # not a reliable Playwright page-request event, so prove the real gesture
-        # target from the anchor itself, then independently validate that exact URL.
-        # The separate browsing context is part of the lifecycle contract: if WebKit
-        # elects to display application/pdf instead of honoring download, it must not
-        # replace or unload the completed NICO assessment tab.
+        # Prove the real user-gesture target from the transient anchor, then fetch that
+        # exact immutable URL independently. The separate browsing context is part of
+        # the lifecycle contract: if WebKit displays application/pdf instead of honoring
+        # download, it must not replace or unload the completed assessment tab.
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
@@ -280,7 +273,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_proof_version": VERSION,
         }
 
-    setattr(verify_manifest_and_pdf, "_nico_ui_pdf_download_proof_v2", True)
+    setattr(verify_manifest_and_pdf, "_nico_ui_pdf_download_proof_v1", True)
     setattr(verify_manifest_and_pdf, "_nico_previous", current)
     recovery._verify_manifest_and_pdf = verify_manifest_and_pdf
 
