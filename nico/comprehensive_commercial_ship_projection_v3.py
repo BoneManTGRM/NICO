@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
@@ -8,8 +7,9 @@ from nico import comprehensive_commercial_ship_projection_v1 as v1
 from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
+from nico.comprehensive_pdf_reflow_v1 import compact_sparse_stage_pages
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.1"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -27,7 +27,26 @@ def project_canonical_for_client_presentation(
 
 
 def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]:
-    return v1.compact_sparse_limitation_pages(pdf_bytes)
+    """Run both bounded sparse-page compactors before final navigation is rebuilt."""
+
+    limitation_pdf, limitation_manifest = v1.compact_sparse_limitation_pages(pdf_bytes)
+    reflowed_pdf, reflow_manifest = compact_sparse_stage_pages(limitation_pdf)
+    original_pages = int(limitation_manifest.get("original_pages") or 0)
+    final_pages = int(reflow_manifest.get("final_pages") or limitation_manifest.get("final_pages") or original_pages)
+    pages_removed = max(0, original_pages - final_pages)
+    return reflowed_pdf, {
+        "status": "compacted" if pages_removed else "unchanged",
+        "original_pages": original_pages,
+        "final_pages": final_pages,
+        "compacted_groups": int(limitation_manifest.get("compacted_groups") or 0)
+        + int(reflow_manifest.get("compacted_groups") or 0),
+        "pages_removed": pages_removed,
+        "truth_preserved": limitation_manifest.get("truth_preserved") is True
+        and reflow_manifest.get("truth_preserved") is True,
+        "canonical_truth_mutated": False,
+        "limitation_compaction": limitation_manifest,
+        "sparse_stage_reflow": reflow_manifest,
+    }
 
 
 def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
@@ -40,6 +59,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             "version": VERSION,
             "bound": True,
             "final_assembled_source_pdf_preserved": True,
+            "sparse_stage_reflow_before_final_navigation": True,
             "canonical_truth_mutated": False,
             "assessment_rerun": False,
             "human_review_required": True,
@@ -79,7 +99,8 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         @wraps(current_renumber)
         def renumber_after_compaction(pdf: bytes) -> bytes:
             compacted, _manifest = compact_sparse_limitation_pages(pdf)
-            # Rebuild physical page labels, TOC, and bookmarks after any compaction.
+            # Rebuild physical page labels, TOC, and bookmarks after both bounded
+            # sparse-page passes. Canonical assessment truth is never mutated.
             return current_renumber(compacted)
 
         setattr(renumber_after_compaction, _NAV_MARKER, True)
@@ -147,6 +168,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         "deployment_outcomes_mutually_exclusive_when_failure_classification_available": True,
         "intermediate_pdf_page_count_scoped": True,
         "sparse_limitation_compaction_before_final_navigation": True,
+        "sparse_stage_reflow_before_final_navigation": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_compaction": True,
         "final_assembled_source_pdf_preserved": True,
         "cross_locale_projection_from_same_canonical_snapshot": True,
