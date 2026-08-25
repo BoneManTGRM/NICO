@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from copy import deepcopy
 
+from nico import comprehensive_canonical_truth_hash_compat_v1 as compat
 from nico.comprehensive_canonical_truth_hash_compat_v1 import (
     reconcile_known_post_render_hash_drift,
     synchronize_report_package_hash,
@@ -49,10 +51,20 @@ def _historically_drifted_status() -> tuple[dict, dict, str]:
     )
     status = {
         "run_id": original["identity"]["run_id"],
+        "repository": original["identity"]["repository"],
+        "commit_sha": original["identity"]["commit_sha"],
+        "report_language": "en",
         "terminal": True,
+        "integrity_sha256": "run-integrity",
+        "human_review_required": True,
+        "client_delivery_allowed": False,
         "reports": {
+            "report_id": "comprehensive_report_hash_compat_1",
             "canonical_truth_sha256": expected,
             "json": drifted,
+            "markdown": "# frozen source report",
+            "html": "<article>frozen source report</article>",
+            "pdf_base64": base64.b64encode(b"%PDF-1.4\nfrozen").decode("ascii"),
         },
     }
     return status, original, expected
@@ -111,3 +123,45 @@ def test_recovery_requires_complete_exact_known_metadata_signature() -> None:
 
     assert reconciled is False
     assert recovered == status
+
+
+def test_installed_compat_restores_affected_frozen_pdf_without_weakening_truth(monkeypatch) -> None:
+    from nico import comprehensive_decision_grade_report_v5 as report_builder
+    from nico import comprehensive_native_providers as providers
+    from nico import comprehensive_same_run_locale_report_v1 as same_run
+
+    # Record every mutable production binding so pytest restores the process after
+    # this integration check even when other report wrappers are already installed.
+    monkeypatch.setattr(
+        report_builder,
+        "build_comprehensive_report_package",
+        report_builder.build_comprehensive_report_package,
+    )
+    monkeypatch.setattr(
+        providers,
+        "build_comprehensive_report_package",
+        providers.build_comprehensive_report_package,
+    )
+    monkeypatch.setattr(
+        same_run,
+        "build_same_run_locale_report",
+        same_run.build_same_run_locale_report,
+    )
+
+    installation = compat.install_canonical_truth_hash_compat()
+    assert installation["builder_hash_sync_bound"] is True
+    assert installation["same_run_legacy_recovery_bound"] is True
+    assert installation["unknown_hash_mismatch_fails_closed"] is True
+
+    status, original, expected = _historically_drifted_status()
+    before = deepcopy(status)
+    projection = same_run.build_same_run_locale_report(status, "en")
+
+    assert status == before
+    assert projection["canonical_truth_hash_reconciled"] is True
+    assert projection["canonical_truth_sha256"] == expected
+    assert projection["report"]["json"] == original
+    assert projection["report"]["pdf_base64"] == status["reports"]["pdf_base64"]
+    assert projection["assessment_rerun"] is False
+    assert projection["human_review_required"] is True
+    assert projection["client_delivery_allowed"] is False
