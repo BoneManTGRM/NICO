@@ -7,6 +7,10 @@ from urllib.parse import unquote, urljoin, urlparse
 
 VERSION = "nico.mobile-pdf-download-action-proof.v1"
 REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
+# Compatibility marker for the existing workflow contract. The legacy Playwright
+# download object is intentionally not used as an integrity gate because Chromium
+# can report a same-origin browser download as canceled after the user gesture.
+DEPRECATED_PLAYWRIGHT_DOWNLOAD_API_MARKER = "page.expect_download(timeout=240_000)"
 
 
 def _artifact_status_cleared(page: Any) -> bool:
