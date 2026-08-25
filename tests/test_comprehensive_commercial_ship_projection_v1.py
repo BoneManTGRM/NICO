@@ -229,19 +229,30 @@ def test_sparse_ordinary_sections_reflow_without_touching_review_gate() -> None:
         assert marker in text
 
 
-def test_review_pdf_and_markdown_bridge_never_silently_noops() -> None:
-    source = Path("apps/web/app/AssessmentReviewPdfDownload.tsx").read_text(
+def test_review_pdf_and_markdown_bridges_never_silently_noop() -> None:
+    pdf_source = Path("apps/web/app/AssessmentReviewPdfDownload.tsx").read_text(
         encoding="utf-8"
     )
+    markdown_source = Path("apps/web/app/AssessmentMarkdownCopyBridge.tsx").read_text(
+        encoding="utf-8"
+    )
+    layout = Path("apps/web/app/layout.tsx").read_text(encoding="utf-8")
 
-    assert 'window.open(href, "_blank", "noopener,noreferrer")' in source
-    assert "window.location.assign(href)" in source
-    assert "fetchMarkdown" in source
-    assert "navigator.clipboard.writeText" in source
-    assert 'document.execCommand("copy")' in source
-    assert "Markdown copied." in source
-    assert "Markdown could not be copied." in source
-    assert "visibleRunId" in source
+    assert 'window.open(href, "_blank", "noopener,noreferrer")' in pdf_source
+    assert "link.click();" in pdf_source
+    assert "visibleRunId" in pdf_source
+    assert "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf" in pdf_source
+
+    assert "loadMarkdown" in markdown_source
+    assert "navigator.clipboard.writeText" in markdown_source
+    assert 'document.execCommand("copy")' in markdown_source
+    assert "Markdown copied." in markdown_source
+    assert "Markdown could not be copied." in markdown_source
+    assert "visibleRunId" in markdown_source
+
+    assert 'import AssessmentMarkdownCopyBridge from "./AssessmentMarkdownCopyBridge"' in layout
+    assert layout.index("<AssessmentReviewPdfDownload />") < layout.index("<AssessmentHomeRedirect />")
+    assert layout.index("<AssessmentMarkdownCopyBridge />") < layout.index("<AssessmentHomeRedirect />")
 
 
 def test_real_runtime_and_renderer_install_report_metadata_integrity() -> None:
