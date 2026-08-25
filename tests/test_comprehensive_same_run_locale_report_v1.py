@@ -83,7 +83,10 @@ def test_alternate_locale_uses_same_canonical_run_without_mutating_source(monkey
     assert result["same_canonical_run"] is True
     assert result["assessment_rerun"] is False
     assert result["canonical_truth_preserved"] is True
-    assert result["canonical_truth_sha256"] == status["reports"]["canonical_truth_sha256"]
+    assert (
+        result["canonical_truth_sha256"]
+        == status["reports"]["canonical_truth_sha256"]
+    )
     assert result["report"]["json"] == status["reports"]["json"]
     assert result["report"]["presentation_language"] == "es-MX"
     assert result["report"]["pdf_page_count"] == 44
@@ -106,6 +109,58 @@ def test_source_locale_reuses_terminal_artifacts_without_rerender(monkeypatch):
     assert result["report"]["html"] == status["reports"]["html"]
     assert result["report"]["pdf_base64"] == status["reports"]["pdf_base64"]
     assert result["assessment_rerun"] is False
+
+
+def test_localized_pdf_response_keeps_same_run_and_truth(monkeypatch):
+    status = _status(source_language="en")
+    pdf_bytes = b"%PDF-1.4\nlocalized"
+
+    monkeypatch.setattr(
+        subject,
+        "_render_target",
+        lambda canonical, report_language: {
+            "markdown": "# informe",
+            "html": "<article>informe</article>",
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+            "pdf_sha256": subject.hashlib.sha256(pdf_bytes).hexdigest(),
+            "pdf_page_count": 44,
+        },
+    )
+
+    response = subject.build_same_run_locale_pdf_response(status, "es-MX")
+
+    assert response.body == pdf_bytes
+    assert response.media_type == "application/pdf"
+    assert response.headers["x-nico-run-id"] == status["run_id"]
+    assert response.headers["x-nico-report-language"] == "es-MX"
+    assert (
+        response.headers["x-nico-canonical-truth-sha256"]
+        == status["reports"]["canonical_truth_sha256"]
+    )
+    assert response.headers["x-nico-assessment-rerun"] == "false"
+    assert "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf" in response.headers[
+        "content-disposition"
+    ]
+
+
+def test_localized_pdf_hash_mismatch_fails_closed(monkeypatch):
+    status = _status(source_language="en")
+    pdf_bytes = b"%PDF-1.4\nlocalized"
+
+    monkeypatch.setattr(
+        subject,
+        "_render_target",
+        lambda canonical, report_language: {
+            "markdown": "# informe",
+            "html": "<article>informe</article>",
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+            "pdf_sha256": "0" * 64,
+            "pdf_page_count": 44,
+        },
+    )
+
+    with pytest.raises(ValueError, match="localized_report_pdf_hash_mismatch"):
+        subject.build_same_run_locale_pdf_response(status, "es-MX")
 
 
 def test_canonical_truth_mismatch_fails_closed(monkeypatch):
@@ -132,19 +187,32 @@ def test_only_english_and_mexican_spanish_are_supported():
         subject._normalize_report_language("fr")
 
 
-def test_route_installs_exactly_once_and_preserves_delivery_boundary():
+def test_routes_install_exactly_once_and_preserve_delivery_boundary():
     app = FastAPI()
 
     first = subject.install_same_run_locale_report(app)
     second = subject.install_same_run_locale_report(app)
 
     assert first["route_count"] == 1
+    assert first["pdf_route_count"] == 1
     assert second["route_count"] == 1
+    assert second["pdf_route_count"] == 1
     assert second["same_canonical_run"] is True
     assert second["assessment_rerun"] is False
     assert second["canonical_truth_preserved"] is True
     assert second["human_review_required"] is True
     assert second["client_delivery_allowed"] is False
+
+
+def test_review_download_bridge_uses_same_run_localized_pdf_route():
+    bridge = Path("apps/web/app/AssessmentReviewPdfDownload.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert "/localized-report/${encodeURIComponent(reportLanguage)}/pdf" in bridge
+    assert 'pathname === "/es-mx"' in bridge
+    assert 'pathname.startsWith("/es-mx/")' in bridge
+    assert 'return "es-MX";' in bridge
+    assert "startExactRunDownload(runId, activeReportLanguage())" in bridge
 
 
 def test_production_docker_entrypoint_mounts_same_run_locale_wrapper():
