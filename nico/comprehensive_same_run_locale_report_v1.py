@@ -21,7 +21,7 @@ from nico.comprehensive_spanish_canonical_report_v87 import (
 )
 
 
-VERSION = "nico.comprehensive_same_run_locale_report.v1"
+VERSION = "nico.comprehensive_same_run_locale_report.v2"
 ROUTE = "/assessment/comprehensive-run/{run_id}/localized-report/{report_language}"
 PDF_ROUTE = f"{ROUTE}/pdf"
 SUPPORTED_REPORT_LANGUAGES = ("en", "es-MX")
@@ -154,6 +154,107 @@ def _localized_filename(
     )
 
 
+def _frozen_source_pdf_response(
+    status: Mapping[str, Any], report_language: str
+) -> Response | None:
+    """Return an already-persisted source-language PDF without re-rendering it.
+
+    Historical terminal runs can contain canonical JSON that was normalized after the
+    canonical hash was bound. Some older normalization revisions removed fields, so the
+    predecessor JSON cannot be reconstructed safely from the persisted object. The
+    original frozen PDF does not need that reconstruction: it is already the artifact
+    produced by the exact terminal run. For the run's source language only, validate the
+    stored PDF bytes and exact run identity and return those bytes unchanged. Cross-
+    language projection still goes through the canonical-hash gate below.
+    """
+
+    target_language = _normalize_report_language(report_language)
+    if status.get("terminal") is not True:
+        raise ValueError("terminal_report_required")
+
+    reports = (
+        status.get("reports") if isinstance(status.get("reports"), Mapping) else {}
+    )
+    canonical = (
+        reports.get("json") if isinstance(reports.get("json"), Mapping) else {}
+    )
+    if not canonical:
+        return None
+
+    source_language = _normalize_report_language(
+        status.get("report_language") or "en"
+    )
+    if target_language != source_language:
+        return None
+
+    encoded_pdf = reports.get("pdf_base64")
+    if not isinstance(encoded_pdf, str) or not encoded_pdf:
+        return None
+
+    try:
+        pdf_bytes = base64.b64decode(encoded_pdf, validate=True)
+    except Exception as exc:
+        raise ValueError("source_report_pdf_invalid") from exc
+    if not pdf_bytes.startswith(b"%PDF"):
+        raise ValueError("source_report_pdf_invalid")
+
+    actual_pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    stored_pdf_sha256 = str(reports.get("pdf_sha256") or "").strip()
+    if stored_pdf_sha256 and stored_pdf_sha256 != actual_pdf_sha256:
+        raise ValueError("source_report_pdf_hash_mismatch")
+
+    canonical_copy = deepcopy(dict(canonical))
+    identity = (
+        canonical_copy.get("identity")
+        if isinstance(canonical_copy.get("identity"), Mapping)
+        else {}
+    )
+    status_run_id = str(status.get("run_id") or "").strip()
+    canonical_run_id = str(identity.get("run_id") or "").strip()
+    if status_run_id and canonical_run_id and status_run_id != canonical_run_id:
+        raise ValueError("source_report_run_identity_mismatch")
+    run_id = status_run_id or canonical_run_id
+    if not run_id:
+        raise ValueError("run_id_required")
+
+    status_repository = str(status.get("repository") or "").strip()
+    canonical_repository = str(identity.get("repository") or "").strip()
+    if (
+        status_repository
+        and canonical_repository
+        and status_repository != canonical_repository
+    ):
+        raise ValueError("source_report_repository_identity_mismatch")
+
+    status_commit = str(status.get("commit_sha") or "").strip()
+    canonical_commit = str(identity.get("commit_sha") or "").strip()
+    if status_commit and canonical_commit and status_commit != canonical_commit:
+        raise ValueError("source_report_commit_identity_mismatch")
+
+    stored_truth_sha256 = str(reports.get("canonical_truth_sha256") or "").strip()
+    if not stored_truth_sha256:
+        return None
+
+    filename = _localized_filename(
+        canonical=canonical_copy,
+        run_id=run_id,
+        report_language=target_language,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-NICO-Run-ID": run_id,
+            "X-NICO-Report-Language": target_language,
+            "X-NICO-Canonical-Truth-SHA256": stored_truth_sha256,
+            "X-NICO-PDF-SHA256": actual_pdf_sha256,
+            "X-NICO-Frozen-Source-Artifact": "true",
+            "X-NICO-Assessment-Rerun": "false",
+        },
+    )
+
+
 def build_same_run_locale_report(
     status: Mapping[str, Any],
     report_language: str,
@@ -269,6 +370,10 @@ def build_same_run_locale_report(
 def build_same_run_locale_pdf_response(
     status: Mapping[str, Any], report_language: str
 ) -> Response:
+    frozen_source = _frozen_source_pdf_response(status, report_language)
+    if frozen_source is not None:
+        return frozen_source
+
     projection = build_same_run_locale_report(status, report_language)
     report = projection["report"]
     try:
@@ -379,6 +484,8 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
         "same_canonical_run": True,
         "assessment_rerun": False,
         "canonical_truth_preserved": True,
+        "frozen_source_pdf_reused_without_rerender": True,
+        "cross_language_projection_requires_canonical_hash": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
