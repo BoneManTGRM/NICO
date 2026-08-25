@@ -77,6 +77,9 @@ def test_tmp_print_report_fingerprints_1324() -> None:
     small_result, small_reader = _render(small_package("en"))
     rich_result, rich_reader = _render(_rich_input("en"))
     phase9_result_value, phase9_reader = _render_phase9(_phase9_input("en"))
-    print("NICO1324_SMALL", repr(_fingerprint(small_result, small_reader)), flush=True)
-    print("NICO1324_RICH", repr(_fingerprint(rich_result, rich_reader)), flush=True)
-    print("NICO1324_PHASE9", repr(_fingerprint(phase9_result_value, phase9_reader)), flush=True)
+    fingerprints = {
+        "SMALL": _fingerprint(small_result, small_reader),
+        "RICH": _fingerprint(rich_result, rich_reader),
+        "PHASE9": _fingerprint(phase9_result_value, phase9_reader),
+    }
+    raise AssertionError("NICO1324_FINGERPRINTS=" + repr(fingerprints))
