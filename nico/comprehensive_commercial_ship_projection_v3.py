@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import re
 from functools import wraps
 from typing import Any, Mapping
 
 from nico import comprehensive_commercial_ship_projection_v1 as v1
+from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
 from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
-from nico.comprehensive_pdf_reflow_v1 import compact_sparse_stage_pages
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.1"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.2"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -18,6 +19,13 @@ _INSTALLED = False
 
 # Correct the helper before any stage projection is evaluated.
 v1._is_deployment_metric = _deployment_metric_order_independent
+# The Spanish renderer localizes the running page header from AUTOMATED DRAFT to
+# BORRADOR AUTOMATIZADO. The sparse-page reflow is locale-neutral, so recognize both
+# approved source-language header forms without changing any rendered report copy.
+pdf_reflow._HEADER = re.compile(
+    r"^NICO\s+Comprehensive\b.*(?:AUTOMATED\s+DRAFT|BORRADOR\s+AUTOMATIZADO)",
+    re.I,
+)
 
 
 def project_canonical_for_client_presentation(
@@ -30,7 +38,7 @@ def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, 
     """Run both bounded sparse-page compactors before final navigation is rebuilt."""
 
     limitation_pdf, limitation_manifest = v1.compact_sparse_limitation_pages(pdf_bytes)
-    reflowed_pdf, reflow_manifest = compact_sparse_stage_pages(limitation_pdf)
+    reflowed_pdf, reflow_manifest = pdf_reflow.compact_sparse_stage_pages(limitation_pdf)
     original_pages = int(limitation_manifest.get("original_pages") or 0)
     final_pages = int(reflow_manifest.get("final_pages") or limitation_manifest.get("final_pages") or original_pages)
     pages_removed = max(0, original_pages - final_pages)
@@ -60,6 +68,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             "bound": True,
             "final_assembled_source_pdf_preserved": True,
             "sparse_stage_reflow_before_final_navigation": True,
+            "localized_sparse_stage_reflow_supported": True,
             "canonical_truth_mutated": False,
             "assessment_rerun": False,
             "human_review_required": True,
@@ -169,6 +178,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         "intermediate_pdf_page_count_scoped": True,
         "sparse_limitation_compaction_before_final_navigation": True,
         "sparse_stage_reflow_before_final_navigation": True,
+        "localized_sparse_stage_reflow_supported": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_compaction": True,
         "final_assembled_source_pdf_preserved": True,
         "cross_locale_projection_from_same_canonical_snapshot": True,
