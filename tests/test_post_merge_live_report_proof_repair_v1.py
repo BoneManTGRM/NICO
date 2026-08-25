@@ -18,12 +18,15 @@ def test_mobile_download_proof_binds_ui_href_to_preverified_exact_run_artifact()
     source = DOWNLOAD_PROOF.read_text(encoding="utf-8")
 
     assert "window.__nicoReviewPdfDownloadHref" in source
-    assert 'requested_href.split("?", 1)[0].endswith(artifact_url_suffix)' in source
+    assert "page.expect_request(" in source
+    assert "unquote(parsed_requested.path) == artifact_url_suffix" in source
+    assert "unquote(parsed_browser_request.path) == artifact_url_suffix" in source
+    assert "_fetch_captured_pdf(page, requested_url, run_id)" in source
     assert 'direct.get("pdf_run_identity_verified") is True' in source
     assert 'direct.get("pdf_signature_verified") is True' in source
-    assert "observed_sha == direct_sha" in source
-    assert '"ui_review_pdf_matches_preverified_artifact": True' in source
+    assert '"ui_review_pdf_matches_preverified_artifact": bool(direct_sha and observed_sha == direct_sha)' in source
     assert '"ui_review_pdf_exact_run_href_verified": True' in source
+    assert "with page.expect_download" not in source
     assert 'page.on("response", capture_response)' not in source
     assert 'assert responses, "UI review PDF response was not observed"' not in source
 
@@ -31,7 +34,8 @@ def test_mobile_download_proof_binds_ui_href_to_preverified_exact_run_artifact()
 def test_mobile_download_proof_rejects_false_finality_filenames() -> None:
     source = DOWNLOAD_PROOF.read_text(encoding="utf-8")
 
+    assert '"AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"' in source
+    assert "requested_filename == expected_filename" in source
     assert '"AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename' in source
     assert '"FINAL-PENDING-APPROVAL" not in requested_filename' in source
-    assert '"FINAL-PENDING-APPROVAL" not in suggested_filename' in source
     assert '"ui_review_pdf_lifecycle_filename_verified": True' in source
