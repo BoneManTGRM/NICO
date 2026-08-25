@@ -12,6 +12,7 @@ const COMPREHENSIVE_REVIEW_WORK = /^\/assessment\/comprehensive-run\/[^/?#]+\/re
 const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
 const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
 const COMPREHENSIVE_REPORT_ARTIFACT = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/(?:markdown|html|json|pdf)$/;
+const COMPREHENSIVE_LOCALIZED_REPORT = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-report\/(?:en|es-MX)(?:\/pdf)?$/;
 const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/comprehensive-runtime$/;
 const BROWSER_PROJECTION_HEADER = "x-nico-browser-projection";
 const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";
@@ -91,6 +92,7 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
   if (method === "POST" && COMPREHENSIVE_REVIEW.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path)) return true;
+  if (method === "GET" && COMPREHENSIVE_LOCALIZED_REPORT.test(path)) return true;
   return false;
 }
 
@@ -106,7 +108,8 @@ function wait(ms: number): Promise<void> {
 }
 
 function upstreamReadPolicy(method: string, path: string): {timeoutMs: number; retryDelaysMs: number[]; readClass: string} {
-  const artifactRead = method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path);
+  const artifactRead = method === "GET"
+    && (COMPREHENSIVE_REPORT_ARTIFACT.test(path) || COMPREHENSIVE_LOCALIZED_REPORT.test(path));
   if (artifactRead) {
     return {
       timeoutMs: ARTIFACT_READ_TIMEOUT_MS,
@@ -220,6 +223,8 @@ async function proxyNico(
         "retry-after",
         "x-nico-run-id",
         "x-nico-report-id",
+        "x-nico-report-language",
+        "x-nico-assessment-rerun",
         "x-nico-artifact-sha256",
         "x-nico-canonical-truth-sha256",
         "x-nico-human-review-required",
