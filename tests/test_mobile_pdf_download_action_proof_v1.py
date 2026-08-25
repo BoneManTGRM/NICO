@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from scripts import mobile_pdf_download_action_proof_v1 as proof
 
 
@@ -27,6 +29,34 @@ def test_mobile_pdf_download_proof_tracks_localized_report_contract() -> None:
     )
 
 
+def test_mobile_pdf_download_proof_accepts_canonical_repository_qualified_response_filename() -> None:
+    filename = (
+        "nico-comprehensive-assessment-BoneManTGRM-NICO-comprun_contract-en-"
+        "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    )
+    disposition = f'attachment; filename="{filename}"'
+
+    assert proof._validate_response_filename(
+        disposition,
+        "comprun_contract",
+        "en",
+    ) == filename
+
+    with pytest.raises(AssertionError):
+        proof._validate_response_filename(
+            disposition,
+            "comprun_other",
+            "en",
+        )
+
+    with pytest.raises(AssertionError):
+        proof._validate_response_filename(
+            disposition.replace("PENDING-APPROVAL", "APPROVED"),
+            "comprun_contract",
+            "en",
+        )
+
+
 def test_mobile_pdf_download_proof_uses_real_anchor_contract_not_download_events() -> None:
     source = Path("scripts/mobile_pdf_download_action_proof_v1.py").read_text(encoding="utf-8")
 
@@ -40,6 +70,7 @@ def test_mobile_pdf_download_proof_uses_real_anchor_contract_not_download_events
     assert "window.__nicoReviewPdfDownloadHref" in source
     assert "unquote(parsed_requested.path) == artifact_url_suffix" in source
     assert "_fetch_captured_pdf(page, requested_url, run_id)" in source
+    assert "_validate_response_filename(" in source
     assert proof.DEPRECATED_PLAYWRIGHT_DOWNLOAD_API_MARKER == (
         "page.expect_download(timeout=240_000)"
     )
