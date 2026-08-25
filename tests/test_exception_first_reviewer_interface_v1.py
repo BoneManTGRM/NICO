@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "apps/web/app/operations/reviewer-queue/ReviewerQueue.tsx"
 PAGE = ROOT / "apps/web/app/operations/reviewer-queue/page.tsx"
 FINAL_REVIEW_PAGE = ROOT / "apps/web/app/operations/final-review/page.tsx"
+FINAL_REVIEW_COMPONENT = ROOT / "apps/web/app/operations/final-review/ComprehensiveFinalReviewWorkspace.tsx"
 PROXY = ROOT / "apps/web/app/api/nico/[...path]/route.ts"
 API_ROUTES = ROOT / "nico/comprehensive_api_routes.py"
 STATUS = ROOT / "docs/NICO_COMPLETION_PROGRAM_STATUS.md"
@@ -87,10 +88,12 @@ def test_package_remains_read_only_and_does_not_absorb_later_work() -> None:
 
 def test_internal_final_review_exposes_queue_without_changing_client_report() -> None:
     page = source(PAGE)
-    final_review = source(FINAL_REVIEW_PAGE)
+    final_review_page = source(FINAL_REVIEW_PAGE)
+    final_review_component = source(FINAL_REVIEW_COMPONENT)
     component = source(COMPONENT)
     assert "ReviewerQueue" in page
-    assert "/operations/reviewer-queue" in final_review
-    assert "FinalReviewWorkspace" in final_review
+    assert "ComprehensiveFinalReviewWorkspace" in final_review_page
+    assert "/operations/reviewer-queue?run_id=${encodeURIComponent(runId.trim())}" in final_review_component
+    assert "&lang=${encodeURIComponent(locale)}" in final_review_component
     assert "report_package" not in component
     assert "pdf_base64" not in component
