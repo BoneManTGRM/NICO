@@ -156,4 +156,4 @@ def test_requirements_pin_resolved_pillow_and_idna_versions() -> None:
     requirements = Path("requirements.txt").read_text(encoding="utf-8").splitlines()
 
     assert "pillow==12.3.0" in requirements
-    assert "idna==3.18" in requirements
+    assert "idna==3.19" in requirements
