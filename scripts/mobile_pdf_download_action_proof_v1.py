@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
 
@@ -152,10 +153,10 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         )
         expected_origin = urlparse(frontend_origin)
 
-        # Prove the real user-gesture target from the transient anchor, then fetch that
-        # exact immutable URL independently. The separate browsing context is part of
-        # the lifecycle contract: if WebKit displays application/pdf instead of honoring
-        # download, it must not replace or unload the completed assessment tab.
+        # Prove both halves of the real action: the transient browser-native target and
+        # exactly one network request caused by one trusted user gesture. The independent
+        # integrity fetch happens only after this listener is removed, so it cannot hide
+        # a duplicate dispatch from the UI itself.
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
@@ -186,6 +187,18 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             }"""
         )
 
+        gesture_pdf_requests: list[str] = []
+
+        def observe_gesture_request(request: Any) -> None:
+            parsed = urlparse(str(request.url))
+            if (
+                str(request.method).upper() == "GET"
+                and unquote(parsed.path) == artifact_url_suffix
+            ):
+                gesture_pdf_requests.append(str(request.url))
+
+        browser_context = page.context
+        browser_context.on("request", observe_gesture_request)
         original_page_url = str(page.url)
         try:
             pdf_button.click()
@@ -193,8 +206,21 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                 "() => Boolean(window.__nicoReviewPdfDownloadHref)",
                 timeout=5_000,
             )
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and not gesture_pdf_requests:
+                page.wait_for_timeout(50)
+            # Keep the listener alive briefly after the first request so a fallback or
+            # accidental second dispatch cannot escape the exact-count assertion.
+            if gesture_pdf_requests:
+                page.wait_for_timeout(750)
         finally:
+            browser_context.remove_listener("request", observe_gesture_request)
             page.evaluate("() => window.__nicoReviewPdfObserver?.disconnect?.()")
+
+        assert len(gesture_pdf_requests) == 1, {
+            "expected_user_gesture_pdf_request_count": 1,
+            "observed_user_gesture_pdf_requests": gesture_pdf_requests,
+        }
 
         requested_filename = str(
             page.evaluate("() => String(window.__nicoReviewPdfDownloadAttribute || '')")
@@ -257,6 +283,8 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_response_filename": response_filename,
             "ui_review_pdf_requested_href": requested_href,
             "ui_review_pdf_report_language": report_language,
+            "ui_review_pdf_user_gesture_request_count": len(gesture_pdf_requests),
+            "ui_review_pdf_single_dispatch_verified": True,
             "ui_review_pdf_exact_run_filename_verified": True,
             "ui_review_pdf_exact_run_href_verified": True,
             "ui_review_pdf_exact_run_response_verified": True,
