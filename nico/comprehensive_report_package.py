@@ -667,9 +667,21 @@ def _pdf(
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"
+    display_metadata_supplied = any(
+        _text(identity.get(field), 300)
+        for field in ("customer_name", "project_name", "primary_technical_contact")
+    )
     not_supplied = localized("Not supplied")
-    customer_display = _text(identity.get("customer_name"), 80) or not_supplied
-    project_display = _text(identity.get("project_name"), 80) or not_supplied
+    if display_metadata_supplied:
+        customer_display = _text(identity.get("customer_name"), 80) or not_supplied
+        project_display = _text(identity.get("project_name"), 80) or not_supplied
+    else:
+        # Legacy/internal packages historically display immutable scope IDs here. Keep
+        # that behavior only when no display metadata was supplied at all so existing
+        # canonical identity/golden contracts remain stable. Commercial engagements
+        # with any display metadata use the explicit human-facing values above.
+        customer_display = _text(identity.get("customer_id"), 80)
+        project_display = _text(identity.get("project_id"), 80)
     identity_rows = [
         [localized("Service"), "Comprehensive", localized("Run ID"), _text(identity.get("run_id"), 80)],
         [localized("Repository"), _text(identity.get("repository"), 80), localized("Commit"), _text(identity.get("commit_sha"), 80)],
@@ -700,7 +712,12 @@ def _pdf(
     story += [Spacer(1, 0.15 * inch), identity_table]
 
     constraints = _constraints(assessment, stages)
-    story += [Spacer(1, 0.2 * inch), p(localized("Priority Constraints and Decision Risks"), h1), *bullets((localized(item) for item in constraints), limit=24)]
+    decision_break = Spacer(1, 0.2 * inch) if display_metadata_supplied else PageBreak()
+    story += [
+        decision_break,
+        p(localized("Priority Constraints and Decision Risks"), h1),
+        *bullets((localized(item) for item in constraints), limit=24),
+    ]
 
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
     story += [PageBreak(), p(localized("Canonical Technical Scorecard"), h1)]
