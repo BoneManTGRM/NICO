@@ -43,7 +43,7 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v15"
+VERSION = "nico.comprehensive_run_service.v16"
 
 _EXECUTIVE_BRIEFING_STAGE_ID = "risk_reduction_and_executive_briefing"
 _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
@@ -283,6 +283,10 @@ class ComprehensiveRunService:
                 retained_stage_results,
                 completed,
             )
+            customer_name = str(
+                identity.get("customer_name") or identity.get("client_name") or ""
+            ).strip()
+            project_name = str(identity.get("project_name") or "").strip()
             context = {
                 "artifact_schema": VERSION,
                 "service_id": "comprehensive",
@@ -293,6 +297,13 @@ class ComprehensiveRunService:
                 "evidence_ledger_id": identity["evidence_ledger_id"],
                 "customer_id": identity["customer_id"],
                 "project_id": identity["project_id"],
+                # Display metadata is descriptive engagement context, not a scope ID.
+                # Carry it through the same authoritative stage context as the canonical
+                # identifiers so child/background/final-renderer processes cannot lose
+                # values that are already durably persisted in record.identity.
+                "customer_name": customer_name,
+                "client_name": customer_name,
+                "project_name": project_name,
                 "assessment_depth": identity["assessment_depth"],
                 "report_language": identity["report_language"],
                 "human_evidence": deepcopy(record.get("human_evidence") or {}),
