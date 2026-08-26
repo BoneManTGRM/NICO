@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.2"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.3"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
 _DISPLAY_MARKER = "__nico_final_worker_display_metadata_fallback_v1__"
 _INSTALLED = False
@@ -58,13 +58,19 @@ def _install_display_metadata_fallback() -> None:
 
 
 def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
-    """Bind final report metadata recovery and sparse-page reflow in the renderer."""
+    """Bind final metadata retention, sparse reflow and semantic navigation."""
 
     global _INSTALLED
     from nico import comprehensive_manifest_navigation_v1 as navigation
     from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
+    from nico.comprehensive_final_display_metadata_v92 import (
+        install_comprehensive_final_display_metadata_v92,
+    )
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
+    )
+    from nico.comprehensive_semantic_navigation_v2 import (
+        install_comprehensive_semantic_navigation_v2,
     )
 
     _install_display_metadata_fallback()
@@ -73,7 +79,14 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         re.I,
     )
 
+    # The old upstream metadata fixes correctly retained and recovered the display
+    # fields, but the final report builder rebuilt a six-field canonical identity and
+    # dropped them again. Bind the last-loss repair inside this isolated renderer process
+    # before any report package is constructed.
+    final_display_metadata = install_comprehensive_final_display_metadata_v92()
+
     install_comprehensive_manifest_navigation_v1()
+    semantic_navigation = install_comprehensive_semantic_navigation_v2()
     current = navigation._renumber_and_outline
     if getattr(current, _MARKER, False):
         _INSTALLED = True
@@ -82,7 +95,12 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "status": "already_installed",
             "bound": True,
             "durable_report_display_metadata_fallback": True,
+            "final_builder_display_metadata_preserved": final_display_metadata.get("bound") is True,
+            "primary_technical_contact_preserved": final_display_metadata.get("primary_technical_contact_preserved") is True,
             "reflow_before_final_navigation": True,
+            "semantic_navigation_bound": semantic_navigation.get("bound") is True,
+            "multiple_sections_per_page_toc_supported": semantic_navigation.get("multiple_sections_per_page_supported") is True,
+            "bilingual_toc_and_page_labels": semantic_navigation.get("bilingual_toc_and_page_labels") is True,
             "bilingual_source_headers_supported": True,
             "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
             "canonical_truth_mutated": False,
@@ -104,7 +122,12 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "status": "installed",
         "bound": True,
         "durable_report_display_metadata_fallback": True,
+        "final_builder_display_metadata_preserved": final_display_metadata.get("bound") is True,
+        "primary_technical_contact_preserved": final_display_metadata.get("primary_technical_contact_preserved") is True,
         "reflow_before_final_navigation": True,
+        "semantic_navigation_bound": semantic_navigation.get("bound") is True,
+        "multiple_sections_per_page_toc_supported": semantic_navigation.get("multiple_sections_per_page_supported") is True,
+        "bilingual_toc_and_page_labels": semantic_navigation.get("bilingual_toc_and_page_labels") is True,
         "bilingual_source_headers_supported": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
         "canonical_truth_mutated": False,
