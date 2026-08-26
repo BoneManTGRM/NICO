@@ -64,17 +64,15 @@ def test_intake_mirrors_display_names_into_retained_report_evidence_without_muta
 
 
 def test_isolated_report_worker_recovers_missing_identity_display_names_from_retained_evidence():
-    import nico.comprehensive_report_review_integrity_v1 as integrity
-    from nico.comprehensive_final_worker_pdf_reflow_v1 import (
-        _install_display_metadata_fallback,
-    )
+    from nico.comprehensive_report_worker_runtime_v90 import _report_identity
 
-    _install_display_metadata_fallback()
-    record = {
-        "identity": {
-            "customer_id": "scope-customer",
-            "project_id": "scope-project",
-        },
+    context = {
+        "run_id": "comprun_worker_metadata_fixture",
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "a" * 40,
+        "evidence_ledger_id": "ledger-worker-metadata-fixture",
+        "customer_id": "scope-customer",
+        "project_id": "scope-project",
         "human_evidence": {
             "modules": {
                 "stakeholder_context": {
@@ -88,14 +86,12 @@ def test_isolated_report_worker_recovers_missing_identity_display_names_from_ret
         },
     }
 
-    values = integrity._display_values(record)
-    assert values == {
-        "customer_name": "Acme Client",
-        "project_name": "Atlas Project",
-        "primary_technical_contact": "Alex Reviewer",
-    }
-    assert record["identity"]["customer_id"] == "scope-customer"
-    assert record["identity"]["project_id"] == "scope-project"
+    identity = _report_identity(context)
+    assert identity["customer_name"] == "Acme Client"
+    assert identity["project_name"] == "Atlas Project"
+    assert identity["primary_technical_contact"] == "Alex Reviewer"
+    assert identity["customer_id"] == "scope-customer"
+    assert identity["project_id"] == "scope-project"
 
 
 def test_sparse_report_reflow_compacts_literal_hyphen_bullets_without_dropping_text():

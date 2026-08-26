@@ -1,90 +1,97 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.2"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.8"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
-_DISPLAY_MARKER = "__nico_final_worker_display_metadata_fallback_v1__"
+_SEMANTIC_MARKER = "__nico_final_worker_semantic_navigation_v1__"
 _INSTALLED = False
 
+_HISTORICAL_SPANISH_SEMANTIC_ALIASES: dict[str, tuple[str, ...]] = {
+    "dependency_library_ecosystem": ("Ecosistema de dependencias",),
+    "secrets_exposure_review": ("Revisión de secretos",),
+    "human_review_acceptance_gate": ("Revisión humana y aceptación",),
+}
 
-def _install_display_metadata_fallback() -> None:
-    """Recover report-only display metadata from durable retained evidence.
 
-    The primary identity path remains authoritative. This fallback exists only because
-    the final renderer is an isolated process and prior ContextVar-based propagation was
-    repeatedly lost at that process boundary. The intake now mirrors optional client and
-    project display names into retained stakeholder evidence; this worker reads them only
-    when the canonical identity field is absent. Scope IDs, scores and review state are
-    untouched.
+def _bind_historical_spanish_semantic_aliases() -> bool:
+    """Recognize bounded historical es-MX headings without changing presentation.
+
+    The final TOC/bookmark labels remain owned by the canonical bilingual semantic
+    manifest. These aliases are input-recognition compatibility for report bodies that
+    were rendered with earlier, shorter Spanish headings before navigation is rebuilt.
     """
 
-    import nico.comprehensive_report_review_integrity_v1 as integrity
+    from nico import comprehensive_semantic_navigation_v1 as semantic_navigation
 
-    current = integrity._display_values
-    if getattr(current, _DISPLAY_MARKER, False):
-        return
-
-    def display_values_with_durable_fallback(record: Mapping[str, Any]) -> dict[str, str]:
-        values = dict(current(record))
-        human_evidence = (
-            record.get("human_evidence")
-            if isinstance(record.get("human_evidence"), Mapping)
-            else {}
-        )
-        if not values.get("customer_name"):
-            values["customer_name"] = integrity._find_evidence_value(
-                human_evidence,
-                "customer_name",
-            ) or integrity._find_evidence_value(human_evidence, "client_name")
-        if not values.get("project_name"):
-            values["project_name"] = integrity._find_evidence_value(
-                human_evidence,
-                "project_name",
-            )
-        if not values.get("primary_technical_contact"):
-            values["primary_technical_contact"] = integrity._find_evidence_value(
-                human_evidence,
-                "primary_technical_contact",
-            )
-        return values
-
-    setattr(display_values_with_durable_fallback, _DISPLAY_MARKER, True)
-    setattr(display_values_with_durable_fallback, "_nico_previous", current)
-    integrity._display_values = display_values_with_durable_fallback
+    aliases = dict(semantic_navigation._TITLE_ALIASES_BY_SECTION_ID)
+    for section_id, historic_values in _HISTORICAL_SPANISH_SEMANTIC_ALIASES.items():
+        current = tuple(aliases.get(section_id) or ())
+        aliases[section_id] = tuple(dict.fromkeys((*current, *historic_values)))
+    semantic_navigation._TITLE_ALIASES_BY_SECTION_ID = aliases
+    return all(
+        all(value in aliases.get(section_id, ()) for value in values)
+        for section_id, values in _HISTORICAL_SPANISH_SEMANTIC_ALIASES.items()
+    )
 
 
 def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
-    """Bind final report metadata recovery and sparse-page reflow in the renderer."""
+    """Bind safe compaction, localized metadata labels, and semantic navigation.
+
+    Display metadata persistence remains stable source behavior in the canonical intake,
+    detached-worker identity projection, and report package builder. This worker-local
+    installer changes presentation only: es-MX metadata labels, sparse-page reflow, final
+    semantic TOC/bookmarks, and physical page labels.
+    """
 
     global _INSTALLED
     from nico import comprehensive_manifest_navigation_v1 as navigation
     from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
+    from nico.comprehensive_bilingual_navigation_validation_v1 import (
+        install_bilingual_navigation_validation_v1,
+    )
+    from nico.comprehensive_display_metadata_localization_v1 import (
+        install_display_metadata_localization_v1,
+    )
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
     )
+    from nico.comprehensive_semantic_navigation_v1 import (
+        semantic_renumber_and_outline,
+    )
 
-    _install_display_metadata_fallback()
     pdf_reflow._HEADER = re.compile(
         r"^NICO\s+Comprehensive\b.*(?:AUTOMATED\s+DRAFT|BORRADOR\s+AUTOMATIZADO)",
         re.I,
     )
 
+    historical_aliases_bound = _bind_historical_spanish_semantic_aliases()
+    metadata_localization = install_display_metadata_localization_v1()
     install_comprehensive_manifest_navigation_v1()
+    bilingual_validation = install_bilingual_navigation_validation_v1()
     current = navigation._renumber_and_outline
-    if getattr(current, _MARKER, False):
+    if getattr(current, _SEMANTIC_MARKER, False):
         _INSTALLED = True
         return {
             "artifact_schema": VERSION,
             "status": "already_installed",
             "bound": True,
-            "durable_report_display_metadata_fallback": True,
+            "display_metadata_preservation_is_stable_source": True,
+            "display_metadata_es_mx_labels_bound": (
+                metadata_localization.get("status") in {"installed", "already_installed"}
+            ),
+            "historical_spanish_semantic_aliases_bound": historical_aliases_bound,
+            "canonical_semantic_titles_unchanged": True,
             "reflow_before_final_navigation": True,
             "bilingual_source_headers_supported": True,
             "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
+            "semantic_multi_heading_toc": True,
+            "shared_page_sections_retained_in_toc": True,
+            "mexican_spanish_toc_validation_supported": (
+                bilingual_validation.get("mexican_spanish_toc_validation_supported") is True
+            ),
             "canonical_truth_mutated": False,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -93,9 +100,10 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     @wraps(current)
     def reflow_then_renumber(pdf_bytes: bytes) -> bytes:
         reflowed, _manifest = pdf_reflow.compact_sparse_stage_pages(pdf_bytes)
-        return current(reflowed)
+        return semantic_renumber_and_outline(reflowed)
 
     setattr(reflow_then_renumber, _MARKER, True)
+    setattr(reflow_then_renumber, _SEMANTIC_MARKER, True)
     setattr(reflow_then_renumber, "_nico_previous", current)
     navigation._renumber_and_outline = reflow_then_renumber
     _INSTALLED = True
@@ -103,10 +111,20 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "artifact_schema": VERSION,
         "status": "installed",
         "bound": True,
-        "durable_report_display_metadata_fallback": True,
+        "display_metadata_preservation_is_stable_source": True,
+        "display_metadata_es_mx_labels_bound": (
+            metadata_localization.get("status") in {"installed", "already_installed"}
+        ),
+        "historical_spanish_semantic_aliases_bound": historical_aliases_bound,
+        "canonical_semantic_titles_unchanged": True,
         "reflow_before_final_navigation": True,
         "bilingual_source_headers_supported": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
+        "semantic_multi_heading_toc": True,
+        "shared_page_sections_retained_in_toc": True,
+        "mexican_spanish_toc_validation_supported": (
+            bilingual_validation.get("mexican_spanish_toc_validation_supported") is True
+        ),
         "canonical_truth_mutated": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
