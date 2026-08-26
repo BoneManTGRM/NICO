@@ -45,13 +45,14 @@ function showStatus(container: Element | null, message: string, failure = false)
     status = document.createElement("span");
     status.setAttribute(STATUS_ATTR, "true");
     status.className = "muted";
+    status.setAttribute("aria-live", "polite");
     container.appendChild(status);
   }
   status.setAttribute("role", failure ? "alert" : "status");
   status.textContent = message;
   window.setTimeout(() => {
     if (status?.isConnected && status.textContent === message) status.remove();
-  }, failure ? 8_000 : 2_500);
+  }, failure ? 8_000 : 3_500);
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -107,13 +108,24 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
   }
 }
 
+function enabledCopyButton(actions: Element): HTMLButtonElement | null {
+  for (const button of Array.from(actions.querySelectorAll<HTMLButtonElement>("button"))) {
+    if (COPY_MARKDOWN_LABEL.test(String(button.textContent || "").trim())) {
+      return button.disabled ? null : button;
+    }
+  }
+  return null;
+}
+
 /**
  * Keep the terminal Copy Markdown action usable across desktop Chromium and WebKit.
  *
- * The exact-run Markdown is prefetched when the terminal action bar becomes available,
- * so the normal click only performs the clipboard write and preserves browser user
- * activation. A click can retry a failed prefetch, but every outcome is visible; the
- * control never remains in the old "looks enabled but silently does nothing" state.
+ * Fetch only after the report is actually terminal-ready. The prior bridge mounted on
+ * the always-present action bar and immediately requested /report/markdown while the
+ * run was still active, producing a real production 409. Once ready, Markdown is
+ * prefetched before the user gesture. If a user clicks before that prefetch completes,
+ * the first click visibly prepares the artifact and asks for one retry instead of
+ * awaiting network I/O and silently losing clipboard user activation.
  */
 export default function AssessmentMarkdownCopyBridge() {
   const cache = useRef<CacheEntry | null>(null);
@@ -132,6 +144,8 @@ export default function AssessmentMarkdownCopyBridge() {
     function prefetch(): void {
       const actions = document.querySelector(REPORT_ACTIONS_SELECTOR);
       if (!actions) return;
+      if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
+      if (!enabledCopyButton(actions)) return;
       const entry = entryForVisibleRun();
       if (!entry || entry.markdown || entry.promise) return;
       void loadMarkdown(entry).catch(() => {
@@ -169,12 +183,30 @@ export default function AssessmentMarkdownCopyBridge() {
         return;
       }
 
+      if (!entry.markdown) {
+        showStatus(
+          actions,
+          spanish()
+            ? "Preparando Markdown. Cuando indique que está listo, pulsa Copiar Markdown otra vez."
+            : "Preparing Markdown. When it is ready, click Copy Markdown again.",
+        );
+        void loadMarkdown(entry)
+          .then(() => showStatus(
+            actions,
+            spanish() ? "Markdown listo. Pulsa Copiar Markdown." : "Markdown ready. Click Copy Markdown.",
+          ))
+          .catch(() => showStatus(
+            actions,
+            spanish()
+              ? "No se pudo preparar Markdown. Vuelve a intentarlo."
+              : "Markdown could not be prepared. Try again.",
+            true,
+          ));
+        return;
+      }
+
       try {
-        if (!entry.markdown) {
-          showStatus(actions, spanish() ? "Preparando Markdown…" : "Preparing Markdown…");
-        }
-        const markdown = entry.markdown || await loadMarkdown(entry);
-        if (!await copyText(markdown)) throw new Error("clipboard_write_failed");
+        if (!await copyText(entry.markdown)) throw new Error("clipboard_write_failed");
         showStatus(actions, spanish() ? "Markdown copiado." : "Markdown copied.");
       } catch {
         showStatus(
@@ -206,4 +238,4 @@ export default function AssessmentMarkdownCopyBridge() {
   return null;
 }
 
-export {copyText, markdownHref, visibleRunId};
+export {copyText, enabledCopyButton, markdownHref, visibleRunId};
