@@ -4,6 +4,9 @@ from nico.api.terminal_authority_bootstrap import app
 from nico.comprehensive_canonical_truth_hash_compat_v1 import (
     install_canonical_truth_hash_compat,
 )
+from nico.comprehensive_final_worker_pdf_reflow_v1 import (
+    install_comprehensive_final_worker_pdf_reflow_v1,
+)
 from nico.comprehensive_report_review_integrity_v1 import (
     install_comprehensive_report_review_integrity_v1,
 )
@@ -23,7 +26,7 @@ from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v7"
+VERSION = "nico.api.final_report_worker_bootstrap.v8"
 
 # This module is the isolated final-report renderer entry point. Parent-process monkey
 # patches do not cross the subprocess boundary. Install the report/review integrity
@@ -226,6 +229,28 @@ if SPANISH_FINAL_REPORT_RUNTIME_CACHE.get("human_review_required") is not True:
 if SPANISH_FINAL_REPORT_RUNTIME_CACHE.get("client_delivery_allowed") is not False:
     raise RuntimeError("Renderer worker must block unapproved client delivery")
 
+# Final report generation happens in this child process. The parent commercial reflow
+# cannot cross the subprocess boundary, and source-language PDFs are frozen once this
+# worker returns them. Bind the sparse-page reflow here before canonical hash finalization
+# so the generated source PDF is compacted before final TOC, page labels and bookmarks
+# are rebuilt. This is presentation-only and does not mutate canonical truth.
+FINAL_WORKER_PDF_REFLOW = install_comprehensive_final_worker_pdf_reflow_v1()
+setattr(app.state, "nico_final_worker_pdf_reflow", FINAL_WORKER_PDF_REFLOW)
+if FINAL_WORKER_PDF_REFLOW.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError("Final renderer sparse-page reflow did not install")
+if FINAL_WORKER_PDF_REFLOW.get("bound") is not True:
+    raise RuntimeError("Final renderer sparse-page reflow is not bound")
+if FINAL_WORKER_PDF_REFLOW.get("reflow_before_final_navigation") is not True:
+    raise RuntimeError("Final PDF reflow must run before final navigation assembly")
+if FINAL_WORKER_PDF_REFLOW.get("toc_page_labels_and_bookmarks_rebuilt_after_reflow") is not True:
+    raise RuntimeError("Final PDF navigation must be rebuilt after sparse-page reflow")
+if FINAL_WORKER_PDF_REFLOW.get("canonical_truth_mutated") is not False:
+    raise RuntimeError("Final PDF reflow must not mutate canonical truth")
+if FINAL_WORKER_PDF_REFLOW.get("human_review_required") is not True:
+    raise RuntimeError("Final PDF reflow must preserve human review")
+if FINAL_WORKER_PDF_REFLOW.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Final PDF reflow must block unapproved client delivery")
+
 # The renderer worker is a separate process, so parent-process monkey patches do not
 # automatically cross this boundary. Bind the canonical truth hash only after every
 # worker-local report wrapper above has been installed. This makes the hash describe the
@@ -243,6 +268,7 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "status": "ready",
     "same_terminal_report_authority_as_production": True,
     "report_review_integrity_bound": True,
+    "final_worker_pdf_reflow_bound": True,
     "spanish_canonical_acceptance_normalization_bound": True,
     "spanish_assessment_scope_contract_bound": True,
     "spanish_canonical_evidence_literals_bound": True,
@@ -267,6 +293,7 @@ setattr(app.state, "nico_final_report_worker_runtime", FINAL_REPORT_WORKER_RUNTI
 __all__ = [
     "CANONICAL_TRUTH_HASH_COMPAT",
     "FINAL_REPORT_WORKER_RUNTIME",
+    "FINAL_WORKER_PDF_REFLOW",
     "REPORT_REVIEW_INTEGRITY",
     "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION",
