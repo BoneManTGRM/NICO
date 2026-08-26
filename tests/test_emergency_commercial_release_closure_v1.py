@@ -255,7 +255,7 @@ def test_semantic_navigation_keeps_multiple_sections_on_the_same_physical_page()
 
     # One inserted TOC page means all headings on original source page 2 land on
     # physical page 3, and all headings on source page 3 land on physical page 4.
-    assert mapping["Code audit"] == 3
+    assert mapping["Code Audit"] == 3
     assert mapping["Dependency / Library Ecosystem"] == 3
     assert mapping["Secrets Exposure Review"] == 3
     assert mapping["Client Evidence Summary"] == 4
@@ -269,7 +269,7 @@ def test_semantic_navigation_keeps_multiple_sections_on_the_same_physical_page()
         assert title in toc
 
     outline_text = " ".join(str(item) for item in reader.outline)
-    assert "Code audit" in outline_text
+    assert "Code Audit" in outline_text
     assert "Dependency / Library Ecosystem" in outline_text
     assert "Secrets Exposure Review" in outline_text
     assert "Client Evidence Summary" in outline_text
@@ -283,6 +283,7 @@ def test_semantic_navigation_localizes_generated_toc_for_es_mx() -> None:
     output = semantic_renumber_and_outline(_multi_heading_pdf(spanish=True))
     reader = PdfReader(io.BytesIO(output))
     toc = reader.pages[1].extract_text() or ""
+    full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     assert "Tabla de contenido" in toc
     assert "Auditoría de código" in toc
@@ -291,4 +292,7 @@ def test_semantic_navigation_localizes_generated_toc_for_es_mx() -> None:
     assert "Resumen de evidencia del cliente" in toc
     assert "QA funcional" in toc
     assert "Paridad de plataformas" in toc
-    assert "Table of Contents" not in toc
+    assert "Table of Contents" not in full_text
+    assert "Document page " not in full_text
+    for index in range(1, len(reader.pages) + 1):
+        assert f"Página del documento {index} de {len(reader.pages)}" in full_text
