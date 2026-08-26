@@ -26,7 +26,7 @@ from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v8"
+VERSION = "nico.api.final_report_worker_bootstrap.v8.1"
 
 # This module is the isolated final-report renderer entry point. Parent-process monkey
 # patches do not cross the subprocess boundary. Install the report/review integrity
@@ -242,6 +242,8 @@ if FINAL_WORKER_PDF_REFLOW.get("bound") is not True:
     raise RuntimeError("Final renderer sparse-page reflow is not bound")
 if FINAL_WORKER_PDF_REFLOW.get("reflow_before_final_navigation") is not True:
     raise RuntimeError("Final PDF reflow must run before final navigation assembly")
+if FINAL_WORKER_PDF_REFLOW.get("bilingual_source_headers_supported") is not True:
+    raise RuntimeError("Final PDF reflow must recognize English and Mexican-Spanish source headers")
 if FINAL_WORKER_PDF_REFLOW.get("toc_page_labels_and_bookmarks_rebuilt_after_reflow") is not True:
     raise RuntimeError("Final PDF navigation must be rebuilt after sparse-page reflow")
 if FINAL_WORKER_PDF_REFLOW.get("canonical_truth_mutated") is not False:
@@ -269,6 +271,7 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "same_terminal_report_authority_as_production": True,
     "report_review_integrity_bound": True,
     "final_worker_pdf_reflow_bound": True,
+    "final_worker_pdf_reflow_bilingual": True,
     "spanish_canonical_acceptance_normalization_bound": True,
     "spanish_assessment_scope_contract_bound": True,
     "spanish_canonical_evidence_literals_bound": True,
