@@ -55,9 +55,6 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
 ) -> None:
     from nico import comprehensive_api_routes as routes
     from nico.comprehensive_api_controller import ComprehensiveApiController
-    from nico.comprehensive_commercial_release_closure_v2 import (
-        install_comprehensive_commercial_release_closure_v2,
-    )
     from nico.comprehensive_report_worker_runtime_v90 import _report_identity
     from nico.comprehensive_run_service import ComprehensiveRunService
     from nico.comprehensive_run_store import ComprehensiveRunStore
@@ -147,7 +144,6 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
         == "NICO Metadata Proof Contact"
     )
 
-    install_comprehensive_commercial_release_closure_v2()
     package = worker.build_comprehensive_report_package(
         identity=report_identity,
         stage_results=_minimal_stage_results(),
@@ -178,8 +174,9 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
     assert "NICO Production Metadata Proof" in pdf_text
     assert "Comprehensive Metadata E2E Proof" in pdf_text
 
-    # The client-evidence stage is the final presentation surface for the technical
-    # contact. It reads canonical report identity, not browser/process memory.
+    # The final Client Evidence Summary reads canonical report identity, not browser or
+    # process-local state. Once required review sections are projected, the contact and
+    # display names must be present and must not revert to not-supplied placeholders.
     import nico.comprehensive_report_review_integrity_v1 as integrity
     import nico.v2_premium_report_renderer as renderer
 
@@ -247,13 +244,13 @@ def _multi_heading_pdf(*, spanish: bool = False) -> bytes:
 
 def test_semantic_navigation_keeps_multiple_sections_on_the_same_physical_page() -> None:
     from nico import comprehensive_manifest_navigation_v1 as navigation
-    from nico.comprehensive_commercial_release_closure_v1 import _semantic_entries
-    from nico.comprehensive_commercial_release_closure_v2 import (
+    from nico.comprehensive_semantic_navigation_v1 import (
+        semantic_entries,
         semantic_renumber_and_outline,
     )
 
     original = PdfReader(io.BytesIO(_multi_heading_pdf()))
-    semantic = _semantic_entries(original, navigation._outline_title)
+    semantic = semantic_entries(original, navigation._outline_title)
     mapping = {title: original_page_index + 2 for title, original_page_index in semantic}
 
     # One inserted TOC page means all headings on original source page 2 land on
@@ -281,9 +278,7 @@ def test_semantic_navigation_keeps_multiple_sections_on_the_same_physical_page()
 
 
 def test_semantic_navigation_localizes_generated_toc_for_es_mx() -> None:
-    from nico.comprehensive_commercial_release_closure_v2 import (
-        semantic_renumber_and_outline,
-    )
+    from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
 
     output = semantic_renumber_and_outline(_multi_heading_pdf(spanish=True))
     reader = PdfReader(io.BytesIO(output))
