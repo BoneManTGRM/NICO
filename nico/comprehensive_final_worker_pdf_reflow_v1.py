@@ -5,21 +5,19 @@ from collections.abc import Mapping
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.2"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.6.1"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
+_SEMANTIC_MARKER = "__nico_final_worker_semantic_navigation_v1__"
 _DISPLAY_MARKER = "__nico_final_worker_display_metadata_fallback_v1__"
 _INSTALLED = False
 
 
 def _install_display_metadata_fallback() -> None:
-    """Recover report-only display metadata from durable retained evidence.
+    """Compatibility fallback for older direct callers of report-review integrity.
 
-    The primary identity path remains authoritative. This fallback exists only because
-    the final renderer is an isolated process and prior ContextVar-based propagation was
-    repeatedly lost at that process boundary. The intake now mirrors optional client and
-    project display names into retained stakeholder evidence; this worker reads them only
-    when the canonical identity field is absent. Scope IDs, scores and review state are
-    untouched.
+    Production final report identity is now preserved by stable report-package source
+    behavior. Keep this helper callable for existing regression/compatibility surfaces,
+    but the final-worker installer no longer depends on it.
     """
 
     import nico.comprehensive_report_review_integrity_v1 as integrity
@@ -58,33 +56,44 @@ def _install_display_metadata_fallback() -> None:
 
 
 def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
-    """Bind final report metadata recovery and sparse-page reflow in the renderer."""
+    """Bind sparse-page reflow followed by canonical bilingual semantic navigation."""
 
     global _INSTALLED
     from nico import comprehensive_manifest_navigation_v1 as navigation
     from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
+    from nico.comprehensive_bilingual_navigation_validation_v1 import (
+        install_bilingual_navigation_validation_v1,
+    )
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
     )
+    from nico.comprehensive_semantic_navigation_v1 import (
+        semantic_renumber_and_outline,
+    )
 
-    _install_display_metadata_fallback()
     pdf_reflow._HEADER = re.compile(
         r"^NICO\s+Comprehensive\b.*(?:AUTOMATED\s+DRAFT|BORRADOR\s+AUTOMATIZADO)",
         re.I,
     )
 
     install_comprehensive_manifest_navigation_v1()
+    bilingual_validation = install_bilingual_navigation_validation_v1()
     current = navigation._renumber_and_outline
-    if getattr(current, _MARKER, False):
+    if getattr(current, _SEMANTIC_MARKER, False):
         _INSTALLED = True
         return {
             "artifact_schema": VERSION,
             "status": "already_installed",
             "bound": True,
-            "durable_report_display_metadata_fallback": True,
+            "display_metadata_preservation_is_stable_report_package_source": True,
             "reflow_before_final_navigation": True,
             "bilingual_source_headers_supported": True,
             "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
+            "semantic_multi_heading_toc": True,
+            "shared_page_sections_retained_in_toc": True,
+            "mexican_spanish_toc_validation_supported": (
+                bilingual_validation.get("mexican_spanish_toc_validation_supported") is True
+            ),
             "canonical_truth_mutated": False,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -93,9 +102,10 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     @wraps(current)
     def reflow_then_renumber(pdf_bytes: bytes) -> bytes:
         reflowed, _manifest = pdf_reflow.compact_sparse_stage_pages(pdf_bytes)
-        return current(reflowed)
+        return semantic_renumber_and_outline(reflowed)
 
     setattr(reflow_then_renumber, _MARKER, True)
+    setattr(reflow_then_renumber, _SEMANTIC_MARKER, True)
     setattr(reflow_then_renumber, "_nico_previous", current)
     navigation._renumber_and_outline = reflow_then_renumber
     _INSTALLED = True
@@ -103,14 +113,23 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "artifact_schema": VERSION,
         "status": "installed",
         "bound": True,
-        "durable_report_display_metadata_fallback": True,
+        "display_metadata_preservation_is_stable_report_package_source": True,
         "reflow_before_final_navigation": True,
         "bilingual_source_headers_supported": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
+        "semantic_multi_heading_toc": True,
+        "shared_page_sections_retained_in_toc": True,
+        "mexican_spanish_toc_validation_supported": (
+            bilingual_validation.get("mexican_spanish_toc_validation_supported") is True
+        ),
         "canonical_truth_mutated": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
 
 
-__all__ = ["VERSION", "install_comprehensive_final_worker_pdf_reflow_v1"]
+__all__ = [
+    "VERSION",
+    "_install_display_metadata_fallback",
+    "install_comprehensive_final_worker_pdf_reflow_v1",
+]
