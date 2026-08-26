@@ -238,9 +238,13 @@ def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
 
     entries, spanish = semantic_entries(reader)
     if not entries:
-        # Fail closed to the established navigation path rather than publishing a TOC
-        # with no semantic anchors if a future renderer changes every heading contract.
-        return navigation._renumber_and_outline(pdf_bytes)
+        # Fall back to the exact pre-v2 delegate retained by the installed wrapper.
+        # Calling navigation._renumber_and_outline directly here after installation
+        # would recurse back into this function.
+        fallback = getattr(navigation._renumber_and_outline, "_nico_previous", None)
+        if callable(fallback):
+            return fallback(pdf_bytes)
+        raise ValueError("final Comprehensive PDF contains no recognized semantic headings")
 
     total = len(reader.pages) + 1
     toc = PdfReader(io.BytesIO(_toc_page(entries, total, spanish=spanish))).pages[0]
