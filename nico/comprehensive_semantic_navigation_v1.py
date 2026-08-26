@@ -7,12 +7,14 @@ from typing import Any, Mapping
 
 from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
-VERSION = "nico.comprehensive_semantic_navigation.v1.2"
+VERSION = "nico.comprehensive_semantic_navigation.v1.3"
 _TOC_ROWS_PER_PAGE = 39
 
 # Known historic/localized heading variants are recognition aliases only.
 # Presentation labels always come from the canonical semantic manifest.
 _TITLE_ALIASES_BY_SECTION_ID: dict[str, tuple[str, ...]] = {
+    "dependency_library_ecosystem": ("Ecosistema de dependencias",),
+    "secrets_exposure_review": ("Revisión de secretos",),
     "functional_qa": ("Control de calidad funcional",),
     "stakeholder_business_alignment": (
         "Alineación con partes interesadas y negocio",
@@ -22,6 +24,7 @@ _TITLE_ALIASES_BY_SECTION_ID: dict[str, tuple[str, ...]] = {
     ),
     "human_review_acceptance_gate": (
         "Puerta de revisión y aceptación humana",
+        "Revisión humana y aceptación",
     ),
     "human_review_exact_artifact_approval": (
         "Registro de revisión humana y aprobación del artefacto exacto",
