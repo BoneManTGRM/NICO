@@ -188,19 +188,21 @@ def test_final_worker_reflows_mexican_spanish_before_navigation() -> None:
     assert state["bound"] is True
     assert state["bilingual_source_headers_supported"] is True
     assert state["reflow_before_final_navigation"] is True
+    assert state["mexican_spanish_toc_validation_supported"] is True
 
     original = _spanish_sparse_pdf()
     output = navigation._renumber_and_outline(original)
     reader = PdfReader(io.BytesIO(output))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    # Four sparse source pages would become five after the normal TOC insertion. A
-    # result below five proves worker-local reflow actually happened before navigation.
+    # Four sparse source pages would become five after normal TOC insertion. A result
+    # below five proves worker-local reflow happened before semantic navigation.
     assert len(reader.pages) < 5
     assert "Tabla de contenido" in text
     assert "Table of Contents" not in text
     for index in range(1, len(reader.pages) + 1):
-        assert f"Document page {index} of {len(reader.pages)}" in text
+        assert f"Página del documento {index} de {len(reader.pages)}" in text
+    assert "Document page " not in text
     for marker in (
         "Auditoría de código",
         "Hallazgos ejecutables de riesgo de código: 0.",
