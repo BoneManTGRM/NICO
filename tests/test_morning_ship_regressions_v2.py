@@ -163,6 +163,14 @@ def _spanish_sparse_pdf() -> bytes:
     buffer = io.BytesIO()
     document = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     header = "NICO Comprehensive · comprun_worker_fixture · BORRADOR AUTOMATIZADO"
+
+    # Production Comprehensive PDFs always retain a cover before semantic body pages.
+    # Keep the synthetic reflow fixture production-shaped so navigation may safely treat
+    # source page 1 as cover instead of weakening the production cover boundary.
+    document.drawString(54, 760, "NICO Comprehensive")
+    document.drawString(54, 720, "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE")
+    document.showPage()
+
     sections = [
         ("Auditoría de código", "Hallazgos ejecutables de riesgo de código: 0."),
         ("Ecosistema de dependencias", "Candidatos de dependencias para revisión: 21."),
@@ -195,9 +203,9 @@ def test_final_worker_reflows_mexican_spanish_before_navigation() -> None:
     reader = PdfReader(io.BytesIO(output))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    # Four sparse source pages would become five after normal TOC insertion. A result
-    # below five proves worker-local reflow happened before semantic navigation.
-    assert len(reader.pages) < 5
+    # Five production-shaped source pages would become six after normal TOC insertion.
+    # A result below six proves worker-local reflow happened before semantic navigation.
+    assert len(reader.pages) < 6
     assert "Tabla de contenido" in text
     assert "Table of Contents" not in text
     for index in range(1, len(reader.pages) + 1):
