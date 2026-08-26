@@ -1,30 +1,64 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.1"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.2"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
+_DISPLAY_MARKER = "__nico_final_worker_display_metadata_fallback_v1__"
 _INSTALLED = False
 
 
-def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
-    """Bind sparse-page reflow inside the isolated final-report renderer process.
+def _install_display_metadata_fallback() -> None:
+    """Recover report-only display metadata from durable retained evidence.
 
-    The production parent process already installed the commercial presentation reflow,
-    but final PDF generation happens in an isolated subprocess. Parent monkey patches do
-    not cross that boundary. Source-language PDFs are then frozen byte-for-byte, so a
-    reflow installed only in the parent can never repair the original 44-page artifact.
-
-    This worker-local binding touches only the final navigation seam: sparse ordinary
-    report pages are compacted first and the existing navigation layer then rebuilds
-    physical page labels, TOC and bookmarks. Canonical JSON, scores, findings, review
-    state and delivery authority are never mutated. The worker also installs the native
-    bilingual header contract here because the parent-only commercial projection cannot
-    cross the subprocess boundary; both English AUTOMATED DRAFT and Mexican-Spanish
-    BORRADOR AUTOMATIZADO source pages therefore qualify for the same bounded reflow.
+    The primary identity path remains authoritative. This fallback exists only because
+    the final renderer is an isolated process and prior ContextVar-based propagation was
+    repeatedly lost at that process boundary. The intake now mirrors optional client and
+    project display names into retained stakeholder evidence; this worker reads them only
+    when the canonical identity field is absent. Scope IDs, scores and review state are
+    untouched.
     """
+
+    import nico.comprehensive_report_review_integrity_v1 as integrity
+
+    current = integrity._display_values
+    if getattr(current, _DISPLAY_MARKER, False):
+        return
+
+    def display_values_with_durable_fallback(record: Mapping[str, Any]) -> dict[str, str]:
+        values = dict(current(record))
+        human_evidence = (
+            record.get("human_evidence")
+            if isinstance(record.get("human_evidence"), Mapping)
+            else {}
+        )
+        if not values.get("customer_name"):
+            values["customer_name"] = integrity._find_evidence_value(
+                human_evidence,
+                "customer_name",
+            ) or integrity._find_evidence_value(human_evidence, "client_name")
+        if not values.get("project_name"):
+            values["project_name"] = integrity._find_evidence_value(
+                human_evidence,
+                "project_name",
+            )
+        if not values.get("primary_technical_contact"):
+            values["primary_technical_contact"] = integrity._find_evidence_value(
+                human_evidence,
+                "primary_technical_contact",
+            )
+        return values
+
+    setattr(display_values_with_durable_fallback, _DISPLAY_MARKER, True)
+    setattr(display_values_with_durable_fallback, "_nico_previous", current)
+    integrity._display_values = display_values_with_durable_fallback
+
+
+def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
+    """Bind final report metadata recovery and sparse-page reflow in the renderer."""
 
     global _INSTALLED
     from nico import comprehensive_manifest_navigation_v1 as navigation
@@ -33,6 +67,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         install_comprehensive_manifest_navigation_v1,
     )
 
+    _install_display_metadata_fallback()
     pdf_reflow._HEADER = re.compile(
         r"^NICO\s+Comprehensive\b.*(?:AUTOMATED\s+DRAFT|BORRADOR\s+AUTOMATIZADO)",
         re.I,
@@ -46,6 +81,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "artifact_schema": VERSION,
             "status": "already_installed",
             "bound": True,
+            "durable_report_display_metadata_fallback": True,
             "reflow_before_final_navigation": True,
             "bilingual_source_headers_supported": True,
             "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
@@ -67,6 +103,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "artifact_schema": VERSION,
         "status": "installed",
         "bound": True,
+        "durable_report_display_metadata_fallback": True,
         "reflow_before_final_navigation": True,
         "bilingual_source_headers_supported": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
