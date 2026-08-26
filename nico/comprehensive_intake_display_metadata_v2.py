@@ -1,10 +1,50 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from collections.abc import Mapping
 from typing import Any
 
-VERSION = "nico.comprehensive_intake_display_metadata.v2"
+VERSION = "nico.comprehensive_intake_display_metadata.v2.1"
 _MARKER = "_nico_direct_display_metadata_v2"
 _INSTALLED = False
+
+
+def _human_evidence_with_display_metadata(
+    value: Any,
+    *,
+    client_name: str,
+    project_name: str,
+) -> Any:
+    """Mirror optional display-only names into retained human evidence.
+
+    The canonical customer/project scope identifiers remain authoritative.  This copy is
+    intentionally descriptive report metadata only, retained in the already-existing
+    stakeholder evidence module so the isolated report worker can recover the names even
+    if a process-local intake side channel is unavailable.
+    """
+
+    if not client_name and not project_name:
+        return value
+    source = deepcopy(value) if isinstance(value, Mapping) else {}
+    modules = source.get("modules")
+    if not isinstance(modules, Mapping):
+        modules = {}
+        source["modules"] = modules
+    else:
+        modules = dict(modules)
+        source["modules"] = modules
+
+    stakeholder = modules.get("stakeholder_context")
+    stakeholder = dict(stakeholder) if isinstance(stakeholder, Mapping) else {}
+    evidence = stakeholder.get("evidence")
+    evidence = dict(evidence) if isinstance(evidence, Mapping) else {}
+    if client_name:
+        evidence["customer_name"] = client_name
+    if project_name:
+        evidence["project_name"] = project_name
+    stakeholder["evidence"] = evidence
+    modules["stakeholder_context"] = stakeholder
+    return source
 
 
 def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
@@ -16,11 +56,12 @@ def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
     threadpool and multiple late runtime wrappers exist, so that side-channel was still
     not reliable in a real fresh run. This v2 binding removes the side-channel at the
     boundary: the exact values received from the browser are passed to the controller
-    explicitly. The already-installed report/review integrity binding then persists them
-    in the initial canonical run record before the durable create.
+    explicitly. It also mirrors the two display-only values into retained stakeholder
+    evidence so the isolated final-report worker has a durable fallback. Canonical
+    customer/project scope IDs remain unchanged.
 
-    Canonical customer/project scope IDs remain unchanged. These values are display
-    metadata only and do not affect scoring, scanners, approval, or delivery authority.
+    These values are display metadata only and do not affect scoring, scanners, approval,
+    candidate truth, or delivery authority.
     """
 
     global _INSTALLED
@@ -34,6 +75,7 @@ def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
             "status": "already_installed",
             "bound": True,
             "direct_controller_payload": True,
+            "durable_report_display_metadata_fallback": True,
             "contextvar_required_for_display_metadata": False,
             "canonical_scope_ids_unchanged": True,
             "human_review_required": True,
@@ -73,6 +115,11 @@ def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
         )
         client_name = " ".join(str(payload.get("client_name") or "").split())[:180]
         project_name = " ".join(str(payload.get("project_name") or "").split())[:180]
+        human_evidence = _human_evidence_with_display_metadata(
+            payload.get("human_evidence"),
+            client_name=client_name,
+            project_name=project_name,
+        )
         requested_sha = routes.expected_commit_sha(payload)
         run_id = f"comprun_{routes.uuid4().hex}"
         evidence_ledger_id = f"ledger_comprehensive_{routes.uuid4().hex}"
@@ -125,7 +172,7 @@ def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
                 "project_name": project_name,
                 "assessment_depth": assessment_depth,
                 "report_language": report_language,
-                "human_evidence": payload.get("human_evidence"),
+                "human_evidence": human_evidence,
                 "authorized": True,
                 "authorization_confirmed": True,
             }
@@ -150,6 +197,7 @@ def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
         "status": "installed",
         "bound": True,
         "direct_controller_payload": True,
+        "durable_report_display_metadata_fallback": True,
         "contextvar_required_for_display_metadata": False,
         "canonical_scope_ids_unchanged": True,
         "human_review_required": True,
@@ -157,4 +205,8 @@ def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
     }
 
 
-__all__ = ["VERSION", "install_comprehensive_intake_display_metadata_v2"]
+__all__ = [
+    "VERSION",
+    "_human_evidence_with_display_metadata",
+    "install_comprehensive_intake_display_metadata_v2",
+]
