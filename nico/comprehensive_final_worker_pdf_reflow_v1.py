@@ -5,22 +5,14 @@ from collections.abc import Mapping
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.3"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.4"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
 _DISPLAY_MARKER = "__nico_final_worker_display_metadata_fallback_v1__"
 _INSTALLED = False
 
 
 def _install_display_metadata_fallback() -> None:
-    """Recover report-only display metadata from durable retained evidence.
-
-    The primary identity path remains authoritative. This fallback exists only because
-    the final renderer is an isolated process and prior ContextVar-based propagation was
-    repeatedly lost at that process boundary. The intake now mirrors optional client and
-    project display names into retained stakeholder evidence; this worker reads them only
-    when the canonical identity field is absent. Scope IDs, scores and review state are
-    untouched.
-    """
+    """Recover report-only display metadata from durable retained evidence."""
 
     import nico.comprehensive_report_review_integrity_v1 as integrity
 
@@ -37,18 +29,15 @@ def _install_display_metadata_fallback() -> None:
         )
         if not values.get("customer_name"):
             values["customer_name"] = integrity._find_evidence_value(
-                human_evidence,
-                "customer_name",
+                human_evidence, "customer_name"
             ) or integrity._find_evidence_value(human_evidence, "client_name")
         if not values.get("project_name"):
             values["project_name"] = integrity._find_evidence_value(
-                human_evidence,
-                "project_name",
+                human_evidence, "project_name"
             )
         if not values.get("primary_technical_contact"):
             values["primary_technical_contact"] = integrity._find_evidence_value(
-                human_evidence,
-                "primary_technical_contact",
+                human_evidence, "primary_technical_contact"
             )
         return values
 
@@ -69,8 +58,8 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
     )
-    from nico.comprehensive_semantic_navigation_v2 import (
-        install_comprehensive_semantic_navigation_v2,
+    from nico.comprehensive_semantic_navigation_v3 import (
+        install_comprehensive_semantic_navigation_v3,
     )
 
     _install_display_metadata_fallback()
@@ -79,14 +68,9 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         re.I,
     )
 
-    # The old upstream metadata fixes correctly retained and recovered the display
-    # fields, but the final report builder rebuilt a six-field canonical identity and
-    # dropped them again. Bind the last-loss repair inside this isolated renderer process
-    # before any report package is constructed.
     final_display_metadata = install_comprehensive_final_display_metadata_v92()
-
     install_comprehensive_manifest_navigation_v1()
-    semantic_navigation = install_comprehensive_semantic_navigation_v2()
+    semantic_navigation = install_comprehensive_semantic_navigation_v3()
     current = navigation._renumber_and_outline
     if getattr(current, _MARKER, False):
         _INSTALLED = True
@@ -99,6 +83,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "primary_technical_contact_preserved": final_display_metadata.get("primary_technical_contact_preserved") is True,
             "reflow_before_final_navigation": True,
             "semantic_navigation_bound": semantic_navigation.get("bound") is True,
+            "semantic_navigation_non_recursive": semantic_navigation.get("non_recursive_fallback") is True,
             "multiple_sections_per_page_toc_supported": semantic_navigation.get("multiple_sections_per_page_supported") is True,
             "bilingual_toc_and_page_labels": semantic_navigation.get("bilingual_toc_and_page_labels") is True,
             "bilingual_source_headers_supported": True,
@@ -126,6 +111,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "primary_technical_contact_preserved": final_display_metadata.get("primary_technical_contact_preserved") is True,
         "reflow_before_final_navigation": True,
         "semantic_navigation_bound": semantic_navigation.get("bound") is True,
+        "semantic_navigation_non_recursive": semantic_navigation.get("non_recursive_fallback") is True,
         "multiple_sections_per_page_toc_supported": semantic_navigation.get("multiple_sections_per_page_supported") is True,
         "bilingual_toc_and_page_labels": semantic_navigation.get("bilingual_toc_and_page_labels") is True,
         "bilingual_source_headers_supported": True,
