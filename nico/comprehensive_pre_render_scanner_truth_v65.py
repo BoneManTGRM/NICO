@@ -609,6 +609,11 @@ def _attach_manifest(
             canonical_copy = dict(canonical)
             canonical_copy[_MANIFEST_KEY] = dict(manifest_copy)
             package_copy["json"] = canonical_copy
+            from nico import comprehensive_report_package as report_module
+
+            final_truth_sha = report_module._canonical_hash(canonical_copy)
+            package_copy["canonical_truth_sha256"] = final_truth_sha
+            output["canonical_truth_sha256"] = final_truth_sha
         output["report_package"] = package_copy
     assessment = output.get("assessment")
     if isinstance(assessment, Mapping):
