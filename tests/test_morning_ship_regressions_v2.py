@@ -236,7 +236,41 @@ def test_markdown_bridge_waits_for_terminal_report_before_prefetch() -> None:
 
 def test_pdf_bridge_uses_one_user_gesture_dispatch_and_visible_status() -> None:
     source = Path("apps/web/app/AssessmentReviewPdfDownload.tsx").read_text(encoding="utf-8")
+    proof = Path("scripts/mobile_pdf_download_action_proof_v1.py").read_text(encoding="utf-8")
     assert "const opened = window.open" not in source
     assert source.count("link.click();") == 1
     assert "PDF requested. Check the new tab or your downloads." in source
     assert "data-nico-review-pdf-action-status" in source
+    assert "assert len(gesture_pdf_requests) == 1" in proof
+    assert '"ui_review_pdf_single_dispatch_verified": True' in proof
+
+
+def test_exact_main_spanish_proof_requires_the_regressions_to_be_fixed() -> None:
+    script = Path("scripts/spanish_comprehensive_live_acceptance_v3.py").read_text(
+        encoding="utf-8"
+    )
+    workflow = Path(".github/workflows/spanish-comprehensive-production-proof.yml").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "NICO Acceptance Client",
+        "NICO Acceptance Project",
+        "NICO Acceptance Contact",
+        "GitHub HTTPS/API - read-only",
+        "Full repository at exact assessed SHA - read-only",
+        'report_language="es-MX"',
+        'report_language="en"',
+        "0 < page_count < 44",
+        "same_run_bilingual_pdf_verified",
+    ):
+        assert marker in script
+    for marker in (
+        'payload["commercial_display_metadata_verified"] is True',
+        'payload["primary_technical_contact_verified"] is True',
+        'payload["access_method_verified_in_canonical_truth"] is True',
+        'payload["authorized_scope_verified_in_canonical_truth"] is True',
+        'payload["same_run_bilingual_pdf_verified"] is True',
+        'int(payload["spanish_pdf_page_count"]) < 44',
+        'int(payload["english_pdf_page_count"]) < 44',
+    ):
+        assert marker in workflow
