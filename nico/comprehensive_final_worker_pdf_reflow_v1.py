@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.3"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.4"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
 _SEMANTIC_MARKER = "__nico_final_worker_semantic_navigation_v1__"
 _DISPLAY_MARKER = "__nico_final_worker_display_metadata_fallback_v1__"
@@ -64,8 +64,8 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     global _INSTALLED
     from nico import comprehensive_manifest_navigation_v1 as navigation
     from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
-    from nico.comprehensive_commercial_release_closure_v1 import (
-        install_comprehensive_commercial_release_closure_v1,
+    from nico.comprehensive_commercial_release_closure_v2 import (
+        install_comprehensive_commercial_release_closure_v2,
         semantic_renumber_and_outline,
     )
     from nico.comprehensive_manifest_navigation_v1 import (
@@ -73,7 +73,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     )
 
     _install_display_metadata_fallback()
-    commercial_closure = install_comprehensive_commercial_release_closure_v1()
+    commercial_closure = install_comprehensive_commercial_release_closure_v2()
     pdf_reflow._HEADER = re.compile(
         r"^NICO\s+Comprehensive\b.*(?:AUTOMATED\s+DRAFT|BORRADOR\s+AUTOMATIZADO)",
         re.I,
@@ -89,6 +89,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "bound": True,
             "durable_report_display_metadata_fallback": True,
             "canonical_report_display_identity_preserved": True,
+            "cross_format_identity_regeneration": True,
             "human_facing_customer_project_projection": True,
             "reflow_before_final_navigation": True,
             "bilingual_source_headers_supported": True,
@@ -117,6 +118,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "bound": True,
         "durable_report_display_metadata_fallback": True,
         "canonical_report_display_identity_preserved": True,
+        "cross_format_identity_regeneration": True,
         "human_facing_customer_project_projection": True,
         "reflow_before_final_navigation": True,
         "bilingual_source_headers_supported": True,
