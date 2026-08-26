@@ -4,10 +4,37 @@ import re
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.7"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.8"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
 _SEMANTIC_MARKER = "__nico_final_worker_semantic_navigation_v1__"
 _INSTALLED = False
+
+_HISTORICAL_SPANISH_SEMANTIC_ALIASES: dict[str, tuple[str, ...]] = {
+    "dependency_library_ecosystem": ("Ecosistema de dependencias",),
+    "secrets_exposure_review": ("Revisión de secretos",),
+    "human_review_acceptance_gate": ("Revisión humana y aceptación",),
+}
+
+
+def _bind_historical_spanish_semantic_aliases() -> bool:
+    """Recognize bounded historical es-MX headings without changing presentation.
+
+    The final TOC/bookmark labels remain owned by the canonical bilingual semantic
+    manifest. These aliases are input-recognition compatibility for report bodies that
+    were rendered with earlier, shorter Spanish headings before navigation is rebuilt.
+    """
+
+    from nico import comprehensive_semantic_navigation_v1 as semantic_navigation
+
+    aliases = dict(semantic_navigation._TITLE_ALIASES_BY_SECTION_ID)
+    for section_id, historic_values in _HISTORICAL_SPANISH_SEMANTIC_ALIASES.items():
+        current = tuple(aliases.get(section_id) or ())
+        aliases[section_id] = tuple(dict.fromkeys((*current, *historic_values)))
+    semantic_navigation._TITLE_ALIASES_BY_SECTION_ID = aliases
+    return all(
+        all(value in aliases.get(section_id, ()) for value in values)
+        for section_id, values in _HISTORICAL_SPANISH_SEMANTIC_ALIASES.items()
+    )
 
 
 def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
@@ -40,6 +67,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         re.I,
     )
 
+    historical_aliases_bound = _bind_historical_spanish_semantic_aliases()
     metadata_localization = install_display_metadata_localization_v1()
     install_comprehensive_manifest_navigation_v1()
     bilingual_validation = install_bilingual_navigation_validation_v1()
@@ -54,6 +82,8 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "display_metadata_es_mx_labels_bound": (
                 metadata_localization.get("status") in {"installed", "already_installed"}
             ),
+            "historical_spanish_semantic_aliases_bound": historical_aliases_bound,
+            "canonical_semantic_titles_unchanged": True,
             "reflow_before_final_navigation": True,
             "bilingual_source_headers_supported": True,
             "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
@@ -85,6 +115,8 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "display_metadata_es_mx_labels_bound": (
             metadata_localization.get("status") in {"installed", "already_installed"}
         ),
+        "historical_spanish_semantic_aliases_bound": historical_aliases_bound,
+        "canonical_semantic_titles_unchanged": True,
         "reflow_before_final_navigation": True,
         "bilingual_source_headers_supported": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
