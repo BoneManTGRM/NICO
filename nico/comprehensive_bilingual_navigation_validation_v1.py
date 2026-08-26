@@ -7,19 +7,91 @@ from typing import Any, Mapping
 
 from pypdf import PdfReader
 
-VERSION = "nico.comprehensive_bilingual_navigation_validation.v1"
+VERSION = "nico.comprehensive_bilingual_navigation_validation.v1.1"
 _MARKER = "__nico_bilingual_navigation_validation_v1__"
+_LOCALIZABLE_LEGACY_FAILURES = (
+    "final PDF does not retain continuous physical page labels",
+    "final PDF does not retain a table of contents",
+)
+
+
+def _text(value: Any, limit: int = 300) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
+
+
+def _reported_locale(result: Mapping[str, Any]) -> str:
+    canonical = result.get("json") if isinstance(result.get("json"), Mapping) else {}
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    return _text(
+        identity.get("report_language")
+        or identity.get("locale")
+        or canonical.get("report_language")
+        or canonical.get("locale"),
+        40,
+    ).casefold()
+
+
+def _pdf_reader(result: Mapping[str, Any]) -> tuple[PdfReader, str]:
+    encoded = result.get("pdf_base64")
+    try:
+        pdf = base64.b64decode(str(encoded or ""), validate=True)
+        reader = PdfReader(io.BytesIO(pdf))
+        extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:
+        raise ValueError("final Comprehensive artifact has no valid PDF") from exc
+    return reader, extracted
+
+
+def _spanish_artifact(result: Mapping[str, Any], extracted: str) -> bool:
+    locale = _reported_locale(result)
+    if locale in {"es", "es-mx", "es_mx", "es-mexico", "spanish"}:
+        return True
+    upper = extracted.upper()
+    return any(
+        marker in upper
+        for marker in (
+            "BORRADOR AUTOMATIZADO",
+            "TABLA DE CONTENIDO",
+            "PÁGINA DEL DOCUMENTO",
+        )
+    )
+
+
+def _validate_spanish_navigation(reader: PdfReader, extracted: str) -> None:
+    total = len(reader.pages)
+    for index in range(1, total + 1):
+        expected = f"Página del documento {index} de {total}"
+        if expected not in extracted:
+            raise ValueError(
+                "final es-MX PDF does not retain localized continuous physical page labels"
+            )
+    if "Document page " in extracted:
+        raise ValueError(
+            "Mexican-Spanish final PDF retained NICO-authored English physical page labels"
+        )
+    if "Tabla de contenido" not in extracted:
+        raise ValueError("final es-MX PDF does not retain a localized table of contents")
+    if "Table of Contents" in extracted:
+        raise ValueError(
+            "Mexican-Spanish final PDF retained NICO-authored English TOC copy"
+        )
+    if not reader.outline:
+        raise ValueError("final PDF does not retain navigation bookmarks")
 
 
 def install_bilingual_navigation_validation_v1() -> dict[str, Any]:
-    """Accept the es-MX TOC label without weakening final-package validation.
+    """Keep final-package validation strict while permitting localized navigation.
 
-    The existing validator correctly checks manifest metadata and continuous physical
-    page labels before checking for the literal English phrase ``Table of Contents``.
-    The localized final PDF must instead contain ``Tabla de contenido`` and no NICO-
-    authored English TOC label. Catch only that exact legacy validation failure, then
-    require the localized semantic TOC and non-empty bookmarks. Every earlier validation
-    condition remains enforced by the original validator.
+    The legacy validator embeds English navigation strings in otherwise valid manifest,
+    page-label, TOC and bookmark checks. English artifacts continue through that validator
+    unchanged. es-MX artifacts may bypass only the two literal-English navigation failures,
+    then must satisfy stricter Spanish page-label/TOC checks and must contain no NICO-
+    authored English navigation chrome.
     """
 
     from nico import comprehensive_manifest_navigation_v1 as navigation
@@ -29,33 +101,36 @@ def install_bilingual_navigation_validation_v1() -> dict[str, Any]:
         return {
             "artifact_schema": VERSION,
             "status": "already_installed",
-            "english_toc_validation_preserved": True,
+            "english_validation_preserved": True,
             "mexican_spanish_toc_validation_supported": True,
+            "mexican_spanish_physical_page_labels_required": True,
+            "english_navigation_rejected_in_es_mx": True,
             "bookmarks_still_required": True,
         }
 
     @wraps(current)
     def validate_bilingual_final_package(result: Mapping[str, Any]) -> None:
+        legacy_error: ValueError | None = None
         try:
             current(result)
-            return
         except ValueError as exc:
-            if "does not retain a table of contents" not in str(exc):
-                raise
+            legacy_error = exc
 
-        encoded = result.get("pdf_base64")
-        try:
-            pdf = base64.b64decode(str(encoded or ""), validate=True)
-            reader = PdfReader(io.BytesIO(pdf))
-            extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception as exc:
-            raise ValueError("final Comprehensive artifact has no valid PDF") from exc
-        if "Tabla de contenido" not in extracted:
-            raise ValueError("final PDF does not retain a localized table of contents")
-        if "Table of Contents" in extracted:
-            raise ValueError("Mexican-Spanish final PDF retained NICO-authored English TOC copy")
-        if not reader.outline:
-            raise ValueError("final PDF does not retain navigation bookmarks")
+        reader, extracted = _pdf_reader(result)
+        spanish = _spanish_artifact(result, extracted)
+
+        if not spanish:
+            if legacy_error is not None:
+                raise legacy_error
+            return
+
+        if legacy_error is not None and not any(
+            marker in str(legacy_error) for marker in _LOCALIZABLE_LEGACY_FAILURES
+        ):
+            # Manifest/integrity/unknown failures are never translated away.
+            raise legacy_error
+
+        _validate_spanish_navigation(reader, extracted)
 
     setattr(validate_bilingual_final_package, _MARKER, True)
     setattr(validate_bilingual_final_package, "_nico_previous", current)
@@ -63,8 +138,10 @@ def install_bilingual_navigation_validation_v1() -> dict[str, Any]:
     return {
         "artifact_schema": VERSION,
         "status": "installed",
-        "english_toc_validation_preserved": True,
+        "english_validation_preserved": True,
         "mexican_spanish_toc_validation_supported": True,
+        "mexican_spanish_physical_page_labels_required": True,
+        "english_navigation_rejected_in_es_mx": True,
         "bookmarks_still_required": True,
         "unknown_validation_failures_still_raise": True,
     }
