@@ -16,7 +16,7 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v13"
+VERSION = "nico.comprehensive_api_routes.v14"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -443,6 +443,23 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
         payload.get("report_language") or "en",
         "report_language",
     )
+
+    # This is the canonical intake boundary, not a runtime monkey patch. Preserve the
+    # optional display names here so every production call path retains them before the
+    # controller/service canonicalizes the run. The detached report worker already reads
+    # the retained stakeholder evidence as its durable display-metadata fallback.
+    client_name = " ".join(str(payload.get("client_name") or "").split())[:180]
+    project_name = " ".join(str(payload.get("project_name") or "").split())[:180]
+    from nico.comprehensive_intake_display_metadata_v2 import (
+        _human_evidence_with_display_metadata,
+    )
+
+    human_evidence = _human_evidence_with_display_metadata(
+        payload.get("human_evidence"),
+        client_name=client_name,
+        project_name=project_name,
+    )
+
     requested_sha = expected_commit_sha(payload)
     run_id = f"comprun_{uuid4().hex}"
     evidence_ledger_id = f"ledger_comprehensive_{uuid4().hex}"
@@ -490,9 +507,11 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
             "evidence_ledger_id": evidence_ledger_id,
             "customer_id": customer_id,
             "project_id": project_id,
+            "client_name": client_name,
+            "project_name": project_name,
             "assessment_depth": assessment_depth,
             "report_language": report_language,
-            "human_evidence": payload.get("human_evidence"),
+            "human_evidence": human_evidence,
             "authorized": True,
             "authorization_confirmed": True,
         }
@@ -503,8 +522,8 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
             **response,
             "operation": "intake_started",
             "repository_snapshot": snapshot,
-            "client_name": str(payload.get("client_name") or ""),
-            "project_name": str(payload.get("project_name") or ""),
+            "client_name": client_name,
+            "project_name": project_name,
         },
     )
 
