@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
-VERSION = "nico.comprehensive_semantic_navigation.v1.1"
+VERSION = "nico.comprehensive_semantic_navigation.v1.2"
 _TOC_ROWS_PER_PAGE = 39
 
 # Known historic/localized heading variants are recognition aliases only.
@@ -37,6 +37,25 @@ _SPANISH_MARKERS = (
     "TABLA DE CONTENIDO",
     "PÁGINA DEL DOCUMENTO",
 )
+_TECHNICAL_SCORECARD_SECTION_IDS = {
+    "code_audit",
+    "dependency_library_ecosystem",
+    "secrets_exposure_review",
+    "static_analysis",
+    "ci_cd_analysis",
+    "architecture_technical_debt",
+    "velocity_complexity",
+}
+_SCORECARD_PLAIN_STATUS = re.compile(
+    r"^(?:"
+    r"strong|moderate|weak|exceptional|pending|not\s+scored|"
+    r"provisional\s+(?:strong|moderate)|"
+    r"sólido|solido|moderado|débil|debil|excepcional|pendiente|"
+    r"no\s+calificado|provisional\s+(?:sólido|solido|moderado)"
+    r")(?:\s+[—-])?(?:\s+\d{1,3}(?:\.\d+)?(?:/100)?)?$",
+    re.I,
+)
+_SCORECARD_PLAIN_SCORE = re.compile(r"^\d{1,3}(?:\.\d+)?(?:/100)?$", re.I)
 
 
 def _text(value: Any, limit: int = 1000) -> str:
@@ -96,6 +115,25 @@ def _section_for_line(raw_line: str) -> tuple[Mapping[str, Any], bool] | None:
     return None
 
 
+def _scorecard_table_followup(next_nonempty: str) -> bool:
+    """Return True when the next line looks like compact scorecard-cell content.
+
+    Real semantic control sections in NICO use richer status lines such as
+    ``STRONG · 96/100`` or ``PROVISIONAL STRONG · HUMAN REVIEW REQUIRED``. Scorecard
+    table rows use plain status/score cells, and the final row may have no following
+    extracted line at all. Treat only those bounded forms as table context so a real
+    compacted section on the same physical page remains eligible for navigation.
+    """
+
+    normalized = _text(next_nonempty, 180).strip().rstrip(".")
+    if not normalized:
+        return True
+    return bool(
+        _SCORECARD_PLAIN_STATUS.fullmatch(normalized)
+        or _SCORECARD_PLAIN_SCORE.fullmatch(normalized)
+    )
+
+
 def _occurrence_quality(
     *,
     raw_line: str,
@@ -152,27 +190,14 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
                     break
             if (
                 "canonical technical scorecard" in page_folded
-                and section_id
-                in {
-                    "code_audit",
-                    "dependency_library_ecosystem",
-                    "secrets_exposure_review",
-                    "static_analysis",
-                    "ci_cd_analysis",
-                    "architecture_technical_debt",
-                    "velocity_complexity",
-                }
-                and next_nonempty.casefold().rstrip(".")
-                in {
-                    "strong",
-                    "moderate",
-                    "provisional strong —",
-                    "provisional strong -",
-                }
+                and section_id in _TECHNICAL_SCORECARD_SECTION_IDS
+                and _scorecard_table_followup(next_nonempty)
             ):
                 # Scorecard table cells repeat control names. Do not let those cells steal
-                # navigation from a real semantic heading, including if safe compaction
-                # later places that real heading on the same physical page.
+                # navigation from a real semantic heading, including when a last scorecard
+                # row has no following extracted status cell. Rich section-status lines are
+                # intentionally not classified as scorecard-cell follow-up, so safe
+                # compaction may still place a real section on this same physical page.
                 continue
             quality, numbered_score = _occurrence_quality(
                 raw_line=raw_line,
