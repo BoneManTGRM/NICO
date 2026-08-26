@@ -238,10 +238,15 @@ def test_review_pdf_and_markdown_bridges_never_silently_noop() -> None:
     )
     layout = Path("apps/web/app/layout.tsx").read_text(encoding="utf-8")
 
-    assert 'window.open(href, "_blank", "noopener,noreferrer")' in pdf_source
-    assert "link.click();" in pdf_source
+    # One user gesture must produce one browser-native PDF navigation attempt. The old
+    # window.open + fallback-anchor sequence could dispatch twice when noopener caused
+    # window.open to return null after navigation had already started.
+    assert "const opened = window.open" not in pdf_source
+    assert pdf_source.count("link.click();") == 1
     assert "visibleRunId" in pdf_source
     assert "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf" in pdf_source
+    assert "PDF requested. Check the new tab or your downloads." in pdf_source
+    assert "data-nico-review-pdf-action-status" in pdf_source
 
     assert "loadMarkdown" in markdown_source
     assert "navigator.clipboard.writeText" in markdown_source
@@ -249,6 +254,7 @@ def test_review_pdf_and_markdown_bridges_never_silently_noop() -> None:
     assert "Markdown copied." in markdown_source
     assert "Markdown could not be copied." in markdown_source
     assert "visibleRunId" in markdown_source
+    assert 'actions.getAttribute("data-assessment-report-ready") !== "true"' in markdown_source
 
     assert 'import AssessmentMarkdownCopyBridge from "./AssessmentMarkdownCopyBridge"' in layout
     assert layout.index("<AssessmentReviewPdfDownload />") < layout.index("<AssessmentHomeRedirect />")
