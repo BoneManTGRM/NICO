@@ -4,7 +4,7 @@ import re
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.5"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.6"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
 _SEMANTIC_MARKER = "__nico_final_worker_semantic_navigation_v1__"
 _INSTALLED = False
@@ -22,6 +22,9 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     global _INSTALLED
     from nico import comprehensive_manifest_navigation_v1 as navigation
     from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
+    from nico.comprehensive_bilingual_navigation_validation_v1 import (
+        install_bilingual_navigation_validation_v1,
+    )
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
     )
@@ -35,6 +38,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     )
 
     install_comprehensive_manifest_navigation_v1()
+    bilingual_validation = install_bilingual_navigation_validation_v1()
     current = navigation._renumber_and_outline
     if getattr(current, _SEMANTIC_MARKER, False):
         _INSTALLED = True
@@ -48,6 +52,9 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
             "semantic_multi_heading_toc": True,
             "shared_page_sections_retained_in_toc": True,
+            "mexican_spanish_toc_validation_supported": (
+                bilingual_validation.get("mexican_spanish_toc_validation_supported") is True
+            ),
             "canonical_truth_mutated": False,
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -73,6 +80,9 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
         "semantic_multi_heading_toc": True,
         "shared_page_sections_retained_in_toc": True,
+        "mexican_spanish_toc_validation_supported": (
+            bilingual_validation.get("mexican_spanish_toc_validation_supported") is True
+        ),
         "canonical_truth_mutated": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
