@@ -6,6 +6,7 @@ const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const REVIEW_PDF_LABEL = /(?:download\s+(?:review|approved)\s+pdf|descargar[^\n]*pdf)/i;
 const RUN_ID_QUERY = "run_id";
 const REENTRY_GUARD_MS = 1_500;
+const STATUS_ATTR = "data-nico-review-pdf-action-status";
 
 type ReportLanguage = "en" | "es-MX";
 
@@ -51,6 +52,27 @@ function exactRunPdfHref(runId: string, reportLanguage: ReportLanguage = "en"): 
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}/pdf`;
 }
 
+function spanish(): boolean {
+  return activeReportLanguage() === "es-MX";
+}
+
+function showStatus(container: Element | null, message: string, failure = false): void {
+  if (!container) return;
+  let status = container.querySelector<HTMLElement>(`[${STATUS_ATTR}]`);
+  if (!status) {
+    status = document.createElement("span");
+    status.setAttribute(STATUS_ATTR, "true");
+    status.className = "muted";
+    status.setAttribute("aria-live", "polite");
+    container.appendChild(status);
+  }
+  status.setAttribute("role", failure ? "alert" : "status");
+  status.textContent = message;
+  window.setTimeout(() => {
+    if (status?.isConnected && status.textContent === message) status.remove();
+  }, failure ? 8_000 : 5_000);
+}
+
 function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): void {
   const href = exactRunPdfHref(runId, reportLanguage);
   const link = document.createElement("a");
@@ -58,28 +80,27 @@ function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): v
   link.download = `nico-comprehensive-${runId}-${reportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  link.hidden = true;
+  link.style.position = "fixed";
+  link.style.left = "-9999px";
   link.setAttribute("data-nico-review-pdf-download", "true");
   document.body.appendChild(link);
 
-  // Prefer an explicit browsing context so desktop Chromium/WebKit visibly opens the
-  // exact-run report instead of silently consuming a successful streamed response.
-  // If popup policy blocks that action, the original user gesture still owns the
-  // prepared same-origin download anchor as a deterministic fallback.
-  const opened = window.open(href, "_blank", "noopener,noreferrer");
-  if (!opened) {
-    link.click();
-  }
+  // A single prepared anchor click is the browser-native user-gesture path. The prior
+  // implementation called window.open(..., noopener) first; browsers may legally
+  // return null when noopener severs the opener even though the tab opened, causing the
+  // fallback anchor to fire as well. Production consequently showed two identical PDF
+  // GETs for one apparent action. Use exactly one navigation attempt.
+  link.click();
   window.setTimeout(() => link.remove(), 1_000);
 }
 
 /**
  * Keep the exact-run PDF request inside the original mobile/desktop user gesture.
  *
- * The assessment result intentionally carries only a bounded terminal manifest. The
- * backend localized artifact route validates exact run identity, canonical truth,
- * strict base64, the PDF signature, and SHA-256. No asynchronous artifact conversion
- * happens before browser navigation, so WebKit/Chromium keep the trusted gesture.
+ * The backend localized artifact route validates exact run identity, canonical truth,
+ * strict base64, the PDF signature, and SHA-256. The browser receives one normal anchor
+ * navigation only, with an explicit visible status so an action can no longer appear to
+ * do nothing even when the browser chooses a background tab or download shelf.
  */
 export default function AssessmentReviewPdfDownload() {
   const guardedUntil = useRef(0);
@@ -89,11 +110,22 @@ export default function AssessmentReviewPdfDownload() {
       const target = event.target instanceof Element ? event.target : null;
       const button = target?.closest("button");
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
-      if (!button.closest(REPORT_ACTIONS_SELECTOR)) return;
+      const actions = button.closest(REPORT_ACTIONS_SELECTOR);
+      if (!actions) return;
       if (!REVIEW_PDF_LABEL.test(String(button.textContent || "").trim())) return;
 
       const runId = visibleRunId();
-      if (!runId.startsWith("comprun_")) return;
+      if (!runId.startsWith("comprun_")) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        showStatus(
+          actions,
+          spanish() ? "No se pudo determinar la ejecución exacta." : "The exact run could not be determined.",
+          true,
+        );
+        return;
+      }
 
       const now = Date.now();
       if (now < guardedUntil.current) {
@@ -108,6 +140,12 @@ export default function AssessmentReviewPdfDownload() {
       event.stopPropagation();
       event.stopImmediatePropagation();
       startExactRunDownload(runId, activeReportLanguage());
+      showStatus(
+        actions,
+        spanish()
+          ? "PDF solicitado. Revisa la nueva pestaña o tus descargas."
+          : "PDF requested. Check the new tab or your downloads.",
+      );
     }
 
     document.addEventListener("click", handleReviewPdfClick, true);
@@ -117,4 +155,4 @@ export default function AssessmentReviewPdfDownload() {
   return null;
 }
 
-export {activeReportLanguage, exactRunPdfHref, visibleRunId};
+export {activeReportLanguage, exactRunPdfHref, startExactRunDownload, visibleRunId};
