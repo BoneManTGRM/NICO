@@ -1,0 +1,36 @@
+name: Morning Ship Live Diagnostic
+
+on:
+  push:
+    branches:
+      - fix/morning-ship-production-regressions-20260825
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-current-production-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NICO_PRODUCTION_FRONTEND_URL: https://app.nicoaudit.com
+      NICO_DIAGNOSTIC_RUN_ID: comprun_98416b38f5d24e76bf23a1177bb99104
+      NICO_DIAGNOSTIC_OUTPUT: audit-results/morning-ship-live-diagnostic.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - name: Install pinned PDF inspection dependency
+        run: python -m pip install --disable-pip-version-check --no-cache-dir 'pypdf==6.15.0'
+      - name: Inspect exact production run
+        run: python scripts/morning_ship_live_diagnostic.py
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: morning-ship-live-diagnostic-${{ github.sha }}
+          path: audit-results/morning-ship-live-diagnostic.json
+          if-no-files-found: error
+          retention-days: 14
