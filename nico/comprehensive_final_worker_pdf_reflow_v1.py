@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.6.1"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.7.1"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
 _SEMANTIC_MARKER = "__nico_final_worker_semantic_navigation_v1__"
 _DISPLAY_MARKER = "__nico_final_worker_display_metadata_fallback_v1__"
@@ -56,13 +56,16 @@ def _install_display_metadata_fallback() -> None:
 
 
 def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
-    """Bind sparse-page reflow followed by canonical bilingual semantic navigation."""
+    """Bind localized metadata labels, sparse reflow, and semantic navigation."""
 
     global _INSTALLED
     from nico import comprehensive_manifest_navigation_v1 as navigation
     from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
     from nico.comprehensive_bilingual_navigation_validation_v1 import (
         install_bilingual_navigation_validation_v1,
+    )
+    from nico.comprehensive_display_metadata_localization_v1 import (
+        install_display_metadata_localization_v1,
     )
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
@@ -76,6 +79,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         re.I,
     )
 
+    metadata_localization = install_display_metadata_localization_v1()
     install_comprehensive_manifest_navigation_v1()
     bilingual_validation = install_bilingual_navigation_validation_v1()
     current = navigation._renumber_and_outline
@@ -86,6 +90,9 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "status": "already_installed",
             "bound": True,
             "display_metadata_preservation_is_stable_report_package_source": True,
+            "display_metadata_es_mx_labels_bound": (
+                metadata_localization.get("status") in {"installed", "already_installed"}
+            ),
             "reflow_before_final_navigation": True,
             "bilingual_source_headers_supported": True,
             "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
@@ -114,6 +121,9 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "status": "installed",
         "bound": True,
         "display_metadata_preservation_is_stable_report_package_source": True,
+        "display_metadata_es_mx_labels_bound": (
+            metadata_localization.get("status") in {"installed", "already_installed"}
+        ),
         "reflow_before_final_navigation": True,
         "bilingual_source_headers_supported": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_reflow": True,
