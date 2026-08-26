@@ -221,6 +221,7 @@ def test_final_worker_installs_sparse_reflow_before_freezing_pdf() -> None:
     assert "install_comprehensive_final_worker_pdf_reflow_v1" in source
     assert "FINAL_WORKER_PDF_REFLOW = install_comprehensive_final_worker_pdf_reflow_v1()" in source
     assert '"reflow_before_final_navigation"' in source
+    assert '"bilingual_source_headers_supported"' in source
     assert '"toc_page_labels_and_bookmarks_rebuilt_after_reflow"' in source
     assert source.index("FINAL_WORKER_PDF_REFLOW =") < source.index("CANONICAL_TRUTH_HASH_COMPAT =")
     assert "BORRADOR\\s+AUTOMATIZADO" in reflow_source
