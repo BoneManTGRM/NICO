@@ -55,8 +55,8 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
 ) -> None:
     from nico import comprehensive_api_routes as routes
     from nico.comprehensive_api_controller import ComprehensiveApiController
-    from nico.comprehensive_commercial_release_closure_v1 import (
-        install_comprehensive_commercial_release_closure_v1,
+    from nico.comprehensive_commercial_release_closure_v2 import (
+        install_comprehensive_commercial_release_closure_v2,
     )
     from nico.comprehensive_report_worker_runtime_v90 import _report_identity
     from nico.comprehensive_run_service import ComprehensiveRunService
@@ -147,7 +147,7 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
         == "NICO Metadata Proof Contact"
     )
 
-    install_comprehensive_commercial_release_closure_v1()
+    install_comprehensive_commercial_release_closure_v2()
     package = worker.build_comprehensive_report_package(
         identity=report_identity,
         stage_results=_minimal_stage_results(),
@@ -170,6 +170,7 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
     assert package["report_package"]["canonical_truth_sha256"] == report_module._canonical_hash(
         canonical
     )
+    assert package["report_quality_contract"]["cross_format_outputs_regenerated_from_repaired_identity"] is True
     pdf = base64.b64decode(package["report_package"]["pdf_base64"])
     pdf_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
@@ -245,45 +246,42 @@ def _multi_heading_pdf(*, spanish: bool = False) -> bytes:
 
 
 def test_semantic_navigation_keeps_multiple_sections_on_the_same_physical_page() -> None:
-    from nico.comprehensive_commercial_release_closure_v1 import (
+    from nico import comprehensive_manifest_navigation_v1 as navigation
+    from nico.comprehensive_commercial_release_closure_v1 import _semantic_entries
+    from nico.comprehensive_commercial_release_closure_v2 import (
         semantic_renumber_and_outline,
     )
 
+    original = PdfReader(io.BytesIO(_multi_heading_pdf()))
+    semantic = _semantic_entries(original, navigation._outline_title)
+    mapping = {title: original_page_index + 2 for title, original_page_index in semantic}
+
+    # One inserted TOC page means all headings on original source page 2 land on
+    # physical page 3, and all headings on source page 3 land on physical page 4.
+    assert mapping["Code audit"] == 3
+    assert mapping["Dependency / Library Ecosystem"] == 3
+    assert mapping["Secrets Exposure Review"] == 3
+    assert mapping["Client Evidence Summary"] == 4
+    assert mapping["Functional QA"] == 4
+    assert mapping["Platform Parity"] == 4
+
     output = semantic_renumber_and_outline(_multi_heading_pdf())
     reader = PdfReader(io.BytesIO(output))
-    pages = [page.extract_text() or "" for page in reader.pages]
-    toc = pages[1]
-
-    for title in (
-        "Code audit",
-        "Dependency / Library Ecosystem",
-        "Secrets Exposure Review",
-        "Client Evidence Summary",
-        "Functional QA",
-        "Platform Parity",
-    ):
+    toc = reader.pages[1].extract_text() or ""
+    for title in mapping:
         assert title in toc
-
-    # Three semantic sections share final physical page 3; three more share page 4.
-    for title in (
-        "Code audit",
-        "Dependency / Library Ecosystem",
-        "Secrets Exposure Review",
-    ):
-        line = next(line for line in toc.splitlines() if title in line)
-        assert line.rstrip().endswith("3")
-    for title in ("Client Evidence Summary", "Functional QA", "Platform Parity"):
-        line = next(line for line in toc.splitlines() if title in line)
-        assert line.rstrip().endswith("4")
 
     outline_text = " ".join(str(item) for item in reader.outline)
     assert "Code audit" in outline_text
     assert "Dependency / Library Ecosystem" in outline_text
     assert "Secrets Exposure Review" in outline_text
+    assert "Client Evidence Summary" in outline_text
+    assert "Functional QA" in outline_text
+    assert "Platform Parity" in outline_text
 
 
 def test_semantic_navigation_localizes_generated_toc_for_es_mx() -> None:
-    from nico.comprehensive_commercial_release_closure_v1 import (
+    from nico.comprehensive_commercial_release_closure_v2 import (
         semantic_renumber_and_outline,
     )
 
