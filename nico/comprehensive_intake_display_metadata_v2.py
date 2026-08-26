@@ -4,9 +4,21 @@ from copy import deepcopy
 from collections.abc import Mapping
 from typing import Any
 
-VERSION = "nico.comprehensive_intake_display_metadata.v2.1"
+VERSION = "nico.comprehensive_intake_display_metadata.v2.2"
 _MARKER = "_nico_direct_display_metadata_v2"
 _INSTALLED = False
+
+
+def _with_names(stakeholder_value: Any, *, client_name: str, project_name: str) -> dict[str, Any]:
+    stakeholder = dict(stakeholder_value) if isinstance(stakeholder_value, Mapping) else {}
+    evidence = stakeholder.get("evidence")
+    evidence = dict(evidence) if isinstance(evidence, Mapping) else {}
+    if client_name:
+        evidence["customer_name"] = client_name
+    if project_name:
+        evidence["project_name"] = project_name
+    stakeholder["evidence"] = evidence
+    return stakeholder
 
 
 def _human_evidence_with_display_metadata(
@@ -17,33 +29,62 @@ def _human_evidence_with_display_metadata(
 ) -> Any:
     """Mirror optional display-only names into retained human evidence.
 
-    The canonical customer/project scope identifiers remain authoritative.  This copy is
-    intentionally descriptive report metadata only, retained in the already-existing
-    stakeholder evidence module so the isolated report worker can recover the names even
-    if a process-local intake side channel is unavailable.
+    Preserve all three intake shapes accepted by the existing normalizer: a module map,
+    a module list, or direct top-level module keys. Canonical scope identifiers remain
+    authoritative; these two strings are descriptive report metadata only.
     """
 
     if not client_name and not project_name:
         return value
     source = deepcopy(value) if isinstance(value, Mapping) else {}
     modules = source.get("modules")
-    if not isinstance(modules, Mapping):
-        modules = {}
-        source["modules"] = modules
-    else:
-        modules = dict(modules)
-        source["modules"] = modules
 
-    stakeholder = modules.get("stakeholder_context")
-    stakeholder = dict(stakeholder) if isinstance(stakeholder, Mapping) else {}
-    evidence = stakeholder.get("evidence")
-    evidence = dict(evidence) if isinstance(evidence, Mapping) else {}
-    if client_name:
-        evidence["customer_name"] = client_name
-    if project_name:
-        evidence["project_name"] = project_name
-    stakeholder["evidence"] = evidence
-    modules["stakeholder_context"] = stakeholder
+    if isinstance(modules, Mapping):
+        copied_modules = dict(modules)
+        copied_modules["stakeholder_context"] = _with_names(
+            copied_modules.get("stakeholder_context"),
+            client_name=client_name,
+            project_name=project_name,
+        )
+        source["modules"] = copied_modules
+        return source
+
+    if isinstance(modules, list):
+        copied_modules = deepcopy(modules)
+        found = False
+        for index, item in enumerate(copied_modules):
+            if not isinstance(item, Mapping):
+                continue
+            if str(item.get("module_id") or "") != "stakeholder_context":
+                continue
+            updated = _with_names(
+                item,
+                client_name=client_name,
+                project_name=project_name,
+            )
+            updated["module_id"] = "stakeholder_context"
+            copied_modules[index] = updated
+            found = True
+            break
+        if not found:
+            appended = _with_names(
+                {},
+                client_name=client_name,
+                project_name=project_name,
+            )
+            appended["module_id"] = "stakeholder_context"
+            copied_modules.append(appended)
+        source["modules"] = copied_modules
+        return source
+
+    # Legacy/direct module-key input is also a supported normalizer contract. Do not
+    # convert it to a new ``modules`` object because doing so would make the normalizer
+    # ignore its other direct module keys.
+    source["stakeholder_context"] = _with_names(
+        source.get("stakeholder_context"),
+        client_name=client_name,
+        project_name=project_name,
+    )
     return source
 
 
