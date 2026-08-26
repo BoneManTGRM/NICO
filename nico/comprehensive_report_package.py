@@ -10,7 +10,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Callable, Iterable
 
-VERSION = "nico.comprehensive_report_package.v2"
+VERSION = "nico.comprehensive_report_package.v2.1"
 
 _STAGE_TITLES = {
     "authorization_and_scope": "Authorization and Scope",
@@ -320,6 +320,15 @@ def _markdown(
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else localized("NOT SCORED")
     constraints = _constraints(assessment, stages)
+    display_lines = []
+    for label, key in (
+        ("Client display name", "customer_name"),
+        ("Project display name", "project_name"),
+        ("Primary technical contact", "primary_technical_contact"),
+    ):
+        value = _text(identity.get(key), 300)
+        if value:
+            display_lines.append(f"{localized(label)}: {value}")
     lines = [
         f"# {localized('NICO Comprehensive Technical Assessment')} — {_text(identity.get('repository'))}",
         "",
@@ -330,6 +339,7 @@ def _markdown(
         f"{localized('Evidence ledger ID')}: {_text(identity.get('evidence_ledger_id'))}",
         f"{localized('Customer scope')}: {_text(identity.get('customer_id'))}",
         f"{localized('Project scope')}: {_text(identity.get('project_id'))}",
+        *display_lines,
         "",
         f"## {localized('Executive Decision Brief')}",
         localized(_decision_summary(identity, assessment, stages)),
@@ -657,10 +667,13 @@ def _pdf(
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"
+    not_supplied = localized("Not supplied")
+    customer_display = _text(identity.get("customer_name"), 80) or not_supplied
+    project_display = _text(identity.get("project_name"), 80) or not_supplied
     identity_rows = [
         [localized("Service"), "Comprehensive", localized("Run ID"), _text(identity.get("run_id"), 80)],
         [localized("Repository"), _text(identity.get("repository"), 80), localized("Commit"), _text(identity.get("commit_sha"), 80)],
-        [localized("Customer"), _text(identity.get("customer_id"), 80), localized("Project"), _text(identity.get("project_id"), 80)],
+        [localized("Customer"), customer_display, localized("Project"), project_display],
         [localized("Maturity"), localized(_text(maturity.get("level") or "Pending", 80)), localized("Score"), localized(score_text)],
     ]
     identity_table = Table(
@@ -687,7 +700,7 @@ def _pdf(
     story += [Spacer(1, 0.15 * inch), identity_table]
 
     constraints = _constraints(assessment, stages)
-    story += [PageBreak(), p(localized("Priority Constraints and Decision Risks"), h1), *bullets((localized(item) for item in constraints), limit=24)]
+    story += [Spacer(1, 0.2 * inch), p(localized("Priority Constraints and Decision Risks"), h1), *bullets((localized(item) for item in constraints), limit=24)]
 
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
     story += [PageBreak(), p(localized("Canonical Technical Scorecard"), h1)]
@@ -849,6 +862,11 @@ def build_comprehensive_report_package(
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
+    report_identity = dict(required_identity)
+    for field in ("customer_name", "project_name", "primary_technical_contact"):
+        value = _text(identity.get(field), 300)
+        if value:
+            report_identity[field] = value
 
     generated_at = _now()
     ordered = [
@@ -861,24 +879,24 @@ def build_comprehensive_report_package(
     assessment["client_ready"] = False
     assessment["client_delivery_allowed"] = False
     assessment["service_id"] = "comprehensive"
-    assessment["repository"] = required_identity["repository"]
-    assessment["commit_sha"] = required_identity["commit_sha"]
-    assessment["run_id"] = required_identity["run_id"]
-    assessment["executive_summary"] = _decision_summary(required_identity, assessment, ordered)
+    assessment["repository"] = report_identity["repository"]
+    assessment["commit_sha"] = report_identity["commit_sha"]
+    assessment["run_id"] = report_identity["run_id"]
+    assessment["executive_summary"] = _decision_summary(report_identity, assessment, ordered)
 
-    markdown = _markdown(required_identity, assessment, ordered, generated_at)
-    title = f"NICO Comprehensive Technical Assessment — {required_identity['repository']}"
+    markdown = _markdown(report_identity, assessment, ordered, generated_at)
+    title = f"NICO Comprehensive Technical Assessment — {report_identity['repository']}"
     rendered_html = _semantic_html(markdown, title)
-    pdf_base64, pdf_error, page_count = _pdf(required_identity, assessment, ordered, generated_at)
+    pdf_base64, pdf_error, page_count = _pdf(report_identity, assessment, ordered, generated_at)
     pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
-    report_id = f"comprehensive_report_{_canonical_hash({'identity': required_identity, 'stages': ordered})[:20]}"
-    safe_repo = re.sub(r"[^A-Za-z0-9_.-]+", "-", required_identity["repository"]).strip("-") or "repository"
+    report_id = f"comprehensive_report_{_canonical_hash({'identity': report_identity, 'stages': ordered})[:20]}"
+    safe_repo = re.sub(r"[^A-Za-z0-9_.-]+", "-", report_identity["repository"]).strip("-") or "repository"
     filename = (
-        f"nico-comprehensive-assessment-{safe_repo}-{required_identity['run_id']}-DRAFT.pdf"
+        f"nico-comprehensive-assessment-{safe_repo}-{report_identity['run_id']}-DRAFT.pdf"
     )
     canonical = {
         "service_id": "comprehensive",
-        "identity": required_identity,
+        "identity": report_identity,
         "assessment": assessment,
         "stage_summaries": ordered,
         "human_review_required": True,
