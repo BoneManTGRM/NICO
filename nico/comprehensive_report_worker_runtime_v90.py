@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
 from nico.comprehensive_report_package import build_comprehensive_report_package
 
-VERSION = "nico.comprehensive-report-worker-runtime.v91"
+VERSION = "nico.comprehensive-report-worker-runtime.v92"
 _REPORT_STAGES = {
     "decision_report_generation",
     "final_comprehensive_report_generation",
@@ -28,11 +28,25 @@ def _text(value: Any, limit: int = 300) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
+def _display_scalar(value: Any, keys: tuple[str, ...]) -> str:
+    """Return one retained display value without serializing list/container syntax."""
+
+    if isinstance(value, Mapping):
+        return _nested_display_value(value, keys)
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            result = _display_scalar(item, keys)
+            if result:
+                return result
+        return ""
+    return _text(value)
+
+
 def _nested_display_value(value: Any, keys: tuple[str, ...]) -> str:
     if isinstance(value, Mapping):
         for key in keys:
             if key in value:
-                direct = _text(value.get(key))
+                direct = _display_scalar(value.get(key), keys)
                 if direct:
                     return direct
         for nested in value.values():
@@ -41,7 +55,7 @@ def _nested_display_value(value: Any, keys: tuple[str, ...]) -> str:
                 return result
     elif isinstance(value, (list, tuple)):
         for nested in value:
-            result = _nested_display_value(nested, keys)
+            result = _display_scalar(nested, keys)
             if result:
                 return result
     return ""
@@ -63,7 +77,7 @@ def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
     for output_key, source_keys in _DISPLAY_IDENTITY_FIELDS:
         direct = ""
         for source_key in source_keys:
-            direct = _text(context.get(source_key))
+            direct = _display_scalar(context.get(source_key), source_keys)
             if direct:
                 break
         value = direct or _nested_display_value(human_evidence, source_keys)
@@ -234,9 +248,10 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
     their stored delegates are reset to these stable bases immediately before a report
     stage executes.
 
-    v91 additionally resolves optional client/project/contact display metadata from the
-    detached exact-run context and normalized retained human evidence before canonical
-    report construction. Canonical scope IDs remain unchanged.
+    v92 additionally normalizes list-shaped retained engagement fields before resolving
+    optional client/project/contact display metadata. This prevents compact mobile human
+    evidence such as ``["Primary Contact"]`` from being rendered as Python container
+    syntax in canonical identity or the final report. Canonical scope IDs remain unchanged.
     """
 
     from nico import comprehensive_ci_pdf_control_safety_v89 as v89
@@ -244,9 +259,6 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
     from nico import comprehensive_rendered_ci_boundary_producer_v79 as producer
     from nico import comprehensive_spanish_exit_criteria_v88 as v88
 
-    # Intentionally repair the private compatibility delegates here. They are process-
-    # local implementation pointers, not canonical evidence. Resetting them does not
-    # alter run identity, score, findings, review state, or client-delivery authority.
     v88._ORIGINAL_NATIVE_BUILD_REPORT = _native_report_base_v90
     v89._ORIGINAL_BOUNDARY_PDF_PAGE = _boundary_pdf_page_base_v90
 
@@ -273,6 +285,7 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
         "first_install_order_independent": True,
         "detached_report_alias_recursion_blocked": True,
         "display_metadata_identity_fallback_bound": True,
+        "list_shaped_display_metadata_normalized": True,
         "canonical_scope_identity_unchanged": True,
         "spanish_guard_bound": spanish_guard.get("bound") is True,
         "ci_pdf_guard_bound": pdf_guard.get("bound") is True,
