@@ -8,6 +8,10 @@ from nico.comprehensive_canonical_truth_hash_compat_v1 import (
 from nico.comprehensive_commercial_ship_projection_v3 import (
     install_comprehensive_commercial_ship_projection_v3,
 )
+from nico.comprehensive_intake_display_metadata_v2 import (
+    VERSION as INTAKE_DISPLAY_METADATA_VERSION,
+    install_comprehensive_intake_display_metadata_v2,
+)
 from nico.comprehensive_report_review_integrity_v1 import (
     VERSION as REPORT_REVIEW_INTEGRITY_VERSION,
     install_comprehensive_report_review_integrity_v1,
@@ -20,17 +24,16 @@ from nico.comprehensive_same_run_locale_report_v1 import (
 )
 
 
-VERSION = "nico.api.same_run_locale_report_bootstrap.v6"
+VERSION = "nico.api.same_run_locale_report_bootstrap.v7"
 
 app = spanish_final_report_app
-# This is the actual Railway production entrypoint. Install the intake/report-review
-# integrity binding here, after the established production chain has loaded but before
-# localized report/export routes are registered. Earlier fixes existed in source but
-# were not installed by the process that accepted real Comprehensive intake requests,
-# which allowed client/project display metadata and Primary Technical Contact to be
-# omitted from the durable run/report even though Access Method and Authorized Scope
-# survived through strategic human evidence.
+# This is the actual Railway production entrypoint. Install the report/review integrity
+# binding first so its controller/create-record projections are present. Then bind v2
+# intake metadata directly into the controller payload. This removes the remaining
+# ContextVar-only dependency that a fresh production run proved could still lose the
+# browser-supplied client/project display names before the initial durable write.
 REPORT_REVIEW_INTEGRITY = install_comprehensive_report_review_integrity_v1()
+INTAKE_DISPLAY_METADATA = install_comprehensive_intake_display_metadata_v2()
 CANONICAL_TRUTH_HASH_COMPAT = install_canonical_truth_hash_compat()
 COMMERCIAL_SHIP_PROJECTION = install_comprehensive_commercial_ship_projection_v3()
 SAME_RUN_LOCALE_REPORT = install_same_run_locale_report(app)
@@ -57,6 +60,19 @@ if REPORT_REVIEW_INTEGRITY.get("human_review_required") is not True:
     raise RuntimeError("Report/review integrity binding must preserve human review")
 if REPORT_REVIEW_INTEGRITY.get("client_delivery_allowed") is not False:
     raise RuntimeError("Report/review integrity binding must block unapproved delivery")
+
+if INTAKE_DISPLAY_METADATA.get("bound") is not True:
+    raise RuntimeError("Direct Comprehensive intake display-metadata binding is not active")
+if INTAKE_DISPLAY_METADATA.get("direct_controller_payload") is not True:
+    raise RuntimeError("Client/project display metadata must reach the controller directly")
+if INTAKE_DISPLAY_METADATA.get("contextvar_required_for_display_metadata") is not False:
+    raise RuntimeError("Client/project display metadata must not depend only on ContextVar transport")
+if INTAKE_DISPLAY_METADATA.get("canonical_scope_ids_unchanged") is not True:
+    raise RuntimeError("Direct display metadata must not replace canonical scope IDs")
+if INTAKE_DISPLAY_METADATA.get("human_review_required") is not True:
+    raise RuntimeError("Direct intake display metadata must preserve human review")
+if INTAKE_DISPLAY_METADATA.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Direct intake display metadata must block unapproved delivery")
 
 if CANONICAL_TRUTH_HASH_COMPAT.get("builder_hash_sync_bound") is not True:
     raise RuntimeError(
@@ -109,6 +125,8 @@ __all__ = [
     "CANONICAL_TRUTH_HASH_COMPAT",
     "CANONICAL_TRUTH_HASH_COMPAT_VERSION",
     "COMMERCIAL_SHIP_PROJECTION",
+    "INTAKE_DISPLAY_METADATA",
+    "INTAKE_DISPLAY_METADATA_VERSION",
     "PDF_ROUTE",
     "REPORT_REVIEW_INTEGRITY",
     "REPORT_REVIEW_INTEGRITY_VERSION",
