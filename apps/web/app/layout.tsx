@@ -21,6 +21,7 @@ import AssessmentFailureResponseBridge from "./AssessmentFailureResponseBridge";
 import AssessmentFinalGateAuthoritativeGuard from "./AssessmentFinalGateAuthoritativeGuard";
 import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";
 import AssessmentHomeRedirect from "./AssessmentHomeRedirect";
+import AssessmentMarkdownCopyBridge from "./AssessmentMarkdownCopyBridge";
 import AssessmentProgressIntegrityGuard from "./AssessmentProgressIntegrityGuard";
 import AssessmentRecoveryActions from "./AssessmentRecoveryActions";
 import AssessmentRequestGuard from "./AssessmentRequestGuard";
@@ -91,6 +92,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
           <AssessmentExactCommitTransport />
           <AssessmentFailureResponseBridge />
           <AssessmentReviewPdfDownload />
+          <AssessmentMarkdownCopyBridge />
           <AssessmentHomeRedirect />
           <LegacyFullRunRedirect />
           <AssessmentRequestGuard />

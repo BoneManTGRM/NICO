@@ -157,8 +157,18 @@ def test_continue_without_bound_stops_at_async_final_report_boundary_then_reache
     assert first["terminal"] is False
     assert first["client_delivery_allowed"] is False
     marker = first["record"]["stage_results"]["final_comprehensive_report_generation"]
-    assert marker["status"] == "running"
-    assert marker["reason"] == "final_report_background_publication_in_progress"
+    # The final report is launched behind the durable background boundary. With a tiny
+    # in-memory test executor the worker may legitimately finish before the first
+    # continuation response is projected, so both the persisted running marker and an
+    # already-published complete result are valid observations. Neither case may block
+    # the request, approve the report, or authorize delivery.
+    assert marker["status"] in {"running", "complete"}
+    if marker["status"] == "running":
+        assert marker["reason"] == "final_report_background_publication_in_progress"
+    else:
+        assert marker["report_package"]["report_id"] == "report_comprun_api_001"
+        assert marker["human_review_required"] is True
+        assert marker["client_delivery_allowed"] is False
 
     response = _continue_to_review(controller, "comprun_api_001")
     assert response["status"] == "review_required"

@@ -8,6 +8,10 @@ from nico.comprehensive_canonical_truth_hash_compat_v1 import (
 from nico.comprehensive_commercial_ship_projection_v3 import (
     install_comprehensive_commercial_ship_projection_v3,
 )
+from nico.comprehensive_report_review_integrity_v1 import (
+    VERSION as REPORT_REVIEW_INTEGRITY_VERSION,
+    install_comprehensive_report_review_integrity_v1,
+)
 from nico.comprehensive_same_run_locale_report_v1 import (
     PDF_ROUTE,
     ROUTE,
@@ -16,12 +20,43 @@ from nico.comprehensive_same_run_locale_report_v1 import (
 )
 
 
-VERSION = "nico.api.same_run_locale_report_bootstrap.v5"
+VERSION = "nico.api.same_run_locale_report_bootstrap.v6"
 
 app = spanish_final_report_app
+# This is the actual Railway production entrypoint. Install the intake/report-review
+# integrity binding here, after the established production chain has loaded but before
+# localized report/export routes are registered. Earlier fixes existed in source but
+# were not installed by the process that accepted real Comprehensive intake requests,
+# which allowed client/project display metadata and Primary Technical Contact to be
+# omitted from the durable run/report even though Access Method and Authorized Scope
+# survived through strategic human evidence.
+REPORT_REVIEW_INTEGRITY = install_comprehensive_report_review_integrity_v1()
 CANONICAL_TRUTH_HASH_COMPAT = install_canonical_truth_hash_compat()
 COMMERCIAL_SHIP_PROJECTION = install_comprehensive_commercial_ship_projection_v3()
 SAME_RUN_LOCALE_REPORT = install_same_run_locale_report(app)
+
+if REPORT_REVIEW_INTEGRITY.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError("Comprehensive report/review integrity binding did not install")
+for key in (
+    "intake_display_metadata_bound",
+    "direct_start_display_metadata_bound",
+    "display_metadata_persisted_in_initial_canonical_write",
+    "final_report_context_carries_display_metadata",
+    "canonical_report_identity_carries_display_metadata",
+    "primary_technical_contact_projected_from_human_evidence",
+    "client_evidence_summary_surfaces_display_metadata",
+    "server_side_approval_readiness_remains_authoritative",
+):
+    if REPORT_REVIEW_INTEGRITY.get(key) is not True:
+        raise RuntimeError(f"Comprehensive report/review integrity requirement missing: {key}")
+if REPORT_REVIEW_INTEGRITY.get("canonical_scope_ids_unchanged") is not True:
+    raise RuntimeError("Client/project display metadata must not replace canonical scope IDs")
+if REPORT_REVIEW_INTEGRITY.get("canonical_scores_unchanged") is not True:
+    raise RuntimeError("Report/review integrity binding must not recompute canonical scores")
+if REPORT_REVIEW_INTEGRITY.get("human_review_required") is not True:
+    raise RuntimeError("Report/review integrity binding must preserve human review")
+if REPORT_REVIEW_INTEGRITY.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Report/review integrity binding must block unapproved delivery")
 
 if CANONICAL_TRUTH_HASH_COMPAT.get("builder_hash_sync_bound") is not True:
     raise RuntimeError(
@@ -75,6 +110,8 @@ __all__ = [
     "CANONICAL_TRUTH_HASH_COMPAT_VERSION",
     "COMMERCIAL_SHIP_PROJECTION",
     "PDF_ROUTE",
+    "REPORT_REVIEW_INTEGRITY",
+    "REPORT_REVIEW_INTEGRITY_VERSION",
     "ROUTE",
     "SAME_RUN_LOCALE_REPORT",
     "SAME_RUN_REPORT_VERSION",

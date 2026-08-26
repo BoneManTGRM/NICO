@@ -4,6 +4,9 @@ from nico.api.terminal_authority_bootstrap import app
 from nico.comprehensive_canonical_truth_hash_compat_v1 import (
     install_canonical_truth_hash_compat,
 )
+from nico.comprehensive_report_review_integrity_v1 import (
+    install_comprehensive_report_review_integrity_v1,
+)
 from nico.comprehensive_spanish_assessment_scope_v97 import (
     install_comprehensive_spanish_assessment_scope_v97,
 )
@@ -20,7 +23,33 @@ from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v6"
+VERSION = "nico.api.final_report_worker_bootstrap.v7"
+
+# This module is the isolated final-report renderer entry point. Parent-process monkey
+# patches do not cross the subprocess boundary. Install the report/review integrity
+# projection here as well so the renderer that actually creates the final PDF receives
+# persisted client/project display metadata and Primary Technical Contact. The binding
+# remains presentation/review only: scores are unchanged, human review remains required,
+# and client delivery remains blocked.
+REPORT_REVIEW_INTEGRITY = install_comprehensive_report_review_integrity_v1()
+setattr(app.state, "nico_worker_report_review_integrity", REPORT_REVIEW_INTEGRITY)
+if REPORT_REVIEW_INTEGRITY.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError("Renderer worker report/review integrity binding did not install")
+for key in (
+    "final_report_context_carries_display_metadata",
+    "canonical_report_identity_carries_display_metadata",
+    "primary_technical_contact_projected_from_human_evidence",
+    "client_evidence_summary_surfaces_display_metadata",
+    "server_side_approval_readiness_remains_authoritative",
+):
+    if REPORT_REVIEW_INTEGRITY.get(key) is not True:
+        raise RuntimeError(f"Renderer worker report/review integrity requirement missing: {key}")
+if REPORT_REVIEW_INTEGRITY.get("canonical_scores_unchanged") is not True:
+    raise RuntimeError("Renderer worker report/review integrity must not recompute scores")
+if REPORT_REVIEW_INTEGRITY.get("human_review_required") is not True:
+    raise RuntimeError("Renderer worker must preserve human review")
+if REPORT_REVIEW_INTEGRITY.get("client_delivery_allowed") is not False:
+    raise RuntimeError("Renderer worker must block unapproved client delivery")
 
 # This module is the isolated final-report renderer entry point. It deliberately starts
 # from the same terminal report/language authority used by production, then adds only
@@ -213,6 +242,7 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "artifact_schema": VERSION,
     "status": "ready",
     "same_terminal_report_authority_as_production": True,
+    "report_review_integrity_bound": True,
     "spanish_canonical_acceptance_normalization_bound": True,
     "spanish_assessment_scope_contract_bound": True,
     "spanish_canonical_evidence_literals_bound": True,
@@ -237,6 +267,7 @@ setattr(app.state, "nico_final_report_worker_runtime", FINAL_REPORT_WORKER_RUNTI
 __all__ = [
     "CANONICAL_TRUTH_HASH_COMPAT",
     "FINAL_REPORT_WORKER_RUNTIME",
+    "REPORT_REVIEW_INTEGRITY",
     "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION",
     "SPANISH_CANONICAL_EVIDENCE_LITERALS",

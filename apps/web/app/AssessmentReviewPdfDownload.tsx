@@ -3,7 +3,7 @@
 import {useEffect, useRef} from "react";
 
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
-const REVIEW_PDF_LABEL = /(?:download\s+review\s+pdf|descargar\s+pdf\s+para\s+revisi[oó]n)/i;
+const REVIEW_PDF_LABEL = /(?:download\s+(?:review|approved)\s+pdf|descargar[^\n]*pdf)/i;
 const RUN_ID_QUERY = "run_id";
 const REENTRY_GUARD_MS = 1_500;
 
@@ -30,38 +30,56 @@ function activeReportLanguage(): ReportLanguage {
   return document.documentElement.lang.toLowerCase().startsWith("es") ? "es-MX" : "en";
 }
 
+function visibleRunId(): string {
+  const fromQuery = new URL(window.location.href).searchParams.get(RUN_ID_QUERY)?.trim() || "";
+  if (fromQuery.startsWith("comprun_")) return fromQuery;
+
+  for (const selector of [
+    ".nico-identifier-value code[title]",
+    "[data-mobile-compact-terminal='true'] code[title]",
+    "[data-assessment-run-state='true'] h2[title]",
+  ]) {
+    for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+      const value = String(node.getAttribute("title") || "").trim();
+      if (value.startsWith("comprun_")) return value;
+    }
+  }
+  return "";
+}
+
 function exactRunPdfHref(runId: string, reportLanguage: ReportLanguage = "en"): string {
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}/pdf`;
 }
 
 function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): void {
+  const href = exactRunPdfHref(runId, reportLanguage);
   const link = document.createElement("a");
-  link.href = exactRunPdfHref(runId, reportLanguage);
+  link.href = href;
   link.download = `nico-comprehensive-${runId}-${reportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`;
-  // Keep artifact retrieval observational even when WebKit ignores the download
-  // attribute for a streamed response. A separate browsing context prevents the
-  // completed assessment SPA from being replaced by the PDF document.
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.hidden = true;
   link.setAttribute("data-nico-review-pdf-download", "true");
   document.body.appendChild(link);
-  link.click();
+
+  // Prefer an explicit browsing context so desktop Chromium/WebKit visibly opens the
+  // exact-run report instead of silently consuming a successful streamed response.
+  // If popup policy blocks that action, the original user gesture still owns the
+  // prepared same-origin download anchor as a deterministic fallback.
+  const opened = window.open(href, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    link.click();
+  }
   window.setTimeout(() => link.remove(), 1_000);
 }
 
 /**
- * Keep the exact-run PDF request inside the original mobile user gesture.
+ * Keep the exact-run PDF request inside the original mobile/desktop user gesture.
  *
- * The assessment result intentionally carries only a bounded terminal manifest.
- * Waiting for an asynchronous in-memory response conversion before clicking a
- * synthetic link loses Safari's download gesture and can leave the React action
- * waiting indefinitely while a streamed proxy response stalls. The backend
- * localized artifact route validates exact run identity, canonical truth, strict
- * base64, the PDF signature, and SHA-256. This bridge therefore hands the
- * same-origin download directly to the browser without rerunning the assessment.
- * The separate browsing context is deliberate: if a browser elects to display the
- * PDF instead of downloading it, the completed NICO assessment remains mounted.
+ * The assessment result intentionally carries only a bounded terminal manifest. The
+ * backend localized artifact route validates exact run identity, canonical truth,
+ * strict base64, the PDF signature, and SHA-256. No asynchronous artifact conversion
+ * happens before browser navigation, so WebKit/Chromium keep the trusted gesture.
  */
 export default function AssessmentReviewPdfDownload() {
   const guardedUntil = useRef(0);
@@ -74,7 +92,7 @@ export default function AssessmentReviewPdfDownload() {
       if (!button.closest(REPORT_ACTIONS_SELECTOR)) return;
       if (!REVIEW_PDF_LABEL.test(String(button.textContent || "").trim())) return;
 
-      const runId = new URL(window.location.href).searchParams.get(RUN_ID_QUERY)?.trim() || "";
+      const runId = visibleRunId();
       if (!runId.startsWith("comprun_")) return;
 
       const now = Date.now();
@@ -99,4 +117,4 @@ export default function AssessmentReviewPdfDownload() {
   return null;
 }
 
-export {activeReportLanguage, exactRunPdfHref};
+export {activeReportLanguage, exactRunPdfHref, visibleRunId};
