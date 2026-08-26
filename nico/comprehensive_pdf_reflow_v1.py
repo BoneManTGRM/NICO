@@ -5,7 +5,7 @@ import io
 import re
 from typing import Any
 
-VERSION = "nico.comprehensive_pdf_reflow.v1"
+VERSION = "nico.comprehensive_pdf_reflow.v2"
 
 _HEADER = re.compile(r"^NICO\s+Comprehensive\b.*AUTOMATED\s+DRAFT", re.I)
 _DOCUMENT_PAGE = re.compile(r"^Document\s+page\s+\d+\s+of\s+\d+$", re.I)
@@ -215,7 +215,11 @@ def _render_group(texts: list[str]) -> bytes:
             elif "AUTOMATED DRAFT" in line.upper() or "PENDING HUMAN APPROVAL" in line.upper():
                 story.append(Paragraph(escaped, eyebrow))
             elif line.startswith(("-", "•")):
-                story.append(Paragraph("• " + html.escape(line.lstrip("-• ")), bullet))
+                # Preserve the literal source prefix. The truth gate compares every
+                # meaningful extracted line after reflow; replacing "- " with a bullet
+                # glyph made otherwise-correct compact groups fail closed and left the
+                # production report at 44 pages.
+                story.append(Paragraph(escaped, bullet))
             else:
                 story.append(Paragraph(escaped, body))
 
