@@ -12,7 +12,7 @@ from nico.strategic_human_evidence_v1 import (
     human_evidence_module,
 )
 
-VERSION = "nico.strategic_human_evidence_binding.v2"
+VERSION = "nico.strategic_human_evidence_binding.v3"
 Provider = Callable[[dict[str, Any]], dict[str, Any]]
 
 _CAPABILITY_MODULES: dict[str, tuple[str, ...]] = {
@@ -108,6 +108,51 @@ def _remove_repository_only_limitations(
     return output
 
 
+def _project_descriptive_engagement_identity(
+    result: dict[str, Any],
+    context: dict[str, Any],
+) -> None:
+    """Carry persisted display identity into stakeholder evidence without authority.
+
+    Customer/project display names are descriptive run metadata. They must not disappear
+    merely because the stakeholder module contains only lightweight mobile context. This
+    projection never creates stakeholder authority, approval, residual-risk acceptance,
+    or client delivery authorization.
+    """
+
+    customer_name = str(
+        context.get("customer_name") or context.get("client_name") or ""
+    ).strip()
+    project_name = str(context.get("project_name") or "").strip()
+    if not customer_name and not project_name:
+        return
+
+    evidence = result.get("evidence")
+    if not isinstance(evidence, dict):
+        evidence = {}
+        result["evidence"] = evidence
+    engagement = evidence.get("engagement")
+    if not isinstance(engagement, dict):
+        engagement = {}
+        evidence["engagement"] = engagement
+
+    if customer_name:
+        engagement["client_identity"] = customer_name
+    if project_name:
+        engagement["project_identity"] = project_name
+    if customer_name or project_name:
+        engagement["mode"] = "client"
+
+    primary_contact = str(engagement.get("primary_technical_contact") or "").strip()
+    engagement["client_delivery_identity_valid"] = bool(
+        customer_name and project_name and primary_contact
+    )
+    # Identity validity is descriptive only. Delivery authority remains explicitly
+    # blocked until an authorized human reviewer acts.
+    result["human_review_required"] = True
+    result["client_delivery_allowed"] = False
+
+
 def _wrap(capability: str, original: Provider) -> Provider:
     module_ids = _CAPABILITY_MODULES[capability]
 
@@ -133,6 +178,8 @@ def _wrap(capability: str, original: Provider) -> Provider:
             "human_evidence_partial_count": summary["partial_count"],
             "human_evidence_excluded_count": summary["excluded_count"],
         }
+        if capability == "stakeholder_alignment":
+            _project_descriptive_engagement_identity(result, context)
         completed_or_excluded = [
             module for module in active if module.get("status") in {"complete", "excluded"}
         ]
@@ -150,6 +197,7 @@ def _wrap(capability: str, original: Provider) -> Provider:
         result["client_delivery_allowed"] = False
         return result
 
+    setattr(execute, "_nico_strategic_human_evidence_v3", True)
     setattr(execute, "_nico_strategic_human_evidence_v2", True)
     setattr(execute, "_nico_original_provider", original)
     return execute
@@ -165,7 +213,7 @@ def install_strategic_human_evidence_binding(app: FastAPI) -> dict[str, Any]:
         if not callable(provider):
             missing.append(capability)
             continue
-        if getattr(provider, "_nico_strategic_human_evidence_v2", False):
+        if getattr(provider, "_nico_strategic_human_evidence_v3", False):
             bound.append(capability)
             continue
         providers[capability] = _wrap(capability, provider)
@@ -179,6 +227,7 @@ def install_strategic_human_evidence_binding(app: FastAPI) -> dict[str, Any]:
         "missing_capabilities": sorted(missing),
         "human_evidence_module_count": 10,
         "existing_decision_grade_ledger_reused": True,
+        "descriptive_engagement_identity_preserved": True,
         "repository_inference_allowed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
