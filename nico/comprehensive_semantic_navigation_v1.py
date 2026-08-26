@@ -143,6 +143,13 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
                 continue
             section, numbered = match
             section_id = _text(section.get("section_id"), 120)
+            if not section_id:
+                continue
+            next_nonempty = ""
+            for following in lines[line_index + 1 :]:
+                if _text(following):
+                    next_nonempty = _text(following, 300)
+                    break
             if (
                 "canonical technical scorecard" in page_folded
                 and section_id
@@ -155,16 +162,18 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
                     "architecture_technical_debt",
                     "velocity_complexity",
                 }
+                and next_nonempty.casefold().rstrip(".")
+                in {
+                    "strong",
+                    "moderate",
+                    "provisional strong —",
+                    "provisional strong -",
+                }
             ):
-                # Scorecard table cells repeat control names but are not section headings.
+                # Scorecard table cells repeat control names. Do not let those cells steal
+                # navigation from a real semantic heading, including if safe compaction
+                # later places that real heading on the same physical page.
                 continue
-            if not section_id:
-                continue
-            next_nonempty = ""
-            for following in lines[line_index + 1 :]:
-                if _text(following):
-                    next_nonempty = _text(following, 300)
-                    break
             quality, numbered_score = _occurrence_quality(
                 raw_line=raw_line,
                 numbered=numbered,
@@ -358,9 +367,14 @@ def _remove_existing_toc(reader: Any) -> list[Any]:
     pages = list(reader.pages)
     if len(pages) < 2:
         return pages
-    second = (pages[1].extract_text() or "").casefold()
-    if "table of contents" in second or "tabla de contenido" in second:
-        return [pages[0], *pages[2:]]
+    body_start = 1
+    while body_start < len(pages):
+        text = (pages[body_start].extract_text() or "").casefold()
+        if "table of contents" not in text and "tabla de contenido" not in text:
+            break
+        body_start += 1
+    if body_start > 1:
+        return [pages[0], *pages[body_start:]]
     return pages
 
 
