@@ -1,0 +1,48 @@
+name: Terminal Action Live Diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostic/ship-terminal-actions-20260826
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-terminal-actions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NICO_PRODUCTION_FRONTEND_URL: https://app.nicoaudit.com
+      NICO_DIAGNOSTIC_RUN_ID: comprun_f36f302960614c69ba785f2b41f409b8
+      NICO_EXPECTED_PRODUCTION_SHA: 40b950e9a186555096d348e633fc7be4da2f023c
+    steps:
+      - name: Check out diagnostic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - name: Install pinned browser proof dependency
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir 'playwright==1.61.0'
+          timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium
+      - name: Prove all terminal actions against exact production run
+        run: |
+          set -euo pipefail
+          python scripts/terminal_action_live_diagnostic.py \
+            --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --run-id "${NICO_DIAGNOSTIC_RUN_ID}" \
+            --expected-sha "${NICO_EXPECTED_PRODUCTION_SHA}" \
+            --terminal-timeout-seconds 3600 \
+            --output audit-results/terminal-action-live-diagnostic.json
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: terminal-action-live-diagnostic-${{ github.sha }}
+          path: audit-results/terminal-action-live-diagnostic.json
+          if-no-files-found: warn
+          retention-days: 14
