@@ -1,0 +1,35 @@
+name: Spanish Comprehensive Proof Status Bridge
+
+on:
+  status:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: nico-spanish-proof-status-bridge-${{ github.event.sha }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch-spanish-proof:
+    name: Dispatch exact-main Spanish production proof
+    if: >-
+      github.event.context == 'successful-cat - NICO' &&
+      github.event.state == 'success' &&
+      contains(github.event.branches.*.name, 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the canonical Spanish production proof on current main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error -L \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${REPOSITORY}/actions/workflows/spanish-comprehensive-production-proof.yml/dispatches" \
+            --data '{"ref":"main"}'
