@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
-VERSION = "nico.comprehensive-manifest-navigation.v1.3"
+VERSION = "nico.comprehensive-manifest-navigation.v1.3.1"
 _MARKER = "__nico_comprehensive_manifest_navigation_v1__"
 _CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_manifest_navigation_context", default={}
@@ -204,7 +204,14 @@ def _rewrite_local_page_labels(page: Any, writer: PdfWriter) -> None:
         page.replace_contents(stream)
 
 
-def _page_overlay(page_number: int, total_pages: int, *, spanish: bool) -> bytes:
+def _page_overlay(
+    page_number: int,
+    total_pages: int,
+    *,
+    spanish: bool | None = None,
+) -> bytes:
+    if spanish is None:
+        spanish = _is_spanish_context()
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     pdf.setFont("Helvetica-Bold", 6.5)
@@ -311,7 +318,14 @@ def _fit_title(value: str, *, max_width: float, font_name: str, font_size: float
     return title.rstrip() + "..."
 
 
-def _toc_page(entries: list[tuple[str, int]], total_pages: int, *, spanish: bool) -> bytes:
+def _toc_page(
+    entries: list[tuple[str, int]],
+    total_pages: int,
+    *,
+    spanish: bool | None = None,
+) -> bytes:
+    if spanish is None:
+        spanish = _is_spanish_context()
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     title = "Tabla de contenido" if spanish else "Table of Contents"
@@ -384,7 +398,9 @@ def _renumber_and_outline(pdf: bytes) -> bytes:
             toc_entries.append((title, original_index + 2))
 
     total = len(reader.pages) + 1
-    toc = PdfReader(io.BytesIO(_toc_page(toc_entries, total, spanish=spanish))).pages[0]
+    # Keep calls compatible with the existing Spanish presentation wrapper, whose
+    # historical two-argument signature remains a supported production contract.
+    toc = PdfReader(io.BytesIO(_toc_page(toc_entries, total))).pages[0]
     writer = PdfWriter()
     source_pages: list[tuple[Any, bool]] = [(reader.pages[0], True), (toc, False)]
     source_pages.extend((page, True) for page in reader.pages[1:])
@@ -394,7 +410,7 @@ def _renumber_and_outline(pdf: bytes) -> bytes:
         page = writer.pages[-1]
         if rewrite_labels:
             _rewrite_local_page_labels(page, writer)
-        overlay = PdfReader(io.BytesIO(_page_overlay(index, total, spanish=spanish))).pages[0]
+        overlay = PdfReader(io.BytesIO(_page_overlay(index, total))).pages[0]
         page.merge_page(overlay, over=True)
 
     try:
