@@ -165,8 +165,8 @@ def _spanish_sparse_pdf() -> bytes:
     header = "NICO Comprehensive · comprun_worker_fixture · BORRADOR AUTOMATIZADO"
     sections = [
         ("Auditoría de código", "Hallazgos ejecutables de riesgo de código: 0."),
-        ("Ecosistema de dependencias", "Candidatos de dependencias para revisión: 21."),
-        ("Revisión de secretos", "Candidatos de secretos para revisión: 19."),
+        ("Ecosistema de dependencias y bibliotecas", "Candidatos de dependencias para revisión: 21."),
+        ("Revisión de exposición de secretos", "Candidatos de secretos para revisión: 19."),
     ]
     for title, evidence in sections:
         document.drawString(54, 760, header)
@@ -174,7 +174,7 @@ def _spanish_sparse_pdf() -> bytes:
         document.drawString(54, 690, evidence)
         document.showPage()
     document.drawString(54, 760, header)
-    document.drawString(54, 720, "Revisión humana y aceptación")
+    document.drawString(54, 720, "Puerta de revisión humana y aceptación")
     document.drawString(54, 690, "La aprobación humana permanece pendiente.")
     document.save()
     return buffer.getvalue()
@@ -188,26 +188,38 @@ def test_final_worker_reflows_mexican_spanish_before_navigation() -> None:
     assert state["bound"] is True
     assert state["bilingual_source_headers_supported"] is True
     assert state["reflow_before_final_navigation"] is True
+    assert state["semantic_multi_heading_toc"] is True
+    assert state["mexican_spanish_toc_validation_supported"] is True
 
     original = _spanish_sparse_pdf()
     output = navigation._renumber_and_outline(original)
     reader = PdfReader(io.BytesIO(output))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    toc = reader.pages[1].extract_text() or ""
 
-    # Four sparse source pages would become five after the normal TOC insertion. A
-    # result below five proves worker-local reflow actually happened before navigation.
+    # Four sparse source pages would become five after normal TOC insertion. A result
+    # below five proves worker-local reflow happened before semantic navigation.
     assert len(reader.pages) < 5
-    assert "Table of Contents" in text
+    assert "Tabla de contenido" in text
+    assert "Table of Contents" not in text
     for index in range(1, len(reader.pages) + 1):
-        assert f"Document page {index} of {len(reader.pages)}" in text
+        assert f"Página del documento {index} de {len(reader.pages)}" in text
+    assert "Document page " not in text
+    for heading in (
+        "Auditoría de código",
+        "Ecosistema de dependencias y bibliotecas",
+        "Revisión de exposición de secretos",
+        "Puerta de revisión humana y aceptación",
+    ):
+        assert heading in toc
     for marker in (
         "Auditoría de código",
         "Hallazgos ejecutables de riesgo de código: 0.",
-        "Ecosistema de dependencias",
+        "Ecosistema de dependencias y bibliotecas",
         "Candidatos de dependencias para revisión: 21.",
-        "Revisión de secretos",
+        "Revisión de exposición de secretos",
         "Candidatos de secretos para revisión: 19.",
-        "Revisión humana y aceptación",
+        "Puerta de revisión humana y aceptación",
         "La aprobación humana permanece pendiente.",
     ):
         assert marker in text
@@ -225,6 +237,7 @@ def test_final_worker_installs_sparse_reflow_before_freezing_pdf() -> None:
     assert '"toc_page_labels_and_bookmarks_rebuilt_after_reflow"' in source
     assert source.index("FINAL_WORKER_PDF_REFLOW =") < source.index("CANONICAL_TRUTH_HASH_COMPAT =")
     assert "BORRADOR\\s+AUTOMATIZADO" in reflow_source
+    assert "semantic_renumber_and_outline" in reflow_source
 
 
 def test_markdown_bridge_waits_for_terminal_report_before_prefetch() -> None:
