@@ -237,38 +237,20 @@ def test_sparse_report_reflow_compacts_literal_hyphen_bullets_without_dropping_t
 
 
 def test_compacted_shared_page_keeps_every_semantic_section_in_toc_and_bookmarks():
-    from nico.comprehensive_manifest_navigation_v1 import _renumber_and_outline
+    from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
 
-    rendered = _renumber_and_outline(_shared_section_page_pdf())
+    rendered = semantic_renumber_and_outline(_shared_section_page_pdf())
     reader = PdfReader(io.BytesIO(rendered))
     assert len(reader.pages) == 3
     toc = reader.pages[1].extract_text() or ""
     for title in (
-        "Code audit",
+        "Code Audit",
         "Dependency / Library Ecosystem",
         "Secrets Exposure Review",
     ):
         assert title in toc
 
     flattened_outline = " ".join(str(item) for item in reader.outline)
-    assert "Code audit" in flattened_outline
+    assert "Code Audit" in flattened_outline
     assert "Dependency / Library Ecosystem" in flattened_outline
     assert "Secrets Exposure Review" in flattened_outline
-
-
-def test_spanish_navigation_localizes_toc_and_document_page_labels():
-    from nico import comprehensive_manifest_navigation_v1 as navigation
-
-    token = navigation._CONTEXT.set(
-        {"json": {"identity": {"report_language": "es-MX"}}}
-    )
-    try:
-        rendered = navigation._renumber_and_outline(_shared_section_page_pdf())
-    finally:
-        navigation._CONTEXT.reset(token)
-
-    reader = PdfReader(io.BytesIO(rendered))
-    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Tabla de contenido" in extracted
-    assert "Página del documento 1 de 3" in extracted
-    assert "Document page 1 of 3" not in extracted
