@@ -6,13 +6,16 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from nico.comprehensive_intake_display_metadata_v2 import (
+    install_comprehensive_intake_display_metadata_v2,
+)
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.strategic_human_evidence_v1 import (
     decision_grade_stage_payload,
     human_evidence_module,
 )
 
-VERSION = "nico.strategic_human_evidence_binding.v2"
+VERSION = "nico.strategic_human_evidence_binding.v2.1"
 Provider = Callable[[dict[str, Any]], dict[str, Any]]
 
 _CAPABILITY_MODULES: dict[str, tuple[str, ...]] = {
@@ -156,6 +159,19 @@ def _wrap(capability: str, original: Provider) -> Provider:
 
 
 def install_strategic_human_evidence_binding(app: FastAPI) -> dict[str, Any]:
+    # The production Comprehensive bootstrap always installs this binding. Make the
+    # commercial intake metadata persistence part of the same fail-closed boundary so
+    # client/project display names cannot depend on a separate, optional installer or
+    # process-order side effect. The route function resolves its module-level _intake at
+    # request time, so this remains authoritative even when routes are registered later.
+    intake_display_metadata = install_comprehensive_intake_display_metadata_v2()
+    intake_display_metadata_bound = (
+        intake_display_metadata.get("bound") is True
+        and intake_display_metadata.get("direct_controller_payload") is True
+        and intake_display_metadata.get("durable_report_display_metadata_fallback") is True
+        and intake_display_metadata.get("contextvar_required_for_display_metadata") is False
+    )
+
     source = getattr(app.state, PROVIDER_STATE_KEY, None)
     providers = dict(source) if isinstance(source, Mapping) else {}
     bound: list[str] = []
@@ -174,9 +190,12 @@ def install_strategic_human_evidence_binding(app: FastAPI) -> dict[str, Any]:
     status = {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
-        "bound": not missing,
+        "bound": not missing and intake_display_metadata_bound,
         "bound_capabilities": sorted(bound),
         "missing_capabilities": sorted(missing),
+        "intake_display_metadata": intake_display_metadata,
+        "intake_display_metadata_bound": intake_display_metadata_bound,
+        "commercial_display_metadata_durable": intake_display_metadata_bound,
         "human_evidence_module_count": 10,
         "existing_decision_grade_ledger_reused": True,
         "repository_inference_allowed": False,
