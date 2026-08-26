@@ -7,15 +7,69 @@ from typing import Any, Mapping
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
 from nico.comprehensive_report_package import build_comprehensive_report_package
 
-VERSION = "nico.comprehensive-report-worker-runtime.v90"
+VERSION = "nico.comprehensive-report-worker-runtime.v91"
 _REPORT_STAGES = {
     "decision_report_generation",
     "final_comprehensive_report_generation",
 }
+_DISPLAY_IDENTITY_FIELDS = (
+    ("customer_name", ("customer_name", "client_name")),
+    ("project_name", ("project_name",)),
+    ("primary_technical_contact", ("primary_technical_contact",)),
+)
 
 
 def report_stage(stage_id: Any) -> bool:
     return str(stage_id or "").strip() in _REPORT_STAGES
+
+
+def _text(value: Any, limit: int = 300) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
+
+
+def _nested_display_value(value: Any, keys: tuple[str, ...]) -> str:
+    if isinstance(value, Mapping):
+        for key in keys:
+            if key in value:
+                direct = _text(value.get(key))
+                if direct:
+                    return direct
+        for nested in value.values():
+            result = _nested_display_value(nested, keys)
+            if result:
+                return result
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            result = _nested_display_value(nested, keys)
+            if result:
+                return result
+    return ""
+
+
+def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
+    """Build final-report identity with durable display-metadata fallback.
+
+    The final report runs behind a detached publication boundary. Canonical scope
+    identity remains sourced from the native provider, while optional display metadata
+    is recovered from the exact run context first and from normalized retained human
+    evidence second. This avoids relying on process-order-sensitive runtime wrappers.
+    """
+
+    from nico import comprehensive_native_providers as providers
+
+    identity = providers._identity(dict(context))
+    human_evidence = context.get("human_evidence")
+    for output_key, source_keys in _DISPLAY_IDENTITY_FIELDS:
+        direct = ""
+        for source_key in source_keys:
+            direct = _text(context.get(source_key))
+            if direct:
+                break
+        value = direct or _nested_display_value(human_evidence, source_keys)
+        if value:
+            identity[output_key] = value
+    return identity
 
 
 def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, Any]:
@@ -36,7 +90,7 @@ def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, A
         else {}
     )
     package = build_comprehensive_report_package(
-        identity=providers._identity(context),
+        identity=_report_identity(context),
         stage_results=prior,
     )
     if str(package.get("status") or "blocked") != "complete":
@@ -179,6 +233,10 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
     Spanish/report guard and v89 CI/CD PDF sanitizer remain authoritative wrappers, but
     their stored delegates are reset to these stable bases immediately before a report
     stage executes.
+
+    v91 additionally resolves optional client/project/contact display metadata from the
+    detached exact-run context and normalized retained human evidence before canonical
+    report construction. Canonical scope IDs remain unchanged.
     """
 
     from nico import comprehensive_ci_pdf_control_safety_v89 as v89
@@ -214,6 +272,8 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
         "ci_pdf_base_stable": True,
         "first_install_order_independent": True,
         "detached_report_alias_recursion_blocked": True,
+        "display_metadata_identity_fallback_bound": True,
+        "canonical_scope_identity_unchanged": True,
         "spanish_guard_bound": spanish_guard.get("bound") is True,
         "ci_pdf_guard_bound": pdf_guard.get("bound") is True,
         "human_review_required": True,
