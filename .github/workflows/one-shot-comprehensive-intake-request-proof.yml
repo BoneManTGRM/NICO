@@ -1,0 +1,93 @@
+name: One-shot Comprehensive Intake Request Proof
+
+on:
+  push:
+    branches:
+      - diagnostic/comprehensive-intake-request-proof-20260826
+
+permissions:
+  contents: read
+
+jobs:
+  request-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
+          python -m playwright install --with-deps chromium
+      - name: Capture actual production browser intake body without creating a run
+        run: |
+          python - <<'PY'
+          import json
+          from playwright.sync_api import sync_playwright
+
+          expected = {
+              "repository": "BoneManTGRM/NICO",
+              "client_name": "NICO Browser Request Proof Client",
+              "project_name": "NICO Browser Request Proof Project",
+              "primary_technical_contact": "NICO Browser Request Proof Contact",
+              "access_method": "NICO browser request proof - GitHub HTTPS/API read-only",
+              "authorized_scope": "NICO browser request proof - exact repository read-only",
+          }
+          captured = {}
+          with sync_playwright() as playwright:
+              browser = playwright.chromium.launch()
+              context = browser.new_context(
+                  viewport={"width": 390, "height": 844},
+                  locale="en-US",
+                  service_workers="block",
+                  extra_http_headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+              )
+              page = context.new_page()
+
+              def intercept(route, request):
+                  if request.method == "POST" and "/api/nico/assessment/comprehensive-intake" in request.url:
+                      raw = request.post_data or "{}"
+                      captured.update(json.loads(raw))
+                      route.fulfill(status=409, content_type="application/json", body=json.dumps({
+                          "detail": "diagnostic interception: request captured; no assessment created"
+                      }))
+                      return
+                  route.continue_()
+
+              page.route("**/api/nico/assessment/comprehensive-intake", intercept)
+              page.goto(
+                  "https://app.nicoaudit.com/assessment?tier=comprehensive&request_proof=20260826#assessment",
+                  wait_until="domcontentloaded",
+                  timeout=120_000,
+              )
+              page.get_by_label("Repository URL or identifier").fill(expected["repository"])
+              page.get_by_label("Client name, optional").fill(expected["client_name"])
+              page.get_by_label("Project name, optional").fill(expected["project_name"])
+              page.get_by_label("Access Method").fill(expected["access_method"])
+              page.get_by_label("Primary Technical Contact").fill(expected["primary_technical_contact"])
+              page.get_by_label("Authorized Scope").fill(expected["authorized_scope"])
+              page.locator('[data-assessment-authorization="true"]').check()
+              page.locator('[data-assessment-primary-action="true"]').click()
+              page.wait_for_timeout(5000)
+              context.close()
+              browser.close()
+
+          assert captured, "production browser did not emit Comprehensive intake POST"
+          stakeholder = ((captured.get("human_evidence") or {}).get("stakeholder_context") or {}).get("evidence") or {}
+          observed = {
+              "repository": captured.get("repository"),
+              "client_name": captured.get("client_name"),
+              "project_name": captured.get("project_name"),
+              "primary_technical_contact": (stakeholder.get("primary_technical_contact") or [""])[0],
+              "access_method": (stakeholder.get("access_method") or [""])[0],
+              "authorized_scope": (stakeholder.get("authorized_scope") or [""])[0],
+              "report_language": captured.get("report_language"),
+          }
+          print(json.dumps({"expected": expected, "observed": observed, "full_request": captured}, indent=2, sort_keys=True))
+          for key, value in expected.items():
+              assert observed[key] == value, {"field": key, "expected": value, "observed": observed[key]}
+          assert captured.get("authorization_confirmed") is True
+          assert captured.get("authorized") is True
+          PY
