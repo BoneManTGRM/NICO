@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import html
 import io
-from copy import deepcopy
 from typing import Any, Mapping
 
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
-from nico.comprehensive_report_package import (
-    build_comprehensive_report_package as _build_comprehensive_report_package_base,
-)
+from nico.comprehensive_report_package import build_comprehensive_report_package
 
-VERSION = "nico.comprehensive-report-worker-runtime.v92"
+VERSION = "nico.comprehensive-report-worker-runtime.v91"
 _REPORT_STAGES = {
     "decision_report_generation",
     "final_comprehensive_report_generation",
@@ -75,173 +70,6 @@ def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
         if value:
             identity[output_key] = value
     return identity
-
-
-def _display_identity(identity: Mapping[str, Any]) -> dict[str, str]:
-    return {
-        key: _text(identity.get(key), 300)
-        for key in (
-            "customer_name",
-            "project_name",
-            "primary_technical_contact",
-            "report_language",
-            "locale",
-        )
-        if _text(identity.get(key), 300)
-    }
-
-
-def build_comprehensive_report_package(
-    *,
-    identity: dict[str, Any],
-    stage_results: dict[str, dict[str, Any]],
-) -> dict[str, Any]:
-    """Authoritative detached-worker package builder with durable display identity.
-
-    The native package builder intentionally narrows identity to canonical scope IDs.
-    That is correct for authorization boundaries but previously discarded optional
-    client/project/contact display metadata immediately before canonical report truth was
-    frozen. The detached worker is the first boundary that has both the durable recovered
-    display metadata and the final package, so preserve those fields here as stable source
-    behavior rather than through an installer or process-order-sensitive monkey patch.
-
-    Canonical customer_id/project_id, repository identity, scores, findings, candidate
-    dispositions, human-review state and delivery authority are not modified.
-    """
-
-    from nico import comprehensive_report_package as report_module
-
-    result = _build_comprehensive_report_package_base(
-        identity=identity,
-        stage_results=stage_results,
-    )
-    if not isinstance(result, dict):
-        return result
-
-    display = _display_identity(identity)
-    if not display:
-        return result
-
-    report_package = (
-        deepcopy(dict(result.get("report_package") or {}))
-        if isinstance(result.get("report_package"), Mapping)
-        else {}
-    )
-    canonical = (
-        deepcopy(dict(report_package.get("json") or {}))
-        if isinstance(report_package.get("json"), Mapping)
-        else {}
-    )
-    if not canonical:
-        return result
-
-    canonical_identity = (
-        deepcopy(dict(canonical.get("identity") or {}))
-        if isinstance(canonical.get("identity"), Mapping)
-        else {}
-    )
-    canonical_identity.update(display)
-    canonical["identity"] = canonical_identity
-
-    assessment = (
-        deepcopy(dict(canonical.get("assessment") or {}))
-        if isinstance(canonical.get("assessment"), Mapping)
-        else deepcopy(dict(result.get("assessment") or {}))
-    )
-    stages = (
-        deepcopy(list(canonical.get("stage_summaries") or []))
-        if isinstance(canonical.get("stage_summaries"), list)
-        else deepcopy(list(result.get("stage_summaries") or []))
-    )
-    generated_at = _text(result.get("generated_at"), 100)
-    if not generated_at:
-        return result
-
-    # Regenerate the three report presentation formats from the repaired canonical
-    # identity. This closes the exact production failure where canonical metadata was
-    # repaired only after the first PDF had already been rendered.
-    markdown = report_module._markdown(
-        canonical_identity,
-        assessment,
-        stages,
-        generated_at,
-    )
-    title = (
-        "NICO Comprehensive Technical Assessment — "
-        + _text(canonical_identity.get("repository"), 300)
-    )
-    rendered_html = report_module._semantic_html(markdown, title)
-
-    # The PDF row is explicitly labelled Customer / Project, so use the supplied display
-    # names for that human-facing row when present while keeping canonical scope IDs in
-    # the canonical JSON untouched.
-    pdf_identity = dict(canonical_identity)
-    if _text(pdf_identity.get("customer_name"), 180):
-        pdf_identity["customer_id"] = _text(pdf_identity.get("customer_name"), 180)
-    if _text(pdf_identity.get("project_name"), 180):
-        pdf_identity["project_id"] = _text(pdf_identity.get("project_name"), 180)
-    pdf_base64, pdf_error, page_count = report_module._pdf(
-        pdf_identity,
-        assessment,
-        stages,
-        generated_at,
-    )
-    pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
-
-    report_id = (
-        "comprehensive_report_"
-        + report_module._canonical_hash(
-            {"identity": canonical_identity, "stages": stages}
-        )[:20]
-    )
-    canonical_truth_sha256 = report_module._canonical_hash(canonical)
-    report_package.update(
-        {
-            "report_id": report_id,
-            "markdown": markdown,
-            "html": rendered_html,
-            "json": canonical,
-            "pdf_base64": pdf_base64,
-            "pdf_error": pdf_error,
-            "pdf_page_count": page_count,
-            "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest() if pdf_bytes else "",
-            "canonical_truth_sha256": canonical_truth_sha256,
-        }
-    )
-    quality = (
-        deepcopy(dict(report_package.get("report_quality_contract") or {}))
-        if isinstance(report_package.get("report_quality_contract"), Mapping)
-        else {}
-    )
-    quality.update(
-        {
-            "display_metadata_preserved_in_canonical_report_identity": True,
-            "cross_format_outputs_regenerated_from_repaired_identity": True,
-            "canonical_scope_ids_unchanged": True,
-            "scores_findings_review_and_delivery_authority_unchanged": True,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-        }
-    )
-    report_package["report_quality_contract"] = quality
-
-    result.update(
-        {
-            "status": (
-                "complete"
-                if pdf_base64 and not pdf_error and pdf_bytes.startswith(b"%PDF")
-                else "blocked"
-            ),
-            "report_id": report_id,
-            "assessment": assessment,
-            "canonical_truth_sha256": canonical_truth_sha256,
-            "report_quality_contract": deepcopy(quality),
-            "report_package": report_package,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-        }
-    )
-    return result
 
 
 def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, Any]:
@@ -406,10 +234,9 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
     their stored delegates are reset to these stable bases immediately before a report
     stage executes.
 
-    v92 additionally makes display-metadata preservation part of the stable detached
-    report builder itself. No installer or process-order-sensitive patch is required for
-    client/project/contact metadata to survive into canonical report truth and the first
-    rendered package.
+    v91 additionally resolves optional client/project/contact display metadata from the
+    detached exact-run context and normalized retained human evidence before canonical
+    report construction. Canonical scope IDs remain unchanged.
     """
 
     from nico import comprehensive_ci_pdf_control_safety_v89 as v89
@@ -446,8 +273,6 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
         "first_install_order_independent": True,
         "detached_report_alias_recursion_blocked": True,
         "display_metadata_identity_fallback_bound": True,
-        "display_metadata_preserved_without_runtime_installer": True,
-        "cross_format_outputs_regenerated_from_repaired_identity": True,
         "canonical_scope_identity_unchanged": True,
         "spanish_guard_bound": spanish_guard.get("bound") is True,
         "ci_pdf_guard_bound": pdf_guard.get("bound") is True,
@@ -458,7 +283,6 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
-    "build_comprehensive_report_package",
     "install_report_worker_runtime_v90",
     "report_stage",
 ]
