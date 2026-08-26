@@ -149,6 +149,7 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
         stage_results=_minimal_stage_results(),
     )
     assert package["status"] == "complete"
+    assert package["artifact_schema"] == "nico.comprehensive_report_package.v2.1"
     canonical = package["report_package"]["json"]
     canonical_identity = canonical["identity"]
 
@@ -166,7 +167,10 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
     assert package["report_package"]["canonical_truth_sha256"] == report_module._canonical_hash(
         canonical
     )
-    assert package["report_quality_contract"]["cross_format_outputs_regenerated_from_repaired_identity"] is True
+    markdown = package["report_package"]["markdown"]
+    assert "Client display name: NICO Production Metadata Proof" in markdown
+    assert "Project display name: Comprehensive Metadata E2E Proof" in markdown
+    assert "Primary technical contact: NICO Metadata Proof Contact" in markdown
     pdf = base64.b64decode(package["report_package"]["pdf_base64"])
     pdf_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
