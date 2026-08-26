@@ -197,7 +197,8 @@ def test_final_worker_reflows_mexican_spanish_before_navigation() -> None:
     # Four sparse source pages would become five after the normal TOC insertion. A
     # result below five proves worker-local reflow actually happened before navigation.
     assert len(reader.pages) < 5
-    assert "Table of Contents" in text
+    assert "Tabla de contenido" in text
+    assert "Table of Contents" not in text
     for index in range(1, len(reader.pages) + 1):
         assert f"Document page {index} of {len(reader.pages)}" in text
     for marker in (
