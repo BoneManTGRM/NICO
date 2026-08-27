@@ -36,6 +36,13 @@ SECURITY_HEADERS = [
     "referrer-policy",
     "permissions-policy",
 ]
+SENSITIVE_RESPONSE_HEADERS = {
+    "set-cookie",
+    "authorization",
+    "proxy-authorization",
+    "www-authenticate",
+    "proxy-authenticate",
+}
 SENSITIVE_OUTPUT_KEY_RE = re.compile(
     r"(?i)(^|[_-])(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|cookie|authorization|auth)([_-]|$)"
 )
@@ -404,17 +411,21 @@ def passive_url_check(url: str, authorized: bool, passive_only: bool) -> dict[st
     findings: list[str] = []
     unavailable: list[str] = []
     headers: dict[str, str] = {}
+    response_header_names: set[str] = set()
     status = None
-    final_url = url
     try:
         response = requests.get(url, timeout=12, allow_redirects=True, headers={"User-Agent": "NICO-passive-check"})
         status = response.status_code
-        final_url = response.url
-        headers = {k.lower(): v for k, v in response.headers.items()}
+        response_header_names = {key.lower() for key in response.headers.keys()}
+        headers = {
+            key.lower(): value
+            for key, value in response.headers.items()
+            if key.lower() not in SENSITIVE_RESPONSE_HEADERS
+        }
         evidence.append(f"HTTP status: {status}.")
-        evidence.append(f"Final URL after redirects: {final_url}.")
-    except requests.RequestException as exc:
-        unavailable.append(f"HTTP reachability check failed: {exc}")
+        evidence.append("Redirect resolution completed; redirect URL values are intentionally not retained.")
+    except requests.RequestException:
+        unavailable.append("HTTP reachability check failed; exception details are intentionally not retained.")
 
     missing_headers = [header for header in SECURITY_HEADERS if header not in headers]
     for header in SECURITY_HEADERS:
@@ -427,13 +438,9 @@ def passive_url_check(url: str, authorized: bool, passive_only: bool) -> dict[st
         evidence.append(f"CORS header visible: access-control-allow-origin={cors}.")
         if cors.strip() == "*":
             findings.append("CORS allows any origin in the visible response headers.")
-    cookies = headers.get("set-cookie")
-    if cookies:
-        masked_cookie = re.sub(r"=([^;]+)", "=***", cookies)
-        evidence.append(f"Set-Cookie visible: {masked_cookie[:240]}.")
-        lower_cookie = cookies.lower()
-        if "secure" not in lower_cookie or "httponly" not in lower_cookie:
-            findings.append("Visible Set-Cookie header may be missing Secure or HttpOnly flags.")
+    if "set-cookie" in response_header_names:
+        evidence.append("Set-Cookie header present; cookie values are intentionally not collected or retained.")
+        unavailable.append("Cookie Secure/HttpOnly/SameSite attributes were not retained in no-server passive mode because Set-Cookie values may contain session credentials.")
 
     if parsed.scheme == "https":
         try:
@@ -814,7 +821,7 @@ def main(argv: list[str] | None = None) -> None:
         print_json({"status": "blocked", "error": str(exc)})
         return
     except Exception as exc:
-        print_json({"status": "error", "error": str(exc)})
+        print_json({"status": "error", "error": "Assessment failed.", "error_type": type(exc).__name__})
         return
 
     parser.print_help()
