@@ -15,7 +15,7 @@ import spanish_comprehensive_live_acceptance_v1 as base
 import spanish_comprehensive_live_acceptance_v2 as telemetry
 from provider_neutral_repository_locator_contract_v1 import SPANISH_REPOSITORY_LABEL
 
-VERSION = "nico.spanish_comprehensive_live_acceptance.v3.2"
+VERSION = "nico.spanish_comprehensive_live_acceptance.v3.3"
 SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"
 SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"
 SPANISH_TERMINAL_REPORT = "Completa"
@@ -53,30 +53,19 @@ def _recursive_values(value: Any, key: str) -> list[str]:
     return found
 
 
-def _fetch_localized_pdf(
-    page: Any,
-    *,
-    frontend_origin: str,
-    run_id: str,
-    report_language: str,
-) -> dict[str, Any]:
+def _fetch_localized_pdf(page: Any, *, frontend_origin: str, run_id: str, report_language: str) -> dict[str, Any]:
     response = page.request.get(
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf",
         headers={"Accept": "application/pdf", "Cache-Control": "no-store"},
         timeout=120_000,
     )
     pdf_bytes = response.body()
-    assert response.ok, (
-        f"Same-run localized {report_language} PDF returned HTTP {response.status}"
-    )
+    assert response.ok, f"Same-run localized {report_language} PDF returned HTTP {response.status}"
     assert pdf_bytes.startswith(b"%PDF"), f"{report_language} report was not a PDF"
     assert response.headers.get("x-nico-run-id") == run_id
     observed_language = str(response.headers.get("x-nico-report-language") or "").lower()
     expected_languages = {"es-mx", "es_mx"} if report_language == "es-MX" else {"en"}
-    assert observed_language in expected_languages, {
-        "expected_report_language": report_language,
-        "observed_report_language": observed_language,
-    }
+    assert observed_language in expected_languages, {"expected_report_language": report_language, "observed_report_language": observed_language}
     assert str(response.headers.get("x-nico-assessment-rerun") or "false").lower() == "false"
     observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
     header_sha = str(response.headers.get("x-nico-artifact-sha256") or "").lower()
@@ -84,21 +73,10 @@ def _fetch_localized_pdf(
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     page_count = len(reader.pages)
-    assert 0 < page_count < 44, {
-        "report_language": report_language,
-        "page_count": page_count,
-        "regression": "production Comprehensive PDF remained 44 pages",
-    }
+    assert 0 < page_count < 44, {"report_language": report_language, "page_count": page_count, "regression": "production Comprehensive PDF remained 44 pages"}
     rendered = base._pdf_text(pdf_bytes)
-    for expected in (
-        PROOF_CLIENT_NAME,
-        PROOF_PROJECT_NAME,
-        PROOF_PRIMARY_TECHNICAL_CONTACT,
-    ):
-        assert expected in rendered, {
-            "report_language": report_language,
-            "missing_commercial_metadata": expected,
-        }
+    for expected in (PROOF_CLIENT_NAME, PROOF_PROJECT_NAME, PROOF_PRIMARY_TECHNICAL_CONTACT):
+        assert expected in rendered, {"report_language": report_language, "missing_commercial_metadata": expected}
 
     if report_language == "es-MX":
         missing = [marker for marker in base.SPANISH_PDF_MARKERS if marker not in rendered]
@@ -118,21 +96,10 @@ def _fetch_localized_pdf(
     }
 
 
-def _verify_localized_spanish_terminal_artifacts(
-    page: Any,
-    *,
-    frontend_origin: str,
-    run_id: str,
-) -> dict[str, Any]:
-    """Verify one exact run across canonical truth and both client PDF locales."""
-
+def _verify_localized_spanish_terminal_artifacts(page: Any, *, frontend_origin: str, run_id: str) -> dict[str, Any]:
     status = page.request.get(
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
-        headers={
-            "Accept": "application/json",
-            base.recovery.BROWSER_PROJECTION_HEADER: base.recovery.BROWSER_PROJECTION_VALUE,
-            "Cache-Control": "no-store",
-        },
+        headers={"Accept": "application/json", base.recovery.BROWSER_PROJECTION_HEADER: base.recovery.BROWSER_PROJECTION_VALUE, "Cache-Control": "no-store"},
         timeout=60_000,
     )
     status_bytes = status.body()
@@ -154,9 +121,7 @@ def _verify_localized_spanish_terminal_artifacts(
         headers={"Accept": "application/json", "Cache-Control": "no-store"},
         timeout=120_000,
     )
-    assert canonical_response.ok, (
-        f"Exact-run canonical report JSON returned HTTP {canonical_response.status}"
-    )
+    assert canonical_response.ok, f"Exact-run canonical report JSON returned HTTP {canonical_response.status}"
     canonical = canonical_response.json()
     assert isinstance(canonical, dict)
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
@@ -170,25 +135,10 @@ def _verify_localized_spanish_terminal_artifacts(
         ("authorized_scope", PROOF_AUTHORIZED_SCOPE),
     ):
         values = _recursive_values(canonical, key)
-        assert expected in values, {
-            "missing_human_context_key": key,
-            "expected": expected,
-            "observed": values[:20],
-        }
+        assert expected in values, {"missing_human_context_key": key, "expected": expected, "observed": values[:20]}
 
-    spanish_pdf = _fetch_localized_pdf(
-        page,
-        frontend_origin=frontend_origin,
-        run_id=run_id,
-        report_language="es-MX",
-    )
-    english_pdf = _fetch_localized_pdf(
-        page,
-        frontend_origin=frontend_origin,
-        run_id=run_id,
-        report_language="en",
-    )
-
+    spanish_pdf = _fetch_localized_pdf(page, frontend_origin=frontend_origin, run_id=run_id, report_language="es-MX")
+    english_pdf = _fetch_localized_pdf(page, frontend_origin=frontend_origin, run_id=run_id, report_language="en")
     return {
         "terminal_manifest_size_bytes": len(status_bytes),
         "terminal_manifest_bounded": True,
@@ -217,8 +167,6 @@ def _verify_localized_spanish_terminal_artifacts(
 
 
 def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
-    """Run the real compact-mobile intake with distinctive commercial metadata."""
-
     context = browser.new_context(
         viewport={"width": 390, "height": 844},
         locale="es-MX",
@@ -237,10 +185,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
         if not parsed.path.startswith("/api/nico/assessment/"):
             return
         entry = {"method": request.method, "path": parsed.path, "body": ""}
-        if (
-            request.method == "POST"
-            and parsed.path == "/api/nico/assessment/comprehensive-intake"
-        ):
+        if request.method == "POST" and parsed.path == "/api/nico/assessment/comprehensive-intake":
             try:
                 entry["body"] = str(request.post_data or "")
             except Exception:
@@ -250,11 +195,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
     page.on("request", record_request)
     started_at = time.time()
     try:
-        page.goto(
-            f"{origin}{base.SPANISH_ROUTE}?tier=comprehensive&spanish_production_probe={time.time_ns()}#assessment",
-            wait_until="domcontentloaded",
-            timeout=args.navigation_timeout_ms,
-        )
+        page.goto(f"{origin}{base.SPANISH_ROUTE}?tier=comprehensive&spanish_production_probe={time.time_ns()}#assessment", wait_until="domcontentloaded", timeout=args.navigation_timeout_ms)
         base._wait_for_spanish_hydration(page, args.navigation_timeout_ms)
         assert page.evaluate("() => document.documentElement.lang") == "es-MX"
 
@@ -270,38 +211,46 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
         run_id, initial_stored = base.recovery._wait_for_run_id(page, 180.0)
         args.proof_run_id = run_id
         assert base.recovery._start_count(requests) == 1
+        intake_entries = [item for item in requests if item.get("method") == "POST" and item.get("path") == "/api/nico/assessment/comprehensive-intake"]
+        assert len(intake_entries) == 1, intake_entries
+        intake_payload = json.loads(str(intake_entries[0].get("body") or "{}"))
+        assert intake_payload.get("client_name") == PROOF_CLIENT_NAME, intake_payload
+        assert intake_payload.get("project_name") == PROOF_PROJECT_NAME, intake_payload
+        intake_human_evidence = intake_payload.get("human_evidence") or {}
+        for key, expected in (
+            ("access_method", PROOF_ACCESS_METHOD),
+            ("primary_technical_contact", PROOF_PRIMARY_TECHNICAL_CONTACT),
+            ("authorized_scope", PROOF_AUTHORIZED_SCOPE),
+        ):
+            observed = _recursive_values(intake_human_evidence, key)
+            assert expected in observed, {"browser_request_missing": key, "expected": expected, "observed": observed}
+        sanitized_intake_payload = {
+            "repository": intake_payload.get("repository"),
+            "client_name": intake_payload.get("client_name"),
+            "project_name": intake_payload.get("project_name"),
+            "access_method": _recursive_values(intake_human_evidence, "access_method"),
+            "primary_technical_contact": _recursive_values(intake_human_evidence, "primary_technical_contact"),
+            "authorized_scope": _recursive_values(intake_human_evidence, "authorized_scope"),
+            "report_language": intake_payload.get("report_language"),
+            "authorized": intake_payload.get("authorized"),
+            "authorization_confirmed": intake_payload.get("authorization_confirmed"),
+        }
         languages = base._intake_languages(requests)
-        assert languages == ["es-MX"], (
-            f"Spanish intake did not persist report_language=es-MX: {languages}"
-        )
+        assert languages == ["es-MX"], f"Spanish intake did not persist report_language=es-MX: {languages}"
         proof_scope = base._verify_proof_scope(page, origin, run_id)
 
         base.recovery._wait_for_terminal(page, run_id, args.timeout_seconds)
-        terminal = base.recovery._wait_for_terminal_ui_ready(
-            page,
-            run_id,
-            args.expected_sha,
-            240.0,
-        )
+        terminal = base.recovery._wait_for_terminal_ui_ready(page, run_id, args.expected_sha, 240.0)
         assert terminal.get("phase") == SPANISH_TERMINAL_PHASE, terminal
         assert terminal.get("report_actions_present") == "true", terminal
         assert terminal.get("pdf_enabled") == "true", terminal
         assert terminal.get("markdown_enabled") == "true", terminal
 
-        artifacts = base._verify_spanish_terminal_artifacts(
-            page,
-            frontend_origin=origin,
-            run_id=run_id,
-        )
+        artifacts = base._verify_spanish_terminal_artifacts(page, frontend_origin=origin, run_id=run_id)
         screenshot_path = args.output.with_suffix(".png")
         screenshot_error = ""
         try:
-            page.screenshot(
-                path=str(screenshot_path),
-                full_page=False,
-                timeout=15_000,
-                animations="disabled",
-            )
+            page.screenshot(path=str(screenshot_path), full_page=False, timeout=15_000, animations="disabled")
         except Exception as exc:
             screenshot_error = f"{type(exc).__name__}: {base._bounded(exc, 320)}"
 
@@ -317,6 +266,8 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             "spanish_route_verified": True,
             "document_language_verified": True,
             "intake_report_language_verified": True,
+            "browser_intake_payload_verified": True,
+            "browser_intake_payload": sanitized_intake_payload,
             **proof_scope,
             "start_request_count": base.recovery._start_count(requests),
             "duplicate_intake_absent": True,
@@ -332,11 +283,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             "finished_at_epoch": time.time(),
             **artifacts,
             "screenshot": screenshot_path.as_posix() if screenshot_path.exists() else "",
-            "screenshot_sha256": (
-                hashlib.sha256(screenshot_path.read_bytes()).hexdigest()
-                if screenshot_path.exists()
-                else ""
-            ),
+            "screenshot_sha256": hashlib.sha256(screenshot_path.read_bytes()).hexdigest() if screenshot_path.exists() else "",
             "screenshot_error": screenshot_error,
         }
     finally:
@@ -346,13 +293,10 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
 
 
 def install_spanish_terminal_boundary() -> None:
-    """Bind current localized repository, terminal, artifact, and commercial semantics."""
-
     base.SPANISH_REPO_LABEL = SPANISH_REPOSITORY_LABEL
     base.SPANISH_TERMINAL_PHASE = SPANISH_TERMINAL_PHASE
     current = base.recovery._wait_for_terminal_ui_ready
     if not getattr(current, _MARKER, False):
-
         @wraps(current)
         def wait_for_terminal_ui_ready(*args: Any, **kwargs: Any) -> dict[str, Any]:
             terminal = current(*args, **kwargs)
@@ -364,7 +308,6 @@ def install_spanish_terminal_boundary() -> None:
             assert maturity in SPANISH_MATURITY_LABELS, terminal
             assert not any(label in score for label in FORBIDDEN_ENGLISH_MATURITY_LABELS), terminal
             return terminal
-
         setattr(wait_for_terminal_ui_ready, _MARKER, True)
         setattr(wait_for_terminal_ui_ready, "_nico_previous", current)
         base.recovery._wait_for_terminal_ui_ready = wait_for_terminal_ui_ready
