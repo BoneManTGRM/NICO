@@ -409,6 +409,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       className={`report-actions ${workspaceStyles.reportActionBar}`}
       data-assessment-report-actions="true"
       data-assessment-report-ready={reportReady ? "true" : "false"}
+      data-run-id={String(result?.run_id || "")}
     >
       <button type="button" disabled={!markdownAvailable || artifactAction !== null} onClick={copyMarkdown}>{copy.copy}</button>
       <button type="button" disabled={!pdfAvailable || artifactAction !== null} onClick={downloadPdf}>{internalReview.approved ? copy.downloadApprovedPdf : copy.downloadReviewPdf}</button>
