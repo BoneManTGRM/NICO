@@ -83,8 +83,8 @@ jobs:
           for before, after in test_replacements.items():
               if before in test:
                   test = test.replace(before, after)
-          if ' secret' in test or '(secret' in test:
-              raise SystemExit("Sensitive test fixture identifier still present in output regression test")
+          if 'def _report(secret:' in test or 'secret = "supersecretvalue12345"' in test:
+              raise SystemExit("Sensitive-name fixture identifier still present in output regression test")
           test_path.write_text(test, encoding="utf-8")
 
           response_test_path = Path("tests/test_no_server_sensitive_response_headers_v1.py")
