@@ -111,8 +111,14 @@ def test_native_final_report_provider_does_not_narrow_away_display_identity() ->
     rendered = "\n".join(
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
     )
-    assert "NICO Acceptance Client" in rendered
-    assert "NICO Acceptance Project" in rendered
+    for expected in (
+        "NICO Acceptance Client",
+        "NICO Acceptance Project",
+        "NICO Acceptance Contact",
+        "GitHub HTTPS/API - read-only",
+        "Full repository at exact assessed SHA - read-only",
+    ):
+        assert expected in rendered
 
 
 def test_native_report_identity_keeps_genuine_missing_display_fields_missing() -> None:
