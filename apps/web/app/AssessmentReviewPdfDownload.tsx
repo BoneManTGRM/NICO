@@ -84,23 +84,16 @@ function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): v
   link.style.left = "-9999px";
   link.setAttribute("data-nico-review-pdf-download", "true");
   document.body.appendChild(link);
-
-  // A single prepared anchor click is the browser-native user-gesture path. The prior
-  // implementation called window.open(..., noopener) first; browsers may legally
-  // return null when noopener severs the opener even though the tab opened, causing the
-  // fallback anchor to fire as well. Production consequently showed two identical PDF
-  // GETs for one apparent action. Use exactly one navigation attempt.
   link.click();
   window.setTimeout(() => link.remove(), 1_000);
 }
 
 /**
  * Keep the exact-run PDF request inside the original mobile/desktop user gesture.
- *
- * The backend localized artifact route validates exact run identity, canonical truth,
- * strict base64, the PDF signature, and SHA-256. The browser receives one normal anchor
- * navigation only, with an explicit visible status so an action can no longer appear to
- * do nothing even when the browser chooses a background tab or download shelf.
+ * This compatibility bridge takes ownership only when the terminal report is ready and
+ * an exact Comprehensive run ID is visible. During a React rerender or temporary run-ID
+ * projection gap it leaves the click untouched so AssessmentWorkspace remains the safe
+ * fallback rather than turning an enabled button into a dead control.
  */
 export default function AssessmentReviewPdfDownload() {
   const guardedUntil = useRef(0);
@@ -114,18 +107,11 @@ export default function AssessmentReviewPdfDownload() {
       if (!actions) return;
       if (!REVIEW_PDF_LABEL.test(String(button.textContent || "").trim())) return;
 
+      // Do not cancel the native React click until this bridge can prove it owns the
+      // exact terminal artifact action.
+      if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
       const runId = visibleRunId();
-      if (!runId.startsWith("comprun_")) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        showStatus(
-          actions,
-          spanish() ? "No se pudo determinar la ejecución exacta." : "The exact run could not be determined.",
-          true,
-        );
-        return;
-      }
+      if (!runId.startsWith("comprun_")) return;
 
       const now = Date.now();
       if (now < guardedUntil.current) {
