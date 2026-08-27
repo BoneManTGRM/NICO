@@ -5,6 +5,7 @@ import {useEffect, useRef} from "react";
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const REVIEW_PDF_LABEL = /(?:download\s+(?:review|approved)\s+pdf|descargar[^\n]*pdf)/i;
 const RUN_ID_QUERY = "run_id";
+const RUN_ID_ATTR = "data-run-id";
 const REENTRY_GUARD_MS = 1_500;
 const STATUS_ATTR = "data-nico-review-pdf-action-status";
 
@@ -31,9 +32,22 @@ function activeReportLanguage(): ReportLanguage {
   return document.documentElement.lang.toLowerCase().startsWith("es") ? "es-MX" : "en";
 }
 
-function visibleRunId(): string {
-  const fromQuery = new URL(window.location.href).searchParams.get(RUN_ID_QUERY)?.trim() || "";
-  if (fromQuery.startsWith("comprun_")) return fromQuery;
+function exactRunId(value: unknown): string {
+  const runId = String(value || "").trim();
+  return runId.startsWith("comprun_") ? runId : "";
+}
+
+function bindRunId(container: Element | null, runId: string): string {
+  if (container && runId) container.setAttribute(RUN_ID_ATTR, runId);
+  return runId;
+}
+
+function visibleRunId(container: Element | null = null): string {
+  const fromBoundContainer = exactRunId(container?.getAttribute(RUN_ID_ATTR));
+  if (fromBoundContainer) return fromBoundContainer;
+
+  const fromQuery = exactRunId(new URL(window.location.href).searchParams.get(RUN_ID_QUERY));
+  if (fromQuery) return bindRunId(container, fromQuery);
 
   for (const selector of [
     ".nico-identifier-value code[title]",
@@ -41,8 +55,8 @@ function visibleRunId(): string {
     "[data-assessment-run-state='true'] h2[title]",
   ]) {
     for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
-      const value = String(node.getAttribute("title") || "").trim();
-      if (value.startsWith("comprun_")) return value;
+      const value = exactRunId(node.getAttribute("title"));
+      if (value) return bindRunId(container, value);
     }
   }
   return "";
@@ -91,9 +105,10 @@ function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): v
 /**
  * Keep the exact-run PDF request inside the original mobile/desktop user gesture.
  * This compatibility bridge takes ownership only when the terminal report is ready and
- * an exact Comprehensive run ID is visible. During a React rerender or temporary run-ID
- * projection gap it leaves the click untouched so AssessmentWorkspace remains the safe
- * fallback rather than turning an enabled button into a dead control.
+ * an exact Comprehensive run ID is bound or can be resolved. Once resolved, the run is
+ * stored on the action container as data-run-id so later handling avoids DOM text
+ * scraping. During a React rerender or temporary run-ID projection gap it leaves the
+ * click untouched so AssessmentWorkspace remains the safe fallback.
  */
 export default function AssessmentReviewPdfDownload() {
   const guardedUntil = useRef(0);
@@ -110,7 +125,7 @@ export default function AssessmentReviewPdfDownload() {
       // Do not cancel the native React click until this bridge can prove it owns the
       // exact terminal artifact action.
       if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
-      const runId = visibleRunId();
+      const runId = visibleRunId(actions);
       if (!runId.startsWith("comprun_")) return;
 
       const now = Date.now();
@@ -141,4 +156,4 @@ export default function AssessmentReviewPdfDownload() {
   return null;
 }
 
-export {activeReportLanguage, exactRunPdfHref, startExactRunDownload, visibleRunId};
+export {activeReportLanguage, bindRunId, exactRunId, exactRunPdfHref, startExactRunDownload, visibleRunId};
