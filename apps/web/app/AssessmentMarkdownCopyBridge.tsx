@@ -5,6 +5,7 @@ import {useEffect, useRef} from "react";
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const COPY_MARKDOWN_LABEL = /(?:copy\s+markdown|copiar\s+markdown)/i;
 const STATUS_ATTR = "data-nico-markdown-action-status";
+const RUN_ID_ATTR = "data-run-id";
 
 type CacheEntry = {
   runId: string;
@@ -17,9 +18,22 @@ function spanish(): boolean {
     || document.documentElement.lang.toLowerCase().startsWith("es");
 }
 
-function visibleRunId(): string {
-  const fromQuery = new URL(window.location.href).searchParams.get("run_id")?.trim() || "";
-  if (fromQuery.startsWith("comprun_")) return fromQuery;
+function exactRunId(value: unknown): string {
+  const runId = String(value || "").trim();
+  return runId.startsWith("comprun_") ? runId : "";
+}
+
+function bindRunId(container: Element | null, runId: string): string {
+  if (container && runId) container.setAttribute(RUN_ID_ATTR, runId);
+  return runId;
+}
+
+function visibleRunId(container: Element | null = null): string {
+  const fromBoundContainer = exactRunId(container?.getAttribute(RUN_ID_ATTR));
+  if (fromBoundContainer) return fromBoundContainer;
+
+  const fromQuery = exactRunId(new URL(window.location.href).searchParams.get("run_id"));
+  if (fromQuery) return bindRunId(container, fromQuery);
 
   for (const selector of [
     ".nico-identifier-value code[title]",
@@ -27,8 +41,8 @@ function visibleRunId(): string {
     "[data-assessment-run-state='true'] h2[title]",
   ]) {
     for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
-      const value = String(node.getAttribute("title") || "").trim();
-      if (value.startsWith("comprun_")) return value;
+      const value = exactRunId(node.getAttribute("title"));
+      if (value) return bindRunId(container, value);
     }
   }
   return "";
@@ -119,17 +133,18 @@ function enabledCopyButton(actions: Element): HTMLButtonElement | null {
 /**
  * Compatibility helper for terminal Copy Markdown across desktop Chromium and WebKit.
  * It may take ownership of a click only after report readiness and an exact run identity
- * are both established. If either is temporarily absent during a React rerender, it
- * returns without cancelling the event so the canonical AssessmentWorkspace onClick
- * remains available instead of presenting a dead button.
+ * are both established. Once resolved, the exact run is bound to the report action
+ * container as data-run-id so subsequent action handling does not depend on visible text.
+ * If identity is temporarily absent during a React rerender, the canonical
+ * AssessmentWorkspace onClick remains available instead of presenting a dead button.
  */
 export default function AssessmentMarkdownCopyBridge() {
   const cache = useRef<CacheEntry | null>(null);
   const guardedUntil = useRef(0);
 
   useEffect(() => {
-    function entryForVisibleRun(): CacheEntry | null {
-      const runId = visibleRunId();
+    function entryForVisibleRun(actions: Element | null): CacheEntry | null {
+      const runId = visibleRunId(actions);
       if (!runId) return null;
       if (!cache.current || cache.current.runId !== runId) {
         cache.current = {runId, markdown: "", promise: null};
@@ -142,7 +157,7 @@ export default function AssessmentMarkdownCopyBridge() {
       if (!actions) return;
       if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
       if (!enabledCopyButton(actions)) return;
-      const entry = entryForVisibleRun();
+      const entry = entryForVisibleRun(actions);
       if (!entry || entry.markdown || entry.promise) return;
       void loadMarkdown(entry).catch(() => {
         // An explicit user click retries and renders the localized failure state.
@@ -160,7 +175,7 @@ export default function AssessmentMarkdownCopyBridge() {
       // terminal report state and an exact run to act on. The native React handler is
       // the safe fallback during rerenders or temporary projection gaps.
       if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
-      const entry = entryForVisibleRun();
+      const entry = entryForVisibleRun(actions);
       if (!entry) return;
 
       const now = Date.now();
@@ -218,7 +233,7 @@ export default function AssessmentMarkdownCopyBridge() {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["disabled", "data-assessment-report-ready"],
+      attributeFilter: ["disabled", "data-assessment-report-ready", RUN_ID_ATTR],
     });
     prefetch();
 
@@ -231,4 +246,4 @@ export default function AssessmentMarkdownCopyBridge() {
   return null;
 }
 
-export {copyText, enabledCopyButton, markdownHref, visibleRunId};
+export {bindRunId, copyText, enabledCopyButton, exactRunId, markdownHref, visibleRunId};
