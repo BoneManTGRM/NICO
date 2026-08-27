@@ -14,7 +14,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any, Mapping, MutableMapping
 
-VERSION = "nico.comprehensive_final_report_process_worker.v2"
+VERSION = "nico.comprehensive_final_report_process_worker.v3"
 DEFAULT_BOOTSTRAP = "nico.api.final_report_worker_bootstrap:app"
 _CHILD_ENV = "NICO_FINAL_REPORT_ISOLATED_CHILD"
 _PROCESS_GROUP_ATTR = "_nico_isolated_process_group"
@@ -42,6 +42,36 @@ def _exit_signal_name(return_code: int | None) -> str:
         return signal.Signals(-return_code).name
     except (ValueError, TypeError):
         return f"SIGNAL_{-return_code}"
+
+
+def _render_deadline_seconds(value: Any) -> float:
+    if value is None:
+        return 0.0
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, seconds)
+
+
+def _render_deadline_state(
+    *,
+    started_monotonic: float,
+    max_render_seconds: Any,
+    now_monotonic: float | None = None,
+) -> dict[str, Any]:
+    deadline_seconds = _render_deadline_seconds(max_render_seconds)
+    now = time.perf_counter() if now_monotonic is None else float(now_monotonic)
+    elapsed = max(0.0, now - float(started_monotonic))
+    active = deadline_seconds > 0.0 and float(started_monotonic) > 0.0
+    return {
+        "active": active,
+        "overdue": active and elapsed >= deadline_seconds,
+        "elapsed_seconds": elapsed,
+        "deadline_seconds": deadline_seconds,
+        "deadline_clock": "process_local_monotonic",
+        "deadline_phase": "rendering",
+    }
 
 
 def _atomic_json(path: Path, value: Any) -> None:
@@ -200,6 +230,7 @@ def run_isolated_final_report(
     stop: Event,
     state: MutableMapping[str, Any],
     bootstrap: str = DEFAULT_BOOTSTRAP,
+    max_render_seconds: float | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Execute the production final-report provider in a killable child process.
 
@@ -209,6 +240,12 @@ def run_isolated_final_report(
     network-supplied paths or arbitrary deserialization formats. On POSIX the child is
     also a new process group so timeout cleanup terminates renderer descendants rather
     than only the direct Python child.
+
+    The parent also owns a process-local monotonic renderer deadline. This is
+    intentionally independent of durable lease reads and heartbeat status so a
+    transient persistence failure cannot leave a renderer alive beyond the configured
+    render budget. Durable lease fencing and exact-run recovery remain the coordinator's
+    responsibility.
 
     The child imports the dedicated renderer bootstrap, not the web-process Spanish
     bootstrap. It therefore receives the exact same terminal report/language authority
@@ -220,6 +257,15 @@ def run_isolated_final_report(
         raise RuntimeError("isolated_final_report_recursive_spawn_blocked")
 
     started = time.perf_counter()
+    local_deadline = _render_deadline_state(
+        started_monotonic=started,
+        max_render_seconds=max_render_seconds,
+        now_monotonic=started,
+    )
+    state["local_render_deadline_seconds"] = float(local_deadline["deadline_seconds"])
+    state["local_render_deadline_clock"] = "process_local_monotonic"
+    state["local_render_deadline_enabled"] = bool(local_deadline["active"])
+
     with tempfile.TemporaryDirectory(prefix="nico-final-report-") as directory:
         root = Path(directory)
         input_path = root / "context.json"
@@ -259,7 +305,41 @@ def run_isolated_final_report(
         cancelled = False
         try:
             while process.poll() is None:
-                if stop.wait(0.2):
+                deadline = _render_deadline_state(
+                    started_monotonic=started,
+                    max_render_seconds=max_render_seconds,
+                )
+                if deadline["overdue"]:
+                    state["deadline_expired"] = True
+                    state["local_render_deadline_expired"] = True
+                    state["local_render_elapsed_seconds"] = round(
+                        float(deadline["elapsed_seconds"]), 3
+                    )
+                    terminated = terminate_process(process)
+                    state["worker_terminated"] = terminated
+                    if not terminated:
+                        state["worker_termination_failed"] = True
+                        state["worker_error_type"] = "WorkerTerminationError"
+                        state["worker_error"] = (
+                            "isolated_final_report_worker_deadline_termination_failed"
+                        )
+                        raise IsolatedFinalReportWorkerError(
+                            "isolated_final_report_worker_deadline_termination_failed"
+                        )
+                    raise IsolatedFinalReportCancelled(
+                        "isolated_final_report_worker_render_deadline_exceeded"
+                    )
+
+                wait_seconds = 0.2
+                if deadline["active"]:
+                    remaining = max(
+                        0.01,
+                        float(deadline["deadline_seconds"])
+                        - float(deadline["elapsed_seconds"]),
+                    )
+                    wait_seconds = min(wait_seconds, remaining)
+
+                if stop.wait(wait_seconds):
                     cancelled = True
                     terminated = terminate_process(process)
                     state["worker_terminated"] = terminated
@@ -273,6 +353,7 @@ def run_isolated_final_report(
                             "isolated_final_report_worker_termination_failed"
                         )
                     break
+
             return_code = process.poll()
             if isinstance(return_code, int):
                 state["worker_exit_code"] = return_code
@@ -281,6 +362,21 @@ def run_isolated_final_report(
                 raise IsolatedFinalReportCancelled(
                     "isolated_final_report_worker_cancelled"
                 )
+
+            completed_deadline = _render_deadline_state(
+                started_monotonic=started,
+                max_render_seconds=max_render_seconds,
+            )
+            if completed_deadline["overdue"]:
+                state["deadline_expired"] = True
+                state["local_render_deadline_expired"] = True
+                state["local_render_elapsed_seconds"] = round(
+                    float(completed_deadline["elapsed_seconds"]), 3
+                )
+                raise IsolatedFinalReportCancelled(
+                    "isolated_final_report_worker_render_deadline_exceeded"
+                )
+
             if return_code is None:
                 state["worker_error_type"] = "WorkerProcessExit"
                 state["worker_error"] = "isolated_final_report_worker_exit_unknown"
@@ -330,6 +426,8 @@ def run_isolated_final_report(
                 "pipe_free_large_result_transport": True,
                 "private_file_transport": True,
                 "nested_web_worker_orchestration_omitted": True,
+                "process_local_monotonic_deadline": bool(local_deadline["active"]),
+                "render_deadline_seconds": float(local_deadline["deadline_seconds"]),
             }
         finally:
             # Run cleanup even after a normal child exit so no renderer descendant can
@@ -372,6 +470,7 @@ __all__ = [
     "IsolatedFinalReportCancelled",
     "IsolatedFinalReportWorkerError",
     "VERSION",
+    "_render_deadline_state",
     "execute_child",
     "run_isolated_final_report",
     "terminate_process",
