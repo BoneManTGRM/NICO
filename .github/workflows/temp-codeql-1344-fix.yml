@@ -81,13 +81,23 @@ jobs:
               '_report(secret)': '_report(fixture_value)',
               'assert secret not in serialized': 'assert fixture_value not in serialized',
               'assert secret not in text': 'assert fixture_value not in text',
+              '"token": secret,': '"token": fixture_value,',
+              '"private_key": secret,': '"private_key": fixture_value,',
               'no_server.print_json({"token": secret, "message": f"api_key={fixture_value}"})': 'no_server.print_json({"token": fixture_value, "message": f"api_key={fixture_value}"})',
               'assert secret not in output': 'assert fixture_value not in output',
           }
           for before, after in test_replacements.items():
               if before in test:
                   test = test.replace(before, after)
-          if 'def _report(secret:' in test or 'secret = "supersecretvalue12345"' in test:
+          code_only_leftovers = [
+              'def _report(secret:',
+              'secret = "supersecretvalue12345"',
+              '"token": secret,',
+              '"private_key": secret,',
+              '_report(secret)',
+              'assert secret not in',
+          ]
+          if any(item in test for item in code_only_leftovers):
               raise SystemExit("Sensitive-name fixture identifier still present in output regression test")
           test_path.write_text(test, encoding="utf-8")
 
@@ -96,6 +106,8 @@ jobs:
           response_test = response_test.replace('secret = "supersecretexceptionvalue"', 'fixture_value = "supersecretexceptionvalue"')
           response_test = response_test.replace('token={secret}', 'token={fixture_value}')
           response_test = response_test.replace('assert secret not in serialized', 'assert fixture_value not in serialized')
+          if 'secret = "supersecretexceptionvalue"' in response_test or 'token={secret}' in response_test or 'assert secret not in serialized' in response_test:
+              raise SystemExit("Sensitive-name fixture identifier still present in response regression test")
           response_test_path.write_text(response_test, encoding="utf-8")
           PY
 
