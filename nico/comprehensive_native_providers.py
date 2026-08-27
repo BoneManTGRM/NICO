@@ -40,6 +40,22 @@ def _identity(context: dict[str, Any]) -> dict[str, str]:
     return output
 
 
+def _report_identity(context: dict[str, Any]) -> dict[str, str]:
+    """Add only supplied descriptive engagement fields to report identity.
+
+    Canonical customer/project scope IDs remain unchanged. These values come from the
+    durable run context created at intake; no repository inference or process-local
+    state is used.
+    """
+
+    output = _identity(context)
+    for field in ("customer_name", "project_name", "primary_technical_contact"):
+        value = _text(context.get(field), 600 if field == "primary_technical_contact" else 180)
+        if value:
+            output[field] = value
+    return output
+
+
 def _result(context: dict[str, Any], status: str = "complete", **payload: Any) -> dict[str, Any]:
     identity = _identity(context)
     return {
@@ -240,7 +256,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
 
 def _build_report(context: dict[str, Any], final: bool) -> dict[str, Any]:
     prior = context.get("prior_stage_results") if isinstance(context.get("prior_stage_results"), dict) else {}
-    package = build_comprehensive_report_package(identity=_identity(context), stage_results=prior)
+    package = build_comprehensive_report_package(identity=_report_identity(context), stage_results=prior)
     if str(package.get("status") or "blocked") != "complete":
         report = package.get("report_package") if isinstance(package.get("report_package"), dict) else {}
         return _result(context, "blocked", reason=package.get("reason") or report.get("pdf_error") or "report_generation_failed", report_package=report)
@@ -258,7 +274,7 @@ def scanner_triage_provider(context: dict[str, Any]) -> dict[str, Any]:
     return _result(context, summary="Scanner findings were separated into material, review-required, approved/nonblocking, and test-only dispositions.", scanner_triage={"finding_summary": scan.get("finding_summary") or {}, "tools_run": scan.get("tools_run") or [], "failed_tools": scan.get("failed_tools") or [], "timed_out_tools": scan.get("timed_out_tools") or [], "unavailable_tools": scan.get("unavailable_tools") or []}, evidence={**counts, "tools_run": scan.get("tools_run") or [], "full_history_verified_tools": scan.get("full_history_verified_tools") or []}, unavailable_data_notes=scan.get("unavailable_data_notes") or [])
 
 
-def functional_qa_provider(context: dict[str, Any]) -> dict[str, Any]:
+def functional_qa_provider(context: dict[str,Any]) -> dict[str, Any]:
     repo = _repo(context)
     architecture = repo.get("architecture_evidence") if isinstance(repo.get("architecture_evidence"), dict) else {}
     workflows = repo.get("workflow_evidence") if isinstance(repo.get("workflow_evidence"), dict) else {}
