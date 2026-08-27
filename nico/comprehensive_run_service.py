@@ -16,6 +16,7 @@ from nico.comprehensive_blocked_run_recovery_v1 import (
     is_recoverable_final_artifact_failure,
     rewind_blocked_run_for_final_artifact_recovery,
 )
+from nico.comprehensive_engagement_metadata_v1 import display_identity_projection
 from nico.comprehensive_final_report_background_v1 import (
     FinalReportPublicationCoordinator,
 )
@@ -43,7 +44,7 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v15"
+VERSION = "nico.comprehensive_run_service.v16"
 
 _EXECUTIVE_BRIEFING_STAGE_ID = "risk_reduction_and_executive_briefing"
 _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
@@ -166,6 +167,7 @@ class ComprehensiveRunService:
         assessment_depth: str = "strategic",
         report_language: str = "en",
         human_evidence: Any = None,
+        engagement_metadata: Any = None,
     ) -> dict[str, Any]:
         record = create_comprehensive_run_record(
             run_id=run_id,
@@ -178,6 +180,7 @@ class ComprehensiveRunService:
             assessment_depth=assessment_depth,
             report_language=report_language,
             human_evidence=human_evidence,
+            engagement_metadata=engagement_metadata,
         )
         return self._store.create(record)
 
@@ -283,6 +286,12 @@ class ComprehensiveRunService:
                 retained_stage_results,
                 completed,
             )
+            engagement_metadata = (
+                deepcopy(record.get("engagement_metadata"))
+                if isinstance(record.get("engagement_metadata"), Mapping)
+                else {}
+            )
+            display_identity = display_identity_projection(engagement_metadata)
             context = {
                 "artifact_schema": VERSION,
                 "service_id": "comprehensive",
@@ -295,6 +304,12 @@ class ComprehensiveRunService:
                 "project_id": identity["project_id"],
                 "assessment_depth": identity["assessment_depth"],
                 "report_language": identity["report_language"],
+                "engagement_metadata": engagement_metadata,
+                **display_identity,
+                "access_method": str(engagement_metadata.get("access_method") or ""),
+                "authorized_scope": str(
+                    engagement_metadata.get("authorized_scope") or ""
+                ),
                 "human_evidence": deepcopy(record.get("human_evidence") or {}),
                 "prior_stage_results": prior_stage_results,
                 "recovery_history": deepcopy(record.get("recovery_history") or []),
