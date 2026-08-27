@@ -3,10 +3,13 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from nico.comprehensive_engagement_metadata_v1 import (
+    build_comprehensive_engagement_metadata,
+)
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 
-VERSION = "nico.comprehensive_api_controller.v6"
+VERSION = "nico.comprehensive_api_controller.v7"
 MAX_PROJECTED_STRING_CHARS = 4_000
 MAX_PROJECTED_LIST_ITEMS = 80
 MAX_PROJECTED_OBJECT_ITEMS = 80
@@ -230,6 +233,11 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
         "identity": _bounded_value(
             record.get("identity") if isinstance(record.get("identity"), dict) else {}
         ),
+        "engagement_metadata": _bounded_value(
+            record.get("engagement_metadata")
+            if isinstance(record.get("engagement_metadata"), dict)
+            else {}
+        ),
         "human_evidence_summary": _human_evidence_summary(record),
         "current_stage": record.get("current_stage"),
         "completed_stages": [str(item) for item in record.get("completed_stages") or []],
@@ -382,6 +390,11 @@ class ComprehensiveApiController:
         ):
             raise ValueError("explicit_authorization_required")
 
+        engagement_metadata = build_comprehensive_engagement_metadata(
+            client_name=body.get("client_name"),
+            project_name=body.get("project_name"),
+            human_evidence=body.get("human_evidence"),
+        )
         record = self._service.start(
             run_id=run_id,
             repository=repository,
@@ -393,6 +406,7 @@ class ComprehensiveApiController:
             assessment_depth=assessment_depth,
             report_language=report_language,
             human_evidence=body.get("human_evidence"),
+            engagement_metadata=engagement_metadata,
         )
         return self._response(record, operation="started")
 
@@ -447,6 +461,11 @@ class ComprehensiveApiController:
             "project_id": identity["project_id"],
             "assessment_depth": str(identity.get("assessment_depth") or "strategic"),
             "report_language": str(identity.get("report_language") or "en"),
+            "engagement_metadata": _bounded_value(
+                canonical_record.get("engagement_metadata")
+                if isinstance(canonical_record.get("engagement_metadata"), dict)
+                else {}
+            ),
             "human_evidence_summary": _human_evidence_summary(canonical_record),
             "status": canonical_record["status"],
             "current_stage": canonical_record["current_stage"],

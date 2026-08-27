@@ -94,13 +94,16 @@ def test_direct_intake_display_metadata_reaches_controller(monkeypatch) -> None:
 
 
 def test_distinctive_metadata_is_in_initial_canonical_record(monkeypatch) -> None:
-    """Prove browser display metadata survives the real controller/create-record seam."""
+    """Prove browser display metadata survives the controller/service durability seam."""
 
     import nico.comprehensive_api_routes as routes
     import nico.comprehensive_intake_display_metadata_v2 as direct_patch
     import nico.comprehensive_report_review_integrity_v1 as integrity
     import nico.comprehensive_run_service as run_service_module
     from nico.comprehensive_api_controller import ComprehensiveApiController
+    from nico.comprehensive_engagement_metadata_v1 import (
+        normalize_comprehensive_engagement_metadata,
+    )
     from nico.comprehensive_run_record import _record_hash
 
     integrity.install_comprehensive_report_review_integrity_v1()
@@ -111,7 +114,14 @@ def test_distinctive_metadata_is_in_initial_canonical_record(monkeypatch) -> Non
 
     class RecordingService:
         def start(self, **kwargs):
+            # Mirror the real ComprehensiveRunService.start boundary. The low-level run
+            # constructor intentionally does not accept engagement metadata directly.
+            engagement = kwargs.pop("engagement_metadata", None)
             record = run_service_module.create_comprehensive_run_record(**kwargs)
+            normalized = normalize_comprehensive_engagement_metadata(engagement)
+            if normalized:
+                record["engagement_metadata"] = normalized
+                record["integrity_sha256"] = _record_hash(record)
             captured["record"] = record
             return record
 
@@ -149,10 +159,14 @@ def test_distinctive_metadata_is_in_initial_canonical_record(monkeypatch) -> Non
     record = captured["record"]
     assert isinstance(record, dict)
     identity = record["identity"]
+    engagement = record["engagement_metadata"]
     assert identity["customer_id"] == "default_customer"
     assert identity["project_id"] == "default_project"
-    assert identity["customer_name"] == "NICO Acceptance Client"
-    assert identity["project_name"] == "NICO Acceptance Project"
+    assert engagement["client_name"] == "NICO Acceptance Client"
+    assert engagement["project_name"] == "NICO Acceptance Project"
+    assert engagement["primary_technical_contact"] == "NICO Acceptance Contact"
+    assert engagement["access_method"] == "GitHub HTTPS/API - read-only"
+    assert engagement["authorized_scope"] == "full repository at exact assessed SHA - read-only"
     assert integrity._display_values(record)["primary_technical_contact"] == "NICO Acceptance Contact"
     assert integrity._find_evidence_value(record["human_evidence"], "access_method") == "GitHub HTTPS/API - read-only"
     assert integrity._find_evidence_value(record["human_evidence"], "authorized_scope") == "full repository at exact assessed SHA - read-only"
@@ -274,6 +288,9 @@ def test_exact_main_spanish_proof_requires_the_regressions_to_be_fixed() -> None
         'report_language="en"',
         "0 < page_count < 44",
         "same_run_bilingual_pdf_verified",
+        "actual_browser_intake_metadata_verified",
+        "durable_engagement_metadata_verified_at_intake",
+        "durable_engagement_metadata_verified_at_terminal",
     ):
         assert marker in script
     for marker in (

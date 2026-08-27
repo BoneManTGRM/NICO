@@ -53,6 +53,133 @@ def _recursive_values(value: Any, key: str) -> list[str]:
     return found
 
 
+def _expected_engagement_metadata() -> dict[str, str]:
+    return {
+        "client_name": PROOF_CLIENT_NAME,
+        "project_name": PROOF_PROJECT_NAME,
+        "primary_technical_contact": PROOF_PRIMARY_TECHNICAL_CONTACT,
+        "access_method": PROOF_ACCESS_METHOD,
+        "authorized_scope": PROOF_AUTHORIZED_SCOPE,
+    }
+
+
+def _assert_engagement_metadata(value: Any, *, boundary: str) -> dict[str, str]:
+    assert isinstance(value, dict), {
+        "boundary": boundary,
+        "missing_engagement_metadata": True,
+        "observed_type": type(value).__name__,
+    }
+    expected = _expected_engagement_metadata()
+    observed: dict[str, str] = {}
+    for key, wanted in expected.items():
+        actual = str(value.get(key) or "").strip()
+        observed[key] = actual
+        assert actual == wanted, {
+            "boundary": boundary,
+            "engagement_metadata_key": key,
+            "expected": wanted,
+            "observed": actual,
+        }
+    assert value.get("repository_inference_prohibited") is True, {
+        "boundary": boundary,
+        "repository_inference_prohibited": value.get("repository_inference_prohibited"),
+    }
+    assert value.get("directly_scored") is False, {
+        "boundary": boundary,
+        "directly_scored": value.get("directly_scored"),
+    }
+    return observed
+
+
+def _verify_actual_browser_intake(requests: list[dict[str, str]]) -> dict[str, Any]:
+    matches = [
+        item
+        for item in requests
+        if item.get("method") == "POST"
+        and item.get("path") == "/api/nico/assessment/comprehensive-intake"
+    ]
+    assert len(matches) == 1, {
+        "expected_intake_requests": 1,
+        "observed_intake_requests": len(matches),
+    }
+    raw = str(matches[0].get("body") or "")
+    assert raw, "Production browser intake POST had no captured request body"
+    try:
+        payload = json.loads(raw)
+    except Exception as exc:
+        raise AssertionError("Production browser intake POST body was not valid JSON") from exc
+    assert isinstance(payload, dict)
+    assert str(payload.get("client_name") or "").strip() == PROOF_CLIENT_NAME
+    assert str(payload.get("project_name") or "").strip() == PROOF_PROJECT_NAME
+    assert str(payload.get("report_language") or "") == "es-MX"
+
+    human = payload.get("human_evidence")
+    assert isinstance(human, dict), {"human_evidence_type": type(human).__name__}
+    stakeholder = human.get("stakeholder_context")
+    assert isinstance(stakeholder, dict), {
+        "stakeholder_context_type": type(stakeholder).__name__
+    }
+    evidence = stakeholder.get("evidence")
+    assert isinstance(evidence, dict), {"evidence_type": type(evidence).__name__}
+    expected_arrays = {
+        "access_method": [PROOF_ACCESS_METHOD],
+        "primary_technical_contact": [PROOF_PRIMARY_TECHNICAL_CONTACT],
+        "authorized_scope": [PROOF_AUTHORIZED_SCOPE],
+    }
+    for key, wanted in expected_arrays.items():
+        assert evidence.get(key) == wanted, {
+            "browser_intake_key": key,
+            "expected": wanted,
+            "observed": evidence.get(key),
+        }
+    return {
+        "actual_browser_intake_metadata_verified": True,
+        "actual_browser_intake_shape_verified": True,
+        "actual_browser_intake_client_name": str(payload.get("client_name") or ""),
+        "actual_browser_intake_project_name": str(payload.get("project_name") or ""),
+        "actual_browser_intake_report_language": str(payload.get("report_language") or ""),
+    }
+
+
+def _fetch_and_verify_durable_engagement(
+    page: Any,
+    *,
+    frontend_origin: str,
+    run_id: str,
+    boundary: str,
+) -> dict[str, str]:
+    response = page.request.get(
+        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
+        headers={
+            "Accept": "application/json",
+            base.recovery.BROWSER_PROJECTION_HEADER: base.recovery.BROWSER_PROJECTION_VALUE,
+            "Cache-Control": "no-store",
+        },
+        timeout=60_000,
+    )
+    assert response.ok, (
+        f"Exact-run engagement metadata read at {boundary} returned HTTP {response.status}"
+    )
+    payload = response.json()
+    assert isinstance(payload, dict)
+    assert str(payload.get("run_id") or "") == run_id
+    top_level = _assert_engagement_metadata(
+        payload.get("engagement_metadata"),
+        boundary=f"{boundary}:top_level",
+    )
+    record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    record_value = _assert_engagement_metadata(
+        record.get("engagement_metadata"),
+        boundary=f"{boundary}:record",
+    )
+    assert top_level == record_value, {
+        "boundary": boundary,
+        "top_level_engagement_metadata": top_level,
+        "record_engagement_metadata": record_value,
+    }
+    return top_level
+
+
 def _fetch_localized_pdf(
     page: Any,
     *,
@@ -149,6 +276,17 @@ def _verify_localized_spanish_terminal_artifacts(
     assert reports.get("pdf_available") is True
     assert reports.get("markdown_available") is True
 
+    terminal_top = _assert_engagement_metadata(
+        payload.get("engagement_metadata"),
+        boundary="terminal_status:top_level",
+    )
+    record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    terminal_record = _assert_engagement_metadata(
+        record.get("engagement_metadata"),
+        boundary="terminal_status:record",
+    )
+    assert terminal_top == terminal_record
+
     canonical_response = page.request.get(
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/json",
         headers={"Accept": "application/json", "Cache-Control": "no-store"},
@@ -207,6 +345,7 @@ def _verify_localized_spanish_terminal_artifacts(
         "primary_technical_contact_verified": True,
         "access_method_verified_in_canonical_truth": True,
         "authorized_scope_verified_in_canonical_truth": True,
+        "durable_engagement_metadata_verified_at_terminal": True,
         "spanish_pdf_page_count": spanish_pdf["page_count"],
         "english_pdf_page_count": english_pdf["page_count"],
         "same_run_bilingual_pdf_verified": True,
@@ -274,6 +413,13 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
         assert languages == ["es-MX"], (
             f"Spanish intake did not persist report_language=es-MX: {languages}"
         )
+        browser_intake = _verify_actual_browser_intake(requests)
+        initial_engagement = _fetch_and_verify_durable_engagement(
+            page,
+            frontend_origin=origin,
+            run_id=run_id,
+            boundary="immediately_after_intake",
+        )
         proof_scope = base._verify_proof_scope(page, origin, run_id)
 
         base.recovery._wait_for_terminal(page, run_id, args.timeout_seconds)
@@ -318,9 +464,12 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             "document_language_verified": True,
             "intake_report_language_verified": True,
             **proof_scope,
+            **browser_intake,
             "start_request_count": base.recovery._start_count(requests),
             "duplicate_intake_absent": True,
             "initial_persistence": initial_stored,
+            "durable_engagement_metadata_verified_at_intake": True,
+            "durable_engagement_metadata_at_intake": initial_engagement,
             "terminal": terminal,
             "exact_run_identity_preserved": True,
             "commercial_proof_client_name": PROOF_CLIENT_NAME,
