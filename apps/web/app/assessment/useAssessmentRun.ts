@@ -175,18 +175,14 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       const boundRunId = urlBoundRunId(url);
       const persisted = readPersistedRun();
       if (boundRunId) {
-        // The explicit exact-run URL is authoritative over any shared local active-run
-        // pointer. Terminal runs intentionally clear that pointer, so direct reopening
-        // must recover from durable backend state rather than silently showing intake.
+        const exactRun = urlBoundPersistedRun(boundRunId, persisted);
         if (persisted?.runId === boundRunId) {
           setRepository(persisted.repository);
           setClient(persisted.client);
           setProject(persisted.project);
           setAuthorized(true);
-          void resumePersistedRun(persisted);
-        } else {
-          void resumeUrlBoundRun(boundRunId);
         }
+        void resumePersistedRun(exactRun);
       } else if (persisted) {
         setRepository(persisted.repository);
         setClient(persisted.client);
@@ -208,7 +204,12 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         ) {
           return;
         }
-        void resumeUrlBoundRun(boundRunId);
+        if (visibleRunId && visibleRunId !== boundRunId) {
+          publishResult(null);
+        }
+        void resumePersistedRun(
+          urlBoundPersistedRun(boundRunId, readPersistedRun()),
+        );
         return;
       }
 
@@ -262,14 +263,23 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     };
   }
 
-  function resultScope(value: Result): Scope {
+  function urlBoundPersistedRun(
+    runId: string,
+    persisted: PersistedRun | null,
+  ): PersistedRun {
+    if (persisted?.runId === runId) {
+      return persisted;
+    }
     return {
-      customerId: String(
-        value.customer_id || value.record?.identity?.customer_id || "default_customer",
-      ),
-      projectId: String(
-        value.project_id || value.record?.identity?.project_id || "default_project",
-      ),
+      version: 1,
+      runId,
+      repository: "",
+      client: "",
+      project: "",
+      customerId: "default_customer",
+      projectId: "default_project",
+      startedAt: Date.now(),
+      locale,
     };
   }
 
@@ -471,65 +481,6 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setIssue(normalized);
     setError("");
     setMessage("");
-  }
-
-  async function resumeUrlBoundRun(runId: string): Promise<void> {
-    const boundRunId = String(runId || "").trim();
-    if (!boundRunId.startsWith("comprun_")) {
-      return;
-    }
-    const visibleRunId = exactRunId(latestResult.current);
-    if (
-      recoveryInFlight.current ||
-      activeContinuationRunId.current === boundRunId ||
-      visibleRunId === boundRunId
-    ) {
-      return;
-    }
-
-    recoveryInFlight.current = true;
-    const token = sequence.current + 1;
-    sequence.current = token;
-    setPhase("checking");
-    setIssue(null);
-    setError("");
-    setMessage(copy.readinessCheckingMessage);
-    setStarted(null);
-    try {
-      const recoveredResponse = await requestWithRetry(
-        `/assessment/comprehensive-run/${encodeURIComponent(boundRunId)}`,
-        {method: "GET"},
-        copy,
-      );
-      const recovered = preserveRunIdentity(recoveredResponse, {runId: boundRunId});
-      if (token !== sequence.current) {
-        return;
-      }
-      setRepository(String(recovered.repository || recovered.record?.identity?.repository || ""));
-      publishResult(recovered);
-      const stable = terminal(service, recovered);
-      if (stable) {
-        clearPersistedRun(true);
-        setPhase(stable);
-        setStarted(null);
-        setMessage(
-          stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
-        );
-        return;
-      }
-
-      const startedAt = Date.now();
-      const scope = resultScope(recovered);
-      persistExactRun(recovered, scope, startedAt);
-      await continueRun(recovered, scope, token, startedAt);
-    } catch (caught) {
-      if (token !== sequence.current) {
-        return;
-      }
-      applyIssue(caught, true);
-    } finally {
-      recoveryInFlight.current = false;
-    }
   }
 
   async function resumePersistedRun(persisted: PersistedRun): Promise<void> {
