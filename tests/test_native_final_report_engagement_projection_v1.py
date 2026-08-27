@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 
 from pypdf import PdfReader
 
@@ -96,6 +97,10 @@ def test_native_final_report_provider_does_not_narrow_away_display_identity() ->
     assert identity["customer_name"] == "NICO Acceptance Client"
     assert identity["project_name"] == "NICO Acceptance Project"
     assert identity["primary_technical_contact"] == "NICO Acceptance Contact"
+
+    canonical_text = json.dumps(canonical, sort_keys=True, ensure_ascii=False)
+    assert "GitHub HTTPS/API - read-only" in canonical_text
+    assert "Full repository at exact assessed SHA - read-only" in canonical_text
 
     markdown = package["markdown"]
     assert "Client display name: NICO Acceptance Client" in markdown
