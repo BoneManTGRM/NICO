@@ -6,7 +6,7 @@ from typing import Any
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 
-VERSION = "nico.comprehensive_api_controller.v6"
+VERSION = "nico.comprehensive_api_controller.v7"
 MAX_PROJECTED_STRING_CHARS = 4_000
 MAX_PROJECTED_LIST_ITEMS = 80
 MAX_PROJECTED_OBJECT_ITEMS = 80
@@ -48,14 +48,11 @@ _REPORT_KEYS = (
 
 
 def _ordered_record(record: dict[str, Any]) -> dict[str, Any]:
-    """Return a shallow canonical-order view without cloning large stage payloads."""
-
     ordered_record = dict(record)
     raw_results = record.get("stage_results")
     if not isinstance(raw_results, dict):
         ordered_record["stage_results"] = {}
         return ordered_record
-
     ordered_results: dict[str, Any] = {}
     for stage_id in COMPREHENSIVE_STAGES:
         if stage_id in raw_results:
@@ -85,7 +82,6 @@ def _active_stage_percent(record: dict[str, Any]) -> float | None:
     result = stage_results.get(current_stage)
     if not isinstance(result, dict):
         return None
-
     scanner = result.get("scanner")
     if isinstance(scanner, dict):
         nested = _bounded_percent(scanner.get("progress_percent"))
@@ -100,8 +96,6 @@ def _active_stage_percent(record: dict[str, Any]) -> float | None:
 
 
 def _display_progress(record: dict[str, Any]) -> tuple[float, float | None]:
-    """Interpolate active-stage progress for UI display only."""
-
     canonical = _bounded_percent(record.get("progress_percent")) or 0.0
     if record.get("terminal"):
         return canonical, None
@@ -114,14 +108,10 @@ def _display_progress(record: dict[str, Any]) -> tuple[float, float | None]:
 
 
 def _bounded_value(value: Any, *, depth: int = 0) -> Any:
-    """Project JSON-like evidence into a deterministic browser-safe structure."""
-
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        if len(value) <= MAX_PROJECTED_STRING_CHARS:
-            return value
-        return value[:MAX_PROJECTED_STRING_CHARS] + "…"
+        return value if len(value) <= MAX_PROJECTED_STRING_CHARS else value[:MAX_PROJECTED_STRING_CHARS] + "…"
     if depth >= MAX_PROJECTED_DEPTH:
         if isinstance(value, dict):
             return {"type": "object", "item_count": len(value), "bounded": True}
@@ -129,25 +119,15 @@ def _bounded_value(value: Any, *, depth: int = 0) -> Any:
             return {"type": "array", "item_count": len(value), "bounded": True}
         return str(type(value).__name__)
     if isinstance(value, list):
-        projected = [
-            _bounded_value(item, depth=depth + 1)
-            for item in value[:MAX_PROJECTED_LIST_ITEMS]
-        ]
+        projected = [_bounded_value(item, depth=depth + 1) for item in value[:MAX_PROJECTED_LIST_ITEMS]]
         if len(value) > MAX_PROJECTED_LIST_ITEMS:
-            projected.append(
-                {
-                    "bounded": True,
-                    "omitted_item_count": len(value) - MAX_PROJECTED_LIST_ITEMS,
-                }
-            )
+            projected.append({"bounded": True, "omitted_item_count": len(value) - MAX_PROJECTED_LIST_ITEMS})
         return projected
     if isinstance(value, dict):
         projected: dict[str, Any] = {}
         for index, (key, item) in enumerate(value.items()):
             if index >= MAX_PROJECTED_OBJECT_ITEMS:
-                projected["_bounded"] = {
-                    "omitted_item_count": len(value) - MAX_PROJECTED_OBJECT_ITEMS,
-                }
+                projected["_bounded"] = {"omitted_item_count": len(value) - MAX_PROJECTED_OBJECT_ITEMS}
                 break
             projected[str(key)] = _bounded_value(item, depth=depth + 1)
         return projected
@@ -156,13 +136,7 @@ def _bounded_value(value: Any, *, depth: int = 0) -> Any:
 
 def _project_stage_result(stage_id: str, result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
-        return {
-            "stage_id": stage_id,
-            "status": "unknown",
-            "summary": "Stage result was not an object.",
-            "response_bounded": True,
-        }
-
+        return {"stage_id": stage_id, "status": "unknown", "summary": "Stage result was not an object.", "response_bounded": True}
     projected: dict[str, Any] = {
         "stage_id": stage_id,
         "status": str(result.get("status") or "unknown"),
@@ -177,14 +151,7 @@ def _project_stage_result(stage_id: str, result: Any) -> dict[str, Any]:
         if value is None or isinstance(value, (bool, int, float, str)):
             projected[normalized] = _bounded_value(value)
             continue
-        if normalized in {
-            "evidence",
-            "scanner",
-            "metrics",
-            "coverage",
-            "unavailable",
-            "findings",
-        }:
+        if normalized in {"evidence", "scanner", "metrics", "coverage", "unavailable", "findings"}:
             projected[normalized] = _bounded_value(value)
     omitted = [key for key in _OMITTED_STAGE_KEYS if key in result]
     if omitted:
@@ -195,11 +162,7 @@ def _project_stage_result(stage_id: str, result: Any) -> dict[str, Any]:
 def _human_evidence_summary(record: dict[str, Any]) -> dict[str, Any]:
     package = record.get("human_evidence")
     if not isinstance(package, dict):
-        return {
-            "status": "not_assessed",
-            "provided_module_ids": [],
-            "provided_module_count": 0,
-        }
+        return {"status": "not_assessed", "provided_module_ids": [], "provided_module_count": 0}
     provided = [str(item) for item in package.get("provided_module_ids") or []]
     return {
         "artifact_schema": str(package.get("artifact_schema") or ""),
@@ -208,9 +171,7 @@ def _human_evidence_summary(record: dict[str, Any]) -> dict[str, Any]:
         "provided_module_count": len(provided),
         "status_counts": _bounded_value(package.get("status_counts") or {}),
         "human_statement_count": int(package.get("human_statement_count") or 0),
-        "attachment_reference_count": int(
-            package.get("attachment_reference_count") or 0
-        ),
+        "attachment_reference_count": int(package.get("attachment_reference_count") or 0),
         "structured_record_count": int(package.get("structured_record_count") or 0),
         "human_evidence_sha256": str(package.get("human_evidence_sha256") or ""),
         "repository_inference_prohibited": True,
@@ -218,25 +179,16 @@ def _human_evidence_summary(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _project_record(record: dict[str, Any]) -> dict[str, Any]:
-    stage_results = (
-        record.get("stage_results")
-        if isinstance(record.get("stage_results"), dict)
-        else {}
-    )
+    stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
     return {
         "artifact_schema": str(record.get("artifact_schema") or ""),
         "service_id": "comprehensive",
         "status": str(record.get("status") or "unknown"),
-        "identity": _bounded_value(
-            record.get("identity") if isinstance(record.get("identity"), dict) else {}
-        ),
+        "identity": _bounded_value(record.get("identity") if isinstance(record.get("identity"), dict) else {}),
         "human_evidence_summary": _human_evidence_summary(record),
         "current_stage": record.get("current_stage"),
         "completed_stages": [str(item) for item in record.get("completed_stages") or []],
-        "stage_results": {
-            stage_id: _project_stage_result(stage_id, result)
-            for stage_id, result in stage_results.items()
-        },
+        "stage_results": {stage_id: _project_stage_result(stage_id, result) for stage_id, result in stage_results.items()},
         "blockers": _bounded_value(record.get("blockers") or []),
         "progress_percent": record.get("progress_percent"),
         "revision": record.get("revision"),
@@ -255,11 +207,7 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    stage_results = (
-        record.get("stage_results")
-        if isinstance(record.get("stage_results"), dict)
-        else {}
-    )
+    stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
     report: dict[str, Any] = {}
     assessment: dict[str, Any] = {}
     for stage_id in _REPORT_STAGE_IDS:
@@ -267,11 +215,7 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
         if not isinstance(stage, dict):
             continue
         if not report:
-            candidate = (
-                stage.get("report_package")
-                if isinstance(stage.get("report_package"), dict)
-                else stage.get("reports")
-            )
+            candidate = stage.get("report_package") if isinstance(stage.get("report_package"), dict) else stage.get("reports")
             if isinstance(candidate, dict):
                 report = candidate
         if not assessment and isinstance(stage.get("assessment"), dict):
@@ -286,15 +230,6 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _project_report(report: dict[str, Any]) -> dict[str, Any]:
-    """Attach the exact terminal report artifacts without mutating persisted truth.
-
-    Active-stage records remain bounded, but a terminal Comprehensive response is the
-    artifact-delivery boundary. Markdown, HTML, PDF, and canonical JSON must therefore
-    remain available from the same package. Returning only the JSON truth hash made the
-    public response claim that the report was attached while silently omitting the
-    canonical JSON assessment required to verify cross-format score and scanner parity.
-    """
-
     projected = {key: report[key] for key in _REPORT_KEYS if key in report}
     json_value = report.get("json")
     if isinstance(json_value, dict) and json_value:
@@ -305,17 +240,11 @@ def _project_report(report: dict[str, Any]) -> dict[str, Any]:
 def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
     projected: dict[str, Any] = {}
     for key in (
-        "executive_summary",
-        "evidence_coverage",
-        "maturity_signal",
-        "unavailable_data_notes",
-        "human_review_required",
-        "client_ready",
-        "client_delivery_allowed",
+        "executive_summary", "evidence_coverage", "maturity_signal", "unavailable_data_notes",
+        "human_review_required", "client_ready", "client_delivery_allowed",
     ):
         if key in assessment:
             projected[key] = _bounded_value(assessment[key])
-
     sections = assessment.get("sections")
     if isinstance(sections, list):
         projected_sections: list[dict[str, Any]] = []
@@ -323,18 +252,7 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(section, dict):
                 continue
             item: dict[str, Any] = {}
-            for key in (
-                "id",
-                "label",
-                "score",
-                "presented_score",
-                "status",
-                "presented_status",
-                "summary",
-                "evidence",
-                "findings",
-                "unavailable",
-            ):
+            for key in ("id", "label", "score", "presented_score", "status", "presented_status", "summary", "evidence", "findings", "unavailable"):
                 if key in section:
                     item[key] = _bounded_value(section[key])
             projected_sections.append(item)
@@ -346,13 +264,7 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
 
 
 class ComprehensiveApiController:
-    """Framework-neutral controller for the customer-facing Comprehensive API.
-
-    The durable store keeps the full canonical run. Public continuation/status
-    responses expose a bounded projection so large scanner trees and generated report
-    artifacts cannot crash a browser during an active run. The complete report is
-    attached once, at the terminal human-review boundary.
-    """
+    """Framework-neutral controller for the customer-facing Comprehensive API."""
 
     def __init__(self, service: ComprehensiveRunService) -> None:
         self._service = service
@@ -362,24 +274,14 @@ class ComprehensiveApiController:
         repository = self._required(body.get("repository"), "repository")
         commit_sha = self._required(body.get("commit_sha"), "commit_sha")
         run_id = self._required(body.get("run_id"), "run_id")
-        evidence_ledger_id = self._required(
-            body.get("evidence_ledger_id"),
-            "evidence_ledger_id",
-        )
+        evidence_ledger_id = self._required(body.get("evidence_ledger_id"), "evidence_ledger_id")
         customer_id = self._required(body.get("customer_id"), "customer_id")
         project_id = self._required(body.get("project_id"), "project_id")
-        assessment_depth = self._required(
-            body.get("assessment_depth") or "strategic",
-            "assessment_depth",
-        )
-        report_language = self._required(
-            body.get("report_language") or "en",
-            "report_language",
-        )
-        if (
-            body.get("authorization_confirmed") is not True
-            or body.get("authorized") is not True
-        ):
+        assessment_depth = self._required(body.get("assessment_depth") or "strategic", "assessment_depth")
+        report_language = self._required(body.get("report_language") or "en", "report_language")
+        customer_name = " ".join(str(body.get("client_name") or body.get("customer_name") or "").split())[:180]
+        project_name = " ".join(str(body.get("project_name") or "").split())[:180]
+        if body.get("authorization_confirmed") is not True or body.get("authorized") is not True:
             raise ValueError("explicit_authorization_required")
 
         record = self._service.start(
@@ -389,6 +291,8 @@ class ComprehensiveApiController:
             evidence_ledger_id=evidence_ledger_id,
             customer_id=customer_id,
             project_id=project_id,
+            customer_name=customer_name,
+            project_name=project_name,
             authorized=True,
             assessment_depth=assessment_depth,
             report_language=report_language,
@@ -400,20 +304,13 @@ class ComprehensiveApiController:
         record = self._service.load(self._required(run_id, "run_id"))
         return self._response(record, operation="status")
 
-    def continue_run(
-        self,
-        run_id: str,
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    def continue_run(self, run_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         body = self._object(payload or {})
         bounded = body.get("max_stages")
         max_stages = None if bounded is None else int(bounded)
         if max_stages is not None and max_stages < 0:
             raise ValueError("max_stages_must_be_non_negative")
-        record = self._service.resume(
-            self._required(run_id, "run_id"),
-            max_stages=max_stages,
-        )
+        record = self._service.resume(self._required(run_id, "run_id"), max_stages=max_stages)
         return self._response(record, operation="continued")
 
     @staticmethod
@@ -445,6 +342,8 @@ class ComprehensiveApiController:
             "evidence_ledger_id": identity["evidence_ledger_id"],
             "customer_id": identity["customer_id"],
             "project_id": identity["project_id"],
+            **({"customer_name": identity["customer_name"]} if str(identity.get("customer_name") or "").strip() else {}),
+            **({"project_name": identity["project_name"]} if str(identity.get("project_name") or "").strip() else {}),
             "assessment_depth": str(identity.get("assessment_depth") or "strategic"),
             "report_language": str(identity.get("report_language") or "en"),
             "human_evidence_summary": _human_evidence_summary(canonical_record),
