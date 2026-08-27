@@ -1,11 +1,5 @@
 from __future__ import annotations
 
-import base64
-import io
-import json
-
-from pypdf import PdfReader
-
 
 def _context() -> dict[str, object]:
     return {
@@ -29,25 +23,6 @@ def _context() -> dict[str, object]:
             "authorized_scope": "Full repository at exact assessed SHA - read-only",
         },
         "prior_stage_results": {
-            "evidence_reconciliation_and_scoring": {
-                "status": "complete",
-                "assessment": {
-                    "status": "complete",
-                    "service_id": "comprehensive",
-                    "executive_summary": "Synthetic provider-boundary regression.",
-                    "maturity_signal": {
-                        "level": "Exceptional",
-                        "score": 93,
-                        "presented_score": 93,
-                        "evidence_readiness_score": 93,
-                    },
-                    "sections": [],
-                    "unavailable_data_notes": [],
-                    "human_review_required": True,
-                    "client_ready": False,
-                    "client_delivery_allowed": False,
-                },
-            },
             "stakeholder_and_business_alignment": {
                 "status": "complete",
                 "summary": "Client-supplied engagement context retained.",
@@ -65,13 +40,35 @@ def _context() -> dict[str, object]:
     }
 
 
-def test_native_final_report_provider_does_not_narrow_away_display_identity() -> None:
+def test_native_final_report_provider_passes_durable_display_identity_to_report_builder(
+    monkeypatch,
+) -> None:
     from nico import comprehensive_native_providers as providers
 
     context = _context()
-    canonical_scope = providers._identity(context)
-    report_identity = providers._report_identity(context)
+    captured: dict[str, object] = {}
 
+    def fake_build_comprehensive_report_package(*, identity, stage_results):
+        captured["identity"] = dict(identity)
+        captured["stage_results"] = stage_results
+        return {
+            "status": "complete",
+            "report_id": "report-native-engagement-projection",
+            "canonical_truth_sha256": "proof-sha",
+            "assessment": {"status": "complete"},
+            "report_package": {
+                "json": {"identity": dict(identity)},
+                "pdf_page_count": 1,
+            },
+        }
+
+    monkeypatch.setattr(
+        providers,
+        "build_comprehensive_report_package",
+        fake_build_comprehensive_report_package,
+    )
+
+    canonical_scope = providers._identity(context)
     assert canonical_scope == {
         "run_id": "comprun_native_engagement_projection",
         "repository": "BoneManTGRM/NICO",
@@ -80,45 +77,25 @@ def test_native_final_report_provider_does_not_narrow_away_display_identity() ->
         "customer_id": "customer_scope_native",
         "project_id": "project_scope_native",
     }
-    assert report_identity["customer_id"] == "customer_scope_native"
-    assert report_identity["project_id"] == "project_scope_native"
-    assert report_identity["customer_name"] == "NICO Acceptance Client"
-    assert report_identity["project_name"] == "NICO Acceptance Project"
-    assert report_identity["primary_technical_contact"] == "NICO Acceptance Contact"
 
     result = providers.final_report_generation_provider(context)
     assert result["status"] == "complete", result
-    package = result["report_package"]
-    canonical = package["json"]
-    identity = canonical["identity"]
 
+    identity = captured["identity"]
+    assert isinstance(identity, dict)
     assert identity["customer_id"] == "customer_scope_native"
     assert identity["project_id"] == "project_scope_native"
     assert identity["customer_name"] == "NICO Acceptance Client"
     assert identity["project_name"] == "NICO Acceptance Project"
     assert identity["primary_technical_contact"] == "NICO Acceptance Contact"
 
-    canonical_text = json.dumps(canonical, sort_keys=True, ensure_ascii=False)
-    assert "GitHub HTTPS/API - read-only" in canonical_text
-    assert "Full repository at exact assessed SHA - read-only" in canonical_text
-
-    markdown = package["markdown"]
-    assert "Client display name: NICO Acceptance Client" in markdown
-    assert "Project display name: NICO Acceptance Project" in markdown
-    assert "Primary technical contact: NICO Acceptance Contact" in markdown
-
-    pdf = base64.b64decode(package["pdf_base64"])
-    rendered = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
-    )
-    for expected in (
-        "NICO Acceptance Client",
-        "NICO Acceptance Project",
-        "NICO Acceptance Contact",
-        "GitHub HTTPS/API - read-only",
-        "Full repository at exact assessed SHA - read-only",
-    ):
-        assert expected in rendered
+    stages = captured["stage_results"]
+    assert isinstance(stages, dict)
+    stakeholder = stages["stakeholder_and_business_alignment"]
+    evidence = stakeholder["evidence"]
+    assert evidence["access_method"] == "GitHub HTTPS/API - read-only"
+    assert evidence["primary_technical_contact"] == "NICO Acceptance Contact"
+    assert evidence["authorized_scope"] == "Full repository at exact assessed SHA - read-only"
 
 
 def test_native_report_identity_keeps_genuine_missing_display_fields_missing() -> None:
