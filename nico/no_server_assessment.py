@@ -36,6 +36,17 @@ SECURITY_HEADERS = [
     "referrer-policy",
     "permissions-policy",
 ]
+SENSITIVE_RESPONSE_HEADERS = {
+    "set-cookie",
+    "authorization",
+    "proxy-authorization",
+    "www-authenticate",
+    "proxy-authenticate",
+}
+SENSITIVE_OUTPUT_KEY_RE = re.compile(
+    r"(?i)(^|[_-])(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|cookie|authorization|auth)([_-]|$)"
+)
+SAFE_OUTPUT_KEYS = {"authorization_scope"}
 
 
 class AuthorizationError(RuntimeError):
@@ -64,6 +75,47 @@ def normalize_repo(value: str) -> str:
     if not SAFE_REPO_RE.match(cleaned):
         raise ValueError("GitHub repository must be owner/name or a GitHub repository URL.")
     return cleaned
+
+
+def _sanitize_output_text(value: str) -> str:
+    candidate = value
+    try:
+        parsed = urlparse(candidate)
+        if parsed.scheme in {"http", "https"} and parsed.netloc and parsed.hostname:
+            host = parsed.hostname
+            if ":" in host and not host.startswith("["):
+                host = f"[{host}]"
+            netloc = host
+            if parsed.port:
+                netloc = f"{netloc}:{parsed.port}"
+            candidate = parsed._replace(netloc=netloc, fragment="").geturl()
+    except (ValueError, TypeError):
+        candidate = value
+    return mask_text(candidate)
+
+
+def sanitize_output(value: Any) -> Any:
+    """Return an output-safe copy that never persists or prints raw credential material."""
+    if isinstance(value, dict):
+        sanitized: dict[Any, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text not in SAFE_OUTPUT_KEYS and SENSITIVE_OUTPUT_KEY_RE.search(key_text):
+                sanitized[key] = "***REDACTED***"
+            else:
+                sanitized[key] = sanitize_output(item)
+        return sanitized
+    if isinstance(value, list):
+        return [sanitize_output(item) for item in value]
+    if isinstance(value, tuple):
+        return [sanitize_output(item) for item in value]
+    if isinstance(value, set):
+        return [sanitize_output(item) for item in sorted(value, key=str)]
+    if isinstance(value, Path):
+        return _sanitize_output_text(str(value))
+    if isinstance(value, str):
+        return _sanitize_output_text(value)
+    return value
 
 
 def is_within(parent: Path, child: Path) -> bool:
@@ -269,15 +321,15 @@ def analyze_dependencies(root: Path, files: list[Path], scan_findings: list[dict
     return section("dependency_audit", "Dependency / Library Ecosystem", score, "Dependency review uses local manifests, lockfile evidence, built-in fixtures, and local audit-tool availability.", evidence, findings, unavailable)
 
 
-def analyze_secrets(scan_findings: list[dict[str, Any]]) -> dict[str, Any]:
-    secrets = [f for f in scan_findings if f.get("category") == "secret_exposure"]
-    score = 90 if not secrets else max(20, 72 - len(secrets) * 18)
+def analyze_credential_exposure(scan_findings: list[dict[str, Any]]) -> dict[str, Any]:
+    credential_findings = [f for f in scan_findings if f.get("category") == "secret_exposure"]
+    score = 90 if not credential_findings else max(20, 72 - len(credential_findings) * 18)
     evidence = [
-        f"Potential secret findings: {len(secrets)}.",
+        f"Potential secret findings: {len(credential_findings)}.",
         "Raw secret values are not printed; evidence is masked and fingerprinted only.",
     ]
-    evidence.extend([f"{f.get('affected_file')}:{f.get('affected_line')} -> {mask_text(str(f.get('masked_evidence', '')))}" for f in secrets[:20]])
-    findings = [f"Potential secret exposure in {f.get('affected_file')}:{f.get('affected_line')}" for f in secrets[:20]]
+    evidence.extend([f"{f.get('affected_file')}:{f.get('affected_line')} -> {mask_text(str(f.get('masked_evidence', '')))}" for f in credential_findings[:20]])
+    findings = [f"Potential secret exposure in {f.get('affected_file')}:{f.get('affected_line')}" for f in credential_findings[:20]]
     return section("secret_review", "Secrets Exposure Review", score, "Secret exposure review uses built-in credential-pattern checks with masking.", evidence, findings)
 
 
@@ -287,7 +339,7 @@ def analyze_cicd(root: Path, files: list[Path]) -> dict[str, Any]:
     combined = "\n".join(read_text(path).lower() for path in workflows)
     has_test = any(term in combined for term in ["pytest", "npm test", "npm run lint", "next build", "ruff", "mypy", "eslint"])
     has_permissions = "permissions:" in combined
-    has_secret_use = "secrets." in combined
+    has_credential_reference = "secrets." in combined
     score = 42
     if workflows:
         score += 20
@@ -309,7 +361,7 @@ def analyze_cicd(root: Path, files: list[Path]) -> dict[str, Any]:
         f"Deployment config files: {', '.join(rel(root, path) for path in deploy_configs) if deploy_configs else 'none'}.",
         f"Test/lint/build signal in workflow text: {has_test}.",
         f"GitHub Actions explicit permissions block observed: {has_permissions}.",
-        f"GitHub Actions secrets reference observed: {has_secret_use}.",
+        f"GitHub Actions secrets reference observed: {has_credential_reference}.",
     ]
     return section("cicd_review", "CI/CD Analysis", score, "CI/CD review uses local workflow and deployment configuration evidence only.", evidence, findings)
 
@@ -359,17 +411,21 @@ def passive_url_check(url: str, authorized: bool, passive_only: bool) -> dict[st
     findings: list[str] = []
     unavailable: list[str] = []
     headers: dict[str, str] = {}
+    response_header_names: set[str] = set()
     status = None
-    final_url = url
     try:
         response = requests.get(url, timeout=12, allow_redirects=True, headers={"User-Agent": "NICO-passive-check"})
         status = response.status_code
-        final_url = response.url
-        headers = {k.lower(): v for k, v in response.headers.items()}
+        response_header_names = {key.lower() for key in response.headers.keys()}
+        headers = {
+            key.lower(): value
+            for key, value in response.headers.items()
+            if key.lower() not in SENSITIVE_RESPONSE_HEADERS
+        }
         evidence.append(f"HTTP status: {status}.")
-        evidence.append(f"Final URL after redirects: {final_url}.")
-    except requests.RequestException as exc:
-        unavailable.append(f"HTTP reachability check failed: {exc}")
+        evidence.append("Redirect resolution completed; redirect URL values are intentionally not retained.")
+    except requests.RequestException:
+        unavailable.append("HTTP reachability check failed; exception details are intentionally not retained.")
 
     missing_headers = [header for header in SECURITY_HEADERS if header not in headers]
     for header in SECURITY_HEADERS:
@@ -382,13 +438,9 @@ def passive_url_check(url: str, authorized: bool, passive_only: bool) -> dict[st
         evidence.append(f"CORS header visible: access-control-allow-origin={cors}.")
         if cors.strip() == "*":
             findings.append("CORS allows any origin in the visible response headers.")
-    cookies = headers.get("set-cookie")
-    if cookies:
-        masked_cookie = re.sub(r"=([^;]+)", "=***", cookies)
-        evidence.append(f"Set-Cookie visible: {masked_cookie[:240]}.")
-        lower_cookie = cookies.lower()
-        if "secure" not in lower_cookie or "httponly" not in lower_cookie:
-            findings.append("Visible Set-Cookie header may be missing Secure or HttpOnly flags.")
+    if "set-cookie" in response_header_names:
+        evidence.append("Set-Cookie header present; cookie values are intentionally not collected or retained.")
+        unavailable.append("Cookie Secure/HttpOnly/SameSite attributes were not retained in no-server passive mode because Set-Cookie values may contain session credentials.")
 
     if parsed.scheme == "https":
         try:
@@ -424,7 +476,7 @@ def build_report(target_type: str, target: str, root: Path | None, scan_result: 
         sections.extend([
             analyze_code(root, files, findings),
             analyze_dependencies(root, files, findings),
-            analyze_secrets(findings),
+            analyze_credential_exposure(findings),
             analyze_cicd(root, files),
             analyze_architecture(root, files),
         ])
@@ -513,7 +565,8 @@ def build_report(target_type: str, target: str, root: Path | None, scan_result: 
         "unavailable_data_notes": unavailable,
     }
     write_latest_reports(report)
-    Store().audit("assessment.no_server", {"target": target, "target_type": target_type, "assessment_id": report["assessment_id"]})
+    safe_target = sanitize_output(target)
+    Store().audit("assessment.no_server", {"target": safe_target, "target_type": target_type, "assessment_id": report["assessment_id"]})
     return report
 
 
@@ -573,14 +626,18 @@ def html_report(markdown: str) -> str:
 
 def write_latest_reports(report: dict[str, Any]) -> dict[str, str]:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    markdown = markdown_report(report)
+    safe_report = sanitize_output(report)
+    if not isinstance(safe_report, dict):
+        raise TypeError("Sanitized no-server report must remain a mapping.")
+    markdown = markdown_report(safe_report)
     html_body = html_report(markdown)
     paths = {
         "json": str(REPORT_DIR / "no_server_latest.json"),
         "markdown": str(REPORT_DIR / "no_server_latest.md"),
         "html": str(REPORT_DIR / "no_server_latest.html"),
     }
-    Path(paths["json"]).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    serialized_report = json.dumps(safe_report, indent=2, sort_keys=True)
+    Path(paths["json"]).write_text(serialized_report, encoding="utf-8")
     Path(paths["markdown"]).write_text(markdown, encoding="utf-8")
     Path(paths["html"]).write_text(html_body, encoding="utf-8")
     store = Store()
@@ -698,7 +755,8 @@ def verify_latest_assessment() -> dict[str, Any]:
 
 
 def print_json(payload: Any) -> None:
-    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    safe_payload = sanitize_output(payload)
+    print(json.dumps(safe_payload, indent=2, sort_keys=True, default=str))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -763,7 +821,7 @@ def main(argv: list[str] | None = None) -> None:
         print_json({"status": "blocked", "error": str(exc)})
         return
     except Exception as exc:
-        print_json({"status": "error", "error": str(exc)})
+        print_json({"status": "error", "error": "Assessment failed.", "error_type": type(exc).__name__})
         return
 
     parser.print_help()
