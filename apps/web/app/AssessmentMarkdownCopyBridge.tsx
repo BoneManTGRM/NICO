@@ -17,7 +17,10 @@ function spanish(): boolean {
     || document.documentElement.lang.toLowerCase().startsWith("es");
 }
 
-function visibleRunId(): string {
+function visibleRunId(actions: Element | null = null): string {
+  const fromActions = String(actions?.getAttribute("data-run-id") || "").trim();
+  if (fromActions.startsWith("comprun_")) return fromActions;
+
   const fromQuery = new URL(window.location.href).searchParams.get("run_id")?.trim() || "";
   if (fromQuery.startsWith("comprun_")) return fromQuery;
 
@@ -119,8 +122,9 @@ function enabledCopyButton(actions: Element): HTMLButtonElement | null {
 /**
  * Compatibility helper for terminal Copy Markdown across desktop Chromium and WebKit.
  * It may take ownership of a click only after report readiness and an exact run identity
- * are both established. If either is temporarily absent during a React rerender, it
- * returns without cancelling the event so the canonical AssessmentWorkspace onClick
+ * are both established. The canonical action container's data-run-id is authoritative;
+ * URL/visible-text discovery remains compatibility fallback only. If exact binding is
+ * temporarily absent during a React rerender, the native AssessmentWorkspace onClick
  * remains available instead of presenting a dead button.
  */
 export default function AssessmentMarkdownCopyBridge() {
@@ -128,8 +132,8 @@ export default function AssessmentMarkdownCopyBridge() {
   const guardedUntil = useRef(0);
 
   useEffect(() => {
-    function entryForVisibleRun(): CacheEntry | null {
-      const runId = visibleRunId();
+    function entryForVisibleRun(actions: Element | null = null): CacheEntry | null {
+      const runId = visibleRunId(actions);
       if (!runId) return null;
       if (!cache.current || cache.current.runId !== runId) {
         cache.current = {runId, markdown: "", promise: null};
@@ -142,7 +146,7 @@ export default function AssessmentMarkdownCopyBridge() {
       if (!actions) return;
       if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
       if (!enabledCopyButton(actions)) return;
-      const entry = entryForVisibleRun();
+      const entry = entryForVisibleRun(actions);
       if (!entry || entry.markdown || entry.promise) return;
       void loadMarkdown(entry).catch(() => {
         // An explicit user click retries and renders the localized failure state.
@@ -160,7 +164,7 @@ export default function AssessmentMarkdownCopyBridge() {
       // terminal report state and an exact run to act on. The native React handler is
       // the safe fallback during rerenders or temporary projection gaps.
       if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
-      const entry = entryForVisibleRun();
+      const entry = entryForVisibleRun(actions);
       if (!entry) return;
 
       const now = Date.now();
@@ -218,7 +222,7 @@ export default function AssessmentMarkdownCopyBridge() {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["disabled", "data-assessment-report-ready"],
+      attributeFilter: ["disabled", "data-assessment-report-ready", "data-run-id"],
     });
     prefetch();
 
