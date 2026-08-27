@@ -16,7 +16,10 @@ from nico.comprehensive_blocked_run_recovery_v1 import (
     is_recoverable_final_artifact_failure,
     rewind_blocked_run_for_final_artifact_recovery,
 )
-from nico.comprehensive_engagement_metadata_v1 import display_identity_projection
+from nico.comprehensive_engagement_metadata_v1 import (
+    display_identity_projection,
+    normalize_comprehensive_engagement_metadata,
+)
 from nico.comprehensive_final_report_background_v1 import (
     FinalReportPublicationCoordinator,
 )
@@ -28,6 +31,7 @@ from nico.comprehensive_pre_render_scanner_truth_v65 import (
 from nico.comprehensive_report_flatten_bound_v1 import install_bounded_report_flatten
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
+    _record_hash,
     apply_comprehensive_review_decision,
     apply_comprehensive_stage_result,
     create_comprehensive_run_record,
@@ -180,8 +184,13 @@ class ComprehensiveRunService:
             assessment_depth=assessment_depth,
             report_language=report_language,
             human_evidence=human_evidence,
-            engagement_metadata=engagement_metadata,
         )
+        normalized_engagement = normalize_comprehensive_engagement_metadata(
+            engagement_metadata
+        )
+        if normalized_engagement:
+            record["engagement_metadata"] = normalized_engagement
+            record["integrity_sha256"] = _record_hash(record)
         return self._store.create(record)
 
     def load(self, run_id: str) -> dict[str, Any]:
