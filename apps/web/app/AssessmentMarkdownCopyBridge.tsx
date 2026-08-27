@@ -61,8 +61,7 @@ async function copyText(text: string): Promise<boolean> {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    // A bounded legacy path keeps WebKit and hardened desktop browser profiles usable
-    // when the Clipboard API is unavailable or denied.
+    // Keep WebKit and hardened desktop profiles usable when Clipboard API access is denied.
   }
 
   const textarea = document.createElement("textarea");
@@ -118,14 +117,11 @@ function enabledCopyButton(actions: Element): HTMLButtonElement | null {
 }
 
 /**
- * Keep the terminal Copy Markdown action usable across desktop Chromium and WebKit.
- *
- * Fetch only after the report is actually terminal-ready. The prior bridge mounted on
- * the always-present action bar and immediately requested /report/markdown while the
- * run was still active, producing a real production 409. Once ready, Markdown is
- * prefetched before the user gesture. If a user clicks before that prefetch completes,
- * the first click visibly prepares the artifact and asks for one retry instead of
- * awaiting network I/O and silently losing clipboard user activation.
+ * Compatibility helper for terminal Copy Markdown across desktop Chromium and WebKit.
+ * It may take ownership of a click only after report readiness and an exact run identity
+ * are both established. If either is temporarily absent during a React rerender, it
+ * returns without cancelling the event so the canonical AssessmentWorkspace onClick
+ * remains available instead of presenting a dead button.
  */
 export default function AssessmentMarkdownCopyBridge() {
   const cache = useRef<CacheEntry | null>(null);
@@ -149,7 +145,7 @@ export default function AssessmentMarkdownCopyBridge() {
       const entry = entryForVisibleRun();
       if (!entry || entry.markdown || entry.promise) return;
       void loadMarkdown(entry).catch(() => {
-        // Explicit click below retries and renders the localized failure state.
+        // An explicit user click retries and renders the localized failure state.
       });
     }
 
@@ -159,6 +155,13 @@ export default function AssessmentMarkdownCopyBridge() {
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
       const actions = button.closest(REPORT_ACTIONS_SELECTOR);
       if (!actions || !COPY_MARKDOWN_LABEL.test(String(button.textContent || "").trim())) return;
+
+      // Never swallow a click unless this compatibility bridge has authoritative
+      // terminal report state and an exact run to act on. The native React handler is
+      // the safe fallback during rerenders or temporary projection gaps.
+      if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
+      const entry = entryForVisibleRun();
+      if (!entry) return;
 
       const now = Date.now();
       if (now < guardedUntil.current) {
@@ -172,16 +175,6 @@ export default function AssessmentMarkdownCopyBridge() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-
-      const entry = entryForVisibleRun();
-      if (!entry) {
-        showStatus(
-          actions,
-          spanish() ? "No se pudo determinar la ejecución exacta." : "The exact run could not be determined.",
-          true,
-        );
-        return;
-      }
 
       if (!entry.markdown) {
         showStatus(
