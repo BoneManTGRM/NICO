@@ -27,6 +27,7 @@ from nico.comprehensive_pre_render_scanner_truth_v65 import (
 from nico.comprehensive_report_flatten_bound_v1 import install_bounded_report_flatten
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_run_record import (
+    _record_hash,
     apply_comprehensive_review_decision,
     apply_comprehensive_stage_result,
     create_comprehensive_run_record,
@@ -63,19 +64,7 @@ def _prior_stage_results_for_stage(
     retained_stage_results: dict[str, Any],
     completed: list[str],
 ) -> dict[str, Any]:
-    """Build the smallest safe prior-stage context for one stage.
-
-    The executive briefing consumes a fixed, bounded set of synthesized/scoring
-    predecessors. Copying the full retained stage tree here would clone repository and
-    scanner payloads before the hard stage-timeout subprocess is even started. On large
-    production runs that can exhaust the request window at the 83% boundary while the
-    canonical run itself remains valid. Keep mutation isolation by deep-copying only the
-    exact predecessors the briefing provider reads.
-
-    Final report generation keeps its existing copy-on-write reference behavior because
-    it intentionally consumes the complete canonical evidence tree. Other stages retain
-    the historical full deep-copy contract.
-    """
+    """Build the smallest safe prior-stage context for one stage."""
 
     if stage_id == FINAL_REPORT_STAGE_ID:
         if FINAL_REPORT_STAGE_ID not in retained_stage_results:
@@ -146,12 +135,19 @@ class ComprehensiveRunService:
             customer_id=customer_id,
             project_id=project_id,
             authorized=authorized,
-            customer_name=customer_name,
-            project_name=project_name,
             assessment_depth=assessment_depth,
             report_language=report_language,
             human_evidence=human_evidence,
         )
+        identity = record["identity"]
+        normalized_customer_name = " ".join(str(customer_name or "").split())[:180]
+        normalized_project_name = " ".join(str(project_name or "").split())[:180]
+        if normalized_customer_name:
+            identity["customer_name"] = normalized_customer_name
+        if normalized_project_name:
+            identity["project_name"] = normalized_project_name
+        if normalized_customer_name or normalized_project_name:
+            record["integrity_sha256"] = _record_hash(record)
         return self._store.create(record)
 
     def load(self, run_id: str) -> dict[str, Any]:
