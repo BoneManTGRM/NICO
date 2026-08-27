@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Regression coverage for sensitive-output sanitization and CodeQL verification.
+
 import json
 from pathlib import Path
 
