@@ -110,6 +110,14 @@ function originalHttpStatus(response: Response): number {
 }
 
 async function normalizeTerminalFailure(response: Response, route: string): Promise<Response | null> {
+  // A Comprehensive HTTP/transport failure is never authoritative durable run truth.
+  // The canonical controller already retries transient 408/425/429/5xx responses and,
+  // once an exact run exists, recovers through the idempotent exact-run status route.
+  // Do not convert a temporary proxy/backend error such as 502 into a synthetic terminal
+  // assessment failure. A genuine Comprehensive terminal state is normalized only from
+  // a successful exact-run response containing persisted terminal evidence.
+  if (COMPREHENSIVE_ROUTE.test(route) && !response.ok) return null;
+
   let payload: JsonRecord = {};
   try {
     payload = record(await response.clone().json());
