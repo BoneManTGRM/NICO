@@ -3,6 +3,7 @@
 import {useEffect} from "react";
 
 const CONTEXT_PREFIX = "nico:review-context:";
+const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const SUCCESS_STATUSES = new Set(["complete", "completed", "passed", "verified", "review_required"]);
 
 type ReviewContext = {
@@ -114,7 +115,13 @@ function contextFor(runId: string): ReviewContext {
   };
 }
 
-function visibleRunId(): string {
+function visibleRunId(actions: HTMLElement | null = null): string {
+  const fromActions = String(actions?.dataset.runId || "").trim();
+  if (fromActions.startsWith("express_run_") || fromActions.startsWith("comprun_")) return fromActions;
+
+  const fromQuery = new URLSearchParams(window.location.search).get("run_id")?.trim() || "";
+  if (fromQuery.startsWith("express_run_") || fromQuery.startsWith("comprun_")) return fromQuery;
+
   const candidates = Array.from(document.querySelectorAll<HTMLElement>(".nico-identifier-value code[title]"));
   for (const candidate of candidates) {
     const value = String(candidate.getAttribute("title") || "").trim();
@@ -134,8 +141,8 @@ function removeReviewAction(actions: HTMLElement | null): void {
 
 function installAction(): void {
   if (!window.location.pathname.startsWith("/assessment") && !window.location.pathname.startsWith("/es/assessment")) return;
-  const actions = document.querySelector<HTMLElement>(".report-actions");
-  const runId = visibleRunId();
+  const actions = document.querySelector<HTMLElement>(REPORT_ACTIONS_SELECTOR);
+  const runId = visibleRunId(actions);
   if (!actions || !runId || !reportExists(actions)) {
     removeReviewAction(actions);
     return;
@@ -198,7 +205,7 @@ export default function AssessmentFinalReviewAction() {
     window.fetch = trackedFetch;
 
     const observer = new MutationObserver(() => window.requestAnimationFrame(installAction));
-    observer.observe(document.body, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["disabled"]});
+    observer.observe(document.body, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["disabled", "data-run-id"]});
     installAction();
     return () => {
       observer.disconnect();
