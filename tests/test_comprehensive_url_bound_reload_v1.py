@@ -22,23 +22,36 @@ def test_bootstrap_prefers_exact_url_run_over_local_active_run() -> None:
     assert 'const boundRunId = urlBoundRunId(url);' in bootstrap
     assert 'const persisted = readPersistedRun();' in bootstrap
     assert 'if (boundRunId) {' in bootstrap
-    assert 'if (persisted?.runId === boundRunId)' in bootstrap
-    assert 'void resumeUrlBoundRun(boundRunId);' in bootstrap
+    assert 'const exactRun = urlBoundPersistedRun(boundRunId, persisted);' in bootstrap
+    assert 'void resumePersistedRun(exactRun);' in bootstrap
     assert bootstrap.index('if (boundRunId) {') < bootstrap.index('} else if (persisted) {')
 
 
-def test_url_bound_terminal_recovery_is_exact_run_get_before_any_continuation() -> None:
+def test_url_bound_fallback_preserves_exact_run_without_inventing_metadata() -> None:
     source = _source()
-    recovery = _slice(source, "async function resumeUrlBoundRun", "async function resumePersistedRun")
+    fallback = _slice(source, "function urlBoundPersistedRun", "function persistExactRun")
 
-    exact_get = '`/assessment/comprehensive-run/${encodeURIComponent(boundRunId)}`'
+    assert 'if (persisted?.runId === runId)' in fallback
+    assert "return persisted;" in fallback
+    assert "runId," in fallback
+    assert 'repository: ""' in fallback
+    assert 'client: ""' in fallback
+    assert 'project: ""' in fallback
+    assert 'customerId: "default_customer"' in fallback
+    assert 'projectId: "default_project"' in fallback
+
+
+def test_shared_recovery_gets_exact_run_before_terminal_or_continuation() -> None:
+    source = _source()
+    recovery = _slice(source, "async function resumePersistedRun", "async function run()")
+
+    exact_get = '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`'
     terminal_check = "const stable = terminal(service, recovered);"
-    continuation = "await continueRun(recovered, scope, token, startedAt);"
+    continuation = "await continueRun(recovered, scope, token, persisted.startedAt);"
 
-    assert 'boundRunId.startsWith("comprun_")' in recovery
     assert exact_get in recovery
     assert '{method: "GET"}' in recovery
-    assert 'preserveRunIdentity(recoveredResponse, {runId: boundRunId})' in recovery
+    assert "runId: persisted.runId" in recovery
     assert terminal_check in recovery
     assert 'if (stable) {' in recovery
     assert 'clearPersistedRun(true);' in recovery
@@ -54,7 +67,8 @@ def test_page_resume_keeps_explicit_url_run_authoritative() -> None:
     assert "const boundRunId = urlBoundRunId(resumedUrl);" in resume
     assert "if (boundRunId) {" in resume
     assert "visibleRunId === boundRunId" in resume
-    assert "void resumeUrlBoundRun(boundRunId);" in resume
+    assert "publishResult(null);" in resume
+    assert "urlBoundPersistedRun(boundRunId, readPersistedRun())" in resume
     assert resume.index("if (boundRunId) {") < resume.index("const persisted = readPersistedRun();")
 
 
@@ -68,11 +82,16 @@ def test_start_new_removes_stale_exact_run_query_parameter() -> None:
     assert start_new.index('url.searchParams.delete("run_id")') < start_new.index("publishResult(null)")
 
 
-def test_url_recovery_does_not_grant_human_approval_or_delivery_authority() -> None:
+def test_url_reload_change_does_not_grant_human_approval_or_delivery_authority() -> None:
     source = _source()
-    recovery = _slice(source, "async function resumeUrlBoundRun", "async function resumePersistedRun")
+    bootstrap = _slice(source, "useEffect(() => {", "useEffect(() => {\n    if (!started")
+    fallback = _slice(source, "function urlBoundPersistedRun", "function persistExactRun")
 
-    assert "approved_delivery_package" not in recovery
-    assert "client_delivery_allowed" not in recovery
-    assert "human_review_completed" not in recovery
-    assert "authorization_confirmed" not in recovery
+    for forbidden in (
+        "approved_delivery_package",
+        "client_delivery_allowed",
+        "human_review_completed",
+        "authorization_confirmed",
+    ):
+        assert forbidden not in bootstrap
+        assert forbidden not in fallback
