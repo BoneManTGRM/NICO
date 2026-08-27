@@ -63,6 +63,11 @@ function exactRunId(value: Result | null | undefined): string {
   ).trim();
 }
 
+function urlBoundRunId(url: URL): string {
+  const candidate = String(url.searchParams.get("run_id") || "").trim();
+  return candidate.startsWith("comprun_") ? candidate : "";
+}
+
 function canonicalProgress(value: Result | null | undefined): number | null {
   const raw = value?.progress_percent ?? value?.record?.progress_percent;
   const numeric = Number(raw);
@@ -167,8 +172,22 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
 
     if (!bootstrapped.current) {
       bootstrapped.current = true;
+      const boundRunId = urlBoundRunId(url);
       const persisted = readPersistedRun();
-      if (persisted) {
+      if (boundRunId) {
+        // The explicit exact-run URL is authoritative over any shared local active-run
+        // pointer. Terminal runs intentionally clear that pointer, so direct reopening
+        // must recover from durable backend state rather than silently showing intake.
+        if (persisted?.runId === boundRunId) {
+          setRepository(persisted.repository);
+          setClient(persisted.client);
+          setProject(persisted.project);
+          setAuthorized(true);
+          void resumePersistedRun(persisted);
+        } else {
+          void resumeUrlBoundRun(boundRunId);
+        }
+      } else if (persisted) {
         setRepository(persisted.repository);
         setClient(persisted.client);
         setProject(persisted.project);
@@ -178,10 +197,22 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
 
     const restoreAfterPageResume = () => {
-      // The exact URL-bound run is authoritative. A different tab may update the
-      // shared active-run pointer, but it must never replace this page's run.
-      const persisted = readPersistedRun();
+      const resumedUrl = new URL(window.location.href);
+      const boundRunId = urlBoundRunId(resumedUrl);
       const visibleRunId = exactRunId(latestResult.current);
+      if (boundRunId) {
+        if (
+          recoveryInFlight.current ||
+          activeContinuationRunId.current === boundRunId ||
+          visibleRunId === boundRunId
+        ) {
+          return;
+        }
+        void resumeUrlBoundRun(boundRunId);
+        return;
+      }
+
+      const persisted = readPersistedRun();
       if (
         !persisted ||
         recoveryInFlight.current ||
@@ -228,6 +259,17 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     return {
       customerId: value.customerId || "default_customer",
       projectId: value.projectId || "default_project",
+    };
+  }
+
+  function resultScope(value: Result): Scope {
+    return {
+      customerId: String(
+        value.customer_id || value.record?.identity?.customer_id || "default_customer",
+      ),
+      projectId: String(
+        value.project_id || value.record?.identity?.project_id || "default_project",
+      ),
     };
   }
 
@@ -431,6 +473,65 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setMessage("");
   }
 
+  async function resumeUrlBoundRun(runId: string): Promise<void> {
+    const boundRunId = String(runId || "").trim();
+    if (!boundRunId.startsWith("comprun_")) {
+      return;
+    }
+    const visibleRunId = exactRunId(latestResult.current);
+    if (
+      recoveryInFlight.current ||
+      activeContinuationRunId.current === boundRunId ||
+      visibleRunId === boundRunId
+    ) {
+      return;
+    }
+
+    recoveryInFlight.current = true;
+    const token = sequence.current + 1;
+    sequence.current = token;
+    setPhase("checking");
+    setIssue(null);
+    setError("");
+    setMessage(copy.readinessCheckingMessage);
+    setStarted(null);
+    try {
+      const recoveredResponse = await requestWithRetry(
+        `/assessment/comprehensive-run/${encodeURIComponent(boundRunId)}`,
+        {method: "GET"},
+        copy,
+      );
+      const recovered = preserveRunIdentity(recoveredResponse, {runId: boundRunId});
+      if (token !== sequence.current) {
+        return;
+      }
+      setRepository(String(recovered.repository || recovered.record?.identity?.repository || ""));
+      publishResult(recovered);
+      const stable = terminal(service, recovered);
+      if (stable) {
+        clearPersistedRun(true);
+        setPhase(stable);
+        setStarted(null);
+        setMessage(
+          stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
+        );
+        return;
+      }
+
+      const startedAt = Date.now();
+      const scope = resultScope(recovered);
+      persistExactRun(recovered, scope, startedAt);
+      await continueRun(recovered, scope, token, startedAt);
+    } catch (caught) {
+      if (token !== sequence.current) {
+        return;
+      }
+      applyIssue(caught, true);
+    } finally {
+      recoveryInFlight.current = false;
+    }
+  }
+
   async function resumePersistedRun(persisted: PersistedRun): Promise<void> {
     const visibleRunId = exactRunId(latestResult.current);
     if (activeContinuationRunId.current === persisted.runId) {
@@ -568,6 +669,15 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     recoveryInFlight.current = false;
     activeContinuationRunId.current = "";
     clearPersistedRun(false);
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("run_id")) {
+      url.searchParams.delete("run_id");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    }
     setRepository("");
     setClient("");
     setProject("");
