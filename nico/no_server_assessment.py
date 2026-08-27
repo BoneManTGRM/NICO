@@ -321,15 +321,15 @@ def analyze_dependencies(root: Path, files: list[Path], scan_findings: list[dict
     return section("dependency_audit", "Dependency / Library Ecosystem", score, "Dependency review uses local manifests, lockfile evidence, built-in fixtures, and local audit-tool availability.", evidence, findings, unavailable)
 
 
-def analyze_secrets(scan_findings: list[dict[str, Any]]) -> dict[str, Any]:
-    secrets = [f for f in scan_findings if f.get("category") == "secret_exposure"]
-    score = 90 if not secrets else max(20, 72 - len(secrets) * 18)
+def analyze_credential_exposure(scan_findings: list[dict[str, Any]]) -> dict[str, Any]:
+    credential_findings = [f for f in scan_findings if f.get("category") == "secret_exposure"]
+    score = 90 if not credential_findings else max(20, 72 - len(credential_findings) * 18)
     evidence = [
-        f"Potential secret findings: {len(secrets)}.",
+        f"Potential secret findings: {len(credential_findings)}.",
         "Raw secret values are not printed; evidence is masked and fingerprinted only.",
     ]
-    evidence.extend([f"{f.get('affected_file')}:{f.get('affected_line')} -> {mask_text(str(f.get('masked_evidence', '')))}" for f in secrets[:20]])
-    findings = [f"Potential secret exposure in {f.get('affected_file')}:{f.get('affected_line')}" for f in secrets[:20]]
+    evidence.extend([f"{f.get('affected_file')}:{f.get('affected_line')} -> {mask_text(str(f.get('masked_evidence', '')))}" for f in credential_findings[:20]])
+    findings = [f"Potential secret exposure in {f.get('affected_file')}:{f.get('affected_line')}" for f in credential_findings[:20]]
     return section("secret_review", "Secrets Exposure Review", score, "Secret exposure review uses built-in credential-pattern checks with masking.", evidence, findings)
 
 
@@ -339,7 +339,7 @@ def analyze_cicd(root: Path, files: list[Path]) -> dict[str, Any]:
     combined = "\n".join(read_text(path).lower() for path in workflows)
     has_test = any(term in combined for term in ["pytest", "npm test", "npm run lint", "next build", "ruff", "mypy", "eslint"])
     has_permissions = "permissions:" in combined
-    has_secret_use = "secrets." in combined
+    has_credential_reference = "secrets." in combined
     score = 42
     if workflows:
         score += 20
@@ -361,7 +361,7 @@ def analyze_cicd(root: Path, files: list[Path]) -> dict[str, Any]:
         f"Deployment config files: {', '.join(rel(root, path) for path in deploy_configs) if deploy_configs else 'none'}.",
         f"Test/lint/build signal in workflow text: {has_test}.",
         f"GitHub Actions explicit permissions block observed: {has_permissions}.",
-        f"GitHub Actions secrets reference observed: {has_secret_use}.",
+        f"GitHub Actions secrets reference observed: {has_credential_reference}.",
     ]
     return section("cicd_review", "CI/CD Analysis", score, "CI/CD review uses local workflow and deployment configuration evidence only.", evidence, findings)
 
@@ -476,7 +476,7 @@ def build_report(target_type: str, target: str, root: Path | None, scan_result: 
         sections.extend([
             analyze_code(root, files, findings),
             analyze_dependencies(root, files, findings),
-            analyze_secrets(findings),
+            analyze_credential_exposure(findings),
             analyze_cicd(root, files),
             analyze_architecture(root, files),
         ])

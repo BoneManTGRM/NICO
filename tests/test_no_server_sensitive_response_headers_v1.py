@@ -36,15 +36,15 @@ def test_passive_url_check_never_retains_sensitive_response_header_values(monkey
 
 
 def test_passive_url_check_never_retains_request_exception_details(monkeypatch) -> None:
-    secret = "supersecretexceptionvalue"
+    fixture_value = "supersecretexceptionvalue"
 
     def _raise(*_args, **_kwargs):
-        raise requests.RequestException(f"request failed with token={secret}")
+        raise requests.RequestException(f"request failed with token={fixture_value}")
 
     monkeypatch.setattr(no_server.requests, "get", _raise)
 
     result = no_server.passive_url_check("http://example.test", authorized=True, passive_only=True)
     serialized = json.dumps(result, sort_keys=True)
 
-    assert secret not in serialized
+    assert fixture_value not in serialized
     assert "HTTP reachability check failed; exception details are intentionally not retained." in serialized
