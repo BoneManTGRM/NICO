@@ -36,6 +36,10 @@ SECURITY_HEADERS = [
     "referrer-policy",
     "permissions-policy",
 ]
+SENSITIVE_OUTPUT_KEY_RE = re.compile(
+    r"(?i)(^|[_-])(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|cookie|authorization|auth)([_-]|$)"
+)
+SAFE_OUTPUT_KEYS = {"authorization_scope"}
 
 
 class AuthorizationError(RuntimeError):
@@ -64,6 +68,47 @@ def normalize_repo(value: str) -> str:
     if not SAFE_REPO_RE.match(cleaned):
         raise ValueError("GitHub repository must be owner/name or a GitHub repository URL.")
     return cleaned
+
+
+def _sanitize_output_text(value: str) -> str:
+    candidate = value
+    try:
+        parsed = urlparse(candidate)
+        if parsed.scheme in {"http", "https"} and parsed.netloc and parsed.hostname:
+            host = parsed.hostname
+            if ":" in host and not host.startswith("["):
+                host = f"[{host}]"
+            netloc = host
+            if parsed.port:
+                netloc = f"{netloc}:{parsed.port}"
+            candidate = parsed._replace(netloc=netloc, fragment="").geturl()
+    except (ValueError, TypeError):
+        candidate = value
+    return mask_text(candidate)
+
+
+def sanitize_output(value: Any) -> Any:
+    """Return an output-safe copy that never persists or prints raw credential material."""
+    if isinstance(value, dict):
+        sanitized: dict[Any, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text not in SAFE_OUTPUT_KEYS and SENSITIVE_OUTPUT_KEY_RE.search(key_text):
+                sanitized[key] = "***REDACTED***"
+            else:
+                sanitized[key] = sanitize_output(item)
+        return sanitized
+    if isinstance(value, list):
+        return [sanitize_output(item) for item in value]
+    if isinstance(value, tuple):
+        return [sanitize_output(item) for item in value]
+    if isinstance(value, set):
+        return [sanitize_output(item) for item in sorted(value, key=str)]
+    if isinstance(value, Path):
+        return _sanitize_output_text(str(value))
+    if isinstance(value, str):
+        return _sanitize_output_text(value)
+    return value
 
 
 def is_within(parent: Path, child: Path) -> bool:
@@ -513,7 +558,8 @@ def build_report(target_type: str, target: str, root: Path | None, scan_result: 
         "unavailable_data_notes": unavailable,
     }
     write_latest_reports(report)
-    Store().audit("assessment.no_server", {"target": target, "target_type": target_type, "assessment_id": report["assessment_id"]})
+    safe_target = sanitize_output(target)
+    Store().audit("assessment.no_server", {"target": safe_target, "target_type": target_type, "assessment_id": report["assessment_id"]})
     return report
 
 
@@ -573,14 +619,18 @@ def html_report(markdown: str) -> str:
 
 def write_latest_reports(report: dict[str, Any]) -> dict[str, str]:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    markdown = markdown_report(report)
+    safe_report = sanitize_output(report)
+    if not isinstance(safe_report, dict):
+        raise TypeError("Sanitized no-server report must remain a mapping.")
+    markdown = markdown_report(safe_report)
     html_body = html_report(markdown)
     paths = {
         "json": str(REPORT_DIR / "no_server_latest.json"),
         "markdown": str(REPORT_DIR / "no_server_latest.md"),
         "html": str(REPORT_DIR / "no_server_latest.html"),
     }
-    Path(paths["json"]).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    serialized_report = json.dumps(safe_report, indent=2, sort_keys=True)
+    Path(paths["json"]).write_text(serialized_report, encoding="utf-8")
     Path(paths["markdown"]).write_text(markdown, encoding="utf-8")
     Path(paths["html"]).write_text(html_body, encoding="utf-8")
     store = Store()
@@ -698,7 +748,8 @@ def verify_latest_assessment() -> dict[str, Any]:
 
 
 def print_json(payload: Any) -> None:
-    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    safe_payload = sanitize_output(payload)
+    print(json.dumps(safe_payload, indent=2, sort_keys=True, default=str))
 
 
 def main(argv: list[str] | None = None) -> None:
