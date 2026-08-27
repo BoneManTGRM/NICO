@@ -43,7 +43,7 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v15"
+VERSION = "nico.comprehensive_run_service.v16"
 
 _EXECUTIVE_BRIEFING_STAGE_ID = "risk_reduction_and_executive_briefing"
 _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
@@ -97,16 +97,7 @@ def _prior_stage_results_for_stage(
 
 
 def _final_report_status_maintenance_required(record: Mapping[str, Any]) -> bool:
-    """Keep the durable final-report lease alive/recoverable during status polling.
-
-    The public UI and production acceptance proof poll canonical run status while final
-    report generation is detached. After a process/container replacement, the prior
-    worker and watchdog disappear but the exact durable run and lease remain. A status
-    read at the final-report boundary therefore performs one bounded continuation tick:
-    active/fresh leases are a no-op, stale leases are reclaimed by the coordinator, and
-    recoverable terminal final-report failures consume only the existing one-attempt
-    recovery budget. No earlier scanner stage is rerun.
-    """
+    """Keep the durable final-report lease alive/recoverable during status polling."""
 
     completed = list(record.get("completed_stages") or [])
     if FINAL_REPORT_STAGE_ID in completed or len(completed) >= len(COMPREHENSIVE_STAGES):
@@ -120,29 +111,7 @@ def _final_report_status_maintenance_required(record: Mapping[str, Any]) -> bool
 
 
 class ComprehensiveRunService:
-    """Restart-safe orchestration over the canonical Comprehensive run record.
-
-    Each completed stage and each explicit human review decision is persisted through
-    the same optimistic-concurrency store. Approval binds the exact existing artifacts;
-    it never reruns report generation or changes the assessed commit. An approved
-    delivery archive is generated only after the accepted-edition manifest validates.
-
-    Long-running scanner stages execute behind a durable polling boundary. Final report
-    publication keeps its stricter atomic package validation, but generation now runs
-    behind a dedicated durable lease so the browser continuation request never has to
-    remain open for the full PDF/HTML/Markdown/JSON render. Only a small running marker
-    and lease heartbeat are persisted during generation; the complete report package is
-    committed once through the canonical optimistic-concurrency run transaction.
-
-    Scanner truth is canonicalized once with copy-on-write traversal before rendering.
-    On first entry to the final stage, the exact already-loaded completed-stage result
-    mapping is passed by reference so the large scanner tree is not cloned. During
-    recovery from an existing final-report running marker, a shallow mapping excludes
-    only that marker while retaining each completed stage result by reference.
-    Final-report processing remains copy-on-write, so the persisted run cannot be
-    mutated by the renderer. Scores, scanner findings, report design, human review,
-    and blocked client delivery remain unchanged.
-    """
+    """Restart-safe orchestration over the canonical Comprehensive run record."""
 
     def __init__(
         self,
@@ -163,6 +132,8 @@ class ComprehensiveRunService:
         customer_id: str,
         project_id: str,
         authorized: bool,
+        customer_name: str = "",
+        project_name: str = "",
         assessment_depth: str = "strategic",
         report_language: str = "en",
         human_evidence: Any = None,
@@ -175,6 +146,8 @@ class ComprehensiveRunService:
             customer_id=customer_id,
             project_id=project_id,
             authorized=authorized,
+            customer_name=customer_name,
+            project_name=project_name,
             assessment_depth=assessment_depth,
             report_language=report_language,
             human_evidence=human_evidence,
@@ -218,8 +191,6 @@ class ComprehensiveRunService:
             record = self._run_next_stage(record)
             if record.get("terminal"):
                 break
-            # An asynchronous final-report marker is progress, but a subsequent loop
-            # iteration in the same request must not spin repeatedly on the same lease.
             if int(record.get("revision") or 0) == before_revision:
                 break
         return record
@@ -293,6 +264,16 @@ class ComprehensiveRunService:
                 "evidence_ledger_id": identity["evidence_ledger_id"],
                 "customer_id": identity["customer_id"],
                 "project_id": identity["project_id"],
+                **(
+                    {"customer_name": identity["customer_name"]}
+                    if str(identity.get("customer_name") or "").strip()
+                    else {}
+                ),
+                **(
+                    {"project_name": identity["project_name"]}
+                    if str(identity.get("project_name") or "").strip()
+                    else {}
+                ),
                 "assessment_depth": identity["assessment_depth"],
                 "report_language": identity["report_language"],
                 "human_evidence": deepcopy(record.get("human_evidence") or {}),
