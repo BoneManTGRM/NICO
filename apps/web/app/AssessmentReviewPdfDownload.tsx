@@ -31,7 +31,10 @@ function activeReportLanguage(): ReportLanguage {
   return document.documentElement.lang.toLowerCase().startsWith("es") ? "es-MX" : "en";
 }
 
-function visibleRunId(): string {
+function visibleRunId(actions: Element | null = null): string {
+  const fromActions = String(actions?.getAttribute("data-run-id") || "").trim();
+  if (fromActions.startsWith("comprun_")) return fromActions;
+
   const fromQuery = new URL(window.location.href).searchParams.get(RUN_ID_QUERY)?.trim() || "";
   if (fromQuery.startsWith("comprun_")) return fromQuery;
 
@@ -91,9 +94,10 @@ function startExactRunDownload(runId: string, reportLanguage: ReportLanguage): v
 /**
  * Keep the exact-run PDF request inside the original mobile/desktop user gesture.
  * This compatibility bridge takes ownership only when the terminal report is ready and
- * an exact Comprehensive run ID is visible. During a React rerender or temporary run-ID
- * projection gap it leaves the click untouched so AssessmentWorkspace remains the safe
- * fallback rather than turning an enabled button into a dead control.
+ * an exact Comprehensive run ID is bound to the canonical action container. URL and
+ * visible-text discovery remain compatibility fallback only. During a React rerender or
+ * temporary run-ID projection gap it leaves the click untouched so AssessmentWorkspace
+ * remains the safe fallback rather than turning an enabled button into a dead control.
  */
 export default function AssessmentReviewPdfDownload() {
   const guardedUntil = useRef(0);
@@ -110,7 +114,7 @@ export default function AssessmentReviewPdfDownload() {
       // Do not cancel the native React click until this bridge can prove it owns the
       // exact terminal artifact action.
       if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
-      const runId = visibleRunId();
+      const runId = visibleRunId(actions);
       if (!runId.startsWith("comprun_")) return;
 
       const now = Date.now();
