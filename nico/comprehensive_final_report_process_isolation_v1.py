@@ -19,11 +19,12 @@ from nico.comprehensive_final_report_process_worker_v1 import (
     terminate_process,
 )
 
-VERSION = "nico.comprehensive_final_report_process_isolation.v2"
+VERSION = "nico.comprehensive_final_report_process_isolation.v3"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 _INSTALL_STATE = "nico_final_report_process_isolation_v1"
 _PATCH_MARKER = "__nico_comprehensive_final_report_process_isolation_v1__"
 _DEFAULT_TERMINATION_WAIT_SECONDS = 12.0
+_LOCAL_DEADLINE_PERSIST_RETRIES = 12
 
 _ORIGINAL_START_WORKER: Callable[..., Any] | None = None
 _ORIGINAL_STOP_LOCAL_TASK: Callable[..., Any] | None = None
@@ -107,6 +108,8 @@ def _with_process_execution(
             "renderer_lifetime_owner": "killable_isolated_subprocess",
             "logical_capacity_released_only_after_worker_exit": True,
             "recovery_waits_for_worker_termination": True,
+            "process_local_monotonic_deadline": True,
+            "deadline_independent_of_durable_lease_reads": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -183,6 +186,119 @@ def _process_worker_failure(
         }
     )
     return output
+
+
+def _local_deadline_blocked_result(
+    context: Mapping[str, Any],
+    *,
+    lease_id: str,
+    state: Mapping[str, Any],
+    render_started_epoch: float,
+) -> dict[str, Any]:
+    try:
+        deadline_seconds = float(
+            state.get("local_render_deadline_seconds")
+            or background._max_publication_seconds()
+        )
+    except (TypeError, ValueError):
+        deadline_seconds = float(background._max_publication_seconds())
+    try:
+        elapsed_seconds = float(state.get("local_render_elapsed_seconds") or 0.0)
+    except (TypeError, ValueError):
+        elapsed_seconds = 0.0
+
+    result = background._overdue_result(
+        context,
+        lease_id=lease_id,
+        deadline={
+            "phase": "rendering",
+            "started_epoch": float(render_started_epoch or time.time()),
+            "elapsed_seconds": max(elapsed_seconds, deadline_seconds),
+            "deadline_seconds": deadline_seconds,
+        },
+    )
+    execution = result.get("stage_execution")
+    execution = dict(execution) if isinstance(execution, Mapping) else {}
+    execution.update(
+        {
+            "deadline_enforced_by": "isolated_process_local_monotonic_clock",
+            "process_local_monotonic_deadline": True,
+            "deadline_independent_of_durable_lease_reads": True,
+            "worker_termination_confirmed": state.get("worker_terminated") is True,
+            "physical_worker_exit_confirmed": (
+                state.get("physical_worker_exit_confirmed") is True
+            ),
+            "local_render_elapsed_seconds": max(elapsed_seconds, deadline_seconds),
+            "local_render_deadline_seconds": deadline_seconds,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+    )
+    result["stage_execution"] = execution
+    result.update(
+        {
+            "local_render_deadline_expired": True,
+            "local_render_deadline_seconds": deadline_seconds,
+            "local_render_elapsed_seconds": max(elapsed_seconds, deadline_seconds),
+            "deadline_source": "process_local_monotonic_clock",
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+    )
+    return result
+
+
+def _publish_local_deadline_and_recover(
+    self: background.FinalReportPublicationCoordinator,
+    *,
+    lease_id: str,
+    executor,
+    context: Mapping[str, Any],
+    state: Mapping[str, Any],
+    render_started_epoch: float,
+) -> str:
+    """Persist a local render timeout and consume the existing one-retry budget.
+
+    The isolated worker enforces the physical deadline without consulting durable
+    storage. Once the child is gone, this helper fences the exact canonical lease,
+    persists the same fail-closed deadline result used by the durable watchdog, and
+    reuses the existing final-artifact recovery path. Transient persistence failures
+    are retried briefly instead of turning a hard renderer timeout into another stuck
+    running marker.
+    """
+
+    run_id = _text(context.get("run_id"))
+    blocked = _local_deadline_blocked_result(
+        context,
+        lease_id=lease_id,
+        state=state,
+        render_started_epoch=render_started_epoch,
+    )
+    for attempt in range(_LOCAL_DEADLINE_PERSIST_RETRIES):
+        try:
+            published = self._publish_result(
+                lease_id=lease_id,
+                run_id=run_id,
+                result=blocked,
+            )
+            if published == "failed":
+                raise RuntimeError("local_deadline_publication_conflict")
+            if published in {"complete", "superseded"}:
+                return published
+
+            self._safe_job_update(lease_id, status="expired")
+            current = self._store.load(run_id)
+            self._recover_after_deadline(
+                current,
+                executor=executor,
+                context=context,
+            )
+            return "expired"
+        except Exception:
+            if attempt + 1 >= _LOCAL_DEADLINE_PERSIST_RETRIES:
+                break
+            time.sleep(min(1.0, 0.1 * (attempt + 1)))
+    return "expired"
 
 
 def _isolated_stop_local_task(
@@ -309,6 +425,7 @@ def _isolated_start_worker(
                 )
                 if transitioned:
                     state["phase"] = "rendering"
+                    state["render_started_epoch"] = render_started_epoch
             if not transitioned:
                 outcome = "superseded"
                 return
@@ -317,6 +434,7 @@ def _isolated_start_worker(
                 context,
                 stop=stop,
                 state=state,
+                max_render_seconds=background._max_publication_seconds(),
             )
             if stop.is_set():
                 outcome = "expired"
@@ -338,7 +456,17 @@ def _isolated_start_worker(
                 ),
             )
         except IsolatedFinalReportCancelled:
-            outcome = "expired" if bool(state.get("deadline_expired")) else "cancelled"
+            if state.get("local_render_deadline_expired") is True:
+                outcome = _publish_local_deadline_and_recover(
+                    self,
+                    lease_id=lease_id,
+                    executor=executor,
+                    context=context,
+                    state=state,
+                    render_started_epoch=render_started_epoch,
+                )
+            else:
+                outcome = "expired" if bool(state.get("deadline_expired")) else "cancelled"
         except BaseException as exc:
             if stop.is_set():
                 outcome = "expired"
@@ -431,6 +559,8 @@ def _active_final_report_execution(
             "lease_id": lease_id,
             "durable_lease_found": False,
             "worker_model": "isolated_subprocess",
+            "process_local_monotonic_deadline": True,
+            "deadline_independent_of_durable_lease_reads": True,
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
@@ -455,6 +585,8 @@ def _active_final_report_execution(
         "durable_lease_found": True,
         "worker_model": "isolated_subprocess",
         "killable_worker": True,
+        "process_local_monotonic_deadline": True,
+        "deadline_independent_of_durable_lease_reads": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -539,6 +671,10 @@ def install_comprehensive_final_report_process_isolation_v1(app: FastAPI) -> dic
         "active_stage_execution_projection": True,
         "bounded_worker_failure_diagnostics_projected": True,
         "worker_traceback_exposed": False,
+        "process_local_monotonic_deadline": True,
+        "deadline_independent_of_durable_lease_reads": True,
+        "local_deadline_persists_blocked_result": True,
+        "local_deadline_reuses_single_recovery_budget": True,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -549,5 +685,6 @@ def install_comprehensive_final_report_process_isolation_v1(app: FastAPI) -> dic
 __all__ = [
     "FINAL_REPORT_STAGE_ID",
     "VERSION",
+    "_local_deadline_blocked_result",
     "install_comprehensive_final_report_process_isolation_v1",
 ]
