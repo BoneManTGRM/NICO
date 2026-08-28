@@ -157,10 +157,9 @@ export default function StrategicEvidenceForm({
     });
   }
 
-  // Mobile/touch intake must leave the DOM once an assessment is active. Keeping
-  // even the lightweight textareas mounted during polling has caused iOS paint
-  // instability; the submitted evidence already lives in controller state.
-  if (!richEditorEnabled && disabled) return null;
+  // The intake editor is never needed while an exact run is active. Removing it from
+  // the DOM prevents Safari from repainting disabled evidence controls on every poll.
+  if (disabled) return null;
 
   if (!richEditorEnabled) {
     const engagement = value.stakeholder_context || emptyStrategicEvidenceModule();
@@ -193,12 +192,26 @@ export default function StrategicEvidenceForm({
         <div className={styles.requiredEvidence}>
           {CLIENT_ENGAGEMENT_FIELDS.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
             <span>{copy.field(field)}</span>
-            <small>{copy.onePerLine}</small>
-            <textarea
-              rows={3}
-              value={(engagement.evidence[field] || []).join("\n")}
+            <input
+              type="text"
+              value={(engagement.evidence[field] || [])[0] || ""}
               disabled={disabled}
-              onChange={(event) => setEvidenceField("stakeholder_context", field, evidenceLines(event.target.value))}
+              autoComplete="off"
+              style={{
+                width: "100%",
+                minHeight: 43,
+                padding: "9px 11px",
+                border: "1px solid rgba(71, 85, 105, 0.86)",
+                borderRadius: 10,
+                background: "rgba(2, 6, 23, 0.76)",
+                color: "#f8fafc",
+                font: "inherit",
+              }}
+              onChange={(event) => setEvidenceField(
+                "stakeholder_context",
+                field,
+                event.target.value ? [event.target.value] : [],
+              )}
             />
           </label>)}
         </div>
