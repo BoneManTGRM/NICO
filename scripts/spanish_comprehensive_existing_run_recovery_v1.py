@@ -67,6 +67,43 @@ def _require_git_sha(value: Any, *, code: str) -> str:
     return candidate
 
 
+def _require_matching_proof_tool_sha(
+    value: Any,
+    *,
+    expected_value: Any,
+) -> str:
+    """Bind the executing proof tool to a separately trusted checkout SHA."""
+
+    observed = _require_git_sha(value, code="proof_tool_sha_invalid")
+    expected = _require_git_sha(
+        expected_value,
+        code="expected_proof_tool_sha_invalid",
+    )
+    if observed != expected:
+        raise ValueError("proof_tool_sha_mismatch")
+    return observed
+
+
+def _require_matching_source_artifact_digest(
+    value: Any,
+    *,
+    failed_source_sha256: Any,
+) -> str:
+    """Bind the supplied source digest to the exact failed proof bytes."""
+
+    observed = _require_sha256(
+        _text(value).removeprefix("sha256:"),
+        code="source_artifact_digest_invalid",
+    )
+    expected = _require_sha256(
+        failed_source_sha256,
+        code="failed_source_proof_sha256_invalid",
+    )
+    if observed != expected:
+        raise ValueError("source_artifact_digest_mismatch")
+    return observed
+
+
 def _load_failed_source(
     path: Path,
     *,
@@ -218,19 +255,70 @@ def _projection(payload: Mapping[str, Any]) -> dict[str, Any]:
             or record.get("evidence_ledger_id")
             or identity.get("evidence_ledger_id")
         ),
-        "human_review_required": bool(
-            payload.get(
-                "human_review_required",
-                record.get("human_review_required", True),
-            )
+        "human_review_required": (
+            payload.get("human_review_required")
+            if "human_review_required" in payload
+            else record.get("human_review_required")
+            if "human_review_required" in record
+            else None
         ),
-        "client_delivery_allowed": bool(
-            payload.get(
-                "client_delivery_allowed",
-                record.get("client_delivery_allowed", False),
-            )
+        "human_review_completed": (
+            payload.get("human_review_completed")
+            if "human_review_completed" in payload
+            else record.get("human_review_completed")
+            if "human_review_completed" in record
+            else None
+        ),
+        "client_delivery_allowed": (
+            payload.get("client_delivery_allowed")
+            if "client_delivery_allowed" in payload
+            else record.get("client_delivery_allowed")
+            if "client_delivery_allowed" in record
+            else None
+        ),
+        "approval_status": _text(payload.get("approval_status")),
+        "approved_final_absent": (
+            _text(payload.get("approval_status")) != "approved_final"
+            and "review_decision" not in payload
+            and "review_decision" not in record
+        ),
+        "delivery_status": _text(
+            payload.get("delivery_status") or record.get("delivery_status")
+        ),
+        "accepted_edition_absent": (
+            "accepted_edition" not in payload and "accepted_edition" not in record
+        ),
+        "review_decision_absent": (
+            "review_decision" not in payload and "review_decision" not in record
+        ),
+        "delivery_authorization_absent": (
+            "delivery_authorization" not in payload
+            and "delivery_authorization" not in record
+        ),
+        "approved_delivery_package_absent": (
+            "approved_delivery_package" not in payload
+            and "approved_delivery_package" not in record
         ),
     }
+
+
+def _assert_pending_human_review_state(
+    view: Mapping[str, Any],
+    *,
+    terminal: bool,
+) -> None:
+    assert view.get("human_review_required") is True, view
+    assert view.get("human_review_completed") is False, view
+    assert view.get("client_delivery_allowed") is False, view
+    assert view.get("approval_status") == "pending_human_approval", view
+    assert view.get("approved_final_absent") is True, view
+    assert view.get("delivery_status") == "blocked", view
+    assert view.get("accepted_edition_absent") is True, view
+    assert view.get("review_decision_absent") is True, view
+    assert view.get("delivery_authorization_absent") is True, view
+    assert view.get("approved_delivery_package_absent") is True, view
+    if terminal:
+        assert _text(view.get("status")) == "review_required", view
 
 
 def _get_exact_run(
@@ -263,8 +351,7 @@ def _get_exact_run(
     assert view["evidence_ledger_id"], view
     if expected_evidence_ledger_id:
         assert view["evidence_ledger_id"] == expected_evidence_ledger_id, view
-    assert view["human_review_required"] is True, view
-    assert view["client_delivery_allowed"] is False, view
+    _assert_pending_human_review_state(view, terminal=view["terminal"])
     if view["terminal"]:
         assert view["status"].casefold() not in FAILED_TERMINAL_STATES, view
     return payload, view
@@ -380,11 +467,14 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
         args.source_script,
         expected_sha256=expected_source_script_sha256,
     )
-    source_artifact_digest = _require_sha256(
-        args.source_artifact_digest.removeprefix("sha256:"),
-        code="source_artifact_digest_invalid",
+    source_artifact_digest = _require_matching_source_artifact_digest(
+        args.source_artifact_digest,
+        failed_source_sha256=failed["failed_source_proof_sha256"],
     )
-    proof_tool_sha = _require_git_sha(args.proof_tool_sha, code="proof_tool_sha_invalid")
+    proof_tool_sha = _require_matching_proof_tool_sha(
+        args.proof_tool_sha,
+        expected_value=args.expected_proof_tool_sha,
+    )
     run_id = failed["run_id"]
     context = browser.new_context(
         viewport={"width": 390, "height": 844},
@@ -475,7 +565,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
         ui_continuation_attempts = [
             item for item in guarded_requests if item["path"].endswith("/continue")
         ]
-        assert len(ui_continuation_attempts) <= 2, ui_continuation_attempts
+        assert not ui_continuation_attempts, ui_continuation_attempts
 
         _, terminal_view, durable_worker_observations = (
             _wait_existing_run_to_terminal(
@@ -491,8 +581,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             )
         )
         assert terminal_view["terminal"] is True, terminal_view
-        assert terminal_view["human_review_required"] is True, terminal_view
-        assert terminal_view["client_delivery_allowed"] is False, terminal_view
+        _assert_pending_human_review_state(terminal_view, terminal=True)
 
         guarded_before_terminal_ui = len(guarded_requests)
         page.reload(wait_until="domcontentloaded", timeout=args.navigation_timeout_ms)
@@ -562,6 +651,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             "repository": args.repository,
             "expected_sha": expected_sha,
             "proof_tool_sha": proof_tool_sha,
+            "expected_proof_tool_sha": proof_tool_sha,
             "source_workflow_run_id": str(args.source_workflow_run_id),
             "source_workflow_run_attempt": str(args.source_workflow_run_attempt),
             "source_binding": source_marker.removeprefix("source:"),
@@ -583,9 +673,14 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             "intake_route_guard_verified": True,
             "uncontrolled_continuation_route_guard_verified": True,
             "blocked_ui_continuation_attempt_count": len(ui_continuation_attempts),
+            "blocked_ui_continuation_attempt_paths": [
+                item["path"] for item in ui_continuation_attempts
+            ],
             "terminal_ui_mutation_attempt_count": len(terminal_ui_mutation_attempts),
-            "explicit_same_run_continuation_count": 0,
-            "explicit_same_run_continuation_paths": [],
+            "explicit_same_run_continuation_count": len(ui_continuation_attempts),
+            "explicit_same_run_continuation_paths": [
+                item["path"] for item in ui_continuation_attempts
+            ],
             "no_client_mutation_terminal_observation": True,
             "initial_canonical_state": initial_view,
             "terminal_canonical_state": terminal_view,
@@ -628,8 +723,20 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
                 else ""
             ),
             "screenshot_error": screenshot_error,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
+            "human_review_required": terminal_view["human_review_required"],
+            "human_review_completed": terminal_view["human_review_completed"],
+            "approval_status": terminal_view["approval_status"],
+            "review_decision_absent": terminal_view["review_decision_absent"],
+            "approved_final_absent": terminal_view["approved_final_absent"],
+            "client_delivery_allowed": terminal_view["client_delivery_allowed"],
+            "delivery_status": terminal_view["delivery_status"],
+            "delivery_authorization_absent": terminal_view[
+                "delivery_authorization_absent"
+            ],
+            "approved_delivery_package_absent": terminal_view[
+                "approved_delivery_package_absent"
+            ],
+            "accepted_edition_absent": terminal_view["accepted_edition_absent"],
         }
         return result
     finally:
@@ -647,6 +754,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--proof-tool-sha", required=True)
+    parser.add_argument("--expected-proof-tool-sha", required=True)
     parser.add_argument("--failed-source-proof", type=Path, required=True)
     parser.add_argument("--failed-source-job-log", type=Path, required=True)
     parser.add_argument("--source-script", type=Path, required=True)
@@ -679,6 +787,7 @@ def main(argv: list[str] | None = None) -> int:
             "repository": args.repository,
             "expected_sha": args.expected_sha,
             "proof_tool_sha": args.proof_tool_sha,
+            "expected_proof_tool_sha": args.expected_proof_tool_sha,
             "source_workflow_run_id": str(args.source_workflow_run_id),
             "source_workflow_run_attempt": str(args.source_workflow_run_attempt),
             "fresh_assessment_count_during_recovery": 0,

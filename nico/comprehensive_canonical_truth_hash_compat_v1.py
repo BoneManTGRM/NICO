@@ -5,6 +5,8 @@ from functools import wraps
 from itertools import combinations
 from typing import Any, Callable, Mapping
 
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
+
 
 VERSION = "nico.comprehensive_canonical_truth_hash_compat.v1"
 _BUILDER_MARKER = "_nico_canonical_truth_hash_compat_builder_v1"
@@ -51,7 +53,7 @@ def synchronize_report_package_hash(result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(canonical, Mapping) or not canonical:
         return output
 
-    truth_sha256 = _canonical_hash(canonical)
+    truth_sha256 = canonical_sha256(canonical)
     package["canonical_truth_sha256"] = truth_sha256
     output["canonical_truth_sha256"] = truth_sha256
     output["report_package"] = package

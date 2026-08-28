@@ -175,8 +175,15 @@ def _artifact_headers(
         )
     status = _text(record.get("status")).strip().casefold()
     approved = status == "approved" and record.get("human_review_completed") is True
-    rejected = status in {"rejected", "declined"}
-    delivery_allowed = approved and record.get("client_delivery_allowed") is True
+    rejected = (
+        status in {"rejected", "declined"}
+        and controller_module._rejected_review_integrity_bound(record)
+    )
+    delivery_allowed = (
+        approved
+        and record.get("client_delivery_allowed") is True
+        and controller_module._client_delivery_integrity_bound(record)
+    )
     headers = {
         "Cache-Control": "no-store, private, max-age=0",
         "X-NICO-Run-ID": run_id,
@@ -390,7 +397,10 @@ def _install_artifact_routes(app: Any) -> None:
                 raise HTTPException(status_code=409, detail="comprehensive_report_pdf_invalid_signature")
             expected_hash = _text(report.get("pdf_sha256")).strip().lower()
             observed_hash = hashlib.sha256(pdf).hexdigest()
-            if expected_hash and expected_hash != observed_hash:
+            if (
+                not re.fullmatch(r"[0-9a-f]{64}", expected_hash)
+                or expected_hash != observed_hash
+            ):
                 raise HTTPException(status_code=409, detail="comprehensive_report_pdf_sha256_mismatch")
             accepted_binding = _accepted_pdf_binding(_record, pdf)
             stored_filename = _safe_filename(

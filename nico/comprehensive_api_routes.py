@@ -9,7 +9,11 @@ from fastapi import FastAPI, Header, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
 
 from nico.admin_security import require_admin_write
-from nico.comprehensive_api_controller import ComprehensiveApiController
+from nico.comprehensive_api_controller import (
+    ComprehensiveApiController,
+    _canonical_final_report_outputs,
+    _client_delivery_integrity_bound,
+)
 from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunNotFound
 from nico.comprehensive_review_decision_v1 import review_artifact_identity
@@ -48,15 +52,6 @@ _SAFE_RUNTIME_REASONS = {
         "Comprehensive is temporarily unavailable because its production database configuration is invalid."
     ),
 }
-
-_REVIEW_QUEUE_STAGE_IDS = (
-    "final_comprehensive_report_generation",
-    "risk_reduction_and_executive_briefing",
-    "decision_report_generation",
-    "report_generation",
-    "reports",
-)
-
 
 def _controller(request: Request) -> ComprehensiveApiController:
     controller = getattr(request.app.state, "comprehensive_api_controller", None)
@@ -219,30 +214,89 @@ def _review_projection(
     response: dict[str, Any],
     record: dict[str, Any],
 ) -> dict[str, Any]:
-    allowed = record.get("client_delivery_allowed") is True
-    projected = {
-        **response,
-        "status": str(record.get("status") or response.get("status") or "unknown"),
-        "human_review_completed": record.get("human_review_completed") is True,
-        "client_delivery_allowed": allowed,
-        "delivery_status": (
+    response_projection = (
+        response.get("response_projection")
+        if isinstance(response.get("response_projection"), Mapping)
+        else {}
+    )
+    approval_invalidated = (
+        response_projection.get("approval_invalidated_by_artifact_mismatch")
+        is True
+    )
+    delivery_invalidated = (
+        response_projection.get("delivery_authorization_invalidated") is True
+    )
+    rejection_invalidated = (
+        response_projection.get("rejection_invalidated_by_review_mismatch")
+        is True
+    )
+    review_decision_integrity_valid = (
+        response_projection.get("review_decision_integrity_valid") is True
+    )
+    allowed = response.get("client_delivery_allowed") is True
+    approved_projection = (
+        response.get("approval_status") == "approved_final"
+        and response.get("human_review_completed") is True
+    )
+    delivery_status = str(response.get("delivery_status") or "").strip()
+    if not delivery_status:
+        delivery_status = (
             "approved_for_delivery"
             if allowed
             else "pending_authorization"
-            if str(record.get("status") or "").casefold() == "approved"
+            if str(response.get("status") or "").strip().casefold() == "approved"
+            and response.get("human_review_completed") is True
             else "blocked"
-        ),
+        )
+    projected = {
+        **response,
+        "delivery_status": delivery_status,
         "review_artifact_identity": review_artifact_identity(record),
     }
-    if isinstance(record.get("review_decision"), dict):
-        projected["review_decision"] = record["review_decision"]
-    if isinstance(record.get("accepted_edition"), dict):
-        projected["accepted_edition"] = record["accepted_edition"]
-    if isinstance(record.get("review_context"), dict):
+    review_decision = record.get("review_decision")
+    if (
+        not approval_invalidated
+        and not rejection_invalidated
+        and review_decision_integrity_valid
+        and isinstance(review_decision, dict)
+    ):
+        review = (
+            review_decision.get("review")
+            if isinstance(review_decision.get("review"), Mapping)
+            else {}
+        )
+        decision = str(review.get("decision") or "").strip().casefold()
+        decision_matches_projection = (
+            (approved_projection and decision == "approved")
+            or (response.get("approval_status") == "rejected" and decision == "rejected")
+            or (
+                response.get("approval_status") == "pending_human_approval"
+                and decision == "request_more_evidence"
+            )
+        )
+        if decision_matches_projection:
+            projected["review_decision"] = review_decision
+    if (
+        not approval_invalidated
+        and not rejection_invalidated
+        and review_decision_integrity_valid
+        and not delivery_invalidated
+        and isinstance(review_decision, dict)
+        and isinstance(record.get("review_context"), dict)
+    ):
         projected["review_context"] = record["review_context"]
-    if isinstance(record.get("delivery_authorization"), dict):
+    if (
+        allowed
+        and not approval_invalidated
+        and not delivery_invalidated
+        and isinstance(record.get("delivery_authorization"), dict)
+    ):
         projected["delivery_authorization"] = record["delivery_authorization"]
-    delivery_projection = _approved_delivery_projection(record)
+    delivery_projection = (
+        _approved_delivery_projection(record)
+        if allowed and not approval_invalidated
+        else {}
+    )
     if delivery_projection:
         projected["approved_delivery_package"] = delivery_projection
     public_record = projected.get("record")
@@ -287,19 +341,12 @@ def _canonical_review_queue_register(record: Mapping[str, Any]) -> Mapping[str, 
     stage_results = record.get("stage_results")
     stage_results = stage_results if isinstance(stage_results, Mapping) else {}
 
-    report_candidates: list[Mapping[str, Any]] = []
-    for stage_id in _REVIEW_QUEUE_STAGE_IDS:
-        stage = stage_results.get(stage_id)
-        if not isinstance(stage, Mapping):
-            continue
-        package = stage.get("report_package")
-        if not isinstance(package, Mapping):
-            package = stage.get("reports")
-        if isinstance(package, Mapping):
-            report_candidates.append(package)
-    top_level_report = record.get("reports")
-    if isinstance(top_level_report, Mapping):
-        report_candidates.append(top_level_report)
+    final_stage = stage_results.get("final_comprehensive_report_generation")
+    final_stage = final_stage if isinstance(final_stage, Mapping) else {}
+    final_package = final_stage.get("report_package")
+    if not isinstance(final_package, Mapping):
+        final_package = final_stage.get("reports")
+    report_candidates = [final_package] if isinstance(final_package, Mapping) else []
 
     for package in report_candidates:
         canonical = package.get("json")
@@ -317,6 +364,12 @@ def _canonical_review_queue_register(record: Mapping[str, Any]) -> Mapping[str, 
             raise _review_queue_error(
                 "comprehensive_review_queue_identity_mismatch",
                 "The terminal report candidate register does not match the exact run identity.",
+            )
+        final_report, _assessment = _canonical_final_report_outputs(dict(record))
+        if not final_report or dict(final_report) != dict(package):
+            raise _review_queue_error(
+                "comprehensive_review_queue_artifact_integrity_invalid",
+                "The exact terminal review package failed immutable artifact validation.",
             )
         assessment = canonical.get("assessment")
         if not isinstance(assessment, Mapping):
@@ -378,6 +431,17 @@ def _review_queue_projection(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _approved_delivery_response(record: dict[str, Any]) -> Response:
+    final_report, _assessment = _canonical_final_report_outputs(record)
+    if not final_report or not _client_delivery_integrity_bound(record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "approved_delivery_package_integrity_invalid",
+                "message": "The exact approved artifacts or delivery authorization failed immutable-package validation.",
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     candidate = record.get("approved_delivery_package")
     validation = validate_approved_delivery_package(record, candidate)
     if validation["status"] != "valid":

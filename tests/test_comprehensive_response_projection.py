@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 
 from nico.comprehensive_api_controller import ComprehensiveApiController, VERSION
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 
 
@@ -80,6 +83,13 @@ def _record(*, terminal: bool) -> dict:
             "raw_evidence": {"raw": large},
         },
     }
+    report = stage_results["final_comprehensive_report_generation"]["report_package"]
+    canonical = report["json"]
+    canonical.pop("canonical_truth_sha256", None)
+    pdf = b"%PDF-1.4\n" + (b"x" * (2 * 1024 * 1024)) + b"\n%%EOF\n"
+    report["pdf_base64"] = base64.b64encode(pdf).decode("ascii")
+    report["pdf_sha256"] = hashlib.sha256(pdf).hexdigest()
+    report["canonical_truth_sha256"] = canonical_sha256(canonical)
     return {
         "artifact_schema": "nico.comprehensive_run_record.v4",
         "service_id": "comprehensive",
@@ -159,10 +169,12 @@ def test_terminal_response_attaches_one_report_package_outside_projected_record(
     assert response["terminal"] is True
     assert response["status"] == "review_required"
     assert response["reports"]["service_id"] == "comprehensive"
-    assert response["reports"]["pdf_base64"] == "x" * (2 * 1024 * 1024)
+    assert base64.b64decode(response["reports"]["pdf_base64"]).startswith(b"%PDF")
     assert response["reports"]["json"] == persisted_json
     assert response["reports"]["json"] is not persisted_json
-    assert response["reports"]["json"]["canonical_truth_sha256"] == "a" * 64
+    assert response["reports"]["canonical_truth_sha256"] == canonical_sha256(
+        response["reports"]["json"]
+    )
     assert response["reports"]["json"]["raw"] == "x" * (2 * 1024 * 1024)
     assert response["assessment"]["maturity_signal"]["presented_score"] == 86
     assert response["assessment"]["sections"][0]["label"] == "Architecture"

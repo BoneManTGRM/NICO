@@ -4,8 +4,10 @@ import base64
 import hashlib
 import io
 import json
+from copy import deepcopy
 from pathlib import Path
 
+import pytest
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 
@@ -159,6 +161,7 @@ def test_manifest_binds_all_required_structured_artifacts() -> None:
     assert manifest["identity"]["repository"] == "BoneManTGRM/NICO"
     assert manifest["identity"]["commit_sha"] == COMMIT
     assert manifest["identity"]["run_id"] == RUN_ID
+    assert manifest["identity"]["evidence_ledger_id"] == "ledger_manifest_v1"
     assert manifest["lifecycle"]["report_finality"] == "automated_draft"
     assert manifest["lifecycle"]["client_delivery_status"] == "blocked"
     assert manifest["approval"]["artifact_schema"] == APPROVAL_SCHEMA
@@ -182,6 +185,7 @@ def test_final_pdf_json_manifest_and_all_artifact_digests_recompute_exactly() ->
         "repository": "BoneManTGRM/NICO",
         "commit_sha": COMMIT,
         "run_id": RUN_ID,
+        "evidence_ledger_id": "ledger_manifest_v1",
         "pdf_sha256": result["pdf_sha256"],
         "canonical_json_sha256": result["canonical_json_sha256"],
         "evidence_manifest_sha256": result["evidence_manifest_sha256"],
@@ -211,6 +215,35 @@ def test_final_pdf_json_manifest_and_all_artifact_digests_recompute_exactly() ->
     assert completion["all_manifest_byte_sizes_recomputed_from_final_bytes"] is True
     assert completion["markdown_manifest_hash_matches_final_bytes"] is True
     assert completion["html_manifest_hash_matches_final_bytes"] is True
+
+
+def test_detached_manifest_cannot_drop_a_retained_artifact_and_rehash_around_it() -> None:
+    result = attach_artifact_manifest(_package())
+    tampered = deepcopy(result)
+    tampered["evidence_csv"] += "forged,evidence,row\n"
+    tampered["evidence_csv_sha256"] = hashlib.sha256(
+        tampered["evidence_csv"].encode("utf-8")
+    ).hexdigest()
+    tampered["artifact_manifest"]["artifacts"] = [
+        item
+        for item in tampered["artifact_manifest"]["artifacts"]
+        if item["artifact_type"] != "evidence_csv"
+    ]
+    manifest_text = json.dumps(
+        tampered["artifact_manifest"],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    manifest_sha256 = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
+    tampered["evidence_manifest_json"] = manifest_text
+    tampered["evidence_manifest_sha256"] = manifest_sha256
+    tampered["draft_artifact_identity"][
+        "evidence_manifest_sha256"
+    ] = manifest_sha256
+
+    with pytest.raises(ValueError, match="artifact set is incomplete or invalid"):
+        _validate_exact_artifact_hashes(tampered)
 
 
 def test_pdf_contains_toc_client_manifest_and_pending_approval_record() -> None:
@@ -336,6 +369,239 @@ def test_visible_manifest_supplement_never_embeds_preliminary_artifact_hashes() 
             "remediation_backlog_json",
         }:
             assert item["sha256"] not in pdf_text
+
+
+def _replace_detached_manifest(result: dict, manifest: dict) -> None:
+    manifest_text = json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    manifest_sha256 = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
+    result["artifact_manifest"] = manifest
+    result["evidence_manifest_json"] = manifest_text
+    result["evidence_manifest_sha256"] = manifest_sha256
+    result["draft_artifact_identity"]["evidence_manifest_sha256"] = manifest_sha256
+
+
+def _rebind_canonical_json_and_detached_manifest(result: dict) -> None:
+    canonical_text = json.dumps(
+        result["json"],
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    canonical_sha256 = hashlib.sha256(canonical_text.encode("utf-8")).hexdigest()
+    result["canonical_json"] = canonical_text
+    result["canonical_json_sha256"] = canonical_sha256
+    result["canonical_truth_sha256"] = canonical_sha256
+    result["draft_artifact_identity"]["canonical_json_sha256"] = canonical_sha256
+
+    detached_manifest = deepcopy(result["artifact_manifest"])
+    detached_canonical_row = next(
+        item
+        for item in detached_manifest["artifacts"]
+        if item["artifact_type"] == "canonical_json"
+    )
+    detached_canonical_row["sha256"] = canonical_sha256
+    detached_canonical_row["size_bytes"] = len(canonical_text.encode("utf-8"))
+    _replace_detached_manifest(result, detached_manifest)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("run_id", "comprun-substituted"),
+        ("repository", "OutsideOrg/substituted"),
+        ("commit_sha", "b" * 40),
+        ("evidence_ledger_id", "ledger-substituted"),
+    ),
+)
+def test_detached_canonical_json_row_cannot_be_relabelled_and_rehashed(
+    field: str,
+    replacement: str,
+) -> None:
+    result = attach_artifact_manifest(_package())
+    manifest = deepcopy(result["artifact_manifest"])
+    canonical_row = next(
+        item
+        for item in manifest["artifacts"]
+        if item["artifact_type"] == "canonical_json"
+    )
+    canonical_row[field] = replacement
+    _replace_detached_manifest(result, manifest)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"detached artifact canonical_json identity {field} mismatch",
+    ):
+        _validate_exact_artifact_hashes(result)
+
+
+def test_detached_manifest_artifact_count_cannot_be_rehashed_around_rows() -> None:
+    result = attach_artifact_manifest(_package())
+    manifest = deepcopy(result["artifact_manifest"])
+    manifest["artifact_count"] = len(manifest["artifacts"]) + 1
+    _replace_detached_manifest(result, manifest)
+
+    with pytest.raises(
+        ValueError,
+        match="detached artifact manifest artifact count is invalid",
+    ):
+        _validate_exact_artifact_hashes(result)
+
+
+def test_canonical_manifest_artifact_count_cannot_be_rehashed_around_rows() -> None:
+    result = attach_artifact_manifest(_package())
+    canonical_manifest = result["json"]["artifact_manifest"]
+    canonical_manifest["artifact_count"] = len(canonical_manifest["artifacts"]) + 1
+    _rebind_canonical_json_and_detached_manifest(result)
+
+    with pytest.raises(
+        ValueError,
+        match="canonical artifact manifest artifact count is invalid",
+    ):
+        _validate_exact_artifact_hashes(result)
+
+
+def test_detached_manifest_cannot_fabricate_human_approval_and_delivery() -> None:
+    result = attach_artifact_manifest(_package())
+    manifest = deepcopy(result["artifact_manifest"])
+    manifest["lifecycle"].update(
+        {
+            "report_finality": "approved_final",
+            "human_review_status": "approved",
+            "client_delivery_status": "authorized",
+            "client_delivery_allowed": True,
+        }
+    )
+    manifest["approval"].update(
+        {
+            "reviewer_identity": "Fabricated Bot",
+            "reviewer_authorized": True,
+            "decision": "approved",
+            "client_delivery_allowed": True,
+        }
+    )
+    _replace_detached_manifest(result, manifest)
+
+    with pytest.raises(
+        ValueError,
+        match="detached manifest lifecycle authority claims are invalid",
+    ):
+        _validate_exact_artifact_hashes(result)
+
+
+def test_canonical_report_cannot_fabricate_human_approval_and_delivery() -> None:
+    result = attach_artifact_manifest(_package())
+    result["json"]["lifecycle"].update(
+        {
+            "report_finality": "approved_final",
+            "human_review_status": "approved",
+            "client_delivery_status": "authorized",
+            "client_delivery_allowed": True,
+        }
+    )
+    result["json"]["approval"].update(
+        {
+            "reviewer_identity": "Fabricated Bot",
+            "reviewer_authorized": True,
+            "decision": "approved",
+            "client_delivery_allowed": True,
+        }
+    )
+    _rebind_canonical_json_and_detached_manifest(result)
+
+    with pytest.raises(
+        ValueError,
+        match="canonical report lifecycle authority claims are invalid",
+    ):
+        _validate_exact_artifact_hashes(result)
+
+
+def test_canonical_top_level_cannot_fabricate_approval_and_delivery() -> None:
+    result = attach_artifact_manifest(_package())
+    result["json"].update(
+        {
+            "human_review_completed": True,
+            "client_delivery_allowed": True,
+            "report_finality": "approved_final",
+            "approval_status": "approved_final",
+            "delivery_status": "authorized",
+        }
+    )
+    _rebind_canonical_json_and_detached_manifest(result)
+
+    with pytest.raises(
+        ValueError,
+        match="canonical report authority field .* is invalid",
+    ):
+        _validate_exact_artifact_hashes(result)
+
+
+@pytest.mark.parametrize(
+    ("field", "forged_value"),
+    (
+        ("human_review_required", False),
+        ("client_delivery_allowed", True),
+        ("report_finality", "approved_final"),
+        ("human_review_status", "approved"),
+        ("client_delivery_status", "authorized"),
+        ("automated_status", "human_approved"),
+        ("human_review_completed", True),
+        ("approval_status", "approved_final"),
+        ("delivery_status", "authorized"),
+        ("review_package_ready", False),
+    ),
+)
+def test_canonical_assessment_cannot_fabricate_approval_and_delivery(
+    field: str,
+    forged_value: object,
+) -> None:
+    result = attach_artifact_manifest(_package())
+    result["json"]["assessment"][field] = forged_value
+    _rebind_canonical_json_and_detached_manifest(result)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"canonical assessment authority field {field} is invalid",
+    ):
+        _validate_exact_artifact_hashes(result)
+
+
+def test_exact_artifact_validation_binds_evidence_ledger_lineage() -> None:
+    result = attach_artifact_manifest(_package())
+    _validate_exact_artifact_hashes(result)
+
+    tampered_manifest = deepcopy(result)
+    manifest = deepcopy(tampered_manifest["artifact_manifest"])
+    manifest["identity"]["evidence_ledger_id"] = "ledger-substituted"
+    _replace_detached_manifest(tampered_manifest, manifest)
+    with pytest.raises(
+        ValueError,
+        match="detached evidence manifest identity evidence_ledger_id mismatch",
+    ):
+        _validate_exact_artifact_hashes(tampered_manifest)
+
+    tampered_draft = deepcopy(result)
+    tampered_draft["draft_artifact_identity"]["evidence_ledger_id"] = (
+        "ledger-substituted"
+    )
+    with pytest.raises(
+        ValueError,
+        match="draft artifact identity evidence_ledger_id mismatch",
+    ):
+        _validate_exact_artifact_hashes(tampered_draft)
+
+
+def test_legacy_draft_identity_without_evidence_ledger_remains_readable() -> None:
+    result = attach_artifact_manifest(_package())
+    result["draft_artifact_identity"].pop("evidence_ledger_id")
+
+    _validate_exact_artifact_hashes(result)
 
 
 def test_legacy_digest_bearing_manifest_cannot_be_rebound_in_place() -> None:

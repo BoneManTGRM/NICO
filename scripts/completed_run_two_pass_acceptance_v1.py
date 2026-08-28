@@ -459,6 +459,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-proof", type=Path, required=True)
     parser.add_argument("--source-workflow-run-id", required=True)
     parser.add_argument("--source-workflow-run-attempt", required=True)
+    parser.add_argument("--expected-proof-tool-sha", required=True)
     parser.add_argument("--passes", type=int, default=2)
     parser.add_argument("--observation-seconds", type=float, default=90.0)
     parser.add_argument("--navigation-timeout-ms", type=int, default=120_000)
@@ -482,6 +483,7 @@ def main(argv: list[str] | None = None) -> int:
         repository=args.repository,
         source_workflow_run_id=args.source_workflow_run_id,
         source_workflow_run_attempt=args.source_workflow_run_attempt,
+        expected_proof_tool_sha=args.expected_proof_tool_sha,
     )
     install_ui_pdf_download_proof(recovery)
     with sync_playwright() as playwright:

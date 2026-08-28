@@ -462,13 +462,23 @@ def operational_metrics(record: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def reviewer_binding(*, reviewer: str, reviewer_role: str, decision: str, decided_at: str, decision_reason: str, authorization_basis: str = "protected_admin_write_and_explicit_review_authorization") -> dict[str, Any]:
-    reviewer, role, decision = _text(reviewer), _text(reviewer_role), _text(decision).casefold()
-    basis = _text(authorization_basis)
+def human_reviewer_identity(*, reviewer: str, reviewer_role: str) -> tuple[str, str]:
+    reviewer, role = _text(reviewer), _text(reviewer_role)
     _require(bool(reviewer), "missing_reviewer_identity")
     _require(reviewer.casefold() not in _AUTOMATION, "automation_cannot_create_final_human_approval")
     _require(bool(role), "missing_reviewer_role")
+    _require(role.casefold() not in _AUTOMATION, "automation_cannot_create_final_human_approval")
+    return reviewer, role
+
+
+def reviewer_binding(*, reviewer: str, reviewer_role: str, decision: str, decided_at: str, decision_reason: str, authorization_basis: str = "protected_admin_write_and_explicit_review_authorization") -> dict[str, Any]:
+    reviewer, role = human_reviewer_identity(
+        reviewer=reviewer,
+        reviewer_role=reviewer_role,
+    )
     _require(role.casefold() in _AUTHORIZED_REVIEWER_ROLES, "reviewer_role_not_authorized")
+    decision = _text(decision).casefold()
+    basis = _text(authorization_basis)
     _require(decision in {"approved", "rejected", "request_more_evidence"}, "invalid_review_decision")
     _require(bool(_text(decided_at)), "missing_review_timestamp")
     _require(bool(_text(decision_reason)), "reviewer_notes_required")

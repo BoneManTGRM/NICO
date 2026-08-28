@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from copy import deepcopy
 
 from fastapi import FastAPI
@@ -7,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
+from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 
 
 class _LoadOnlyService:
@@ -66,6 +70,8 @@ def _record(
         "evidence_ledger_id": "ledger_exception_queue_001",
         "customer_id": "customer_001",
         "project_id": "project_001",
+        "assessment_depth": "strategic",
+        "report_language": "en",
     }
     findings = [] if empty else [
         _candidate(
@@ -113,27 +119,50 @@ def _record(
     if identity_mismatch:
         canonical_identity["commit_sha"] = "c" * 40
     canonical = {
+        "service_id": "comprehensive",
+        "report_id": "report_exception_queue_001",
+        "report_language": "en",
+        "locale": "en",
         "identity": canonical_identity,
-        "assessment": {"canonical_scanner_finding_register": register},
+        "assessment": {
+            "report_language": "en",
+            "locale": "en",
+            "canonical_scanner_finding_register": register,
+        },
         "human_review_required": True,
         "client_delivery_allowed": False,
+    }
+    canonical_identity.update({"report_language": "en", "locale": "en"})
+    pdf = b"%PDF-1.4\ncanonical reviewer queue fixture\n%%EOF\n"
+    markdown = "# Canonical reviewer queue fixture\n"
+    html = "<h1>Canonical reviewer queue fixture</h1>"
+    report_package = {
+        "service_id": "comprehensive",
+        "report_id": canonical["report_id"],
+        "report_language": "en",
+        "locale": "en",
+        "markdown": markdown,
+        "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+        "html": html,
+        "html_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
+        "json": canonical,
+        "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+        "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
+        "canonical_truth_sha256": canonical_sha256(canonical),
     }
     return {
         "artifact_schema": "nico.comprehensive_run_record.v1",
         "identity": identity,
         "status": status,
         "terminal": terminal,
+        "completed_stages": list(COMPREHENSIVE_STAGES),
         "human_review_completed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
         "stage_results": {
             "final_comprehensive_report_generation": {
                 "status": "complete",
-                "report_package": {
-                    "report_id": "report_exception_queue_001",
-                    "json": canonical,
-                    "pdf_base64": "not-returned-by-review-queue",
-                },
+                "report_package": report_package,
             }
         },
     }
@@ -224,3 +253,19 @@ def test_review_queue_rejects_candidate_count_drift(monkeypatch) -> None:
     )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "comprehensive_review_queue_candidate_count_mismatch"
+
+
+def test_review_queue_rejects_tampered_terminal_report_artifact(monkeypatch) -> None:
+    record = _record()
+    record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]["markdown"] += "tampered"
+    response = _client(monkeypatch, record).get(
+        "/assessment/comprehensive-run/comprun_exception_queue_001/review-queue",
+        headers={"X-NICO-Admin-Token": "operator-secret"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == (
+        "comprehensive_review_queue_artifact_integrity_invalid"
+    )

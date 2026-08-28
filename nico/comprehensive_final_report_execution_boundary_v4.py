@@ -4,6 +4,7 @@ import base64
 import hashlib
 import os
 import queue
+import re
 import threading
 import time
 from typing import Any, Mapping
@@ -11,6 +12,7 @@ from typing import Any, Mapping
 from nico.comprehensive_final_report_compact_base_v1 import (
     install_comprehensive_final_report_compact_base_v1,
 )
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 
 VERSION = "nico.comprehensive_final_report_execution_boundary.v8"
 FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
@@ -18,6 +20,12 @@ DEFAULT_FINAL_REPORT_TIMEOUT_SECONDS = 600
 MIN_CONFIGURED_FINAL_REPORT_TIMEOUT_SECONDS = 30
 MAX_FINAL_REPORT_TIMEOUT_SECONDS = 900
 _IDENTITY_FIELDS = ("run_id", "repository", "commit_sha", "evidence_ledger_id")
+_MANIFEST_PACKAGE_FIELDS = (
+    "artifact_manifest",
+    "evidence_manifest_json",
+    "evidence_manifest_sha256",
+    "draft_artifact_identity",
+)
 
 
 def _text(value: Any) -> str:
@@ -149,6 +157,22 @@ def _exact_identity_matches(
     return True
 
 
+def _manifest_bearing_package(
+    package: Mapping[str, Any], canonical_json: Mapping[str, Any]
+) -> bool:
+    if isinstance(canonical_json.get("artifact_manifest"), Mapping):
+        return True
+    for field in _MANIFEST_PACKAGE_FIELDS:
+        value = package.get(field)
+        if isinstance(value, Mapping):
+            return True
+        if isinstance(value, str) and value.strip():
+            return True
+        if value not in (None, ""):
+            return True
+    return False
+
+
 def _validate_package(
     package: Mapping[str, Any],
     context: Mapping[str, Any],
@@ -159,6 +183,9 @@ def _validate_package(
     pdf_base64 = _text(package.get("pdf_base64"))
     canonical_json = package.get("json")
     canonical_truth_sha256 = _text(package.get("canonical_truth_sha256"))
+    pdf_sha256 = _text(package.get("pdf_sha256")).casefold()
+    markdown_sha256 = _text(package.get("markdown_sha256")).casefold()
+    html_sha256 = _text(package.get("html_sha256")).casefold()
     if not report_id:
         return False, "final_report_id_missing", {}
     if not markdown.strip():
@@ -167,8 +194,25 @@ def _validate_package(
         return False, "final_report_html_missing", {}
     if not isinstance(canonical_json, Mapping):
         return False, "final_report_json_missing", {}
+    manifest_bearing = _manifest_bearing_package(package, canonical_json)
+    markdown_actual_sha256 = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    html_actual_sha256 = hashlib.sha256(rendered_html.encode("utf-8")).hexdigest()
+    if manifest_bearing and not markdown_sha256:
+        return False, "final_report_markdown_hash_missing", {}
+    if markdown_sha256 and not re.fullmatch(r"[0-9a-f]{64}", markdown_sha256):
+        return False, "final_report_markdown_hash_invalid", {}
+    if markdown_sha256 and markdown_sha256 != markdown_actual_sha256:
+        return False, "final_report_markdown_hash_mismatch", {}
+    if manifest_bearing and not html_sha256:
+        return False, "final_report_html_hash_missing", {}
+    if html_sha256 and not re.fullmatch(r"[0-9a-f]{64}", html_sha256):
+        return False, "final_report_html_hash_invalid", {}
+    if html_sha256 and html_sha256 != html_actual_sha256:
+        return False, "final_report_html_hash_mismatch", {}
     if not canonical_truth_sha256:
         return False, "final_report_canonical_hash_missing", {}
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", canonical_truth_sha256):
+        return False, "final_report_canonical_hash_invalid", {}
     if not pdf_base64:
         return False, "final_report_pdf_missing", {}
     try:
@@ -177,6 +221,12 @@ def _validate_package(
         return False, "final_report_pdf_invalid_base64", {}
     if not pdf.startswith(b"%PDF"):
         return False, "final_report_pdf_invalid", {}
+    if not pdf_sha256:
+        return False, "final_report_pdf_hash_missing", {}
+    if not re.fullmatch(r"[0-9a-f]{64}", pdf_sha256):
+        return False, "final_report_pdf_hash_invalid", {}
+    if pdf_sha256 != hashlib.sha256(pdf).hexdigest():
+        return False, "final_report_pdf_hash_mismatch", {}
     identity = (
         canonical_json.get("identity")
         if isinstance(canonical_json.get("identity"), Mapping)
@@ -186,15 +236,14 @@ def _validate_package(
         return False, "final_report_identity_missing", {}
     if not _exact_identity_matches(identity, context, require_present=True):
         return False, "final_report_identity_mismatch", {}
+    if canonical_truth_sha256.casefold() != canonical_sha256(canonical_json):
+        return False, "final_report_canonical_hash_mismatch", {}
     return True, "", {
         "report_id": report_id,
         "pdf_page_count": package.get("pdf_page_count"),
-        "pdf_sha256": _text(package.get("pdf_sha256"))
-        or hashlib.sha256(pdf).hexdigest(),
-        "markdown_sha256": _text(package.get("markdown_sha256"))
-        or hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
-        "html_sha256": _text(package.get("html_sha256"))
-        or hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
+        "pdf_sha256": pdf_sha256,
+        "markdown_sha256": markdown_sha256 or markdown_actual_sha256,
+        "html_sha256": html_sha256 or html_actual_sha256,
         "canonical_truth_sha256": canonical_truth_sha256,
         "exact_run_identity_verified": True,
         "exact_repository_identity_verified": True,

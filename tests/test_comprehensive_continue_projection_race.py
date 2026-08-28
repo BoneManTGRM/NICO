@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from copy import deepcopy
 
 from fastapi import FastAPI
@@ -7,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 
 
 class _PublicationRaceService:
@@ -92,6 +95,12 @@ class _PublicationRaceService:
             "terminal": True,
             "integrity_sha256": "terminal-integrity",
         }
+        report = self.terminal["stage_results"][
+            "final_comprehensive_report_generation"
+        ]["report_package"]
+        pdf = base64.b64decode(report["pdf_base64"], validate=True)
+        report["pdf_sha256"] = hashlib.sha256(pdf).hexdigest()
+        report["canonical_truth_sha256"] = canonical_sha256(report["json"])
 
     def resume(self, run_id: str, *, max_stages: int | None = None) -> dict:
         assert run_id == "comprun_projection_race"

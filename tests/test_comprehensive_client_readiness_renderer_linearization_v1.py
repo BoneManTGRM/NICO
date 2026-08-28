@@ -132,6 +132,24 @@ def test_symbol_repair_plan_skips_regex_for_probe_miss() -> None:
     assert pattern.calls == 1
 
 
+def test_symbol_plan_is_deterministic_for_case_equivalent_identifiers() -> None:
+    plan = readiness._compile_symbol_repair_plan({"Audit", "audit"})
+
+    assert plan == ()
+    assert readiness._repair_symbols(
+        "A u d i t",
+        {"Audit", "audit"},
+        0,
+        symbol_repair_plan=plan,
+    ) == "A u d i t"
+    assert readiness._repair_symbols(
+        "Use exact Audit here.",
+        {"Audit", "audit"},
+        0,
+        symbol_repair_plan=plan,
+    ) == "Use exact Audit here."
+
+
 def test_large_candidate_tree_is_digest_equivalent_and_compiles_once(
     monkeypatch: Any,
 ) -> None:

@@ -15,7 +15,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 RECOVERY_SCRIPT = ROOT / "scripts/spanish_comprehensive_existing_run_recovery_v1.py"
 SOURCE_SCRIPT = ROOT / "scripts/spanish_comprehensive_live_acceptance_v3.py"
+WORKFLOW = ROOT / ".github/workflows/spanish-comprehensive-production-proof.yml"
 SHA = "a" * 40
+PROOF_TOOL_SHA = "b" * 40
 REPOSITORY = "BoneManTGRM/NICO"
 RUN_ID = "comprun_" + "1" * 32
 SOURCE_RUN_ID = "12345678901"
@@ -209,7 +211,10 @@ def test_projection_binds_evidence_ledger_and_real_worker_activity_keys(
         "status": "running",
         "terminal": False,
         "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
         "client_delivery_allowed": False,
+        "delivery_status": "blocked",
         "active_stage_execution": {
             "state": "running",
             "stage_id": "final_comprehensive_report_generation",
@@ -229,6 +234,13 @@ def test_projection_binds_evidence_ledger_and_real_worker_activity_keys(
 
     assert view["evidence_ledger_id"] == "ledger-1"
     assert view["report_language"] == "es-MX"
+    assert view["human_review_completed"] is False
+    assert view["approval_status"] == "pending_human_approval"
+    assert view["delivery_status"] == "blocked"
+    assert view["accepted_edition_absent"] is True
+    assert view["review_decision_absent"] is True
+    assert view["delivery_authorization_absent"] is True
+    assert view["approved_delivery_package_absent"] is True
     assert activity == {
         "state": "running",
         "stage_id": "final_comprehensive_report_generation",
@@ -258,7 +270,15 @@ def test_terminal_observation_uses_only_exact_get_reconciliation(
         "revision": 59,
         "progress_percent": 82.61,
         "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
         "client_delivery_allowed": False,
+        "delivery_status": "blocked",
+        "accepted_edition_absent": True,
+        "review_decision_absent": True,
+        "approved_final_absent": True,
+        "delivery_authorization_absent": True,
+        "approved_delivery_package_absent": True,
     }
     terminal_view = {
         **initial_view,
@@ -316,6 +336,98 @@ def test_terminal_observation_uses_only_exact_get_reconciliation(
     assert observations[-1]["terminal"] is True
 
 
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    (
+        ("human_review_required", None),
+        ("human_review_completed", True),
+        ("approval_status", "approved_final"),
+        ("client_delivery_allowed", True),
+        ("delivery_status", "approved_for_delivery"),
+        ("accepted_edition_absent", False),
+        ("review_decision_absent", False),
+        ("approved_final_absent", False),
+        ("delivery_authorization_absent", False),
+        ("approved_delivery_package_absent", False),
+    ),
+)
+def test_pending_human_review_state_fails_closed(
+    monkeypatch: Any,
+    field: str,
+    invalid: Any,
+) -> None:
+    recovery = _load_recovery(monkeypatch)
+    view = {
+        "status": "review_required",
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "delivery_status": "blocked",
+        "accepted_edition_absent": True,
+        "review_decision_absent": True,
+        "approved_final_absent": True,
+        "delivery_authorization_absent": True,
+        "approved_delivery_package_absent": True,
+    }
+    view[field] = invalid
+
+    with pytest.raises(AssertionError):
+        recovery._assert_pending_human_review_state(view, terminal=True)
+
+
+def test_fresh_producer_emits_explicit_pending_human_review_state(
+    monkeypatch: Any,
+) -> None:
+    recovery = _load_recovery(monkeypatch)
+    payload = {
+        "status": "review_required",
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "delivery_status": "blocked",
+        "record": {
+            "status": "review_required",
+            "human_review_required": True,
+            "human_review_completed": False,
+            "client_delivery_allowed": False,
+            "delivery_status": "blocked",
+        },
+    }
+
+    result = recovery.spanish._assert_pending_human_review_state(
+        payload,
+        boundary="unit",
+    )
+
+    assert result == {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "client_delivery_allowed": False,
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked",
+        "accepted_edition_absent": True,
+        "review_decision_absent": True,
+        "approved_final_absent": True,
+        "delivery_authorization_absent": True,
+        "approved_delivery_package_absent": True,
+    }
+    payload["accepted_edition"] = {"accepted_edition": True}
+    with pytest.raises(AssertionError):
+        recovery.spanish._assert_pending_human_review_state(
+            payload,
+            boundary="unit_tampered",
+        )
+    payload.pop("accepted_edition")
+    payload["review_decision"] = {"decision": "approved"}
+    with pytest.raises(AssertionError):
+        recovery.spanish._assert_pending_human_review_state(
+            payload,
+            boundary="unit_fabricated_review",
+        )
+
+
 def test_recovery_script_contains_no_client_mutation_dispatch() -> None:
     source = RECOVERY_SCRIPT.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -333,7 +445,11 @@ def test_recovery_script_contains_no_client_mutation_dispatch() -> None:
     assert 'route.abort("blockedbyclient")' in source
     assert '"recovery_start_request_count": 0' in source
     assert '"fresh_assessment_count_during_recovery": 0' in source
-    assert '"explicit_same_run_continuation_count": 0' in source
+    assert "assert not ui_continuation_attempts" in source
+    assert (
+        '"explicit_same_run_continuation_count": len(ui_continuation_attempts)'
+        in source
+    )
 
 
 def test_git_sha_and_artifact_sha256_are_distinct_contracts(monkeypatch: Any) -> None:
@@ -345,3 +461,79 @@ def test_git_sha_and_artifact_sha256_are_distinct_contracts(monkeypatch: Any) ->
         recovery._require_git_sha("a" * 64, code="bad_git")
     with pytest.raises(ValueError, match="bad_digest"):
         recovery._require_sha256("b" * 40, code="bad_digest")
+
+
+def test_proof_tool_sha_is_bound_to_independently_supplied_checkout(
+    monkeypatch: Any,
+) -> None:
+    recovery = _load_recovery(monkeypatch)
+
+    assert recovery._require_matching_proof_tool_sha(
+        PROOF_TOOL_SHA,
+        expected_value=PROOF_TOOL_SHA.upper(),
+    ) == PROOF_TOOL_SHA
+    # The proof-tool checkout may intentionally differ from the assessed release.
+    assert PROOF_TOOL_SHA != SHA
+    with pytest.raises(ValueError, match="proof_tool_sha_mismatch"):
+        recovery._require_matching_proof_tool_sha(
+            PROOF_TOOL_SHA,
+            expected_value="c" * 40,
+        )
+    with pytest.raises(ValueError, match="expected_proof_tool_sha_invalid"):
+        recovery._require_matching_proof_tool_sha(
+            PROOF_TOOL_SHA,
+            expected_value="not-a-git-sha",
+        )
+
+
+def test_source_artifact_digest_is_bound_to_exact_failed_proof_bytes(
+    monkeypatch: Any,
+) -> None:
+    recovery = _load_recovery(monkeypatch)
+    digest = hashlib.sha256(b"exact failed proof bytes").hexdigest()
+
+    assert recovery._require_matching_source_artifact_digest(
+        f"sha256:{digest.upper()}",
+        failed_source_sha256=digest,
+    ) == digest
+    with pytest.raises(ValueError, match="source_artifact_digest_mismatch"):
+        recovery._require_matching_source_artifact_digest(
+            "a" * 64,
+            failed_source_sha256=digest,
+        )
+    with pytest.raises(ValueError, match="source_artifact_digest_invalid"):
+        recovery._require_matching_source_artifact_digest(
+            "not-a-digest",
+            failed_source_sha256=digest,
+        )
+
+
+def test_production_workflow_recovers_only_the_existing_failed_run() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    source_step = workflow.index("Run fresh Spanish Comprehensive final-report proof")
+    recovery_step = workflow.index("Recover visibility-only failure without new intake")
+    upload_step = workflow.index("Upload immutable Spanish proof")
+    require_step = workflow.index("Require passing Spanish final-report evidence")
+    assert source_step < recovery_step < upload_step < require_step
+
+    assert 'SOURCE_PROOF_LOG="audit-results/spanish-comprehensive-source-proof.log"' in workflow
+    assert 'SOURCE_PIPE_STATUS=("${PIPESTATUS[@]}")' in workflow
+    assert 'SOURCE_PROOF_EXIT="${SOURCE_PIPE_STATUS[0]}"' in workflow
+    assert 'SOURCE_LOG_EXIT="${SOURCE_PIPE_STATUS[1]}"' in workflow
+    assert 'printf \'%s\\n\' "${SOURCE_PROOF_EXIT}" > audit-results/spanish-comprehensive-source-proof.exit-code' in workflow
+    assert "Process completed with exit code %s" in workflow
+    assert "steps.spanish_proof.outcome == 'failure'" in workflow
+    assert "python scripts/spanish_comprehensive_existing_run_recovery_v1.py" in workflow
+    assert 'PROOF_TOOL_SHA="$(git rev-parse HEAD)"' in workflow
+    assert '--proof-tool-sha "${PROOF_TOOL_SHA}"' in workflow
+    assert '--expected-proof-tool-sha "${PROOF_TOOL_SHA}"' in workflow
+    assert '--expected-source-script-sha256 "${SOURCE_SCRIPT_SHA256}"' in workflow
+    assert '--source-artifact-digest "sha256:${SOURCE_ARTIFACT_DIGEST}"' in workflow
+    assert "spanish-comprehensive-failed-source-proof.json" in workflow
+    assert "spanish-comprehensive-existing-run-recovery-proof.json" in workflow
+    assert "nico.spanish_comprehensive_existing_run_recovery.v1" in workflow
+    assert 'payload["recovery_start_request_count"] == 0' in workflow
+    assert 'payload["fresh_assessment_count_during_recovery"] == 0' in workflow
+    assert 'payload["explicit_same_run_continuation_count"] == 0' in workflow
+    assert 'payload["terminal_ui_mutation_attempt_count"] == 0' in workflow

@@ -942,6 +942,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
         repository=args.repository,
         source_workflow_run_id=args.source_workflow_run_id,
         source_workflow_run_attempt=args.source_workflow_run_attempt,
+        expected_proof_tool_sha=args.expected_proof_tool_sha,
     )
     run_id = str(handoff["run_id"])
     origin = args.frontend_url.rstrip("/")
@@ -1272,6 +1273,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-proof", type=Path, required=True)
     parser.add_argument("--source-workflow-run-id", required=True)
     parser.add_argument("--source-workflow-run-attempt", required=True)
+    parser.add_argument("--expected-proof-tool-sha", required=True)
     parser.add_argument("--observation-seconds", type=float, default=90.0)
     parser.add_argument("--ui-locale", choices=("en", "es-MX"), default="en")
     return parser.parse_args(argv)

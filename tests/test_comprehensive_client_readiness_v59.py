@@ -6,6 +6,10 @@ from nico.comprehensive_client_readiness_v59 import (
     install_comprehensive_client_readiness_v59,
     reconcile_client_readiness,
 )
+from nico.comprehensive_engagement_metadata_v1 import (
+    build_comprehensive_engagement_metadata,
+    verify_comprehensive_engagement_metadata,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +172,123 @@ def test_client_readiness_repairs_whitespace_corrupted_identifiers() -> None:
     assert "apply_scanner_artifact_scoring" in rendered
     assert "_spanish_pdf" in rendered
     assert "Specific correction" in rendered
+
+
+def test_client_readiness_repairs_only_narrative_and_preserves_exact_literals() -> None:
+    metadata = build_comprehensive_engagement_metadata(
+        client_name="Cody Jenkins",
+        project_name="NICO Audit",
+        human_evidence={
+            "stakeholder_context": {
+                "evidence": {
+                    "primary_technical_contact": [
+                        "Cody — Repository owner / project lead"
+                    ],
+                    "access_method": [
+                        "Public GitHub repository via HTTPS/API — read-only access"
+                    ],
+                    "authorized_scope": [
+                        "BoneManTGRM/NICO — entire repository, current main branch, "
+                        "including source code, configuration, CI/CD workflows, "
+                        "dependency manifests, documentation, and repository metadata. "
+                        "Read-only technical and security assessment."
+                    ],
+                }
+            }
+        },
+    )
+    identity = {
+        "customer_name": metadata["client_name"],
+        "project_name": metadata["project_name"],
+        "primary_technical_contact": metadata["primary_technical_contact"],
+        "access_method": metadata["access_method"],
+        "authorized_scope": metadata["authorized_scope"],
+        "repository": "Org/Audit",
+        "commit_sha": "a" * 40,
+        "run_id": "comprun_Audit_001",
+        "evidence_ledger_id": "ledger_Audit_001",
+    }
+    canonical = {
+        "engagement_metadata": metadata,
+        "identity": identity,
+        "canonical_findings": [
+            {
+                "finding_id": "NICO-Audit-001",
+                "candidate_id": "candidate_Audit_001",
+                "symbol": "audit",
+                "exact_source": "Org/Audit/audit.py:12",
+                "recommendation": (
+                    "For NICO Audit, refactor `a u d i t` without rewriting "
+                    "Cody — Repository owner / project lead."
+                ),
+            }
+        ],
+    }
+
+    result = reconcile_client_readiness(canonical)
+
+    assert result["engagement_metadata"] == metadata
+    assert verify_comprehensive_engagement_metadata(result["engagement_metadata"])
+    assert result["identity"] == identity
+    finding = result["canonical_findings"][0]
+    assert finding["finding_id"] == "NICO-Audit-001"
+    assert finding["candidate_id"] == "candidate_Audit_001"
+    assert finding["exact_source"] == "Org/Audit/audit.py:12"
+    assert finding["symbol"] == "audit"
+    assert "NICO Audit" in finding["recommendation"]
+    assert "Cody — Repository owner / project lead" in finding["recommendation"]
+    assert "`audit`" in finding["recommendation"]
+    assert "a u d i t" not in finding["recommendation"]
+
+
+def test_client_readiness_never_repairs_raw_or_human_evidence_strings() -> None:
+    canonical = {
+        "executive_summary": "The Security Audit remains pending.",
+        "canonical_findings": [
+            {
+                "symbol": "safe_handler",
+                "recommendation": "Refactor `s a f e _ h a n d l e r` safely.",
+                "evidence": {
+                    "summary": "Audit/file.py is exact retained source evidence."
+                },
+            }
+        ],
+        "raw_evidence": {
+            "summary": "Audit/file.py must remain byte-faithful.",
+            "content": "span ish_pdf is client-retained evidence.",
+            "scanner_name": "bandit",
+            "status": "failed",
+            "completed": False,
+            "verified": False,
+            "exact_commit_match": False,
+            "failure_reason": "literal client evidence",
+            "analyzer_execution_coverage": 17,
+            "maturity": "Client Literal",
+        },
+        "human_evidence": {
+            "notes": ["production_ app was supplied literally by the client."],
+            "scanner_observation": {
+                "symbol": "audit",
+                "scanner_name": "bandit",
+                "status": "failed",
+                "completed": False,
+                "verified": False,
+                "exact_commit_match": False,
+                "failure_reason": "reported by the client",
+                "analyzer_execution_coverage": 17,
+                "maturity": "Client Literal",
+            },
+        },
+    }
+
+    result = reconcile_client_readiness(canonical)
+
+    finding = result["canonical_findings"][0]
+    assert finding["recommendation"] == "Refactor `safe_handler` safely."
+    assert finding["evidence"] == canonical["canonical_findings"][0]["evidence"]
+    assert result["raw_evidence"] == canonical["raw_evidence"]
+    assert result["human_evidence"] == canonical["human_evidence"]
+    assert result["executive_summary"] == "The Security Audit remains pending."
 
 
 def test_execution_complete_is_separate_from_limited_human_evidence() -> None:

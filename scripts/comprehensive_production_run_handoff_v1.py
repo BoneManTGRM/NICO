@@ -14,10 +14,24 @@ RECOVERED_SOURCE_SCHEMA = "nico.spanish_comprehensive_existing_run_recovery.v1"
 TERMINAL_PHASES = {"Se requiere revisión experta", "Revisión interna requerida"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+_HUMAN_AUTHORITY_KEYS = (
+    "accepted_edition",
+    "review_decision",
+    "delivery_authorization",
+    "approved_delivery_package",
+)
 
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _human_authority_objects_absent(value: Mapping[str, Any]) -> bool:
+    return not any(key in value for key in _HUMAN_AUTHORITY_KEYS)
+
+
+def _exact_zero(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value == 0
 
 
 def _positive_decimal(value: Any, *, code: str) -> str:
@@ -116,6 +130,7 @@ def load_source_proof(
     repository: str,
     source_workflow_run_id: str,
     source_workflow_run_attempt: str,
+    expected_proof_tool_sha: str,
 ) -> dict[str, Any]:
     raw = path.read_bytes()
     payload = json.loads(raw.decode("utf-8"))
@@ -170,6 +185,16 @@ def load_source_proof(
         == expected_sha,
         "source_proof_terminal_state_invalid": _text(terminal.get("phase"))
         in TERMINAL_PHASES,
+        "source_proof_terminal_authority_boundary_invalid": (
+            _human_authority_objects_absent(terminal)
+        ),
+        "source_proof_record_authority_boundary_invalid": (
+            "record" not in payload
+            or (
+                isinstance(payload.get("record"), Mapping)
+                and _human_authority_objects_absent(payload["record"])
+            )
+        ),
         "source_proof_duplicate_intake_unproven": payload.get("duplicate_intake_absent")
         is True,
         "source_proof_bilingual_same_run_unproven": payload.get(
@@ -182,8 +207,30 @@ def load_source_proof(
         is False,
         "source_proof_human_review_boundary_missing": payload.get("human_review_required")
         is True,
-        "source_proof_delivery_boundary_invalid": payload.get("client_delivery_allowed")
+        "source_proof_human_review_completion_invalid": payload.get(
+            "human_review_completed"
+        )
         is False,
+        "source_proof_approval_boundary_invalid": payload.get("approval_status")
+        == "pending_human_approval"
+        and payload.get("approved_final_absent") is True
+        and payload.get("review_decision_absent") is True
+        and "review_decision" not in payload,
+        "source_proof_delivery_boundary_invalid": payload.get("client_delivery_allowed")
+        is False
+        and payload.get("delivery_status") == "blocked"
+        and payload.get("delivery_authorization_absent") is True
+        and "delivery_authorization" not in payload,
+        "source_proof_approved_delivery_package_boundary_invalid": payload.get(
+            "approved_delivery_package_absent"
+        )
+        is True
+        and "approved_delivery_package" not in payload,
+        "source_proof_accepted_edition_boundary_invalid": payload.get(
+            "accepted_edition_absent"
+        )
+        is True
+        and "accepted_edition" not in payload,
     }
     if source_schema == SOURCE_SCHEMA:
         checks.update(
@@ -195,6 +242,9 @@ def load_source_proof(
             }
         )
     elif source_schema == RECOVERED_SOURCE_SCHEMA:
+        trusted_proof_tool_sha = _text(expected_proof_tool_sha).lower()
+        if not _GIT_SHA.fullmatch(trusted_proof_tool_sha):
+            raise ValueError("expected_proof_tool_sha_invalid")
         initial = payload.get("initial_canonical_state")
         initial = initial if isinstance(initial, Mapping) else {}
         canonical_terminal = payload.get("terminal_canonical_state")
@@ -216,9 +266,10 @@ def load_source_proof(
         english_pdf_sha256 = _text(payload.get("english_pdf_sha256")).lower()
         checks.update(
             {
-                "recovered_source_proof_tool_sha_invalid": bool(
-                    _GIT_SHA.fullmatch(_text(payload.get("proof_tool_sha")).lower())
-                ),
+                "recovered_source_proof_tool_sha_mismatch": _text(
+                    payload.get("proof_tool_sha")
+                ).lower()
+                == trusted_proof_tool_sha,
                 "recovered_source_lineage_hashes_invalid": source_hashes_valid,
                 "recovered_source_script_flow_unproven": payload.get(
                     "source_script_control_flow_order_verified"
@@ -255,15 +306,17 @@ def load_source_proof(
                     "uncontrolled_continuation_route_guard_verified"
                 )
                 is True,
-                "recovered_source_explicit_continuation_detected": payload.get(
-                    "explicit_same_run_continuation_count"
+                "recovered_source_blocked_ui_continuation_detected": _exact_zero(
+                    payload.get("blocked_ui_continuation_attempt_count")
                 )
-                == 0
+                and payload.get("blocked_ui_continuation_attempt_paths") == [],
+                "recovered_source_explicit_continuation_detected": _exact_zero(
+                    payload.get("explicit_same_run_continuation_count")
+                )
                 and payload.get("explicit_same_run_continuation_paths") == [],
-                "recovered_source_terminal_ui_mutation_detected": payload.get(
-                    "terminal_ui_mutation_attempt_count"
-                )
-                == 0,
+                "recovered_source_terminal_ui_mutation_detected": _exact_zero(
+                    payload.get("terminal_ui_mutation_attempt_count")
+                ),
                 "recovered_source_client_mutation_unproven": payload.get(
                     "no_client_mutation_terminal_observation"
                 )
@@ -294,6 +347,19 @@ def load_source_proof(
                     initial.get("report_language")
                 )
                 == "es-MX",
+                "recovered_source_initial_review_boundary_invalid": initial.get(
+                    "human_review_required"
+                )
+                is True
+                and initial.get("human_review_completed") is False
+                and initial.get("client_delivery_allowed") is False
+                and initial.get("approval_status") == "pending_human_approval"
+                and initial.get("delivery_status") == "blocked"
+                and initial.get("accepted_edition_absent") is True
+                and initial.get("review_decision_absent") is True
+                and initial.get("delivery_authorization_absent") is True
+                and initial.get("approved_delivery_package_absent") is True
+                and _human_authority_objects_absent(initial),
                 "recovered_source_terminal_run_mismatch": _text(
                     canonical_terminal.get("run_id")
                 )
@@ -318,7 +384,17 @@ def load_source_proof(
                     "human_review_required"
                 )
                 is True
-                and canonical_terminal.get("client_delivery_allowed") is False,
+                and canonical_terminal.get("human_review_completed") is False
+                and canonical_terminal.get("client_delivery_allowed") is False
+                and canonical_terminal.get("approval_status")
+                == "pending_human_approval"
+                and canonical_terminal.get("delivery_status") == "blocked"
+                and canonical_terminal.get("accepted_edition_absent") is True
+                and canonical_terminal.get("review_decision_absent") is True
+                and canonical_terminal.get("delivery_authorization_absent") is True
+                and canonical_terminal.get("approved_delivery_package_absent") is True
+                and _human_authority_objects_absent(canonical_terminal)
+                and _text(canonical_terminal.get("status")) == "review_required",
                 "recovered_source_terminal_visibility_unproven": payload.get(
                     "terminal_background_foreground_recovery_verified"
                 )
@@ -360,6 +436,11 @@ def load_source_proof(
         "source_workflow_run_attempt": _text(source_workflow_run_attempt),
         "source_binding": marker.removeprefix("source:"),
         "release_sha": expected_sha,
+        "proof_tool_sha": (
+            _text(payload.get("proof_tool_sha")).lower()
+            if source_schema == RECOVERED_SOURCE_SCHEMA
+            else ""
+        ),
         "repository": repository,
         "run_id": _text(payload.get("run_id")),
         "terminal_phase": _text(terminal.get("phase")),
@@ -369,7 +450,15 @@ def load_source_proof(
         "same_run_bilingual_pdf_verified": True,
         "same_run_bilingual_assessment_rerun": False,
         "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "review_decision_absent": True,
+        "approved_final_absent": True,
         "client_delivery_allowed": False,
+        "delivery_status": "blocked",
+        "delivery_authorization_absent": True,
+        "approved_delivery_package_absent": True,
+        "accepted_edition_absent": True,
     }
 
 
@@ -382,6 +471,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--source-workflow-run-id", required=True)
     parser.add_argument("--source-workflow-run-attempt", required=True)
+    parser.add_argument("--expected-proof-tool-sha", required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -394,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
         repository=args.repository,
         source_workflow_run_id=args.source_workflow_run_id,
         source_workflow_run_attempt=args.source_workflow_run_attempt,
+        expected_proof_tool_sha=args.expected_proof_tool_sha,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

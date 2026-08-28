@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import base64
-import io
 from copy import deepcopy
 from datetime import UTC, datetime
 
 import pytest
-from pypdf import PdfWriter
 
 from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
@@ -21,15 +18,31 @@ from nico.comprehensive_run_record import (
     validate_comprehensive_run_record,
 )
 from nico.comprehensive_run_service import ComprehensiveRunService
+from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+from tests.test_v2_premium_report_renderer import _package
 
 
-def _valid_pdf() -> bytes:
-    writer = PdfWriter()
-    for _ in range(3):
-        writer.add_blank_page(width=612, height=792)
-    buffer = io.BytesIO()
-    writer.write(buffer)
-    return buffer.getvalue()
+def _exact_report(record: dict, *, regenerated: bool = False) -> dict:
+    source = _package("en")
+    identity = record["identity"]
+    source["json"]["identity"].update(
+        {
+            "repository": identity["repository"],
+            "commit_sha": identity["commit_sha"],
+            "run_id": identity["run_id"],
+            "evidence_ledger_id": identity["evidence_ledger_id"],
+            "customer_id": identity["customer_id"],
+            "project_id": identity["project_id"],
+            "assessment_depth": identity["assessment_depth"],
+            "report_language": identity["report_language"],
+        }
+    )
+    if regenerated:
+        source["json"]["generated_at"] = "2026-07-26T01:19:00Z"
+        source["json"]["identity"]["generated_at"] = (
+            "2026-07-26T01:19:00Z"
+        )
+    return rebuild_client_artifacts(source)
 
 
 def _review_ready_record() -> dict:
@@ -45,35 +58,7 @@ def _review_ready_record() -> dict:
         report_language="en",
         now=datetime(2026, 7, 26, 1, 0, tzinfo=UTC),
     )
-    package = {
-        "service_id": "comprehensive",
-        "report_id": "report-review-1",
-        "markdown": "# Immutable report\n",
-        "html": "<html><body>Immutable report</body></html>",
-        "pdf_base64": base64.b64encode(_valid_pdf()).decode("ascii"),
-        "pdf_filename": "nico-review.pdf",
-        "pdf_page_count": 3,
-        "core_report_page_count": 2,
-        "findings_csv": "finding_id,title\nF-1,Example finding\n",
-        "jira_csv": "summary,priority\nExample remediation,P1\n",
-        "canonical_truth_sha256": "d" * 64,
-        "json": {
-            "identity": {
-                "repository": "owner/repo",
-                "commit_sha": "a" * 40,
-                "run_id": "comprun_review_1",
-                "report_language": "en",
-                "assessment_depth": "strategic",
-            },
-            "canonical_truth_sha256": "d" * 64,
-            "findings_register": [
-                {"finding_id": "F-1", "title": "Example finding", "priority": "P1"}
-            ],
-            "executive_risk_register": [],
-            "roadmap": [],
-            "staffing_plan": [],
-        },
-    }
+    package = _exact_report(record)
     for stage_id in COMPREHENSIVE_STAGES:
         result: dict = {"status": "complete", "summary": stage_id}
         if stage_id == "immutable_repository_snapshot":
@@ -220,6 +205,7 @@ def test_service_blocks_approval_of_unchanged_report_after_more_evidence_request
         decision="request_more_evidence",
         decision_reason="Executed QA evidence is still missing.",
         decided_at="2026-07-26T01:15:00+00:00",
+        expected_artifact_identity=review_artifact_identity(record),
     )
 
     with pytest.raises(
@@ -242,10 +228,10 @@ def test_service_rejects_stale_artifact_identity_after_review_download() -> None
     downloaded_identity = review_artifact_identity(record)
     store = _MemoryStore(record)
     service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
-    package = store.record["stage_results"]["final_comprehensive_report_generation"][
-        "report_package"
-    ]
-    package["markdown"] += "\nNew review truth after the prior download.\n"
+    regenerated = _exact_report(store.record, regenerated=True)
+    final_stage = store.record["stage_results"]["final_comprehensive_report_generation"]
+    final_stage["report_package"] = regenerated
+    final_stage["assessment"] = deepcopy(regenerated["json"]["assessment"])
     store.record["revision"] += 1
 
     with pytest.raises(ValueError, match="stale_review_artifact_identity"):

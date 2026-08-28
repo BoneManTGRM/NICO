@@ -9,6 +9,8 @@ from typing import Any, Mapping
 
 from fastapi import FastAPI, HTTPException, Response
 
+import nico.comprehensive_api_controller as controller_module
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_report_package import (
     _canonical_hash,
     _markdown,
@@ -169,50 +171,53 @@ def _source_lifecycle_projection(
 ) -> dict[str, Any]:
     """Project source-run lifecycle truth without applying locale-artifact policy."""
 
-    assessment = (
-        canonical.get("assessment")
-        if isinstance(canonical.get("assessment"), Mapping)
-        else {}
-    )
     record = (
         status.get("record")
         if isinstance(status.get("record"), Mapping)
         else {}
     )
 
-    def present(field: str, default: Any = None) -> Any:
-        for container in (status, record, reports, canonical, assessment):
+    def authoritative(field: str, default: Any = None) -> Any:
+        for container in (status, record):
             if field in container and container.get(field) is not None:
                 return deepcopy(container.get(field))
         return deepcopy(default)
 
-    run_status = str(present("status", "unknown") or "unknown")
+    run_status = str(authoritative("status", "unknown") or "unknown")
     normalized_run_status = run_status.strip().casefold()
-    human_review_completed = bool(present("human_review_completed", False))
-    client_delivery_allowed = bool(present("client_delivery_allowed", False))
-    explicit_approval_status = str(present("approval_status", "") or "").strip()
-    explicit_human_review_status = str(
-        present("human_review_status", "") or ""
-    ).strip()
-    approval_signal = {
-        normalized_run_status,
-        explicit_approval_status.casefold(),
-        explicit_human_review_status.casefold(),
-    }
-    approved = client_delivery_allowed or bool(
-        approval_signal
-        & {
-            "approved",
-            "approved_final",
-            "approved final",
-            "final approved",
-        }
+    raw_human_review_completed = bool(
+        authoritative("human_review_completed", False)
     )
-    rejected = not approved and bool(
-        approval_signal & {"rejected", "declined"}
+    client_delivery_allowed = bool(authoritative("client_delivery_allowed", False))
+    response_projection = (
+        status.get("response_projection")
+        if isinstance(status.get("response_projection"), Mapping)
+        else {}
     )
-    human_review_completed = human_review_completed or approved or rejected
-
+    if normalized_run_status == "approved" and not raw_human_review_completed:
+        raise ValueError("authoritative_approved_state_requires_completed_review")
+    approved = (
+        normalized_run_status == "approved" and raw_human_review_completed
+    )
+    rejected_requested = normalized_run_status in {"rejected", "declined"}
+    rejected = (
+        rejected_requested
+        and raw_human_review_completed
+        and response_projection.get("rejection_review_integrity_valid") is True
+    )
+    human_review_completed = approved or rejected
+    if client_delivery_allowed and not approved:
+        raise ValueError("delivery_authorization_requires_approved_run")
+    delivery_integrity_invalid = (
+        response_projection.get("delivery_authorization_invalidated") is True
+        or (
+            client_delivery_allowed
+            and response_projection.get("delivery_authorization_integrity_valid")
+            is not True
+        )
+    )
+    if delivery_integrity_invalid:
+        client_delivery_allowed = False
     if approved:
         approval_status = "approved_final"
         human_review_status = "approved"
@@ -223,7 +228,10 @@ def _source_lifecycle_projection(
         approval_status = "pending_human_approval"
         human_review_status = "pending"
 
-    if client_delivery_allowed:
+    if delivery_integrity_invalid:
+        delivery_status = "blocked_authorization_integrity"
+        client_delivery_status = "blocked"
+    elif client_delivery_allowed:
         delivery_status = "authorized"
         client_delivery_status = "authorized"
     elif approved:
@@ -238,13 +246,14 @@ def _source_lifecycle_projection(
 
     return {
         "run_status": run_status,
-        "human_review_required": bool(present("human_review_required", True)),
+        "human_review_required": bool(authoritative("human_review_required", True)),
         "human_review_completed": human_review_completed,
         "client_delivery_allowed": client_delivery_allowed,
         "approval_status": approval_status,
         "delivery_status": delivery_status,
         "human_review_status": human_review_status,
         "client_delivery_status": client_delivery_status,
+        "delivery_authorization_integrity_valid": not delivery_integrity_invalid,
     }
 
 
@@ -722,7 +731,9 @@ def _frozen_source_pdf_response(
 
     actual_pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
     stored_pdf_sha256 = str(reports.get("pdf_sha256") or "").strip()
-    if stored_pdf_sha256 and stored_pdf_sha256 != actual_pdf_sha256:
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", stored_pdf_sha256):
+        raise ValueError("source_report_pdf_hash_required")
+    if stored_pdf_sha256.casefold() != actual_pdf_sha256:
         raise ValueError("source_report_pdf_hash_mismatch")
 
     identity = (
@@ -757,8 +768,12 @@ def _frozen_source_pdf_response(
         raise ValueError("canonical_truth_hash_required")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", stored_truth_sha256):
         raise ValueError("canonical_truth_hash_invalid")
-    if stored_truth_sha256.casefold() != _canonical_hash(canonical_copy):
-        raise ValueError("canonical_truth_hash_mismatch")
+    if not controller_module._final_report_package_integrity_bound(reports):
+        if not controller_module._canonical_truth_hash_integrity_bound(
+            reports, canonical_copy
+        ):
+            raise ValueError("canonical_truth_hash_mismatch")
+        raise ValueError("source_report_artifact_integrity_invalid")
 
     source_lifecycle = _source_lifecycle_projection(
         status,
@@ -847,21 +862,54 @@ def build_same_run_locale_report(
     )
     if not canonical:
         raise ValueError("terminal_canonical_report_json_required")
-
     canonical_copy = deepcopy(dict(canonical))
     identity_binding = _validate_status_canonical_identity(status, canonical_copy)
-    canonical_truth_sha256 = _canonical_hash(canonical_copy)
     expected_truth_sha256 = str(reports.get("canonical_truth_sha256") or "").strip()
     if not expected_truth_sha256:
         raise ValueError("canonical_truth_hash_required")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_truth_sha256):
         raise ValueError("canonical_truth_hash_invalid")
-    if expected_truth_sha256.casefold() != canonical_truth_sha256:
+    if not controller_module._canonical_truth_hash_integrity_bound(
+        reports,
+        canonical_copy,
+    ):
         raise ValueError("canonical_truth_hash_mismatch")
+    canonical_truth_sha256 = expected_truth_sha256.casefold()
 
     source_language = _normalize_report_language(
         identity_binding["report_language"]
     )
+    source_lifecycle = _source_lifecycle_projection(
+        status,
+        reports,
+        canonical_copy,
+    )
+    source_pdf_bytes: bytes | None = None
+    encoded_source_pdf = reports.get("pdf_base64")
+    if isinstance(encoded_source_pdf, str) and encoded_source_pdf:
+        try:
+            source_pdf_bytes = base64.b64decode(encoded_source_pdf, validate=True)
+        except Exception as exc:
+            raise ValueError("source_report_pdf_invalid") from exc
+        if not source_pdf_bytes.startswith(b"%PDF"):
+            raise ValueError("source_report_pdf_invalid")
+        source_pdf_sha256 = str(reports.get("pdf_sha256") or "").strip()
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", source_pdf_sha256):
+            raise ValueError("source_report_pdf_hash_required")
+        if source_pdf_sha256.casefold() != hashlib.sha256(source_pdf_bytes).hexdigest():
+            raise ValueError("source_report_pdf_hash_mismatch")
+    if not controller_module._final_report_package_integrity_bound(reports):
+        raise ValueError("source_report_artifact_integrity_invalid")
+    if source_lifecycle["approval_status"] == "approved_final":
+        if source_pdf_bytes is None:
+            raise ValueError("accepted_edition_pdf_required")
+        _accepted_source_binding(
+            status,
+            reports,
+            identity_binding,
+            source_language,
+            source_pdf_bytes,
+        )
     source_artifacts_reused = False
     if target_language == source_language:
         markdown = reports.get("markdown")
@@ -873,11 +921,8 @@ def build_same_run_locale_report(
             and isinstance(encoded_pdf, str)
             and encoded_pdf
         ):
-            try:
-                pdf_bytes = base64.b64decode(encoded_pdf, validate=True)
-            except Exception as exc:
-                raise ValueError("source_report_pdf_invalid") from exc
-            if not pdf_bytes.startswith(b"%PDF"):
+            pdf_bytes = source_pdf_bytes
+            if pdf_bytes is None:
                 raise ValueError("source_report_pdf_invalid")
             artifacts = {
                 "markdown": markdown,
@@ -900,11 +945,6 @@ def build_same_run_locale_report(
         else {}
     )
     regenerated = not source_artifacts_reused
-    source_lifecycle = _source_lifecycle_projection(
-        status,
-        reports,
-        canonical_copy,
-    )
     artifact_lifecycle = _localized_artifact_lifecycle(
         source_lifecycle,
         artifacts,
@@ -1025,7 +1065,9 @@ def build_same_run_locale_pdf_response(
 
     expected_sha256 = str(report.get("pdf_sha256") or "")
     actual_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
-    if expected_sha256 and expected_sha256 != actual_sha256:
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+        raise ValueError("localized_report_pdf_hash_required")
+    if expected_sha256.casefold() != actual_sha256:
         raise ValueError("localized_report_pdf_hash_mismatch")
 
     return Response(

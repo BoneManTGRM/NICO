@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import sqlite3
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nico.comprehensive_capability_registry import execution_plan
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_runtime import configure_comprehensive_runtime
 
 
@@ -40,6 +42,16 @@ def _executors() -> dict:
                     )
                 }
                 identity["report_language"] = "en"
+                pdf = b"%PDF-1.4\n%%EOF\n"
+                canonical = {
+                    "report_language": "en",
+                    "locale": "en",
+                    "identity": identity,
+                    "assessment": {
+                        "report_language": "en",
+                        "locale": "en",
+                    },
+                }
                 result["report_package"] = {
                     "report_id": f"report_{context['run_id']}",
                     "report_language": "en",
@@ -51,20 +63,11 @@ def _executors() -> dict:
                     "html": (
                         "<html><body>NICO Comprehensive Technical Assessment</body></html>"
                     ),
-                    "pdf_base64": base64.b64encode(
-                        b"%PDF-1.4\n%%EOF\n"
-                    ).decode("ascii"),
+                    "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+                    "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
                     "pdf_page_count": 1,
-                    "json": {
-                        "report_language": "en",
-                        "locale": "en",
-                        "identity": identity,
-                        "assessment": {
-                            "report_language": "en",
-                            "locale": "en",
-                        },
-                    },
-                    "canonical_truth_sha256": "a" * 64,
+                    "json": canonical,
+                    "canonical_truth_sha256": canonical_sha256(canonical),
                     "human_review_required": True,
                     "client_delivery_allowed": False,
                 }
@@ -149,7 +152,9 @@ def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
     assert restored_body["integrity_sha256"] == body["integrity_sha256"]
     assert restored_body["revision"] == body["revision"]
     assert restored_body["reports"]["report_id"] == "report_comprun_runtime_001"
-    assert restored_body["reports"]["canonical_truth_sha256"] == "a" * 64
+    assert restored_body["reports"]["canonical_truth_sha256"] == canonical_sha256(
+        restored_body["reports"]["json"]
+    )
     assert restored_body["human_review_required"] is True
     assert restored_body["client_delivery_allowed"] is False
 

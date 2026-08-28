@@ -130,6 +130,44 @@ def _pending_approval_record() -> dict[str, Any]:
     }
 
 
+def _reset_pending_authority(canonical: dict[str, Any]) -> None:
+    """Reset every canonical authority projection before binding draft bytes."""
+
+    canonical["lifecycle"] = _lifecycle()
+    canonical["approval"] = _pending_approval_record()
+    canonical["review_package_ready"] = True
+    canonical["human_review_required"] = True
+    canonical["human_review_completed"] = False
+    canonical["client_delivery_allowed"] = False
+    canonical["report_finality"] = "automated_draft"
+    canonical["approval_status"] = "pending_human_approval"
+    canonical["delivery_status"] = "blocked_pending_human_approval"
+
+    assessment = (
+        deepcopy(dict(canonical.get("assessment") or {}))
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    assessment.update(
+        {
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+            "report_finality": "automated_draft",
+            "human_review_status": "pending_human_approval",
+            "client_delivery_status": "blocked",
+            "automated_status": "complete",
+        }
+    )
+    for field in (
+        "human_review_completed",
+        "approval_status",
+        "delivery_status",
+        "review_package_ready",
+    ):
+        assessment.pop(field, None)
+    canonical["assessment"] = assessment
+
+
 def _candidate_register(canonical: Mapping[str, Any]) -> dict[str, Any]:
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     register = assessment.get("canonical_scanner_finding_register")
@@ -553,14 +591,7 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
         else {}
     )
     identity = _canonical_identity(canonical)
-    canonical["lifecycle"] = _lifecycle()
-    canonical["approval"] = _pending_approval_record()
-    canonical["review_package_ready"] = True
-    canonical["human_review_required"] = True
-    canonical["client_delivery_allowed"] = False
-    canonical["report_finality"] = "automated_draft"
-    canonical["approval_status"] = "pending_human_approval"
-    canonical["delivery_status"] = "blocked_pending_human_approval"
+    _reset_pending_authority(canonical)
 
     exports = _build_structured_exports(canonical)
     entries = _preliminary_entries(canonical, exports)
@@ -681,6 +712,7 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
         "repository": identity.get("repository"),
         "commit_sha": identity.get("commit_sha"),
         "run_id": identity.get("run_id"),
+        "evidence_ledger_id": identity.get("evidence_ledger_id"),
         "pdf_sha256": pdf_sha256,
         "canonical_json_sha256": canonical_json_sha256,
         "evidence_manifest_sha256": manifest_sha256,
@@ -815,14 +847,7 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
         else {}
     )
     identity = _canonical_identity(canonical)
-    canonical["lifecycle"] = _lifecycle()
-    canonical["approval"] = _pending_approval_record()
-    canonical["review_package_ready"] = True
-    canonical["human_review_required"] = True
-    canonical["client_delivery_allowed"] = False
-    canonical["report_finality"] = "automated_draft"
-    canonical["approval_status"] = "pending_human_approval"
-    canonical["delivery_status"] = "blocked_pending_human_approval"
+    _reset_pending_authority(canonical)
 
     markdown = str(output.get("markdown") or "")
     rendered_html = str(output.get("html") or "")
@@ -990,6 +1015,7 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
         "repository": identity.get("repository"),
         "commit_sha": identity.get("commit_sha"),
         "run_id": identity.get("run_id"),
+        "evidence_ledger_id": identity.get("evidence_ledger_id"),
         "pdf_sha256": pdf_sha256,
         "canonical_json_sha256": canonical_json_sha256,
         "evidence_manifest_sha256": manifest_sha256,

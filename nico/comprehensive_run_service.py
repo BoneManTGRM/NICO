@@ -73,6 +73,17 @@ _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
 )
 
 
+def _require_exact_final_report_integrity(record: Mapping[str, Any]) -> None:
+    """Block every human-authority transition until final artifacts validate."""
+
+    # Imported at the operation boundary to avoid the controller/service import cycle.
+    from nico.comprehensive_api_controller import _canonical_final_report_outputs
+
+    report, _assessment = _canonical_final_report_outputs(dict(record))
+    if not report:
+        raise ValueError("comprehensive_report_artifact_integrity_invalid")
+
+
 def _prior_stage_results_for_stage(
     stage_id: str,
     retained_stage_results: dict[str, Any],
@@ -267,11 +278,11 @@ class ComprehensiveRunService:
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
         previous_revision = int(record["revision"])
-        if str(decision or "").strip().casefold() == "approved":
-            assert_expected_review_artifact_identity(
-                record,
-                expected_artifact_identity,
-            )
+        _require_exact_final_report_integrity(record)
+        assert_expected_review_artifact_identity(
+            record,
+            expected_artifact_identity,
+        )
         manifest = build_reviewed_edition(
             record,
             reviewer=reviewer,
@@ -300,6 +311,7 @@ class ComprehensiveRunService:
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
         previous_revision = int(record["revision"])
+        _require_exact_final_report_integrity(record)
         accepted = record.get("accepted_edition")
         if not isinstance(accepted, Mapping):
             raise ValueError("delivery_authorization_requires_accepted_edition")

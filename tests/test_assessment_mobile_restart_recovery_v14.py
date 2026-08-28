@@ -92,5 +92,6 @@ def test_backend_streams_exact_run_artifacts_and_keeps_browser_terminal_response
     assert '@app.get("/assessment/comprehensive-run/{run_id}/report/pdf")' in source
     assert "base64.b64decode(encoded, validate=True)" in source
     assert 'if not pdf.startswith(b"%PDF")' in source
-    assert "expected_hash and expected_hash != observed_hash" in source
+    assert 'not re.fullmatch(r"[0-9a-f]{64}", expected_hash)' in source
+    assert "or expected_hash != observed_hash" in source
     assert "install_comprehensive_mobile_recovery_v1()" in package_init
