@@ -74,14 +74,24 @@ function mobileEngagementSnapshot(): IntakeDomSnapshot["mobileEvidence"] {
   );
   if (!(section instanceof HTMLElement)) return null;
 
-  const textareas = Array.from(section.querySelectorAll("textarea"));
-  if (textareas.length !== MOBILE_ENGAGEMENT_FIELDS.length) return null;
+  // The current compact phone UI uses three single-line inputs. Accept legacy
+  // textareas as a compatibility fallback so the submit-boundary snapshot remains
+  // correct across rolling frontend deployments, cached clients, and rollback.
+  const controls = Array.from(
+    section.querySelectorAll('input[type="text"], textarea'),
+  );
+  if (controls.length !== MOBILE_ENGAGEMENT_FIELDS.length) return null;
 
   const output = {} as Record<MobileEngagementField, string[]>;
   for (let index = 0; index < MOBILE_ENGAGEMENT_FIELDS.length; index += 1) {
-    const textarea = textareas[index];
-    if (!(textarea instanceof HTMLTextAreaElement)) return null;
-    output[MOBILE_ENGAGEMENT_FIELDS[index]] = evidenceLines(textarea.value);
+    const control = controls[index];
+    if (
+      !(control instanceof HTMLInputElement)
+      && !(control instanceof HTMLTextAreaElement)
+    ) {
+      return null;
+    }
+    output[MOBILE_ENGAGEMENT_FIELDS[index]] = evidenceLines(control.value);
   }
   return output;
 }
