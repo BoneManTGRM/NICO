@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import sqlite3
 import threading
 import time
 from pathlib import Path
 
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_final_report_background_v1 import (
     FinalReportPublicationCoordinator,
     reset_final_report_publication_tasks_for_tests,
@@ -77,7 +79,8 @@ def _context(record: dict) -> dict:
 
 
 def _valid_final_result() -> dict:
-    pdf = base64.b64encode(b"%PDF-1.4\n%%EOF\n").decode("ascii")
+    pdf_bytes = b"%PDF-1.4\n%%EOF\n"
+    canonical = {"identity": dict(IDENTITY)}
     return {
         "status": "complete",
         **IDENTITY,
@@ -85,9 +88,10 @@ def _valid_final_result() -> dict:
             "report_id": "report_async_final_test",
             "markdown": "# NICO Comprehensive\n",
             "html": "<h1>NICO Comprehensive</h1>",
-            "pdf_base64": pdf,
-            "canonical_truth_sha256": "b" * 64,
-            "json": {"identity": dict(IDENTITY)},
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+            "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+            "canonical_truth_sha256": canonical_sha256(canonical),
+            "json": canonical,
         },
     }
 
