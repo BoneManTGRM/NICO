@@ -27,7 +27,7 @@ def test_large_human_module_survives_decision_grade_evidence_cap_without_loss() 
         project_name="Human Retention Project",
         human_evidence=human_evidence,
     )
-    snapshot = v1._context_snapshot(
+    snapshot = v2._strict_context_snapshot(
         {
             "engagement_metadata": engagement,
             "human_evidence": human_evidence,
@@ -64,3 +64,31 @@ def test_large_human_module_survives_decision_grade_evidence_cap_without_loss() 
     assert "human-observed-result" in retained
     assert "Human QA Reviewer" in retained
     assert "Client QA evidence source" in retained
+
+
+def test_tampered_engagement_metadata_is_not_labeled_as_client_supplied_evidence() -> None:
+    engagement = build_comprehensive_engagement_metadata(
+        client_name="Verified Client",
+        project_name="Verified Project",
+        human_evidence={},
+    )
+    engagement["client_name"] = "Tampered Client"
+
+    snapshot = v2._strict_context_snapshot(
+        {
+            "engagement_metadata": engagement,
+            # These compatibility scalars must not be promoted into the new verified
+            # client-evidence report section when the durable digest fails.
+            "customer_name": "Unverified Compatibility Client",
+            "project_name": "Unverified Compatibility Project",
+            "access_method": "Unverified Compatibility Access",
+            "authorized_scope": "Unverified Compatibility Scope",
+        }
+    )
+
+    assert all(
+        not str(value or "").strip()
+        for value in snapshot["display_values"].values()
+    )
+    assert snapshot["human_evidence"] == {}
+    assert v2._inject_human_review_stages({}, snapshot) == {}
