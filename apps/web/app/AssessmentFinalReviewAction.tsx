@@ -169,24 +169,38 @@ function installAction(): void {
   });
   if (spanish) query.set("lang", "es-MX");
   const label = spanish ? "Revisar y aceptar este informe" : "Review and accept this report";
+  const reviewHref = `/operations/final-review?${query}`;
+  const reviewAriaLabel = `${label}: ${runId}`;
 
   if (existing) {
-    existing.href = `/operations/final-review?${query}`;
-    existing.textContent = label;
+    if (existing.getAttribute("href") !== reviewHref) existing.setAttribute("href", reviewHref);
+    if (existing.textContent !== label) existing.textContent = label;
+    if (existing.getAttribute("aria-label") !== reviewAriaLabel) existing.setAttribute("aria-label", reviewAriaLabel);
     return;
   }
 
   const link = document.createElement("a");
   link.dataset.nicoFinalReviewAction = "true";
   link.className = "primary-link nico-final-review-action";
-  link.href = `/operations/final-review?${query}`;
+  link.setAttribute("href", reviewHref);
   link.textContent = label;
-  link.setAttribute("aria-label", `${label}: ${runId}`);
+  link.setAttribute("aria-label", reviewAriaLabel);
   actions.appendChild(link);
 }
 
 export default function AssessmentFinalReviewAction() {
   useEffect(() => {
+    let scheduled = false;
+    let frame = 0;
+    const scheduleInstallAction = () => {
+      if (scheduled) return;
+      scheduled = true;
+      frame = window.requestAnimationFrame(() => {
+        scheduled = false;
+        installAction();
+      });
+    };
+
     const previousFetch = window.fetch;
     const trackedFetch: typeof window.fetch = async (input, init) => {
       const response = await previousFetch(input, init);
@@ -195,7 +209,7 @@ export default function AssessmentFinalReviewAction() {
         if (url.pathname.includes("/assessment/") && response.headers.get("content-type")?.includes("application/json")) {
           const payload = await response.clone().json();
           storeContext(asRecord(payload));
-          window.setTimeout(installAction, 0);
+          scheduleInstallAction();
         }
       } catch {
         // Context capture is optional and must not affect assessment transport.
@@ -204,11 +218,17 @@ export default function AssessmentFinalReviewAction() {
     };
     window.fetch = trackedFetch;
 
-    const observer = new MutationObserver(() => window.requestAnimationFrame(installAction));
-    observer.observe(document.body, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["disabled", "data-run-id"]});
+    const observer = new MutationObserver(scheduleInstallAction);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["disabled", "data-run-id", "data-assessment-report-ready"],
+    });
     installAction();
     return () => {
       observer.disconnect();
+      window.cancelAnimationFrame(frame);
       if (window.fetch === trackedFetch) window.fetch = previousFetch;
     };
   }, []);
