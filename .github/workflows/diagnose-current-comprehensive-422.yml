@@ -12,6 +12,20 @@ jobs:
   diagnose:
     runs-on: ubuntu-24.04
     steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Locate runtime response wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== exact wrapper symbol ==='
+          grep -R -n -C 20 --exclude-dir=.git '_controller_response_with_execution' . || true
+          echo '=== original response alias ==='
+          grep -R -n -C 20 --exclude-dir=.git '_original_controller_response' . || true
+          echo '=== response monkey-patch assignments ==='
+          grep -R -n -C 15 --exclude-dir=.git 'ComprehensiveApiController\._response' . || true
+
       - name: Fetch exact failed production run response
         shell: bash
         run: |
