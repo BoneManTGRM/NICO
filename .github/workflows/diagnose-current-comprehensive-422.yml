@@ -1,0 +1,28 @@
+name: Diagnose Current Comprehensive 422
+
+on:
+  push:
+    branches:
+      - fix/comprehensive-422-final-closure-20260827
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fetch exact failed production run response
+        shell: bash
+        run: |
+          set -u
+          url='https://nico-production-690a.up.railway.app/assessment/comprehensive-run/comprun_7b9fa08129cc4bb29209dd52ca98c180'
+          echo '=== no projection header ==='
+          curl --silent --show-error --include --max-time 30 "$url" || true
+          echo
+          echo '=== with browser projection header ==='
+          curl --silent --show-error --include --max-time 30 \
+            -H 'Accept: application/json' \
+            -H 'X-NICO-Browser-Projection: terminal-manifest-v1' \
+            "$url" || true
+          echo
