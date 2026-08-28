@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
 from nico.final_report_ship_closure_v94 import (
+    _verified_display_identity_projection,
     build_ship_ready_report_package,
     install_final_report_ship_closure_v94,
 )
@@ -57,16 +58,17 @@ def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
 
     The final report runs behind a detached publication boundary. Canonical scope
     identity remains sourced from the native provider, while optional display metadata
-    is recovered from the exact run context first, the durable normalized engagement
+    is recovered from the exact run context first, the digest-verified durable engagement
     snapshot second, and normalized retained human evidence last. This avoids relying on
     process-order-sensitive runtime wrappers or transient scalar projections.
     """
 
     from nico import comprehensive_native_providers as providers
-    from nico.comprehensive_engagement_metadata_v1 import display_identity_projection
 
     identity = providers._identity(dict(context))
-    engagement_projection = display_identity_projection(context.get("engagement_metadata"))
+    engagement_projection = _verified_display_identity_projection(
+        context.get("engagement_metadata")
+    )
     human_evidence = context.get("human_evidence")
     for output_key, source_keys in _DISPLAY_IDENTITY_FIELDS:
         direct = ""
@@ -78,7 +80,12 @@ def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
         value = direct or durable or _nested_display_value(human_evidence, source_keys)
         if value:
             identity[output_key] = value
-    durable_digest = _text(context.get("engagement_metadata", {}).get("engagement_metadata_sha256") if isinstance(context.get("engagement_metadata"), Mapping) else "", 128)
+    durable_digest = _text(
+        context.get("engagement_metadata", {}).get("engagement_metadata_sha256")
+        if isinstance(context.get("engagement_metadata"), Mapping)
+        else "",
+        128,
+    )
     if engagement_projection and durable_digest:
         identity["engagement_metadata_sha256"] = durable_digest
     return identity
