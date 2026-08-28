@@ -5,6 +5,8 @@ import io
 from pypdf import PdfReader
 
 from nico import comprehensive_manifest_navigation_v1 as nav
+from nico import comprehensive_spanish_presentation_parity_v1 as parity_v1
+from nico import comprehensive_spanish_presentation_parity_v2 as parity_v2
 from nico.comprehensive_spanish_presentation_parity_v2 import (
     _localized_register,
     _render_manifest_spanish,
@@ -31,6 +33,23 @@ def test_boundary_safe_spanish_translation_does_not_corrupt_source_tokens() -> N
     assert "bebaja" not in translated
     assert "ScannerWorkflowPage" in translated
     assert "apps/web/app/scanner-workflow/page.tsx" in translated
+
+
+def test_spanish_phrase_patterns_are_compiled_once_per_authored_source() -> None:
+    for module in (parity_v1, parity_v2):
+        module._safe_replace_pattern.cache_clear()
+        first = module._safe_replace_pattern("Workflow counts")
+        second = module._safe_replace_pattern("Workflow counts")
+        assert first is not None
+        assert second is first
+        cache = module._safe_replace_pattern.cache_info()
+        assert cache.misses == 1
+        assert cache.hits == 1
+        assert module._safe_replace(
+            "Workflow counts remain visible.",
+            "Workflow counts",
+            "Los conteos de flujos de trabajo",
+        ) == "Los conteos de flujos de trabajo remain visible."
 
 
 def test_spanish_finding_register_localizes_prose_but_preserves_exact_source() -> None:
