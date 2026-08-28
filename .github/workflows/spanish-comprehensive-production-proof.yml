@@ -137,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir \
-            "playwright==1.61.0" "pypdf==6.15.0"
+            . "playwright==1.61.0" "pypdf==6.15.0"
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           fi
