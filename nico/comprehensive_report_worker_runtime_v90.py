@@ -5,9 +5,12 @@ import io
 from typing import Any, Mapping
 
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
+from nico.comprehensive_human_evidence_report_v1 import (
+    build_report_package_with_human_context,
+)
 from nico.comprehensive_report_package import build_comprehensive_report_package
 
-VERSION = "nico.comprehensive-report-worker-runtime.v92"
+VERSION = "nico.comprehensive-report-worker-runtime.v93"
 _REPORT_STAGES = {
     "decision_report_generation",
     "final_comprehensive_report_generation",
@@ -84,6 +87,11 @@ def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, A
     reproduces the native provider contract without delegating through the mutable alias,
     so it cannot become self-recursive when a detached worker starts after late runtime
     compatibility installation.
+
+    v93 binds the exact durable human-evidence and engagement snapshot only for the
+    lifetime of the established report builder. The renderer projects those verified
+    client-supplied values into canonical JSON, Markdown, HTML, and PDF as review context
+    without changing scoring, repository truth, approval, or delivery authority.
     """
 
     from nico import comprehensive_native_providers as providers
@@ -93,7 +101,9 @@ def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, A
         if isinstance(context.get("prior_stage_results"), dict)
         else {}
     )
-    package = build_comprehensive_report_package(
+    package = build_report_package_with_human_context(
+        build_comprehensive_report_package,
+        context=context,
         identity=_report_identity(context),
         stage_results=prior,
     )
@@ -242,6 +252,11 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
     durable normalized engagement snapshot when transient scalar projections are absent
     from the detached exact-run context. Direct context values remain authoritative, and
     retained human evidence is only the final fallback. Canonical scope IDs remain unchanged.
+
+    v93 carries the verified durable engagement snapshot and all verified user-entered
+    human evidence through the existing renderer boundary. The projection is presentation
+    and review context only: it does not recalculate scores, infer missing facts, approve
+    findings, or authorize client delivery.
     """
 
     from nico import comprehensive_ci_pdf_control_safety_v89 as v89
@@ -276,6 +291,8 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
         "detached_report_alias_recursion_blocked": True,
         "display_metadata_identity_fallback_bound": True,
         "durable_engagement_metadata_projection_bound": True,
+        "verified_human_evidence_renderer_context_bound": True,
+        "all_user_entered_human_evidence_reportable": True,
         "canonical_scope_identity_unchanged": True,
         "spanish_guard_bound": spanish_guard.get("bound") is True,
         "ci_pdf_guard_bound": pdf_guard.get("bound") is True,
