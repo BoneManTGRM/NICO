@@ -607,9 +607,14 @@ def _controller_response_with_execution(
     record: dict[str, Any],
     *,
     operation: str,
+    browser_projection: bool = False,
 ) -> dict[str, Any]:
     assert _ORIGINAL_CONTROLLER_RESPONSE is not None
-    response = _ORIGINAL_CONTROLLER_RESPONSE(record, operation=operation)
+    response = _ORIGINAL_CONTROLLER_RESPONSE(
+        record,
+        operation=operation,
+        browser_projection=browser_projection,
+    )
     execution = record.get("active_stage_execution")
     if isinstance(execution, Mapping):
         projected = dict(execution)
