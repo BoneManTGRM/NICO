@@ -5,7 +5,10 @@ import io
 from typing import Any, Mapping
 
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
-from nico.comprehensive_report_package import build_comprehensive_report_package
+from nico.final_report_ship_closure_v94 import (
+    build_ship_ready_report_package,
+    install_final_report_ship_closure_v94,
+)
 
 VERSION = "nico.comprehensive-report-worker-runtime.v92"
 _REPORT_STAGES = {
@@ -16,6 +19,8 @@ _DISPLAY_IDENTITY_FIELDS = (
     ("customer_name", ("customer_name", "client_name")),
     ("project_name", ("project_name",)),
     ("primary_technical_contact", ("primary_technical_contact",)),
+    ("access_method", ("access_method",)),
+    ("authorized_scope", ("authorized_scope",)),
 )
 
 
@@ -73,6 +78,9 @@ def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
         value = direct or durable or _nested_display_value(human_evidence, source_keys)
         if value:
             identity[output_key] = value
+    durable_digest = _text(context.get("engagement_metadata", {}).get("engagement_metadata_sha256") if isinstance(context.get("engagement_metadata"), Mapping) else "", 128)
+    if engagement_projection and durable_digest:
+        identity["engagement_metadata_sha256"] = durable_digest
     return identity
 
 
@@ -93,7 +101,7 @@ def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, A
         if isinstance(context.get("prior_stage_results"), dict)
         else {}
     )
-    package = build_comprehensive_report_package(
+    package = build_ship_ready_report_package(
         identity=_report_identity(context),
         stage_results=prior,
     )
@@ -238,16 +246,20 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
     their stored delegates are reset to these stable bases immediately before a report
     stage executes.
 
-    v92 additionally resolves optional client/project/contact display metadata from the
-    durable normalized engagement snapshot when transient scalar projections are absent
-    from the detached exact-run context. Direct context values remain authoritative, and
-    retained human evidence is only the final fallback. Canonical scope IDs remain unchanged.
+    v92 additionally resolves the complete five-field client-supplied engagement context
+    from the durable normalized engagement snapshot when transient scalar projections are
+    absent from the detached exact-run context. Direct context values remain authoritative,
+    and retained human evidence is only the final fallback. Canonical scope IDs remain
+    unchanged. The v94 ship guard keeps those values visible in client report surfaces and
+    reuses one Spanish localization-tree pass across Markdown and PDF rendering.
     """
 
     from nico import comprehensive_ci_pdf_control_safety_v89 as v89
     from nico import comprehensive_native_providers as providers
     from nico import comprehensive_rendered_ci_boundary_producer_v79 as producer
     from nico import comprehensive_spanish_exit_criteria_v88 as v88
+
+    ship_guard = install_final_report_ship_closure_v94()
 
     v88._ORIGINAL_NATIVE_BUILD_REPORT = _native_report_base_v90
     v89._ORIGINAL_BOUNDARY_PDF_PAGE = _boundary_pdf_page_base_v90
@@ -276,6 +288,8 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
         "detached_report_alias_recursion_blocked": True,
         "display_metadata_identity_fallback_bound": True,
         "durable_engagement_metadata_projection_bound": True,
+        "complete_client_engagement_context_bound": ship_guard.get("all_five_client_supplied_fields_preserved") is True,
+        "spanish_single_localization_tree_pass_bound": ship_guard.get("spanish_premium_localization_tree_passes") == 1,
         "canonical_scope_identity_unchanged": True,
         "spanish_guard_bound": spanish_guard.get("bound") is True,
         "ci_pdf_guard_bound": pdf_guard.get("bound") is True,
