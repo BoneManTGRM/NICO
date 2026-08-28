@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import sqlite3
 import time
 from pathlib import Path
@@ -14,6 +15,7 @@ from nico import hosted_provider_comprehensive_runtime_v1 as runtime
 from nico.admin_security import internal_admin_token
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_capability_registry import execution_plan
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.comprehensive_run_store import ComprehensiveRunStore
@@ -157,6 +159,7 @@ def _controller(path: Path, evidence_store: MemoryEvidenceStore) -> Comprehensiv
                 result["provider_repository_id"] = snapshot["provider_repository_id"]
                 result["snapshot_id"] = snapshot["snapshot_id"]
             if _capability == "final_report_generation":
+                pdf_bytes = b"%PDF-1.4\n%%EOF\n"
                 identity = {
                     key: context[key]
                     for key in (
@@ -165,6 +168,11 @@ def _controller(path: Path, evidence_store: MemoryEvidenceStore) -> Comprehensiv
                         "commit_sha",
                         "evidence_ledger_id",
                     )
+                }
+                canonical = {
+                    "identity": identity,
+                    "report_language": context["report_language"],
+                    "locale": context["report_language"],
                 }
                 result["report_package"] = {
                     "report_id": f"report_{context['run_id']}",
@@ -175,12 +183,11 @@ def _controller(path: Path, evidence_store: MemoryEvidenceStore) -> Comprehensiv
                     "html": (
                         "<html><body>NICO Comprehensive Technical Assessment</body></html>"
                     ),
-                    "pdf_base64": base64.b64encode(
-                        b"%PDF-1.4\n%%EOF\n"
-                    ).decode("ascii"),
+                    "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+                    "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
                     "pdf_page_count": 1,
-                    "json": {"identity": identity},
-                    "canonical_truth_sha256": "a" * 64,
+                    "json": canonical,
+                    "canonical_truth_sha256": canonical_sha256(canonical),
                     "human_review_required": True,
                     "client_delivery_allowed": False,
                 }
