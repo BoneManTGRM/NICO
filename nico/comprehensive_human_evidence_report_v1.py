@@ -10,7 +10,9 @@ VERSION = "nico.comprehensive_human_evidence_report.v1"
 _CLIENT_LITERAL_EN_PREFIX = "Client-supplied data · "
 _CLIENT_LITERAL_ES_PREFIX = "Dato aportado por el cliente · "
 _REPORT_LINE_CHARS = 760
-_REPORT_STAGE_LINES = 90
+# The established decision-grade stage summarizer retains at most 18 evidence lines
+# per stage. Stay below that boundary so explicit human input is never silently clipped.
+_REPORT_STAGE_LINES = 16
 
 _REPORT_CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_human_evidence_report_context",
