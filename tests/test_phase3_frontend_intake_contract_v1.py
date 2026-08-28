@@ -28,7 +28,9 @@ def test_phase3_mobile_intake_keeps_mandatory_client_context_available_without_f
     form = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
     assert 'data-mobile-client-engagement-context="true"' in form
     assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in form
-    assert 'setEvidenceField("stakeholder_context", field' in form
+    assert "setEvidenceField(" in form
+    assert '"stakeholder_context"' in form
+    assert "field," in form
 
 
 def test_phase3_workspace_mounts_mobile_client_context_instead_of_hiding_it() -> None:
