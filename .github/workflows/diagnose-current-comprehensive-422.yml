@@ -1,4 +1,4 @@
-name: Diagnose Current Comprehensive 422
+name: Repair Comprehensive Browser Projection 422
 
 on:
   push:
@@ -6,37 +6,159 @@ on:
       - fix/comprehensive-422-final-closure-20260827
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  repair:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - name: Check out branch
-        uses: actions/checkout@v4
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/comprehensive-422-final-closure-20260827
+          fetch-depth: 1
 
-      - name: Locate runtime response wrapper
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Apply exact response-wrapper compatibility repair
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== exact wrapper symbol ==='
-          grep -R -n -C 20 --exclude-dir=.git '_controller_response_with_execution' . || true
-          echo '=== original response alias ==='
-          grep -R -n -C 20 --exclude-dir=.git '_original_controller_response' . || true
-          echo '=== response monkey-patch assignments ==='
-          grep -R -n -C 15 --exclude-dir=.git 'ComprehensiveApiController\._response' . || true
+          python - <<'PY'
+          from pathlib import Path
 
-      - name: Fetch exact failed production run response
+          path = Path("nico/comprehensive_final_report_process_isolation_v1.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''def _controller_response_with_execution(
+              record: dict[str, Any],
+              *,
+              operation: str,
+          ) -> dict[str, Any]:
+              assert _ORIGINAL_CONTROLLER_RESPONSE is not None
+              response = _ORIGINAL_CONTROLLER_RESPONSE(record, operation=operation)
+          '''
+          new = '''def _controller_response_with_execution(
+              record: dict[str, Any],
+              *,
+              operation: str,
+              browser_projection: bool = False,
+          ) -> dict[str, Any]:
+              assert _ORIGINAL_CONTROLLER_RESPONSE is not None
+              response = _ORIGINAL_CONTROLLER_RESPONSE(
+                  record,
+                  operation=operation,
+                  browser_projection=browser_projection,
+              )
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("Expected exactly one legacy response-wrapper signature; refusing broad edit")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test_path = Path("tests/test_comprehensive_process_isolation_browser_projection_compatibility.py")
+          test_path.write_text('''from __future__ import annotations
+
+import inspect
+
+from nico import comprehensive_final_report_process_isolation_v1 as isolation
+
+
+def test_process_isolation_response_wrapper_accepts_and_forwards_browser_projection(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def original_response(
+        record: dict[str, object],
+        *,
+        operation: str,
+        browser_projection: bool = False,
+    ) -> dict[str, object]:
+        observed["record"] = record
+        observed["operation"] = operation
+        observed["browser_projection"] = browser_projection
+        return {
+            "record": {},
+            "response_projection": {"browser_projection": browser_projection},
+        }
+
+    monkeypatch.setattr(isolation, "_ORIGINAL_CONTROLLER_RESPONSE", original_response)
+
+    signature = inspect.signature(isolation._controller_response_with_execution)
+    assert signature.parameters["browser_projection"].default is False
+
+    record = {
+        "active_stage_execution": {
+            "state": "rendering",
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+    }
+    response = isolation._controller_response_with_execution(
+        record,
+        operation="status",
+        browser_projection=True,
+    )
+
+    assert observed == {
+        "record": record,
+        "operation": "status",
+        "browser_projection": True,
+    }
+    assert response["response_projection"]["browser_projection"] is True
+    assert response["active_stage_execution"]["state"] == "rendering"
+    assert response["record"]["active_stage_execution"]["state"] == "rendering"
+
+
+def test_process_isolation_response_wrapper_preserves_non_browser_default(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def original_response(
+        record: dict[str, object],
+        *,
+        operation: str,
+        browser_projection: bool = False,
+    ) -> dict[str, object]:
+        observed["browser_projection"] = browser_projection
+        return {"record": {}}
+
+    monkeypatch.setattr(isolation, "_ORIGINAL_CONTROLLER_RESPONSE", original_response)
+
+    isolation._controller_response_with_execution({}, operation="status")
+    assert observed["browser_projection"] is False
+''', encoding="utf-8")
+          PY
+
+      - name: Install targeted test dependencies
         shell: bash
         run: |
-          set -u
-          url='https://nico-production-690a.up.railway.app/assessment/comprehensive-run/comprun_7b9fa08129cc4bb29209dd52ca98c180'
-          echo '=== no projection header ==='
-          curl --silent --show-error --include --max-time 30 "$url" || true
-          echo
-          echo '=== with browser projection header ==='
-          curl --silent --show-error --include --max-time 30 \
-            -H 'Accept: application/json' \
-            -H 'X-NICO-Browser-Projection: terminal-manifest-v1' \
-            "$url" || true
-          echo
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pytest
+          if [ -f requirements.txt ]; then python -m pip install --disable-pip-version-check -r requirements.txt; fi
+          python -m pip install --disable-pip-version-check --no-deps -e .
+
+      - name: Verify exact repair and existing projection contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile nico/comprehensive_final_report_process_isolation_v1.py
+          python -m pytest -q \
+            tests/test_comprehensive_process_isolation_browser_projection_compatibility.py \
+            tests/test_final_ship_blocker_metadata_and_browser_projection.py \
+            tests/test_comprehensive_response_projection.py
+
+      - name: Commit only the bounded production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/diagnose-current-comprehensive-422.yml
+          git config user.name 'Reparodynamics'
+          git config user.email 'papadenico@yahoo.com'
+          git add \
+            nico/comprehensive_final_report_process_isolation_v1.py \
+            tests/test_comprehensive_process_isolation_browser_projection_compatibility.py \
+            .github/workflows/diagnose-current-comprehensive-422.yml
+          git diff --cached --check
+          git commit -m 'Fix browser projection compatibility in process-isolation response wrapper'
+          git push origin HEAD:fix/comprehensive-422-final-closure-20260827
