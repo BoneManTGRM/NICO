@@ -78,8 +78,10 @@ def build_approved_delivery_package(
         raise ValueError("approved_delivery_package_not_authorized")
     if delivery.get("one_client_report") is not True or int(delivery.get("client_pdf_count") or 0) != 1:
         raise ValueError("approved_delivery_requires_one_comprehensive_client_report")
-    if delivery.get("approval_certificate_page_appended") is not True:
-        raise ValueError("approved_delivery_requires_client_pdf_approval_certificate")
+    if delivery.get("approved_report_pdf_preserved_exactly") is not True:
+        raise ValueError("approved_delivery_requires_exact_approved_pdf")
+    if delivery.get("approval_certificate_page_appended") is not False:
+        raise ValueError("approved_delivery_must_not_mutate_approved_pdf")
     if list(delivery.get("missing_required_artifacts") or []):
         raise ValueError("approved_delivery_package_missing_required_artifacts")
 
@@ -112,7 +114,9 @@ def build_approved_delivery_package(
         "approved_at": _text(review.get("decided_at")),
         "final_human_approval_status": "approved",
         "client_delivery_authorization_status": "authorized",
-        "approval_certificate_page_appended": True,
+        "approval_certificate_page_appended": False,
+        "approval_certificate_separate_json": True,
+        "approved_report_pdf_preserved_exactly": True,
         "report_analysis_regenerated_during_delivery_packaging": False,
         "one_client_report": True,
         "client_pdf_count": 1,
@@ -149,7 +153,9 @@ def build_approved_delivery_package(
         "certificate": certificate,
         "one_client_report": True,
         "client_pdf_count": 1,
-        "approval_certificate_page_appended": True,
+        "approval_certificate_page_appended": False,
+        "approval_certificate_separate_json": True,
+        "approved_report_pdf_preserved_exactly": True,
         "final_human_approval_status": "approved",
         "client_delivery_authorization_status": "authorized",
         "human_review_required": True,
@@ -173,8 +179,10 @@ def validate_approved_delivery_package(
         errors.add("delivery_review_source_hash_mismatch")
     if package.get("one_client_report") is not True or int(package.get("client_pdf_count") or 0) != 1:
         errors.add("delivery_not_single_comprehensive_report")
-    if package.get("approval_certificate_page_appended") is not True:
-        errors.add("delivery_pdf_approval_certificate_missing")
+    if package.get("approved_report_pdf_preserved_exactly") is not True:
+        errors.add("delivery_approved_pdf_not_preserved")
+    if package.get("approval_certificate_page_appended") is not False:
+        errors.add("delivery_approved_pdf_was_mutated")
     if _text(certificate.get("final_human_approval_status")) != "approved":
         errors.add("delivery_final_approval_status_invalid")
     if _text(certificate.get("client_delivery_authorization_status")) != "authorized":
@@ -203,7 +211,9 @@ def attach_approved_delivery_package(
             "delivery_authorization_certificate_sha256": delivery["certificate"]["delivery_authorization_certificate_sha256"],
             "one_client_report": True,
             "client_pdf_count": 1,
-            "approval_certificate_page_appended": True,
+            "approval_certificate_page_appended": False,
+            "approval_certificate_separate_json": True,
+            "approved_report_pdf_preserved_exactly": True,
             "final_human_approval_status": "approved",
             "client_delivery_authorization_status": "authorized",
             "report_analysis_regenerated_during_delivery_packaging": False,

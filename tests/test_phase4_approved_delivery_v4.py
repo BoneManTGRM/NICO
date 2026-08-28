@@ -8,14 +8,28 @@ from datetime import UTC, datetime
 
 import pytest
 
+import nico.comprehensive_run_service as run_service_module
+
 from nico.comprehensive_approved_delivery_v4 import (
+    _json_bytes,
+    _sha256,
+    _zip,
     attach_approved_delivery_package,
     bind_phase4_approval_manifest,
     validate_approved_delivery_package,
 )
 from nico.comprehensive_final_decision_truth_v1 import synchronize_final_decision_truth
-from nico.comprehensive_review_decision_v1 import build_reviewed_edition
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
+from nico.comprehensive_delivery_authorization_v1 import (
+    authorize_accepted_edition,
+    validate_delivery_authorization,
+)
+from nico.comprehensive_review_decision_v1 import (
+    build_reviewed_edition,
+    review_artifact_identity,
+)
 from nico.comprehensive_review_work_safe_v1 import apply_review_work_action
+from nico.comprehensive_run_service import ComprehensiveRunService
 
 
 def _pdf() -> str:
@@ -100,7 +114,14 @@ def _record() -> dict:
         "product_name": "NICO Comprehensive",
         "identity": {
             key: identity[key]
-            for key in ("run_id", "repository", "commit_sha", "evidence_ledger_id")
+            for key in (
+                "run_id",
+                "repository",
+                "commit_sha",
+                "evidence_ledger_id",
+                "report_language",
+                "assessment_depth",
+            )
         },
         "report_language": "en",
         "assessment_depth": "comprehensive",
@@ -195,7 +216,7 @@ def _reviewed_record() -> dict:
     return record
 
 
-def _decision_and_manifest() -> tuple[dict, dict]:
+def _approved_pending_authorization() -> tuple[dict, dict]:
     decision_record = synchronize_final_decision_truth(
         _reviewed_record(),
         decision="approved",
@@ -212,7 +233,66 @@ def _decision_and_manifest() -> tuple[dict, dict]:
         decision_reason="All exact candidate and residual-risk review gates are complete.",
         decided_at="2026-08-21T15:00:00+00:00",
     )
+    decision_record["status"] = "approved"
+    decision_record["human_review_completed"] = True
+    decision_record["accepted_edition"] = deepcopy(manifest)
     return decision_record, manifest
+
+
+def _decision_and_manifest() -> tuple[dict, dict]:
+    decision_record, manifest = _approved_pending_authorization()
+    decision_record["delivery_authorization"] = authorize_accepted_edition(
+        decision_record,
+        manifest,
+        authorizer="Alice Security",
+        authorizer_role="Cybersecurity specialist",
+        authorization_reason="Explicitly authorize delivery of this exact accepted edition.",
+        authorized_at="2026-08-21T15:05:00+00:00",
+        expected_artifact_identity=review_artifact_identity(decision_record),
+    )
+    return decision_record, manifest
+
+
+def _fully_rehash_archive(
+    delivery: dict,
+    *,
+    entry_changes: dict[str, bytes] | None = None,
+    manifest_changes: dict | None = None,
+) -> dict:
+    output = deepcopy(delivery)
+    with zipfile.ZipFile(
+        io.BytesIO(base64.b64decode(output["zip_base64"], validate=True)),
+        "r",
+    ) as archive:
+        entries = {
+            name: archive.read(name)
+            for name in archive.namelist()
+            if not name.endswith("/")
+        }
+    entries.update(entry_changes or {})
+    manifest = deepcopy(output["manifest"])
+    manifest.update(manifest_changes or {})
+    for row in manifest["artifacts"]:
+        content = entries[row["path"]]
+        row["sha256"] = _sha256(content)
+        row["size_bytes"] = len(content)
+    manifest_bytes = _json_bytes(manifest)
+    entries["11_evidence_manifest.json"] = manifest_bytes
+    archive = _zip(entries)
+    output["manifest"] = manifest
+    output["zip_base64"] = base64.b64encode(archive).decode("ascii")
+    output["zip_sha256"] = _sha256(archive)
+    output["zip_size_bytes"] = len(archive)
+    output["artifact_count"] = len(manifest["artifacts"])
+    certificate = output["certificate"]
+    certificate["evidence_manifest_sha256"] = _sha256(manifest_bytes)
+    certificate["delivery_package_sha256"] = _sha256(archive)
+    certificate["delivery_package_size_bytes"] = len(archive)
+    certificate.pop("delivery_authorization_certificate_sha256", None)
+    certificate["delivery_authorization_certificate_sha256"] = canonical_sha256(
+        certificate
+    )
+    return output
 
 
 def test_phase4_approved_delivery_binds_full_identity_and_receipt_inside_one_report_package() -> None:
@@ -222,7 +302,10 @@ def test_phase4_approved_delivery_binds_full_identity_and_receipt_inside_one_rep
     receipt = delivery["phase4_approval_receipt"]
     certificate = delivery["certificate"]
 
-    assert attached["accepted_edition"]["phase4_approval_binding"]["client_identity"] == "Acme Holdings"
+    assert attached["accepted_edition"] == manifest
+    assert attached["accepted_edition"]["accepted_edition_manifest_sha256"] == manifest[
+        "accepted_edition_manifest_sha256"
+    ]
     assert receipt["client_identity"] == "Acme Holdings"
     assert receipt["project_identity"] == "Python service review"
     assert receipt["assessment_run_id"] == "comprun_phase4_delivery"
@@ -241,7 +324,12 @@ def test_phase4_approved_delivery_binds_full_identity_and_receipt_inside_one_rep
         pdf_names = [name for name in zipped.namelist() if name.endswith(".pdf")]
         assert pdf_names == ["01_nico_comprehensive_report.pdf"]
         assert "12_phase4_approval_receipt.json" in zipped.namelist()
+        assert "16_delivery_authorization.json" in zipped.namelist()
         assert "11_evidence_manifest.json" in zipped.namelist()
+        assert zipped.read("15_approval_record.json") == _json_bytes(manifest)
+        assert zipped.read("16_delivery_authorization.json") == _json_bytes(
+            attached["delivery_authorization"]
+        )
 
     assert attached["integrity_sha256"] != receipt["version_truth"][
         "mutable_operational_history_reference"
@@ -249,6 +337,181 @@ def test_phase4_approved_delivery_binds_full_identity_and_receipt_inside_one_rep
     validation = validate_approved_delivery_package(attached, delivery)
     assert validation["status"] == "valid"
     assert validation["validation_errors"] == []
+
+
+def test_delivery_authorization_keeps_accepted_edition_byte_for_byte_immutable() -> None:
+    record, manifest = _approved_pending_authorization()
+    before = _json_bytes(manifest)
+    before_hash = manifest["accepted_edition_manifest_sha256"]
+
+    authorization = authorize_accepted_edition(
+        record,
+        manifest,
+        authorizer="Alice Security",
+        authorizer_role="Cybersecurity specialist",
+        authorization_reason="Explicit client delivery authorization.",
+        authorized_at="2026-08-21T15:05:00+00:00",
+        expected_artifact_identity=review_artifact_identity(record),
+    )
+    record["delivery_authorization"] = authorization
+    attached = attach_approved_delivery_package(record, manifest)
+
+    assert _json_bytes(attached["accepted_edition"]) == before
+    assert attached["accepted_edition"]["accepted_edition_manifest_sha256"] == before_hash
+    assert authorization["accepted_edition_manifest_sha256"] == before_hash
+    assert "delivery_authorization" not in attached["accepted_edition"]
+
+
+def test_service_authorization_is_distinct_atomic_revision_and_replay_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record, manifest = _approved_pending_authorization()
+    before = _json_bytes(manifest)
+
+    class Store:
+        def __init__(self, value: dict) -> None:
+            self.value = deepcopy(value)
+
+        def load(self, run_id: str) -> dict:
+            assert run_id == self.value["identity"]["run_id"]
+            return deepcopy(self.value)
+
+        def save(self, value: dict, *, expected_revision: int) -> dict:
+            assert int(value["revision"]) == expected_revision + 1
+            self.value = deepcopy(value)
+            return deepcopy(value)
+
+    store = Store(record)
+    service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        run_service_module,
+        "attach_approved_delivery_package",
+        attach_approved_delivery_package,
+    )
+    authorized = service.authorize_delivery(
+        record["identity"]["run_id"],
+        authorizer="Alice Security",
+        authorizer_role="Cybersecurity specialist",
+        authorization_reason="Explicit client delivery authorization.",
+        authorized_at="2026-08-21T15:05:00+00:00",
+        expected_artifact_identity=review_artifact_identity(record),
+    )
+
+    assert authorized["revision"] == record["revision"] + 1
+    assert authorized["client_delivery_allowed"] is True
+    assert _json_bytes(authorized["accepted_edition"]) == before
+    assert validate_approved_delivery_package(
+        authorized,
+        authorized["approved_delivery_package"],
+    )["status"] == "valid"
+    with pytest.raises(ValueError, match="client_delivery_already_authorized"):
+        service.authorize_delivery(
+            record["identity"]["run_id"],
+            authorizer="Alice Security",
+            authorizer_role="Cybersecurity specialist",
+            authorization_reason="Replay.",
+            authorized_at="2026-08-21T15:06:00+00:00",
+            expected_artifact_identity=review_artifact_identity(authorized),
+        )
+
+
+def test_delivery_authorization_rejects_stale_replay_and_invalid_human_authority() -> None:
+    record, manifest = _approved_pending_authorization()
+    identity = review_artifact_identity(record)
+    stale = deepcopy(identity)
+    stale["artifact_digests"]["pdf"]["sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="stale_review_artifact_identity"):
+        authorize_accepted_edition(
+            record,
+            manifest,
+            authorizer="Alice Security",
+            authorizer_role="Cybersecurity specialist",
+            authorization_reason="Explicit authorization.",
+            authorized_at="2026-08-21T15:05:00+00:00",
+            expected_artifact_identity=stale,
+        )
+    with pytest.raises(ValueError, match="automation_cannot_create_final_human_approval"):
+        authorize_accepted_edition(
+            record,
+            manifest,
+            authorizer="automation",
+            authorizer_role="Cybersecurity specialist",
+            authorization_reason="Automated authorization is forbidden.",
+            authorized_at="2026-08-21T15:05:00+00:00",
+            expected_artifact_identity=identity,
+        )
+
+    authorization = authorize_accepted_edition(
+        record,
+        manifest,
+        authorizer="Alice Security",
+        authorizer_role="Cybersecurity specialist",
+        authorization_reason="Explicit authorization.",
+        authorized_at="2026-08-21T15:05:00+00:00",
+        expected_artifact_identity=identity,
+    )
+    record["delivery_authorization"] = authorization
+    with pytest.raises(ValueError, match="client_delivery_already_authorized"):
+        authorize_accepted_edition(
+            record,
+            manifest,
+            authorizer="Alice Security",
+            authorizer_role="Cybersecurity specialist",
+            authorization_reason="Replay.",
+            authorized_at="2026-08-21T15:06:00+00:00",
+            expected_artifact_identity=identity,
+        )
+
+
+@pytest.mark.parametrize("status", ["review_required", "rejected", "failed"])
+def test_delivery_authorization_rejects_nonapproved_runs(status: str) -> None:
+    record, manifest = _approved_pending_authorization()
+    record["status"] = status
+    with pytest.raises(ValueError, match="delivery_authorization_requires_approved_run"):
+        authorize_accepted_edition(
+            record,
+            manifest,
+            authorizer="Alice Security",
+            authorizer_role="Cybersecurity specialist",
+            authorization_reason="Invalid state.",
+            authorized_at="2026-08-21T15:05:00+00:00",
+            expected_artifact_identity=review_artifact_identity(record),
+        )
+
+
+def test_delivery_authorization_rejects_tampered_manifest_and_pdf() -> None:
+    record, manifest = _approved_pending_authorization()
+    tampered_manifest = deepcopy(manifest)
+    tampered_manifest["report_artifact_digest"] = "0" * 64
+    with pytest.raises(ValueError, match="accepted_edition_manifest_hash_mismatch"):
+        authorize_accepted_edition(
+            record,
+            tampered_manifest,
+            authorizer="Alice Security",
+            authorizer_role="Cybersecurity specialist",
+            authorization_reason="Invalid manifest.",
+            authorized_at="2026-08-21T15:05:00+00:00",
+            expected_artifact_identity=review_artifact_identity(record),
+        )
+
+    authorization = authorize_accepted_edition(
+        record,
+        manifest,
+        authorizer="Alice Security",
+        authorizer_role="Cybersecurity specialist",
+        authorization_reason="Explicit authorization.",
+        authorized_at="2026-08-21T15:05:00+00:00",
+        expected_artifact_identity=review_artifact_identity(record),
+    )
+    record["stage_results"]["final_comprehensive_report_generation"]["report_package"][
+        "pdf_base64"
+    ] = base64.b64encode(b"%PDF-1.7 tampered").decode("ascii")
+    validation = validate_delivery_authorization(record, manifest, authorization)
+    assert validation["status"] == "invalid"
+    assert any(
+        "accepted_edition" in error or "current_artifact_mismatch" in error
+        for error in validation["validation_errors"]
+    )
 
 
 def test_cross_project_mutation_invalidates_delivery() -> None:
@@ -261,8 +524,8 @@ def test_cross_project_mutation_invalidates_delivery() -> None:
         tampered["approved_delivery_package"],
     )
     assert validation["status"] == "invalid"
-    assert "cross_project_id_review_mismatch" in validation["validation_errors"]
     assert "phase4_project_id_mismatch" in validation["validation_errors"]
+    assert "review_work_projection_invalid" in validation["validation_errors"]
     assert any(
         item.startswith("phase4_inherited_validation_failed:")
         for item in validation["validation_errors"]
@@ -280,11 +543,11 @@ def test_report_regeneration_after_approval_invalidates_receipt() -> None:
     assert "artifact_hash_mismatch" in validation["validation_errors"]
 
 
-def test_automation_identity_cannot_be_bound_as_final_approver() -> None:
+def test_accepted_reviewer_identity_cannot_be_rewritten_after_approval() -> None:
     decision_record, manifest = _decision_and_manifest()
     manifest = deepcopy(manifest)
     manifest["review"]["reviewer"] = "automation"
-    with pytest.raises(ValueError, match="automation_cannot_create_final_human_approval"):
+    with pytest.raises(ValueError, match="accepted_edition_manifest_hash_mismatch"):
         bind_phase4_approval_manifest(decision_record, manifest)
 
 
@@ -295,3 +558,169 @@ def test_internal_assessment_cannot_become_phase4_client_final() -> None:
     evidence["engagement_mode"] = ["internal"]
     with pytest.raises(ValueError, match="internal_or_test_assessment_not_client_final"):
         attach_approved_delivery_package(decision_record, manifest)
+
+
+def test_receipt_derived_certificate_fields_cannot_be_rewritten_with_a_new_self_hash() -> None:
+    decision_record, manifest = _decision_and_manifest()
+    attached = attach_approved_delivery_package(decision_record, manifest)
+    delivery = deepcopy(attached["approved_delivery_package"])
+    certificate = delivery["certificate"]
+    certificate["reviewer_identity"] = "Mallory"
+    certificate.pop("delivery_authorization_certificate_sha256", None)
+    certificate["delivery_authorization_certificate_sha256"] = canonical_sha256(certificate)
+
+    validation = validate_approved_delivery_package(attached, delivery)
+
+    assert validation["status"] == "invalid"
+    assert "phase4_reviewer_identity_mismatch" in validation["validation_errors"]
+
+
+def test_in_memory_and_archived_delivery_manifests_must_be_identical() -> None:
+    decision_record, manifest = _decision_and_manifest()
+    attached = attach_approved_delivery_package(decision_record, manifest)
+    delivery = deepcopy(attached["approved_delivery_package"])
+    delivery["manifest"]["artifacts"][0]["sha256"] = "0" * 64
+
+    validation = validate_approved_delivery_package(attached, delivery)
+
+    assert validation["status"] == "invalid"
+    assert "phase4_evidence_manifest_archive_mismatch" in validation["validation_errors"]
+
+
+def test_top_level_receipt_binding_cannot_diverge_from_exact_receipt() -> None:
+    decision_record, manifest = _decision_and_manifest()
+    attached = attach_approved_delivery_package(decision_record, manifest)
+    delivery = deepcopy(attached["approved_delivery_package"])
+    delivery["phase4_approval_receipt_sha256"] = "0" * 64
+
+    validation = validate_approved_delivery_package(attached, delivery)
+
+    assert validation["status"] == "invalid"
+    assert "phase4_receipt_package_hash_mismatch" in validation["validation_errors"]
+
+
+def test_fully_rehashed_archive_cannot_replace_exact_approval_record_or_pdf() -> None:
+    decision_record, manifest = _decision_and_manifest()
+    attached = attach_approved_delivery_package(decision_record, manifest)
+    delivery = attached["approved_delivery_package"]
+
+    forged_approval = deepcopy(attached["accepted_edition"])
+    forged_approval["review"]["reviewer"] = "Mallory Security"
+    approval_delivery = _fully_rehash_archive(
+        delivery,
+        entry_changes={"15_approval_record.json": _json_bytes(forged_approval)},
+    )
+    approval_validation = validate_approved_delivery_package(
+        attached,
+        approval_delivery,
+    )
+    assert approval_validation["status"] == "invalid"
+    assert (
+        "phase4_approval_record_accepted_edition_mismatch"
+        in approval_validation["validation_errors"]
+    )
+
+    with zipfile.ZipFile(
+        io.BytesIO(base64.b64decode(delivery["zip_base64"], validate=True)),
+        "r",
+    ) as archive:
+        original_pdf = archive.read("01_nico_comprehensive_report.pdf")
+    pdf_delivery = _fully_rehash_archive(
+        delivery,
+        entry_changes={
+            "01_nico_comprehensive_report.pdf": original_pdf + b"\n% forged\n"
+        },
+    )
+    pdf_validation = validate_approved_delivery_package(attached, pdf_delivery)
+    assert pdf_validation["status"] == "invalid"
+    assert (
+        "phase4_delivered_pdf_accepted_edition_mismatch"
+        in pdf_validation["validation_errors"]
+    )
+    assert "phase4_delivered_pdf_receipt_mismatch" in pdf_validation[
+        "validation_errors"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_error"),
+    [
+        ("repository", "OtherOrg/other", "phase4_evidence_manifest_repository_mismatch"),
+        ("run_id", "comprun_other", "phase4_evidence_manifest_run_id_mismatch"),
+        ("product_name", "Other product", "phase4_evidence_manifest_product_name_mismatch"),
+        (
+            "package_classification",
+            "internal",
+            "phase4_evidence_manifest_package_classification_mismatch",
+        ),
+        (
+            "client_delivery_allowed",
+            False,
+            "phase4_evidence_manifest_delivery_authorization_missing",
+        ),
+        (
+            "human_review_required",
+            False,
+            "phase4_evidence_manifest_human_review_boundary_missing",
+        ),
+        (
+            "delivery_authorization_sha256",
+            "0" * 64,
+            "phase4_evidence_manifest_delivery_authorization_hash_mismatch",
+        ),
+    ],
+)
+def test_fully_rehashed_archive_manifest_cannot_change_identity_or_boundary(
+    field: str,
+    value: object,
+    expected_error: str,
+) -> None:
+    decision_record, manifest = _decision_and_manifest()
+    attached = attach_approved_delivery_package(decision_record, manifest)
+    forged = _fully_rehash_archive(
+        attached["approved_delivery_package"],
+        manifest_changes={field: value},
+    )
+    validation = validate_approved_delivery_package(attached, forged)
+    assert validation["status"] == "invalid"
+    assert expected_error in validation["validation_errors"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_error"),
+    [
+        (
+            "approval_certificate_sha256",
+            "0" * 64,
+            "phase4_approval_certificate_sha256_mismatch",
+        ),
+        ("approved_at", "2026-01-01T00:00:00+00:00", "phase4_approved_at_mismatch"),
+        (
+            "report_analysis_regenerated_during_delivery_packaging",
+            True,
+            "phase4_certificate_report_regeneration_invalid",
+        ),
+        (
+            "approval_certificate_page_appended",
+            True,
+            "phase4_certificate_approved_pdf_was_mutated",
+        ),
+    ],
+)
+def test_rehashed_certificate_cannot_contradict_exact_approval(
+    field: str,
+    value: object,
+    expected_error: str,
+) -> None:
+    decision_record, manifest = _decision_and_manifest()
+    attached = attach_approved_delivery_package(decision_record, manifest)
+    delivery = deepcopy(attached["approved_delivery_package"])
+    certificate = delivery["certificate"]
+    certificate[field] = value
+    certificate.pop("delivery_authorization_certificate_sha256", None)
+    certificate["delivery_authorization_certificate_sha256"] = canonical_sha256(
+        certificate
+    )
+    validation = validate_approved_delivery_package(attached, delivery)
+    assert validation["status"] == "invalid"
+    assert expected_error in validation["validation_errors"]

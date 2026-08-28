@@ -45,6 +45,15 @@ export type Assessment = Record<string, unknown> & {executive_summary?: string; 
 export type Stage = {status?: string; message?: string; summary?: string; evidence?: Evidence; assessment?: Assessment; report_package?: Report; reports?: Report};
 export type ProgressItem = {step?: string; status?: string; message?: string; evidence?: Record<string, unknown>};
 export type RunIdentity = {run_id?: string; repository?: string; commit_sha?: string; evidence_ledger_id?: string; customer_id?: string; project_id?: string};
+export type EngagementMetadata = {
+  artifact_schema?: string;
+  client_name?: string;
+  project_name?: string;
+  primary_technical_contact?: string;
+  access_method?: string;
+  authorized_scope?: string;
+  engagement_metadata_sha256?: string;
+};
 export type RunRecord = {
   assessment_state?: AssessmentState;
   canonical_truth_sha256?: string;
@@ -54,12 +63,14 @@ export type RunRecord = {
   progress_percent?: number;
   stage_results?: Record<string, Stage>;
   identity?: RunIdentity;
+  engagement_metadata?: EngagementMetadata;
   human_review_required?: boolean;
   human_review_completed?: boolean;
   client_delivery_allowed?: boolean;
   delivery_status?: string;
   review_decision?: Record<string, unknown>;
   accepted_edition?: Record<string, unknown>;
+  delivery_authorization?: Record<string, unknown>;
   approved_delivery_package?: Record<string, unknown>;
 };
 export type Result = Assessment & {
@@ -75,6 +86,7 @@ export type Result = Assessment & {
   evidence_ledger_id?: string;
   customer_id?: string;
   project_id?: string;
+  engagement_metadata?: EngagementMetadata;
   current_stage?: string | null;
   progress_percent?: number;
   progress?: ProgressItem[];
@@ -92,6 +104,7 @@ export type Result = Assessment & {
   delivery_status?: string;
   review_decision?: Record<string, unknown>;
   accepted_edition?: Record<string, unknown>;
+  delivery_authorization?: Record<string, unknown>;
   approved_delivery_package?: Record<string, unknown>;
 };
 export type Scope = {customerId: string; projectId: string};

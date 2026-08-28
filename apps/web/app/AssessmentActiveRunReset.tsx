@@ -60,6 +60,12 @@ function savedRunId(): string {
   }
 }
 
+function currentRunId(): string {
+  return new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim()
+    || savedRunId()
+    || "";
+}
+
 function stuckRecoveryVisible(): boolean {
   return (
     document.documentElement.getAttribute(STUCK_RECOVERY_ATTRIBUTE) === "true" ||
@@ -75,19 +81,33 @@ function activeAssessmentVisible(): boolean {
     '[data-assessment-terminal-actions="true"]',
   );
   if (terminalAction) return false;
-  return Boolean(
-    savedRunId() ||
-      new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY),
-  );
+  return Boolean(currentRunId());
 }
 
-function clearCurrentRun(): void {
+function removeStoredRunIfMatching(storage: Storage, runId: string): void {
+  if (!runId) return;
   try {
-    window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
-    window.sessionStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    const raw = storage.getItem(ACTIVE_RUN_STORAGE_KEY);
+    if (!raw) return;
+    let storedRunId = "";
+    try {
+      const value = JSON.parse(raw) as Record<string, unknown>;
+      storedRunId = String(value.runId || "").trim();
+    } catch {
+      // A malformed browser pointer has no competing exact-run authority.
+    }
+    if (!storedRunId || storedRunId === runId) {
+      storage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    }
   } catch {
-    // URL replacement still provides a clean public assessment entry point.
+    // URL cleanup remains the browser-visible recovery boundary.
   }
+}
+
+function clearCurrentRun(runId: string): void {
+  const exactRunId = String(runId || "").trim();
+  removeStoredRunIfMatching(window.localStorage, exactRunId);
+  removeStoredRunIfMatching(window.sessionStorage, exactRunId);
   const url = new URL(window.location.href);
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
@@ -113,7 +133,7 @@ export default function AssessmentActiveRunReset() {
   useEffect(() => {
     const inspect = () => {
       setVisible(activeAssessmentVisible());
-      setRunId(savedRunId());
+      setRunId(currentRunId());
       setSpanish(isSpanishRoute());
     };
     const observer = new MutationObserver(inspect);
@@ -175,7 +195,7 @@ export default function AssessmentActiveRunReset() {
   if (!visible) return null;
 
   const confirmAndClear = () => {
-    if (window.confirm(copy.confirmClear)) clearCurrentRun();
+    if (window.confirm(copy.confirmClear)) clearCurrentRun(runId);
   };
 
   return (

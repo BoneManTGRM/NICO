@@ -18,7 +18,12 @@ export function canonicalLocale(value: Locale | string | null | undefined): Cano
 
 export function routeLocale(pathname: string): CanonicalLocale | null {
   const normalized = String(pathname || "").trim();
-  if (normalized === "/es" || normalized.startsWith("/es/")) return "es-MX";
+  if (
+    normalized === "/es"
+    || normalized.startsWith("/es/")
+    || normalized === "/es-mx"
+    || normalized.startsWith("/es-mx/")
+  ) return "es-MX";
   if (normalized === "/assessment" || normalized.startsWith("/assessment/")) return "en-US";
   return null;
 }
@@ -67,6 +72,10 @@ export function reportLocaleForRequest(uiLocale: Locale): ReportLocale {
   return normalizeCanonicalLocale(uiLocale);
 }
 
+export function reportLanguageForRequest(uiLocale: Locale): "en" | "es-MX" {
+  return reportLocaleForRequest(uiLocale) === "es-MX" ? "es-MX" : "en";
+}
+
 export function persistReportLocale(locale: ReportLocale): void {
   safeLocalStorageSet(REPORT_LOCALE_STORAGE_KEY, locale);
   if (typeof window !== "undefined") {
@@ -92,13 +101,18 @@ export function localePreservingHref(
   const assessmentRoute = pathname === "/assessment"
     || pathname.startsWith("/assessment/")
     || pathname === "/es/assessment"
-    || pathname.startsWith("/es/assessment/");
+    || pathname.startsWith("/es/assessment/")
+    || pathname === "/es-mx"
+    || pathname.startsWith("/es-mx/");
 
   let targetPath = pathname;
   if (assessmentRoute) {
-    const suffix = pathname.startsWith("/es/assessment")
-      ? pathname.slice("/es/assessment".length)
-      : pathname.slice("/assessment".length);
+    const sourcePrefix = pathname.startsWith("/es/assessment")
+      ? "/es/assessment"
+      : pathname.startsWith("/es-mx")
+        ? "/es-mx"
+        : "/assessment";
+    const suffix = pathname.slice(sourcePrefix.length);
     targetPath = `${spanish ? "/es/assessment" : "/assessment"}${suffix}`;
     params.set("tier", "comprehensive");
     params.delete("lang");

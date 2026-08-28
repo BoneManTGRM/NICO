@@ -144,7 +144,12 @@ class _PdfStoryBuilder:
         colors, inch = c["colors"], c["inch"]
         story = [PageBreak(), p("Evidence Appendix", c["h1"]), p("Bounded decision-relevant evidence is rendered here; the complete machine-readable ledger is included in JSON and CSV artifacts.", c["body"])]
         for index, stage in enumerate(c["stages"], 1):
-            story.extend([CondPageBreak(2.5 * inch), p(f"A{index}. {stage.get('title')} — {_text(stage.get('status')).upper()}", c["h2"]), p(f"Stage ID: {stage.get('stage_id')}", c["small"]), p(stage.get("summary"), c["body"]), p(f"Evidence records: {len(stage.get('evidence') or [])} · Findings: {len(stage.get('findings') or [])} · Limitations: {len(stage.get('unavailable') or [])}", c["small"]), *bullets(stage.get("evidence") or [], 8)])
+            stage_id = str(stage.get("stage_id") or "")
+            client_literal_stage = (
+                stage_id == "client_evidence_summary"
+                or stage_id.startswith("client_human_evidence_")
+            )
+            story.extend([CondPageBreak(2.5 * inch), p(f"A{index}. {stage.get('title')} — {_text(stage.get('status')).upper()}", c["h2"]), p(f"Stage ID: {stage.get('stage_id')}", c["small"]), p(stage.get("summary"), c["body"]), p(f"Evidence records: {len(stage.get('evidence') or [])} · Findings: {len(stage.get('findings') or [])} · Limitations: {len(stage.get('unavailable') or [])}", c["small"]), *bullets(stage.get("evidence") or [], 8, client_literal=client_literal_stage)])
             if stage.get("findings"):
                 story.extend([p("Findings", c["h3"]), *bullets(stage.get("findings") or [], 5)])
             if stage.get("unavailable"):
@@ -186,11 +191,11 @@ def _build_pdf(
     styles = getSampleStyleSheet()
     title = ParagraphStyle("P6-Title", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=27, leading=31, alignment=TA_CENTER, textColor=colors.HexColor("#0f172a"), spaceAfter=14)
     subtitle = ParagraphStyle("P6-Subtitle", parent=styles["BodyText"], fontSize=10, leading=14, alignment=TA_CENTER, textColor=colors.HexColor("#475569"), spaceAfter=5)
-    h1 = ParagraphStyle("P6-H1", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=19, leading=23, textColor=colors.HexColor("#0f172a"), spaceBefore=7, spaceAfter=9)
-    h2 = ParagraphStyle("P6-H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=colors.HexColor("#075985"), spaceBefore=7, spaceAfter=5)
-    h3 = ParagraphStyle("P6-H3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=10.2, leading=13, textColor=colors.HexColor("#0f172a"), spaceBefore=5, spaceAfter=3)
+    h1 = ParagraphStyle("P6-H1", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=19, leading=23, textColor=colors.HexColor("#0f172a"), spaceBefore=7, spaceAfter=9, keepWithNext=1)
+    h2 = ParagraphStyle("P6-H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=colors.HexColor("#075985"), spaceBefore=7, spaceAfter=5, keepWithNext=1)
+    h3 = ParagraphStyle("P6-H3", parent=styles["Heading3"], fontName="Helvetica-Bold", fontSize=10.2, leading=13, textColor=colors.HexColor("#0f172a"), spaceBefore=5, spaceAfter=3, keepWithNext=1)
     body = ParagraphStyle("P6-Body", parent=styles["BodyText"], fontSize=9, leading=12.8, textColor=colors.HexColor("#334155"), spaceAfter=5)
-    small = ParagraphStyle("P6-Small", parent=body, fontSize=7.2, leading=9.5, textColor=colors.HexColor("#475569"))
+    small = ParagraphStyle("P6-Small", parent=body, fontSize=7.2, leading=9.5, textColor=colors.HexColor("#475569"), allowWidows=0)
     table_header = ParagraphStyle("P6-TableHeader", parent=small, fontName="Helvetica-Bold", textColor=colors.white)
     warning = ParagraphStyle("P6-Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.8, borderPadding=8, spaceBefore=7, spaceAfter=9)
 
@@ -205,9 +210,29 @@ def _build_pdf(
                 self.canv.bookmarkPage(key)
                 self.canv.addOutlineEntry(flowable.getPlainText(), key, level=0 if flowable.style.name == "P6-H1" else 1, closed=False)
 
-    def p(value: Any, style: ParagraphStyle = body) -> Paragraph:
+    def p(
+        value: Any,
+        style: ParagraphStyle = body,
+        *,
+        client_literal: bool = False,
+    ) -> Paragraph:
+        if client_literal:
+            from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+
+            return Paragraph(reportlab_literal_markup(value, 5000), style)
         return Paragraph(html.escape(_text(value)), style)
-    def bullets(values: Iterable[Any], limit: int = 12) -> list[Paragraph]:
+    def bullets(
+        values: Iterable[Any],
+        limit: int = 12,
+        *,
+        client_literal: bool = False,
+    ) -> list[Paragraph]:
+        if client_literal:
+            return [
+                p(f"- {item}", small, client_literal=True)
+                for item in list(values)[:limit]
+                if str(item or "").strip()
+            ]
         return [p(f"- {_text(item, 900)}", small) for item in list(values)[:limit] if _text(item)]
     def table(rows: list[list[Any]], widths: list[float], header: bool = True, font_size: float = 6.8) -> LongTable:
         cell_style = ParagraphStyle(f"P6-Cell-{font_size}", parent=small, fontSize=font_size, leading=max(font_size + 1.8, 6.5), textColor=colors.HexColor("#475569"))

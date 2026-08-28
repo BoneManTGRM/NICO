@@ -6,11 +6,18 @@ import io
 import json
 import time
 from functools import wraps
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from pypdf import PdfReader
 
+from comprehensive_production_run_handoff_v1 import (
+    require_canonical_json_digest,
+    require_matching_canonical_truth_digest,
+    source_binding_marker,
+)
+from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 import spanish_comprehensive_live_acceptance_v1 as base
 import spanish_comprehensive_live_acceptance_v2 as telemetry
 from provider_neutral_repository_locator_contract_v1 import SPANISH_REPOSITORY_LABEL
@@ -22,11 +29,15 @@ SPANISH_TERMINAL_REPORT = "Completa"
 SPANISH_MATURITY_LABELS = {"Excepcional", "Sólido", "Moderado", "Débil", "Crítico"}
 FORBIDDEN_ENGLISH_MATURITY_LABELS = {"Exceptional", "Strong", "Moderate", "Weak", "Critical"}
 
-PROOF_CLIENT_NAME = "NICO Acceptance Client"
-PROOF_PROJECT_NAME = "NICO Acceptance Project"
-PROOF_ACCESS_METHOD = "GitHub HTTPS/API - read-only"
-PROOF_PRIMARY_TECHNICAL_CONTACT = "NICO Acceptance Contact"
-PROOF_AUTHORIZED_SCOPE = "Full repository at exact assessed SHA - read-only"
+PROOF_CLIENT_NAME = "Cody Jenkins"
+PROOF_PROJECT_NAME = "NICO Audit"
+PROOF_PRIMARY_TECHNICAL_CONTACT = "Cody — Repository owner / project lead"
+PROOF_ACCESS_METHOD = "Public GitHub repository via HTTPS/API — read-only access"
+PROOF_AUTHORIZED_SCOPE = (
+    "BoneManTGRM/NICO — entire repository, current main branch, including source "
+    "code, configuration, CI/CD workflows, dependency manifests, documentation, "
+    "and repository metadata. Read-only technical and security assessment."
+)
 SPANISH_ACCESS_METHOD_LABEL = "Método de acceso"
 SPANISH_PRIMARY_CONTACT_LABEL = "Contacto técnico principal"
 SPANISH_AUTHORIZED_SCOPE_LABEL = "Alcance autorizado"
@@ -42,9 +53,9 @@ def _recursive_values(value: Any, key: str) -> list[str]:
         if key in value:
             direct = value.get(key)
             if isinstance(direct, list):
-                found.extend(str(item).strip() for item in direct if str(item).strip())
-            elif str(direct or "").strip():
-                found.append(str(direct).strip())
+                found.extend(str(item) for item in direct if str(item))
+            elif str(direct or ""):
+                found.append(str(direct))
         for nested in value.values():
             found.extend(_recursive_values(nested, key))
     elif isinstance(value, list):
@@ -72,7 +83,7 @@ def _assert_engagement_metadata(value: Any, *, boundary: str) -> dict[str, str]:
     expected = _expected_engagement_metadata()
     observed: dict[str, str] = {}
     for key, wanted in expected.items():
-        actual = str(value.get(key) or "").strip()
+        actual = str(value.get(key) or "")
         observed[key] = actual
         assert actual == wanted, {
             "boundary": boundary,
@@ -89,6 +100,27 @@ def _assert_engagement_metadata(value: Any, *, boundary: str) -> dict[str, str]:
         "directly_scored": value.get("directly_scored"),
     }
     return observed
+
+
+def _terminal_mutation_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
+    record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    reports = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
+    return {
+        "run_id": payload.get("run_id"),
+        "commit_sha": payload.get("commit_sha"),
+        "status": payload.get("status"),
+        "current_stage": payload.get("current_stage"),
+        "terminal": payload.get("terminal"),
+        "revision": payload.get("revision"),
+        "integrity_sha256": payload.get("integrity_sha256"),
+        "attempt": payload.get("attempt"),
+        "run_attempt": payload.get("run_attempt"),
+        "stage_attempts": payload.get("stage_attempts", record.get("stage_attempts")),
+        "record_revision": record.get("revision"),
+        "record_integrity_sha256": record.get("integrity_sha256"),
+        "record_current_stage": record.get("current_stage"),
+        "canonical_truth_sha256": reports.get("canonical_truth_sha256"),
+    }
 
 
 def _verify_actual_browser_intake(requests: list[dict[str, str]]) -> dict[str, Any]:
@@ -109,8 +141,8 @@ def _verify_actual_browser_intake(requests: list[dict[str, str]]) -> dict[str, A
     except Exception as exc:
         raise AssertionError("Production browser intake POST body was not valid JSON") from exc
     assert isinstance(payload, dict)
-    assert str(payload.get("client_name") or "").strip() == PROOF_CLIENT_NAME
-    assert str(payload.get("project_name") or "").strip() == PROOF_PROJECT_NAME
+    assert str(payload.get("client_name") or "") == PROOF_CLIENT_NAME
+    assert str(payload.get("project_name") or "") == PROOF_PROJECT_NAME
     assert str(payload.get("report_language") or "") == "es-MX"
 
     human = payload.get("human_evidence")
@@ -137,6 +169,15 @@ def _verify_actual_browser_intake(requests: list[dict[str, str]]) -> dict[str, A
         "actual_browser_intake_shape_verified": True,
         "actual_browser_intake_client_name": str(payload.get("client_name") or ""),
         "actual_browser_intake_project_name": str(payload.get("project_name") or ""),
+        "actual_browser_intake_primary_technical_contact": str(
+            evidence.get("primary_technical_contact", [""])[0]
+        ),
+        "actual_browser_intake_access_method": str(
+            evidence.get("access_method", [""])[0]
+        ),
+        "actual_browser_intake_authorized_scope": str(
+            evidence.get("authorized_scope", [""])[0]
+        ),
         "actual_browser_intake_report_language": str(payload.get("report_language") or ""),
     }
 
@@ -207,25 +248,94 @@ def _fetch_localized_pdf(
     assert str(response.headers.get("x-nico-assessment-rerun") or "false").lower() == "false"
     observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
     header_sha = str(response.headers.get("x-nico-artifact-sha256") or "").lower()
-    assert not header_sha or header_sha == observed_sha
+    assert len(header_sha) == 64 and set(header_sha) <= set("0123456789abcdef"), {
+        "report_language": report_language,
+        "missing_or_invalid_artifact_sha256_header": header_sha,
+    }
+    assert header_sha == observed_sha, {
+        "report_language": report_language,
+        "artifact_sha256_header": header_sha,
+        "computed_artifact_sha256": observed_sha,
+    }
+    canonical_truth_sha256 = str(
+        response.headers.get("x-nico-canonical-truth-sha256") or ""
+    ).lower()
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     page_count = len(reader.pages)
-    assert 0 < page_count < 44, {
+    assert 0 < page_count <= MAX_CLIENT_PDF_PAGES, {
         "report_language": report_language,
         "page_count": page_count,
-        "regression": "production Comprehensive PDF remained 44 pages",
+        "renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
     }
     rendered = base._pdf_text(pdf_bytes)
+    rendered_compact = " ".join(rendered.split())
     for expected in (
         PROOF_CLIENT_NAME,
         PROOF_PROJECT_NAME,
         PROOF_PRIMARY_TECHNICAL_CONTACT,
+        PROOF_ACCESS_METHOD,
+        PROOF_AUTHORIZED_SCOPE,
     ):
-        assert expected in rendered, {
+        assert expected in rendered_compact, {
             "report_language": report_language,
             "missing_commercial_metadata": expected,
         }
+
+    spanish = report_language == "es-MX"
+    summary_heading = (
+        "Resumen de evidencia del cliente" if spanish else "Client Evidence Summary"
+    )
+    following_heading = (
+        "Separación de ejecución y disposición"
+        if spanish
+        else "Execution and disposition are separate"
+    )
+    summary_labels = (
+        (
+            "Nombre del cliente",
+            "Nombre del proyecto",
+            "Contacto técnico principal",
+            "Método de acceso",
+            "Alcance autorizado",
+        )
+        if spanish
+        else (
+            "Client name",
+            "Project name",
+            "Primary technical contact",
+            "Access method",
+            "Authorized scope",
+        )
+    )
+    summary_values = tuple(_expected_engagement_metadata().values())
+    summary_verified = False
+    search_at = 0
+    while True:
+        heading_at = rendered_compact.find(summary_heading, search_at)
+        if heading_at < 0:
+            break
+        following_at = rendered_compact.find(
+            following_heading,
+            heading_at + len(summary_heading),
+        )
+        if following_at < 0:
+            search_at = heading_at + len(summary_heading)
+            continue
+        window = rendered_compact[heading_at:following_at]
+        label_positions = [window.find(label) for label in summary_labels]
+        if (
+            all(position >= 0 for position in label_positions)
+            and label_positions == sorted(label_positions)
+            and all(value in window for value in summary_values)
+        ):
+            summary_verified = True
+            break
+        search_at = heading_at + len(summary_heading)
+    assert summary_verified, {
+        "report_language": report_language,
+        "client_evidence_summary_five_fields_consolidated": False,
+    }
 
     if report_language == "es-MX":
         missing = [marker for marker in base.SPANISH_PDF_MARKERS if marker not in rendered]
@@ -233,15 +343,30 @@ def _fetch_localized_pdf(
         assert not missing, f"Spanish PDF omitted required presentation markers: {missing}"
         assert not forbidden, f"Spanish PDF retained forbidden English/failure markers: {forbidden}"
 
+    locale_filename = "es-MX" if report_language == "es-MX" else "en"
+    artifact_path = Path("audit-results") / (
+        f"nico-comprehensive-{locale_filename}-"
+        "automated-draft-pending-human-approval.pdf"
+    )
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(pdf_bytes)
+    assert hashlib.sha256(artifact_path.read_bytes()).hexdigest() == observed_sha
+
     return {
         "language": report_language,
         "size_bytes": len(pdf_bytes),
         "sha256": observed_sha,
         "page_count": page_count,
+        "renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
         "signature_verified": True,
         "run_identity_verified": True,
         "commercial_metadata_verified": True,
+        "all_five_engagement_literals_verified": True,
+        "client_evidence_summary_five_fields_consolidated": True,
         "assessment_rerun": False,
+        "canonical_truth_sha256": canonical_truth_sha256,
+        "artifact_path": artifact_path.as_posix(),
+        "approval_boundary_in_filename": "pending-human-approval",
     }
 
 
@@ -275,6 +400,10 @@ def _verify_localized_spanish_terminal_artifacts(
     assert reports.get("artifact_delivery") == "on_demand_exact_run"
     assert reports.get("pdf_available") is True
     assert reports.get("markdown_available") is True
+    manifest_canonical_truth_sha256 = str(
+        reports.get("canonical_truth_sha256") or ""
+    ).lower()
+    terminal_state_before_localized_reads = _terminal_mutation_snapshot(payload)
 
     terminal_top = _assert_engagement_metadata(
         payload.get("engagement_metadata"),
@@ -295,8 +424,15 @@ def _verify_localized_spanish_terminal_artifacts(
     assert canonical_response.ok, (
         f"Exact-run canonical report JSON returned HTTP {canonical_response.status}"
     )
+    canonical_response_sha256 = str(
+        canonical_response.headers.get("x-nico-canonical-truth-sha256") or ""
+    ).lower()
     canonical = canonical_response.json()
     assert isinstance(canonical, dict)
+    computed_canonical_truth_sha256 = require_canonical_json_digest(
+        canonical,
+        canonical_response_sha256,
+    )
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
     assert str(identity.get("run_id") or "") == run_id
     assert str(identity.get("customer_name") or identity.get("client_name") or "") == PROOF_CLIENT_NAME
@@ -326,6 +462,52 @@ def _verify_localized_spanish_terminal_artifacts(
         run_id=run_id,
         report_language="en",
     )
+    canonical_after = page.request.get(
+        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/json",
+        headers={"Accept": "application/json", "Cache-Control": "no-store"},
+        timeout=120_000,
+    )
+    assert canonical_after.ok, (
+        "Exact-run canonical report JSON could not be refetched after localized rendering: "
+        f"HTTP {canonical_after.status}"
+    )
+    canonical_after_payload = canonical_after.json()
+    assert isinstance(canonical_after_payload, dict)
+    canonical_after_computed_sha256 = require_canonical_json_digest(
+        canonical_after_payload,
+        canonical_after.headers.get("x-nico-canonical-truth-sha256"),
+    )
+    status_after = page.request.get(
+        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
+        headers={
+            "Accept": "application/json",
+            base.recovery.BROWSER_PROJECTION_HEADER: base.recovery.BROWSER_PROJECTION_VALUE,
+            "Cache-Control": "no-store",
+        },
+        timeout=60_000,
+    )
+    assert status_after.ok, (
+        "Exact terminal status could not be refetched after localized report reads: "
+        f"HTTP {status_after.status}"
+    )
+    status_after_payload = status_after.json()
+    assert isinstance(status_after_payload, dict)
+    terminal_state_after_localized_reads = _terminal_mutation_snapshot(
+        status_after_payload
+    )
+    assert terminal_state_after_localized_reads == terminal_state_before_localized_reads, {
+        "terminal_state_before_localized_reads": terminal_state_before_localized_reads,
+        "terminal_state_after_localized_reads": terminal_state_after_localized_reads,
+    }
+    canonical_truth_sha256 = require_matching_canonical_truth_digest(
+        manifest_canonical_truth_sha256,
+        canonical_response_sha256,
+        computed_canonical_truth_sha256,
+        spanish_pdf["canonical_truth_sha256"],
+        english_pdf["canonical_truth_sha256"],
+        canonical_after_computed_sha256,
+        terminal_state_after_localized_reads["canonical_truth_sha256"],
+    )
 
     return {
         "terminal_manifest_size_bytes": len(status_bytes),
@@ -348,8 +530,31 @@ def _verify_localized_spanish_terminal_artifacts(
         "durable_engagement_metadata_verified_at_terminal": True,
         "spanish_pdf_page_count": spanish_pdf["page_count"],
         "english_pdf_page_count": english_pdf["page_count"],
+        "spanish_pdf_path": spanish_pdf["artifact_path"],
+        "spanish_pdf_sha256": spanish_pdf["sha256"],
+        "english_pdf_path": english_pdf["artifact_path"],
+        "english_pdf_sha256": english_pdf["sha256"],
+        "localized_pdf_artifacts_pending_human_approval": True,
+        "five_field_literals_verified_in_both_pdfs": all(
+            item["all_five_engagement_literals_verified"]
+            for item in (spanish_pdf, english_pdf)
+        ),
+        "five_fields_consolidated_in_both_client_evidence_summaries": all(
+            item["client_evidence_summary_five_fields_consolidated"]
+            for item in (spanish_pdf, english_pdf)
+        ),
         "same_run_bilingual_pdf_verified": True,
         "same_run_bilingual_assessment_rerun": False,
+        "canonical_truth_sha256": canonical_truth_sha256,
+        "canonical_truth_unchanged_after_localized_rendering": True,
+        "canonical_truth_digest_computed_from_json": True,
+        "localized_pdf_artifact_hash_headers_verified": True,
+        "localized_report_get_count": 2,
+        "localized_report_mutation_request_count": 0,
+        "terminal_state_before_localized_reads": terminal_state_before_localized_reads,
+        "terminal_state_after_localized_reads": terminal_state_after_localized_reads,
+        "terminal_state_unchanged_after_localized_reads": True,
+        "pdf_renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
@@ -369,6 +574,10 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
     run_id = ""
     proof_completed = False
     origin = args.frontend_url.rstrip("/")
+    source_marker = source_binding_marker(
+        args.source_workflow_run_id,
+        args.source_workflow_run_attempt,
+    )
     base._install_reserved_proof_scope(page)
 
     def record_request(request: Any) -> None:
@@ -422,6 +631,25 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
         )
         proof_scope = base._verify_proof_scope(page, origin, run_id)
 
+        running_reload = base.recovery._reload_and_restore(
+            page,
+            run_id,
+            args.navigation_timeout_ms,
+            expect_active_storage=True,
+        )
+        assert base.recovery._start_count(requests) == 1
+        running_visibility = base.recovery._prove_visibility_hidden_visible(
+            page,
+            context,
+            timeout_ms=args.navigation_timeout_ms,
+        )
+        running_after_foreground = base.recovery._wait_for_same_run_ui(
+            page,
+            run_id,
+            120.0,
+        )
+        assert base.recovery._start_count(requests) == 1
+
         base.recovery._wait_for_terminal(page, run_id, args.timeout_seconds)
         terminal = base.recovery._wait_for_terminal_ui_ready(
             page,
@@ -458,6 +686,9 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             "frontend_url": origin,
             "repository": args.repository,
             "expected_sha": args.expected_sha,
+            "source_workflow_run_id": str(args.source_workflow_run_id),
+            "source_workflow_run_attempt": str(args.source_workflow_run_attempt),
+            "source_binding": source_marker.removeprefix("source:"),
             "run_id": run_id,
             "report_language_requested": "es-MX",
             "spanish_route_verified": True,
@@ -468,6 +699,12 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             "start_request_count": base.recovery._start_count(requests),
             "duplicate_intake_absent": True,
             "initial_persistence": initial_stored,
+            "running_reload": running_reload,
+            "running_after_foreground": running_after_foreground,
+            "running_visibility": running_visibility,
+            "running_visibility_transitions": ["hidden", "visible"],
+            "running_reload_recovery_verified": True,
+            "running_background_foreground_recovery_verified": True,
             "durable_engagement_metadata_verified_at_intake": True,
             "durable_engagement_metadata_at_intake": initial_engagement,
             "terminal": terminal,

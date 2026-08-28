@@ -155,6 +155,22 @@ def test_spanish_final_surface_gate_rejects_reintroduced_english_copy() -> None:
         )
 
 
+def test_spanish_final_surface_gate_allows_exact_user_and_technical_fragments() -> None:
+    canonical = _canonical(language="es-MX")
+    literal = (
+        "Dato aportado por el cliente · Alcance autorizado: tool=Bandit; "
+        "package=requests; installed=2.31.0; fixed=2.32.0; "
+        "location=nico/admin_security.py; disposition=review_required"
+    )
+
+    assert_spanish_client_copy_is_localized(
+        canonical,
+        f"## Resumen de evidencia del cliente\n\n- {literal}",
+        f"<p>{literal}</p>",
+        _pdf(literal),
+    )
+
+
 def test_empty_legacy_native_control_vector_is_not_presented_as_zero_over_zero() -> None:
     result = normalize_ci_presentation_lines(
         [

@@ -12,11 +12,12 @@ from nico.admin_security import require_admin_write
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunNotFound
+from nico.comprehensive_review_decision_v1 import review_artifact_identity
 from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v15"
+VERSION = "nico.comprehensive_api_routes.v16"
 _BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 
 COMPREHENSIVE_API_ROUTES = {
@@ -26,6 +27,7 @@ COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-run/{run_id}/continue"),
     ("GET", "/assessment/comprehensive-run/{run_id}/review-queue"),
     ("POST", "/assessment/comprehensive-run/{run_id}/review"),
+    ("POST", "/assessment/comprehensive-run/{run_id}/authorize-delivery"),
     ("GET", "/assessment/comprehensive-run/{run_id}/approved-delivery-package"),
 }
 
@@ -106,6 +108,20 @@ def _translate_error(exc: Exception) -> HTTPException:
         )
     if isinstance(exc, ComprehensiveRunConflict):
         return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, ValueError) and str(exc) == "stale_review_artifact_identity":
+        return HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_review_artifact_identity",
+                "message": (
+                    "The report artifact set changed after it was loaded. "
+                    "Reload and review the current exact artifacts before approving "
+                    "or authorizing client delivery."
+                ),
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     if isinstance(exc, (TypeError, ValueError)):
         return HTTPException(status_code=422, detail=str(exc))
     return HTTPException(status_code=500, detail="comprehensive_service_error")
@@ -209,7 +225,14 @@ def _review_projection(
         "status": str(record.get("status") or response.get("status") or "unknown"),
         "human_review_completed": record.get("human_review_completed") is True,
         "client_delivery_allowed": allowed,
-        "delivery_status": "approved_for_delivery" if allowed else "blocked",
+        "delivery_status": (
+            "approved_for_delivery"
+            if allowed
+            else "pending_authorization"
+            if str(record.get("status") or "").casefold() == "approved"
+            else "blocked"
+        ),
+        "review_artifact_identity": review_artifact_identity(record),
     }
     if isinstance(record.get("review_decision"), dict):
         projected["review_decision"] = record["review_decision"]
@@ -217,6 +240,8 @@ def _review_projection(
         projected["accepted_edition"] = record["accepted_edition"]
     if isinstance(record.get("review_context"), dict):
         projected["review_context"] = record["review_context"]
+    if isinstance(record.get("delivery_authorization"), dict):
+        projected["delivery_authorization"] = record["delivery_authorization"]
     delivery_projection = _approved_delivery_projection(record)
     if delivery_projection:
         projected["approved_delivery_package"] = delivery_projection
@@ -456,8 +481,10 @@ def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     # optional display names here so every production call path retains them before the
     # controller/service canonicalizes the run. The detached report worker already reads
     # the retained stakeholder evidence as its durable display-metadata fallback.
-    client_name = " ".join(str(payload.get("client_name") or "").split())[:180]
-    project_name = " ".join(str(payload.get("project_name") or "").split())[:180]
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    client_name = _literal(payload.get("client_name"), 180)
+    project_name = _literal(payload.get("project_name"), 180)
     from nico.comprehensive_intake_display_metadata_v2 import (
         _human_evidence_with_display_metadata,
     )
@@ -681,10 +708,64 @@ def register_comprehensive_api_routes(
                     if payload.get("decided_at")
                     else None
                 ),
+                expected_artifact_identity=payload.get(
+                    "expected_artifact_identity"
+                ),
             )
             response = controller_value._response(
                 record,
                 operation="reviewed",
+                browser_projection=_browser_projection_requested(request),
+            )
+            return _with_runtime_truth(
+                request,
+                _review_projection(response, record),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _translate_error(exc) from exc
+
+    @app.post("/assessment/comprehensive-run/{run_id}/authorize-delivery")
+    async def authorize_comprehensive_delivery(
+        run_id: str,
+        request: Request,
+        x_nico_admin_token: str = Header(default=""),
+    ) -> dict[str, Any]:
+        try:
+            _authorize_review(x_nico_admin_token)
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise TypeError("request_body_must_be_object")
+            if (
+                payload.get("delivery_authorized") is not True
+                or payload.get("authorization_confirmed") is not True
+            ):
+                raise ValueError("explicit_delivery_authorization_required")
+            controller_value = _controller(request)
+            record = _service(controller_value).authorize_delivery(
+                run_id,
+                authorizer=_required(payload.get("authorizer"), "authorizer"),
+                authorizer_role=_required(
+                    payload.get("authorizer_role"),
+                    "authorizer_role",
+                ),
+                authorization_reason=_required(
+                    payload.get("authorization_reason"),
+                    "authorization_reason",
+                ),
+                authorized_at=(
+                    str(payload.get("authorized_at")).strip()
+                    if payload.get("authorized_at")
+                    else None
+                ),
+                expected_artifact_identity=payload.get(
+                    "expected_artifact_identity"
+                ),
+            )
+            response = controller_value._response(
+                record,
+                operation="delivery_authorized",
                 browser_projection=_browser_projection_requested(request),
             )
             return _with_runtime_truth(

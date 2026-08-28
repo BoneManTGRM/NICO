@@ -122,6 +122,12 @@ export function evidenceFields(definition: StrategicEvidenceDefinition): string[
   return definition.fields || definition.requiredFields;
 }
 
+export const CLIENT_ENGAGEMENT_FIELDS = new Set([
+  "access_method",
+  "primary_technical_contact",
+  "authorized_scope",
+]);
+
 export function emptyStrategicEvidenceModule(): StrategicEvidenceModuleInput {
   return {
     evidence: {},
@@ -167,10 +173,14 @@ export function compactStrategicHumanEvidence(
       evidenceFields(definition)
         .map((field) => [
           field,
-          (module.evidence[field] || [])
-            .map((item) => item.trim())
-            .filter(Boolean)
-            .slice(0, 100),
+          CLIENT_ENGAGEMENT_FIELDS.has(field)
+            ? (module.evidence[field] || [])
+              .filter((item) => item.trim())
+              .slice(0, 1)
+            : (module.evidence[field] || [])
+              .map((item) => item.trim())
+              .filter(Boolean)
+              .slice(0, 100),
         ] as const)
         .filter(([, items]) => items.length > 0),
     );

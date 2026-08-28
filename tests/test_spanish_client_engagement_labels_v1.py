@@ -21,7 +21,7 @@ def test_mobile_client_engagement_labels_are_bilingual() -> None:
 
 def test_client_engagement_transport_keys_remain_stable() -> None:
     assert (
-        'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", '
+        'const MOBILE_CLIENT_ENGAGEMENT_FIELDS = ["access_method", '
         '"primary_technical_contact", "authorized_scope"] as const;'
     ) in SOURCE
     assert "setEvidenceField(" in SOURCE

@@ -138,7 +138,7 @@ _PHASE2_REVIEW_TRUTH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ),
     (
         "Efecto en puntuación: solo aseguramiento hasta completar la revisión.",
-        "Efecto en puntuación: solo aseguramiento mientras la disposición humana autorizada siga pendiente; el estado del triage técnico de NICO se informa por separado.",
+        "Efecto en la puntuación: solo aseguramiento mientras la disposición humana autorizada siga pendiente; el estado del triaje técnico de NICO se informa por separado.",
     ),
 )
 

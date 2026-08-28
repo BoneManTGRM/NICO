@@ -238,8 +238,10 @@ def install_client_ready_truth_projection() -> None:
 
     def canonical_hash(canonical: Mapping[str, Any]) -> str:
         # Use the original deterministic serializer so the hash binds the actual
-        # automated-draft canonical object rather than re-projecting it as final.
-        return _ORIGINAL_HASH(project_client_ready_truth(canonical))
+        # stored automated-draft canonical object. Re-projecting here is unsafe:
+        # project_client_ready_truth is a presentation projection and historical
+        # canonical objects are not guaranteed to be idempotent under it.
+        return _ORIGINAL_HASH(canonical)
 
     _pipeline.build_canonical_assessment = build
     _pipeline.canonical_truth_sha256 = canonical_hash

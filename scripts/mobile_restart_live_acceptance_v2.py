@@ -237,6 +237,13 @@ def main(argv: list[str] | None = None) -> int:
         result["webkit_intake_paint_stability_verified"] = True
         result["browser_engine"] = "webkit"
         result["mobile_emulation"] = "iPhone 390x844 @3x touch"
+        result["browser_evidence_class"] = (
+            "Playwright WebKit iPhone-sized mobile emulation"
+        )
+        result["safari_equivalent_evidence"] = (
+            "WebKit engine evidence; not real Safari or real iOS device evidence"
+        )
+        result["real_device_tested"] = False
         result["acceptance_version"] = VERSION
     except Exception as exc:
         failure = {
@@ -247,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
             "repository": args.repository,
             "expected_sha": args.expected_sha,
             "browser_engine": "webkit",
+            "browser_evidence_class": "Playwright WebKit iPhone-sized mobile emulation",
+            "real_device_tested": False,
             "error": f"{type(exc).__name__}: {recovery._bounded(exc, 2_000)}",
             "diagnostic": getattr(exc, "nico_diagnostic", {}),
             "finished_at_epoch": time.time(),

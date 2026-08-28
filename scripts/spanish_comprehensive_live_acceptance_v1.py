@@ -379,6 +379,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=float, default=7_200.0)
     parser.add_argument("--navigation-timeout-ms", type=int, default=120_000)
+    parser.add_argument("--source-workflow-run-id", required=True)
+    parser.add_argument("--source-workflow-run-attempt", required=True)
     return parser.parse_args(argv)
 
 

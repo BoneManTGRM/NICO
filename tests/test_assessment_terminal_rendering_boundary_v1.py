@@ -26,6 +26,7 @@ def test_workspace_never_stringifies_unbounded_stage_evidence() -> None:
     workspace = WORKSPACE.read_text(encoding="utf-8")
 
     assert "JSON.stringify(item.evidence, null, 2)" in workspace
+    assert '<pre className="json-block" data-no-localize="true">' in workspace
     assert "browserEvidencePreview(value.evidence)" in evidence
     assert "compactBrowserValue" in evidence
     assert "item_count" in evidence

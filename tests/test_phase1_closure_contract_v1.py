@@ -10,9 +10,9 @@ MOBILE_PROOF = ROOT / "scripts/mobile_restart_live_acceptance_v1.py"
 TWO_SERVICE_WORKFLOW = ROOT / ".github/workflows/two-service-production-acceptance.yml"
 IOS_WORKFLOW = ROOT / ".github/workflows/ios-webkit-paint-proof.yml"
 MOBILE_WORKFLOW = ROOT / ".github/workflows/mobile-restart-production-proof.yml"
-MOBILE_CONCURRENCY = "group: nico-production-assessment-proof-${{ github.ref }}"
-IOS_CONCURRENCY = "group: nico-production-ios-webkit-proof-${{ github.ref }}"
-TWO_SERVICE_CONCURRENCY = "group: unified-production-acceptance-v2-${{ github.ref }}"
+MOBILE_CONCURRENCY = "group: nico-production-assessment-proof-${{ github.event.workflow_run.head_sha || github.ref }}"
+IOS_CONCURRENCY = "group: nico-production-ios-webkit-proof-${{ github.event.workflow_run.head_sha || github.ref }}"
+TWO_SERVICE_CONCURRENCY = "group: unified-production-acceptance-v2-${{ github.event.workflow_run.head_sha || github.ref }}"
 
 
 def _load_audit_module() -> Any:

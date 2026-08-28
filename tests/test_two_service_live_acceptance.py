@@ -213,12 +213,13 @@ def test_legacy_report_validation_keeps_depth_and_review_boundaries() -> None:
         assert required in source
 
 
-def test_post_merge_workflow_waits_for_deployments_and_preflights_readiness() -> None:
+def test_post_merge_workflow_consumes_the_single_run_after_deployment_readiness() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
     assert "pull_request:" in source
-    assert "push:" in source
-    assert "- main" in source
+    assert "workflow_run:" in source
+    assert "Spanish Comprehensive Production Proof" in source
+    assert "github.event.workflow_run.head_branch == 'main'" in source
     assert "statuses: write" in source
     assert "Wait for exact frontend and backend deployments" in source
     assert "Verify production assessment readiness" in source
@@ -227,9 +228,10 @@ def test_post_merge_workflow_waits_for_deployments_and_preflights_readiness() ->
     assert "Production assessment is not safe to start" in source
     assert "--passes 2" in source
     assert "NICO Two-Service Production Acceptance" in source
-    assert 'payload["artifact_schema"] == "nico.unified_live_acceptance.v1"' in source
-    assert 'payload["public_assessment"] == "strategic"' in source
-    assert 'payload["services"] == ["comprehensive"]' in source
+    assert 'payload["artifact_schema"] == "nico.completed-run-two-pass-production-acceptance.v1"' in source
+    assert 'payload["fresh_assessment_count"] == 0' in source
+    assert 'payload["start_request_count"] == 0' in source
+    assert 'payload["continuation_post_count"] == 0' in source
     assert 'len(payload["runs"]) == 2' in source
     assert '"state": "success"' in source
     assert '"state": "failure"' in source

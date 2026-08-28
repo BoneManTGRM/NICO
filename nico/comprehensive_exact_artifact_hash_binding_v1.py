@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import json
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
@@ -141,16 +142,37 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
                 f"artifact {artifact_type} byte-size mismatch: {actual_size} != {expected_size}"
             )
 
-    manifest_json = str(result.get("evidence_manifest_json") or "").encode("utf-8")
+    manifest_text = str(result.get("evidence_manifest_json") or "")
+    manifest_json = manifest_text.encode("utf-8")
     expected_manifest_sha = _text(result.get("evidence_manifest_sha256"), 100).lower()
     if not manifest_json or _sha256(manifest_json) != expected_manifest_sha:
         raise ValueError("detached evidence manifest SHA-256 does not match retained bytes")
+    try:
+        retained_manifest = json.loads(manifest_text)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("detached evidence manifest JSON is invalid") from exc
+    if retained_manifest != manifest:
+        raise ValueError("detached evidence manifest bytes do not match retained manifest object")
 
     canonical_json = str(result.get("canonical_json") or "").encode("utf-8")
     pdf = _artifact_bytes(result, "comprehensive_pdf")
     identity = result.get("draft_artifact_identity")
     if not isinstance(identity, Mapping):
         raise ValueError("Exact draft artifact identity is missing")
+    manifest_id = _text(manifest.get("manifest_id"), 200)
+    if not manifest_id or _text(identity.get("manifest_id"), 200) != manifest_id:
+        raise ValueError("draft artifact identity manifest ID does not match detached manifest")
+    manifest_identity = manifest.get("identity")
+    canonical = result.get("json")
+    canonical_identity = canonical.get("identity") if isinstance(canonical, Mapping) else None
+    if not isinstance(manifest_identity, Mapping) or not isinstance(canonical_identity, Mapping):
+        raise ValueError("exact artifact identity binding is missing")
+    for field in ("repository", "commit_sha", "run_id"):
+        expected = _text(canonical_identity.get(field), 1000)
+        if not expected or _text(manifest_identity.get(field), 1000) != expected:
+            raise ValueError(f"detached evidence manifest identity {field} mismatch")
+        if _text(identity.get(field), 1000) != expected:
+            raise ValueError(f"draft artifact identity {field} mismatch")
     checks = {
         "pdf_sha256": _sha256(pdf),
         "canonical_json_sha256": _sha256(canonical_json),

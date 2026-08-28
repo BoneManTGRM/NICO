@@ -60,12 +60,8 @@ function inputForLabels(labels: ReadonlySet<string>): HTMLInputElement | null {
   return null;
 }
 
-function evidenceLines(value: string): string[] {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 100);
+function exactEngagementValue(value: string): string[] {
+  return value.trim() ? [value] : [];
 }
 
 function mobileEngagementSnapshot(): IntakeDomSnapshot["mobileEvidence"] {
@@ -91,7 +87,7 @@ function mobileEngagementSnapshot(): IntakeDomSnapshot["mobileEvidence"] {
     ) {
       return null;
     }
-    output[MOBILE_ENGAGEMENT_FIELDS[index]] = evidenceLines(control.value);
+    output[MOBILE_ENGAGEMENT_FIELDS[index]] = exactEngagementValue(control.value);
   }
   return output;
 }
@@ -149,9 +145,9 @@ export function rewriteComprehensiveIntakeBody(
   return JSON.stringify(payload);
 }
 
-function isPrimaryAssessmentAction(target: EventTarget | null): boolean {
+function isIntakeSubmitAction(target: EventTarget | null): boolean {
   return target instanceof Element
-    && Boolean(target.closest('[data-assessment-primary-action="true"]'));
+    && Boolean(target.closest("[data-assessment-intake-submit='true']"));
 }
 
 /**
@@ -167,7 +163,7 @@ export default function AssessmentIntakeDomSnapshotBridge() {
     let pendingSnapshot: IntakeDomSnapshot | null = null;
 
     const captureBeforeReactSubmit = (event: MouseEvent) => {
-      if (!isPrimaryAssessmentAction(event.target)) return;
+      if (!isIntakeSubmitAction(event.target)) return;
       pendingSnapshot = captureIntakeDomSnapshot();
     };
 

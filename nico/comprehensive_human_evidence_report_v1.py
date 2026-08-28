@@ -13,6 +13,14 @@ _REPORT_LINE_CHARS = 760
 # The established decision-grade stage summarizer retains at most 18 evidence lines
 # per stage. Stay below that boundary so explicit human input is never silently clipped.
 _REPORT_STAGE_LINES = 16
+_CANONICAL_ENGAGEMENT_FIELDS = {
+    "customer_name",
+    "client_name",
+    "project_name",
+    "primary_technical_contact",
+    "access_method",
+    "authorized_scope",
+}
 
 _REPORT_CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_human_evidence_report_context",
@@ -84,6 +92,12 @@ def _text(value: Any, limit: int = 500) -> str:
     )
 
 
+def _engagement_literal(value: Any, limit: int) -> str:
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    return _literal(value, limit)
+
+
 def _verified_engagement(value: Any) -> dict[str, Any]:
     from nico.comprehensive_engagement_metadata_v1 import (
         normalize_comprehensive_engagement_metadata,
@@ -107,29 +121,26 @@ def _verified_human_evidence(value: Any) -> dict[str, Any]:
 
 def _context_snapshot(context: Mapping[str, Any]) -> dict[str, Any]:
     engagement = _verified_engagement(context.get("engagement_metadata"))
-    display_values = {
-        "customer_name": _text(
-            engagement.get("client_name") or context.get("customer_name"),
-            180,
-        ),
-        "project_name": _text(
-            engagement.get("project_name") or context.get("project_name"),
-            180,
-        ),
-        "primary_technical_contact": _text(
-            engagement.get("primary_technical_contact")
-            or context.get("primary_technical_contact"),
-            600,
-        ),
-        "access_method": _text(
-            engagement.get("access_method") or context.get("access_method"),
-            1200,
-        ),
-        "authorized_scope": _text(
-            engagement.get("authorized_scope") or context.get("authorized_scope"),
-            4000,
-        ),
-    }
+    if engagement:
+        display_values = {
+            "customer_name": _engagement_literal(engagement.get("client_name"), 180),
+            "project_name": _engagement_literal(engagement.get("project_name"), 180),
+            "primary_technical_contact": _engagement_literal(
+                engagement.get("primary_technical_contact"), 600
+            ),
+            "access_method": _engagement_literal(engagement.get("access_method"), 1200),
+            "authorized_scope": _engagement_literal(engagement.get("authorized_scope"), 4000),
+        }
+    else:
+        display_values = {
+            "customer_name": _engagement_literal(context.get("customer_name"), 180),
+            "project_name": _engagement_literal(context.get("project_name"), 180),
+            "primary_technical_contact": _engagement_literal(
+                context.get("primary_technical_contact"), 600
+            ),
+            "access_method": _engagement_literal(context.get("access_method"), 1200),
+            "authorized_scope": _engagement_literal(context.get("authorized_scope"), 4000),
+        }
     return {
         "report_language": _text(context.get("report_language"), 40) or "en",
         "display_values": display_values,
@@ -185,9 +196,10 @@ def _literal_lines(
     spanish: bool,
 ) -> list[str]:
     prefix = _CLIENT_LITERAL_ES_PREFIX if spanish else _CLIENT_LITERAL_EN_PREFIX
-    pieces = _split_text(value)
-    if not pieces:
+    literal = _engagement_literal(value, 4000)
+    if not literal:
         return []
+    pieces = [literal]
     if len(pieces) == 1:
         return [f"{prefix}{label}: {pieces[0]}"]
     part_word = "parte" if spanish else "part"
@@ -213,7 +225,10 @@ def _flatten_scalars(value: Any, path: str = "") -> list[tuple[str, str]]:
             child = f"{path}[{index}]" if path else f"[{index}]"
             output.extend(_flatten_scalars(item, child))
         return output
-    normalized = _text(value, 100_000)
+    if isinstance(value, str):
+        normalized = value
+    else:
+        normalized = _text(value, 100_000)
     return [(path, normalized)] if normalized else []
 
 
@@ -248,7 +263,7 @@ def _engagement_lines(
     for key, labels in _ENGAGEMENT_LABELS.items():
         label = labels[1 if spanish else 0]
         value = values.get(key)
-        if _text(value, 4000):
+        if _engagement_literal(value, 4000):
             evidence.extend(_literal_lines(label, value, spanish=spanish))
         else:
             missing.append(
@@ -299,6 +314,14 @@ def _human_module_stage_specs(
             else {}
         )
         for field, raw in evidence.items():
+            if (
+                module_id == "stakeholder_context"
+                and str(field) in _CANONICAL_ENGAGEMENT_FIELDS
+            ):
+                # These five canonical engagement values are already rendered once,
+                # exactly, in Client Evidence Summary. A generic flattened duplicate
+                # would normalize whitespace and could diverge from that source.
+                continue
             for path, scalar in _flatten_scalars(raw, str(field)):
                 lines.extend(
                     _literal_lines(
@@ -603,6 +626,8 @@ def _install_spanish_literal_guard() -> dict[str, bool]:
         return original(value, key)
 
     translate_with_client_literal_guard._nico_client_literal_guard_v1 = True
+    if getattr(current, "_nico_scoring_unavailable_es_v1", False):
+        translate_with_client_literal_guard._nico_scoring_unavailable_es_v1 = True
     canonical._translate_presentation_field = translate_with_client_literal_guard
     return {
         "spanish_client_supplied_literals_preserved": True,

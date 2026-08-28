@@ -24,10 +24,13 @@ def test_reconciliation_has_bounded_actions_write_scope_and_exact_sha_selection(
     assert "actions: write" in text
     assert "contents: read" in text
     assert "statuses: read" in text
-    assert '"head_sha": sha' in text
-    assert 'str(item.get("head_sha") or "") == sha' in text
-    assert 'str(item.get("event") or "") == "push"' in text
-    assert "per_page" in text
+    assert "SOURCE_CONSUMER_RUN_ID: ${{ github.event.workflow_run.id }}" in text
+    assert "SOURCE_CONSUMER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}" in text
+    assert 'str(trigger_run.get("head_sha") or "") != sha' in text
+    assert 'str(trigger_run.get("event") or "") != "workflow_run"' in text
+    assert 'str(trigger_run.get("run_attempt") or "") != source_consumer_run_attempt' in text
+    assert 'marker_match = re.match(r"^(source:\\d+:\\d+) ", description)' in text
+    assert "source_bound_status(statuses, context, source_marker)" in text
     assert "rerun-failed-jobs" in text
     assert 'status != "completed"' in text
     assert 'conclusion not in {"failure", "cancelled", "timed_out", "action_required", "stale"}' in text
@@ -44,6 +47,8 @@ def test_reconciliation_repairs_only_the_known_dependency_chain() -> None:
     assert 'observed[mobile_context] == "success" and observed[ios_context] in {"failure", "error"}' in text
     assert 'observed[ios_context] == "success"' in text
     assert 'observed[acceptance_context] in {"failure", "error"}' in text
+    assert "status_item=bound[ios_context]" in text
+    assert "status_item=bound[acceptance_context]" in text
 
 
 def test_reconciliation_never_creates_a_new_assessment_or_replays_successful_jobs() -> None:

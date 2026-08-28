@@ -41,7 +41,10 @@ def test_failure_panel_keeps_raw_diagnostics_collapsed() -> None:
     assert '<details className="help-details nico-failure-evidence__details">' in source
     assert '<summary>{copy.details}</summary>' in source
     assert '<div><dt>{copy.code}</dt><dd><code>{failure.code}</code></dd></div>' in source
-    assert '<div><dt>{copy.message}</dt><dd>{failure.message}</dd></div>' in source
+    assert "authoredFailureMessage(failure.message, spanish" in source
+    assert "Canonical diagnostic prose stays in API evidence" in source
+    assert "data-stage-id={item.step}" in source
+    assert "data-status-id={item.status}" in source
     assert 'recovery: "Open this run in Recovery"' in source
 
 

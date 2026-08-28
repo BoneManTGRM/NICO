@@ -75,7 +75,7 @@ def test_more_menu_exposes_only_help_and_authorized_operator_destinations() -> N
 def test_spanish_route_localizes_the_simplified_navigation_shell() -> None:
     source = NAVIGATION.read_text(encoding="utf-8")
 
-    assert 'const spanishActive = pathname.startsWith("/es") || queryLocale === "es-MX"' in source
+    assert 'const spanishActive = pathname.startsWith("/es") || queryLocale === "es-mx" || queryLocale === "es"' in source
     assert "localePreservingHref(" in source
     assert "currentSearch" in source
     assert "currentHash" in source

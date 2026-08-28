@@ -14,8 +14,10 @@ def test_markdown_copy_has_mobile_safari_fallback_and_current_run_fetch() -> Non
     workspace = WORKSPACE.read_text(encoding="utf-8")
     repair = RUNTIME_REPAIR.read_text(encoding="utf-8")
 
-    assert "/report/markdown" in workspace
+    assert "/localized-report/${encodeURIComponent(requestedReportLanguage)}" in workspace
     assert "encodeURIComponent(runId)" in workspace
+    assert "payload.report?.markdown" in workspace
+    assert "payload.assessment_rerun !== false" in workspace
     assert "if (!markdown.trim())" in workspace
     assert "navigator.clipboard?.writeText" in repair
     assert 'document.execCommand("copy")' in repair

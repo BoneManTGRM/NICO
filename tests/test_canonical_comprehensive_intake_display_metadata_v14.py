@@ -32,7 +32,7 @@ def _request() -> SimpleNamespace:
     return SimpleNamespace(app=SimpleNamespace(state=state))
 
 
-def test_canonical_intake_retains_display_metadata_without_runtime_wrapper(monkeypatch) -> None:
+def test_canonical_intake_retains_exact_display_metadata_without_runtime_wrapper(monkeypatch) -> None:
     controller = _CapturingController()
     monkeypatch.setattr(routes, "_controller", lambda _request: controller)
     monkeypatch.setattr(
@@ -70,8 +70,8 @@ def test_canonical_intake_retains_display_metadata_without_runtime_wrapper(monke
     )
 
     assert controller.payload is not None
-    assert controller.payload["client_name"] == "Acme Holdings"
-    assert controller.payload["project_name"] == "Apollo Modernization"
+    assert controller.payload["client_name"] == "  Acme   Holdings  "
+    assert controller.payload["project_name"] == "  Apollo   Modernization  "
 
     raw_human_evidence = controller.payload["human_evidence"]
     assert isinstance(raw_human_evidence, dict)
@@ -79,8 +79,8 @@ def test_canonical_intake_retains_display_metadata_without_runtime_wrapper(monke
     assert isinstance(stakeholder, dict)
     evidence = stakeholder["evidence"]
     assert isinstance(evidence, dict)
-    assert evidence["customer_name"] == "Acme Holdings"
-    assert evidence["project_name"] == "Apollo Modernization"
+    assert evidence["customer_name"] == "  Acme   Holdings  "
+    assert evidence["project_name"] == "  Apollo   Modernization  "
     assert evidence["primary_technical_contact"] == "Nora Engineer"
 
     retained = normalize_strategic_human_evidence(raw_human_evidence)
@@ -97,11 +97,11 @@ def test_canonical_intake_retains_display_metadata_without_runtime_wrapper(monke
             "human_evidence": retained,
         }
     )
-    assert report_identity["customer_name"] == "Acme Holdings"
-    assert report_identity["project_name"] == "Apollo Modernization"
+    assert report_identity["customer_name"] == "  Acme   Holdings  "
+    assert report_identity["project_name"] == "  Apollo   Modernization  "
     assert report_identity["primary_technical_contact"] == "Nora Engineer"
 
-    assert response["client_name"] == "Acme Holdings"
-    assert response["project_name"] == "Apollo Modernization"
+    assert response["client_name"] == "  Acme   Holdings  "
+    assert response["project_name"] == "  Apollo   Modernization  "
     assert response["client_delivery_allowed"] is False
     assert response["human_review_required"] is True

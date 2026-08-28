@@ -10,6 +10,7 @@ const COMPREHENSIVE_CONTINUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/conti
 const COMPREHENSIVE_REVIEW_QUEUE = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-queue$/;
 const COMPREHENSIVE_REVIEW_WORK = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-work$/;
 const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
+const COMPREHENSIVE_AUTHORIZE_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/authorize-delivery$/;
 const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
 const COMPREHENSIVE_REPORT_ARTIFACT = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/(?:markdown|html|json|pdf)$/;
 const COMPREHENSIVE_LOCALIZED_REPORT = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-report\/(?:en|es-MX)(?:\/pdf)?$/;
@@ -90,6 +91,7 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
   if (method === "GET" && COMPREHENSIVE_REVIEW_QUEUE.test(path)) return true;
   if ((method === "GET" || method === "POST") && COMPREHENSIVE_REVIEW_WORK.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_REVIEW.test(path)) return true;
+  if (method === "POST" && COMPREHENSIVE_AUTHORIZE_DELIVERY.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_LOCALIZED_REPORT.test(path)) return true;
@@ -100,6 +102,7 @@ function protectedReviewRoute(method: string, path: string): boolean {
   return (method === "GET" && COMPREHENSIVE_REVIEW_QUEUE.test(path))
     || ((method === "GET" || method === "POST") && COMPREHENSIVE_REVIEW_WORK.test(path))
     || (method === "POST" && COMPREHENSIVE_REVIEW.test(path))
+    || (method === "POST" && COMPREHENSIVE_AUTHORIZE_DELIVERY.test(path))
     || (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path));
 }
 
@@ -131,6 +134,16 @@ function upstreamReadPolicy(method: string, path: string): {timeoutMs: number; r
       timeoutMs: CONTINUATION_WRITE_TIMEOUT_MS,
       retryDelaysMs: SINGLE_ATTEMPT_DELAYS_MS,
       readClass: "single-attempt-continuation",
+    };
+  }
+  const mutatingRequest = method !== "GET" && method !== "HEAD";
+  if (mutatingRequest) {
+    return {
+      timeoutMs: WRITE_TIMEOUT_MS,
+      retryDelaysMs: SINGLE_ATTEMPT_DELAYS_MS,
+      readClass: path === COMPREHENSIVE_INTAKE
+        ? "single-attempt-intake"
+        : "single-attempt-mutation",
     };
   }
   const shortRead = method === "GET" || ALLOWED_DIAGNOSTIC_PATH.test(path);
@@ -222,13 +235,24 @@ async function proxyNico(
         "content-disposition",
         "retry-after",
         "x-nico-run-id",
+        "x-nico-commit-sha",
         "x-nico-report-id",
         "x-nico-report-language",
         "x-nico-assessment-rerun",
+        "x-nico-pdf-sha256",
         "x-nico-artifact-sha256",
+        "x-nico-accepted-pdf-sha256",
+        "x-nico-accepted-edition-language",
+        "x-nico-accepted-edition-manifest-sha256",
         "x-nico-canonical-truth-sha256",
         "x-nico-human-review-required",
+        "x-nico-approval-status",
+        "x-nico-delivery-status",
         "x-nico-client-delivery-allowed",
+        "x-nico-localized-artifact-requires-new-approval",
+        "x-nico-localized-artifact-approval-invalidated",
+        "x-nico-artifact-finality",
+        "x-nico-frozen-source-artifact",
         "x-nico-delivery-package-sha256",
         "x-nico-accepted-edition-sha256",
         "x-nico-delivery-certificate-sha256",
@@ -249,14 +273,28 @@ async function proxyNico(
   }
 
   const continuationFailure = policy.readClass === "single-attempt-continuation";
+  const intakeFailure = policy.readClass === "single-attempt-intake";
+  const mutationFailure = policy.readClass === "single-attempt-mutation";
   const timeoutFailure = lastFailure === "timeout";
   return jsonError(
     timeoutFailure ? 504 : 502,
     continuationFailure && timeoutFailure
       ? "assessment_run_continue_timeout"
-      : "assessment_backend_unreachable",
+      : intakeFailure
+        ? timeoutFailure
+          ? "assessment_intake_timeout"
+          : "assessment_intake_outcome_unknown"
+        : mutationFailure
+          ? timeoutFailure
+            ? "assessment_mutation_timeout"
+            : "assessment_mutation_outcome_unknown"
+          : "assessment_backend_unreachable",
     continuationFailure
       ? "The Comprehensive continuation request did not complete within its bounded single-attempt transport window. Recover the exact run status before attempting any further stage advancement."
+      : intakeFailure
+        ? "The Comprehensive intake request did not complete within its single-dispatch transport window. It was not replayed because the outcome may be ambiguous."
+        : mutationFailure
+          ? "The protected mutation did not complete within its single-dispatch transport window. It was not replayed because human and artifact state must not be duplicated."
       : "The canonical assessment backend could not be reached after bounded cold-start retries.",
     {
       request_id: requestId,
@@ -266,7 +304,10 @@ async function proxyNico(
       backend_candidate_count: 1,
       last_upstream_status: lastStatus,
       failure_class: lastFailure,
-      retryable: true,
+      // Intake and protected writes have an ambiguous upstream outcome here. Never
+      // advertise a one-click replay that could duplicate a paid run or human action.
+      // Continuation has an exact run identity and recovers through its status GET.
+      retryable: continuationFailure || (!intakeFailure && !mutationFailure),
     },
   );
 }

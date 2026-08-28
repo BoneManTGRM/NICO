@@ -55,6 +55,12 @@ _SPANISH_DYNAMIC_PHRASES = {
     "immutable native-control vector=not applicable; provider-neutral objective coverage is reported separately.": (
         "vector inmutable de controles nativos=no aplica; la cobertura de objetivos neutral al proveedor se informa por separado."
     ),
+    "Human context or additional evidence is required before this section can be accepted.": (
+        "Se requiere contexto humano o evidencia adicional antes de aceptar esta sección."
+    ),
+    "Named people, rates, contract structure, geographic mix, and budget require client input.": (
+        "Las personas, tarifas, estructura contractual, distribución geográfica y presupuesto requieren información del cliente."
+    ),
 }
 
 _SECTION_SPECS = (

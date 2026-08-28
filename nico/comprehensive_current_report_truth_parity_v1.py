@@ -89,6 +89,14 @@ _SPANISH_LEAK_MARKERS = (
     "Candidate volume and reviewer workload are operational review metrics",
     "Cybersecurity specialist",
     "maturity_level: Exceptional",
+    "Non-success or unresolved deployment observations:",
+    "Outcome classification breakdown:",
+    "Top-level entries[",
+    ": completed; commit exacto=",
+    ": completed; exact commit=",
+    "Dependency: raw=",
+    "Secret: raw=",
+    "Static: raw=",
 )
 
 # Late report-owned fields must fail closed even when an unforeseen English sentence

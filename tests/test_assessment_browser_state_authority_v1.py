@@ -17,7 +17,7 @@ def test_exact_run_status_retries_without_replaying_continuation() -> None:
     assert (
         ": runStatusRequest\n"
         "      ? CLIENT_RETRY_DELAYS_MS\n"
-        "      : boundedRequest\n"
+        "      : mutatingRequest\n"
         "        ? [0]\n"
         "        : CLIENT_RETRY_DELAYS_MS"
     ) in source
@@ -25,8 +25,8 @@ def test_exact_run_status_retries_without_replaying_continuation() -> None:
     assert 'return requestWithRetry(path, {method: "GET"}, copy);' in source
     assert "Exact-run GET retrying is centralized in requestWithRetry" in source
     assert "including Safari resume and Check again" in source
-    assert "Exact-run status is idempotent durable" in source
-    assert "Continuation is not safely replayable" in source
+    assert "status is idempotent durable recovery truth" in source
+    assert "No mutation is safely replayable" in source
 
 
 def test_terminal_continuation_is_confirmed_by_exact_run_status() -> None:
@@ -64,3 +64,17 @@ def test_browser_terminal_phase_requires_explicit_canonical_marker() -> None:
     assert 'export {terminal} from "./assessmentTerminalAuthority";' in model
     assert "terminal?: boolean;" in types
     assert 'terminal, wait} from "./assessmentModel"' in controller
+
+
+def test_human_approved_delivery_blocked_run_remains_terminal_without_continuation() -> None:
+    authority = TERMINAL_AUTHORITY.read_text(encoding="utf-8")
+    controller = RUN_CONTROLLER.read_text(encoding="utf-8")
+
+    approved = authority.index('if (value === "approved")')
+    complete = authority.index('return "complete"', approved)
+    assert approved < complete
+    assert "client_delivery_allowed" not in authority[approved:complete]
+    terminal_gate = controller.index("const stable = terminal(service, recovered);")
+    settled = controller.index("if (stable)", terminal_gate)
+    continuation = controller.index("await continueRun(recovered", settled)
+    assert terminal_gate < settled < continuation

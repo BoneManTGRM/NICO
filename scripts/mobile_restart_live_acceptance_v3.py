@@ -252,6 +252,7 @@ class SingleDispatchBrowser:
 
 
 def run_proof(browser: Any, args: Any) -> dict[str, Any]:
+    recovery._require_existing_source_args(args)
     wrapped = SingleDispatchBrowser(browser)
 
     def capture_on_terminal(page: Any) -> dict[str, str]:
@@ -278,7 +279,9 @@ def run_proof(browser: Any, args: Any) -> dict[str, Any]:
 
     assert wrapped.terminal_metrics, "Terminal compact-DOM metrics were not captured"
     _validate_terminal_metrics(wrapped.terminal_metrics)
-    result["start_dispatch"] = "single_native_dom_click"
+    assert result.get("start_request_count") == 0
+    assert result.get("continuation_post_count") == 0
+    result["start_dispatch"] = "not_dispatched_existing_run"
     result["start_dispatch_retry_absent"] = True
     result["hydration_wait_verified"] = True
     result["compact_mobile_dom_verified"] = True
@@ -289,6 +292,7 @@ def run_proof(browser: Any, args: Any) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = recovery.parse_args(argv)
+    recovery._require_existing_source_args(args)
     try:
         with sync_playwright() as playwright:
             browser: Browser = playwright.chromium.launch(headless=True)

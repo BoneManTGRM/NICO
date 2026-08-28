@@ -5,6 +5,7 @@ import styles from "./strategicEvidence.module.css";
 import type {Locale} from "./assessmentTypes";
 import {
   STRATEGIC_EVIDENCE_DEFINITIONS,
+  CLIENT_ENGAGEMENT_FIELDS,
   emptyStrategicEvidenceModule,
   evidenceFields,
   evidenceLines,
@@ -12,7 +13,7 @@ import {
   type StrategicHumanEvidenceInput,
 } from "./strategicEvidence";
 
-const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"] as const;
+const MOBILE_CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"] as const;
 
 const TEXT = {
   en: {
@@ -190,7 +191,7 @@ export default function StrategicEvidenceForm({
           </div>
         </header>
         <div className={styles.requiredEvidence}>
-          {CLIENT_ENGAGEMENT_FIELDS.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
+          {MOBILE_CLIENT_ENGAGEMENT_FIELDS.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
             <span>{copy.field(field)}</span>
             <input
               type="text"
@@ -369,7 +370,13 @@ export default function StrategicEvidenceForm({
                 rows={4}
                 value={(activeModule.evidence[field] || []).join("\n")}
                 disabled={disabled}
-                onChange={(event) => setEvidenceField(activeDefinition.moduleId, field, evidenceLines(event.target.value))}
+                onChange={(event) => setEvidenceField(
+                  activeDefinition.moduleId,
+                  field,
+                  CLIENT_ENGAGEMENT_FIELDS.has(field)
+                    ? event.target.value.trim() ? [event.target.value] : []
+                    : evidenceLines(event.target.value),
+                )}
               />
             </label>)}
           </div>}

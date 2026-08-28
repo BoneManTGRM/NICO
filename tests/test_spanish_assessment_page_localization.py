@@ -59,15 +59,16 @@ def test_report_sentences_visible_in_prior_spanish_run_have_translations() -> No
         assert signature in source
 
 
-def test_raw_step_evidence_is_localized_without_mutating_backend_records() -> None:
-    source = LOCALIZATION.read_text(encoding="utf-8")
-    assert 'pre.json-block' in source
-    assert 'JSON_KEY_SPANISH' in source
-    assert '"status", "estado"' in source
-    assert '"findings", "hallazgos"' in source
-    assert '"commit_sha", "sha_del_commit"' in source
-    assert "JSON.parse" in source
-    assert "node.textContent = localized" in source
+def test_raw_step_evidence_is_never_translated_or_rewritten() -> None:
+    localization = LOCALIZATION.read_text(encoding="utf-8")
+    workspace = (ROOT / "apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+
+    assert "JSON_KEY_SPANISH" not in localization
+    assert "localizeSpanishJson" not in localization
+    assert "localizeJsonBlocks" not in localization
+    assert '<pre className="json-block" data-no-localize="true">' in workspace
+    assert "JSON.stringify(item.evidence, null, 2)" in workspace
+    assert "data-no-localize='true'" in localization
 
 
 def test_runtime_applies_localization_once_without_observing_live_react_nodes() -> None:

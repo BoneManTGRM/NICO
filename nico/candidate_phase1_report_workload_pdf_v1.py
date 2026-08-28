@@ -87,11 +87,42 @@ def render_phase1_evidence_review_gate_pdf(
     small = ParagraphStyle("P1-Small", parent=body, fontSize=7, leading=8.8)
     warning = ParagraphStyle("P1-Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.7, borderPadding=7, spaceAfter=7)
 
-    def p(value: Any, style: ParagraphStyle = body) -> Paragraph:
-        return Paragraph(html.escape(_text(value)), style)
+    def p(
+        value: Any,
+        style: ParagraphStyle = body,
+        *,
+        client_literal: bool = False,
+    ) -> Paragraph:
+        if client_literal:
+            from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
 
-    def table(rows: list[list[Any]], widths: list[float]) -> Table:
-        value = Table([[p(cell, small) for cell in row] for row in rows], colWidths=widths, repeatRows=1)
+            return Paragraph(reportlab_literal_markup(value, 4000), style)
+        else:
+            rendered = _text(value)
+        return Paragraph(html.escape(rendered), style)
+
+    def table(
+        rows: list[list[Any]],
+        widths: list[float],
+        *,
+        client_literal_rows: set[int] | None = None,
+    ) -> Table:
+        literal_rows = client_literal_rows or set()
+        value = Table(
+            [
+                [
+                    p(
+                        cell,
+                        small,
+                        client_literal=row_index in literal_rows and column_index == 1,
+                    )
+                    for column_index, cell in enumerate(row)
+                ]
+                for row_index, row in enumerate(rows)
+            ],
+            colWidths=widths,
+            repeatRows=1,
+        )
         value.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -105,11 +136,22 @@ def render_phase1_evidence_review_gate_pdf(
         return value
 
     boundary = projection.ES_BOUNDARY if spanish else projection.EN_BOUNDARY
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    def engagement_value(key: str) -> str:
+        value = _literal(identity.get(key), 4000)
+        return value or ("No proporcionado" if spanish else "Not supplied")
+
     labels = (
         {
             "field": "Campo",
             "value": "Valor",
             "repository": "Repositorio",
+            "client_name": "Nombre del cliente",
+            "project_name": "Nombre del proyecto",
+            "primary_technical_contact": "Contacto técnico principal",
+            "access_method": "Método de acceso",
+            "authorized_scope": "Alcance autorizado",
             "exact_commit": "Commit exacto",
             "run_id": "ID de ejecución",
             "technical_maturity": "Madurez técnica",
@@ -136,6 +178,11 @@ def render_phase1_evidence_review_gate_pdf(
             "field": "Field",
             "value": "Value",
             "repository": "Repository",
+            "client_name": "Client name",
+            "project_name": "Project name",
+            "primary_technical_contact": "Primary technical contact",
+            "access_method": "Access method",
+            "authorized_scope": "Authorized scope",
             "exact_commit": "Exact commit",
             "run_id": "Run ID",
             "technical_maturity": "Technical maturity",
@@ -164,6 +211,11 @@ def render_phase1_evidence_review_gate_pdf(
         table(
             [
                 [labels["field"], labels["value"]],
+                [labels["client_name"], engagement_value("customer_name")],
+                [labels["project_name"], engagement_value("project_name")],
+                [labels["primary_technical_contact"], engagement_value("primary_technical_contact")],
+                [labels["access_method"], engagement_value("access_method")],
+                [labels["authorized_scope"], engagement_value("authorized_scope")],
                 [labels["repository"], _text(identity.get("repository"))],
                 [labels["exact_commit"], _text(identity.get("commit_sha"))],
                 [labels["run_id"], _text(identity.get("run_id"))],
@@ -171,6 +223,7 @@ def render_phase1_evidence_review_gate_pdf(
                 [labels["evidence_adjusted"], f"{int(adjusted_score)}/100" if isinstance(adjusted_score, (int, float)) else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")],
             ],
             [1.55 * inch, 5.85 * inch],
+            client_literal_rows={1, 2, 3, 4, 5},
         ),
         p("El triaje técnico y la disposición humana están separados" if spanish else "Technical triage and human disposition are separate", h2),
         p(
@@ -254,9 +307,9 @@ def render_phase1_evidence_review_gate_pdf(
     story.extend([
         Spacer(1, .1 * inch),
         p(
-            "Solo un revisor autorizado puede cambiar el estado a FINAL APROBADO y ENTREGA AUTORIZADA."
+            "Solo un revisor humano autorizado puede aprobar los artefactos inmutables exactos. La entrega al cliente requiere una acción autorizada independiente."
             if spanish
-            else "Only an authorized reviewer may change the status to APPROVED FINAL and CLIENT DELIVERY AUTHORIZED.",
+            else "Only an authorized human reviewer may approve the exact immutable artifacts. Client delivery requires a separate authorized action.",
             warning,
         ),
     ])

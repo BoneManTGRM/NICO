@@ -85,14 +85,21 @@ def test_completed_assessment_links_to_protected_internal_review() -> None:
     assert "X-NICO-Admin-Token" not in evidence
 
 
-def test_approved_run_is_complete_and_client_ready_in_the_frontend_contract() -> None:
+def test_approved_run_is_terminal_while_client_ready_remains_separate() -> None:
     evidence = (ASSESSMENT / "assessmentEvidence.ts").read_text(encoding="utf-8")
     workspace = (ASSESSMENT / "AssessmentWorkspace.tsx").read_text(encoding="utf-8")
 
-    assert 'value === "approved" && deliveryAllowed' in evidence
+    assert 'const approvalCompleted = status === "approved" || decision === "approved"' in evidence
+    assert "approvalCompleted," in evidence
+    assert "const clientReadyStatus = internalReview.deliveryAllowed" in workspace
+    assert "internalReview.approvalCompleted" in workspace
+    assert "copy.deliveryAuthorizationRequired" in workspace
     assert 'return "complete"' in evidence
     assert "clientReadyStatus" in workspace
-    assert "internalReview.approved ? copy.downloadApprovedPdf : copy.downloadReviewPdf" in workspace
+    assert 'data-assessment-pdf-kind="accepted-edition"' in workspace
+    assert 'data-assessment-pdf-kind="localized-draft-pending-approval"' in workspace
+    assert "!exactApprovedPdfAvailable || approvedLocaleMismatch" in workspace
+    assert "copy.newApprovalRequired" in workspace
 
 
 def test_visible_product_language_is_internal_review_not_client_acceptance() -> None:

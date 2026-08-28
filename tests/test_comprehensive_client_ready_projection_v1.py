@@ -174,6 +174,71 @@ def test_compact_client_composition_removes_duplicate_cards_and_raw_appendix() -
     assert EN_BOUNDARY in extracted
 
 
+def test_spanish_evidence_gate_localizes_score_and_candidate_table_copy() -> None:
+    register = _register(1)
+    canonical = _canonical(register)
+    canonical["assessment"].pop("technical_score")
+    canonical["assessment"].pop("evidence_adjusted_score")
+
+    base_renderer = render_evidence_review_gate_pdf
+    while getattr(base_renderer, "_nico_previous", None) is not None:
+        base_renderer = base_renderer._nico_previous
+    pdf = base_renderer(canonical, register, spanish=True)
+    extracted = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+    normalized = " ".join(extracted.split())
+
+    for expected in (
+        "SIN PUNTUACIÓN",
+        "Categoría",
+        "Brutos",
+        "Materiales confirmados",
+        "Requieren revisión",
+        "Efecto en la puntuación",
+        "Dependencias",
+        "Secretos",
+        "Análisis estático",
+        "Solo aseguramiento mientras la disposición humana autorizada siga pendiente",
+        "Solo un revisor humano autorizado puede aprobar los artefactos inmutables exactos.",
+        "La entrega al cliente requiere una acción autorizada independiente.",
+    ):
+        assert expected in normalized
+    for leak in (
+        "NOT SCORED",
+        "Category",
+        "Confirmed material",
+        "Review required",
+        "Score effect",
+        "Assurance-only until triaged",
+        "FINAL APROBADO y ENTREGA AL CLIENTE AUTORIZADA",
+    ):
+        assert leak not in normalized
+
+
+def test_english_evidence_gate_keeps_approval_and_delivery_as_separate_actions() -> None:
+    register = _register(1)
+    canonical = _canonical(register)
+
+    base_renderer = render_evidence_review_gate_pdf
+    while getattr(base_renderer, "_nico_previous", None) is not None:
+        base_renderer = base_renderer._nico_previous
+    pdf = base_renderer(canonical, register, spanish=False)
+    normalized = " ".join(
+        "\n".join(
+            page.extract_text() or ""
+            for page in PdfReader(io.BytesIO(pdf)).pages
+        ).split()
+    )
+
+    assert (
+        "Only an authorized human reviewer may approve the exact immutable artifacts."
+        in normalized
+    )
+    assert "Client delivery requires a separate authorized action." in normalized
+    assert "APPROVED FINAL and CLIENT DELIVERY AUTHORIZED" not in normalized
+
+
 def test_compact_markdown_and_html_remove_finality_and_raw_appendix() -> None:
     register = _register(5)
     canonical = _canonical(register)

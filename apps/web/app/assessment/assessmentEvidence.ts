@@ -1,5 +1,6 @@
 import type {
   Assessment,
+  Copy,
   Evidence,
   Phase,
   ProgressItem,
@@ -195,7 +196,8 @@ export type EvidenceCompletionView = {
 
 function completionMetric(
   value: unknown,
-  fallbackLabel: string,
+  presentationLabel: string,
+  presentationDefinition: string,
 ): CompletionMetric {
   const record =
     value && typeof value === "object" && !Array.isArray(value)
@@ -206,16 +208,20 @@ function completionMetric(
       ? Math.max(0, Math.min(100, Math.round(record.percent)))
       : null;
   return {
-    label: String(record.label || fallbackLabel),
+    // Canonical metric labels and definitions are assessment data authored by NICO,
+    // not machine identity. Render locale-owned copy while retaining the canonical
+    // counts and percentages unchanged.
+    label: presentationLabel,
     completed: typeof record.completed === "number" ? record.completed : null,
     total: typeof record.total === "number" ? record.total : null,
     percent,
-    definition: String(record.definition || ""),
+    definition: presentationDefinition,
   };
 }
 
 export function evidenceCompletionFor(
   assessment: Assessment | null,
+  copy: Copy,
 ): EvidenceCompletionView | null {
   if (!assessment) {
     return null;
@@ -227,7 +233,8 @@ export function evidenceCompletionFor(
   const record = contract as Record<string, unknown>;
   const overall = completionMetric(
     record.overall_engagement_evidence,
-    "Overall engagement evidence",
+    copy.overallEngagementEvidence,
+    copy.overallEngagementEvidenceDefinition,
   );
   const overallRecord =
     record.overall_engagement_evidence &&
@@ -237,15 +244,18 @@ export function evidenceCompletionFor(
   return {
     automatable: completionMetric(
       record.automatable_repository_evidence,
-      "Automatable repository evidence processed",
+      copy.automatableEvidence,
+      copy.automatableEvidenceDefinition,
     ),
     disposition: completionMetric(
       record.required_evidence_disposition,
-      "Required evidence disposition",
+      copy.requiredEvidenceDisposition,
+      copy.requiredEvidenceDispositionDefinition,
     ),
     analyzers: completionMetric(
       record.analyzer_completion,
-      "Successful analyzer completion",
+      copy.analyzerCompletion,
+      copy.analyzerCompletionDefinition,
     ),
     overall: {
       ...overall,
@@ -258,7 +268,7 @@ export function evidenceCompletionFor(
 }
 
 export type InternalReviewState = {
-  approved: boolean;
+  approvalCompleted: boolean;
   completed: boolean;
   deliveryAllowed: boolean;
   status: string;
@@ -272,16 +282,44 @@ export function internalReviewStateFor(
       ? (result.record as Record<string, unknown>)
       : {};
   const status = String(result?.status || record.status || "").toLowerCase();
+  const acceptedEdition = (
+    result?.accepted_edition && typeof result.accepted_edition === "object"
+      ? result.accepted_edition
+      : record.accepted_edition && typeof record.accepted_edition === "object"
+        ? record.accepted_edition as Record<string, unknown>
+        : {}
+  ) as Record<string, unknown>;
+  const acceptedReview = acceptedEdition.review && typeof acceptedEdition.review === "object"
+    ? acceptedEdition.review as Record<string, unknown>
+    : {};
+  const reviewDecision = (
+    result?.review_decision && typeof result.review_decision === "object"
+      ? result.review_decision
+      : record.review_decision && typeof record.review_decision === "object"
+        ? record.review_decision as Record<string, unknown>
+        : {}
+  ) as Record<string, unknown>;
+  const recordedReview = reviewDecision.review && typeof reviewDecision.review === "object"
+    ? reviewDecision.review as Record<string, unknown>
+    : {};
+  const decision = String(
+    acceptedReview.decision
+      || recordedReview.decision
+      || reviewDecision.decision
+      || "",
+  ).trim().toLowerCase();
   const deliveryAllowed =
     result?.client_delivery_allowed === true ||
     record.client_delivery_allowed === true;
+  const approvalCompleted = status === "approved" || decision === "approved";
   const completed =
     result?.human_review_completed === true ||
     record.human_review_completed === true ||
-    status === "approved" ||
-    status === "rejected";
+    approvalCompleted ||
+    status === "rejected" ||
+    decision === "rejected";
   return {
-    approved: status === "approved" && deliveryAllowed,
+    approvalCompleted,
     completed,
     deliveryAllowed,
     status,
@@ -318,10 +356,7 @@ export function internalReviewHrefFor(
 
 export function terminal(_service: Service, result: Result): Phase | null {
   const value = String(result.status || result.record?.status || "").toLowerCase();
-  const deliveryAllowed =
-    result.client_delivery_allowed === true ||
-    result.record?.client_delivery_allowed === true;
-  if (value === "approved" && deliveryAllowed) {
+  if (value === "approved") {
     return "complete";
   }
   if (

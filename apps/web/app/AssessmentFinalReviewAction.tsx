@@ -140,7 +140,12 @@ function removeReviewAction(actions: HTMLElement | null): void {
 }
 
 function installAction(): void {
-  if (!window.location.pathname.startsWith("/assessment") && !window.location.pathname.startsWith("/es/assessment")) return;
+  const pathname = window.location.pathname;
+  const assessmentRoute = pathname.startsWith("/assessment")
+    || pathname.startsWith("/es/assessment")
+    || pathname === "/es-mx"
+    || pathname.startsWith("/es-mx/");
+  if (!assessmentRoute) return;
   const actions = document.querySelector<HTMLElement>(REPORT_ACTIONS_SELECTOR);
   const runId = visibleRunId(actions);
   if (!actions || !runId || !reportExists(actions)) {
@@ -160,7 +165,14 @@ function installAction(): void {
 
   actions.dataset.nicoReviewGate = "ready";
   delete actions.dataset.nicoCrossFormatFailedChecks;
-  const spanish = window.location.pathname.startsWith("/es/") || document.documentElement.lang.toLowerCase().startsWith("es");
+  const path = window.location.pathname.toLowerCase();
+  const queryLocale = new URLSearchParams(window.location.search).get("lang")?.toLowerCase();
+  const spanish = path === "/es-mx"
+    || path.startsWith("/es-mx/")
+    || path.startsWith("/es/")
+    || queryLocale === "es-mx"
+    || queryLocale === "es"
+    || document.documentElement.lang.toLowerCase().startsWith("es");
   const query = new URLSearchParams({
     service: context.service,
     run_id: context.run_id,

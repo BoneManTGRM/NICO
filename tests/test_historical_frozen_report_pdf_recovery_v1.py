@@ -21,8 +21,12 @@ def _historical_removed_field_status() -> tuple[dict, bytes]:
             "run_id": "comprun_historical_frozen_1",
             "repository": "BoneManTGRM/NICO",
             "commit_sha": "9" * 40,
+            "evidence_ledger_id": "ledger_historical_frozen_1",
+            "report_language": "en",
         },
+        "report_language": "en",
         "assessment": {
+            "report_language": "en",
             "technical_score": 93,
             "canonical_evidence_adjusted_score": 93,
             "human_review_required": True,
@@ -43,6 +47,7 @@ def _historical_removed_field_status() -> tuple[dict, bytes]:
         "run_id": original["identity"]["run_id"],
         "repository": original["identity"]["repository"],
         "commit_sha": original["identity"]["commit_sha"],
+        "evidence_ledger_id": original["identity"]["evidence_ledger_id"],
         "report_language": "en",
         "terminal": True,
         "integrity_sha256": "run-integrity",
@@ -61,26 +66,18 @@ def _historical_removed_field_status() -> tuple[dict, bytes]:
     return status, pdf_bytes
 
 
-def test_source_language_pdf_reuses_exact_frozen_artifact_when_old_json_cannot_be_reconstructed() -> None:
-    status, pdf_bytes = _historical_removed_field_status()
+def test_source_language_pdf_fails_closed_when_old_json_cannot_prove_asserted_hash() -> None:
+    status, _ = _historical_removed_field_status()
 
     # The canonical projection correctly remains blocked because the missing historical
     # field cannot be guessed or reconstructed from the persisted JSON.
     with pytest.raises(ValueError, match="canonical_truth_hash_mismatch"):
         build_same_run_locale_report(status, "en")
 
-    # The original source-language PDF is already the exact frozen artifact produced by
-    # this terminal run, so it can be returned byte-for-byte without re-rendering.
-    response = build_same_run_locale_pdf_response(status, "en")
-
-    assert response.body == pdf_bytes
-    assert response.media_type == "application/pdf"
-    assert response.headers["x-nico-run-id"] == status["run_id"]
-    assert response.headers["x-nico-report-language"] == "en"
-    assert response.headers["x-nico-frozen-source-artifact"] == "true"
-    assert response.headers["x-nico-assessment-rerun"] == "false"
-    assert response.headers["x-nico-pdf-sha256"] == hashlib.sha256(pdf_bytes).hexdigest()
-    assert response.headers["content-disposition"].endswith('.pdf"')
+    # Current-release responses may not assert a canonical truth digest that the
+    # persisted JSON cannot reproduce, even when historical PDF bytes still exist.
+    with pytest.raises(ValueError, match="canonical_truth_hash_mismatch"):
+        build_same_run_locale_pdf_response(status, "en")
 
 
 def test_historical_cross_language_projection_still_fails_closed_on_unknown_hash_drift() -> None:
@@ -94,7 +91,7 @@ def test_frozen_source_pdf_recovery_rejects_run_identity_mismatch() -> None:
     status, _ = _historical_removed_field_status()
     status["run_id"] = "comprun_wrong_identity"
 
-    with pytest.raises(ValueError, match="source_report_run_identity_mismatch"):
+    with pytest.raises(ValueError, match="status_canonical_run_id_mismatch"):
         build_same_run_locale_pdf_response(status, "en")
 
 

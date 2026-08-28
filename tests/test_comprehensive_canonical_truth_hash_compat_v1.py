@@ -27,6 +27,7 @@ _COUNT_KEYS = (
 def _canonical() -> dict:
     return {
         "service_id": "comprehensive",
+        "report_language": "en",
         "identity": {
             "run_id": "comprun_hash_compat_1",
             "repository": "BoneManTGRM/NICO",
@@ -34,8 +35,10 @@ def _canonical() -> dict:
             "evidence_ledger_id": "ledger_hash_compat_1",
             "customer_id": "customer_hash_compat_1",
             "project_id": "project_hash_compat_1",
+            "report_language": "en",
         },
         "assessment": {
+            "report_language": "en",
             "technical_score": 93,
             "canonical_evidence_adjusted_score": 93,
             "human_review_required": True,

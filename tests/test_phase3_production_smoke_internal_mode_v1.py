@@ -28,18 +28,15 @@ def _fill_values_by_label(source: str) -> dict[str, list[ast.expr]]:
     return values
 
 
-def test_production_smoke_keeps_client_engagement_fields_blank() -> None:
+def test_mobile_production_consumer_cannot_create_an_engagement() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     fills = _fill_values_by_label(source)
 
-    for label in ("Client name, optional", "Project name, optional"):
-        assert label in fills, f"production smoke no longer controls {label!r}"
-        assert len(fills[label]) == 1, f"expected one production-smoke fill for {label!r}"
-        value = fills[label][0]
-        assert isinstance(value, ast.Constant) and value.value == "", (
-            f"{label!r} must stay blank so the automated production proof remains an "
-            "internal assessment instead of fabricating client-engagement context"
-        )
-
-    assert "Mobile Restart Production Proof" not in source
-    assert "Exact SHA {args.expected_sha[:12]}" not in source
+    assert fills == {}
+    run_proof = source.split("def run_proof(", 1)[1].split(
+        "def _continuation_count", 1
+    )[0]
+    assert "run_existing_proof(browser, args)" in run_proof
+    assert ".click()" not in run_proof
+    assert "comprehensive-intake" not in run_proof
+    assert "_require_existing_source_args(args)" in run_proof

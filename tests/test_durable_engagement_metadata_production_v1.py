@@ -4,15 +4,15 @@ import sqlite3
 from types import SimpleNamespace
 
 
-def _browser_shaped_human_evidence() -> dict[str, object]:
+def _browser_shaped_human_evidence(
+    authorized_scope: str = "Full repository at exact assessed SHA - read-only",
+) -> dict[str, object]:
     return {
         "stakeholder_context": {
             "evidence": {
                 "access_method": ["GitHub HTTPS/API - read-only"],
                 "primary_technical_contact": ["NICO Acceptance Contact"],
-                "authorized_scope": [
-                    "Full repository at exact assessed SHA - read-only"
-                ],
+                "authorized_scope": [authorized_scope],
             }
         }
     }
@@ -66,6 +66,8 @@ def test_real_intake_persists_first_class_engagement_metadata_from_mobile_shape(
     )
     monkeypatch.setattr(routes, "expected_commit_sha", lambda _payload: "")
 
+    authorized_scope = "Scope start — " + ("ñ /.- " * 260) + "— scope end"
+    assert 1200 < len(authorized_scope) < 4000
     response = routes._intake(
         request,
         {
@@ -78,7 +80,7 @@ def test_real_intake_persists_first_class_engagement_metadata_from_mobile_shape(
             "report_language": "es-MX",
             "authorized": True,
             "authorization_confirmed": True,
-            "human_evidence": _browser_shaped_human_evidence(),
+            "human_evidence": _browser_shaped_human_evidence(authorized_scope),
         },
     )
 
@@ -89,10 +91,7 @@ def test_real_intake_persists_first_class_engagement_metadata_from_mobile_shape(
     assert engagement["project_name"] == "NICO Acceptance Project"
     assert engagement["primary_technical_contact"] == "NICO Acceptance Contact"
     assert engagement["access_method"] == "GitHub HTTPS/API - read-only"
-    assert (
-        engagement["authorized_scope"]
-        == "Full repository at exact assessed SHA - read-only"
-    )
+    assert engagement["authorized_scope"] == authorized_scope
 
     # Canonical partitioning identity remains separate from descriptive engagement data.
     assert record["identity"]["customer_id"] == "customer_scope_regression"
@@ -104,6 +103,8 @@ def test_real_intake_persists_first_class_engagement_metadata_from_mobile_shape(
     projected = controller.status(str(response["run_id"]))
     assert projected["engagement_metadata"] == engagement
     assert projected["record"]["engagement_metadata"] == engagement
+    assert projected["engagement_metadata"]["authorized_scope"] == authorized_scope
+    assert not projected["engagement_metadata"]["authorized_scope"].endswith("…")
 
     # Exercise the same stage-context builder used by final report generation. The
     # browser-shaped arrays have already been normalized to singular exact values before
@@ -132,10 +133,7 @@ def test_real_intake_persists_first_class_engagement_metadata_from_mobile_shape(
     assert seen["project_name"] == "NICO Acceptance Project"
     assert seen["primary_technical_contact"] == "NICO Acceptance Contact"
     assert seen["access_method"] == "GitHub HTTPS/API - read-only"
-    assert (
-        seen["authorized_scope"]
-        == "Full repository at exact assessed SHA - read-only"
-    )
+    assert seen["authorized_scope"] == authorized_scope
 
     report_identity = _report_identity(seen)
     assert report_identity["customer_id"] == "customer_scope_regression"

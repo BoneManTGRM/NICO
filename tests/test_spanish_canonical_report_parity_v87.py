@@ -242,6 +242,13 @@ def test_spanish_scanner_limitations_localize_the_production_truth_contract() ->
     import pytest
 
     from nico.comprehensive_spanish_canonical_report_v87 import _localize_tree
+    from nico.comprehensive_spanish_current_copy_worker_v98 import (
+        install_comprehensive_spanish_current_copy_worker_v98,
+    )
+
+    # Bind the current production worker explicitly so this assertion cannot
+    # depend on which localization compatibility module pytest imported first.
+    install_comprehensive_spanish_current_copy_worker_v98()
 
     source = {
         "summary": (
@@ -301,9 +308,9 @@ def test_spanish_scanner_limitations_localize_the_production_truth_contract() ->
     )
     assert localized["evidence"] == [
         (
-            "El volumen de candidatos y la carga de trabajo de revisión son métricas "
-            "operativas de revisión y no tienen efecto numérico en la madurez técnica "
-            "ni en la puntuación ajustada por evidencia."
+            "El volumen de candidatos y la carga de trabajo del revisor son métricas "
+            "operativas de revisión y no tienen efecto numérico sobre la madurez "
+            "técnica ni sobre la puntuación de Ajuste por evidencia."
         ),
         (
             "pip-audit: estado=no disponible; coincidencia_commit_exacto=sí; "
@@ -1034,23 +1041,25 @@ install_comprehensive_spanish_client_surface_localization_v86()
 SMALL_ENGLISH_GOLDEN = {
     "markdown": ("2ca2efd359843c7a2c311a1036a6892fcc35c6c3f6e392d20238e89a66f5c6c0", 18849),
     "html": ("43d3a5097c673763501cc06bfa22921cbb963b59d77f4bb8cd92e0773c440343", 22724),
-    "pdf_base64": ("dba37d8645574b8db591fd71091c4c0d25aef0565b98f2b4c47c1f13cba58ea4", 176236),
-    "pdf_sha256": "f6e7b4e8902e971f5b3552ad8312aec5fbe6b0a1025fed856f9ee42e9eb3ac9a",
-    "page_count": 22,
+    # The authoritative separately rendered CI/CD boundary replaces the base
+    # copy, so one semantic section now produces one physical body page.
+    "pdf_base64": ("8639c62b3d7b11bb6064b8bd86388934842b3ca6f69f07bf114e3c9f18b0039a", 174632),
+    "pdf_sha256": "ec8d633da41443707f0f0c26ed8144eeb95a8985a97137dbcb04f3c9501bfb7e",
+    "page_count": 21,
 }
 RICH_ENGLISH_GOLDEN = {
     "markdown": ("cc43b0829649ee16904cdfc43ac1ac41d220bf9acd534eefdb0e7de07fcde238", 21527),
     "html": ("849702f055d1609b4ab6ba540def9f9db5050b76dd02063024b61c7454c1f0f3", 25966),
-    "pdf_base64": ("9f6aa18e965602b2846c97fe3085c71317c58fbb072ea23fde9c29e655370bc9", 262792),
-    "pdf_sha256": "8e460b37d85175d08bee6389abf0198d67e76b75afafd9e0d9c953f94fb8f5ce",
+    "pdf_base64": ("a56d1f8fbe906d18119fe20959d06911ae8e85ea87425166136b1ac37ec4e90f", 265592),
+    "pdf_sha256": "9b6d1b2b6ad52cc74ea1044f3d40b00271aae9ea78373e6eb02771f259a3c231",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
     "markdown": ("51a2018ab77f58a5393987170771796db6ae6cfa6dbbf2a57d2ee672de15c7b7", 19585),
     "html": ("e09e9867f511b055a1e80b25902b3891f04279f0e5f2c656029e7d634fb050bc", 23784),
-    "pdf_base64": ("8ff8b2e1a26f925e5231eeb0a8e3f5ec5169fb1a467e9ae25612320817853606", 172784),
-    "pdf_sha256": "306c56bd0f67507923137dd2b6b00a27ccd835867d2e47a8c2e3e26373afb0fb",
-    "page_count": 21,
+    "pdf_base64": ("e1f4621d5a47fab5db0a3fa5cf3e3870aa36e76f4ec232256f6acf4dcbac8562", 171176),
+    "pdf_sha256": "b45088ef6d71bdd92b8a05f5c2d9216ed92c26f6168daeeb176ef2cc9dc1ed3e",
+    "page_count": 20,
 }
 
 SPANISH_OUTLINE = {
@@ -1372,7 +1381,7 @@ for finding_id in (
     assert finding_id in phase9_english[0]["markdown"]
     assert finding_id in phase9_spanish[0]["markdown"]
 assert "componentes hij..." not in phase9_spanish[0]["markdown"]
-assert len(phase9_english[2]) == len(phase9_spanish[2]) == 21
+assert len(phase9_english[2]) == len(phase9_spanish[2]) == 20
 assert len(outline_projection(phase9_english[1])) == len(outline_projection(phase9_spanish[1])) == 19
 assert len(re.findall(r"(?m)^#{1,3}\s", phase9_english[0]["markdown"])) == 79
 assert len(re.findall(r"(?m)^#{1,3}\s", phase9_spanish[0]["markdown"])) == 79
@@ -1476,7 +1485,9 @@ assert small_result["markdown"].count("## Puerta de revisión humana y aceptaci�
         cwd=repository_root,
         capture_output=True,
         text=True,
-        timeout=180,
+        # This single parity probe fully composes and inspects six PDFs. Allow
+        # headroom on shared/CI workers without reducing any artifact assertion.
+        timeout=300,
         check=False,
     )
     assert completed.returncode == 0, (

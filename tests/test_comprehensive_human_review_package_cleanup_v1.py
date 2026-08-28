@@ -77,7 +77,7 @@ def test_client_identity_placeholders_render_not_supplied() -> None:
     assert cleaned["assessment"] == canonical["assessment"]
 
 
-def test_supplied_client_names_are_preserved() -> None:
+def test_scope_ids_remain_independent_from_supplied_client_names() -> None:
     cleaned = sanitize_client_identity(
         {
             "identity": {
@@ -89,8 +89,8 @@ def test_supplied_client_names_are_preserved() -> None:
         }
     )
 
-    assert cleaned["identity"]["customer_id"] == "Acme Holdings"
-    assert cleaned["identity"]["project_id"] == "Mercury"
+    assert cleaned["identity"]["customer_id"] == "internal-id"
+    assert cleaned["identity"]["project_id"] == "internal-project"
 
 
 def test_scanner_execution_and_candidate_disposition_are_separate() -> None:

@@ -21,7 +21,7 @@ def test_continuation_transport_window_fits_function_budget_and_preserves_no_rep
     assert (
         ": runStatusRequest\n"
         "      ? CLIENT_RETRY_DELAYS_MS\n"
-        "      : boundedRequest\n"
+        "      : mutatingRequest\n"
         "        ? [0]\n"
         "        : CLIENT_RETRY_DELAYS_MS"
     ) in client
@@ -29,7 +29,7 @@ def test_continuation_transport_window_fits_function_budget_and_preserves_no_rep
     # Status reads may retry because they are idempotent; continuation remains the
     # bounded-request branch with exactly one browser attempt and no POST replay.
     assert "runStatusRequest\n      ? CLIENT_RETRY_DELAYS_MS" in client
-    assert ": boundedRequest\n        ? [0]" in client
+    assert ": mutatingRequest\n        ? [0]" in client
 
     # Ordering is intentional: backend proxy timeout < browser timeout < platform max.
     assert 240_000 < 260_000 < 300_000

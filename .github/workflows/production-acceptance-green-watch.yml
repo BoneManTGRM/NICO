@@ -33,6 +33,7 @@ jobs:
 
           import json
           import os
+          import re
           import urllib.error
           import urllib.request
 
@@ -78,11 +79,54 @@ jobs:
               "GET",
               f"/repos/{repository}/commits/{sha}/status?per_page=100",
           )
+          statuses = [
+              item
+              for item in status_payload.get("statuses") or []
+              if isinstance(item, dict)
+          ]
+
+          def latest(values: list[dict]) -> dict:
+              return max(
+                  values,
+                  key=lambda item: (
+                      str(item.get("created_at") or ""),
+                      int(item.get("id") or 0),
+                  ),
+                  default={},
+              )
+
+          spanish_context = "NICO Spanish Comprehensive Production Proof"
+          spanish = latest([
+              item
+              for item in statuses
+              if str(item.get("context") or "").strip() == spanish_context
+          ])
+          spanish_description = str(spanish.get("description") or "").strip()
+          marker_match = re.match(r"^(source:\d+:\d+) ", spanish_description)
+          source_marker = marker_match.group(1) if marker_match else ""
+          source_bound_contexts = {
+              spanish_context,
+              "NICO Two-Service Production Acceptance",
+              "NICO Mobile Restart Production Proof",
+              "NICO iOS WebKit Paint Proof",
+          }
+
           latest_by_context: dict[str, dict] = {}
-          for item in status_payload.get("statuses") or []:
-              context = str(item.get("context") or "").strip()
-              if context and context not in latest_by_context:
-                  latest_by_context[context] = item
+          for context in required_contexts:
+              latest_by_context[context] = latest([
+                  item
+                  for item in statuses
+                  if str(item.get("context") or "").strip() == context
+                  and (
+                      context not in source_bound_contexts
+                      or (
+                          bool(source_marker)
+                          and str(item.get("description") or "").strip().startswith(
+                              source_marker + " "
+                          )
+                      )
+                  )
+              ])
 
           observed = {
               context: str((latest_by_context.get(context) or {}).get("state") or "missing").lower()
@@ -98,15 +142,18 @@ jobs:
               for context, state in blocking.items()
               if state in {"error", "failure"}
           }
-          if not blocking:
+          if not source_marker:
+              derived_state = "pending"
+              description = "Waiting for a source-bound Spanish production proof"
+          elif not blocking:
               derived_state = "success"
-              description = "All exact-main production acceptance contexts are successful"
+              description = f"{source_marker} all exact-main production acceptance contexts succeeded"
           elif hard_failures:
               derived_state = "failure"
-              description = "One or more exact-main production acceptance contexts failed"
+              description = f"{source_marker} one or more exact-main production contexts failed"
           else:
               derived_state = "pending"
-              description = "Waiting for exact-main production acceptance contexts"
+              description = f"{source_marker} waiting for exact-main production contexts"
 
           target_url = f"https://github.com/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
           request(
@@ -126,6 +173,7 @@ jobs:
                       "derived_state": derived_state,
                       "required_statuses": observed,
                       "blocking": blocking,
+                      "source_binding": source_marker.removeprefix("source:"),
                   },
                   sort_keys=True,
               )

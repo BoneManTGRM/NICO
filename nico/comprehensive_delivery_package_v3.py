@@ -260,13 +260,27 @@ def build_comprehensive_delivery_package(
         for name in source.namelist():
             if not name.endswith("/"):
                 entries[name] = source.read(name)
-    original_pdf = entries.get(_REPORT_PATH, b"")
-    certified_pdf = _append_certificate(
-        original_pdf,
-        _certificate_page(accepted, report_language=report_language),
-        report_language=report_language,
+    try:
+        approved_pdf = base64.b64decode(
+            _text(report_package.get("pdf_base64")),
+            validate=True,
+        )
+    except Exception as exc:
+        raise ValueError("comprehensive_delivery_approved_pdf_invalid") from exc
+    artifact_digests = (
+        accepted.get("artifact_digests")
+        if isinstance(accepted.get("artifact_digests"), Mapping)
+        else {}
     )
-    entries[_REPORT_PATH] = certified_pdf
+    pdf_digest = (
+        artifact_digests.get("pdf")
+        if isinstance(artifact_digests.get("pdf"), Mapping)
+        else {}
+    )
+    expected_pdf_sha = _text(pdf_digest.get("sha256"))
+    if not approved_pdf.startswith(b"%PDF") or _sha256(approved_pdf) != expected_pdf_sha:
+        raise ValueError("comprehensive_delivery_approved_pdf_digest_mismatch")
+    entries[_REPORT_PATH] = approved_pdf
 
     manifest = deepcopy(package.get("manifest") or {})
     manifest["artifact_schema"] = VERSION
@@ -274,7 +288,9 @@ def build_comprehensive_delivery_package(
     manifest["client_pdf_count"] = 1
     manifest["final_human_approval_status"] = "approved"
     manifest["client_delivery_authorization_status"] = "authorized"
-    manifest["approval_certificate_page_appended"] = True
+    manifest["approval_certificate_page_appended"] = False
+    manifest["approval_certificate_separate_json"] = True
+    manifest["approved_report_pdf_preserved_exactly"] = True
     manifest["approval_certificate_language"] = report_language
     manifest["report_analysis_regenerated_during_delivery_packaging"] = False
     manifest["client_delivery_allowed"] = True
@@ -284,8 +300,8 @@ def build_comprehensive_delivery_package(
             continue
         candidate = deepcopy(dict(item))
         if _text(candidate.get("path")) == _REPORT_PATH:
-            candidate["size_bytes"] = len(certified_pdf)
-            candidate["sha256"] = _sha256(certified_pdf)
+            candidate["size_bytes"] = len(approved_pdf)
+            candidate["sha256"] = _sha256(approved_pdf)
         artifacts.append(candidate)
     manifest["artifacts"] = artifacts
     entries[_MANIFEST_PATH] = _json_bytes(manifest)
@@ -302,7 +318,9 @@ def build_comprehensive_delivery_package(
         "client_pdf_count": 1,
         "final_human_approval_status": "approved",
         "client_delivery_authorization_status": "authorized",
-        "approval_certificate_page_appended": True,
+        "approval_certificate_page_appended": False,
+        "approval_certificate_separate_json": True,
+        "approved_report_pdf_preserved_exactly": True,
         "approval_certificate_language": report_language,
         "report_analysis_regenerated_during_delivery_packaging": False,
         "human_review_required": True,

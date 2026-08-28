@@ -17,7 +17,10 @@ def test_comprehensive_intake_dom_snapshot_bridge_is_mounted_and_bounded() -> No
     assert "<AssessmentIntakeDomSnapshotBridge />" in page
     assert '"/assessment/comprehensive-intake"' in bridge
     assert '"/api/nico/assessment/comprehensive-intake"' in bridge
-    assert 'data-assessment-primary-action="true"' in bridge
+    # Only gestures that can create a new intake may refresh the native-control
+    # snapshot. Exact-run retry actions must never be mistaken for a fresh intake.
+    assert "[data-assessment-intake-submit='true']" in bridge
+    assert "function isIntakeSubmitAction" in bridge
     assert 'document.addEventListener("click", captureBeforeReactSubmit, true)' in bridge
     assert "rewriteComprehensiveIntakeBody" in bridge
     assert "console." not in bridge

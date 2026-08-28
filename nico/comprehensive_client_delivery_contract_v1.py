@@ -4,6 +4,8 @@ import base64
 import hashlib
 import io
 import json
+import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -24,6 +26,7 @@ _AUTHORIZED_REVIEWER_ROLES = {
 }
 _AUTHORIZED_REVIEWER_BASES = {
     "protected_admin_write_and_explicit_review_authorization",
+    "protected_admin_write_and_explicit_delivery_authorization",
 }
 
 
@@ -59,6 +62,53 @@ def canonical_sha256(value: Any) -> str:
 def _require(condition: bool, code: str, detail: str = "") -> None:
     if not condition:
         raise ClientDeliveryContractError(code, detail)
+
+
+def _bounded_error_code(exc: BaseException) -> str:
+    raw = _text(exc).split(":", 1)[0]
+    normalized = "".join(
+        char if char.isalnum() or char in {"_", "-"} else "_"
+        for char in raw
+    )[:120]
+    return normalized or type(exc).__name__.casefold()
+
+
+def _read_only_access_confirmed(value: Any) -> bool:
+    ascii_value = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", _text(value).casefold())
+        if not unicodedata.combining(char)
+    )
+    words = " ".join(re.findall(r"[a-z0-9]+", ascii_value))
+    compact = words.replace(" ", "")
+
+    negated_read_only = (
+        r"\bnot\s+(?:a\s+)?read\s+only\b",
+        r"\bnot\s+(?:a\s+)?readonly\b",
+        r"\bno\s+(?:es\s+)?(?:de\s+)?solo\s+lectura\b",
+        r"\bno\s+(?:es\s+)?(?:de\s+)?sololectura\b",
+    )
+    if any(re.search(pattern, words) for pattern in negated_read_only):
+        return False
+
+    without_write = words
+    denied_write_patterns = (
+        r"\b(?:no|without)\s+write\s+(?:access|permissions?|capability|operations?)\b",
+        r"\bwrite\s+(?:access|permissions?|capability|operations?)\s+(?:(?:is|are)\s+)?(?:not\s+(?:allowed|permitted|enabled|available)|denied|disabled|blocked|unavailable)\b",
+        r"\bsin\s+(?:acceso|permisos?|capacidad)\s+de\s+escritura\b",
+        r"\bno\s+(?:hay|incluye|permite)\s+(?:acceso\s+de\s+)?escritura\b",
+        r"\b(?:acceso|permisos?|operaciones?)\s+de\s+escritura\s+(?:(?:esta|estan)\s+)?(?:no\s+(?:permitid[oa]s?|habilitad[oa]s?|disponibles?)|denegad[oa]s?|deshabilitad[oa]s?|bloquead[oa]s?)\b",
+    )
+    for pattern in denied_write_patterns:
+        without_write = re.sub(pattern, " ", without_write)
+    if re.search(r"\b(?:write|writable|escritura|escribir)\b", without_write):
+        return False
+
+    return (
+        "readonly" in compact
+        or "readaccess" in compact
+        or "sololectura" in compact
+    )
 
 
 def _identity(record: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -142,7 +192,22 @@ def artifact_digests(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
             raise ValueError("pdf_page_count_invalid")
     except Exception:
         pdf = b""
-    values: dict[str, Any] = {"markdown": package.get("markdown"), "html": package.get("html"), "json": package.get("json"), "pdf": pdf}
+    values: dict[str, Any] = {
+        "markdown": package.get("markdown"),
+        "html": package.get("html"),
+        "json": package.get("json"),
+        "pdf": pdf,
+    }
+    if any(
+        package.get(key) not in (None, "")
+        for key in (
+            "artifact_manifest",
+            "evidence_manifest_json",
+            "evidence_manifest_sha256",
+            "draft_artifact_identity",
+        )
+    ):
+        values["evidence_manifest"] = package.get("evidence_manifest_json")
     for source, name in (("findings_csv", "findings_csv"), ("evidence_csv", "evidence_csv"), ("jira_csv", "remediation_csv"), ("candidate_register_csv", "candidate_register_csv")):
         values[name] = package.get(source)
     output: dict[str, dict[str, Any]] = {}
@@ -167,8 +232,10 @@ def _identity_scope(record: Mapping[str, Any]) -> dict[str, Any]:
     _require(bool(engagement["customer_id"] and engagement["project_id"]), "missing_client_project_scope_identity")
     _require(engagement["authorization_confirmed"], "assessment_authorization_missing")
     _require(bool(engagement["authorized_scope"]), "authorized_scope_missing")
-    access = "".join(engagement["access_method"].casefold().split()).replace("-", "")
-    _require("readonly" in access or "readaccess" in access, "repository_access_not_read_only")
+    _require(
+        _read_only_access_confirmed(engagement["access_method"]),
+        "repository_access_not_read_only",
+    )
     _require(not engagement["repository_identity"] or engagement["repository_identity"].casefold() == repository.casefold(), "repository_outside_approved_scope")
     return {"run_id": run_id, "repository": repository, "commit_sha": commit, "evidence_ledger_id": ledger_id, "engagement": engagement}
 
@@ -238,6 +305,8 @@ def _scanner_contract(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _candidate_contract(record: Mapping[str, Any]) -> dict[str, Any]:
+    from nico.comprehensive_review_work_safe_v1 import review_work_projection
+
     register = _register(record)
     findings = register.get("findings")
     _require(isinstance(findings, list), "malformed_candidate_register")
@@ -248,7 +317,6 @@ def _candidate_contract(record: Mapping[str, Any]) -> dict[str, Any]:
     _require(declared == len(findings), "candidate_register_count_mismatch")
     ledger = _mapping(record.get("review_work_ledger"))
     dispositions = _mapping(ledger.get("dispositions"))
-    pending_individual: list[str] = []
     candidate_ids: list[str] = []
     triaged = 0
     for row in findings:
@@ -263,10 +331,6 @@ def _candidate_contract(record: Mapping[str, Any]) -> dict[str, Any]:
         confidence = triage.get("confidence", row.get("technical_triage_confidence"))
         _require(bool(verdict) and confidence not in (None, ""), "incomplete_required_technical_triage", candidate_id)
         triaged += 1
-        has_disposition = candidate_id in dispositions or isinstance(row.get("human_disposition"), Mapping)
-        if row.get("review_requires_individual_attention") is True and not has_disposition:
-            pending_individual.append(candidate_id)
-    _require(not pending_individual, "mandatory_individual_review_unresolved", ",".join(pending_individual))
     _require(
         len(candidate_ids) == len(set(candidate_ids)),
         "duplicate_candidate_identity",
@@ -274,23 +338,48 @@ def _candidate_contract(record: Mapping[str, Any]) -> dict[str, Any]:
     candidate_set = set(candidate_ids)
     disposition_ids = {_text(value) for value in dispositions if _text(value)}
     unexpected_dispositions = sorted(disposition_ids - candidate_set)
-    missing_dispositions = sorted(candidate_set - disposition_ids)
     _require(
         not unexpected_dispositions,
         "candidate_disposition_register_mismatch",
         ",".join(unexpected_dispositions),
     )
+    try:
+        projection = review_work_projection(record)
+    except ClientDeliveryContractError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise ClientDeliveryContractError(
+            "review_work_projection_invalid",
+            _bounded_error_code(exc),
+        ) from exc
+
+    required_ids = {
+        _text(value)
+        for value in projection.get("required_human_disposition_candidate_ids") or []
+        if _text(value)
+    }
+    pending_required = sorted(required_ids - disposition_ids)
     _require(
-        not missing_dispositions,
+        not pending_required,
         "human_dispositions_pending",
-        ",".join(missing_dispositions),
+        ",".join(pending_required),
+    )
+    _require(
+        projection.get("ready_for_final_approval") is True,
+        "review_work_not_ready_for_final_approval",
+        "projection_not_ready",
     )
     return {
         "total_candidates": len(findings),
         "technical_triage_completed": triaged,
-        "mandatory_individual_review_pending": len(pending_individual),
-        "human_dispositions_pending": len(missing_dispositions),
+        "required_human_dispositions": len(required_ids),
+        "required_human_dispositions_pending": len(pending_required),
+        "actual_human_disposition_record_count": len(disposition_ids),
+        "exception_first_review": True,
     }
+
+
+setattr(_candidate_contract, "_nico_exception_first_v1", True)
 
 
 def _review_contract(record: Mapping[str, Any], identity: Mapping[str, Any]) -> dict[str, Any]:
@@ -320,6 +409,25 @@ def _artifact_contract(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         _require(False, "final_pdf_invalid")
     for name in _REQUIRED_ARTIFACTS:
         _require(name in digests, "required_final_artifact_missing", name)
+    manifest_aware = any(
+        package.get(key) not in (None, "")
+        for key in (
+            "artifact_manifest",
+            "evidence_manifest_json",
+            "evidence_manifest_sha256",
+            "draft_artifact_identity",
+        )
+    )
+    if manifest_aware:
+        _require("evidence_manifest" in digests, "required_final_artifact_missing", "evidence_manifest")
+        try:
+            from nico.comprehensive_exact_artifact_hash_binding_v1 import (
+                _validate_exact_artifact_hashes,
+            )
+
+            _validate_exact_artifact_hashes(package)
+        except ValueError as exc:
+            _require(False, "exact_artifact_hash_binding_invalid", str(exc))
     return digests
 
 
@@ -383,8 +491,41 @@ def build_approval_receipt(record: Mapping[str, Any], manifest: Mapping[str, Any
     candidates, ledger, artifacts = _candidate_contract(record), _review_contract(record, identity), _artifact_contract(record)
     review = reviewer_binding(reviewer=reviewer, reviewer_role=reviewer_role, decision=decision, decided_at=decided_at, decision_reason=decision_reason, authorization_basis=authorization_basis)
     manifest_review, manifest_artifacts = _mapping(manifest.get("review")), _mapping(manifest.get("artifact_digests"))
-    _require(_text(manifest_review.get("decision")).casefold() == review["review_decision"], "approval_manifest_decision_mismatch")
-    for name in _REQUIRED_ARTIFACTS:
+    for manifest_field, review_field in (
+        ("reviewer", "reviewer_identity"),
+        ("reviewer_role", "reviewer_role"),
+        ("decision", "review_decision"),
+        ("decided_at", "review_timestamp"),
+        ("reason", "reviewer_notes"),
+    ):
+        actual = _text(manifest_review.get(manifest_field))
+        expected = _text(review.get(review_field))
+        if manifest_field == "decision":
+            actual, expected = actual.casefold(), expected.casefold()
+        _require(actual == expected, f"approval_manifest_{manifest_field}_mismatch")
+    for field in (
+        "authorization_basis",
+        "residual_risk_decision",
+        "approval_record_id",
+    ):
+        if field in manifest_review:
+            _require(
+                _text(manifest_review.get(field)) == _text(review.get(field)),
+                f"approval_manifest_{field}_mismatch",
+            )
+    certificate = dict(manifest_review)
+    claimed_certificate = _text(
+        certificate.pop("approval_certificate_sha256", "")
+    )
+    _require(
+        bool(claimed_certificate)
+        and claimed_certificate == canonical_sha256(certificate),
+        "approval_manifest_certificate_hash_mismatch",
+    )
+    required_manifest_artifacts = list(_REQUIRED_ARTIFACTS)
+    if "evidence_manifest" in artifacts:
+        required_manifest_artifacts.append("evidence_manifest")
+    for name in required_manifest_artifacts:
         _require(_text(_mapping(manifest_artifacts.get(name)).get("sha256")) == artifacts[name]["sha256"], "artifact_hash_mismatch", name)
     receipt = {
         "artifact_schema": VERSION, "product_name": PRODUCT_NAME, "report_kind": REPORT_KIND,
@@ -399,7 +540,10 @@ def build_approval_receipt(record: Mapping[str, Any], manifest: Mapping[str, Any
         "candidate_disposition_state_sha256": canonical_sha256(_mapping(record.get("review_work_ledger")).get("dispositions") or {}),
         "candidate_register_sha256": canonical_sha256(_register(record)), "version_truth": version_truth(record),
         "candidate_metrics": candidates, "accepted_edition_manifest_sha256": _text(manifest.get("accepted_edition_manifest_sha256")),
-        "human_review_required": True, "client_delivery_authorized": review["review_decision"] == "approved",
+        "human_review_required": True,
+        "human_approval_completed": review["review_decision"] == "approved",
+        # Human approval and client-delivery authorization are separate receipts.
+        "client_delivery_authorized": False,
     }
     receipt["approval_receipt_sha256"] = canonical_sha256(receipt)
     return receipt
@@ -435,14 +579,29 @@ def validate_approval_receipt(record: Mapping[str, Any], manifest: Mapping[str, 
         expected = build_approval_receipt(record, manifest, reviewer=_text(review.get("reviewer_identity")), reviewer_role=_text(review.get("reviewer_role")), decision=_text(review.get("review_decision")), decided_at=_text(review.get("review_timestamp")), decision_reason=_text(review.get("reviewer_notes")), authorization_basis=_text(review.get("authorization_basis")))
     except ClientDeliveryContractError as exc:
         return {"status": "invalid", "validation_errors": [exc.code], "client_delivery_authorized": False}
+    except (TypeError, ValueError) as exc:
+        return {
+            "status": "invalid",
+            "validation_errors": [
+                "approval_contract_validation_failed:" + _bounded_error_code(exc)
+            ],
+            "client_delivery_authorized": False,
+        }
     errors = []
     if canonical_sha256(receipt) != canonical_sha256(expected):
         errors.append("stale_or_mismatched_approval_receipt")
     if _text(receipt.get("approval_receipt_sha256")) != expected["approval_receipt_sha256"]:
         errors.append("approval_receipt_hash_mismatch")
-    if receipt.get("client_delivery_authorized") is not True:
+    if receipt.get("human_approval_completed") is not True:
         errors.append("approval_incomplete_or_rejected")
-    return {"status": "valid" if not errors else "invalid", "validation_errors": sorted(set(errors)), "client_delivery_authorized": not errors}
+    if receipt.get("client_delivery_authorized") is not False:
+        errors.append("approval_receipt_must_not_authorize_delivery")
+    return {
+        "status": "valid" if not errors else "invalid",
+        "validation_errors": sorted(set(errors)),
+        "human_approval_valid": not errors,
+        "client_delivery_authorized": False,
+    }
 
 
 __all__ = ["CLIENT_FINAL_CLASSIFICATION", "ClientDeliveryContractError", "PRODUCT_NAME", "REPORT_KIND", "VERSION", "artifact_digests", "build_approval_receipt", "canonical_sha256", "engagement_binding", "operational_metrics", "reviewer_binding", "validate_approval_receipt", "validate_full_lifecycle", "version_truth"]

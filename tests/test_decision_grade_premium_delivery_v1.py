@@ -171,12 +171,14 @@ def test_internal_review_package_contains_layered_premium_artifacts() -> None:
         )
 
 
-def test_approved_exact_edition_unlocks_complete_package_only() -> None:
+def test_approved_exact_edition_still_requires_delivery_authorization() -> None:
     delivery = build_premium_delivery_package(_approved_package())
 
-    assert delivery["status"] == "approved_for_delivery"
-    assert delivery["client_delivery_allowed"] is True
-    assert "APPROVED.zip" in delivery["filename"]
+    # Artifact approval and client-delivery authorization are separate human
+    # decisions. An accepted edition alone must remain fail closed for delivery.
+    assert delivery["status"] == "internal_review_ready"
+    assert delivery["client_delivery_allowed"] is False
+    assert "INTERNAL-REVIEW.zip" in delivery["filename"]
 
 
 def test_fake_approval_is_blocked_before_delivery_packaging() -> None:

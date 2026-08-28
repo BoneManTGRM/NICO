@@ -23,10 +23,13 @@ def test_active_run_reset_is_available_before_terminal_state() -> None:
     assert "Clear current run and start new assessment" in source
 
 
-def test_reset_clears_saved_identity_and_url_run_id() -> None:
+def test_reset_clears_only_the_matching_saved_identity_and_url_run_id() -> None:
     source = COMPONENT.read_text(encoding="utf-8")
-    assert 'window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY)' in source
-    assert 'window.sessionStorage.removeItem(ACTIVE_RUN_STORAGE_KEY)' in source
+    assert "function removeStoredRunIfMatching" in source
+    assert "if (!runId) return;" in source
+    assert "storedRunId === runId" in source
+    assert "removeStoredRunIfMatching(window.localStorage, exactRunId)" in source
+    assert "removeStoredRunIfMatching(window.sessionStorage, exactRunId)" in source
     assert 'url.searchParams.delete(ACTIVE_RUN_QUERY_KEY)' in source
     assert 'url.searchParams.set("new_assessment", String(Date.now()))' in source
     assert 'window.location.replace(`${url.pathname}${url.search}${url.hash}`)' in source

@@ -13,9 +13,17 @@ IOS = (
 
 
 def test_mobile_and_ios_proofs_do_not_share_a_cancelling_workflow_group() -> None:
-    assert "group: nico-production-assessment-proof-${{ github.ref }}" in MOBILE
-    assert "group: nico-production-ios-webkit-proof-${{ github.ref }}" in IOS
-    assert "group: nico-production-assessment-proof-${{ github.ref }}" not in IOS
+    mobile_header = MOBILE.split("\njobs:", 1)[0]
+    ios_header = IOS.split("\njobs:", 1)[0]
+    assert (
+        "group: nico-production-assessment-proof-${{ github.event.workflow_run.head_sha || github.ref }}"
+        in mobile_header
+    )
+    assert (
+        "group: nico-production-ios-webkit-proof-${{ github.event.workflow_run.head_sha || github.ref }}"
+        in ios_header
+    )
+    assert "group: nico-production-assessment-proof-" not in ios_header
 
 
 def test_ios_proof_waits_for_exact_sha_mobile_success_before_starting_webkit() -> None:

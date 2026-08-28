@@ -98,13 +98,17 @@ def test_same_run_locale_renderers_consume_identical_stage_topology() -> None:
 def test_locale_change_reuses_same_frozen_run_without_assessment_rerun(monkeypatch) -> None:
     canonical = {
         "service_id": "comprehensive",
+        "report_language": "en",
         "identity": {
             "run_id": "comprun_locale_closure",
             "repository": "BoneManTGRM/NICO",
             "commit_sha": "a" * 40,
+            "evidence_ledger_id": "ledger_locale_closure",
+            "report_language": "en",
             "generated_at": "2026-08-25T14:33:26Z",
         },
         "assessment": {
+            "report_language": "en",
             "maturity_signal": {"score": 93, "presented_score": 93},
             "human_review_required": True,
             "client_delivery_allowed": False,
@@ -118,6 +122,7 @@ def test_locale_change_reuses_same_frozen_run_without_assessment_rerun(monkeypat
         "run_id": canonical["identity"]["run_id"],
         "repository": canonical["identity"]["repository"],
         "commit_sha": canonical["identity"]["commit_sha"],
+        "evidence_ledger_id": canonical["identity"]["evidence_ledger_id"],
         "report_language": "en",
         "terminal": True,
         "human_review_required": True,

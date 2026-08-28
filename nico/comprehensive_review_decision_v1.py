@@ -7,6 +7,10 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
+from nico.decision_grade_accepted_edition_guard_v1 import (
+    current_report_artifact_digest,
+    current_report_artifact_digests,
+)
 
 VERSION = "nico.comprehensive_review_decision.v2"
 _REPORT_STAGE_IDS = (
@@ -185,6 +189,7 @@ def build_reviewed_edition(
             "html": package.get("html"),
             "pdf": pdf,
             "json": package.get("json"),
+            "evidence_manifest": package.get("evidence_manifest_json"),
         },
         reviewer=reviewer,
         reviewer_role=reviewer_role,
@@ -195,4 +200,34 @@ def build_reviewed_edition(
     return _bind_review_ledger_to_manifest(manifest, _review_ledger_binding(record))
 
 
-__all__ = ["VERSION", "build_reviewed_edition", "report_package_from_record"]
+def review_artifact_identity(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Identify the exact pre-approval bytes and optimistic record revision."""
+
+    identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
+    package = report_package_from_record(record)
+    return {
+        "artifact_schema": "nico.comprehensive_review_artifact_identity.v1",
+        "run_id": str(identity.get("run_id") or ""),
+        "revision": int(record.get("revision") or 0),
+        "report_artifact_digest": current_report_artifact_digest(package),
+        "artifact_digests": current_report_artifact_digests(package),
+    }
+
+
+def assert_expected_review_artifact_identity(
+    record: Mapping[str, Any],
+    expected: Any,
+) -> dict[str, Any]:
+    current = review_artifact_identity(record)
+    if not isinstance(expected, Mapping) or dict(expected) != current:
+        raise ValueError("stale_review_artifact_identity")
+    return current
+
+
+__all__ = [
+    "VERSION",
+    "assert_expected_review_artifact_identity",
+    "build_reviewed_edition",
+    "report_package_from_record",
+    "review_artifact_identity",
+]

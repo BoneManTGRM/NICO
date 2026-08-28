@@ -2,17 +2,19 @@ name: Mobile Restart Production Proof
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Spanish Comprehensive Production Proof
+    types:
+      - completed
 
 permissions:
   contents: read
+  actions: read
   statuses: write
 
 concurrency:
-  group: nico-production-assessment-proof-${{ github.ref }}
+  group: nico-production-assessment-proof-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -23,6 +25,8 @@ jobs:
     steps:
       - name: Check out exact commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
@@ -31,6 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile \
+            scripts/comprehensive_production_run_handoff_v1.py \
             scripts/mobile_pdf_download_action_proof_v1.py \
             scripts/mobile_restart_live_acceptance_v1.py \
             scripts/mobile_restart_live_acceptance_v3.py \
@@ -53,13 +58,19 @@ jobs:
           assert 'Acquire::https::Timeout "20";' in workflow
           assert 'timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium' in workflow
           assert 'if: failure() || cancelled()' in workflow
-          assert 'Wait for exact-SHA Spanish production proof' in workflow
-          assert 'NICO Spanish Comprehensive Production Proof' in workflow
+          assert 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' in workflow
+          assert '--source-proof source-proof/spanish-comprehensive-live-proof.json' in workflow
+          assert '--source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}"' in workflow
+          assert '--observation-seconds 90' in workflow
+          assert 'Spanish Comprehensive Production Proof' in workflow
           PY
 
   live-production:
     name: Reload mobile assessment and download the exact review PDF
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -69,14 +80,24 @@ jobs:
       NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY || 'BoneManTGRM/NICO' }}
       NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
       GITHUB_TOKEN: ${{ github.token }}
-      RELEASE_SHA: ${{ github.sha }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       STATUS_CONTEXT: NICO Mobile Restart Production Proof
     steps:
       - name: Check out exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
+
+      - name: Download sole Comprehensive run handoff
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: spanish-comprehensive-production-proof-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: source-proof
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Publish pending proof status
         run: |
@@ -86,7 +107,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Waiting for exact-SHA mobile recovery and review PDF download proof",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} mobile recovery proof running",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -134,52 +155,6 @@ jobs:
               raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
           PY
 
-      - name: Wait for exact-SHA Spanish production proof
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import time
-          import urllib.request
-
-          repository = os.environ["GITHUB_REPOSITORY"]
-          sha = os.environ["RELEASE_SHA"]
-          token = os.environ["GITHUB_TOKEN"]
-          required_context = "NICO Spanish Comprehensive Production Proof"
-          deadline = time.time() + 150 * 60
-          last_state = "missing"
-          while time.time() < deadline:
-              request = urllib.request.Request(
-                  f"https://api.github.com/repos/{repository}/commits/{sha}/status",
-                  headers={
-                      "Authorization": f"Bearer {token}",
-                      "Accept": "application/vnd.github+json",
-                      "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-mobile-wait-for-spanish-proof",
-                  },
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  payload = json.loads(response.read().decode("utf-8"))
-              last_state = "missing"
-              for item in payload.get("statuses") or []:
-                  if str(item.get("context") or "") == required_context:
-                      last_state = str(item.get("state") or "unknown")
-                      break
-              print(f"Spanish prerequisite status: {last_state}", flush=True)
-              if last_state == "success":
-                  break
-              if last_state in {"error", "failure"}:
-                  raise SystemExit(
-                      f"The exact-SHA Spanish production proof failed before Mobile proof: {last_state}"
-                  )
-              time.sleep(20)
-          else:
-              raise SystemExit(
-                  f"Timed out waiting for exact-SHA Spanish production proof: {last_state}"
-              )
-          PY
-
       - name: Verify exact frontend release identity
         run: |
           set -euo pipefail
@@ -218,6 +193,17 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
           timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium
 
+      - name: Validate sole Comprehensive run handoff
+        run: |
+          set -euo pipefail
+          python scripts/comprehensive_production_run_handoff_v1.py \
+            --source-proof source-proof/spanish-comprehensive-live-proof.json \
+            --expected-sha "${RELEASE_SHA}" \
+            --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+            --source-workflow-run-id "${SOURCE_RUN_ID}" \
+            --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+            --output audit-results/comprehensive-run-handoff.json
+
       - name: Prove recovery and exact-run review PDF download
         id: restart_proof
         continue-on-error: true
@@ -227,14 +213,20 @@ jobs:
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
+            --source-proof source-proof/spanish-comprehensive-live-proof.json \
+            --source-workflow-run-id "${SOURCE_RUN_ID}" \
+            --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+            --observation-seconds 90 \
+            --ui-locale en \
             --output audit-results/mobile-restart-live-proof.json
 
       - name: Upload immutable mobile restart proof
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mobile-restart-production-proof-${{ github.sha }}-${{ github.run_id }}
+          name: mobile-restart-production-proof-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            audit-results/comprehensive-run-handoff.json
             audit-results/mobile-restart-frontend-release.json
             audit-results/mobile-restart-live-proof.json
             audit-results/mobile-restart-live-proof.png
@@ -253,20 +245,80 @@ jobs:
           assert payload["artifact_schema"] == "nico.mobile_restart_live_acceptance.v1"
           assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.single_dispatch.v3"
           assert payload["status"] == "passed"
-          assert payload["expected_sha"] == "${{ github.sha }}"
-          assert payload["start_dispatch"] == "single_native_dom_click"
+          assert payload["expected_sha"] == "${{ github.event.workflow_run.head_sha }}"
+          assert payload["source_workflow_run_id"] == "${{ github.event.workflow_run.id }}"
+          assert payload["source_workflow_run_attempt"] == "${{ github.event.workflow_run.run_attempt }}"
+          assert payload["source_binding"] == "${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}"
+          assert payload["ui_locale"] == "en"
+          assert payload["assessment_path"] == "/assessment"
+          assert payload["browser_evidence_class"] == "Playwright Chromium iPhone-sized mobile emulation"
+          assert payload["real_device_tested"] is False
+          assert len(payload["canonical_truth_sha256"]) == 64
+          assert payload["canonical_truth"]["canonical_truth_digest_computed_from_json"] is True
+          assert payload["start_dispatch"] == "not_dispatched_existing_run"
           assert payload["start_dispatch_retry_absent"] is True
-          assert payload["start_request_count"] == 1
-          assert payload["duplicate_intake_absent"] is True
-          assert payload["running_restart_recovery_verified"] is True
+          assert payload["fresh_assessment_count"] == 0
+          assert payload["start_request_count"] == 0
+          assert payload["continuation_post_count"] == 0
+          assert payload["prohibited_mutation_guard_verified"] is True
           assert payload["terminal_restart_recovery_verified"] is True
+          assert payload["clean_context_reopen_verified"] is True
+          assert payload["browser_context_count"] == 2
+          assert payload["first_context_closed_before_reopen"] is True
+          assert payload["terminal_background_foreground_recovery_verified"] is True
+          assert payload["terminal_visibility_transitions"] == ["hidden", "visible"]
+          assert payload["terminal_observation_at_least_90_seconds"] is True
+          assert payload["terminal_observation"]["observed_seconds"] >= 90
+          assert payload["terminal_observation"]["status_get_count"] <= 4
+          assert payload["terminal_observation"]["localized_markdown_get_count"] <= 2
+          assert payload["terminal_observation"]["legacy_markdown_get_count"] == 0
+          assert payload["terminal_observation"]["markdown_action_success_count"] == 2
+          assert payload["terminal_observation"]["markdown_verification_get_count"] == 2
+          assert payload["terminal_observation"]["markdown_report_language"] == "en"
+          assert payload["terminal_observation"]["markdown_network_bounded"] is True
+          assert payload["terminal_observation"]["post_request_count"] == 0
+          assert payload["terminal_observation"]["unexpected_assessment_request_count"] == 0
+          assert len(payload["terminal_observation"]["markdown_action_proofs"]) == 2
+          assert all(
+              item["report_language"] == "en"
+              and item["locale_identity_verified"] is True
+              and item["lifecycle_contract_verified"] is True
+              for item in payload["terminal_observation"]["markdown_action_proofs"]
+          )
+          assert payload["terminal_horizontal_overflow_absent"] is True
+          assert payload["terminal_touch_targets_verified"] is True
+          assert payload["terminal_mobile_layout"]["minimum_touch_target_px"] == 44
+          assert payload["terminal_navigation_recovery_verified"] is True
+          assert payload["mobile_locale_switch_control_verified"] is True
+          assert payload["mobile_locale_round_trip"]["source_locale"] == "en"
+          assert payload["mobile_locale_round_trip"]["target_locale"] == "es-MX"
+          assert payload["mobile_locale_round_trip"]["same_run_preserved"] is True
+          assert payload["professional_review_navigation_verified"] is True
+          assert payload["professional_review_locale_preserved"] is True
           assert payload["terminal_manifest_bounded"] is True
           assert payload["pdf_signature_verified"] is True
+          assert payload["pdf_artifact_hash_header_verified"] is True
+          assert payload["pdf_canonical_truth_digest_verified"] is True
           assert payload["ui_review_pdf_download_verified"] is True
+          assert payload["ui_review_pdf_user_gesture_request_count"] == 1
           assert payload["ui_review_pdf_signature_verified"] is True
+          assert payload["ui_review_pdf_artifact_hash_header_verified"] is True
+          assert payload["ui_review_pdf_canonical_truth_digest_verified"] is True
           assert payload["ui_review_pdf_exact_run_filename_verified"] is True
           assert payload["ui_review_pdf_artifact_status_cleared"] is True
           assert payload["ui_review_pdf_original_user_gesture_preserved"] is True
+          assert payload["ui_review_pdf_original_page_visible_after_action"] is True
+          assert payload["ui_review_pdf_requested_report_language"] == "en"
+          assert payload["ui_review_pdf_lifecycle_contract_verified"] is True
+          assert payload["ui_review_pdf_action_kind"] in {
+              "accepted-edition", "localized-draft-pending-approval",
+          }
+          if payload["ui_review_pdf_action_kind"] == "accepted-edition":
+              assert payload["ui_review_pdf_network_path"].endswith("/report/pdf")
+              assert payload["ui_review_pdf_accepted_edition_digest_verified"] is True
+          else:
+              assert payload["ui_review_pdf_network_path"].endswith("/localized-report/en/pdf")
+              assert payload["ui_review_pdf_localized_draft_identity_verified"] is True
           assert payload["ui_review_pdf_proof_version"] == "nico.mobile-pdf-download-action-proof.v1"
           assert payload["terminal_before_reload"]["commit_sha"] == payload["expected_sha"]
           assert "Awaiting" not in payload["terminal_before_reload"]["score"]
@@ -282,7 +334,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Mobile recovered one exact run and downloaded its review PDF",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} mobile recovery proof passed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -302,7 +354,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Mobile recovery or review PDF download proof failed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} mobile recovery proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY

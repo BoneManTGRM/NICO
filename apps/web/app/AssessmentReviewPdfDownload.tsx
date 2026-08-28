@@ -1,9 +1,11 @@
 "use client";
 
 import {useEffect, useRef} from "react";
+import {reportLanguageForRequest} from "./assessment/assessmentLocale";
 
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
-const REVIEW_PDF_LABEL = /(?:download\s+(?:review|approved)\s+pdf|descargar[^\n]*pdf)/i;
+const REVIEW_PDF_LABEL = /(?:download\s+review\s+pdf|descargar\s+pdf\s+para\s+revisi[oó]n)/i;
+const REVIEW_PDF_KIND = "localized-draft-pending-approval";
 const RUN_ID_QUERY = "run_id";
 const REENTRY_GUARD_MS = 1_500;
 const STATUS_ATTR = "data-nico-review-pdf-action-status";
@@ -12,23 +14,32 @@ type ReportLanguage = "en" | "es-MX";
 
 function activeReportLanguage(): ReportLanguage {
   const current = new URL(window.location.href);
-  const requested = String(
-    current.searchParams.get("report_language") || current.searchParams.get("lang") || "",
-  ).toLowerCase();
-  if (requested === "es-mx" || requested === "es_mx") return "es-MX";
-  if (requested === "en") return "en";
-
   const pathname = current.pathname.toLowerCase();
-  if (
+  const queryLocale = current.searchParams.get("lang")?.toLowerCase();
+  const uiLocale = (
     pathname === "/es" ||
     pathname.startsWith("/es/") ||
     pathname === "/es-mx" ||
-    pathname.startsWith("/es-mx/")
-  ) {
-    return "es-MX";
-  }
+    pathname.startsWith("/es-mx/") ||
+    queryLocale === "es-mx" ||
+    queryLocale === "es"
+  ) || document.documentElement.lang.toLowerCase().startsWith("es")
+    ? "es-MX"
+    : "en";
+  return reportLanguageForRequest(uiLocale);
+}
 
-  return document.documentElement.lang.toLowerCase().startsWith("es") ? "es-MX" : "en";
+function spanishUi(): boolean {
+  const current = new URL(window.location.href);
+  const pathname = current.pathname.toLowerCase();
+  const queryLocale = current.searchParams.get("lang")?.toLowerCase();
+  return pathname === "/es"
+    || pathname.startsWith("/es/")
+    || pathname === "/es-mx"
+    || pathname.startsWith("/es-mx/")
+    || queryLocale === "es-mx"
+    || queryLocale === "es"
+    || document.documentElement.lang.toLowerCase().startsWith("es");
 }
 
 function visibleRunId(actions: Element | null = null): string {
@@ -53,10 +64,6 @@ function visibleRunId(actions: Element | null = null): string {
 
 function exactRunPdfHref(runId: string, reportLanguage: ReportLanguage = "en"): string {
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}/pdf`;
-}
-
-function spanish(): boolean {
-  return activeReportLanguage() === "es-MX";
 }
 
 function showStatus(container: Element | null, message: string, failure = false): void {
@@ -109,6 +116,10 @@ export default function AssessmentReviewPdfDownload() {
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
       const actions = button.closest(REPORT_ACTIONS_SELECTOR);
       if (!actions) return;
+      // An accepted-edition action must remain with AssessmentWorkspace, which
+      // verifies the streamed bytes against the exact approved PDF digest. This
+      // localization bridge owns only explicitly pending-review draft actions.
+      if (button.getAttribute("data-assessment-pdf-kind") !== REVIEW_PDF_KIND) return;
       if (!REVIEW_PDF_LABEL.test(String(button.textContent || "").trim())) return;
 
       // Do not cancel the native React click until this bridge can prove it owns the
@@ -132,7 +143,7 @@ export default function AssessmentReviewPdfDownload() {
       startExactRunDownload(runId, activeReportLanguage());
       showStatus(
         actions,
-        spanish()
+        spanishUi()
           ? "PDF solicitado. Revisa la nueva pestaña o tus descargas."
           : "PDF requested. Check the new tab or your downloads.",
       );
@@ -145,4 +156,4 @@ export default function AssessmentReviewPdfDownload() {
   return null;
 }
 
-export {activeReportLanguage, exactRunPdfHref, startExactRunDownload, visibleRunId};
+export {activeReportLanguage, exactRunPdfHref, spanishUi, startExactRunDownload, visibleRunId};

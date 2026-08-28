@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import Any, Mapping
 
-from nico.comprehensive_approved_delivery_v1 import attach_approved_delivery_package
+from nico.comprehensive_approved_delivery_v1 import (
+    attach_approved_delivery_package,
+    require_new_report_after_evidence_request,
+)
 from nico.comprehensive_background_stage_execution_v1 import (
     BACKGROUND_STAGE_IDS,
     execute_background_stage,
@@ -20,6 +24,9 @@ from nico.comprehensive_engagement_metadata_v1 import (
     display_identity_projection,
     normalize_comprehensive_engagement_metadata,
 )
+from nico.comprehensive_delivery_authorization_v1 import (
+    authorize_accepted_edition,
+)
 from nico.comprehensive_final_report_background_v1 import (
     FinalReportPublicationCoordinator,
 )
@@ -29,7 +36,10 @@ from nico.comprehensive_pre_render_scanner_truth_v65 import (
     install_pre_render_authoritative_scanner_truth,
 )
 from nico.comprehensive_report_flatten_bound_v1 import install_bounded_report_flatten
-from nico.comprehensive_review_decision_v1 import build_reviewed_edition
+from nico.comprehensive_review_decision_v1 import (
+    assert_expected_review_artifact_identity,
+    build_reviewed_edition,
+)
 from nico.comprehensive_run_record import (
     _record_hash,
     apply_comprehensive_review_decision,
@@ -199,6 +209,11 @@ class ComprehensiveRunService:
             return self.resume(run_id, max_stages=1)
         return record
 
+    def load_read_only(self, run_id: str) -> dict[str, Any]:
+        """Load and integrity-validate a run without continuation or maintenance."""
+
+        return self._store.load(run_id)
+
     def resume(
         self,
         run_id: str,
@@ -248,9 +263,15 @@ class ComprehensiveRunService:
         decision: str,
         decision_reason: str,
         decided_at: str | None = None,
+        expected_artifact_identity: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
         previous_revision = int(record["revision"])
+        if str(decision or "").strip().casefold() == "approved":
+            assert_expected_review_artifact_identity(
+                record,
+                expected_artifact_identity,
+            )
         manifest = build_reviewed_edition(
             record,
             reviewer=reviewer,
@@ -259,12 +280,55 @@ class ComprehensiveRunService:
             decision_reason=decision_reason,
             decided_at=decided_at,
         )
+        if str(decision or "").strip().casefold() == "approved":
+            require_new_report_after_evidence_request(record, manifest)
         updated = apply_comprehensive_review_decision(
             record,
             manifest=manifest,
         )
-        if str(decision or "").strip().casefold() == "approved":
-            updated = attach_approved_delivery_package(updated, manifest)
+        return self._store.save(updated, expected_revision=previous_revision)
+
+    def authorize_delivery(
+        self,
+        run_id: str,
+        *,
+        authorizer: str,
+        authorizer_role: str,
+        authorization_reason: str,
+        authorized_at: str | None = None,
+        expected_artifact_identity: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        record = self._store.load(run_id)
+        previous_revision = int(record["revision"])
+        accepted = record.get("accepted_edition")
+        if not isinstance(accepted, Mapping):
+            raise ValueError("delivery_authorization_requires_accepted_edition")
+        timestamp = str(
+            authorized_at
+            or datetime.now(UTC).replace(microsecond=0).isoformat()
+        ).strip()
+        delivery_authorization = authorize_accepted_edition(
+            record,
+            accepted,
+            authorizer=authorizer,
+            authorizer_role=authorizer_role,
+            authorization_reason=authorization_reason,
+            authorized_at=timestamp,
+            expected_artifact_identity=expected_artifact_identity,
+        )
+        authorization_record = deepcopy(dict(record))
+        authorization_record["delivery_authorization"] = deepcopy(
+            delivery_authorization
+        )
+        updated = attach_approved_delivery_package(
+            authorization_record,
+            accepted,
+        )
+        updated["client_delivery_allowed"] = True
+        updated["delivery_authorization"] = deepcopy(delivery_authorization)
+        updated["updated_at"] = timestamp
+        updated["revision"] = previous_revision + 1
+        updated["integrity_sha256"] = _record_hash(updated)
         return self._store.save(updated, expected_revision=previous_revision)
 
     def _run_next_stage(self, record: dict[str, Any]) -> dict[str, Any]:

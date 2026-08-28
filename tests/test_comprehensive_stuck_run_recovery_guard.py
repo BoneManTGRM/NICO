@@ -5,6 +5,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "apps/web/app/ComprehensiveStuckRunRecovery.tsx"
 LAYOUT = ROOT / "apps/web/app/layout.tsx"
+ACTIVE_RESET = ROOT / "apps/web/app/AssessmentActiveRunReset.tsx"
+PERSISTENCE = ROOT / "apps/web/app/assessment/assessmentRunPersistence.ts"
 
 
 def test_guard_bounds_comprehensive_lifecycle_requests() -> None:
@@ -63,11 +65,84 @@ def test_keep_waiting_dismisses_the_current_timeout_notice() -> None:
 def test_timeout_recovers_run_identity_from_the_exact_request_path() -> None:
     source = GUARD.read_text(encoding="utf-8")
     assert "function runIdFromLifecyclePath(path: string)" in source
-    assert "const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path)" in source
+    assert "const timeoutRunId = runIdFromLifecyclePath(path) || currentRunId()" in source
     assert "retainExactRunIdentity(timeoutRunId)" in source
     assert 'url.searchParams.set(ACTIVE_RUN_QUERY_KEY, exactRunId)' in source
     assert "window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY" in source
     assert "setRecoveryRunId(timeoutRunId)" in source
+
+
+def test_page_url_precedes_shared_active_storage_and_never_borrows_another_run() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    current = source.split("function currentRunId()", 1)[1].split(
+        "function retainExactRunIdentity", 1
+    )[0]
+    assert current.index("searchParams.get(ACTIVE_RUN_QUERY_KEY)") < current.index(
+        "readStoredRun()?.runId"
+    )
+
+    retain = source.split("function retainExactRunIdentity", 1)[1].split(
+        "function clearRunIdentity", 1
+    )[0]
+    assert "existingRunId" in retain
+    assert "existingRunId === exactRunId" in retain
+    assert "...existing" not in retain
+
+
+def test_clearing_one_page_run_does_not_remove_another_tabs_active_pointer() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    clear = source.split("function clearRunIdentity", 1)[1].split(
+        "function clearReservedViewportSpace", 1
+    )[0]
+    assert "runId: string" in clear
+    assert "removeStoredRunIfMatching" in clear
+    assert "if (!runId) return;" in source
+    assert "clearRunIdentity(runId)" in source
+
+    reset = ACTIVE_RESET.read_text(encoding="utf-8")
+    current = reset.split("function currentRunId()", 1)[1].split(
+        "function stuckRecoveryVisible", 1
+    )[0]
+    assert current.index("searchParams.get(ACTIVE_RUN_QUERY_KEY)") < current.index(
+        "savedRunId()"
+    )
+    reset_clear = reset.split("function clearCurrentRun", 1)[1].split(
+        "function clearReservedViewportSpace", 1
+    )[0]
+    assert "runId: string" in reset_clear
+    assert "removeStoredRunIfMatching" in reset_clear
+    assert "clearCurrentRun(runId)" in reset
+
+
+def test_new_assessment_reset_cannot_adopt_another_tabs_active_pointer() -> None:
+    persistence = PERSISTENCE.read_text(encoding="utf-8")
+    read = persistence.split("export function readPersistedRun", 1)[1].split(
+        "export function clearPersistedRun", 1
+    )[0]
+    clear = persistence.split("export function clearPersistedRun", 1)[1].split(
+        "export function writePersistedRun", 1
+    )[0]
+    write = persistence.split("export function writePersistedRun", 1)[1]
+
+    assert 'NEW_ASSESSMENT_QUERY_KEY = "new_assessment"' in persistence
+    assert "!urlRunId && url.searchParams.has(NEW_ASSESSMENT_QUERY_KEY)" in read
+    assert read.index("url.searchParams.has(NEW_ASSESSMENT_QUERY_KEY)") < read.index(
+        "readStoredRun()"
+    )
+    assert "url.searchParams.set(NEW_ASSESSMENT_QUERY_KEY" in clear
+    assert "url.searchParams.delete(NEW_ASSESSMENT_QUERY_KEY)" in write
+
+
+def test_only_successful_status_or_continuation_clears_timeout_panel() -> None:
+    source = GUARD.read_text(encoding="utf-8")
+    assert "function settlesRunLifecycle(path: string, method: string)" in source
+    assert 'method === "GET" && RUN_STATUS_PATH.test(path)' in source
+    assert 'method === "POST" && RUN_CONTINUE_PATH.test(path)' in source
+    assert "if (settlesRunLifecycle(path, method))" in source
+    settling = source.split("function settlesRunLifecycle", 1)[1].split(
+        "function combinedRequest", 1
+    )[0]
+    assert "localized-report" not in settling
 
 
 def test_readiness_timeout_without_an_accepted_run_does_not_show_recovery() -> None:

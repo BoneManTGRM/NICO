@@ -90,7 +90,7 @@ function isSpanishRoute() {
 function isAssessmentRoute() {
   if (typeof window === "undefined") return false;
   const pathname = window.location.pathname.toLowerCase();
-  return pathname === "/assessment" || pathname.startsWith("/assessment/") || pathname === "/es/assessment" || pathname.startsWith("/es/assessment/");
+  return pathname === "/assessment" || pathname.startsWith("/assessment/") || pathname === "/es/assessment" || pathname.startsWith("/es/assessment/") || pathname === "/es-mx" || pathname.startsWith("/es-mx/");
 }
 function isLegacyHomeRoute() {
   if (typeof window === "undefined") return false;
@@ -121,7 +121,7 @@ function applyGlobalLanguageNav(spanish: boolean) {
     toggle.dataset.nicoLanguageToggle = "true";
     links.appendChild(toggle);
   }
-  toggle.href = spanish ? "/assessment?tier=express#assessment" : "/es/assessment?tier=express#assessment";
+  toggle.href = spanish ? "/assessment?tier=comprehensive#assessment" : "/es/assessment?tier=comprehensive#assessment";
   toggle.textContent = spanish ? "English" : "Español";
 }
 

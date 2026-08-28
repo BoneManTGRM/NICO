@@ -4,13 +4,21 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.5"
+VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.6"
 _ONE_ARG_MARKER = "__nico_spanish_current_copy_worker_one_v98__"
 _TWO_ARG_MARKER = "__nico_spanish_current_copy_worker_two_v98__"
 
 _STATE_ES = {
+    "completed": "ejecución completada",
+    "complete": "ejecución completada",
+    "succeeded": "exitosa",
+    "success": "exitosa",
     "passed": "aprobado",
     "failed": "fallido",
+    "not_applicable": "no aplica",
+    "not applicable": "no aplica",
+    "unavailable": "no disponible",
+    "unknown": "desconocido",
     "not_assessed": "no evaluado",
     "not assessed": "no evaluado",
 }
@@ -63,8 +71,56 @@ _REVIEW_REQUIRED_SCANNER_CANDIDATES_RE = re.compile(
     r"Review-required scanner candidates: (?P<count>\d+)(?P<period>\.?)",
     re.IGNORECASE,
 )
+_UNRESOLVED_DEPLOYMENTS_RE = re.compile(
+    r"Non-success or unresolved deployment observations: (?P<count>\d+)\.",
+    re.IGNORECASE,
+)
+_OUTCOME_CLASSIFICATION_RE = re.compile(
+    r"Outcome classification breakdown: (?P<value>[^\r\n]+?)(?P<period>\.)?(?=\r?$|\n)",
+    re.IGNORECASE | re.MULTILINE,
+)
+_TOP_LEVEL_ENTRY_RE = re.compile(
+    r"Top-level entries\[(?P<index>\d+)\]: (?P<value>[^\r\n]+)",
+    re.IGNORECASE,
+)
+_SCANNER_STATE_RE = re.compile(
+    r"(?P<prefix>(?:^|\n)[^\n:]{1,100}: )"
+    r"(?P<state>completed|complete|succeeded|success|passed|failed|not_applicable|not applicable|unavailable|unknown)"
+    r"(?=; (?:commit exacto|exact commit)=)",
+    re.IGNORECASE,
+)
+_CANDIDATE_CATEGORY_SUMMARY_RE = re.compile(
+    r"(?P<category>Dependency|Secret|Static): raw=(?P<raw>\d+); "
+    r"confirmed_material=(?P<confirmed>\d+); review_required=(?P<review>\d+); "
+    r"excluded_test_only=(?P<excluded>\d+); approved_or_nonblocking=(?P<nonblocking>\d+)\.",
+    re.IGNORECASE,
+)
+_CANDIDATE_CATEGORY_ES = {
+    "dependency": "Dependencias",
+    "secret": "Secretos",
+    "static": "Análisis estático",
+}
+_CANDIDATE_DETAIL_LABEL_ES = {
+    "tool": "herramienta",
+    "package": "paquete",
+    "installed": "versión instalada",
+    "fixed": "versión corregida",
+    "location": "ubicación",
+    "disposition": "disposición",
+}
+_CANDIDATE_DISPOSITION_ES = {
+    "review_required": "revisión requerida",
+    "confirmed": "confirmado",
+    "not_actionable": "no accionable",
+    "false_positive": "falso positivo",
+}
 
 _STATIC_GENERATOR_COPY = {
+    "Score effect: assurance-only until triaged.": (
+        "Efecto en la puntuación: solo aseguramiento mientras la disposición humana "
+        "autorizada siga pendiente; el estado del triaje técnico de NICO se informa "
+        "por separado."
+    ),
     "Historical workflow, job, and deployment outcomes are retained as an unscored operational trend.": (
         "Los resultados históricos de flujos de trabajo, trabajos y despliegues se conservan como una tendencia operativa sin puntuación."
     ),
@@ -79,6 +135,7 @@ _STATIC_GENERATOR_COPY = {
     ),
 }
 _STRUCTURED_TRIGGER_TOKENS = (
+    "Score effect: assurance-only until triaged.",
     "Workflow files at assessed commit:",
     "Workflow configuration exact-SHA match:",
     "Explicit permissions control:",
@@ -89,6 +146,13 @@ _STRUCTURED_TRIGGER_TOKENS = (
     "Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.",
     "applicable analyzers completed;",
     "Review-required scanner candidates:",
+    "Non-success or unresolved deployment observations:",
+    "Outcome classification breakdown:",
+    "Top-level entries[",
+    "; commit exacto=",
+    "; exact commit=",
+    ": raw=",
+    "disposition=",
     *_STATIC_GENERATOR_COPY.keys(),
 )
 
@@ -168,6 +232,76 @@ def _translate_structured_current_report_copy(text: str) -> str:
             f"{match.group('count')}{match.group('period')}"
         )
 
+    def unresolved_deployments(match: re.Match[str]) -> str:
+        return (
+            "Observaciones de despliegues no exitosos o no resueltos: "
+            f"{match.group('count')}."
+        )
+
+    def outcome_classification(match: re.Match[str]) -> str:
+        return (
+            "Desglose de la clasificación de resultados: "
+            f"{match.group('value')}{match.group('period') or ''}"
+        )
+
+    def top_level_entry(match: re.Match[str]) -> str:
+        return (
+            f"Elementos de nivel superior[{match.group('index')}]: "
+            f"{match.group('value')}"
+        )
+
+    def scanner_state(match: re.Match[str]) -> str:
+        state = _STATE_ES.get(match.group("state").casefold(), match.group("state"))
+        return f"{match.group('prefix')}{state}"
+
+    def candidate_summary(match: re.Match[str]) -> str:
+        category = _CANDIDATE_CATEGORY_ES[match.group("category").casefold()]
+        return (
+            f"{category}: brutos={match.group('raw')}; "
+            f"materiales confirmados={match.group('confirmed')}; "
+            f"requieren revisión={match.group('review')}; "
+            f"excluidos por ser solo de pruebas={match.group('excluded')}; "
+            f"aprobados o no bloqueantes={match.group('nonblocking')}."
+        )
+
+    def candidate_detail_lines(value: str) -> str:
+        lines = value.splitlines(keepends=True)
+        output_lines: list[str] = []
+        for line in lines:
+            match = re.match(
+                r"(?P<prefix>\s*(?:[-•]\s*)?)(?P<category>Dependency|Secret|Static)"
+                r"(?P<rest>\s+·.*\bdisposition=[^\r\n]+)",
+                line,
+                flags=re.IGNORECASE,
+            )
+            if not match:
+                output_lines.append(line)
+                continue
+            localized = (
+                match.group("prefix")
+                + _CANDIDATE_CATEGORY_ES[match.group("category").casefold()]
+                + match.group("rest")
+            )
+            for source, target in _CANDIDATE_DETAIL_LABEL_ES.items():
+                localized = re.sub(
+                    rf"(?<![\w]){re.escape(source)}=",
+                    f"{target}=",
+                    localized,
+                )
+            localized = re.sub(
+                r"(?P<label>disposición=)(?P<value>[A-Za-z_]+)",
+                lambda disposition: (
+                    disposition.group("label")
+                    + _CANDIDATE_DISPOSITION_ES.get(
+                        disposition.group("value").casefold(),
+                        disposition.group("value"),
+                    )
+                ),
+                localized,
+            )
+            output_lines.append(localized)
+        return "".join(output_lines)
+
     if "Workflow files at assessed commit:" in output:
         output = _PROVIDER_WORKFLOW_FILES_RE.sub(workflow_files, output)
     if "Workflow configuration exact-SHA match:" in output:
@@ -197,6 +331,18 @@ def _translate_structured_current_report_copy(text: str) -> str:
             review_required_scanner_candidates,
             output,
         )
+    if "Non-success or unresolved deployment observations:" in output:
+        output = _UNRESOLVED_DEPLOYMENTS_RE.sub(unresolved_deployments, output)
+    if "Outcome classification breakdown:" in output:
+        output = _OUTCOME_CLASSIFICATION_RE.sub(outcome_classification, output)
+    if "Top-level entries[" in output:
+        output = _TOP_LEVEL_ENTRY_RE.sub(top_level_entry, output)
+    if "; commit exacto=" in output or "; exact commit=" in output:
+        output = _SCANNER_STATE_RE.sub(scanner_state, output)
+    if ": raw=" in output:
+        output = _CANDIDATE_CATEGORY_SUMMARY_RE.sub(candidate_summary, output)
+    if "disposition=" in output:
+        output = candidate_detail_lines(output)
     for source, target in _STATIC_GENERATOR_COPY.items():
         if source in output:
             output = output.replace(source, target)

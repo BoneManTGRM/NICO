@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, Mapping
 
 from nico.comprehensive_engagement_metadata_v1 import (
     build_comprehensive_engagement_metadata,
+    verify_comprehensive_engagement_metadata,
 )
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
@@ -47,6 +48,10 @@ _REPORT_KEYS = (
     "pdf_error",
     "pdf_sha256",
     "canonical_truth_sha256",
+    "artifact_manifest",
+    "evidence_manifest_json",
+    "evidence_manifest_sha256",
+    "draft_artifact_identity",
 )
 _REPORT_MANIFEST_KEYS = (
     "service_id",
@@ -174,6 +179,30 @@ def _bounded_value(value: Any, *, depth: int = 0) -> Any:
     return str(value)[:MAX_PROJECTED_STRING_CHARS]
 
 
+def _project_engagement_metadata(value: Any) -> dict[str, Any]:
+    """Return the verified, independently field-bounded intake snapshot exactly."""
+
+    if not isinstance(value, dict):
+        return {}
+    try:
+        if not verify_comprehensive_engagement_metadata(value):
+            return {}
+    except (TypeError, ValueError):
+        return {}
+    return deepcopy(value)
+
+
+def _project_accepted_edition(
+    record: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project the immutable approval identity without touching persisted state."""
+
+    candidate = record.get("accepted_edition")
+    if not isinstance(candidate, Mapping):
+        return {}
+    return deepcopy(dict(candidate))
+
+
 def _project_stage_result(stage_id: str, result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {
@@ -243,6 +272,8 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
         if isinstance(record.get("stage_results"), dict)
         else {}
     )
+    delivery_allowed = record.get("client_delivery_allowed") is True
+    human_review_completed = record.get("human_review_completed") is True
     return {
         "artifact_schema": str(record.get("artifact_schema") or ""),
         "service_id": "comprehensive",
@@ -250,10 +281,8 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
         "identity": _bounded_value(
             record.get("identity") if isinstance(record.get("identity"), dict) else {}
         ),
-        "engagement_metadata": _bounded_value(
+        "engagement_metadata": _project_engagement_metadata(
             record.get("engagement_metadata")
-            if isinstance(record.get("engagement_metadata"), dict)
-            else {}
         ),
         "human_evidence_summary": _human_evidence_summary(record),
         "current_stage": record.get("current_stage"),
@@ -267,7 +296,15 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
         "revision": record.get("revision"),
         "terminal": bool(record.get("terminal")),
         "human_review_required": True,
-        "client_delivery_allowed": False,
+        "human_review_completed": human_review_completed,
+        "client_delivery_allowed": delivery_allowed,
+        "delivery_status": (
+            "approved_for_delivery"
+            if delivery_allowed
+            else "pending_authorization"
+            if str(record.get("status") or "").casefold() == "approved"
+            else "blocked"
+        ),
         "integrity_sha256": str(record.get("integrity_sha256") or ""),
         "response_projection": {
             "version": VERSION,
@@ -313,7 +350,11 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 def _project_report(report: dict[str, Any]) -> dict[str, Any]:
     """Attach exact terminal artifacts for established non-browser API consumers."""
 
-    projected = {key: report[key] for key in _REPORT_KEYS if key in report}
+    projected = {
+        key: deepcopy(report[key])
+        for key in _REPORT_KEYS
+        if key in report
+    }
     json_value = report.get("json")
     if isinstance(json_value, dict) and json_value:
         projected["json"] = deepcopy(json_value)
@@ -455,6 +496,12 @@ class ComprehensiveApiController:
         record = self._service.load(self._required(run_id, "run_id"))
         return self._response(record, operation="status")
 
+    def status_read_only(self, run_id: str) -> dict[str, Any]:
+        """Project stored truth without resuming or regenerating the assessment."""
+
+        record = self._service.load_read_only(self._required(run_id, "run_id"))
+        return self._response(record, operation="status")
+
     def continue_run(
         self,
         run_id: str,
@@ -495,6 +542,10 @@ class ComprehensiveApiController:
         identity = canonical_record["identity"]
         display_progress, active_stage_progress = _display_progress(canonical_record)
         terminal = bool(canonical_record.get("terminal"))
+        human_review_completed = (
+            canonical_record.get("human_review_completed") is True
+        )
+        delivery_allowed = canonical_record.get("client_delivery_allowed") is True
         response: dict[str, Any] = {
             "artifact_schema": VERSION,
             "service_id": "comprehensive",
@@ -507,10 +558,8 @@ class ComprehensiveApiController:
             "project_id": identity["project_id"],
             "assessment_depth": str(identity.get("assessment_depth") or "strategic"),
             "report_language": str(identity.get("report_language") or "en"),
-            "engagement_metadata": _bounded_value(
+            "engagement_metadata": _project_engagement_metadata(
                 canonical_record.get("engagement_metadata")
-                if isinstance(canonical_record.get("engagement_metadata"), dict)
-                else {}
             ),
             "human_evidence_summary": _human_evidence_summary(canonical_record),
             "status": canonical_record["status"],
@@ -522,7 +571,16 @@ class ComprehensiveApiController:
             "revision": canonical_record["revision"],
             "terminal": terminal,
             "human_review_required": True,
-            "client_delivery_allowed": False,
+            "human_review_completed": human_review_completed,
+            "client_delivery_allowed": delivery_allowed,
+            "delivery_status": (
+                "approved_for_delivery"
+                if delivery_allowed
+                else "pending_authorization"
+                if str(canonical_record.get("status") or "").casefold()
+                == "approved"
+                else "blocked"
+            ),
             "integrity_sha256": canonical_record["integrity_sha256"],
             "record": _project_record(canonical_record),
             "response_projection": {
@@ -548,6 +606,9 @@ class ComprehensiveApiController:
                 )
             if assessment:
                 response["assessment"] = _project_assessment(assessment)
+            accepted_edition = _project_accepted_edition(canonical_record)
+            if accepted_edition:
+                response["accepted_edition"] = accepted_edition
         return response
 
 

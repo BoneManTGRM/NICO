@@ -10,6 +10,9 @@ from urllib.parse import unquote, urljoin, urlparse
 # workflows consume this version and the stronger lifecycle fields are additive.
 VERSION = "nico.mobile-pdf-download-action-proof.v1"
 REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
+DRAFT_PDF_KIND = "localized-draft-pending-approval"
+ACCEPTED_PDF_KIND = "accepted-edition"
+SUPPORTED_PDF_KINDS = {DRAFT_PDF_KIND, ACCEPTED_PDF_KIND}
 # Compatibility marker for the existing workflow contract. The legacy Playwright
 # download object is intentionally not used as an integrity gate because Chromium
 # can report a same-origin browser download as canceled after the user gesture.
@@ -63,6 +66,76 @@ def _localized_pdf_contract(run_id: str, report_language: str) -> tuple[str, str
     return artifact_url_suffix, expected_filename
 
 
+def _pdf_action_contract(
+    run_id: str,
+    report_language: str,
+    action_kind: str,
+) -> dict[str, str]:
+    assert report_language in {"en", "es-MX"}
+    assert action_kind in SUPPORTED_PDF_KINDS
+    if action_kind == DRAFT_PDF_KIND:
+        path, fallback_filename = _localized_pdf_contract(run_id, report_language)
+        return {
+            "path": path,
+            "fallback_filename": fallback_filename,
+            "lifecycle": "localized-draft-pending-human-approval",
+            "read_class": "exact-run-localized-artifact",
+        }
+    return {
+        "path": f"/api/nico/assessment/comprehensive-run/{run_id}/report/pdf",
+        "fallback_filename": (
+            f"nico-comprehensive-{run_id}-APPROVED-ACCEPTED-EDITION.pdf"
+        ),
+        "lifecycle": "exact-approved-accepted-edition",
+        "read_class": "exact-run-accepted-edition",
+    }
+
+
+def _choose_pdf_action(
+    actions: list[dict[str, Any]],
+    requested_report_language: str,
+) -> dict[str, Any]:
+    """Select the requested-locale action while proving the complete button set.
+
+    An approved cross-locale surface intentionally contains two independent actions:
+    the immutable source-language accepted edition and a newly generated requested-
+    locale draft. The proof exercises the requested-locale draft in that case. When
+    the requested locale is the accepted source language, the accepted edition is the
+    sole action. Unapproved surfaces expose only the requested-locale draft.
+    """
+
+    assert requested_report_language in {"en", "es-MX"}
+    assert actions, "No terminal PDF action was rendered"
+    assert all(item.get("kind") in SUPPORTED_PDF_KINDS for item in actions), actions
+    assert all(item.get("report_language") in {"en", "es-MX"} for item in actions), actions
+    assert all(item.get("visible") is True for item in actions), actions
+    assert all(item.get("enabled") is True for item in actions), actions
+
+    accepted = [item for item in actions if item.get("kind") == ACCEPTED_PDF_KIND]
+    drafts = [item for item in actions if item.get("kind") == DRAFT_PDF_KIND]
+    assert len(accepted) <= 1 and len(drafts) <= 1, actions
+    if accepted and accepted[0].get("report_language") == requested_report_language:
+        assert not drafts, {
+            "reason": "accepted_source_locale_must_not_offer_regenerated_draft",
+            "actions": actions,
+        }
+        return accepted[0]
+
+    requested_drafts = [
+        item
+        for item in drafts
+        if item.get("report_language") == requested_report_language
+    ]
+    assert len(requested_drafts) == 1, {
+        "reason": "requested_locale_pdf_action_missing_or_ambiguous",
+        "requested_report_language": requested_report_language,
+        "actions": actions,
+    }
+    if accepted:
+        assert accepted[0].get("report_language") != requested_report_language, actions
+    return requested_drafts[0]
+
+
 def _content_disposition_filename(value: str) -> str:
     encoded = re.search(r"filename\*=UTF-8''([^;]+)", value, re.I)
     quoted = re.search(r'filename="([^"]+)"', value, re.I)
@@ -104,7 +177,14 @@ def _validate_response_filename(
     return filename
 
 
-def _fetch_captured_pdf(page: Any, requested_url: str, run_id: str) -> dict[str, Any]:
+def _fetch_captured_pdf(
+    page: Any,
+    requested_url: str,
+    run_id: str,
+    *,
+    action_kind: str,
+    report_language: str,
+) -> dict[str, Any]:
     response = page.request.get(
         requested_url,
         headers={"Accept": "application/pdf", "Cache-Control": "no-store"},
@@ -116,20 +196,65 @@ def _fetch_captured_pdf(page: Any, requested_url: str, run_id: str) -> dict[str,
     assert len(pdf_bytes) > 1_000, "Captured exact-run localized PDF was unexpectedly small"
     observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
     header_sha = str(response.headers.get("x-nico-artifact-sha256") or "").lower()
-    assert not header_sha or header_sha == observed_sha, {
+    assert re.fullmatch(r"[0-9a-f]{64}", header_sha), {
+        "missing_or_invalid_artifact_sha256_header": header_sha,
+    }
+    assert header_sha == observed_sha, {
         "captured_pdf_sha256": observed_sha,
         "response_artifact_sha256": header_sha,
     }
     header_run_id = str(response.headers.get("x-nico-run-id") or "")
-    assert not header_run_id or header_run_id == run_id, {
+    assert header_run_id == run_id, {
         "expected_run_id": run_id,
         "response_run_id": header_run_id,
     }
+    canonical_truth_sha256 = str(
+        response.headers.get("x-nico-canonical-truth-sha256") or ""
+    ).lower()
+    assert re.fullmatch(r"[0-9a-f]{64}", canonical_truth_sha256), {
+        "missing_or_invalid_canonical_truth_sha256_header": canonical_truth_sha256,
+    }
+    accepted_pdf_sha256 = str(
+        response.headers.get("x-nico-accepted-pdf-sha256") or ""
+    ).lower()
+    response_report_language = str(
+        response.headers.get("x-nico-report-language") or ""
+    ).strip()
+    assessment_rerun = str(
+        response.headers.get("x-nico-assessment-rerun") or ""
+    ).strip().lower()
+    if action_kind == DRAFT_PDF_KIND:
+        assert response_report_language == report_language, {
+            "expected_report_language": report_language,
+            "response_report_language": response_report_language,
+        }
+        assert assessment_rerun == "false", {
+            "assessment_rerun": assessment_rerun,
+        }
+        assert not accepted_pdf_sha256, {
+            "localized_draft_must_not_claim_accepted_pdf": accepted_pdf_sha256,
+        }
+    else:
+        assert action_kind == ACCEPTED_PDF_KIND
+        assert re.fullmatch(r"[0-9a-f]{64}", accepted_pdf_sha256), {
+            "missing_or_invalid_accepted_pdf_sha256_header": accepted_pdf_sha256,
+        }
+        assert accepted_pdf_sha256 == observed_sha, {
+            "accepted_pdf_sha256": accepted_pdf_sha256,
+            "observed_pdf_sha256": observed_sha,
+        }
     return {
         "pdf_bytes": pdf_bytes,
         "pdf_sha256": observed_sha,
         "content_disposition": str(response.headers.get("content-disposition") or ""),
         "response_run_id": header_run_id,
+        "artifact_hash_header_verified": True,
+        "canonical_truth_sha256": canonical_truth_sha256,
+        "accepted_pdf_sha256": accepted_pdf_sha256,
+        "accepted_edition_digest_verified": action_kind == ACCEPTED_PDF_KIND,
+        "response_report_language": response_report_language,
+        "assessment_rerun": assessment_rerun,
+        "localized_draft_identity_verified": action_kind == DRAFT_PDF_KIND,
     }
 
 
@@ -142,28 +267,85 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         direct = dict(current(page, frontend_origin, run_id))
         actions = page.locator(REPORT_ACTIONS_SELECTOR).first
         actions.wait_for(state="visible", timeout=120_000)
-        pdf_button = actions.get_by_role("button", name=re.compile(r"pdf", re.I)).first
-        assert pdf_button.is_visible(), "Review PDF action was not visible"
-        assert pdf_button.is_enabled(), "Review PDF action was not enabled"
-
         report_language = _active_report_language(page)
-        artifact_url_suffix, expected_filename = _localized_pdf_contract(
-            run_id,
-            report_language,
+        requested_language_attr = str(
+            actions.get_attribute("data-requested-report-language") or ""
+        ).strip()
+        assert requested_language_attr == report_language, {
+            "active_report_language": report_language,
+            "requested_report_language_attribute": requested_language_attr,
+        }
+        action_records = list(
+            actions.locator("button[data-assessment-pdf-kind]").evaluate_all(
+                r"""buttons => buttons.map(button => {
+                  const rect = button.getBoundingClientRect();
+                  const style = getComputedStyle(button);
+                  return {
+                    kind: String(button.getAttribute('data-assessment-pdf-kind') || ''),
+                    report_language: String(button.getAttribute('data-report-language') || ''),
+                    label: String(button.textContent || '').replace(/\s+/g, ' ').trim(),
+                    visible: rect.width > 0 && rect.height > 0
+                      && style.display !== 'none' && style.visibility !== 'hidden',
+                    enabled: !button.disabled,
+                  };
+                })"""
+            )
+            or []
         )
+        selected = _choose_pdf_action(action_records, report_language)
+        action_kind = str(selected["kind"])
+        action_report_language = str(selected["report_language"])
+        contract = _pdf_action_contract(
+            run_id,
+            action_report_language,
+            action_kind,
+        )
+        artifact_url_suffix = contract["path"]
+        expected_filename = contract["fallback_filename"]
+        pdf_button = actions.locator(
+            f'button[data-assessment-pdf-kind="{action_kind}"]'
+            f'[data-report-language="{action_report_language}"]'
+        ).first
+        assert pdf_button.is_visible(), "Selected PDF action was not visible"
+        assert pdf_button.is_enabled(), "Selected PDF action was not enabled"
         expected_origin = urlparse(frontend_origin)
 
-        # Prove both halves of the real action: the transient browser-native target and
-        # exactly one network request caused by one trusted user gesture. The independent
-        # integrity fetch happens only after this listener is removed, so it cannot hide
-        # a duplicate dispatch from the UI itself.
+        # Capture both UI implementations without changing their dispatch semantics:
+        # the pending-review compatibility bridge creates an exact-route anchor, while
+        # the accepted-edition React action validates bytes first and creates a blob URL.
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
               window.__nicoReviewPdfDownloadHref = '';
               window.__nicoReviewPdfDownloadRel = '';
               window.__nicoReviewPdfDownloadTarget = '';
+              window.__nicoAcceptancePdfAnchor = null;
               window.__nicoReviewPdfObserver?.disconnect?.();
+              if (window.__nicoAcceptancePdfOriginalClick) {
+                HTMLAnchorElement.prototype.click = window.__nicoAcceptancePdfOriginalClick;
+              }
+              const originalClick = HTMLAnchorElement.prototype.click;
+              window.__nicoAcceptancePdfOriginalClick = originalClick;
+              const capture = link => {
+                if (!(link instanceof HTMLAnchorElement)) return;
+                const value = {
+                  download: link.getAttribute('download') || '',
+                  href: link.getAttribute('href') || '',
+                  rel: link.getAttribute('rel') || '',
+                  target: link.getAttribute('target') || '',
+                  marked_review_download:
+                    link.getAttribute('data-nico-review-pdf-download') === 'true',
+                };
+                window.__nicoAcceptancePdfAnchor = value;
+                window.__nicoReviewPdfDownloadAttribute = value.download;
+                window.__nicoReviewPdfDownloadHref = value.href;
+                window.__nicoReviewPdfDownloadRel = value.rel;
+                window.__nicoReviewPdfDownloadTarget = value.target;
+              };
+              HTMLAnchorElement.prototype.click = function(...args) {
+                capture(this);
+                return originalClick.apply(this, args);
+              };
               const observer = new MutationObserver(records => {
                 for (const record of records) {
                   for (const node of record.addedNodes) {
@@ -172,10 +354,7 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                       ? node
                       : node.querySelector?.('[data-nico-review-pdf-download="true"]');
                     if (link) {
-                      window.__nicoReviewPdfDownloadAttribute = link.getAttribute('download') || '';
-                      window.__nicoReviewPdfDownloadHref = link.getAttribute('href') || '';
-                      window.__nicoReviewPdfDownloadRel = link.getAttribute('rel') || '';
-                      window.__nicoReviewPdfDownloadTarget = link.getAttribute('target') || '';
+                      capture(link);
                       observer.disconnect();
                       return;
                     }
@@ -188,14 +367,17 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         )
 
         gesture_pdf_requests: list[str] = []
+        gesture_pdf_paths: list[str] = []
 
         def observe_gesture_request(request: Any) -> None:
             parsed = urlparse(str(request.url))
-            if (
-                str(request.method).upper() == "GET"
-                and unquote(parsed.path) == artifact_url_suffix
+            path = unquote(parsed.path)
+            if str(request.method).upper() == "GET" and (
+                path.endswith("/report/pdf")
+                or ("/localized-report/" in path and path.endswith("/pdf"))
             ):
                 gesture_pdf_requests.append(str(request.url))
+                gesture_pdf_paths.append(path)
 
         browser_context = page.context
         browser_context.on("request", observe_gesture_request)
@@ -203,10 +385,10 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
         try:
             pdf_button.click()
             page.wait_for_function(
-                "() => Boolean(window.__nicoReviewPdfDownloadHref)",
-                timeout=5_000,
+                "() => Boolean(window.__nicoAcceptancePdfAnchor?.href)",
+                timeout=120_000,
             )
-            deadline = time.monotonic() + 5.0
+            deadline = time.monotonic() + 120.0
             while time.monotonic() < deadline and not gesture_pdf_requests:
                 page.wait_for_timeout(50)
             # Keep the listener alive briefly after the first request so a fallback or
@@ -215,11 +397,23 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                 page.wait_for_timeout(750)
         finally:
             browser_context.remove_listener("request", observe_gesture_request)
-            page.evaluate("() => window.__nicoReviewPdfObserver?.disconnect?.()")
+            page.evaluate(
+                """() => {
+                  window.__nicoReviewPdfObserver?.disconnect?.();
+                  if (window.__nicoAcceptancePdfOriginalClick) {
+                    HTMLAnchorElement.prototype.click = window.__nicoAcceptancePdfOriginalClick;
+                    window.__nicoAcceptancePdfOriginalClick = null;
+                  }
+                }"""
+            )
 
         assert len(gesture_pdf_requests) == 1, {
             "expected_user_gesture_pdf_request_count": 1,
             "observed_user_gesture_pdf_requests": gesture_pdf_requests,
+        }
+        assert gesture_pdf_paths == [artifact_url_suffix], {
+            "expected_user_gesture_pdf_path": artifact_url_suffix,
+            "observed_user_gesture_pdf_paths": gesture_pdf_paths,
         }
 
         requested_filename = str(
@@ -235,38 +429,73 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             page.evaluate("() => String(window.__nicoReviewPdfDownloadTarget || '')")
         )
         assert requested_href, "Review PDF action did not create an exact-run download href"
-        requested_url = urljoin(frontend_origin.rstrip("/") + "/", requested_href)
+        requested_url = urljoin(
+            frontend_origin.rstrip("/") + "/",
+            artifact_url_suffix,
+        )
         parsed_requested = urlparse(requested_url)
         assert parsed_requested.scheme == expected_origin.scheme, requested_url
         assert parsed_requested.netloc == expected_origin.netloc, requested_url
-        assert unquote(parsed_requested.path) == artifact_url_suffix, (
-            f"UI review PDF action did not target the exact localized run artifact: {requested_href}"
-        )
-        assert requested_filename == expected_filename, {
-            "requested_filename": requested_filename,
-            "expected_filename": expected_filename,
-        }
-        rel_tokens = {token.casefold() for token in requested_rel.split() if token.strip()}
-        assert {"noopener", "noreferrer"}.issubset(rel_tokens), requested_rel
-        assert requested_target == "_blank", requested_target
-        assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename, requested_filename
+        if action_kind == DRAFT_PDF_KIND:
+            parsed_anchor = urlparse(urljoin(frontend_origin.rstrip("/") + "/", requested_href))
+            assert unquote(parsed_anchor.path) == artifact_url_suffix, (
+                f"UI review PDF action did not target the exact localized run artifact: {requested_href}"
+            )
+            assert requested_filename == expected_filename, {
+                "requested_filename": requested_filename,
+                "expected_filename": expected_filename,
+            }
+            rel_tokens = {token.casefold() for token in requested_rel.split() if token.strip()}
+            assert {"noopener", "noreferrer"}.issubset(rel_tokens), requested_rel
+            assert requested_target == "_blank", requested_target
+            assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename, requested_filename
+        else:
+            assert requested_href.startswith("blob:"), requested_href
+            assert requested_filename.lower().endswith(".pdf"), requested_filename
+            assert run_id in requested_filename, requested_filename
         assert "FINAL-PENDING-APPROVAL" not in requested_filename, requested_filename
 
-        captured = _fetch_captured_pdf(page, requested_url, run_id)
+        captured = _fetch_captured_pdf(
+            page,
+            requested_url,
+            run_id,
+            action_kind=action_kind,
+            report_language=action_report_language,
+        )
         pdf_bytes = captured["pdf_bytes"]
         observed_sha = str(captured["pdf_sha256"])
         content_disposition = str(captured["content_disposition"])
         response_filename = ""
         if content_disposition:
-            response_filename = _validate_response_filename(
-                content_disposition,
-                run_id,
-                report_language,
-            )
+            if action_kind == DRAFT_PDF_KIND:
+                response_filename = _validate_response_filename(
+                    content_disposition,
+                    run_id,
+                    action_report_language,
+                )
+            else:
+                response_filename = _content_disposition_filename(content_disposition)
+                assert response_filename.lower().endswith(".pdf"), response_filename
+                assert run_id in response_filename, response_filename
+                assert requested_filename == response_filename, {
+                    "requested_filename": requested_filename,
+                    "response_filename": response_filename,
+                }
         direct_sha = str(direct.get("pdf_sha256") or "").lower()
+        direct_canonical_truth_sha256 = str(
+            direct.get("canonical_truth_sha256") or ""
+        ).lower()
+        assert captured["canonical_truth_sha256"] == direct_canonical_truth_sha256
         assert direct.get("pdf_run_identity_verified") is True, direct
         assert direct.get("pdf_signature_verified") is True, direct
+        if action_kind == ACCEPTED_PDF_KIND:
+            assert captured["accepted_pdf_sha256"] == direct_sha
         page.wait_for_timeout(250)
+        page.bring_to_front()
+        page.wait_for_function(
+            "() => document.visibilityState === 'visible' && document.hidden === false",
+            timeout=5_000,
+        )
         assert page.url == original_page_url, {
             "original_page_url": original_page_url,
             "observed_page_url": page.url,
@@ -282,22 +511,47 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_requested_filename": requested_filename,
             "ui_review_pdf_response_filename": response_filename,
             "ui_review_pdf_requested_href": requested_href,
-            "ui_review_pdf_report_language": report_language,
+            "ui_review_pdf_report_language": action_report_language,
+            "ui_review_pdf_requested_report_language": report_language,
+            "ui_review_pdf_action_kind": action_kind,
+            "ui_review_pdf_action_lifecycle": contract["lifecycle"],
+            "ui_review_pdf_action_set": action_records,
+            "ui_review_pdf_network_path": artifact_url_suffix,
             "ui_review_pdf_user_gesture_request_count": len(gesture_pdf_requests),
             "ui_review_pdf_single_dispatch_verified": True,
             "ui_review_pdf_exact_run_filename_verified": True,
             "ui_review_pdf_exact_run_href_verified": True,
             "ui_review_pdf_exact_run_response_verified": True,
             "ui_review_pdf_response_sha256_verified": True,
+            "ui_review_pdf_artifact_hash_header_verified": captured[
+                "artifact_hash_header_verified"
+            ],
+            "ui_review_pdf_canonical_truth_sha256": captured[
+                "canonical_truth_sha256"
+            ],
+            "ui_review_pdf_canonical_truth_digest_verified": True,
             "ui_review_pdf_matches_preverified_artifact": bool(direct_sha and observed_sha == direct_sha),
-            "ui_review_pdf_proxy_read_class": "exact-run-localized-artifact",
+            "ui_review_pdf_proxy_read_class": contract["read_class"],
             "ui_review_pdf_signature_verified": True,
             "ui_review_pdf_artifact_status_cleared": True,
             "ui_review_pdf_original_user_gesture_preserved": True,
             "ui_review_pdf_lifecycle_filename_verified": True,
-            "ui_review_pdf_target_blank_verified": True,
-            "ui_review_pdf_noopener_noreferrer_verified": True,
+            "ui_review_pdf_lifecycle_contract_verified": True,
+            "ui_review_pdf_accepted_edition_digest_verified": captured[
+                "accepted_edition_digest_verified"
+            ],
+            "ui_review_pdf_localized_draft_identity_verified": captured[
+                "localized_draft_identity_verified"
+            ],
+            "ui_review_pdf_target_contract": (
+                "blank-noopener-noreferrer"
+                if action_kind == DRAFT_PDF_KIND
+                else "same-page-validated-blob-download"
+            ),
+            "ui_review_pdf_target_blank_verified": action_kind == DRAFT_PDF_KIND,
+            "ui_review_pdf_noopener_noreferrer_verified": action_kind == DRAFT_PDF_KIND,
             "ui_review_pdf_original_assessment_page_preserved": True,
+            "ui_review_pdf_original_page_visible_after_action": True,
             "ui_review_pdf_proof_version": VERSION,
         }
 
@@ -306,4 +560,9 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
     recovery._verify_manifest_and_pdf = verify_manifest_and_pdf
 
 
-__all__ = ["VERSION", "install_ui_pdf_download_proof"]
+__all__ = [
+    "ACCEPTED_PDF_KIND",
+    "DRAFT_PDF_KIND",
+    "VERSION",
+    "install_ui_pdf_download_proof",
+]

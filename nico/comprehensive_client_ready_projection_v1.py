@@ -17,7 +17,7 @@ APPROVAL_SUFFIX = "AUTOMATED-DRAFT-PENDING-APPROVAL"
 EN_BOUNDARY = "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 ES_BOUNDARY = "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
 MAX_EXECUTIVE_FINDINGS = 7
-MAX_CLIENT_PDF_PAGES = 45
+MAX_CLIENT_PDF_PAGES = 60
 
 _REGISTER_HEADINGS = (
     "## Detailed Canonical Findings",
@@ -106,6 +106,23 @@ def clean_finding_title(value: Any) -> str:
     return title.replace("<arrow>", "anonymous callback")
 
 
+def _authored_display(
+    value: Any,
+    key: str,
+    *,
+    spanish: bool,
+    limit: int,
+) -> str:
+    rendered = _text(value, limit)
+    if not spanish or not rendered:
+        return rendered
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation_field,
+    )
+
+    return _translate_presentation_field(rendered, key)
+
+
 def _records(register: Mapping[str, Any]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for surface in ("code_findings", "operational_findings"):
@@ -165,24 +182,69 @@ def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: b
         verification = item.get("verification") or item.get("acceptance_criteria") or []
         if isinstance(verification, str):
             verification = [verification]
+        title = _authored_display(
+            clean_finding_title(item.get("title")),
+            "title",
+            spanish=spanish,
+            limit=700,
+        )
+        observed_evidence = _authored_display(
+            item.get("observed_evidence")
+            or item.get("fact")
+            or ("revisión requerida" if spanish else "review required"),
+            "observed_evidence",
+            spanish=spanish,
+            limit=900,
+        )
+        business_impact = _authored_display(
+            item.get("business_impact")
+            or item.get("impact")
+            or ("requiere revisión" if spanish else "requires review"),
+            "business_impact",
+            spanish=spanish,
+            limit=900,
+        )
+        correction = _authored_display(
+            item.get("recommended_correction")
+            or item.get("recommendation")
+            or ("requiere revisión" if spanish else "requires review"),
+            "recommended_correction",
+            spanish=spanish,
+            limit=1000,
+        )
+        localized_verification = [
+            _authored_display(
+                criterion,
+                "verification",
+                spanish=spanish,
+                limit=900,
+            )
+            for criterion in _dedupe(verification, 2)
+        ]
         lines.extend(
             [
-                f"#### {_priority(item)} · {clean_finding_title(item.get('title'))} · {_identifier(item)}",
+                f"#### {_priority(item)} · {title} · {_identifier(item)}",
                 f"- {('Fuente exacta' if spanish else 'Exact source')}: {_location(item)}",
-                f"- {('Evidencia observada' if spanish else 'Observed evidence')}: {_text(item.get('observed_evidence') or item.get('fact') or 'review required', 900)}",
-                f"- {('Consecuencia comercial' if spanish else 'Business consequence')}: {_text(item.get('business_impact') or item.get('impact') or 'requires review', 900)}",
-                f"- {('Corrección específica' if spanish else 'Specific correction')}: {_text(item.get('recommended_correction') or item.get('recommendation') or 'requires review', 1000)}",
+                f"- {('Evidencia observada' if spanish else 'Observed evidence')}: {observed_evidence}",
+                f"- {('Consecuencia comercial' if spanish else 'Business consequence')}: {business_impact}",
+                f"- {('Corrección específica' if spanish else 'Specific correction')}: {correction}",
             ]
         )
-        for criterion in _dedupe(verification, 2):
+        for criterion in localized_verification:
             lines.append(f"- {('Verificación' if spanish else 'Verification')}: {criterion}")
         lines.append("")
 
     lines.extend([index_heading, ""])
     for item in records:
+        title = _authored_display(
+            clean_finding_title(item.get("title")),
+            "title",
+            spanish=spanish,
+            limit=700,
+        )
         lines.append(
             f"- {_priority(item)} · {_identifier(item)} · {_location(item)} · "
-            f"{clean_finding_title(item.get('title'))} · "
+            f"{title} · "
             f"{('revisión humana requerida' if spanish else 'human review required')}"
         )
     return "\n".join(lines).strip() + "\n"
@@ -205,15 +267,42 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
     small = ParagraphStyle("CR-Small", parent=body, fontSize=6.5, leading=8.1, textColor=colors.HexColor("#475569"), spaceAfter=2)
     warning = ParagraphStyle("CR-Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.7, borderPadding=7, spaceAfter=8)
 
-    def p(value: Any, style: ParagraphStyle = body, limit: int = 1800) -> Paragraph:
-        return Paragraph(html.escape(_text(value, limit)), style)
+    def p(
+        value: Any,
+        style: ParagraphStyle = body,
+        limit: int = 1800,
+        *,
+        client_literal: bool = False,
+    ) -> Paragraph:
+        if client_literal:
+            from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+
+            return Paragraph(
+                reportlab_literal_markup(value, min(4000, limit)),
+                style,
+            )
+        else:
+            rendered = _text(value, limit)
+        return Paragraph(html.escape(rendered), style)
 
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawString(.55 * inch, .35 * inch, "NICO · compact finding register · automated draft")
-        canvas.drawRightString(7.95 * inch, .35 * inch, f"Register {doc.page}")
+        canvas.drawString(
+            .55 * inch,
+            .35 * inch,
+            (
+                "NICO · registro compacto de hallazgos · borrador automatizado"
+                if spanish
+                else "NICO · compact finding register · automated draft"
+            ),
+        )
+        canvas.drawRightString(
+            7.95 * inch,
+            .35 * inch,
+            f"{'Registro' if spanish else 'Register'} {doc.page}",
+        )
         canvas.restoreState()
 
     boundary = ES_BOUNDARY if spanish else EN_BOUNDARY
@@ -250,14 +339,61 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
         verification = item.get("verification") or item.get("acceptance_criteria") or []
         if isinstance(verification, str):
             verification = [verification]
+        title = _authored_display(
+            clean_finding_title(item.get("title")),
+            "title",
+            spanish=spanish,
+            limit=700,
+        )
+        observed_evidence = _authored_display(
+            item.get("observed_evidence")
+            or item.get("fact")
+            or ("revisión requerida" if spanish else "review required"),
+            "observed_evidence",
+            spanish=spanish,
+            limit=900,
+        )
+        business_impact = _authored_display(
+            item.get("business_impact")
+            or item.get("impact")
+            or ("requiere revisión" if spanish else "requires review"),
+            "business_impact",
+            spanish=spanish,
+            limit=900,
+        )
+        correction = _authored_display(
+            item.get("recommended_correction")
+            or item.get("recommendation")
+            or ("requiere revisión" if spanish else "requires review"),
+            "recommended_correction",
+            spanish=spanish,
+            limit=1000,
+        )
+        localized_verification = [
+            _authored_display(
+                criterion,
+                "verification",
+                spanish=spanish,
+                limit=900,
+            )
+            for criterion in _dedupe(verification, 2)
+        ]
         rows = [
             ["Prioridad / ID" if spanish else "Priority / ID", f"{_priority(item)} · {_identifier(item)}"],
-            ["Hallazgo" if spanish else "Finding", clean_finding_title(item.get("title"))],
+            ["Hallazgo" if spanish else "Finding", title],
             ["Fuente exacta" if spanish else "Exact source", _location(item)],
-            ["Evidencia" if spanish else "Evidence", _text(item.get("observed_evidence") or item.get("fact") or "review required", 900)],
-            ["Impacto" if spanish else "Impact", _text(item.get("business_impact") or item.get("impact") or "requires review", 900)],
-            ["Corrección" if spanish else "Correction", _text(item.get("recommended_correction") or item.get("recommendation") or "requires review", 1000)],
-            ["Verificación" if spanish else "Verification", "; ".join(_dedupe(verification, 2)) or "Human disposition required"],
+            ["Evidencia" if spanish else "Evidence", observed_evidence],
+            ["Impacto" if spanish else "Impact", business_impact],
+            ["Corrección" if spanish else "Correction", correction],
+            [
+                "Verificación" if spanish else "Verification",
+                "; ".join(localized_verification)
+                or (
+                    "Se requiere disposición humana"
+                    if spanish
+                    else "Human disposition required"
+                ),
+            ],
         ]
         table = Table([[p(left, small) if index else p(left, small) for index, left in enumerate(row)] for row in rows], colWidths=[1.15 * inch, 6.25 * inch])
         table.setStyle(TableStyle([
@@ -273,14 +409,29 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
         story.extend([table, Spacer(1, .1 * inch)])
 
     story.extend([PageBreak(), p("Índice completo de fuentes exactas" if spanish else "Complete Exact-Source Index", h1)])
-    header = ["Pri.", "Finding ID", "Exact source", "Finding / disposition"]
+    header = (
+        ["Pri.", "ID del hallazgo", "Fuente exacta", "Hallazgo / disposición"]
+        if spanish
+        else ["Pri.", "Finding ID", "Exact source", "Finding / disposition"]
+    )
     rows: list[list[Any]] = [[p(value, small) for value in header]]
     for item in records:
+        title = _authored_display(
+            clean_finding_title(item.get("title")),
+            "title",
+            spanish=spanish,
+            limit=700,
+        )
         rows.append([
             p(_priority(item), small),
             p(_identifier(item), small),
             p(_location(item), small, 700),
-            p(f"{clean_finding_title(item.get('title'))} · {'revisión humana requerida' if spanish else 'human review required'}", small, 900),
+            p(
+                f"{title} · "
+                f"{'revisión humana requerida' if spanish else 'human review required'}",
+                small,
+                900,
+            ),
         ])
     index = LongTable(rows, colWidths=[.36 * inch, 1.18 * inch, 2.8 * inch, 3.06 * inch], repeatRows=1, splitByRow=1)
     index.setStyle(TableStyle([
@@ -347,19 +498,46 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
     small = ParagraphStyle("CG-Small", parent=body, fontSize=7.2, leading=9.3, textColor=colors.HexColor("#475569"), spaceAfter=3)
     warning = ParagraphStyle("CG-Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.7, borderPadding=8, spaceAfter=9)
 
-    def p(value: Any, style: ParagraphStyle = body, limit: int = 1800) -> Paragraph:
+    def p(
+        value: Any,
+        style: ParagraphStyle = body,
+        limit: int = 1800,
+        *,
+        client_literal: bool = False,
+    ) -> Paragraph:
+        if client_literal:
+            from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+
+            return Paragraph(reportlab_literal_markup(value, limit), style)
         return Paragraph(html.escape(_text(value, limit)), style)
 
     boundary = ES_BOUNDARY if spanish else EN_BOUNDARY
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    def engagement_value(key: str, limit: int) -> str:
+        value = _literal(identity.get(key), limit)
+        return value or ("No proporcionado" if spanish else "Not supplied")
+
     story: list[Any] = [p("Resumen de evidencia del cliente" if spanish else "Client Evidence Summary", h1), p(boundary, warning)]
     identity_rows = [
+        ["Nombre del cliente" if spanish else "Client name", engagement_value("customer_name", 180)],
+        ["Nombre del proyecto" if spanish else "Project name", engagement_value("project_name", 180)],
+        ["Contacto técnico principal" if spanish else "Primary technical contact", engagement_value("primary_technical_contact", 600)],
+        ["Método de acceso" if spanish else "Access method", engagement_value("access_method", 1200)],
+        ["Alcance autorizado" if spanish else "Authorized scope", engagement_value("authorized_scope", 4000)],
         ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
         ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],
         ["ID de ejecución" if spanish else "Run ID", _text(identity.get("run_id"))],
-        ["Madurez técnica" if spanish else "Technical maturity", f"{int(technical)}/100" if isinstance(technical, (int, float)) else "NOT SCORED"],
-        ["Ajuste por evidencia" if spanish else "Evidence-Adjusted", f"{int(adjusted)}/100" if isinstance(adjusted, (int, float)) else "NOT SCORED"],
+        ["Madurez técnica" if spanish else "Technical maturity", f"{int(technical)}/100" if isinstance(technical, (int, float)) else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")],
+        ["Ajuste por evidencia" if spanish else "Evidence-Adjusted", f"{int(adjusted)}/100" if isinstance(adjusted, (int, float)) else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")],
     ]
-    identity_table = Table([[p(a, small), p(b, small)] for a, b in identity_rows], colWidths=[1.55 * inch, 5.85 * inch])
+    identity_table = Table(
+        [
+            [p(a, small), p(b, small, 4000, client_literal=index < 5)]
+            for index, (a, b) in enumerate(identity_rows)
+        ],
+        colWidths=[1.55 * inch, 5.85 * inch],
+    )
     identity_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e0f2fe")),
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
@@ -378,14 +556,29 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
         body,
     ))
     if categories:
-        rows = [["Category", "Raw", "Confirmed material", "Review required", "Score effect"]]
+        rows = [[
+            "Categoría" if spanish else "Category",
+            "Brutos" if spanish else "Raw",
+            "Materiales confirmados" if spanish else "Confirmed material",
+            "Requieren revisión" if spanish else "Review required",
+            "Efecto en la puntuación" if spanish else "Score effect",
+        ]]
+        category_labels_es = {
+            "dependency": "Dependencias",
+            "secret": "Secretos",
+            "static": "Análisis estático",
+        }
         for category, counts in categories.items():
             rows.append([
-                category.title(),
+                category_labels_es.get(category.casefold(), category) if spanish else category.title(),
                 str(_integer(counts.get("raw"))),
                 str(_integer(counts.get("material"))),
                 str(_integer(counts.get("review_required"))),
-                "Assurance-only until triaged",
+                (
+                    "Solo aseguramiento mientras la disposición humana autorizada siga pendiente; el estado del triaje técnico se informa por separado"
+                    if spanish
+                    else "Assurance-only until triaged"
+                ),
             ])
         table = Table([[p(cell, small) for cell in row] for row in rows], colWidths=[1.25 * inch, .6 * inch, 1.05 * inch, 1.0 * inch, 3.45 * inch], repeatRows=1)
         table.setStyle(TableStyle([
@@ -434,9 +627,9 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
     story.extend([
         Spacer(1, .12 * inch),
         p(
-            "Only an authorized reviewer may change the status to APPROVED FINAL and CLIENT DELIVERY AUTHORIZED."
+            "Only an authorized human reviewer may approve the exact immutable artifacts. Client delivery requires a separate authorized action."
             if not spanish
-            else "Solo un revisor autorizado puede cambiar el estado a FINAL APROBADO y ENTREGA AL CLIENTE AUTORIZADA.",
+            else "Solo un revisor humano autorizado puede aprobar los artefactos inmutables exactos. La entrega al cliente requiere una acción autorizada independiente.",
             warning,
         ),
     ])

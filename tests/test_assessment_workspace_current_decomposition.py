@@ -20,7 +20,9 @@ def test_workspace_delegates_copy_model_types_and_run_control() -> None:
     assert "async function run()" not in workspace
     assert "const EN:" not in workspace
     assert "const ES:" not in workspace
-    assert workspace.count("useState") <= 4
+    # The report-locale selection is independently reactive from the route locale,
+    # adding one bounded state cell without moving run control back into this view.
+    assert workspace.count("useState") <= 5
     assert 'artifactAction' in workspace
     assert 'on_demand_exact_run' not in workspace
     assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf`' in workspace
@@ -40,7 +42,7 @@ def test_public_workspace_is_one_semantic_comprehensive_engagement() -> None:
     assert 'requestWithRetry(' in hook
     assert '"/assessment/comprehensive-intake"' in hook
     assert 'assessment_depth: "strategic"' in hook
-    assert 'report_language: locale' in hook
+    assert 'report_language: reportLanguageForRequest(locale)' in hook
 
 
 def test_score_assurance_and_risk_remain_separate() -> None:

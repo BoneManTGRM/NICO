@@ -115,40 +115,41 @@ const EXACT_SPANISH = new Map<string, string>([
   ["control", "Control"],
   ["primary constraint", "Restricción principal"],
   ["score-derived contribution", "Contribución derivada de la puntuación"],
-]);
-
-const JSON_KEY_SPANISH = new Map<string, string>([
-  ["status", "estado"],
-  ["message", "mensaje"],
-  ["summary", "resumen"],
-  ["evidence", "evidencia"],
-  ["findings", "hallazgos"],
-  ["unavailable", "no_disponible"],
-  ["repository", "repositorio"],
-  ["repository_url", "url_del_repositorio"],
-  ["commit_sha", "sha_del_commit"],
-  ["snapshot_commit_sha", "sha_de_la_instantánea"],
-  ["scanner_status", "estado_de_analizadores"],
-  ["progress_percent", "porcentaje_de_progreso"],
-  ["analyzed_files", "archivos_analizados"],
-  ["source_files", "archivos_fuente"],
-  ["source_loc", "líneas_de_código_fuente"],
-  ["function_units", "unidades_de_función"],
-  ["risk", "riesgo"],
-  ["score", "puntuación"],
-  ["technical_score", "puntuación_técnica"],
-  ["evidence_adjusted_score", "puntuación_ajustada_por_evidencia"],
-  ["candidate_count", "cantidad_de_candidatos"],
-  ["blocking", "bloqueantes"],
-  ["needs_review", "requieren_revisión"],
-  ["approved", "aprobados"],
-  ["candidate_false_positive", "posibles_falsos_positivos"],
-  ["duration_seconds", "duración_en_segundos"],
-  ["started_at", "iniciado_en"],
-  ["completed_at", "completado_en"],
-  ["adapter", "adaptador"],
-  ["durable", "durable"],
-  ["recorded", "registrado"],
+  ["the authorized repository was bound to one immutable commit before evidence collection.", "El repositorio autorizado quedó vinculado a un solo commit inmutable antes de recopilar la evidencia."],
+  ["exact-commit repository, dependency, architecture, workflow, activity, and complexity evidence were attached.", "Se adjuntó la evidencia del repositorio, dependencias, arquitectura, flujos de trabajo, actividad y complejidad correspondiente al commit exacto."],
+  ["the modern scanner suite is executing against the exact immutable commit.", "El conjunto moderno de analizadores se está ejecutando sobre el commit inmutable exacto."],
+  ["dependency, static-analysis, secret, typescript, and history-aware scanner output was verified against the immutable commit.", "La salida de dependencias, análisis estático, secretos, TypeScript y análisis con historial se verificó contra el commit inmutable."],
+  ["ci/cd, architecture, source footprint, complexity, ownership, churn, and delivery velocity were analyzed from snapshot-bound and separately labeled historical evidence.", "Se analizaron CI/CD, arquitectura, huella del código fuente, complejidad, propiedad, rotación de cambios y velocidad de entrega mediante evidencia vinculada a la instantánea y evidencia histórica identificada por separado."],
+  ["canonical evidence-bound technical scoring completed without forced score inflation.", "La puntuación técnica canónica vinculada a evidencia terminó sin forzar un aumento de la puntuación."],
+  ["the core decision report was generated from reconciled technical evidence.", "Se generó el informe principal de decisiones a partir de la evidencia técnica conciliada."],
+  ["the final native comprehensive markdown, html, json, and pdf draft package was generated.", "Se generó el paquete preliminar final de NICO Comprehensive en Markdown, HTML, JSON y PDF."],
+  ["scanner findings were separated into material, review-required, approved/nonblocking, and test-only dispositions.", "Los hallazgos de los analizadores se separaron en disposiciones materiales, sujetas a revisión, aprobadas o no bloqueantes y exclusivas de pruebas."],
+  ["functional qa evidence was assessed from test footprint and ci command configuration; runtime acceptance remains human-supplied evidence.", "La evidencia de QA funcional se evaluó a partir de la huella de pruebas y la configuración de comandos de CI; la aceptación en ejecución sigue dependiendo de evidencia aportada por personas."],
+  ["platform evidence was inventoried without claiming parity where runnable builds or native project evidence were unavailable.", "La evidencia de plataformas se inventarió sin afirmar paridad cuando no había compilaciones ejecutables o evidencia de proyectos nativos."],
+  ["deployment manifests, workflow deployment evidence, and runtime configuration controls were reviewed.", "Se revisaron los manifiestos de despliegue, la evidencia de despliegue de los flujos de trabajo y los controles de configuración en ejecución."],
+  ["architecture, top-level modules, deployment boundaries, source footprint, and measured complexity were synthesized into a data-flow review boundary.", "La arquitectura, los módulos principales, los límites de despliegue, la huella del código fuente y la complejidad medida se sintetizaron en un límite de revisión del flujo de datos."],
+  ["commit, pull-request, workflow, job, and deployment evidence were reviewed as bounded delivery-process history.", "La evidencia de commits, solicitudes de cambio, flujos de trabajo, tareas y despliegues se revisó como historial acotado del proceso de entrega."],
+  ["stakeholder and business alignment remains an explicit human-context boundary; nico did not infer unprovided objectives or approvals.", "La alineación con negocio y partes interesadas sigue siendo un límite explícito del contexto humano; NICO no infirió objetivos ni aprobaciones no proporcionados."],
+  ["repository documentation was searched for requirements, specifications, adrs, roadmaps, and acceptance evidence.", "Se buscaron requisitos, especificaciones, ADR, hojas de ruta y evidencia de aceptación en la documentación del repositorio."],
+  ["historical change and failure signals were calculated only from bounded github operational evidence observed through capture time.", "Las señales históricas de cambios y fallos se calcularon únicamente con evidencia operativa acotada de GitHub observada hasta el momento de la captura."],
+  ["a six-month roadmap was sequenced from the lowest evidence-bound controls and explicit unavailable-evidence boundaries.", "Se ordenó una hoja de ruta de seis meses a partir de los controles vinculados a evidencia con menor puntuación y de los límites explícitos por evidencia no disponible."],
+  ["a role-based staffing and sequencing plan was generated without presenting unverified market rates as committed cost.", "Se generó un plan de personal y secuencia por funciones sin presentar tarifas de mercado no verificadas como costos comprometidos."],
+  ["technical score, evidence limitations, roadmap, staffing, and decision boundaries were condensed into an executive briefing.", "La puntuación técnica, las limitaciones de evidencia, la hoja de ruta, el personal y los límites de decisión se condensaron en un informe ejecutivo."],
+  ["markdown, html, and pdf artifacts passed identity, validity, service-name, and delivery-boundary verification.", "Los artefactos Markdown, HTML y PDF superaron la verificación de identidad, validez, nombre del servicio y límite de entrega."],
+  ["a human-review request was created for the exact immutable comprehensive report package.", "Se creó una solicitud de revisión humana para el paquete exacto e inmutable del informe NICO Comprehensive."],
+  ["automated comprehensive work is complete. client acceptance and delivery remain pending human approval.", "El trabajo automatizado de NICO Comprehensive terminó. La aceptación del cliente sigue pendiente de aprobación humana y la entrega permanece bloqueada hasta registrar una autorización de entrega independiente."],
+  ["exact-source maintainability, complexity hotspots, coupling, duplication, workflow automation, and bounded change history were synthesized; activity volume remains unscored context.", "Se sintetizaron la mantenibilidad de fuentes exactas, los puntos críticos de complejidad, el acoplamiento, la duplicación, la automatización de flujos y el historial acotado de cambios; el volumen de actividad sigue siendo contexto sin puntuación."],
+  ["repository test inventory, supplied journey evidence, parsed results, coverage gaps, and draft qa conclusions were reconciled without treating repository tests or model synthesis as runtime acceptance.", "Se conciliaron el inventario de pruebas del repositorio, la evidencia aportada de recorridos, los resultados analizados, las brechas de cobertura y las conclusiones preliminares de QA sin considerar las pruebas del repositorio ni la síntesis del modelo como aceptación en ejecución."],
+  ["repository platform indicators and supplied feature/device observations were reconciled and divergence candidates surfaced without promoting source indicators or an unapproved matrix to runtime/device parity.", "Se conciliaron los indicadores de plataforma del repositorio y las observaciones aportadas sobre funciones y dispositivos; se identificaron posibles divergencias sin convertir indicadores de código ni una matriz no aprobada en prueba de paridad en ejecución o en dispositivos."],
+  ["supplied stakeholder/business evidence was organized, linked to the engagement, and checked for conflicts while authority and disputed meaning remain human decisions.", "La evidencia aportada sobre negocio y partes interesadas se organizó, se vinculó al encargo y se revisó para detectar conflictos; la autoridad y cualquier interpretación controvertida siguen siendo decisiones humanas."],
+  ["supplied requirements were mapped to retained implementation paths where supportable, with authoritative, supplied-unverified, inferred, missing, and verification states explicit.", "Los requisitos aportados se vincularon, cuando fue justificable, con rutas de implementación conservadas; se mantuvieron explícitos los estados autoritativo, aportado sin verificar, inferido, faltante y de verificación."],
+  ["bounded operational history and supplied incident evidence were reconciled without turning activity volume into quality or workflow counts into incident truth.", "El historial operativo acotado y la evidencia aportada de incidentes se conciliaron sin convertir el volumen de actividad en calidad ni los conteos de flujos en prueba de incidentes."],
+  ["the existing 0-30/31-90/91-180 roadmap framework was drafted from technical priorities, evidence gaps, supplied requirements, and supplied constraints without creating commitments.", "El marco existente de la hoja de ruta de 0-30, 31-90 y 91-180 días se preparó a partir de prioridades técnicas, brechas de evidencia, requisitos y restricciones aportados, sin crear compromisos."],
+  ["role and skill categories were derived from the technical roadmap without inventing salaries, rates, vendors, contracts, or budgets.", "Las categorías de funciones y habilidades se derivaron de la hoja de ruta técnica sin inventar salarios, tarifas, proveedores, contratos ni presupuestos."],
+  ["evidence-backed priorities, quick wins, roadmap/resourcing context, and missing-evidence limits were condensed automatically for executive review.", "Las prioridades respaldadas por evidencia, las mejoras rápidas, el contexto de hoja de ruta y recursos, y los límites por evidencia faltante se condensaron automáticamente para la revisión ejecutiva."],
+  ["this assessment stage is executing behind the exact-run boundary without holding the browser continuation request open.", "Esta etapa de la evaluación se está ejecutando tras el límite de la ejecución exacta sin mantener abierta la solicitud de continuación del navegador."],
+  ["stage result was not an object.", "El resultado de la etapa no tenía una estructura válida."],
+  ["no bounded stage message was returned.", "No se devolvió una explicación acotada para esta etapa."],
 ]);
 
 const SPANISH_REPLACEMENTS: Array<[RegExp, string]> = [
@@ -252,13 +253,22 @@ function compact(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+export function localizeExactSpanishText(value: string | null | undefined): string | null {
+  const source = String(value || "");
+  if (!source.trim()) return null;
+  const leading = source.match(/^\s*/)?.[0] || "";
+  const trailing = source.match(/\s*$/)?.[0] || "";
+  const exact = EXACT_SPANISH.get(compact(source).toLowerCase());
+  return exact ? `${leading}${exact}${trailing}` : null;
+}
+
 export function localizeSpanishText(value: string | null | undefined): string {
   const source = String(value || "");
   if (!source.trim()) return source;
   const leading = source.match(/^\s*/)?.[0] || "";
   const trailing = source.match(/\s*$/)?.[0] || "";
   const core = compact(source);
-  const exact = EXACT_SPANISH.get(core.toLowerCase());
+  const exact = localizeExactSpanishText(core);
   let localized = exact || core;
   for (const [pattern, replacement] of SPANISH_REPLACEMENTS) {
     localized = localized.replace(pattern, replacement);
@@ -266,35 +276,8 @@ export function localizeSpanishText(value: string | null | undefined): string {
   return `${leading}${localized}${trailing}`;
 }
 
-function localizeSpanishJson(value: unknown): unknown {
-  if (typeof value === "string") return localizeSpanishText(value);
-  if (Array.isArray(value)) return value.map(localizeSpanishJson);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-      JSON_KEY_SPANISH.get(key) || key,
-      localizeSpanishJson(item),
-    ]),
-  );
-}
-
-function localizeJsonBlocks(root: ParentNode): void {
-  root.querySelectorAll<HTMLElement>("pre.json-block").forEach((node) => {
-    const source = node.textContent || "";
-    try {
-      const parsed = JSON.parse(source) as unknown;
-      const localized = JSON.stringify(localizeSpanishJson(parsed), null, 2);
-      if (localized !== source) node.textContent = localized;
-    } catch {
-      const localized = localizeSpanishText(source);
-      if (localized !== source) node.textContent = localized;
-    }
-  });
-}
-
 export function localizeSpanishAssessmentDom(root: Document | HTMLElement = document): void {
   if (!document.documentElement.lang.toLowerCase().startsWith("es")) return;
-  localizeJsonBlocks(root);
   const container: Node = root instanceof Document ? root.body : root;
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];

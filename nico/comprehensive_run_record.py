@@ -180,7 +180,18 @@ def _review_manifest_errors(
         return errors
     expected_digests = current_report_artifact_digests(package)
     expected_digest = current_report_artifact_digest(package)
-    if set(expected_digests) != {"markdown", "html", "pdf", "json"}:
+    required_digests = {"markdown", "html", "pdf", "json"}
+    if any(
+        package.get(key) not in (None, "")
+        for key in (
+            "artifact_manifest",
+            "evidence_manifest_json",
+            "evidence_manifest_sha256",
+            "draft_artifact_identity",
+        )
+    ):
+        required_digests.add("evidence_manifest")
+    if set(expected_digests) != required_digests:
         errors.append("review_report_artifacts_incomplete")
     if candidate.get("artifact_digests") != expected_digests:
         errors.append("review_artifact_digests_mismatch")
@@ -244,12 +255,41 @@ def _validate_record(
     status = str(record.get("status") or "").lower()
     delivery_allowed = record.get("client_delivery_allowed") is True
     if status == "approved":
-        if not delivery_allowed:
-            violations.append("approved_run_must_allow_delivery")
         if record.get("human_review_completed") is not True:
             violations.append("approved_run_requires_completed_review")
         review_errors = _review_manifest_errors(record, record.get("accepted_edition"))
         violations.extend(f"accepted_edition:{item}" for item in review_errors)
+        if delivery_allowed:
+            accepted = (
+                record.get("accepted_edition")
+                if isinstance(record.get("accepted_edition"), Mapping)
+                else {}
+            )
+            if accepted.get("client_delivery_allowed") is not False:
+                violations.append("approved_delivery_accepted_edition_must_remain_immutable")
+            if str(accepted.get("delivery_status") or "") != "pending_authorization":
+                violations.append("approved_delivery_accepted_edition_status_changed")
+            try:
+                from nico.comprehensive_delivery_authorization_v1 import (
+                    validate_delivery_authorization,
+                )
+
+                authorization_validation = validate_delivery_authorization(
+                    record,
+                    accepted,
+                    record.get("delivery_authorization"),
+                )
+                violations.extend(
+                    f"delivery_authorization:{item}"
+                    for item in authorization_validation.get("validation_errors") or []
+                )
+            except (TypeError, ValueError) as exc:
+                violations.append(
+                    "delivery_authorization:validation_failed:"
+                    + str(exc).split(":", 1)[0]
+                )
+            if not isinstance(record.get("approved_delivery_package"), Mapping):
+                violations.append("approved_delivery_package_required")
     elif delivery_allowed:
         violations.append("client_delivery_must_remain_blocked")
 
@@ -408,6 +448,8 @@ def apply_comprehensive_review_decision(
         updated["accepted_edition"] = candidate
     else:
         updated.pop("accepted_edition", None)
+    updated.pop("approved_delivery_package", None)
+    updated.pop("delivery_authorization", None)
     package = report_package_from_record(updated)
     updated["review_context"] = {
         "report_id": str(package.get("report_id") or ""),
@@ -419,7 +461,9 @@ def apply_comprehensive_review_decision(
     updated["terminal"] = True
     updated["human_review_required"] = True
     updated["human_review_completed"] = decision in {"approved", "rejected"}
-    updated["client_delivery_allowed"] = decision == "approved"
+    # Human approval binds the exact accepted edition. Client delivery remains a
+    # distinct, explicitly authorized transition with its own audit receipt.
+    updated["client_delivery_allowed"] = False
     updated["updated_at"] = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
     updated["revision"] = int(updated.get("revision") or 0) + 1
     updated["integrity_sha256"] = _record_hash(updated)

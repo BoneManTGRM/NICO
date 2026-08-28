@@ -119,18 +119,11 @@ def sanitize_client_identity(canonical: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(result.get("identity"), Mapping)
         else {}
     )
-    customer = (
-        identity.get("customer_name")
-        or result.get("customer_name")
-        or identity.get("customer_id")
-        or result.get("customer_id")
-    )
-    project = (
-        identity.get("project_name")
-        or result.get("project_name")
-        or identity.get("project_id")
-        or result.get("project_id")
-    )
+    # Scope IDs and human-entered display names are independent canonical fields.
+    # A missing or placeholder scope ID must remain explicitly not supplied; never
+    # reconstruct it from client/project display metadata.
+    customer = identity.get("customer_id") or result.get("customer_id")
+    project = identity.get("project_id") or result.get("project_id")
     identity["customer_id"] = _client_identity(customer)
     identity["project_id"] = _client_identity(project)
     result["identity"] = identity

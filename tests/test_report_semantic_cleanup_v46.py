@@ -140,7 +140,8 @@ def test_source_acceptance_uses_semantic_contract_not_page_quota() -> None:
 
     assert 'pdf["page_count"] >= 30' not in source
     assert '"semantic_contract"' in source
-    assert 'semantic_contract"]["status"] == "passed"' in workflow
+    assert 'payload["artifact_schema"] == "nico.completed-run-two-pass-production-acceptance.v1"' in workflow
+    assert 'assert all(payload["proof"].values())' in workflow
 
 
 def test_report_source_uses_final_pending_approval_language_and_safe_bullet() -> None:

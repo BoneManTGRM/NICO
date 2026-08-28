@@ -41,6 +41,16 @@ def current_report_artifact_digests(
         "pdf": pdf,
         "json": package.get("json"),
     }
+    if any(
+        package.get(key) not in (None, "")
+        for key in (
+            "artifact_manifest",
+            "evidence_manifest_json",
+            "evidence_manifest_sha256",
+            "draft_artifact_identity",
+        )
+    ):
+        values["evidence_manifest"] = package.get("evidence_manifest_json")
     output: dict[str, dict[str, Any]] = {}
     for name, value in values.items():
         if value in (None, "", b""):
@@ -66,9 +76,12 @@ def validate_accepted_edition(
         errors.append("accepted_edition_schema_mismatch")
     if candidate.get("accepted_edition") is not True:
         errors.append("accepted_edition_not_approved")
-    if candidate.get("client_delivery_allowed") is not True:
-        errors.append("accepted_edition_delivery_not_authorized")
-    if str(candidate.get("delivery_status") or "") != "approved_for_delivery":
+    delivery_allowed = candidate.get("client_delivery_allowed") is True
+    delivery_status = str(candidate.get("delivery_status") or "")
+    expected_delivery_status = (
+        "approved_for_delivery" if delivery_allowed else "pending_authorization"
+    )
+    if delivery_status != expected_delivery_status:
         errors.append("accepted_edition_delivery_status_invalid")
     if list(candidate.get("validation_errors") or []):
         errors.append("accepted_edition_contains_validation_errors")
@@ -86,7 +99,18 @@ def validate_accepted_edition(
 
     expected_digests = current_report_artifact_digests(package)
     expected_digest = current_report_artifact_digest(package)
-    if set(expected_digests) != {"markdown", "html", "pdf", "json"}:
+    required_digests = {"markdown", "html", "pdf", "json"}
+    if any(
+        package.get(key) not in (None, "")
+        for key in (
+            "artifact_manifest",
+            "evidence_manifest_json",
+            "evidence_manifest_sha256",
+            "draft_artifact_identity",
+        )
+    ):
+        required_digests.add("evidence_manifest")
+    if set(expected_digests) != required_digests:
         errors.append("current_report_required_artifacts_missing")
     if candidate.get("artifact_digests") != expected_digests:
         errors.append("accepted_edition_artifact_digests_mismatch")
@@ -124,7 +148,8 @@ def validate_accepted_edition(
         "validation_errors": errors,
         "current_report_artifact_digest": expected_digest,
         "current_report_artifact_digests": expected_digests,
-        "client_delivery_allowed": not errors,
+        "human_approval_valid": not errors,
+        "client_delivery_allowed": not errors and delivery_allowed,
     }
 
 

@@ -13,13 +13,18 @@ import nico.comprehensive_run_service as service_module
 from nico.comprehensive_approved_delivery_v3 import (
     attach_approved_delivery_package as attach_approved_delivery_package_v3,
 )
-from nico.comprehensive_final_decision_truth_v1 import synchronize_final_decision_truth
+from nico.comprehensive_approved_delivery_v1 import (
+    require_new_report_after_evidence_request,
+)
 from nico.comprehensive_review_report_truth_v1 import synchronize_review_truth
 from nico.comprehensive_review_work_record_v1 import apply_review_work_ledger
 from nico.comprehensive_review_work_safe_v1 import (
     apply_review_work_action,
     assert_ready_for_approval,
     review_work_projection,
+)
+from nico.comprehensive_review_decision_v1 import (
+    assert_expected_review_artifact_identity,
 )
 
 VERSION = "nico.comprehensive_review_work_runtime.v3"
@@ -125,28 +130,47 @@ def _install_service_methods() -> None:
         decision: str,
         decision_reason: str,
         decided_at: str | None = None,
+        expected_artifact_identity: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
         previous_revision = int(record["revision"])
         normalized_decision = str(decision or "").strip().casefold()
         canonical_phase2 = False
+        readiness_projection: Mapping[str, Any] | None = None
         if _canonical_scanner_register_present(record):
             canonical_phase2 = True
             if normalized_decision == "approved":
-                assert_ready_for_approval(_review_action_record(record))
+                readiness_projection = assert_ready_for_approval(
+                    _review_action_record(record)
+                )
+        if normalized_decision == "approved":
+            assert_expected_review_artifact_identity(
+                record,
+                expected_artifact_identity,
+            )
 
         timestamp = _decision_timestamp(decided_at)
         decision_record = record
         if canonical_phase2:
-            decision_record = synchronize_final_decision_truth(
-                record,
-                decision=normalized_decision,
-                reviewer=reviewer,
-                reviewer_role=reviewer_role,
-                decision_reason=decision_reason,
-                decided_at=timestamp,
-            )
+            if readiness_projection is not None:
+                ledger = readiness_projection.get("ledger")
+                if not isinstance(ledger, Mapping):
+                    raise ValueError("review_work_ledger_missing")
+                normalized_ledger = _normalize_review_ledger(
+                    deepcopy(dict(ledger))
+                )
+                decision_record = deepcopy(dict(record))
+                decision_record["review_work_ledger"] = normalized_ledger
+                decision_record["review_work_status"] = {
+                    "artifact_schema": "nico.comprehensive_review_work_record.v1",
+                    "audit_event_count": len(normalized_ledger.get("audit_events") or []),
+                    "updated_at": str(normalized_ledger.get("updated_at") or ""),
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                }
+                from nico.comprehensive_run_record import _record_hash
 
+                decision_record["integrity_sha256"] = _record_hash(decision_record)
         manifest = service_module.build_reviewed_edition(
             decision_record,
             reviewer=reviewer,
@@ -155,12 +179,12 @@ def _install_service_methods() -> None:
             decision_reason=decision_reason,
             decided_at=timestamp,
         )
+        if normalized_decision == "approved":
+            require_new_report_after_evidence_request(decision_record, manifest)
         updated = service_module.apply_comprehensive_review_decision(
             decision_record,
             manifest=manifest,
         )
-        if normalized_decision == "approved":
-            updated = service_module.attach_approved_delivery_package(updated, manifest)
         return self._store.save(updated, expected_revision=previous_revision)
 
     setattr(guarded_review, _REVIEW_MARKER, True)
@@ -256,9 +280,10 @@ def install_comprehensive_review_work_runtime_v1() -> dict[str, Any]:
         "exception_queue_projection": True,
         "bulk_review_fails_closed_for_individual_attention": True,
         "report_truth_synchronized_before_approval": True,
-        "final_human_decision_bound_into_accepted_report": True,
+        "final_human_decision_bound_into_accepted_edition": True,
         "approved_delivery_has_one_client_report": True,
-        "approved_client_pdf_has_authorization_certificate": True,
+        "approved_client_pdf_preserved_exactly": True,
+        "approval_certificate_is_separate_json": True,
         "delivery_validates_exact_review_ledger": True,
         "four_hour_target_is_safety_gate": False,
         "human_review_required": True,

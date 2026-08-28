@@ -196,6 +196,11 @@ export function formatStatus(status: unknown, copy: Copy): string {
   if (value === "not_applicable") {
     return copy.notApplicable;
   }
+  if (copy.heroEyebrow.startsWith("EVALUACIÓN")) {
+    // Preserve the canonical enum in assessment state, but never expose a newly
+    // introduced English machine token as if it were localized display copy.
+    return copy.unknownStatus;
+  }
   return value
     .split("_")
     .filter(Boolean)

@@ -64,15 +64,19 @@ def test_final_review_requires_memory_only_token_and_downloads_certified_zip() -
     assert "document.cookie" not in source
 
 
-def test_approval_builds_package_after_manifest_and_never_regenerates_report() -> None:
+def test_delivery_package_requires_distinct_post_approval_authorization() -> None:
     service = SERVICE.read_text(encoding="utf-8")
     delivery = DELIVERY.read_text(encoding="utf-8")
 
     assert "apply_comprehensive_review_decision" in service
-    assert "attach_approved_delivery_package(updated, manifest)" in service
-    assert service.index("apply_comprehensive_review_decision") < service.index(
-        "attach_approved_delivery_package(updated, manifest)"
-    )
+    assert "def authorize_delivery(" in service
+    assert "delivery_authorization = authorize_accepted_edition(" in service
+    assert "authorization_record[\"delivery_authorization\"]" in service
+    assert "attach_approved_delivery_package(" in service
+    approval_method = service.split("def review(", 1)[1].split(
+        "def authorize_delivery(", 1
+    )[0]
+    assert "attach_approved_delivery_package" not in approval_method
     assert 'package_input["accepted_edition"] = deepcopy(dict(manifest))' in delivery
     assert "build_premium_delivery_package(package_input)" in delivery
     assert '"report_regenerated_during_delivery_packaging": False' in delivery

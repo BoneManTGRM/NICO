@@ -7,6 +7,7 @@ from nico.comprehensive_decision_content_restoration_v67 import (
     restore_decision_content,
 )
 from nico.comprehensive_engagement_metadata_v1 import (
+    _literal,
     display_identity_projection,
     normalize_comprehensive_engagement_metadata,
     verify_comprehensive_engagement_metadata,
@@ -109,10 +110,17 @@ def _attach_engagement_identity(
         "access_method": engagement_metadata.get("access_method"),
         "authorized_scope": engagement_metadata.get("authorized_scope"),
     }
+    limits = {
+        "customer_name": 180,
+        "project_name": 180,
+        "primary_technical_contact": 600,
+        "access_method": 1200,
+        "authorized_scope": 4000,
+    }
     for field, value in optional_identity.items():
-        normalized = _text(value, 4000)
-        if normalized:
-            identity[field] = normalized
+        literal = _literal(value, limits[field])
+        if literal:
+            identity[field] = literal
 
     metadata_sha = _text(
         engagement_metadata.get("engagement_metadata_sha256"),
