@@ -49,7 +49,7 @@ jobs:
           css = Path("apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
           workflow = Path(".github/workflows/ios-webkit-paint-proof.yml").read_text(encoding="utf-8")
           workflow_header = workflow.split("\njobs:", 1)[0]
-          assert 'nico.mobile_restart_live_acceptance.webkit.v4' in proof
+          assert 'nico.mobile_restart_live_acceptance.webkit.v5' in proof
           assert 'failure_layout.prove_failure_layouts(browser, args)' in proof
           assert 'terminal_failure_layout_viewports_verified' in proof
           assert 'VIEWPORT_WIDTHS = (320, 375, 390, 414, 430)' in failure
@@ -58,6 +58,7 @@ jobs:
           assert 'recovery_visible' in failure
           assert 'data-mobile-evidence-boundary="true"' in proof
           assert 'client_context_control_count' in proof
+          assert 'client_context_single_line_input_count' in proof
           assert 'rich_editor_control_count' in proof
           assert 'optional_evidence_editor_unmounted' in proof
           assert 'single_native_dom_click' in dispatch
@@ -279,7 +280,7 @@ jobs:
           assert payload["status"] == "passed"
           assert payload["expected_sha"] == "${{ github.sha }}"
           assert payload["browser_engine"] == "webkit"
-          assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.webkit.v4"
+          assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.webkit.v5"
           assert payload["start_dispatch"] == "single_native_dom_click"
           assert payload["start_dispatch_retry_absent"] is True
           assert payload["terminal_failure_layout_viewports_verified"] is True
@@ -305,7 +306,8 @@ jobs:
           assert paint_boundary["client_context_present"] is True
           assert paint_boundary["interactive_control_count"] == 3
           assert paint_boundary["client_context_control_count"] == 3
-          assert paint_boundary["client_context_textarea_count"] == 3
+          assert paint_boundary["client_context_textarea_count"] == 0
+          assert paint_boundary["client_context_single_line_input_count"] == 3
           assert paint_boundary["rich_editor_control_count"] == 0
           assert paint_boundary["rich_editor_node_count"] == 0
           assert set(paint_boundary["client_context_labels"]) == {

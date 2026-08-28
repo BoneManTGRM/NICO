@@ -5,7 +5,7 @@ RUN_CONTROLLER = Path("apps/web/app/assessment/useAssessmentRun.ts").read_text(e
 
 
 def test_mobile_evidence_intake_unmounts_while_assessment_is_active() -> None:
-    assert "if (!richEditorEnabled && disabled) return null;" in FORM
+    assert "if (disabled) return null;" in FORM
     assert "if (!richEditorEnabled)" in FORM
     assert 'data-evidence-editor-mounted="false"' in FORM
     assert 'data-mobile-client-engagement-context="true"' in FORM

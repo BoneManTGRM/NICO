@@ -6,6 +6,11 @@ from typing import Any, Mapping
 from nico.comprehensive_decision_content_restoration_v67 import (
     restore_decision_content,
 )
+from nico.comprehensive_engagement_metadata_v1 import (
+    display_identity_projection,
+    normalize_comprehensive_engagement_metadata,
+    verify_comprehensive_engagement_metadata,
+)
 from nico.comprehensive_finding_count_truth_v66 import (
     reconcile_finding_count_truth,
 )
@@ -49,7 +54,7 @@ ZERO_FINDING_FINALITY_TRUTH = (
     install_comprehensive_zero_finding_finality_truth_v1()
 )
 
-VERSION = "nico.comprehensive_canonical_report_source.v6"
+VERSION = "nico.comprehensive_canonical_report_source.v7"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
@@ -77,6 +82,46 @@ def _report_language(context: Mapping[str, Any]) -> str:
     return "en"
 
 
+def _attach_engagement_identity(
+    identity: dict[str, str],
+    context: Mapping[str, Any],
+) -> None:
+    """Project only verified client-supplied metadata into canonical identity.
+
+    The durable engagement snapshot is the sole source for these display/context
+    fields. Missing values remain absent and are never reconstructed from repository,
+    customer/project scope IDs, or any later analysis stage. A snapshot whose stored
+    digest does not verify is treated as unavailable rather than silently normalized.
+    """
+
+    raw_metadata = context.get("engagement_metadata")
+    if not verify_comprehensive_engagement_metadata(raw_metadata):
+        return
+    engagement_metadata = normalize_comprehensive_engagement_metadata(raw_metadata)
+    if not engagement_metadata:
+        return
+
+    projected = display_identity_projection(engagement_metadata)
+    optional_identity = {
+        "customer_name": projected.get("customer_name"),
+        "project_name": projected.get("project_name"),
+        "primary_technical_contact": projected.get("primary_technical_contact"),
+        "access_method": engagement_metadata.get("access_method"),
+        "authorized_scope": engagement_metadata.get("authorized_scope"),
+    }
+    for field, value in optional_identity.items():
+        normalized = _text(value, 4000)
+        if normalized:
+            identity[field] = normalized
+
+    metadata_sha = _text(
+        engagement_metadata.get("engagement_metadata_sha256"),
+        128,
+    )
+    if metadata_sha:
+        identity["engagement_metadata_sha256"] = metadata_sha
+
+
 def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     """Build the exact canonical report model without rendering legacy artifacts.
 
@@ -100,6 +145,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
+
+    _attach_engagement_identity(identity, context)
 
     report_language = _report_language(context)
     identity["report_language"] = report_language

@@ -16,7 +16,8 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v14"
+VERSION = "nico.comprehensive_api_routes.v15"
+_BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -76,6 +77,13 @@ def _controller(request: Request) -> ComprehensiveApiController:
             },
         )
     return controller
+
+
+def _browser_projection_requested(request: Request) -> bool:
+    return (
+        str(request.headers.get("x-nico-browser-projection") or "").strip().lower()
+        == _BROWSER_PROJECTION_VALUE
+    )
 
 
 def _translate_error(exc: Exception) -> HTTPException:
@@ -581,7 +589,11 @@ def register_comprehensive_api_routes(
         try:
             controller_value = _controller(request)
             record = _service(controller_value).load(run_id)
-            response = controller_value._response(record, operation="status")
+            response = controller_value._response(
+                record,
+                operation="status",
+                browser_projection=_browser_projection_requested(request),
+            )
             return _with_runtime_truth(
                 request,
                 _review_projection(response, record),
@@ -602,7 +614,11 @@ def register_comprehensive_api_routes(
             controller_value = _controller(request)
             await run_in_threadpool(controller_value.continue_run, run_id, payload)
             record = _service(controller_value).load(run_id)
-            response = controller_value._response(record, operation="continued")
+            response = controller_value._response(
+                record,
+                operation="continued",
+                browser_projection=_browser_projection_requested(request),
+            )
             return _with_runtime_truth(
                 request,
                 _review_projection(response, record),
@@ -666,7 +682,11 @@ def register_comprehensive_api_routes(
                     else None
                 ),
             )
-            response = controller_value._response(record, operation="reviewed")
+            response = controller_value._response(
+                record,
+                operation="reviewed",
+                browser_projection=_browser_projection_requested(request),
+            )
             return _with_runtime_truth(
                 request,
                 _review_projection(response, record),
