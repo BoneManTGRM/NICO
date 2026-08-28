@@ -54,7 +54,7 @@ def test_webkit_gate_requires_zero_allocated_evidence_controls_and_failure_layou
     source = WEBKIT_PROOF.read_text(encoding="utf-8")
     failure = FAILURE_LAYOUT_PROOF.read_text(encoding="utf-8")
 
-    assert 'VERSION = "nico.mobile_restart_live_acceptance.webkit.v4"' in source
+    assert 'VERSION = "nico.mobile_restart_live_acceptance.webkit.v5"' in source
     assert "playwright.webkit.launch" in source
     assert 'device_scale_factor", 3' in source
     assert 'is_mobile", True' in source
@@ -66,6 +66,7 @@ def test_webkit_gate_requires_zero_allocated_evidence_controls_and_failure_layou
     assert "optional_evidence_controls_allocated" in source
     assert "interactive_control_count" in source
     assert "rich_editor_node_count" in source
+    assert "client_context_single_line_input_count" in source
     assert "authorization_reachable" in source
     assert "assessment_action_reachable" in source
     assert "ancestor_clipping_absent" in source
