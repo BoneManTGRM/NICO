@@ -321,7 +321,7 @@ def _project_report(report: dict[str, Any]) -> dict[str, Any]:
             "pdf_available": bool(str(report.get("pdf_base64") or "").strip())
             and not bool(str(report.get("pdf_error") or "").strip()),
             "response_bounded": True,
-            "artifact_delivery": "dedicated_exact_run_endpoints",
+            "artifact_delivery": "on_demand_exact_run",
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
