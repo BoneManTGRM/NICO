@@ -470,7 +470,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           locale={locale}
           value={humanEvidence}
           onChange={setHumanEvidence}
-          disabled={running}
+          disabled={running || Boolean(result?.run_id)}
         />
 
         <label className={workspaceStyles.authorizationPanel}>
