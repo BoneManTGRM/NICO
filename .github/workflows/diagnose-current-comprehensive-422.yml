@@ -26,109 +26,13 @@ jobs:
 
       - name: Apply exact response-wrapper compatibility repair
         shell: bash
+        env:
+          OLD_B64: ZGVmIF9jb250cm9sbGVyX3Jlc3BvbnNlX3dpdGhfZXhlY3V0aW9uKAogICAgcmVjb3JkOiBkaWN0W3N0ciwgQW55XSwKICAgICosCiAgICBvcGVyYXRpb246IHN0ciwKKSAtPiBkaWN0W3N0ciwgQW55XToKICAgIGFzc2VydCBfT1JJR0lOQUxfQ09OVFJPTExFUl9SRVNQT05TRSBpcyBub3QgTm9uZQogICAgcmVzcG9uc2UgPSBfT1JJR0lOQUxfQ09OVFJPTExFUl9SRVNQT05TRShyZWNvcmQsIG9wZXJhdGlvbj1vcGVyYXRpb24pCg==
+          NEW_B64: ZGVmIF9jb250cm9sbGVyX3Jlc3BvbnNlX3dpdGhfZXhlY3V0aW9uKAogICAgcmVjb3JkOiBkaWN0W3N0ciwgQW55XSwKICAgICosCiAgICBvcGVyYXRpb246IHN0ciwKICAgIGJyb3dzZXJfcHJvamVjdGlvbjogYm9vbCA9IEZhbHNlLAopIC0+IGRpY3Rbc3RyLCBBbnldOgogICAgYXNzZXJ0IF9PUklHSU5BTF9DT05UUk9MTEVSX1JFU1BPTlNFIGlzIG5vdCBOb25lCiAgICByZXNwb25zZSA9IF9PUklHSU5BTF9DT05UUk9MTEVSX1JFU1BPTlNFKAogICAgICAgIHJlY29yZCwKICAgICAgICBvcGVyYXRpb249b3BlcmF0aW9uLAogICAgICAgIGJyb3dzZXJfcHJvamVjdGlvbj1icm93c2VyX3Byb2plY3Rpb24sCiAgICApCg==
+          TEST_B64: ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGluc3BlY3QKCmZyb20gbmljbyBpbXBvcnQgY29tcHJlaGVuc2l2ZV9maW5hbF9yZXBvcnRfcHJvY2Vzc19pc29sYXRpb25fdjEgYXMgaXNvbGF0aW9uCgoKZGVmIHRlc3RfcHJvY2Vzc19pc29sYXRpb25fcmVzcG9uc2Vfd3JhcHBlcl9hY2NlcHRzX2FuZF9mb3J3YXJkc19icm93c2VyX3Byb2plY3Rpb24obW9ua2V5cGF0Y2gpIC0+IE5vbmU6CiAgICBvYnNlcnZlZDogZGljdFtzdHIsIG9iamVjdF0gPSB7fQoKICAgIGRlZiBvcmlnaW5hbF9yZXNwb25zZSgKICAgICAgICByZWNvcmQ6IGRpY3Rbc3RyLCBvYmplY3RdLAogICAgICAgICosCiAgICAgICAgb3BlcmF0aW9uOiBzdHIsCiAgICAgICAgYnJvd3Nlcl9wcm9qZWN0aW9uOiBib29sID0gRmFsc2UsCiAgICApIC0+IGRpY3Rbc3RyLCBvYmplY3RdOgogICAgICAgIG9ic2VydmVkWyJyZWNvcmQiXSA9IHJlY29yZAogICAgICAgIG9ic2VydmVkWyJvcGVyYXRpb24iXSA9IG9wZXJhdGlvbgogICAgICAgIG9ic2VydmVkWyJicm93c2VyX3Byb2plY3Rpb24iXSA9IGJyb3dzZXJfcHJvamVjdGlvbgogICAgICAgIHJldHVybiB7CiAgICAgICAgICAgICJyZWNvcmQiOiB7fSwKICAgICAgICAgICAgInJlc3BvbnNlX3Byb2plY3Rpb24iOiB7ImJyb3dzZXJfcHJvamVjdGlvbiI6IGJyb3dzZXJfcHJvamVjdGlvbn0sCiAgICAgICAgfQoKICAgIG1vbmtleXBhdGNoLnNldGF0dHIoaXNvbGF0aW9uLCAiX09SSUdJTkFMX0NPTlRST0xMRVJfUkVTUE9OU0UiLCBvcmlnaW5hbF9yZXNwb25zZSkKCiAgICBzaWduYXR1cmUgPSBpbnNwZWN0LnNpZ25hdHVyZShpc29sYXRpb24uX2NvbnRyb2xsZXJfcmVzcG9uc2Vfd2l0aF9leGVjdXRpb24pCiAgICBhc3NlcnQgc2lnbmF0dXJlLnBhcmFtZXRlcnNbImJyb3dzZXJfcHJvamVjdGlvbiJdLmRlZmF1bHQgaXMgRmFsc2UKCiAgICByZWNvcmQgPSB7CiAgICAgICAgImFjdGl2ZV9zdGFnZV9leGVjdXRpb24iOiB7CiAgICAgICAgICAgICJzdGF0ZSI6ICJyZW5kZXJpbmciLAogICAgICAgICAgICAiaHVtYW5fcmV2aWV3X3JlcXVpcmVkIjogVHJ1ZSwKICAgICAgICAgICAgImNsaWVudF9kZWxpdmVyeV9hbGxvd2VkIjogRmFsc2UsCiAgICAgICAgfQogICAgfQogICAgcmVzcG9uc2UgPSBpc29sYXRpb24uX2NvbnRyb2xsZXJfcmVzcG9uc2Vfd2l0aF9leGVjdXRpb24oCiAgICAgICAgcmVjb3JkLAogICAgICAgIG9wZXJhdGlvbj0ic3RhdHVzIiwKICAgICAgICBicm93c2VyX3Byb2plY3Rpb249VHJ1ZSwKICAgICkKCiAgICBhc3NlcnQgb2JzZXJ2ZWQgPT0gewogICAgICAgICJyZWNvcmQiOiByZWNvcmQsCiAgICAgICAgIm9wZXJhdGlvbiI6ICJzdGF0dXMiLAogICAgICAgICJicm93c2VyX3Byb2plY3Rpb24iOiBUcnVlLAogICAgfQogICAgYXNzZXJ0IHJlc3BvbnNlWyJyZXNwb25zZV9wcm9qZWN0aW9uIl1bImJyb3dzZXJfcHJvamVjdGlvbiJdIGlzIFRydWUKICAgIGFzc2VydCByZXNwb25zZVsiYWN0aXZlX3N0YWdlX2V4ZWN1dGlvbiJdWyJzdGF0ZSJdID09ICJyZW5kZXJpbmciCiAgICBhc3NlcnQgcmVzcG9uc2VbInJlY29yZCJdWyJhY3RpdmVfc3RhZ2VfZXhlY3V0aW9uIl1bInN0YXRlIl0gPT0gInJlbmRlcmluZyIKCgpkZWYgdGVzdF9wcm9jZXNzX2lzb2xhdGlvbl9yZXNwb25zZV93cmFwcGVyX3ByZXNlcnZlc19ub25fYnJvd3Nlcl9kZWZhdWx0KG1vbmtleXBhdGNoKSAtPiBOb25lOgogICAgb2JzZXJ2ZWQ6IGRpY3Rbc3RyLCBvYmplY3RdID0ge30KCiAgICBkZWYgb3JpZ2luYWxfcmVzcG9uc2UoCiAgICAgICAgcmVjb3JkOiBkaWN0W3N0ciwgb2JqZWN0XSwKICAgICAgICAqLAogICAgICAgIG9wZXJhdGlvbjogc3RyLAogICAgICAgIGJyb3dzZXJfcHJvamVjdGlvbjogYm9vbCA9IEZhbHNlLAogICAgKSAtPiBkaWN0W3N0ciwgb2JqZWN0XToKICAgICAgICBvYnNlcnZlZFsiYnJvd3Nlcl9wcm9qZWN0aW9uIl0gPSBicm93c2VyX3Byb2plY3Rpb24KICAgICAgICByZXR1cm4geyJyZWNvcmQiOiB7fX0KCiAgICBtb25rZXlwYXRjaC5zZXRhdHRyKGlzb2xhdGlvbiwgIl9PUklHSU5BTF9DT05UUk9MTEVSX1JFU1BPTlNFIiwgb3JpZ2luYWxfcmVzcG9uc2UpCgogICAgaXNvbGF0aW9uLl9jb250cm9sbGVyX3Jlc3BvbnNlX3dpdGhfZXhlY3V0aW9uKHt9LCBvcGVyYXRpb249InN0YXR1cyIpCiAgICBhc3NlcnQgb2JzZXJ2ZWRbImJyb3dzZXJfcHJvamVjdGlvbiJdIGlzIEZhbHNlCg==
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path("nico/comprehensive_final_report_process_isolation_v1.py")
-          text = path.read_text(encoding="utf-8")
-          old = '''def _controller_response_with_execution(
-              record: dict[str, Any],
-              *,
-              operation: str,
-          ) -> dict[str, Any]:
-              assert _ORIGINAL_CONTROLLER_RESPONSE is not None
-              response = _ORIGINAL_CONTROLLER_RESPONSE(record, operation=operation)
-          '''
-          new = '''def _controller_response_with_execution(
-              record: dict[str, Any],
-              *,
-              operation: str,
-              browser_projection: bool = False,
-          ) -> dict[str, Any]:
-              assert _ORIGINAL_CONTROLLER_RESPONSE is not None
-              response = _ORIGINAL_CONTROLLER_RESPONSE(
-                  record,
-                  operation=operation,
-                  browser_projection=browser_projection,
-              )
-          '''
-          if text.count(old) != 1:
-              raise SystemExit("Expected exactly one legacy response-wrapper signature; refusing broad edit")
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-          test_path = Path("tests/test_comprehensive_process_isolation_browser_projection_compatibility.py")
-          test_path.write_text('''from __future__ import annotations
-
-import inspect
-
-from nico import comprehensive_final_report_process_isolation_v1 as isolation
-
-
-def test_process_isolation_response_wrapper_accepts_and_forwards_browser_projection(monkeypatch) -> None:
-    observed: dict[str, object] = {}
-
-    def original_response(
-        record: dict[str, object],
-        *,
-        operation: str,
-        browser_projection: bool = False,
-    ) -> dict[str, object]:
-        observed["record"] = record
-        observed["operation"] = operation
-        observed["browser_projection"] = browser_projection
-        return {
-            "record": {},
-            "response_projection": {"browser_projection": browser_projection},
-        }
-
-    monkeypatch.setattr(isolation, "_ORIGINAL_CONTROLLER_RESPONSE", original_response)
-
-    signature = inspect.signature(isolation._controller_response_with_execution)
-    assert signature.parameters["browser_projection"].default is False
-
-    record = {
-        "active_stage_execution": {
-            "state": "rendering",
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-        }
-    }
-    response = isolation._controller_response_with_execution(
-        record,
-        operation="status",
-        browser_projection=True,
-    )
-
-    assert observed == {
-        "record": record,
-        "operation": "status",
-        "browser_projection": True,
-    }
-    assert response["response_projection"]["browser_projection"] is True
-    assert response["active_stage_execution"]["state"] == "rendering"
-    assert response["record"]["active_stage_execution"]["state"] == "rendering"
-
-
-def test_process_isolation_response_wrapper_preserves_non_browser_default(monkeypatch) -> None:
-    observed: dict[str, object] = {}
-
-    def original_response(
-        record: dict[str, object],
-        *,
-        operation: str,
-        browser_projection: bool = False,
-    ) -> dict[str, object]:
-        observed["browser_projection"] = browser_projection
-        return {"record": {}}
-
-    monkeypatch.setattr(isolation, "_ORIGINAL_CONTROLLER_RESPONSE", original_response)
-
-    isolation._controller_response_with_execution({}, operation="status")
-    assert observed["browser_projection"] is False
-''', encoding="utf-8")
-          PY
+          python -c 'import base64, os; from pathlib import Path; p=Path("nico/comprehensive_final_report_process_isolation_v1.py"); t=p.read_text(encoding="utf-8"); old=base64.b64decode(os.environ["OLD_B64"]).decode(); new=base64.b64decode(os.environ["NEW_B64"]).decode(); assert t.count(old)==1, "expected exactly one legacy wrapper"; p.write_text(t.replace(old,new,1),encoding="utf-8"); Path("tests/test_comprehensive_process_isolation_browser_projection_compatibility.py").write_bytes(base64.b64decode(os.environ["TEST_B64"]))'
 
       - name: Install targeted test dependencies
         shell: bash
@@ -155,10 +59,7 @@ def test_process_isolation_response_wrapper_preserves_non_browser_default(monkey
           rm .github/workflows/diagnose-current-comprehensive-422.yml
           git config user.name 'Reparodynamics'
           git config user.email 'papadenico@yahoo.com'
-          git add \
-            nico/comprehensive_final_report_process_isolation_v1.py \
-            tests/test_comprehensive_process_isolation_browser_projection_compatibility.py \
-            .github/workflows/diagnose-current-comprehensive-422.yml
+          git add nico/comprehensive_final_report_process_isolation_v1.py tests/test_comprehensive_process_isolation_browser_projection_compatibility.py .github/workflows/diagnose-current-comprehensive-422.yml
           git diff --cached --check
           git commit -m 'Fix browser projection compatibility in process-isolation response wrapper'
           git push origin HEAD:fix/comprehensive-422-final-closure-20260827
