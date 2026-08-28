@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any
 
 from nico.comprehensive_engagement_metadata_v1 import (
@@ -9,11 +8,11 @@ from nico.comprehensive_engagement_metadata_v1 import (
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 
-VERSION = "nico.comprehensive_api_controller.v7"
-MAX_PROJECTED_STRING_CHARS = 4_000
-MAX_PROJECTED_LIST_ITEMS = 80
-MAX_PROJECTED_OBJECT_ITEMS = 80
-MAX_PROJECTED_DEPTH = 3
+VERSION = "nico.comprehensive_api_controller.v8"
+MAX_PROJECTED_STRING_CHARS = 1_200
+MAX_PROJECTED_LIST_ITEMS = 24
+MAX_PROJECTED_OBJECT_ITEMS = 24
+MAX_PROJECTED_DEPTH = 2
 
 _OMITTED_STAGE_KEYS = {
     "assessment",
@@ -37,16 +36,22 @@ _REPORT_STAGE_IDS = (
     "report_generation",
     "reports",
 )
-_REPORT_KEYS = (
+_REPORT_MANIFEST_KEYS = (
     "service_id",
     "report_id",
-    "markdown",
-    "html",
-    "pdf_base64",
+    "report_language",
+    "locale",
+    "generated_at",
+    "generation_timestamp",
     "pdf_filename",
     "pdf_error",
     "pdf_sha256",
     "canonical_truth_sha256",
+    "assessment_state",
+    "report_finality",
+    "approval_status",
+    "delivery_status",
+    "artifact_delivery",
 )
 
 
@@ -257,7 +262,7 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
             "bounded": True,
             "persisted_record_mutated": False,
             "large_stage_payloads_omitted": True,
-            "report_payload_deferred_until_terminal": True,
+            "report_payload_deferred_to_exact_run_artifact_endpoints": True,
         },
     }
 
@@ -294,19 +299,33 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _project_report(report: dict[str, Any]) -> dict[str, Any]:
-    """Attach the exact terminal report artifacts without mutating persisted truth.
+    """Return only the exact terminal artifact manifest on lifecycle responses.
 
-    Active-stage records remain bounded, but a terminal Comprehensive response is the
-    artifact-delivery boundary. Markdown, HTML, PDF, and canonical JSON must therefore
-    remain available from the same package. Returning only the JSON truth hash made the
-    public response claim that the report was attached while silently omitting the
-    canonical JSON assessment required to verify cross-format score and scanner parity.
+    Full Markdown, HTML, PDF bytes, and canonical JSON remain immutable in durable run
+    truth and are served through their exact-run artifact endpoints. Keeping those large
+    artifacts out of status/continuation JSON prevents Safari and other browsers from
+    parsing and retaining the entire report package merely to render action controls.
     """
 
-    projected = {key: report[key] for key in _REPORT_KEYS if key in report}
-    json_value = report.get("json")
-    if isinstance(json_value, dict) and json_value:
-        projected["json"] = deepcopy(json_value)
+    projected = {
+        key: _bounded_value(report[key])
+        for key in _REPORT_MANIFEST_KEYS
+        if key in report
+    }
+    projected.update(
+        {
+            "markdown_available": bool(str(report.get("markdown") or "").strip()),
+            "html_available": bool(str(report.get("html") or "").strip()),
+            "json_available": isinstance(report.get("json"), dict)
+            and bool(report.get("json")),
+            "pdf_available": bool(str(report.get("pdf_base64") or "").strip())
+            and not bool(str(report.get("pdf_error") or "").strip()),
+            "response_bounded": True,
+            "artifact_delivery": "dedicated_exact_run_endpoints",
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+    )
     return projected
 
 
@@ -315,6 +334,10 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
     for key in (
         "executive_summary",
         "evidence_coverage",
+        "evidence_completion_contract",
+        "technical_score",
+        "canonical_evidence_adjusted_score",
+        "evidence_adjusted_score",
         "maturity_signal",
         "unavailable_data_notes",
         "human_review_required",
@@ -356,10 +379,12 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
 class ComprehensiveApiController:
     """Framework-neutral controller for the customer-facing Comprehensive API.
 
-    The durable store keeps the full canonical run. Public continuation/status
-    responses expose a bounded projection so large scanner trees and generated report
-    artifacts cannot crash a browser during an active run. The complete report is
-    attached once, at the terminal human-review boundary.
+    The durable store keeps the full canonical run and every report artifact. Lifecycle
+    responses expose only a bounded browser-safe projection at every phase, including
+    the terminal human-review boundary. Exact report artifacts are retrieved separately
+    by run ID, so lifecycle polling never has to carry PDF base64, Markdown, HTML, or
+    canonical report JSON. This projection changes transport only; persisted assessment
+    truth, report hashes, human review, and delivery authorization remain unchanged.
     """
 
     def __init__(self, service: ComprehensiveRunService) -> None:
@@ -482,10 +507,12 @@ class ComprehensiveApiController:
             "response_projection": {
                 "version": VERSION,
                 "bounded": True,
-                "terminal_report_attached": terminal,
-                "terminal_canonical_json_attached": terminal,
+                "terminal_report_manifest_attached": terminal,
+                "terminal_report_artifacts_inlined": False,
+                "terminal_canonical_json_attached": False,
                 "full_record_persisted": True,
                 "large_stage_payloads_omitted": True,
+                "exact_run_artifact_endpoints_required": terminal,
             },
         }
         if terminal:
