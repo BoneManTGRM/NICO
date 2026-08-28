@@ -24,6 +24,10 @@ _DISPLAY_IDENTITY_FIELDS = (
     ("authorized_scope", ("authorized_scope",)),
 )
 
+# Preserve the established report-worker module seam used by compatibility tests and
+# internal callers while routing it through the ship-ready final package builder.
+build_comprehensive_report_package = build_ship_ready_report_package
+
 
 def report_stage(stage_id: Any) -> bool:
     return str(stage_id or "").strip() in _REPORT_STAGES
@@ -108,7 +112,7 @@ def _native_report_base_v90(context: dict[str, Any], final: bool) -> dict[str, A
         if isinstance(context.get("prior_stage_results"), dict)
         else {}
     )
-    package = build_ship_ready_report_package(
+    package = build_comprehensive_report_package(
         identity=_report_identity(context),
         stage_results=prior,
     )
@@ -307,6 +311,7 @@ def install_report_worker_runtime_v90() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
+    "build_comprehensive_report_package",
     "install_report_worker_runtime_v90",
     "report_stage",
 ]
