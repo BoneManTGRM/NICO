@@ -31,13 +31,23 @@ _OMITTED_STAGE_KEYS = {
     "evidence_bundle_json",
     "evidence_ledger_json",
 }
-_REPORT_STAGE_IDS = (
-    "final_comprehensive_report_generation",
-    "risk_reduction_and_executive_briefing",
-    "decision_report_generation",
-    "report_generation",
-    "reports",
-)
+_FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
+_FINAL_REPORT_STAGE_SUCCESS_STATUSES = {
+    "complete",
+    "completed",
+    "passed",
+    "review_required",
+    "success",
+    "succeeded",
+}
+_FINAL_REPORT_RUN_STATUSES = {
+    "complete",
+    "completed",
+    "review_required",
+    "approved",
+    "rejected",
+    "declined",
+}
 _REPORT_KEYS = (
     "service_id",
     "report_id",
@@ -316,35 +326,135 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _normalized_report_language(value: Any) -> str:
+    normalized = str(value or "").strip().casefold().replace("_", "-")
+    if normalized == "en":
+        return "en"
+    if normalized == "es-mx":
+        return "es-MX"
+    return ""
+
+
+def _final_report_identity_and_language_bound(
+    record: Mapping[str, Any],
+    report: Mapping[str, Any],
+) -> bool:
+    """Require the final package JSON to bind exact run and locale truth."""
+
+    run_identity = (
+        record.get("identity")
+        if isinstance(record.get("identity"), Mapping)
+        else {}
+    )
+    canonical = report.get("json") if isinstance(report.get("json"), Mapping) else {}
+    canonical_identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
+        run_value = str(run_identity.get(field) or "").strip()
+        canonical_value = str(canonical_identity.get(field) or "").strip()
+        if not run_value or not canonical_value or run_value != canonical_value:
+            return False
+
+    run_language = _normalized_report_language(run_identity.get("report_language"))
+    if not run_language:
+        return False
+    canonical_assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    canonical_language_values = [
+        value
+        for value in (
+            canonical.get("report_language"),
+            canonical.get("locale"),
+            canonical_identity.get("report_language"),
+            canonical_identity.get("locale"),
+            canonical_assessment.get("report_language"),
+            canonical_assessment.get("locale"),
+        )
+        if str(value or "").strip()
+    ]
+    if not canonical_language_values:
+        return False
+    language_values = [
+        *canonical_language_values,
+        *[
+            value
+            for value in (report.get("report_language"), report.get("locale"))
+            if str(value or "").strip()
+        ],
+    ]
+    normalized_languages = {
+        _normalized_report_language(value) for value in language_values
+    }
+    if "" in normalized_languages or normalized_languages != {run_language}:
+        return False
+
+    report_id = str(report.get("report_id") or "").strip()
+    canonical_report_id = str(canonical.get("report_id") or "").strip()
+    if canonical_report_id and report_id != canonical_report_id:
+        return False
+    return True
+
+
+def _canonical_final_report_outputs(
+    record: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return only the language-bound package published by the canonical final stage.
+
+    Earlier decision/report stages may contain useful internal drafts. They are never
+    final artifact authority and must not become downloadable merely because a later
+    final-render failure made the run terminal.
+    """
+
+    if record.get("terminal") is not True:
+        return {}, {}
+    if str(record.get("status") or "").strip().casefold() not in _FINAL_REPORT_RUN_STATUSES:
+        return {}, {}
+    if _FINAL_REPORT_STAGE_ID not in {
+        str(item) for item in record.get("completed_stages") or []
+    }:
+        return {}, {}
     stage_results = (
         record.get("stage_results")
         if isinstance(record.get("stage_results"), dict)
         else {}
     )
-    report: dict[str, Any] = {}
-    assessment: dict[str, Any] = {}
-    for stage_id in _REPORT_STAGE_IDS:
-        stage = stage_results.get(stage_id)
-        if not isinstance(stage, dict):
-            continue
-        if not report:
-            candidate = (
-                stage.get("report_package")
-                if isinstance(stage.get("report_package"), dict)
-                else stage.get("reports")
-            )
-            if isinstance(candidate, dict):
-                report = candidate
-        if not assessment and isinstance(stage.get("assessment"), dict):
-            assessment = stage["assessment"]
-        if report and assessment:
-            break
-    if not report and isinstance(record.get("reports"), dict):
-        report = record["reports"]
-    if not assessment and isinstance(record.get("assessment"), dict):
-        assessment = record["assessment"]
+    final_stage = stage_results.get(_FINAL_REPORT_STAGE_ID)
+    if not isinstance(final_stage, dict):
+        return {}, {}
+    if (
+        str(final_stage.get("status") or "").strip().casefold()
+        not in _FINAL_REPORT_STAGE_SUCCESS_STATUSES
+    ):
+        return {}, {}
+    candidate = (
+        final_stage.get("report_package")
+        if isinstance(final_stage.get("report_package"), dict)
+        else final_stage.get("reports")
+    )
+    if not isinstance(candidate, dict) or not _final_report_identity_and_language_bound(
+        record,
+        candidate,
+    ):
+        return {}, {}
+    report = candidate
+    assessment = (
+        final_stage.get("assessment")
+        if isinstance(final_stage.get("assessment"), dict)
+        else {}
+    )
     return report, assessment
+
+
+def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Compatibility hook over the one canonical final artifact source."""
+
+    return _canonical_final_report_outputs(record)
 
 
 def _project_report(report: dict[str, Any]) -> dict[str, Any]:
@@ -542,6 +652,11 @@ class ComprehensiveApiController:
         identity = canonical_record["identity"]
         display_progress, active_stage_progress = _display_progress(canonical_record)
         terminal = bool(canonical_record.get("terminal"))
+        report: dict[str, Any] = {}
+        assessment: dict[str, Any] = {}
+        if terminal:
+            report, assessment = _report_outputs(canonical_record)
+        terminal_report_available = bool(report)
         human_review_completed = (
             canonical_record.get("human_review_completed") is True
         )
@@ -586,18 +701,22 @@ class ComprehensiveApiController:
             "response_projection": {
                 "version": VERSION,
                 "bounded": True,
-                "terminal_report_attached": terminal and not browser_projection,
-                "terminal_canonical_json_attached": terminal and not browser_projection,
-                "terminal_report_manifest_attached": terminal and browser_projection,
-                "terminal_report_artifacts_inlined": terminal and not browser_projection,
+                "terminal_report_attached": terminal_report_available
+                and not browser_projection,
+                "terminal_canonical_json_attached": terminal_report_available
+                and not browser_projection,
+                "terminal_report_manifest_attached": terminal_report_available
+                and browser_projection,
+                "terminal_report_artifacts_inlined": terminal_report_available
+                and not browser_projection,
                 "full_record_persisted": True,
                 "large_stage_payloads_omitted": True,
-                "exact_run_artifact_endpoints_required": terminal and browser_projection,
+                "exact_run_artifact_endpoints_required": terminal_report_available
+                and browser_projection,
                 "browser_projection": browser_projection,
             },
         }
         if terminal:
-            report, assessment = _report_outputs(canonical_record)
             if report:
                 response["reports"] = (
                     _project_report_manifest(report)

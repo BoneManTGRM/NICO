@@ -36,12 +36,28 @@ def _record(*, terminal: bool = True) -> dict:
     html = "<!doctype html><html><body><h1>NICO Comprehensive Technical Assessment</h1></body></html>"
     canonical = {
         "canonical_truth_sha256": "a" * 64,
-        "assessment": {"maturity_signal": {"level": "Senior", "presented_score": 91}},
+        "report_language": "en",
+        "locale": "en",
+        "identity": {
+            "run_id": "comprun_mobile_recovery_001",
+            "repository": "BoneManTGRM/NICO",
+            "commit_sha": "b" * 40,
+            "evidence_ledger_id": "ledger_mobile_recovery_001",
+            "report_language": "en",
+            "locale": "en",
+        },
+        "assessment": {
+            "report_language": "en",
+            "locale": "en",
+            "maturity_signal": {"level": "Senior", "presented_score": 91},
+        },
         "large": "z" * (2 * 1024 * 1024),
     }
     report = {
         "service_id": "comprehensive",
         "report_id": "report_mobile_recovery_001",
+        "report_language": "en",
+        "locale": "en",
         "markdown": markdown,
         "html": html,
         "json": canonical,

@@ -42,8 +42,11 @@ def _controller(path: Path) -> ComprehensiveApiController:
                         "evidence_ledger_id",
                     )
                 }
+                identity["report_language"] = "en"
                 result["report_package"] = {
                     "report_id": f"report_{context['run_id']}",
+                    "report_language": "en",
+                    "locale": "en",
                     "markdown": (
                         "# NICO Comprehensive Technical Assessment\n"
                         "CLIENT DELIVERY NOT AUTHORIZED"
@@ -55,7 +58,15 @@ def _controller(path: Path) -> ComprehensiveApiController:
                         b"%PDF-1.4\n%%EOF\n"
                     ).decode("ascii"),
                     "pdf_page_count": 1,
-                    "json": {"identity": identity},
+                    "json": {
+                        "report_language": "en",
+                        "locale": "en",
+                        "identity": identity,
+                        "assessment": {
+                            "report_language": "en",
+                            "locale": "en",
+                        },
+                    },
                     "canonical_truth_sha256": "a" * 64,
                     "human_review_required": True,
                     "client_delivery_allowed": False,
