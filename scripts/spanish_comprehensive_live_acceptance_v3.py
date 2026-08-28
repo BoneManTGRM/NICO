@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sys
 import time
 from functools import wraps
 from pathlib import Path
@@ -11,6 +12,12 @@ from typing import Any
 from urllib.parse import urlparse
 
 from pypdf import PdfReader
+
+# Release automation invokes this file by path, which otherwise exposes only the
+# scripts directory on sys.path. Add the repository root before importing NICO.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
 
 from comprehensive_production_run_handoff_v1 import (
     require_canonical_json_digest,
