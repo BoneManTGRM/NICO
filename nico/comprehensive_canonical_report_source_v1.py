@@ -9,6 +9,7 @@ from nico.comprehensive_decision_content_restoration_v67 import (
 from nico.comprehensive_engagement_metadata_v1 import (
     display_identity_projection,
     normalize_comprehensive_engagement_metadata,
+    verify_comprehensive_engagement_metadata,
 )
 from nico.comprehensive_finding_count_truth_v66 import (
     reconcile_finding_count_truth,
@@ -89,12 +90,14 @@ def _attach_engagement_identity(
 
     The durable engagement snapshot is the sole source for these display/context
     fields. Missing values remain absent and are never reconstructed from repository,
-    customer/project scope IDs, or any later analysis stage.
+    customer/project scope IDs, or any later analysis stage. A snapshot whose stored
+    digest does not verify is treated as unavailable rather than silently normalized.
     """
 
-    engagement_metadata = normalize_comprehensive_engagement_metadata(
-        context.get("engagement_metadata")
-    )
+    raw_metadata = context.get("engagement_metadata")
+    if not verify_comprehensive_engagement_metadata(raw_metadata):
+        return
+    engagement_metadata = normalize_comprehensive_engagement_metadata(raw_metadata)
     if not engagement_metadata:
         return
 
