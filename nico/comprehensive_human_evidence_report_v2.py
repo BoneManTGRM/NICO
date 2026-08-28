@@ -99,7 +99,9 @@ def _inject_human_review_stages(
     stage_results: Mapping[str, Any],
     snapshot: Mapping[str, Any],
 ) -> dict[str, Any]:
-    output = deepcopy(dict(stage_results))
+    # The existing stage payload can be large. A shallow container copy is sufficient
+    # because the function only adds new report-only keys and never mutates prior values.
+    output = dict(stage_results)
     if not _has_verified_human_context(snapshot):
         return output
 
@@ -146,13 +148,10 @@ def _install_english_retained_titles() -> dict[str, bool]:
             )
         elif stage_id.startswith("client_human_evidence_"):
             module_id = v1._module_id_from_stage(stage_id)
-            try:
-                from nico.strategic_human_evidence_v1 import MODULES
+            from nico.strategic_human_evidence_v1 import MODULES
 
-                definition = MODULES.get(module_id) or {}
-                label = str(definition.get("label") or "").strip()
-            except Exception:
-                label = ""
+            definition = MODULES.get(module_id) or {}
+            label = str(definition.get("label") or "").strip()
             if not label:
                 label = module_id.replace("_", " ").title()
             output["title"] = f"Client Human Evidence — {label}"
