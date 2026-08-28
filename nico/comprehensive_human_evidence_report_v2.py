@@ -3,13 +3,14 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping
-from copy import deepcopy
 from typing import Any
 
 from nico import comprehensive_human_evidence_report_v1 as v1
 
 VERSION = "nico.comprehensive_human_evidence_report.v2"
-_BASE_STAGE_EVIDENCE_LIMIT = 70
+# The decision-grade report path keeps only 18 evidence lines per stage after its own
+# normalization. Keep a margin so every explicit client-supplied line survives intact.
+_BASE_STAGE_EVIDENCE_LIMIT = 16
 
 
 def _literal_mapping(lines: list[str]) -> dict[str, str]:
@@ -36,9 +37,9 @@ def _literal_mapping(lines: list[str]) -> dict[str, str]:
 def _canonical_injection_specs(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Create bounded English source stages for the ordinary canonical report builder.
 
-    The established base renderer flattens at most 80 evidence records per stage. The
-    durable human-evidence package permits more than that, so collapse the v1 presentation
-    specs back to each module and rechunk at 70. Later premium locale projection can then
+    The established decision-grade renderer keeps at most 18 evidence records per stage.
+    The durable human-evidence package can contain more, so collapse the v1 presentation
+    specs back to each module and rechunk at 16. Later premium locale projection can then
     translate NICO-owned labels without rerunning the assessment or losing client input.
     """
 
