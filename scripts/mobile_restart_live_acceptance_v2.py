@@ -10,7 +10,7 @@ from playwright.sync_api import Browser, Page, sync_playwright
 import mobile_failure_layout_probe as failure_layout
 import mobile_restart_live_acceptance_v1 as recovery
 
-VERSION = "nico.mobile_restart_live_acceptance.webkit.v4"
+VERSION = "nico.mobile_restart_live_acceptance.webkit.v5"
 OPTIONAL_EVIDENCE_SELECTOR = 'section[data-mobile-evidence-boundary="true"]'
 AUTHORIZATION_SELECTOR = '[data-assessment-authorization="true"]'
 ACTION_SELECTOR = '[data-assessment-primary-action="true"]'
@@ -112,6 +112,9 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
                 ? clientContext.querySelectorAll('input, textarea, select, button')
                 : [];
               const clientTextareas = clientContext ? clientContext.querySelectorAll('textarea') : [];
+              const clientSingleLineInputs = clientContext
+                ? clientContext.querySelectorAll('input[type="text"], input:not([type])')
+                : [];
               const clientLabels = clientContext
                 ? Array.from(clientContext.querySelectorAll('label span')).map(
                     node => String(node.textContent || '').trim().toLowerCase()
@@ -127,6 +130,7 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
                 client_context_present: Boolean(clientContext),
                 client_context_control_count: clientControls.length,
                 client_context_textarea_count: clientTextareas.length,
+                client_context_single_line_input_count: clientSingleLineInputs.length,
                 client_context_labels: clientLabels,
                 rich_editor_control_count: richControlCount,
                 rich_editor_node_count: richNodes.length,
@@ -140,7 +144,8 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
         assert paint_boundary.get("client_context_present") is True, paint_boundary
         assert int(paint_boundary.get("interactive_control_count") or 0) == 3, paint_boundary
         assert int(paint_boundary.get("client_context_control_count") or 0) == 3, paint_boundary
-        assert int(paint_boundary.get("client_context_textarea_count") or 0) == 3, paint_boundary
+        assert int(paint_boundary.get("client_context_textarea_count") or 0) == 0, paint_boundary
+        assert int(paint_boundary.get("client_context_single_line_input_count") or 0) == 3, paint_boundary
         assert int(paint_boundary.get("rich_editor_control_count") or 0) == 0, paint_boundary
         assert int(paint_boundary.get("rich_editor_node_count") or 0) == 0, paint_boundary
         assert set(paint_boundary.get("client_context_labels") or []) == CLIENT_CONTEXT_FIELDS, paint_boundary
