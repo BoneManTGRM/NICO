@@ -169,24 +169,40 @@ function installAction(): void {
   });
   if (spanish) query.set("lang", "es-MX");
   const label = spanish ? "Revisar y aceptar este informe" : "Review and accept this report";
+  const href = `/operations/final-review?${query}`;
+  const ariaLabel = `${label}: ${runId}`;
 
+  // Keep the terminal action installation strictly idempotent. This function is
+  // invoked from a DOM observer; unconditional textContent replacement here would
+  // create a new childList mutation and can form a requestAnimationFrame mutation
+  // loop on completed reports, particularly expensive in WebKit/iOS Safari.
   if (existing) {
-    existing.href = `/operations/final-review?${query}`;
-    existing.textContent = label;
+    if (existing.getAttribute("href") !== href) existing.setAttribute("href", href);
+    if (existing.textContent !== label) existing.textContent = label;
+    if (existing.getAttribute("aria-label") !== ariaLabel) existing.setAttribute("aria-label", ariaLabel);
     return;
   }
 
   const link = document.createElement("a");
   link.dataset.nicoFinalReviewAction = "true";
   link.className = "primary-link nico-final-review-action";
-  link.href = `/operations/final-review?${query}`;
+  link.setAttribute("href", href);
   link.textContent = label;
-  link.setAttribute("aria-label", `${label}: ${runId}`);
+  link.setAttribute("aria-label", ariaLabel);
   actions.appendChild(link);
 }
 
 export default function AssessmentFinalReviewAction() {
   useEffect(() => {
+    let installFrame = 0;
+    const scheduleInstall = () => {
+      if (installFrame) return;
+      installFrame = window.requestAnimationFrame(() => {
+        installFrame = 0;
+        installAction();
+      });
+    };
+
     const previousFetch = window.fetch;
     const trackedFetch: typeof window.fetch = async (input, init) => {
       const response = await previousFetch(input, init);
@@ -195,7 +211,7 @@ export default function AssessmentFinalReviewAction() {
         if (url.pathname.includes("/assessment/") && response.headers.get("content-type")?.includes("application/json")) {
           const payload = await response.clone().json();
           storeContext(asRecord(payload));
-          window.setTimeout(installAction, 0);
+          scheduleInstall();
         }
       } catch {
         // Context capture is optional and must not affect assessment transport.
@@ -204,11 +220,20 @@ export default function AssessmentFinalReviewAction() {
     };
     window.fetch = trackedFetch;
 
-    const observer = new MutationObserver(() => window.requestAnimationFrame(installAction));
-    observer.observe(document.body, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["disabled", "data-run-id"]});
+    // Watch only structural changes and the attributes that can make the exact-run
+    // action newly eligible. Character-data changes are deliberately excluded so the
+    // action's own label cannot trigger another installation pass.
+    const observer = new MutationObserver(scheduleInstall);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["disabled", "data-run-id", "data-assessment-report-ready"],
+    });
     installAction();
     return () => {
       observer.disconnect();
+      if (installFrame) window.cancelAnimationFrame(installFrame);
       if (window.fetch === trackedFetch) window.fetch = previousFetch;
     };
   }, []);
