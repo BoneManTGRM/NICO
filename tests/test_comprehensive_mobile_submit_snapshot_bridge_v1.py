@@ -41,7 +41,7 @@ def test_submit_snapshot_recovers_all_five_client_context_values() -> None:
         assert marker in bridge
 
     assert 'data-mobile-client-engagement-context="true"' in form
-    assert "if (!richEditorEnabled && disabled) return null;" in form
+    assert "if (disabled) return null;" in form
     assert "payload.client_name = snapshot.clientName" in bridge
     assert "payload.project_name = snapshot.projectName" in bridge
     assert "payload.human_evidence = humanEvidence" in bridge
