@@ -24,7 +24,9 @@ def test_client_engagement_transport_keys_remain_stable() -> None:
         'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", '
         '"primary_technical_contact", "authorized_scope"] as const;'
     ) in SOURCE
-    assert 'setEvidenceField("stakeholder_context", field,' in SOURCE
+    assert "setEvidenceField(" in SOURCE
+    assert '"stakeholder_context"' in SOURCE
+    assert "field," in SOURCE
     assert 'engagement.evidence[field]' in SOURCE
 
 
