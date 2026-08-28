@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import base64
+import io
+
+from pypdf import PdfReader
+
 from nico import comprehensive_human_evidence_report_v1 as human_report
 from nico import v2_premium_report_renderer as renderer
 from nico.comprehensive_engagement_metadata_v1 import (
     build_comprehensive_engagement_metadata,
 )
+from nico.comprehensive_report_package import build_comprehensive_report_package
+from nico.comprehensive_report_worker_runtime_v90 import _report_identity
 from nico.strategic_human_evidence_v1 import MODULES, normalize_strategic_human_evidence
 
 
@@ -46,6 +53,49 @@ def _context(report_language: str = "en") -> dict:
         "evidence_ledger_id": "ledger_human_evidence_report_v1",
         "customer_id": "customer_human_evidence_report_v1",
         "project_id": "project_human_evidence_report_v1",
+        "report_language": report_language,
+        "engagement_metadata": engagement,
+        "human_evidence": human_evidence,
+    }
+
+
+def _compact_context(report_language: str = "en") -> dict:
+    source = {
+        "functional_qa": {
+            "evidence": {
+                "test_cases": ["Human checkout smoke test"],
+                "observed_results": ["Human observed checkout success"],
+            },
+            "reviewer": "Human QA Reviewer",
+            "observed_at": "2026-08-27T20:00:00Z",
+            "source_reference": "Client QA record",
+        },
+        "stakeholder_context": {
+            "evidence": {
+                "objectives": ["Human supplied product objective"],
+                "constraints": ["Human supplied delivery constraint"],
+                "access_method": ["Client supplied read-only HTTPS access"],
+                "primary_technical_contact": ["Client supplied technical contact"],
+                "authorized_scope": ["Client supplied exact repository scope"],
+            },
+            "reviewer": "Human Stakeholder Reviewer",
+            "observed_at": "2026-08-27T20:00:00Z",
+            "source_reference": "Client stakeholder record",
+        },
+    }
+    human_evidence = normalize_strategic_human_evidence(source)
+    engagement = build_comprehensive_engagement_metadata(
+        client_name="Client Artifact Name",
+        project_name="Client Artifact Project",
+        human_evidence=human_evidence,
+    )
+    return {
+        "run_id": "comprun_human_evidence_artifact_v1",
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "b" * 40,
+        "evidence_ledger_id": "ledger_human_evidence_artifact_v1",
+        "customer_id": "customer_human_evidence_artifact_v1",
+        "project_id": "project_human_evidence_artifact_v1",
         "report_language": report_language,
         "engagement_metadata": engagement,
         "human_evidence": human_evidence,
@@ -101,6 +151,15 @@ def _rendered_stages(context: dict) -> list[dict]:
     return list(result["stages"])
 
 
+def _full_package(context: dict) -> dict:
+    return human_report.build_report_package_with_human_context(
+        build_comprehensive_report_package,
+        context=context,
+        identity=_report_identity(context),
+        stage_results={},
+    )
+
+
 def test_all_verified_human_modules_and_five_engagement_fields_reach_report_stages() -> None:
     stages = _rendered_stages(_context("en"))
     by_id = {str(stage.get("stage_id")): stage for stage in stages}
@@ -142,6 +201,45 @@ def test_all_verified_human_modules_and_five_engagement_fields_reach_report_stag
     )
 
 
+def test_english_final_artifacts_carry_verified_human_input_end_to_end() -> None:
+    package = _full_package(_compact_context("en"))
+    assert package["status"] == "complete"
+    report = package["report_package"]
+
+    canonical = report["json"]
+    stages = canonical.get("stage_summaries") or []
+    stage_ids = {str(stage.get("stage_id") or "") for stage in stages}
+    assert "client_evidence_summary" in stage_ids
+    assert "client_human_evidence_functional_qa" in stage_ids
+    assert "client_human_evidence_stakeholder_context" in stage_ids
+
+    expected = (
+        "Client Artifact Name",
+        "Client Artifact Project",
+        "Client supplied technical contact",
+        "Client supplied read-only HTTPS access",
+        "Client supplied exact repository scope",
+        "Human checkout smoke test",
+        "Human observed checkout success",
+        "Human supplied product objective",
+        "Human supplied delivery constraint",
+    )
+    markdown = str(report["markdown"])
+    html = str(report["html"])
+    pdf = base64.b64decode(report["pdf_base64"])
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+    for value in expected:
+        assert value in markdown
+        assert value in html
+        assert value in pdf_text
+
+    assert report["human_review_required"] is True
+    assert report["client_delivery_allowed"] is False
+
+
 def test_spanish_projection_localizes_nico_labels_but_preserves_client_literals() -> None:
     stages = _rendered_stages(_context("es-MX"))
     human_stages = [
@@ -166,6 +264,50 @@ def test_spanish_projection_localizes_nico_labels_but_preserves_client_literals(
     )
     assert summary["title"] == "Resumen de evidencia del cliente"
     assert "Client Human Name" in "\n".join(summary.get("evidence") or [])
+
+
+def test_spanish_final_artifacts_localize_nico_human_labels_end_to_end() -> None:
+    package = _full_package(_compact_context("es-MX"))
+    assert package["status"] == "complete"
+    report = package["report_package"]
+    canonical = report["json"]
+    assert str(canonical.get("report_language") or "").lower().startswith("es")
+
+    markdown = str(report["markdown"])
+    html = str(report["html"])
+    pdf = base64.b64decode(report["pdf_base64"])
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+
+    for label in (
+        "Resumen de evidencia del cliente",
+        "Evidencia humana aportada por el cliente",
+        "Dato aportado por el cliente",
+        "Método de acceso",
+        "Contacto técnico principal",
+        "Alcance autorizado",
+    ):
+        assert label in markdown
+        assert label in html
+        assert label in pdf_text
+
+    # Client-entered values are factual literals, not NICO-authored prose. They remain
+    # unchanged while NICO-owned headings/labels are es-MX.
+    for value in (
+        "Client Artifact Name",
+        "Client Artifact Project",
+        "Human checkout smoke test",
+        "Human observed checkout success",
+        "Human supplied product objective",
+    ):
+        assert value in markdown
+        assert value in html
+        assert value in pdf_text
+
+    assert report["human_review_required"] is True
+    assert report["client_delivery_allowed"] is False
 
 
 def test_locale_projection_reuses_frozen_human_evidence_without_assessment_rerun() -> None:
