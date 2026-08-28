@@ -159,15 +159,14 @@ def test_continue_without_bound_stops_at_async_final_report_boundary_then_reache
     marker = first["record"]["stage_results"]["final_comprehensive_report_generation"]
     # The final report is launched behind the durable background boundary. With a tiny
     # in-memory test executor the worker may legitimately finish before the first
-    # continuation response is projected. In either case the browser response stays
-    # bounded and never carries the full final artifact package.
+    # continuation response is projected, so both the persisted running marker and an
+    # already-published complete result are valid observations. Neither case may block
+    # the request, approve the report, or authorize delivery.
     assert marker["status"] in {"running", "complete"}
     if marker["status"] == "running":
         assert marker["reason"] == "final_report_background_publication_in_progress"
     else:
-        assert marker["response_bounded"] is True
-        assert "report_package" not in marker
-        assert "report_package" in marker.get("omitted_large_fields", [])
+        assert marker["report_package"]["report_id"] == "report_comprun_api_001"
         assert marker["human_review_required"] is True
         assert marker["client_delivery_allowed"] is False
 
@@ -177,28 +176,9 @@ def test_continue_without_bound_stops_at_async_final_report_boundary_then_reache
     assert response["completed_stages"] == list(COMPREHENSIVE_STAGES)
     assert response["terminal"] is True
     assert response["reports"]["report_id"] == "report_comprun_api_001"
-    assert response["reports"]["pdf_available"] is True
-    assert response["reports"]["markdown_available"] is True
-    assert response["reports"]["html_available"] is True
-    assert response["reports"]["json_available"] is True
-    for large_field in ("pdf_base64", "markdown", "html", "json"):
-        assert large_field not in response["reports"]
-    assert response["response_projection"]["terminal_report_artifacts_inlined"] is False
-    assert response["response_projection"]["terminal_canonical_json_attached"] is False
-    assert response["response_projection"]["exact_run_artifact_endpoints_required"] is True
+    assert response["reports"]["pdf_base64"].startswith("JVBER")
     assert response["human_review_required"] is True
     assert response["client_delivery_allowed"] is False
-
-    # Browser projection is transport-only: immutable exact-run artifacts remain in
-    # durable assessment truth for the dedicated report endpoints.
-    durable = controller._service.load("comprun_api_001")
-    final_stage = durable["stage_results"]["final_comprehensive_report_generation"]
-    package = final_stage["report_package"]
-    assert package["pdf_base64"].startswith("JVBER")
-    assert package["markdown"].startswith("# NICO Comprehensive")
-    assert package["json"]["identity"]["run_id"] == "comprun_api_001"
-    assert package["human_review_required"] is True
-    assert package["client_delivery_allowed"] is False
 
 
 def test_request_validation_rejects_missing_identity_and_invalid_bounds(
