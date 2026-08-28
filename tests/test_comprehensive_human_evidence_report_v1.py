@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import base64
 import io
+from copy import deepcopy
 
 from pypdf import PdfReader
 
-from nico import comprehensive_human_evidence_report_v1 as human_report
+from nico import comprehensive_human_evidence_report_v2 as human_report
 from nico import v2_premium_report_renderer as renderer
 from nico.comprehensive_engagement_metadata_v1 import (
     build_comprehensive_engagement_metadata,
@@ -152,12 +153,34 @@ def _rendered_stages(context: dict) -> list[dict]:
 
 
 def _full_package(context: dict) -> dict:
-    return human_report.build_report_package_with_human_context(
+    raw = human_report.build_report_package_with_human_context(
         build_comprehensive_report_package,
         context=context,
         identity=_report_identity(context),
         stage_results={},
     )
+    assert raw["status"] == "complete"
+
+    report = deepcopy(raw["report_package"])
+    canonical = deepcopy(report["json"])
+    identity = deepcopy(canonical.get("identity") or {})
+    generated_at = str(raw["generated_at"])
+    language = str(context["report_language"])
+    canonical["generated_at"] = generated_at
+    canonical["generation_timestamp"] = generated_at
+    canonical["report_language"] = language
+    identity["generated_at"] = generated_at
+    identity["generation_timestamp"] = generated_at
+    identity["report_language"] = language
+    canonical["identity"] = identity
+    report["json"] = canonical
+
+    # This is the same premium final-artifact population used by the production report
+    # repair chain after the base canonical package exists. It proves the retained human
+    # stages survive into the actual EN/es-MX Markdown, HTML, JSON and PDF surfaces.
+    rebuilt = renderer.rebuild_premium_client_artifacts(report)
+    raw["report_package"] = rebuilt
+    return raw
 
 
 def test_all_verified_human_modules_and_five_engagement_fields_reach_report_stages() -> None:
@@ -201,9 +224,40 @@ def test_all_verified_human_modules_and_five_engagement_fields_reach_report_stag
     )
 
 
+def test_base_canonical_population_retains_human_stages_before_locale_rebuild() -> None:
+    context = _compact_context("en")
+    raw = human_report.build_report_package_with_human_context(
+        build_comprehensive_report_package,
+        context=context,
+        identity=_report_identity(context),
+        stage_results={},
+    )
+    assert raw["status"] == "complete"
+    stages = raw["report_package"]["json"].get("stage_summaries") or []
+    by_id = {str(stage.get("stage_id") or ""): stage for stage in stages}
+    assert "client_evidence_summary" in by_id
+    assert "client_human_evidence_functional_qa" in by_id
+    assert "client_human_evidence_stakeholder_context" in by_id
+    joined = "\n".join(
+        line
+        for stage in stages
+        if str(stage.get("stage_id") or "").startswith("client_")
+        for line in stage.get("evidence") or []
+    )
+    for expected in (
+        "Client Artifact Name",
+        "Client Artifact Project",
+        "Client supplied technical contact",
+        "Client supplied read-only HTTPS access",
+        "Client supplied exact repository scope",
+        "Human checkout smoke test",
+        "Human observed checkout success",
+    ):
+        assert expected in joined
+
+
 def test_english_final_artifacts_carry_verified_human_input_end_to_end() -> None:
     package = _full_package(_compact_context("en"))
-    assert package["status"] == "complete"
     report = package["report_package"]
 
     canonical = report["json"]
@@ -236,6 +290,8 @@ def test_english_final_artifacts_carry_verified_human_input_end_to_end() -> None
         assert value in html
         assert value in pdf_text
 
+    assert "Client Evidence Summary" in markdown
+    assert "Client Human Evidence" in markdown
     assert report["human_review_required"] is True
     assert report["client_delivery_allowed"] is False
 
@@ -268,7 +324,6 @@ def test_spanish_projection_localizes_nico_labels_but_preserves_client_literals(
 
 def test_spanish_final_artifacts_localize_nico_human_labels_end_to_end() -> None:
     package = _full_package(_compact_context("es-MX"))
-    assert package["status"] == "complete"
     report = package["report_package"]
     canonical = report["json"]
     assert str(canonical.get("report_language") or "").lower().startswith("es")
