@@ -164,12 +164,37 @@ def test_retired_tier_selector_may_remain_fully_hidden() -> None:
 
 def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
+    completed_runner = Path(
+        "scripts/completed_run_two_pass_acceptance_v1.py"
+    ).read_text(encoding="utf-8")
 
     assert "scripts/unified_production_acceptance.py" in source
     assert "scripts/unified_production_acceptance_authoritative.py" in source
-    assert "python scripts/unified_production_acceptance_authoritative.py" in source
-    assert 'canonical_report_identity_verified' in source
+    assert "python scripts/completed_run_two_pass_acceptance_v1.py" in source
+    assert "same_immutable_completed_run" in completed_runner
+    assert 'proof["visible_pdf_action_count"] = 2' in completed_runner
+    assert 'item["ui_review_pdf_user_gesture_request_count"] == 1' in completed_runner
+    assert 'item["ui_review_pdf_artifact_hash_header_verified"] is True' in completed_runner
+    assert 'item["ui_review_pdf_canonical_truth_digest_verified"] is True' in completed_runner
+    assert 'item["ui_review_pdf_lifecycle_contract_verified"] is True' in completed_runner
+    assert 'item["ui_review_pdf_network_path"]' in completed_runner
+    assert 'proof["pdf_ui_action_browser_get_count"] = pdf_user_gesture_get_count' in completed_runner
+    assert 'first_pdf["ui_review_pdf_download_sha256"]' in completed_runner
+    assert 'second_pdf["ui_review_pdf_download_sha256"]' in completed_runner
+    assert "_review_locale_surface(page, locale, run_id)" in completed_runner
+    assert 'assert not posts, posts' in completed_runner
+    assert 'assert not unexpected, unexpected' in completed_runner
+    assert 'proof["legacy_markdown_get_count"] == 0' in completed_runner
+    assert 'proof["markdown_action_success_count"] == 2' in completed_runner
     assert "--passes 2" in source
+    assert "--observation-seconds 90" in source
+    assert 'item["observation"]["visible_pdf_action_count"] == 2' in source
+    assert 'item["observation"]["pdf_ui_action_browser_get_count"] == 2' in source
+    assert 'len(item["observation"]["pdf_ui_action_proofs"]) == 2' in source
+    assert 'item["professional_review_locale_preserved"] is True' in source
+    assert "--source-proof source-proof/spanish-comprehensive-live-proof.json" in source
+    assert '--source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}"' in source
+    assert "unified-production-acceptance-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}" in source
     assert "Wait for exact frontend and backend deployments" in source
 
 

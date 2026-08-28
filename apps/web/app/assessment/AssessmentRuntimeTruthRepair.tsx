@@ -2,6 +2,7 @@
 
 import {useEffect} from "react";
 import {localizeSpanishAssessmentDom} from "./AssessmentSpanishLocalization";
+import {reportLanguageForRequest} from "./assessmentLocale";
 import "./assessment-runtime-truth.css";
 
 type PersistenceSnapshot = {
@@ -40,7 +41,16 @@ function normalizeText(value: string | null | undefined): string {
 }
 
 function isSpanish(): boolean {
-  return document.documentElement.lang.toLowerCase().startsWith("es");
+  const current = new URL(window.location.href);
+  const path = current.pathname.toLowerCase();
+  const queryLocale = current.searchParams.get("lang")?.toLowerCase();
+  return path === "/es"
+    || path.startsWith("/es/")
+    || path === "/es-mx"
+    || path.startsWith("/es-mx/")
+    || queryLocale === "es"
+    || queryLocale === "es-mx"
+    || document.documentElement.lang.toLowerCase().startsWith("es");
 }
 
 /**
@@ -279,7 +289,9 @@ function installAssessmentFetchObserver(): () => void {
   };
 }
 
-function runIdFromPage(): string {
+function runIdFromPage(actions: HTMLElement | null = null): string {
+  const fromActions = String(actions?.dataset.runId || "").trim();
+  if (fromActions.startsWith("comprun_")) return fromActions;
   const fromUrl = new URL(window.location.href).searchParams.get("run_id")?.trim();
   if (fromUrl) return fromUrl;
   const identity = Array.from(document.querySelectorAll<HTMLElement>("code[title]")).find((node) => /^comprun_[a-z0-9]+$/i.test(node.title));
@@ -287,19 +299,44 @@ function runIdFromPage(): string {
 }
 
 export async function copyCurrentMarkdown(button: HTMLButtonElement): Promise<void> {
-  const runId = runIdFromPage();
-  if (!runId) throw new Error("Run ID is unavailable.");
-  const response = await fetch(`/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`, {
+  const actions = button.closest<HTMLElement>('[data-assessment-report-actions="true"]');
+  const runId = runIdFromPage(actions);
+  const spanish = isSpanish();
+  if (!runId) throw new Error(spanish ? "El ID de ejecución no está disponible." : "Run ID is unavailable.");
+  const commitSha = String(actions?.dataset.commitSha || "").trim();
+  const reportLanguage = reportLanguageForRequest(spanish ? "es-MX" : "en");
+  const response = await fetch(`/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}`, {
     method: "GET",
     cache: "no-store",
-    headers: {Accept: "text/markdown"},
+    headers: {Accept: "application/json"},
   });
-  if (!response.ok) throw new Error(`Markdown report is unavailable (${response.status}).`);
-  const markdown = await response.text();
-  if (!markdown.trim()) throw new Error("Markdown report is empty.");
+  if (!response.ok) throw new Error(spanish
+    ? `El informe Markdown no está disponible (${response.status}).`
+    : `Markdown report is unavailable (${response.status}).`);
+  const payload = await response.json() as {
+    run_id?: unknown;
+    commit_sha?: unknown;
+    report_language?: unknown;
+    assessment_rerun?: unknown;
+    report?: {markdown?: unknown};
+  };
+  if (String(payload.run_id || "") !== runId) throw new Error(spanish
+    ? "La identidad de ejecución del informe Markdown no coincide."
+    : "Markdown report run identity does not match.");
+  if (commitSha && String(payload.commit_sha || "") !== commitSha) throw new Error(spanish
+    ? "El commit del informe Markdown no coincide."
+    : "Markdown report commit does not match.");
+  if (String(payload.report_language || "") !== reportLanguage) throw new Error(spanish
+    ? "El idioma del informe Markdown no coincide."
+    : "Markdown report language does not match.");
+  if (payload.assessment_rerun !== false) throw new Error(spanish
+    ? "No se pudo comprobar que la evaluación no volvió a ejecutarse."
+    : "The report could not prove that the assessment was not rerun.");
+  const markdown = String(payload.report?.markdown || "");
+  if (!markdown.trim()) throw new Error(spanish ? "El informe Markdown está vacío." : "Markdown report is empty.");
   await writeClipboardText(markdown);
-  const original = button.textContent || (isSpanish() ? "Copiar Markdown" : "Copy Markdown");
-  button.textContent = isSpanish() ? "Markdown copiado" : "Markdown copied";
+  const original = button.textContent || (spanish ? "Copiar Markdown" : "Copy Markdown");
+  button.textContent = spanish ? "Markdown copiado" : "Markdown copied";
   window.setTimeout(() => { button.textContent = original; }, 1800);
 }
 
@@ -311,9 +348,11 @@ export function installMarkdownCopyRepair(): () => void {
     if (!label.includes("copy markdown") && !label.includes("copiar markdown")) return;
     if (button.disabled) return;
     button.disabled = true;
-    void copyCurrentMarkdown(button).catch((error) => {
+    void copyCurrentMarkdown(button).catch(() => {
       button.textContent = isSpanish() ? "No se pudo copiar" : "Copy failed";
-      button.title = error instanceof Error ? error.message : String(error);
+      button.title = isSpanish()
+        ? "No se pudo copiar el informe Markdown localizado. Vuelve a intentarlo."
+        : "The localized Markdown report could not be copied. Try again.";
     }).finally(() => {
       window.setTimeout(() => { button.disabled = false; }, 300);
     });

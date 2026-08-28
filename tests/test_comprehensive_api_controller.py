@@ -166,7 +166,12 @@ def test_continue_without_bound_stops_at_async_final_report_boundary_then_reache
     if marker["status"] == "running":
         assert marker["reason"] == "final_report_background_publication_in_progress"
     else:
-        assert marker["report_package"]["report_id"] == "report_comprun_api_001"
+        if "report_package" in marker:
+            assert marker["report_package"]["report_id"] == "report_comprun_api_001"
+        else:
+            assert first["record"]["response_projection"][
+                "report_payload_deferred_until_terminal"
+            ] is True
         assert marker["human_review_required"] is True
         assert marker["client_delivery_allowed"] is False
 
@@ -194,3 +199,29 @@ def test_request_validation_rejects_missing_identity_and_invalid_bounds(
     controller.start(_payload())
     with pytest.raises(ValueError, match="max_stages_must_be_non_negative"):
         controller.continue_run("comprun_api_001", {"max_stages": -1})
+
+
+def test_controller_projects_human_approval_separately_from_delivery_authorization(
+    tmp_path: Path,
+) -> None:
+    controller = _controller(tmp_path / "state-matrix.db")
+    controller.start(_payload())
+    record = controller._service.load_read_only("comprun_api_001")  # type: ignore[attr-defined]
+    record["status"] = "approved"
+    record["terminal"] = True
+    record["human_review_completed"] = True
+    record["client_delivery_allowed"] = False
+
+    pending = controller._response(record, operation="status")
+    assert pending["status"] == "approved"
+    assert pending["human_review_completed"] is True
+    assert pending["client_delivery_allowed"] is False
+    assert pending["delivery_status"] == "pending_authorization"
+    assert pending["record"]["delivery_status"] == "pending_authorization"
+
+    record["client_delivery_allowed"] = True
+    authorized = controller._response(record, operation="status")
+    assert authorized["human_review_completed"] is True
+    assert authorized["client_delivery_allowed"] is True
+    assert authorized["delivery_status"] == "approved_for_delivery"
+    assert authorized["record"]["delivery_status"] == "approved_for_delivery"

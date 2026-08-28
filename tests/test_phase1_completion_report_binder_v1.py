@@ -123,6 +123,15 @@ def test_workflow_creates_one_post_acceptance_comprehensive_report_with_phase2_t
     source = WORKFLOW.read_text(encoding="utf-8")
     assert 'workflows: ["Unified Production Acceptance"]' in source
     assert "github.event.workflow_run.conclusion == 'success'" in source
+    assert "SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}" in source
+    assert (
+        "SOURCE_ARTIFACT_NAME: unified-production-acceptance-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"
+        in source
+    )
+    assert "source-acceptance/two-service-live-acceptance.json" in source
+    assert 'acceptance["source_workflow_run_attempt"]' in source
+    assert 'description.startswith(source_marker + " ")' in source
+    assert '"spanish_source_binding": source_marker.removeprefix("source:")' in source
     assert "scripts/phase1_completion_report_binder_v1.py" in source
     assert "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf" in source
     assert 'manifest["phase1_definition_of_done"][8]["status"] == "passed"' in source

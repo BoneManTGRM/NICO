@@ -10,7 +10,10 @@ from pypdf import PdfWriter
 
 from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
-from nico.comprehensive_review_decision_v1 import build_reviewed_edition
+from nico.comprehensive_review_decision_v1 import (
+    build_reviewed_edition,
+    review_artifact_identity,
+)
 from nico.comprehensive_run_record import (
     apply_comprehensive_review_decision,
     apply_comprehensive_stage_result,
@@ -97,20 +100,20 @@ def _manifest(record: dict, decision: str = "approved") -> dict:
     return build_reviewed_edition(
         record,
         reviewer="reviewer@example.com",
-        reviewer_role="Principal Engineering Reviewer",
+        reviewer_role="Security reviewer",
         decision=decision,
         decision_reason="The exact immutable evidence and report artifacts were reviewed.",
         decided_at="2026-07-26T01:05:00+00:00",
     )
 
 
-def test_approved_review_unlocks_only_the_exact_existing_artifacts() -> None:
+def test_approved_review_binds_exact_artifacts_without_authorizing_delivery() -> None:
     record = _review_ready_record()
     manifest = _manifest(record)
     approved = apply_comprehensive_review_decision(record, manifest=manifest)
 
     assert approved["status"] == "approved"
-    assert approved["client_delivery_allowed"] is True
+    assert approved["client_delivery_allowed"] is False
     assert approved["human_review_completed"] is True
     assert approved["accepted_edition"]["accepted_edition"] is True
     assert approved["review_context"]["report_regenerated_during_review"] is False
@@ -145,7 +148,7 @@ def test_request_more_evidence_preserves_review_history_before_later_approval() 
     approved_manifest = build_reviewed_edition(
         requested,
         reviewer="reviewer@example.com",
-        reviewer_role="Principal Engineering Reviewer",
+        reviewer_role="Security reviewer",
         decision="approved",
         decision_reason="The requested evidence was supplied and reviewed.",
         decided_at="2026-07-26T01:10:00+00:00",
@@ -182,7 +185,7 @@ class _MemoryStore:
         return deepcopy(record)
 
 
-def test_service_persists_review_and_certified_delivery_with_one_revision() -> None:
+def test_service_persists_human_approval_with_delivery_blocked() -> None:
     record = _review_ready_record()
     store = _MemoryStore(record)
     service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
@@ -190,19 +193,19 @@ def test_service_persists_review_and_certified_delivery_with_one_revision() -> N
     approved = service.review(
         record["identity"]["run_id"],
         reviewer="reviewer@example.com",
-        reviewer_role="Principal Engineering Reviewer",
+        reviewer_role="Security reviewer",
         decision="approved",
         decision_reason="Approved after exact-artifact review.",
         decided_at="2026-07-26T01:15:00+00:00",
+        expected_artifact_identity=review_artifact_identity(record),
     )
 
     assert approved["revision"] == record["revision"] + 1
     assert store.record["status"] == "approved"
-    assert store.record["client_delivery_allowed"] is True
-    delivery = store.record["approved_delivery_package"]
-    assert delivery["status"] == "approved_for_delivery"
-    assert delivery["client_delivery_allowed"] is True
-    assert validate_approved_delivery_package(store.record, delivery)["status"] == "valid"
+    assert store.record["client_delivery_allowed"] is False
+    assert "approved_delivery_package" not in store.record
+    assert "delivery_authorization" not in store.record
+    assert store.record["accepted_edition"]["delivery_status"] == "pending_authorization"
 
 
 def test_service_blocks_approval_of_unchanged_report_after_more_evidence_request() -> None:
@@ -213,7 +216,7 @@ def test_service_blocks_approval_of_unchanged_report_after_more_evidence_request
     service.review(
         record["identity"]["run_id"],
         reviewer="reviewer@example.com",
-        reviewer_role="Principal Engineering Reviewer",
+        reviewer_role="Security reviewer",
         decision="request_more_evidence",
         decision_reason="Executed QA evidence is still missing.",
         decided_at="2026-07-26T01:15:00+00:00",
@@ -226,8 +229,32 @@ def test_service_blocks_approval_of_unchanged_report_after_more_evidence_request
         service.review(
             record["identity"]["run_id"],
             reviewer="reviewer@example.com",
-            reviewer_role="Principal Engineering Reviewer",
+            reviewer_role="Security reviewer",
             decision="approved",
             decision_reason="Approve unchanged report.",
             decided_at="2026-07-26T01:20:00+00:00",
+            expected_artifact_identity=review_artifact_identity(store.record),
+        )
+
+
+def test_service_rejects_stale_artifact_identity_after_review_download() -> None:
+    record = _review_ready_record()
+    downloaded_identity = review_artifact_identity(record)
+    store = _MemoryStore(record)
+    service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
+    package = store.record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]
+    package["markdown"] += "\nNew review truth after the prior download.\n"
+    store.record["revision"] += 1
+
+    with pytest.raises(ValueError, match="stale_review_artifact_identity"):
+        service.review(
+            record["identity"]["run_id"],
+            reviewer="reviewer@example.com",
+            reviewer_role="Security reviewer",
+            decision="approved",
+            decision_reason="Attempted approval of a stale download.",
+            decided_at="2026-07-26T01:20:00+00:00",
+            expected_artifact_identity=downloaded_identity,
         )

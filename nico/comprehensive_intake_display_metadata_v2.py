@@ -129,105 +129,25 @@ def install_comprehensive_intake_display_metadata_v2() -> dict[str, Any]:
     ) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise TypeError("request_body_must_be_object")
-        if (
-            payload.get("authorized") is not True
-            or payload.get("authorization_confirmed") is not True
-        ):
-            raise ValueError("explicit_authorization_required")
+        from nico.comprehensive_engagement_metadata_v1 import _literal
 
-        repository = routes.normalize_repository(
-            routes._required(payload.get("repository"), "repository")
-        )
-        customer_id = routes._required(
-            payload.get("customer_id") or "default_customer",
-            "customer_id",
-        )
-        project_id = routes._required(
-            payload.get("project_id") or "default_project",
-            "project_id",
-        )
-        assessment_depth = routes._required(
-            payload.get("assessment_depth") or "strategic",
-            "assessment_depth",
-        )
-        report_language = routes._required(
-            payload.get("report_language") or "en",
-            "report_language",
-        )
-        client_name = " ".join(str(payload.get("client_name") or "").split())[:180]
-        project_name = " ".join(str(payload.get("project_name") or "").split())[:180]
+        client_name = _literal(payload.get("client_name"), 180)
+        project_name = _literal(payload.get("project_name"), 180)
         human_evidence = _human_evidence_with_display_metadata(
             payload.get("human_evidence"),
             client_name=client_name,
             project_name=project_name,
         )
-        requested_sha = routes.expected_commit_sha(payload)
-        run_id = f"comprun_{routes.uuid4().hex}"
-        evidence_ledger_id = f"ledger_comprehensive_{routes.uuid4().hex}"
-
-        snapshot = routes.capture_repository_snapshot(
-            {
-                "run_id": run_id,
-                "repository": repository,
-                "customer_id": customer_id,
-                "project_id": project_id,
-                "authorized": True,
-                "authorized_by": routes._required(
-                    payload.get("authorized_by") or "public_assessment_requester",
-                    "authorized_by",
-                ),
-                "authorization_scope": routes._required(
-                    payload.get("authorization_scope")
-                    or "authorized defensive repository assessment",
-                    "authorization_scope",
-                ),
-                "expected_commit_sha": requested_sha,
-            }
-        )
-        if snapshot.get("status") != "attached" or not str(
-            snapshot.get("commit_sha") or ""
-        ).strip():
-            notes = [
-                str(item)
-                for item in snapshot.get("unavailable_data_notes") or []
-                if str(item).strip()
-            ]
-            reason = notes[0] if notes else "repository_snapshot_unavailable"
-            raise ValueError(f"repository_snapshot_unavailable:{reason}")
-        if (
-            requested_sha
-            and str(snapshot.get("commit_sha") or "").strip().lower()
-            != requested_sha
-        ):
-            raise ValueError("repository_snapshot_commit_mismatch")
-
-        response = routes._controller(request).start(
-            {
-                "repository": repository,
-                "commit_sha": snapshot["commit_sha"],
-                "run_id": run_id,
-                "evidence_ledger_id": evidence_ledger_id,
-                "customer_id": customer_id,
-                "project_id": project_id,
-                "client_name": client_name,
-                "project_name": project_name,
-                "assessment_depth": assessment_depth,
-                "report_language": report_language,
-                "human_evidence": human_evidence,
-                "authorized": True,
-                "authorization_confirmed": True,
-            }
-        )
-        return routes._with_runtime_truth(
-            request,
-            {
-                **response,
-                "operation": "intake_started",
-                "repository_snapshot": snapshot,
-                "client_name": client_name,
-                "project_name": project_name,
-            },
-        )
+        # Compose with the already-installed intake boundary instead of replacing it.
+        # In production that boundary includes the Phase-3 client-engagement guard,
+        # which validates real client scope and binds client/project delivery identity.
+        # Bypassing it would preserve display strings but silently remove required
+        # authorization evidence and make a legitimate client run unapprovable later.
+        enriched_payload = dict(payload)
+        enriched_payload["client_name"] = client_name
+        enriched_payload["project_name"] = project_name
+        enriched_payload["human_evidence"] = human_evidence
+        return current(request, enriched_payload)
 
     setattr(intake_with_direct_display_metadata, _MARKER, True)
     setattr(intake_with_direct_display_metadata, "_nico_previous", current)

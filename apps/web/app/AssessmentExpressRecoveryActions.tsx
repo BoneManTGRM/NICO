@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useMemo, useState} from "react";
+import {usePathname} from "next/navigation";
 import styles from "./AssessmentRecoveryActions.module.css";
 import {
   EXPRESS_RECOVERY_STATE_EVENT,
@@ -38,10 +39,16 @@ function storedState(): RecoveryState | null {
 }
 
 export default function AssessmentExpressRecoveryActions() {
+  const pathname = usePathname();
+  const operationsRoute = pathname === "/operations" || pathname.startsWith("/operations/");
   const [state, setState] = useState<RecoveryState | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (!operationsRoute) {
+      setState(null);
+      return;
+    }
     setState(storedState());
     const update = (event: Event) => {
       const detail = (event as CustomEvent<RecoveryState>).detail || {};
@@ -54,7 +61,7 @@ export default function AssessmentExpressRecoveryActions() {
     };
     window.addEventListener(EXPRESS_RECOVERY_STATE_EVENT, update);
     return () => window.removeEventListener(EXPRESS_RECOVERY_STATE_EVENT, update);
-  }, []);
+  }, [operationsRoute]);
 
   const recoveryUrl = useMemo(() => {
     const path = state?.recovery_path || "/operations/recovery";
@@ -66,7 +73,7 @@ export default function AssessmentExpressRecoveryActions() {
     return `${url.pathname}${url.search}`;
   }, [state]);
 
-  if (!state || state.status === "healthy") return null;
+  if (!operationsRoute || !state || state.status === "healthy") return null;
 
   async function copyDiagnostics() {
     if (!state) return;

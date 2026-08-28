@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-from nico.comprehensive_review_work_v2 import review_work_projection
+from nico.comprehensive_review_work_safe_v1 import review_work_projection
 
 VERSION = "nico.comprehensive_review_report_truth.v1"
 _MARKDOWN_START = "<!-- NICO_PHASE2_REVIEW_TRUTH_START -->"
@@ -451,6 +451,18 @@ def _synchronize_package(package: dict[str, Any], truth: Mapping[str, Any]) -> N
             }
         )
         package["content_integrity"] = updated_integrity
+    if isinstance(package.get("artifact_manifest"), Mapping):
+        from nico.comprehensive_artifact_manifest_approval_v1 import (
+            rebind_artifact_manifest,
+        )
+        from nico.comprehensive_exact_artifact_hash_binding_v1 import (
+            _validate_exact_artifact_hashes,
+        )
+
+        rebound = rebind_artifact_manifest(package)
+        _validate_exact_artifact_hashes(rebound)
+        package.clear()
+        package.update(rebound)
 
 
 def synchronize_review_truth(record: Mapping[str, Any]) -> dict[str, Any]:

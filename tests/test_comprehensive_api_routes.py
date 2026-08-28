@@ -216,3 +216,25 @@ def test_registration_is_complete_and_idempotent(tmp_path: Path) -> None:
     assert COMPREHENSIVE_API_ROUTES <= pairs
     for route in COMPREHENSIVE_API_ROUTES:
         assert sum(1 for candidate in pairs if candidate == route) == 1
+
+
+def test_route_review_projection_preserves_pending_authorization_state() -> None:
+    response = {
+        "status": "approved",
+        "record": {},
+        "human_review_completed": True,
+        "client_delivery_allowed": False,
+    }
+    record = {
+        "status": "approved",
+        "human_review_completed": True,
+        "client_delivery_allowed": False,
+        "identity": {"run_id": "comprun-approved-pending"},
+    }
+    projected = routes._review_projection(response, record)
+
+    assert projected["delivery_status"] == "pending_authorization"
+    assert projected["record"]["delivery_status"] == "pending_authorization"
+    record["client_delivery_allowed"] = True
+    authorized = routes._review_projection(response, record)
+    assert authorized["delivery_status"] == "approved_for_delivery"

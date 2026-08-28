@@ -33,6 +33,7 @@ jobs:
 
           import json
           import os
+          import re
           import urllib.error
           import urllib.request
           from datetime import UTC, datetime
@@ -50,6 +51,7 @@ jobs:
               "NICO Mobile Restart Production Proof",
               "NICO iOS WebKit Paint Proof",
               "NICO Spanish Comprehensive Production Proof",
+              "NICO Production Acceptance Green Watch",
           )
 
 
@@ -104,14 +106,66 @@ jobs:
               f"/repos/{REPOSITORY}/commits/{main_sha}/status?per_page=100",
           )
 
-          states: dict[str, str] = {}
-          targets: dict[str, str] = {}
-          for item in status_payload.get("statuses") or []:
-              context = str(item.get("context") or "")
-              if context not in REQUIRED_CONTEXTS or context in states:
-                  continue
-              states[context] = str(item.get("state") or "missing").lower()
-              targets[context] = str(item.get("target_url") or "")
+          statuses = [
+              item
+              for item in status_payload.get("statuses") or []
+              if isinstance(item, dict)
+          ]
+
+          def latest(values: list[dict]) -> dict:
+              return max(
+                  values,
+                  key=lambda item: (
+                      str(item.get("created_at") or ""),
+                      int(item.get("id") or 0),
+                  ),
+                  default={},
+              )
+
+          green_context = "NICO Production Acceptance Green Watch"
+          green = latest([
+              item
+              for item in statuses
+              if str(item.get("context") or "").strip() == green_context
+          ])
+          marker_match = re.match(
+              r"^(source:\d+:\d+) ",
+              str(green.get("description") or "").strip(),
+          )
+          if not marker_match:
+              print("Source-bound green-watch status is not available yet.", flush=True)
+              raise SystemExit(0)
+          source_marker = marker_match.group(1)
+          source_bound_contexts = {
+              "NICO Two-Service Production Acceptance",
+              "NICO Mobile Restart Production Proof",
+              "NICO iOS WebKit Paint Proof",
+              "NICO Spanish Comprehensive Production Proof",
+              green_context,
+          }
+
+          selected = {
+              context: latest([
+                  item
+                  for item in statuses
+                  if str(item.get("context") or "").strip() == context
+                  and (
+                      context not in source_bound_contexts
+                      or str(item.get("description") or "").strip().startswith(
+                          source_marker + " "
+                      )
+                  )
+              ])
+              for context in REQUIRED_CONTEXTS
+          }
+          states = {
+              context: str(item.get("state") or "missing").lower()
+              for context, item in selected.items()
+          }
+          targets = {
+              context: str(item.get("target_url") or "")
+              for context, item in selected.items()
+          }
 
           observed = {
               context: states.get(context, "missing") for context in REQUIRED_CONTEXTS
@@ -121,6 +175,7 @@ jobs:
               json.dumps(
                   {
                       "main_sha": main_sha,
+                      "source_binding": source_marker.removeprefix("source:"),
                       "required_contexts": observed,
                   },
                   sort_keys=True,

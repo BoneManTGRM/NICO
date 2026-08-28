@@ -195,9 +195,92 @@ def _dedupe(values: Iterable[str], limit: int = 120) -> list[str]:
     return output
 
 
+def _flatten_client_literals(
+    value: Any,
+    *,
+    prefix: str = "",
+    depth: int = 0,
+    maximum: int = 120,
+) -> list[str]:
+    """Flatten client-evidence structure without rewriting scalar literals."""
+
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    if depth > 5:
+        return []
+    output: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key) in _IGNORED_DETAIL_KEYS:
+                continue
+            label = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(item, (dict, list, tuple)):
+                output.extend(
+                    _flatten_client_literals(
+                        item,
+                        prefix=label,
+                        depth=depth + 1,
+                        maximum=maximum,
+                    )
+                )
+            elif item not in (None, ""):
+                literal = _literal(item, 6000)
+                output.append(f"{label}: {literal}")
+            if len(output) >= maximum:
+                break
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            label = f"{prefix}[{index}]" if prefix else str(index + 1)
+            if isinstance(item, (dict, list, tuple)):
+                output.extend(
+                    _flatten_client_literals(
+                        item,
+                        prefix=label,
+                        depth=depth + 1,
+                        maximum=maximum,
+                    )
+                )
+            elif item not in (None, ""):
+                literal = _literal(item, 6000)
+                output.append(f"{label}: {literal}" if prefix else literal)
+            if len(output) >= maximum:
+                break
+    elif value not in (None, ""):
+        literal = _literal(value, 6000)
+        output.append(f"{prefix}: {literal}" if prefix else literal)
+    return output[:maximum]
+
+
+def _dedupe_client_literals(
+    values: Iterable[str], limit: int = 120
+) -> list[str]:
+    """Bound and deduplicate exact client-evidence strings without normalization."""
+
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        literal = _literal(value, 6000)
+        key = literal.casefold()
+        if not literal or key in seen:
+            continue
+        seen.add(key)
+        output.append(literal)
+        if len(output) >= limit:
+            break
+    return output
+
+
 def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
-    evidence_lines = _flatten(result.get("evidence"), maximum=80)
-    structured_details = _flatten(
+    client_literal_stage = (
+        stage_id == "client_evidence_summary"
+        or stage_id.startswith("client_human_evidence_")
+    )
+    flatten = _flatten_client_literals if client_literal_stage else _flatten
+    dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
+    evidence_lines = flatten(result.get("evidence"), maximum=80)
+    structured_details = flatten(
         {
             key: value
             for key, value in result.items()
@@ -206,7 +289,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         maximum=80,
     )
     findings = _dedupe(result.get("findings") or [], 50)
-    unavailable = _dedupe(
+    unavailable = dedupe(
         result.get("unavailable_data_notes") or result.get("unavailable") or [],
         50,
     )
@@ -218,7 +301,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
             result.get("summary") or result.get("message") or "Stage evidence was recorded.",
             1600,
         ),
-        "evidence": _dedupe([*evidence_lines, *structured_details], 140),
+        "evidence": dedupe([*evidence_lines, *structured_details], 140),
         "findings": findings,
         "unavailable": unavailable,
     }
@@ -320,15 +403,33 @@ def _markdown(
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else localized("NOT SCORED")
     constraints = _constraints(assessment, stages)
+    from nico.comprehensive_engagement_metadata_v1 import (
+        _literal,
+        markdown_literal_markup,
+    )
+
     display_lines = []
     for label, key in (
         ("Client display name", "customer_name"),
         ("Project display name", "project_name"),
         ("Primary technical contact", "primary_technical_contact"),
+        ("Access method", "access_method"),
+        ("Authorized scope", "authorized_scope"),
     ):
-        value = _text(identity.get(key), 300)
+        value = _literal(
+            identity.get(key),
+            {
+                "customer_name": 180,
+                "project_name": 180,
+                "primary_technical_contact": 600,
+                "access_method": 1200,
+                "authorized_scope": 4000,
+            }[key],
+        )
         if value:
-            display_lines.append(f"{localized(label)}: {value}")
+            display_lines.append(
+                f"{localized(label)}: {markdown_literal_markup(value, 4000)}"
+            )
     lines = [
         f"# {localized('NICO Comprehensive Technical Assessment')} — {_text(identity.get('repository'))}",
         "",
@@ -383,6 +484,11 @@ def _markdown(
             continue
         lines += ["", f"## {localized(chapter)}"]
         for stage in selected:
+            stage_id = str(stage.get("stage_id") or "")
+            client_literal_stage = (
+                stage_id == "client_evidence_summary"
+                or stage_id.startswith("client_human_evidence_")
+            )
             lines += [
                 "",
                 f"### {stage['title']} — {localized(stage['status'].upper())}",
@@ -391,7 +497,12 @@ def _markdown(
                 f"{localized('Evidence')}:",
             ]
             lines.extend(
-                (f"- {item}" for item in stage["evidence"]),
+                (
+                    f"- {markdown_literal_markup(item, 6000)}"
+                    if client_literal_stage
+                    else f"- {item}"
+                    for item in stage["evidence"]
+                ),
             )
             if not stage["evidence"]:
                 lines.append(f"- {localized('No structured evidence line was retained for this stage.')}")
@@ -399,7 +510,12 @@ def _markdown(
                 lines += ["", f"{localized('Findings')}:"] + [f"- {item}" for item in stage["findings"]]
             if stage["unavailable"]:
                 lines += ["", f"{localized('Unavailable or limited evidence')}:"] + [
-                    f"- {item}" for item in stage["unavailable"]
+                    (
+                        f"- {markdown_literal_markup(item, 6000)}"
+                        if client_literal_stage
+                        else f"- {item}"
+                    )
+                    for item in stage["unavailable"]
                 ]
 
     unmatched = [
@@ -410,12 +526,24 @@ def _markdown(
     if unmatched:
         lines += ["", f"## {localized('Additional Recorded Stages')}"]
         for stage in unmatched:
+            stage_id = str(stage.get("stage_id") or "")
+            client_literal_stage = (
+                stage_id == "client_evidence_summary"
+                or stage_id.startswith("client_human_evidence_")
+            )
             lines += [
                 "",
                 f"### {stage['title']} — {localized(stage['status'].upper())}",
                 stage["summary"],
             ]
-            lines.extend(f"- {item}" for item in stage["evidence"])
+            lines.extend(
+                (
+                    f"- {markdown_literal_markup(item, 6000)}"
+                    if client_literal_stage
+                    else f"- {item}"
+                )
+                for item in stage["evidence"]
+            )
 
     unavailable = _dedupe(assessment.get("unavailable_data_notes") or [], 50)
     lines += [
@@ -444,6 +572,30 @@ def _semantic_html(markdown: str, title: str) -> str:
     blocks: list[str] = []
     list_items: list[str] = []
     lifecycle_boundary: str | None = None
+    literal_span = re.compile(
+        r'<span data-nico-client-literal="true">.*?</span>'
+    )
+
+    def inline(value: str) -> str:
+        """Escape Markdown text while admitting only our inert client-literal span."""
+
+        output: list[str] = []
+        cursor = 0
+        for match in literal_span.finditer(value):
+            output.append(html.escape(value[cursor : match.start()]))
+            candidate = match.group(0)
+            inner = candidate.removeprefix(
+                '<span data-nico-client-literal="true">'
+            ).removesuffix("</span>")
+            if "<" in inner.replace("<br/>", "") or ">" in inner.replace(
+                "<br/>", ""
+            ):
+                output.append(html.escape(candidate))
+            else:
+                output.append(candidate)
+            cursor = match.end()
+        output.append(html.escape(value[cursor:]))
+        return "".join(output)
 
     def flush_list() -> None:
         nonlocal list_items
@@ -458,17 +610,17 @@ def _semantic_html(markdown: str, title: str) -> str:
             continue
         if line.startswith("### "):
             flush_list()
-            blocks.append(f"<h3>{html.escape(line[4:])}</h3>")
+            blocks.append(f"<h3>{inline(line[4:])}</h3>")
         elif line.startswith("## "):
             flush_list()
-            blocks.append(f"<h2>{html.escape(line[3:])}</h2>")
+            blocks.append(f"<h2>{inline(line[3:])}</h2>")
         elif line.startswith("# "):
             flush_list()
-            blocks.append(f"<h1>{html.escape(line[2:])}</h1>")
+            blocks.append(f"<h1>{inline(line[2:])}</h1>")
         elif line.startswith("- [ ] "):
-            list_items.append(f"<li class=\"check\">☐ {html.escape(line[6:])}</li>")
+            list_items.append(f"<li class=\"check\">☐ {inline(line[6:])}</li>")
         elif line.startswith("- "):
-            list_items.append(f"<li>{html.escape(line[2:])}</li>")
+            list_items.append(f"<li>{inline(line[2:])}</li>")
         elif line.startswith("**") and line.endswith("**"):
             flush_list()
             lifecycle_boundary = line.strip("*")
@@ -477,7 +629,7 @@ def _semantic_html(markdown: str, title: str) -> str:
             )
         else:
             flush_list()
-            blocks.append(f"<p>{html.escape(line)}</p>")
+            blocks.append(f"<p>{inline(line)}</p>")
     flush_list()
     body = "".join(blocks)
     badge = (
@@ -488,7 +640,7 @@ def _semantic_html(markdown: str, title: str) -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
 <style>
-:root{{color-scheme:dark}}body{{margin:0;background:#071124;color:#dbeafe;font:16px/1.6 Inter,system-ui,sans-serif}}main{{max-width:1080px;margin:0 auto;padding:42px 22px 80px}}header{{padding:30px;border:1px solid #274060;border-radius:24px;background:#0d1a31;margin-bottom:24px}}header h1{{margin:0;color:#fff;font-size:clamp(28px,5vw,48px)}}.badge{{display:inline-block;margin-top:14px;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;color:#fde68a;background:#4a2406;font-weight:800}}article{{padding:26px;border:1px solid #274060;border-radius:24px;background:#0b172c}}h1{{color:#fff;line-height:1.08}}h2{{margin-top:34px;padding-top:24px;border-top:1px solid #274060;color:#7dd3fc}}h3{{margin-top:26px;color:#e0f2fe}}p{{color:#cbd5e1}}ul{{padding-left:24px}}li{{margin:7px 0;color:#cbd5e1}}.check{{list-style:none;margin-left:-22px}}.warning{{padding:16px;border:1px solid #f59e0b;border-radius:14px;background:#4a2406;color:#fde68a;font-weight:800;letter-spacing:.02em}}
+:root{{color-scheme:dark}}body{{margin:0;background:#071124;color:#dbeafe;font:16px/1.6 Inter,system-ui,sans-serif}}main{{max-width:1080px;margin:0 auto;padding:42px 22px 80px}}header{{padding:30px;border:1px solid #274060;border-radius:24px;background:#0d1a31;margin-bottom:24px}}header h1{{margin:0;color:#fff;font-size:clamp(28px,5vw,48px)}}.badge{{display:inline-block;margin-top:14px;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;color:#fde68a;background:#4a2406;font-weight:800}}article{{padding:26px;border:1px solid #274060;border-radius:24px;background:#0b172c}}h1{{color:#fff;line-height:1.08}}h2{{margin-top:34px;padding-top:24px;border-top:1px solid #274060;color:#7dd3fc}}h3{{margin-top:26px;color:#e0f2fe}}p{{color:#cbd5e1}}ul{{padding-left:24px}}li{{margin:7px 0;color:#cbd5e1}}p,li{{white-space:break-spaces;overflow-wrap:anywhere}}.check{{list-style:none;margin-left:-22px}}.warning{{padding:16px;border:1px solid #f59e0b;border-radius:14px;background:#4a2406;color:#fde68a;font-weight:800;letter-spacing:.02em}}
 </style></head><body><main><header><h1>{html.escape(title)}</h1>{badge}</header><article>{body}</article></main></body></html>"""
 
 
@@ -548,6 +700,7 @@ def _pdf(
         leading=25,
         textColor=colors.HexColor("#0f172a"),
         spaceAfter=12,
+        keepWithNext=1,
     )
     h2 = ParagraphStyle(
         "H2",
@@ -558,6 +711,7 @@ def _pdf(
         textColor=colors.HexColor("#075985"),
         spaceBefore=8,
         spaceAfter=6,
+        keepWithNext=1,
     )
     h3 = ParagraphStyle(
         "H3",
@@ -568,6 +722,7 @@ def _pdf(
         textColor=colors.HexColor("#0f172a"),
         spaceBefore=8,
         spaceAfter=4,
+        keepWithNext=1,
     )
     body = ParagraphStyle(
         "Body",
@@ -584,6 +739,7 @@ def _pdf(
         fontSize=7.8,
         leading=10.5,
         textColor=colors.HexColor("#475569"),
+        allowWidows=0,
     )
     warning = ParagraphStyle(
         "Warning",
@@ -598,15 +754,36 @@ def _pdf(
         spaceAfter=12,
     )
 
-    def p(value: Any, style: ParagraphStyle = body) -> Paragraph:
-        return Paragraph(html.escape(_text(value, 6000)), style)
+    def p(
+        value: Any,
+        style: ParagraphStyle = body,
+        *,
+        client_literal: bool = False,
+    ) -> Paragraph:
+        if client_literal:
+            from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+
+            rendered = reportlab_literal_markup(value, 6000)
+        else:
+            rendered = html.escape(_text(value, 6000))
+        return Paragraph(rendered, style)
 
     def localized(value: str) -> str:
         return localize_presentation(value) if localize_presentation else value
 
-    def bullets(values: Iterable[str], *, limit: int = 60) -> list[Paragraph]:
-        items = [_text(item, 1000) for item in values if _text(item)][:limit]
-        return [p(f"• {item}", small) for item in items] or [p(localized("No structured item was retained."), small)]
+    def bullets(
+        values: Iterable[str],
+        *,
+        limit: int = 60,
+        client_literal: bool = False,
+    ) -> list[Paragraph]:
+        if client_literal:
+            items = [str(item) for item in values if str(item or "").strip()][:limit]
+        else:
+            items = [_text(item, 1000) for item in values if _text(item)][:limit]
+        return [
+            p(f"• {item}", small, client_literal=client_literal) for item in items
+        ] or [p(localized("No structured item was retained."), small)]
 
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
@@ -667,14 +844,20 @@ def _pdf(
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
     display_metadata_supplied = any(
-        _text(identity.get(field), 300)
-        for field in ("customer_name", "project_name", "primary_technical_contact")
+        _literal(identity.get(field), limit)
+        for field, limit in (
+            ("customer_name", 180),
+            ("project_name", 180),
+            ("primary_technical_contact", 600),
+        )
     )
     not_supplied = localized("Not supplied")
     if display_metadata_supplied:
-        customer_display = _text(identity.get("customer_name"), 80) or not_supplied
-        project_display = _text(identity.get("project_name"), 80) or not_supplied
+        customer_display = _literal(identity.get("customer_name"), 180) or not_supplied
+        project_display = _literal(identity.get("project_name"), 180) or not_supplied
     else:
         # Legacy/internal packages historically display immutable scope IDs here. Keep
         # that behavior only when no display metadata was supplied at all so existing
@@ -689,7 +872,21 @@ def _pdf(
         [localized("Maturity"), localized(_text(maturity.get("level") or "Pending", 80)), localized("Score"), localized(score_text)],
     ]
     identity_table = Table(
-        identity_rows,
+        [
+            [
+                p(
+                    cell,
+                    small,
+                    client_literal=(
+                        display_metadata_supplied
+                        and row_index == 2
+                        and column_index in {1, 3}
+                    ),
+                )
+                for column_index, cell in enumerate(row)
+            ]
+            for row_index, row in enumerate(identity_rows)
+        ],
         colWidths=[0.85 * inch, 2.35 * inch, 0.8 * inch, 3.5 * inch],
     )
     identity_table.setStyle(
@@ -799,12 +996,19 @@ def _pdf(
             continue
         story += [PageBreak(), p(localized(chapter), h1)]
         for stage in selected:
+            stage_id = str(stage.get("stage_id") or "")
+            client_literal_stage = (
+                stage_id == "client_evidence_summary"
+                or stage_id.startswith("client_human_evidence_")
+            )
             block: list[Any] = [
                 p(f"{stage['title']} · {localized(stage['status'].upper())}", h2),
                 p(stage["summary"], body),
             ]
             preview = stage["evidence"][:10]
-            block.extend(bullets(preview, limit=10))
+            block.extend(
+                bullets(preview, limit=10, client_literal=client_literal_stage)
+            )
             if stage["findings"]:
                 block.extend([p(localized("Findings"), h3), *bullets(stage["findings"], limit=12)])
             if stage["unavailable"]:
@@ -814,13 +1018,22 @@ def _pdf(
 
     story += [PageBreak(), p(localized("Evidence Appendix"), h1), p(localized("The appendix preserves full bounded stage evidence for the immutable run. It is intentionally separate from the decision-oriented body."), body)]
     for stage in stages:
+        stage_id = str(stage.get("stage_id") or "")
+        client_literal_stage = (
+            stage_id == "client_evidence_summary"
+            or stage_id.startswith("client_human_evidence_")
+        )
         story += [
             PageBreak(),
             p(stage["title"], h1),
             p(f"{localized('Stage ID')}: {stage['stage_id']} · {localized('Status')}: {localized(stage['status'].upper())}", small),
             p(stage["summary"], body),
             p(localized("Retained Evidence"), h2),
-            *bullets(stage["evidence"], limit=100),
+            *bullets(
+                stage["evidence"],
+                limit=100,
+                client_literal=client_literal_stage,
+            ),
         ]
         if stage["findings"]:
             story += [p(localized("Findings"), h2), *bullets(stage["findings"], limit=50)]
@@ -879,9 +1092,17 @@ def build_comprehensive_report_package(
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
     report_identity = dict(required_identity)
-    for field in ("customer_name", "project_name", "primary_technical_contact"):
-        value = _text(identity.get(field), 300)
+    for field, limit in (
+        ("customer_name", 180),
+        ("project_name", 180),
+        ("primary_technical_contact", 600),
+        ("access_method", 1200),
+        ("authorized_scope", 4000),
+    ):
+        value = _literal(identity.get(field), limit)
         if value:
             report_identity[field] = value
 

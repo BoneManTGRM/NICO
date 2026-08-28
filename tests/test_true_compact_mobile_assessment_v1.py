@@ -39,7 +39,7 @@ def test_mobile_intake_mounts_lightweight_phase3_client_context_without_rich_edi
     assert 'data-mobile-evidence-boundary="true"' in STRATEGIC_FORM
     assert 'data-evidence-editor-mounted="false"' in STRATEGIC_FORM
     assert 'data-mobile-client-engagement-context="true"' in STRATEGIC_FORM
-    assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in STRATEGIC_FORM
+    assert 'const MOBILE_CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in STRATEGIC_FORM
 
 
 def test_compact_terminal_uses_containment_and_no_scroll_anchor() -> None:

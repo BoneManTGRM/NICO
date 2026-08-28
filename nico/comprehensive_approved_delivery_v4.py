@@ -24,10 +24,16 @@ from nico.comprehensive_client_delivery_contract_v1 import (
     validate_approval_receipt,
     version_truth,
 )
+from nico.comprehensive_delivery_authorization_v1 import (
+    validate_delivery_authorization,
+)
 
 VERSION = "nico.comprehensive_approved_delivery.v4"
 _RECEIPT_PATH = "12_phase4_approval_receipt.json"
 _MANIFEST_PATH = "11_evidence_manifest.json"
+_REPORT_PATH = "01_nico_comprehensive_report.pdf"
+_APPROVAL_RECORD_PATH = "15_approval_record.json"
+_DELIVERY_AUTHORIZATION_PATH = "16_delivery_authorization.json"
 
 
 def _text(value: Any) -> str:
@@ -77,6 +83,7 @@ def _bounded_validation_error_code(exc: ValueError) -> str:
 def _receipt_validation_record(
     record: Mapping[str, Any],
     manifest: Mapping[str, Any],
+    receipt: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Revalidate against the accepted edition's frozen history reference.
 
@@ -88,9 +95,14 @@ def _receipt_validation_record(
 
     output = deepcopy(dict(record))
     binding = manifest.get("phase4_approval_binding")
-    if not isinstance(binding, Mapping):
-        return output
-    truth = binding.get("version_truth")
+    truth = (
+        receipt.get("version_truth")
+        if isinstance(receipt, Mapping)
+        and isinstance(receipt.get("version_truth"), Mapping)
+        else binding.get("version_truth")
+        if isinstance(binding, Mapping)
+        else None
+    )
     if not isinstance(truth, Mapping):
         return output
     frozen = _text(truth.get("mutable_operational_history_reference"))
@@ -105,85 +117,27 @@ def bind_phase4_approval_manifest(
     record: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Retain client/project/authorization/version truth without changing report bytes."""
+    """Validate and preserve the exact immutable human-approved manifest."""
 
     output = deepcopy(dict(manifest))
-    review = deepcopy(dict(_review_metadata(output)))
-    binding = engagement_binding(record)
-    decision = _text(review.get("decision")).casefold()
-    reviewer = _text(review.get("reviewer"))
-    reviewer_role = _text(review.get("reviewer_role"))
-    reason = _text(review.get("reason"))
-    decided_at = _text(review.get("decided_at"))
-    if decision == "approved":
-        from nico.comprehensive_client_delivery_contract_v1 import reviewer_binding
-
-        human = reviewer_binding(
-            reviewer=reviewer,
-            reviewer_role=reviewer_role,
-            decision=decision,
-            decided_at=decided_at,
-            decision_reason=reason,
-        )
-    else:
-        human = {
-            "reviewer_identity": reviewer,
-            "reviewer_role": reviewer_role,
-            "authorization_basis": "protected_admin_write_and_explicit_review_authorization",
-            "review_decision": decision,
-            "review_timestamp": decided_at,
-            "residual_risk_decision": "not_accepted",
-            "reviewer_notes": reason,
-            "human_action_required": True,
-            "automation_may_not_approve": True,
-            "approval_record_id": "approval_" + canonical_sha256(review)[:24],
-        }
-    phase4_binding = {
-        "artifact_schema": CONTRACT_VERSION,
-        "product_name": PRODUCT_NAME,
-        "package_classification": CLIENT_FINAL_CLASSIFICATION,
-        "client_identity": binding["client_identity"],
-        "project_identity": binding["project_identity"],
-        "customer_id": binding["customer_id"],
-        "client_id": binding["client_id"],
-        "project_id": binding["project_id"],
-        "authorized_scope": binding["authorized_scope"],
-        "read_only_access_method": binding["access_method"],
-        "review": human,
-        "version_truth": version_truth(record),
-        "one_product": PRODUCT_NAME,
-        "one_client_report": True,
-        "human_review_required": True,
-        "client_delivery_allowed": decision == "approved" and output.get("accepted_edition") is True,
-    }
-    phase4_binding["binding_sha256"] = canonical_sha256(phase4_binding)
-    output.update(
-        {
-            "phase4_approval_binding": phase4_binding,
-            "client_identity": binding["client_identity"],
-            "project_identity": binding["project_identity"],
-            "customer_id": binding["customer_id"],
-            "client_id": binding["client_id"],
-            "project_id": binding["project_id"],
-            "package_classification": CLIENT_FINAL_CLASSIFICATION,
-            "one_product": PRODUCT_NAME,
-            "one_client_report": True,
-        }
+    authorization_validation = validate_delivery_authorization(
+        record,
+        output,
+        record.get("delivery_authorization"),
     )
-    review.pop("approval_certificate_sha256", None)
-    review["authorization_basis"] = human["authorization_basis"]
-    review["residual_risk_decision"] = human["residual_risk_decision"]
-    review["approval_record_id"] = human["approval_record_id"]
-    review["approval_certificate_sha256"] = canonical_sha256(review)
-    output["review"] = review
-    output.pop("accepted_edition_manifest_sha256", None)
-    output["accepted_edition_manifest_sha256"] = canonical_sha256(output)
+    if authorization_validation["status"] != "valid":
+        raise ValueError(
+            "invalid_delivery_authorization:"
+            + ",".join(authorization_validation["validation_errors"])
+        )
     return output
 
 
 def _enhance_delivery_archive(
     delivery: Mapping[str, Any],
     receipt: Mapping[str, Any],
+    accepted_edition: Mapping[str, Any],
+    delivery_authorization: Mapping[str, Any],
 ) -> tuple[bytes, dict[str, Any], str]:
     try:
         source = base64.b64decode(_text(delivery.get("zip_base64")), validate=True)
@@ -195,14 +149,27 @@ def _enhance_delivery_archive(
             if not name.endswith("/"):
                 entries[name] = archive.read(name)
     receipt_bytes = _json_bytes(receipt)
+    authorization_bytes = _json_bytes(delivery_authorization)
+    entries[_APPROVAL_RECORD_PATH] = _json_bytes(accepted_edition)
     entries[_RECEIPT_PATH] = receipt_bytes
+    entries[_DELIVERY_AUTHORIZATION_PATH] = authorization_bytes
 
     manifest = deepcopy(dict(delivery.get("manifest") or {}))
     artifacts = [
         deepcopy(dict(item))
         for item in manifest.get("artifacts") or []
-        if isinstance(item, Mapping) and _text(item.get("path")) != _RECEIPT_PATH
+        if isinstance(item, Mapping)
+        and _text(item.get("path"))
+        not in {_RECEIPT_PATH, _DELIVERY_AUTHORIZATION_PATH, _APPROVAL_RECORD_PATH}
     ]
+    artifacts.append(
+        {
+            "path": _APPROVAL_RECORD_PATH,
+            "kind": "immutable_human_approved_edition",
+            "sha256": _sha256(entries[_APPROVAL_RECORD_PATH]),
+            "size_bytes": len(entries[_APPROVAL_RECORD_PATH]),
+        }
+    )
     artifacts.append(
         {
             "path": _RECEIPT_PATH,
@@ -211,14 +178,40 @@ def _enhance_delivery_archive(
             "size_bytes": len(receipt_bytes),
         }
     )
+    artifacts.append(
+        {
+            "path": _DELIVERY_AUTHORIZATION_PATH,
+            "kind": "explicit_human_delivery_authorization_receipt",
+            "sha256": _sha256(authorization_bytes),
+            "size_bytes": len(authorization_bytes),
+        }
+    )
     artifacts.sort(key=lambda item: _text(item.get("path")))
     manifest.update(
         {
             "artifact_schema": VERSION,
             "product_name": PRODUCT_NAME,
             "package_classification": CLIENT_FINAL_CLASSIFICATION,
+            "repository": receipt.get("repository"),
+            "run_id": receipt.get("assessment_run_id"),
+            "assessed_repository_commit": receipt.get(
+                "assessed_repository_commit"
+            ),
+            "evidence_ledger_id": receipt.get("evidence_ledger_id"),
+            "client_identity": receipt.get("client_identity"),
+            "project_identity": receipt.get("project_identity"),
+            "customer_id": receipt.get("customer_id"),
+            "client_id": receipt.get("client_id"),
+            "project_id": receipt.get("project_id"),
+            "accepted_edition_manifest_sha256": receipt.get(
+                "accepted_edition_manifest_sha256"
+            ),
             "phase4_approval_receipt_path": _RECEIPT_PATH,
             "phase4_approval_receipt_sha256": _sha256(receipt_bytes),
+            "delivery_authorization_path": _DELIVERY_AUTHORIZATION_PATH,
+            "delivery_authorization_sha256": delivery_authorization.get(
+                "delivery_authorization_sha256"
+            ),
             "artifacts": artifacts,
             "artifact_count": len(artifacts),
             "one_client_report": True,
@@ -237,12 +230,22 @@ def build_approved_delivery_package(
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
     bound = bind_phase4_approval_manifest(record, manifest)
+    delivery_authorization = record.get("delivery_authorization")
+    if not isinstance(delivery_authorization, Mapping):
+        raise ValueError("delivery_authorization_required")
+    delivery_projection = deepcopy(bound)
+    delivery_projection["delivery_status"] = "approved_for_delivery"
+    delivery_projection["client_delivery_allowed"] = True
+    delivery_projection.pop("accepted_edition_manifest_sha256", None)
+    delivery_projection["accepted_edition_manifest_sha256"] = canonical_sha256(
+        delivery_projection
+    )
     record_for_delivery = deepcopy(dict(record))
-    record_for_delivery["accepted_edition"] = deepcopy(bound)
-    delivery = build_v3(record_for_delivery, bound)
+    record_for_delivery["accepted_edition"] = deepcopy(delivery_projection)
+    delivery = build_v3(record_for_delivery, delivery_projection)
     review = _review_metadata(bound)
     receipt = build_approval_receipt(
-        record_for_delivery,
+        record,
         bound,
         reviewer=_text(review.get("reviewer")),
         reviewer_role=_text(review.get("reviewer_role")),
@@ -252,7 +255,12 @@ def build_approved_delivery_package(
         authorization_basis=_text(review.get("authorization_basis"))
         or "protected_admin_write_and_explicit_review_authorization",
     )
-    archive, delivery_manifest, evidence_manifest_sha = _enhance_delivery_archive(delivery, receipt)
+    archive, delivery_manifest, evidence_manifest_sha = _enhance_delivery_archive(
+        delivery,
+        receipt,
+        bound,
+        delivery_authorization,
+    )
     certificate = deepcopy(dict(delivery.get("certificate") or {}))
     certificate.update(
         {
@@ -269,6 +277,22 @@ def build_approved_delivery_package(
             "reviewer_identity": receipt["review"]["reviewer_identity"],
             "reviewer_role": receipt["review"]["reviewer_role"],
             "authorization_basis": receipt["review"]["authorization_basis"],
+            "delivery_authorization_id": delivery_authorization.get(
+                "delivery_authorization_id"
+            ),
+            "delivery_authorizer_identity": delivery_authorization.get(
+                "authorizer_identity"
+            ),
+            "delivery_authorizer_role": delivery_authorization.get(
+                "authorizer_role"
+            ),
+            "delivery_authorized_at": delivery_authorization.get("authorized_at"),
+            "delivery_authorization_reason": delivery_authorization.get(
+                "authorization_reason"
+            ),
+            "delivery_authorization_sha256": delivery_authorization.get(
+                "delivery_authorization_sha256"
+            ),
             "residual_risk_decision": receipt["review"]["residual_risk_decision"],
             "pdf_sha256": receipt["pdf_sha256"],
             "canonical_json_sha256": receipt["canonical_json_sha256"],
@@ -276,6 +300,9 @@ def build_approved_delivery_package(
             "phase4_approval_receipt_sha256": receipt["approval_receipt_sha256"],
             "candidate_register_sha256": receipt["candidate_register_sha256"],
             "candidate_disposition_state_sha256": receipt["candidate_disposition_state_sha256"],
+            "accepted_edition_manifest_sha256": receipt[
+                "accepted_edition_manifest_sha256"
+            ],
             "version_truth": deepcopy(receipt["version_truth"]),
             "package_classification": CLIENT_FINAL_CLASSIFICATION,
             "one_client_report": True,
@@ -334,33 +361,93 @@ def validate_approved_delivery_package(
         }
     manifest = record.get("accepted_edition")
     receipt = package.get("phase4_approval_receipt")
+    delivery_authorization = record.get("delivery_authorization")
     if not isinstance(manifest, Mapping):
         errors.add("phase4_accepted_edition_missing")
     if not isinstance(receipt, Mapping):
         errors.add("phase4_approval_receipt_missing")
     if isinstance(manifest, Mapping) and isinstance(receipt, Mapping):
+        authorization_validation = validate_delivery_authorization(
+            record,
+            manifest,
+            delivery_authorization,
+        )
+        errors.update(authorization_validation.get("validation_errors") or [])
         validation = validate_approval_receipt(
-            _receipt_validation_record(record, manifest),
+            _receipt_validation_record(record, manifest, receipt),
             manifest,
             receipt,
         )
         errors.update(validation.get("validation_errors") or [])
+        receipt_hash = _text(receipt.get("approval_receipt_sha256"))
+        if receipt_hash != _text(package.get("phase4_approval_receipt_sha256")):
+            errors.add("phase4_receipt_package_hash_mismatch")
     if _text(package.get("product_name")) != PRODUCT_NAME:
         errors.add("phase4_wrong_product")
     if _text(package.get("package_classification")) != CLIENT_FINAL_CLASSIFICATION:
         errors.add("phase4_internal_or_test_package_blocked")
     if package.get("one_client_report") is not True or int(package.get("client_pdf_count") or 0) != 1:
         errors.add("phase4_one_report_rule_violated")
+    if package.get("human_review_required") is not True:
+        errors.add("phase4_human_review_boundary_missing")
+    if package.get("client_delivery_allowed") is not True:
+        errors.add("phase4_delivery_authorization_missing")
+    if _text(package.get("final_human_approval_status")) != "approved":
+        errors.add("phase4_final_approval_status_invalid")
+    if _text(package.get("client_delivery_authorization_status")) != "authorized":
+        errors.add("phase4_delivery_status_invalid")
+    if package.get("approval_certificate_page_appended") is not False:
+        errors.add("phase4_approved_pdf_was_mutated")
+    if package.get("approved_report_pdf_preserved_exactly") is not True:
+        errors.add("phase4_approved_pdf_preservation_missing")
+    if package.get("approval_certificate_separate_json") is not True:
+        errors.add("phase4_separate_approval_certificate_missing")
 
+    archive_manifest: Mapping[str, Any] | None = None
+    archive_manifest_sha = ""
+    archive_sha = ""
     try:
         archive_bytes = base64.b64decode(_text(package.get("zip_base64")), validate=True)
-        if _sha256(archive_bytes) != _text(package.get("zip_sha256")):
+        archive_sha = _sha256(archive_bytes)
+        if archive_sha != _text(package.get("zip_sha256")):
             errors.add("phase4_delivery_archive_hash_mismatch")
+        if len(archive_bytes) != int(package.get("zip_size_bytes") or -1):
+            errors.add("phase4_delivery_archive_size_mismatch")
         with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:
             names = archive.namelist()
+            if len(names) != len(set(names)):
+                errors.add("phase4_delivery_archive_duplicate_path")
             pdfs = [name for name in names if name.casefold().endswith(".pdf")]
             if len(pdfs) != 1:
                 errors.add("phase4_one_report_rule_violated")
+            elif isinstance(manifest, Mapping) and isinstance(receipt, Mapping):
+                delivered_pdf_sha = _sha256(archive.read(pdfs[0]))
+                manifest_digests = manifest.get("artifact_digests")
+                manifest_digests = (
+                    manifest_digests
+                    if isinstance(manifest_digests, Mapping)
+                    else {}
+                )
+                approved_pdf = manifest_digests.get("pdf")
+                approved_pdf = approved_pdf if isinstance(approved_pdf, Mapping) else {}
+                if delivered_pdf_sha != _text(approved_pdf.get("sha256")):
+                    errors.add("phase4_delivered_pdf_accepted_edition_mismatch")
+                if delivered_pdf_sha != _text(receipt.get("pdf_sha256")):
+                    errors.add("phase4_delivered_pdf_receipt_mismatch")
+                if pdfs[0] != _REPORT_PATH:
+                    errors.add("phase4_client_report_path_mismatch")
+            if _APPROVAL_RECORD_PATH not in names:
+                errors.add("phase4_approval_record_missing")
+            elif isinstance(manifest, Mapping) and archive.read(
+                _APPROVAL_RECORD_PATH
+            ) != _json_bytes(manifest):
+                errors.add("phase4_approval_record_accepted_edition_mismatch")
+            if _DELIVERY_AUTHORIZATION_PATH not in names:
+                errors.add("phase4_delivery_authorization_receipt_missing")
+            elif isinstance(delivery_authorization, Mapping) and archive.read(
+                _DELIVERY_AUTHORIZATION_PATH
+            ) != _json_bytes(delivery_authorization):
+                errors.add("phase4_delivery_authorization_receipt_mismatch")
             if _RECEIPT_PATH not in names:
                 errors.add("phase4_receipt_not_in_immutable_package")
             elif isinstance(receipt, Mapping):
@@ -369,12 +456,133 @@ def validate_approved_delivery_package(
             if _MANIFEST_PATH not in names:
                 errors.add("phase4_evidence_manifest_missing")
             else:
-                manifest_sha = _sha256(archive.read(_MANIFEST_PATH))
+                manifest_bytes = archive.read(_MANIFEST_PATH)
+                archive_manifest_sha = _sha256(manifest_bytes)
+                try:
+                    parsed_manifest = json.loads(manifest_bytes.decode("utf-8"))
+                    if isinstance(parsed_manifest, Mapping):
+                        archive_manifest = parsed_manifest
+                    else:
+                        errors.add("phase4_evidence_manifest_invalid")
+                except (UnicodeDecodeError, ValueError):
+                    errors.add("phase4_evidence_manifest_invalid")
+                in_memory_manifest = package.get("manifest")
+                if not isinstance(in_memory_manifest, Mapping) or _json_bytes(
+                    in_memory_manifest
+                ) != manifest_bytes:
+                    errors.add("phase4_evidence_manifest_archive_mismatch")
                 certificate = package.get("certificate")
                 if not isinstance(certificate, Mapping) or _text(
                     certificate.get("evidence_manifest_sha256")
-                ) != manifest_sha:
+                ) != archive_manifest_sha:
                     errors.add("phase4_evidence_manifest_hash_mismatch")
+            if isinstance(archive_manifest, Mapping):
+                identity = (
+                    record.get("identity")
+                    if isinstance(record.get("identity"), Mapping)
+                    else {}
+                )
+                expected_manifest_values = {
+                    "product_name": PRODUCT_NAME,
+                    "package_classification": CLIENT_FINAL_CLASSIFICATION,
+                    "repository": receipt.get("repository")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "run_id": receipt.get("assessment_run_id")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "assessed_repository_commit": receipt.get(
+                        "assessed_repository_commit"
+                    )
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "evidence_ledger_id": receipt.get("evidence_ledger_id")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "client_identity": receipt.get("client_identity")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "project_identity": receipt.get("project_identity")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "customer_id": receipt.get("customer_id")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "client_id": receipt.get("client_id")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "project_id": receipt.get("project_id")
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "accepted_edition_manifest_sha256": receipt.get(
+                        "accepted_edition_manifest_sha256"
+                    )
+                    if isinstance(receipt, Mapping)
+                    else "",
+                    "report_language": identity.get("report_language"),
+                }
+                for key, expected in expected_manifest_values.items():
+                    if _text(archive_manifest.get(key)) != _text(expected):
+                        errors.add(f"phase4_evidence_manifest_{key}_mismatch")
+                if _text(archive_manifest.get("delivery_status")) != "approved_for_delivery":
+                    errors.add("phase4_evidence_manifest_delivery_status_invalid")
+                if archive_manifest.get("human_review_required") is not True:
+                    errors.add("phase4_evidence_manifest_human_review_boundary_missing")
+                if archive_manifest.get("client_delivery_allowed") is not True:
+                    errors.add("phase4_evidence_manifest_delivery_authorization_missing")
+                if archive_manifest.get("one_client_report") is not True or int(
+                    archive_manifest.get("client_pdf_count") or 0
+                ) != 1:
+                    errors.add("phase4_evidence_manifest_one_report_rule_violated")
+                artifact_rows = [
+                    item
+                    for item in archive_manifest.get("artifacts") or []
+                    if isinstance(item, Mapping)
+                ]
+                declared_paths = [_text(item.get("path")) for item in artifact_rows]
+                archived_paths = sorted(name for name in names if name != _MANIFEST_PATH)
+                if sorted(declared_paths) != archived_paths:
+                    errors.add("phase4_evidence_manifest_artifact_set_mismatch")
+                if len(declared_paths) != len(set(declared_paths)):
+                    errors.add("phase4_evidence_manifest_duplicate_path")
+                for item in artifact_rows:
+                    path = _text(item.get("path"))
+                    if path not in names:
+                        continue
+                    content = archive.read(path)
+                    if _text(item.get("sha256")) != _sha256(content):
+                        errors.add("phase4_evidence_manifest_artifact_hash_mismatch")
+                    if item.get("size_bytes") != len(content):
+                        errors.add("phase4_evidence_manifest_artifact_size_mismatch")
+                declared_count = int(archive_manifest.get("artifact_count") or -1)
+                if declared_count != len(artifact_rows) or int(
+                    package.get("artifact_count") or -1
+                ) != len(artifact_rows):
+                    errors.add("phase4_evidence_manifest_artifact_count_mismatch")
+                if _text(archive_manifest.get("phase4_approval_receipt_path")) != _RECEIPT_PATH:
+                    errors.add("phase4_evidence_manifest_receipt_path_mismatch")
+                receipt_bytes = archive.read(_RECEIPT_PATH) if _RECEIPT_PATH in names else b""
+                if _text(archive_manifest.get("phase4_approval_receipt_sha256")) != _sha256(
+                    receipt_bytes
+                ):
+                    errors.add("phase4_evidence_manifest_receipt_hash_mismatch")
+                if _text(archive_manifest.get("delivery_authorization_path")) != (
+                    _DELIVERY_AUTHORIZATION_PATH
+                ):
+                    errors.add(
+                        "phase4_evidence_manifest_delivery_authorization_path_mismatch"
+                    )
+                expected_authorization_sha = (
+                    _text(delivery_authorization.get("delivery_authorization_sha256"))
+                    if isinstance(delivery_authorization, Mapping)
+                    else ""
+                )
+                if _text(
+                    archive_manifest.get("delivery_authorization_sha256")
+                ) != expected_authorization_sha:
+                    errors.add(
+                        "phase4_evidence_manifest_delivery_authorization_hash_mismatch"
+                    )
     except Exception:
         errors.add("phase4_delivery_archive_invalid")
 
@@ -383,13 +591,108 @@ def validate_approved_delivery_package(
     if not isinstance(certificate, Mapping):
         errors.add("phase4_delivery_certificate_missing")
     else:
+        expected_certificate: dict[str, Any] = {
+            "client_identity": binding["client_identity"],
+            "project_identity": binding["project_identity"],
+            "customer_id": binding["customer_id"],
+            "client_id": binding["client_id"],
+            "project_id": binding["project_id"],
+            "package_classification": CLIENT_FINAL_CLASSIFICATION,
+        }
+        delivery_authorization = (
+            record.get("delivery_authorization")
+            if isinstance(record.get("delivery_authorization"), Mapping)
+            else {}
+        )
+        expected_certificate.update(
+            {
+                "delivery_authorization_id": delivery_authorization.get(
+                    "delivery_authorization_id"
+                ),
+                "delivery_authorizer_identity": delivery_authorization.get(
+                    "authorizer_identity"
+                ),
+                "delivery_authorizer_role": delivery_authorization.get(
+                    "authorizer_role"
+                ),
+                "delivery_authorized_at": delivery_authorization.get(
+                    "authorized_at"
+                ),
+                "delivery_authorization_reason": delivery_authorization.get(
+                    "authorization_reason"
+                ),
+                "delivery_authorization_sha256": delivery_authorization.get(
+                    "delivery_authorization_sha256"
+                ),
+            }
+        )
+        if isinstance(receipt, Mapping):
+            receipt_review = receipt.get("review")
+            receipt_review = receipt_review if isinstance(receipt_review, Mapping) else {}
+            expected_certificate.update(
+                {
+                    "assessment_run_id": receipt.get("assessment_run_id"),
+                    "run_id": receipt.get("assessment_run_id"),
+                    "repository": receipt.get("repository"),
+                    "assessed_repository_commit": receipt.get("assessed_repository_commit"),
+                    "commit_sha": receipt.get("assessed_repository_commit"),
+                    "approval_record_id": receipt_review.get("approval_record_id"),
+                    "reviewer_identity": receipt_review.get("reviewer_identity"),
+                    "reviewer_role": receipt_review.get("reviewer_role"),
+                    "authorization_basis": receipt_review.get("authorization_basis"),
+                    "residual_risk_decision": receipt_review.get("residual_risk_decision"),
+                    "pdf_sha256": receipt.get("pdf_sha256"),
+                    "canonical_json_sha256": receipt.get("canonical_json_sha256"),
+                    "phase4_approval_receipt_sha256": receipt.get("approval_receipt_sha256"),
+                    "candidate_register_sha256": receipt.get("candidate_register_sha256"),
+                    "candidate_disposition_state_sha256": receipt.get(
+                        "candidate_disposition_state_sha256"
+                    ),
+                    "accepted_edition_manifest_sha256": receipt.get(
+                        "accepted_edition_manifest_sha256"
+                    ),
+                    "approval_certificate_sha256": (
+                        manifest.get("review", {}).get(
+                            "approval_certificate_sha256"
+                        )
+                        if isinstance(manifest, Mapping)
+                        and isinstance(manifest.get("review"), Mapping)
+                        else ""
+                    ),
+                    "approved_at": receipt_review.get("review_timestamp"),
+                    "version_truth": receipt.get("version_truth"),
+                }
+            )
+        for key, expected in expected_certificate.items():
+            if isinstance(expected, (Mapping, list)):
+                matches = certificate.get(key) == expected
+            else:
+                matches = _text(certificate.get(key)) == _text(expected)
+            if not matches:
+                errors.add(f"phase4_{key}_mismatch")
         for key, expected in (
-            ("client_identity", binding["client_identity"]),
-            ("project_identity", binding["project_identity"]),
-            ("project_id", binding["project_id"]),
+            ("evidence_manifest_sha256", archive_manifest_sha),
+            ("delivery_package_sha256", archive_sha),
+            ("delivery_package_size_bytes", package.get("zip_size_bytes")),
         ):
             if _text(certificate.get(key)) != _text(expected):
                 errors.add(f"phase4_{key}_mismatch")
+        if certificate.get("one_client_report") is not True or int(
+            certificate.get("client_pdf_count") or 0
+        ) != 1:
+            errors.add("phase4_certificate_one_report_rule_violated")
+        if certificate.get("human_review_required") is not True:
+            errors.add("phase4_certificate_human_review_boundary_missing")
+        if certificate.get("client_delivery_allowed") is not True:
+            errors.add("phase4_certificate_delivery_authorization_missing")
+        if certificate.get("approval_certificate_page_appended") is not False:
+            errors.add("phase4_certificate_approved_pdf_was_mutated")
+        if certificate.get("approved_report_pdf_preserved_exactly") is not True:
+            errors.add("phase4_certificate_approved_pdf_preservation_missing")
+        if certificate.get("approval_certificate_separate_json") is not True:
+            errors.add("phase4_certificate_separate_approval_missing")
+        if certificate.get("report_analysis_regenerated_during_delivery_packaging") is not False:
+            errors.add("phase4_certificate_report_regeneration_invalid")
         candidate = deepcopy(dict(certificate))
         supplied_hash = _text(candidate.pop("delivery_authorization_certificate_sha256", ""))
         if supplied_hash != canonical_sha256(candidate):
@@ -418,7 +721,6 @@ def attach_approved_delivery_package(
         return updated
     require_new_report_after_evidence_request(updated, manifest)
     bound = bind_phase4_approval_manifest(updated, manifest)
-    updated["accepted_edition"] = deepcopy(bound)
     delivery = build_approved_delivery_package(updated, bound)
     updated["approved_delivery_package"] = delivery
     updated["client_delivery_allowed"] = True
@@ -434,6 +736,12 @@ def attach_approved_delivery_package(
             "package_classification": CLIENT_FINAL_CLASSIFICATION,
             "one_client_report": True,
             "client_pdf_count": 1,
+            "delivery_authorization_id": updated["delivery_authorization"][
+                "delivery_authorization_id"
+            ],
+            "delivery_authorization_sha256": updated["delivery_authorization"][
+                "delivery_authorization_sha256"
+            ],
             "human_review_required": True,
             "client_delivery_allowed": True,
         }

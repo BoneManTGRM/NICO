@@ -48,6 +48,8 @@ _REPLACEMENTS = (
     ),
 )
 _PRESERVED_CLIENT_MARKERS = (
+    "comprehensive client review",
+    "revision integral del cliente",
     "compact finding and remediation register",
     "complete exact-source index",
     "client evidence summary",

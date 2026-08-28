@@ -12,9 +12,13 @@ def _context() -> dict[str, object]:
         client_name="Cody Jenkins",
         project_name="NICO Audit",
         human_evidence={
-            "primary_technical_contact": "Cody Jenkins — Repository owner / project lead",
-            "access_method": "Public GitHub repository via HTTPS/API — read-only access",
-            "authorized_scope": "BoneManTGRM/NICO — entire repository, current main branch.",
+            "stakeholder_context": {
+                "evidence": {
+                    "primary_technical_contact": "Cody — Repository owner / project lead",
+                    "access_method": "Public GitHub repository via HTTPS/API — read-only access",
+                    "authorized_scope": "BoneManTGRM/NICO — entire repository, current main branch.",
+                }
+            },
         },
     )
     return {
@@ -37,7 +41,7 @@ def test_detached_report_identity_recovers_durable_engagement_metadata() -> None
     assert identity["project_name"] == "NICO Audit"
     assert (
         identity["primary_technical_contact"]
-        == "Cody Jenkins — Repository owner / project lead"
+        == "Cody — Repository owner / project lead"
     )
 
 
@@ -56,11 +60,18 @@ def test_durable_engagement_metadata_reaches_report_surfaces() -> None:
     assert canonical_identity["project_name"] == "NICO Audit"
     assert (
         canonical_identity["primary_technical_contact"]
-        == "Cody Jenkins — Repository owner / project lead"
+        == "Cody — Repository owner / project lead"
     )
-    assert "Client display name: Cody Jenkins" in markdown
-    assert "Project display name: NICO Audit" in markdown
     assert (
-        "Primary technical contact: Cody Jenkins — Repository owner / project lead"
+        'Client display name: <span data-nico-client-literal="true">Cody Jenkins</span>'
+        in markdown
+    )
+    assert (
+        'Project display name: <span data-nico-client-literal="true">NICO Audit</span>'
+        in markdown
+    )
+    assert (
+        'Primary technical contact: <span data-nico-client-literal="true">'
+        "Cody — Repository owner / project lead</span>"
         in markdown
     )

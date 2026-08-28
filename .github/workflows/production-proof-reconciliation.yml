@@ -29,6 +29,8 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
+      SOURCE_CONSUMER_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_CONSUMER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
 
     steps:
       - name: Reconcile stale downstream proof failures
@@ -39,7 +41,7 @@ jobs:
 
           import json
           import os
-          import urllib.parse
+          import re
           import urllib.request
           from typing import Any
 
@@ -47,6 +49,8 @@ jobs:
           sha = os.environ["RELEASE_SHA"].strip()
           token = os.environ["GITHUB_TOKEN"]
           source_workflow = os.environ["SOURCE_WORKFLOW"].strip()
+          source_consumer_run_id = os.environ["SOURCE_CONSUMER_RUN_ID"].strip()
+          source_consumer_run_attempt = os.environ["SOURCE_CONSUMER_RUN_ATTEMPT"].strip()
 
           if not sha:
               raise SystemExit("workflow_run event did not provide an exact release SHA")
@@ -82,59 +86,68 @@ jobs:
                   raise RuntimeError(f"Expected a JSON object from {method} {url}")
               return value
 
-          def latest_commit_statuses() -> dict[str, str]:
+          def commit_statuses() -> list[dict[str, Any]]:
               payload = request_json(
                   "GET",
                   f"https://api.github.com/repos/{repository}/commits/{sha}/status",
               )
-              # GitHub returns commit statuses newest-first. setdefault therefore keeps
-              # the latest observation for a context and ignores stale earlier attempts.
-              latest: dict[str, str] = {}
-              for item in payload.get("statuses") or []:
-                  if not isinstance(item, dict):
-                      continue
-                  context = str(item.get("context") or "").strip()
-                  state = str(item.get("state") or "unknown").strip().lower()
-                  if context:
-                      latest.setdefault(context, state)
-              return latest
+              return [
+                  item for item in payload.get("statuses") or []
+                  if isinstance(item, dict)
+              ]
 
-          def rerun_latest_failed_workflow(
+          def latest(values: list[dict[str, Any]]) -> dict[str, Any]:
+              return max(
+                  values,
+                  key=lambda item: (
+                      str(item.get("created_at") or ""),
+                      int(item.get("id") or 0),
+                  ),
+                  default={},
+              )
+
+          def source_bound_status(
+              statuses: list[dict[str, Any]],
+              context: str,
+              source_marker: str,
+          ) -> dict[str, Any]:
+              return latest(
+                  [
+                      item
+                      for item in statuses
+                      if str(item.get("context") or "").strip() == context
+                      and str(item.get("description") or "").strip().startswith(
+                          source_marker + " "
+                      )
+                  ]
+              )
+
+          def rerun_exact_failed_workflow(
               workflow_file: str,
               *,
               expected_context: str,
+              status_item: dict[str, Any],
           ) -> bool:
-              encoded = urllib.parse.quote(workflow_file, safe="")
-              query = urllib.parse.urlencode(
-                  {
-                      "head_sha": sha,
-                      "event": "push",
-                      "per_page": 20,
-                  }
-              )
-              payload = request_json(
-                  "GET",
-                  f"https://api.github.com/repos/{repository}/actions/workflows/{encoded}/runs?{query}",
-              )
-              runs = [
-                  item
-                  for item in payload.get("workflow_runs") or []
-                  if isinstance(item, dict)
-                  and str(item.get("head_sha") or "") == sha
-                  and str(item.get("event") or "") == "push"
-              ]
-              if not runs:
-                  print(
-                      f"No push workflow run found for {workflow_file} at exact SHA {sha}; no replay created.",
-                      flush=True,
+              target_url = str(status_item.get("target_url") or "")
+              match = re.search(r"/actions/runs/(\d+)(?:/|$)", target_url)
+              if not match:
+                  raise SystemExit(
+                      f"{expected_context} exact source-bound status omitted its workflow run URL"
                   )
-                  return False
-
-              # The API is newest-first. Never start a second replay while the latest
-              # exact-SHA run is queued or running. Only a completed failed run may be
-              # retried, and GitHub's rerun-failed-jobs endpoint reuses that same run.
-              run = runs[0]
-              run_id = int(run["id"])
+              run_id = int(match.group(1))
+              run = request_json(
+                  "GET",
+                  f"https://api.github.com/repos/{repository}/actions/runs/{run_id}",
+              )
+              workflow_path = str(run.get("path") or "").split("@", 1)[0]
+              if (
+                  str(run.get("head_sha") or "") != sha
+                  or str(run.get("event") or "") != "workflow_run"
+                  or not workflow_path.endswith("/" + workflow_file)
+              ):
+                  raise SystemExit(
+                      f"{expected_context} status targeted an unrelated workflow run: {run_id}"
+                  )
               status = str(run.get("status") or "unknown").lower()
               conclusion = str(run.get("conclusion") or "").lower()
               if status != "completed":
@@ -160,14 +173,52 @@ jobs:
               )
               return True
 
-          statuses = latest_commit_statuses()
+          statuses = commit_statuses()
           mobile_context = "NICO Mobile Restart Production Proof"
           ios_context = "NICO iOS WebKit Paint Proof"
           acceptance_context = "NICO Two-Service Production Acceptance"
+          triggering_context = {
+              "Mobile Restart Production Proof": mobile_context,
+              "iOS WebKit Paint Proof": ios_context,
+          }.get(source_workflow)
+          if not triggering_context:
+              raise SystemExit(f"Unsupported reconciliation source workflow: {source_workflow}")
+          trigger_run = request_json(
+              "GET",
+              f"https://api.github.com/repos/{repository}/actions/runs/{source_consumer_run_id}",
+          )
+          if (
+              str(trigger_run.get("head_sha") or "") != sha
+              or str(trigger_run.get("event") or "") != "workflow_run"
+              or str(trigger_run.get("run_attempt") or "") != source_consumer_run_attempt
+          ):
+              raise SystemExit(
+                  "Reconciliation event did not match the exact consumer run ID and attempt"
+              )
+          triggering = latest(
+              [
+                  item
+                  for item in statuses
+                  if str(item.get("context") or "").strip() == triggering_context
+                  and str(item.get("target_url") or "").rstrip("/").endswith(
+                      f"/actions/runs/{source_consumer_run_id}"
+                  )
+              ]
+          )
+          description = str(triggering.get("description") or "").strip()
+          marker_match = re.match(r"^(source:\d+:\d+) ", description)
+          if not marker_match:
+              raise SystemExit(
+                  "Triggering consumer status did not prove its Spanish source run ID and attempt"
+              )
+          source_marker = marker_match.group(1)
+          bound = {
+              context: source_bound_status(statuses, context, source_marker)
+              for context in (mobile_context, ios_context, acceptance_context)
+          }
           observed = {
-              mobile_context: statuses.get(mobile_context, "missing"),
-              ios_context: statuses.get(ios_context, "missing"),
-              acceptance_context: statuses.get(acceptance_context, "missing"),
+              context: str(item.get("state") or "missing").strip().lower()
+              for context, item in bound.items()
           }
           print(
               "Exact-SHA production proof state after "
@@ -179,9 +230,10 @@ jobs:
           # workflow is later rerun successfully. Reconcile the dependency graph from
           # current status instead of leaving downstream proofs red forever.
           if observed[mobile_context] == "success" and observed[ios_context] in {"failure", "error"}:
-              rerun_latest_failed_workflow(
+              rerun_exact_failed_workflow(
                   "ios-webkit-paint-proof.yml",
                   expected_context=ios_context,
+                  status_item=bound[ios_context],
               )
               raise SystemExit(0)
 
@@ -190,9 +242,10 @@ jobs:
               and observed[ios_context] == "success"
               and observed[acceptance_context] in {"failure", "error"}
           ):
-              rerun_latest_failed_workflow(
+              rerun_exact_failed_workflow(
                   "two-service-production-acceptance.yml",
                   expected_context=acceptance_context,
+                  status_item=bound[acceptance_context],
               )
               raise SystemExit(0)
 

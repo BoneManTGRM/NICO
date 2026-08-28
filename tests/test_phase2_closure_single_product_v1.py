@@ -135,7 +135,7 @@ def test_readiness_retries_only_same_canonical_store_recovery_state() -> None:
     assert "result.runtime_recovery_supported === true" in source
     assert "result.automatic_cross_store_fallback === false" in source
     assert "readinessCanRecoverOnSameStore(result)" in source
-    assert "Continuation is not safely replayable" in source
+    assert "No mutation is safely replayable" in source
 
 
 def test_operator_guide_declares_one_comprehensive_product() -> None:

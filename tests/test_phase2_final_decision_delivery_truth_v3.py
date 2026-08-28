@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import zipfile
 from copy import deepcopy
@@ -12,6 +13,7 @@ from nico.comprehensive_approved_delivery_v3 import (
     build_approved_delivery_package,
     validate_approved_delivery_package,
 )
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_final_decision_truth_v1 import synchronize_final_decision_truth
 from nico.comprehensive_review_decision_v1 import build_reviewed_edition
 from nico.comprehensive_review_work_safe_v1 import apply_review_work_action
@@ -145,6 +147,17 @@ def _reviewed_record() -> dict:
     return record
 
 
+def _authorized_packaging_projection(manifest: dict) -> dict:
+    """V3 is the lower ZIP builder; V4 validates the separate receipt around it."""
+
+    projected = deepcopy(manifest)
+    projected["client_delivery_allowed"] = True
+    projected["delivery_status"] = "approved_for_delivery"
+    projected.pop("accepted_edition_manifest_sha256", None)
+    projected["accepted_edition_manifest_sha256"] = canonical_sha256(projected)
+    return projected
+
+
 def test_final_human_decision_is_in_exact_artifacts_before_acceptance() -> None:
     record = synchronize_final_decision_truth(
         _reviewed_record(),
@@ -164,7 +177,7 @@ def test_final_human_decision_is_in_exact_artifacts_before_acceptance() -> None:
     assert "APPROVED" in package["html"]
 
 
-def test_approved_client_pdf_adds_authorization_certificate_without_second_report() -> None:
+def test_approved_client_pdf_is_the_exact_reviewed_pdf_with_separate_certificate() -> None:
     decision_record = synchronize_final_decision_truth(
         _reviewed_record(),
         decision="approved",
@@ -182,12 +195,15 @@ def test_approved_client_pdf_adds_authorization_certificate_without_second_repor
         decided_at="2026-08-11T13:30:00+00:00",
     )
     assert manifest["accepted_edition"] is True
+    packaging_manifest = _authorized_packaging_projection(manifest)
     approved_record = deepcopy(decision_record)
-    approved_record["accepted_edition"] = deepcopy(manifest)
-    delivery = build_approved_delivery_package(approved_record, manifest)
+    approved_record["accepted_edition"] = deepcopy(packaging_manifest)
+    delivery = build_approved_delivery_package(approved_record, packaging_manifest)
     assert delivery["one_client_report"] is True
     assert delivery["client_pdf_count"] == 1
-    assert delivery["approval_certificate_page_appended"] is True
+    assert delivery["approval_certificate_page_appended"] is False
+    assert delivery["approval_certificate_separate_json"] is True
+    assert delivery["approved_report_pdf_preserved_exactly"] is True
     assert delivery["final_human_approval_status"] == "approved"
     assert delivery["client_delivery_authorization_status"] == "authorized"
     assert delivery["certificate"]["review_work_ledger_sha256"] == manifest["review_work_ledger_sha256"]
@@ -197,13 +213,16 @@ def test_approved_client_pdf_adds_authorization_certificate_without_second_repor
         pdf_names = [name for name in zipped.namelist() if name.endswith(".pdf")]
         assert pdf_names == ["01_nico_comprehensive_report.pdf"]
         pdf_bytes = zipped.read(pdf_names[0])
-    from pypdf import PdfReader
-
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    certificate_text = reader.pages[-1].extract_text() or ""
-    assert "Final Approval and Client Delivery Authorization" in certificate_text
-    assert "AUTHORIZED" in certificate_text
-    assert "APPROVED" in certificate_text
+    reviewed_pdf = base64.b64decode(
+        decision_record["stage_results"]["final_comprehensive_report_generation"][
+            "report_package"
+        ]["pdf_base64"],
+        validate=True,
+    )
+    assert pdf_bytes == reviewed_pdf
+    assert hashlib.sha256(pdf_bytes).hexdigest() == manifest["artifact_digests"][
+        "pdf"
+    ]["sha256"]
 
     validation_record = deepcopy(approved_record)
     validation_record["approved_delivery_package"] = deepcopy(delivery)
@@ -230,7 +249,8 @@ def test_delivery_fails_if_review_ledger_changes_after_accepted_edition() -> Non
         decided_at="2026-08-11T13:30:00+00:00",
     )
     tampered = deepcopy(decision_record)
-    tampered["accepted_edition"] = deepcopy(manifest)
+    packaging_manifest = _authorized_packaging_projection(manifest)
+    tampered["accepted_edition"] = deepcopy(packaging_manifest)
     tampered["review_work_ledger"]["dispositions"]["candidate-final-1"]["rationale"] = "tampered after acceptance"
     with pytest.raises(ValueError, match="approved_delivery_review_ledger_binding_mismatch"):
-        build_approved_delivery_package(tampered, manifest)
+        build_approved_delivery_package(tampered, packaging_manifest)

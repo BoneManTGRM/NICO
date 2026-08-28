@@ -9,6 +9,13 @@ from nico.decision_grade_human_evidence_v1 import MODULE_DEFINITIONS
 
 VERSION = "nico.strategic_human_evidence.v2"
 _REQUIRED_METADATA = ("reviewer", "observed_at", "source_reference")
+_EXACT_ENGAGEMENT_FIELD_LIMITS = {
+    "customer_name": 180,
+    "project_name": 180,
+    "primary_technical_contact": 600,
+    "access_method": 1200,
+    "authorized_scope": 4000,
+}
 
 MODULES: dict[str, dict[str, Any]] = {
     str(definition["module_id"]): {
@@ -37,6 +44,37 @@ def _safe(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_safe(item, depth=depth + 1) for item in list(value)[:120]]
     return str(value)[:4000]
+
+
+def _exact_engagement_value(value: Any, *, limit: int, depth: int = 0) -> Any:
+    """Preserve the five engagement literals inside retained human evidence."""
+
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        if len(value) > limit:
+            raise ValueError(f"engagement_evidence_value_exceeds_{limit}_characters")
+        return value
+    if depth >= 5:
+        rendered = str(value)
+        if len(rendered) > limit:
+            raise ValueError(f"engagement_evidence_value_exceeds_{limit}_characters")
+        return rendered
+    if isinstance(value, Mapping):
+        return {
+            str(key)[:160]: _exact_engagement_value(item, limit=limit, depth=depth + 1)
+            for index, (key, item) in enumerate(value.items())
+            if index < 120
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [
+            _exact_engagement_value(item, limit=limit, depth=depth + 1)
+            for item in list(value)[:120]
+        ]
+    rendered = str(value)
+    if len(rendered) > limit:
+        raise ValueError(f"engagement_evidence_value_exceeds_{limit}_characters")
+    return rendered
 
 
 def _canonical_hash(value: Any) -> str:
@@ -90,7 +128,17 @@ def _normalize_module(module_id: str, raw: Any) -> dict[str, Any]:
     for field in definition["required_fields"]:
         if field in source and field not in evidence:
             evidence[field] = _safe(source[field])
-    evidence = {str(key): _safe(item) for key, item in evidence.items()}
+    evidence = {
+        str(key): (
+            _exact_engagement_value(
+                item,
+                limit=_EXACT_ENGAGEMENT_FIELD_LIMITS[str(key)],
+            )
+            if str(key) in _EXACT_ENGAGEMENT_FIELD_LIMITS
+            else _safe(item)
+        )
+        for key, item in evidence.items()
+    }
 
     reviewer = " ".join(str(source.get("reviewer") or "").split())[:240]
     observed_at = " ".join(

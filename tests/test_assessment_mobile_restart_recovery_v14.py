@@ -57,7 +57,10 @@ def test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_
 
     assert "report?.pdf_available" in source
     assert "report?.markdown_available" in source
-    assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`' in source
+    assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(requestedReportLanguage)}`' in source
+    assert "payload.report?.markdown" in source
+    assert "payload.assessment_rerun !== false" in source
+    assert 'data-commit-sha={immutableCommit}' in source
     assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf`' in source
     assert "await response.arrayBuffer()" in source
     assert 'new Blob([bytes], {type: "application/pdf"})' in source
@@ -75,6 +78,7 @@ def test_same_origin_proxy_allows_artifacts_and_forwards_bounded_projection() ->
     assert 'BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"' in source
     assert 'headers.set("X-NICO-Browser-Projection", BROWSER_PROJECTION_VALUE)' in source
     assert '"x-nico-artifact-sha256"' in source
+    assert '"x-nico-accepted-pdf-sha256"' in source
     assert '"x-nico-canonical-truth-sha256"' in source
 
 

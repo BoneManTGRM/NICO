@@ -69,7 +69,7 @@ def test_recovery_ui_exposes_express_without_enabling_resume() -> None:
     page = RECOVERY_PAGE.read_text(encoding="utf-8")
     panel = RECOVERY_PANEL.read_text(encoding="utf-8")
 
-    assert "Review interrupted Express, Mid, Full, and scanner work." in page
+    assert "Review interrupted legacy assessment and scanner work." in page
     assert "Interrupted Express, Mid, and Full runs" in panel
     assert "express_recovery_required?: number" in panel
     assert "Interrupted Express runs are retained for manual review" in panel

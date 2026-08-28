@@ -23,9 +23,7 @@ def test_readiness_preflight_uses_bounded_same_store_recovery_probes_with_absolu
     assert "result.runtime_recovery_supported === true" in source
     assert "result.automatic_cross_store_fallback === false" in source
     assert "const readinessPreflight = path === READINESS_PATH" in source
-    assert (
-        "readinessPreflight || runStatusRequest || runContinueRequest" in source
-    )
+    assert "readinessPreflight || runStatusRequest || mutatingRequest" in source
     assert "const retryDelays = readinessPreflight" in source
     assert "? READINESS_RETRY_DELAYS_MS" in source
     assert "readinessCanRecoverOnSameStore(result)" in source
@@ -79,7 +77,7 @@ def test_persisted_run_status_recovery_has_bounded_retry_and_larger_absolute_tim
     assert "runStatusRequest\n      ? CLIENT_RETRY_DELAYS_MS" in source
     assert '"assessment_run_status_timeout"' in source
     assert '"assessment_run_status_timeout",' in source
-    assert "Exact-run status is idempotent durable" in source
+    assert "status is idempotent durable recovery truth" in source
 
 
 def test_exact_run_status_proxy_has_one_long_attempt_per_browser_retry() -> None:
@@ -106,12 +104,12 @@ def test_comprehensive_continue_is_single_attempt_and_has_absolute_timeout() -> 
         'const runContinueRequest = method === "POST" && '
         "RUN_CONTINUE_PATH.test(path)" in source
     )
-    assert "readinessPreflight || runStatusRequest || runContinueRequest" in source
+    assert "readinessPreflight || runStatusRequest || mutatingRequest" in source
     assert "runContinueRequest\n        ? RUN_CONTINUE_CLIENT_TIMEOUT_MS" in source
     assert '"assessment_run_continue_timeout"' in source
     assert "const retryDelays = readinessPreflight" in source
-    assert ': boundedRequest\n        ? [0]\n        : CLIENT_RETRY_DELAYS_MS' in source
-    assert "Continuation is not safely replayable" in source
+    assert ': mutatingRequest\n        ? [0]\n        : CLIENT_RETRY_DELAYS_MS' in source
+    assert "No mutation is safely replayable" in source
     assert "server proxy gives a single non-replayable continuation up to 240s" in source
 
 

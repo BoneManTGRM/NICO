@@ -26,6 +26,7 @@ jobs:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
       SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       STATUS_CONTEXT: NICO Spanish Comprehensive Production Proof
 
     steps:
@@ -45,7 +46,9 @@ jobs:
           token = os.environ["GITHUB_TOKEN"]
           source_conclusion = os.environ["SOURCE_CONCLUSION"].strip().lower()
           source_run_id = os.environ["SOURCE_RUN_ID"].strip()
+          source_run_attempt = os.environ["SOURCE_RUN_ATTEMPT"].strip()
           status_context = os.environ["STATUS_CONTEXT"]
+          source_marker = f"source:{source_run_id}:{source_run_attempt}"
 
           headers = {
               "Authorization": f"Bearer {token}",
@@ -82,16 +85,24 @@ jobs:
               "GET",
               f"https://api.github.com/repos/{repository}/commits/{sha}/status",
           )
-          latest: dict[str, str] = {}
+          matching: list[dict[str, Any]] = []
           for item in statuses.get("statuses") or []:
               if not isinstance(item, dict):
                   continue
               context = str(item.get("context") or "").strip()
-              state = str(item.get("state") or "unknown").strip().lower()
-              if context:
-                  latest.setdefault(context, state)
+              description = str(item.get("description") or "").strip()
+              if context == status_context and description.startswith(source_marker + " "):
+                  matching.append(item)
 
-          observed = latest.get(status_context, "missing")
+          latest = max(
+              matching,
+              key=lambda item: (
+                  str(item.get("created_at") or ""),
+                  int(item.get("id") or 0),
+              ),
+              default={},
+          )
+          observed = str(latest.get("state") or "missing").strip().lower()
           print(
               f"Spanish production proof completed with conclusion={source_conclusion}; "
               f"latest commit context={observed}",
@@ -106,10 +117,10 @@ jobs:
               raise SystemExit(0)
 
           if source_conclusion == "success":
-              description = "Spanish proof completed without publishing terminal commit status"
+              description = f"{source_marker} completed without terminal commit status"
           else:
               description = (
-                  "Spanish proof ended before terminal publication: "
+                  f"{source_marker} ended before terminal publication: "
                   f"{source_conclusion or 'unknown'}"
               )
 

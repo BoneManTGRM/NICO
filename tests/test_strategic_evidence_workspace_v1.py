@@ -61,7 +61,7 @@ def test_controller_sends_compacted_evidence_on_same_canonical_run() -> None:
 
     assert "human_evidence: compactStrategicHumanEvidence(humanEvidence)" in controller
     assert 'assessment_depth: "strategic"' in controller
-    assert "report_language: locale" in controller
+    assert "report_language: reportLanguageForRequest(locale)" in controller
     assert "<StrategicEvidenceForm" in workspace
     assert "onChange={setHumanEvidence}" in workspace
     assert "disabled={running}" in workspace

@@ -16,7 +16,8 @@ def test_protected_review_work_routes_are_installed_without_new_product_or_repor
     assert "routes_module._authorize_review(x_nico_admin_token)" in RUNTIME
     assert "service.review_work(run_id, payload)" in RUNTIME
     assert "if _canonical_scanner_register_present(record):" in RUNTIME
-    assert "assert_ready_for_approval(_review_action_record(record))" in RUNTIME
+    assert "readiness_projection = assert_ready_for_approval(" in RUNTIME
+    assert "_review_action_record(record)" in RUNTIME
     assert "legacy_precanonical_approval_compatibility_preserved" in RUNTIME
     assert '"candidate_truth_source": "canonical_terminal_comprehensive_report_json"' in RUNTIME
     assert '"client_delivery_allowed": False' in RUNTIME

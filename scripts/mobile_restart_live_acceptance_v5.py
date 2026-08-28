@@ -14,6 +14,7 @@ VERSION = "nico.mobile_restart_live_acceptance.single_dispatch_pdf_download.v5"
 
 def main(argv: list[str] | None = None) -> int:
     args = recovery.parse_args(argv)
+    recovery._require_existing_source_args(args)
     install_exact_sha_navigation(single_dispatch, args.expected_sha)
     install_provider_neutral_repository_locator(single_dispatch)
     install_ui_pdf_download_proof(recovery)

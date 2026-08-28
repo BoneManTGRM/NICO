@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useMemo, useState} from "react";
+import {usePathname} from "next/navigation";
 import styles from "./AssessmentRecoveryActions.module.css";
 
 const MID_RECOVERY_STATE_EVENT = "nico:mid-recovery-state";
@@ -58,12 +59,18 @@ function timeLabel(value?: string) {
 }
 
 export default function AssessmentRecoveryActions() {
+  const pathname = usePathname();
+  const operationsRoute = pathname === "/operations" || pathname.startsWith("/operations/");
   const [state, setState] = useState<RecoveryState | null>(null);
   const [copied, setCopied] = useState(false);
   const [runtime, setRuntime] = useState<RuntimeDiagnostics | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
 
   useEffect(() => {
+    if (!operationsRoute) {
+      setState(null);
+      return;
+    }
     setState(storedState());
     const update = (event: Event) => {
       const detail = (event as CustomEvent<RecoveryState>).detail || {};
@@ -82,7 +89,7 @@ export default function AssessmentRecoveryActions() {
     };
     window.addEventListener(MID_RECOVERY_STATE_EVENT, update);
     return () => window.removeEventListener(MID_RECOVERY_STATE_EVENT, update);
-  }, []);
+  }, [operationsRoute]);
 
   const recoveryUrl = useMemo(() => {
     const path = state?.recovery_path || "/operations/recovery";
@@ -92,7 +99,7 @@ export default function AssessmentRecoveryActions() {
     return `${url.pathname}${url.search}`;
   }, [state]);
 
-  if (!state || state.status === "healthy") return null;
+  if (!operationsRoute || !state || state.status === "healthy") return null;
 
   const deploymentMismatch = state.status === "deployment_mismatch";
   const recoveryRequired = state.status === "recovery_required" || state.recovery_required;

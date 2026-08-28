@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import re
 from copy import deepcopy
 from typing import Any, Mapping
@@ -19,6 +20,7 @@ from nico.comprehensive_spanish_canonical_report_v87 import (
     render_spanish_markdown,
     render_spanish_pdf,
 )
+from nico.decision_grade_accepted_edition_guard_v1 import validate_accepted_edition
 
 
 VERSION = "nico.comprehensive_same_run_locale_report.v2"
@@ -78,6 +80,409 @@ def _render_inputs(
     return identity, assessment, stages, generated_at
 
 
+def _validate_status_canonical_identity(
+    status: Mapping[str, Any],
+    canonical: Mapping[str, Any],
+) -> dict[str, str]:
+    """Fail closed when a terminal status is paired with another run's JSON."""
+
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    pairs = (
+        ("run_id", status.get("run_id"), identity.get("run_id")),
+        ("repository", status.get("repository"), identity.get("repository")),
+        ("commit_sha", status.get("commit_sha"), identity.get("commit_sha")),
+        (
+            "evidence_ledger_id",
+            status.get("evidence_ledger_id"),
+            identity.get("evidence_ledger_id"),
+        ),
+    )
+    resolved: dict[str, str] = {}
+    for field, status_value, canonical_value in pairs:
+        status_text = str(status_value or "").strip()
+        canonical_text = str(canonical_value or "").strip()
+        if status_text and canonical_text and status_text != canonical_text:
+            raise ValueError(f"status_canonical_{field}_mismatch")
+        resolved[field] = status_text or canonical_text
+
+    reports = (
+        status.get("reports") if isinstance(status.get("reports"), Mapping) else {}
+    )
+    status_report_id = str(reports.get("report_id") or "").strip()
+    canonical_report_id = str(
+        canonical.get("report_id") or identity.get("report_id") or ""
+    ).strip()
+    if (
+        status_report_id
+        and canonical_report_id
+        and status_report_id != canonical_report_id
+    ):
+        raise ValueError("status_canonical_report_id_mismatch")
+    resolved["report_id"] = status_report_id or canonical_report_id
+
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    status_language = str(status.get("report_language") or "").strip()
+    canonical_languages = [
+        str(value).strip()
+        for value in (
+            identity.get("report_language"),
+            identity.get("locale"),
+            canonical.get("report_language"),
+            canonical.get("locale"),
+            assessment.get("report_language"),
+            assessment.get("locale"),
+        )
+        if str(value or "").strip()
+    ]
+    if not canonical_languages:
+        raise ValueError("canonical_report_language_required")
+    normalized_canonical_languages = {
+        _normalize_report_language(value) for value in canonical_languages
+    }
+    if len(normalized_canonical_languages) != 1:
+        raise ValueError("canonical_report_language_inconsistent")
+    canonical_language = next(iter(normalized_canonical_languages))
+    if status_language and _normalize_report_language(status_language) != canonical_language:
+        raise ValueError("status_canonical_report_language_mismatch")
+    resolved["report_language"] = canonical_language
+
+    for required in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
+        if not resolved[required]:
+            raise ValueError(f"canonical_{required}_required")
+    if reports and not resolved["report_id"]:
+        raise ValueError("source_report_id_required")
+    return resolved
+
+
+def _source_lifecycle_projection(
+    status: Mapping[str, Any],
+    reports: Mapping[str, Any],
+    canonical: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project source-run lifecycle truth without applying locale-artifact policy."""
+
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    record = (
+        status.get("record")
+        if isinstance(status.get("record"), Mapping)
+        else {}
+    )
+
+    def present(field: str, default: Any = None) -> Any:
+        for container in (status, record, reports, canonical, assessment):
+            if field in container and container.get(field) is not None:
+                return deepcopy(container.get(field))
+        return deepcopy(default)
+
+    run_status = str(present("status", "unknown") or "unknown")
+    normalized_run_status = run_status.strip().casefold()
+    human_review_completed = bool(present("human_review_completed", False))
+    client_delivery_allowed = bool(present("client_delivery_allowed", False))
+    explicit_approval_status = str(present("approval_status", "") or "").strip()
+    explicit_human_review_status = str(
+        present("human_review_status", "") or ""
+    ).strip()
+    approval_signal = {
+        normalized_run_status,
+        explicit_approval_status.casefold(),
+        explicit_human_review_status.casefold(),
+    }
+    approved = client_delivery_allowed or bool(
+        approval_signal
+        & {
+            "approved",
+            "approved_final",
+            "approved final",
+            "final approved",
+        }
+    )
+    rejected = not approved and bool(
+        approval_signal & {"rejected", "declined"}
+    )
+    human_review_completed = human_review_completed or approved or rejected
+
+    if approved:
+        approval_status = "approved_final"
+        human_review_status = "approved"
+    elif rejected:
+        approval_status = "rejected"
+        human_review_status = "rejected"
+    else:
+        approval_status = "pending_human_approval"
+        human_review_status = "pending"
+
+    if client_delivery_allowed:
+        delivery_status = "authorized"
+        client_delivery_status = "authorized"
+    elif approved:
+        delivery_status = "pending_authorization"
+        client_delivery_status = "pending_authorization"
+    elif rejected:
+        delivery_status = "blocked_rejected"
+        client_delivery_status = "blocked"
+    else:
+        delivery_status = "blocked_pending_human_approval"
+        client_delivery_status = "blocked"
+
+    return {
+        "run_status": run_status,
+        "human_review_required": bool(present("human_review_required", True)),
+        "human_review_completed": human_review_completed,
+        "client_delivery_allowed": client_delivery_allowed,
+        "approval_status": approval_status,
+        "delivery_status": delivery_status,
+        "human_review_status": human_review_status,
+        "client_delivery_status": client_delivery_status,
+    }
+
+
+def _localized_artifact_lifecycle(
+    source: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    localized_json: Mapping[str, Any],
+    *,
+    regenerated: bool,
+) -> dict[str, Any]:
+    """Keep reused source bytes exact; fail closed for every regenerated byte set."""
+
+    if not regenerated:
+        return deepcopy(dict(source))
+    return {
+        "run_status": source.get("run_status"),
+        "human_review_required": True,
+        "human_review_completed": False,
+        "client_delivery_allowed": False,
+        "approval_status": str(
+            artifacts.get("approval_status")
+            or localized_json.get("approval_status")
+            or "pending_human_approval"
+        ),
+        "delivery_status": str(
+            artifacts.get("delivery_status")
+            or localized_json.get("delivery_status")
+            or "blocked_pending_human_approval"
+        ),
+        "human_review_status": str(
+            artifacts.get("human_review_status")
+            or localized_json.get("human_review_status")
+            or "pending"
+        ),
+        "client_delivery_status": str(
+            artifacts.get("client_delivery_status")
+            or localized_json.get("client_delivery_status")
+            or "blocked"
+        ),
+    }
+
+
+def _localized_draft_view(
+    canonical: Mapping[str, Any],
+    report_language: str,
+) -> dict[str, Any]:
+    """Create a locale-only render input without carrying exact-artifact approval."""
+
+    view = deepcopy(dict(canonical))
+    identity = (
+        deepcopy(dict(view.get("identity") or {}))
+        if isinstance(view.get("identity"), Mapping)
+        else {}
+    )
+    assessment = (
+        deepcopy(dict(view.get("assessment") or {}))
+        if isinstance(view.get("assessment"), Mapping)
+        else {}
+    )
+    for container in (view, identity, assessment):
+        container["report_language"] = report_language
+        container["locale"] = report_language
+    view["identity"] = identity
+    view["assessment"] = assessment
+
+    # These objects bind one exact byte set. A localized regeneration is a new draft.
+    for field in (
+        "artifacts",
+        "artifact_manifest",
+        "approval",
+        "accepted_edition",
+        "accepted_edition_manifest_sha256",
+        "lifecycle",
+    ):
+        view.pop(field, None)
+    view.update(
+        {
+            "review_package_ready": True,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+            "report_finality": "automated_draft",
+            "approval_status": "pending_human_approval",
+            "delivery_status": "blocked_pending_human_approval",
+        }
+    )
+    return view
+
+
+def _truth_records(canonical: Mapping[str, Any], identity_field: str) -> tuple[Any, ...]:
+    ignored = {"artifacts", "artifact_manifest", "approval", "lifecycle"}
+    output: set[tuple[Any, ...]] = set()
+
+    def visit(value: Any, key: str = "") -> None:
+        if key in ignored:
+            return
+        if isinstance(value, Mapping):
+            if value.get(identity_field) not in (None, ""):
+                output.add(
+                    (
+                        str(value.get(identity_field)),
+                        str(value.get("finding_id") or ""),
+                        str(value.get("priority") or value.get("severity") or ""),
+                        str(
+                            value.get("location")
+                            or value.get("exact_source")
+                            or value.get("source_path")
+                            or ""
+                        ),
+                        str(value.get("proposed_disposition") or ""),
+                        str(value.get("human_disposition") or ""),
+                    )
+                )
+            for child_key, child in value.items():
+                visit(child, str(child_key))
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                visit(child)
+
+    visit(canonical)
+    return tuple(sorted(output))
+
+
+def _assessment_truth_projection(canonical: Mapping[str, Any]) -> dict[str, Any]:
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    maturity = (
+        assessment.get("maturity_signal")
+        if isinstance(assessment.get("maturity_signal"), Mapping)
+        else {}
+    )
+    engagement = (
+        canonical.get("engagement_metadata")
+        if isinstance(canonical.get("engagement_metadata"), Mapping)
+        else {}
+    )
+    scanners = canonical.get("scanner_execution_records")
+    if not isinstance(scanners, list):
+        scanners = assessment.get("scanner_execution_records") or []
+    return {
+        "identity": tuple(
+            str(identity.get(field) or "")
+            for field in ("repository", "commit_sha", "run_id", "evidence_ledger_id")
+        ),
+        "scores": (
+            assessment.get("technical_score"),
+            assessment.get("canonical_evidence_adjusted_score"),
+            maturity.get("score"),
+            maturity.get("presented_score"),
+        ),
+        "scanners": tuple(
+            sorted(
+                (
+                    str(item.get("scanner_name") or item.get("tool") or ""),
+                    str(item.get("state") or item.get("status") or ""),
+                    item.get("completed"),
+                    item.get("exact_commit_match"),
+                    str(item.get("artifact_hash") or ""),
+                    len(item.get("findings") or []),
+                )
+                for item in scanners
+                if isinstance(item, Mapping)
+            )
+        ),
+        "candidates": _truth_records(canonical, "candidate_id"),
+        "findings": _truth_records(canonical, "finding_id"),
+        "sections": tuple(
+            (
+                str(item.get("id") or item.get("section_id") or ""),
+                item.get("score"),
+                item.get("presented_score"),
+            )
+            for item in assessment.get("sections") or []
+            if isinstance(item, Mapping)
+        ),
+        "stage_ids": tuple(
+            str(item.get("stage_id") or "")
+            for item in canonical.get("stage_summaries") or []
+            if isinstance(item, Mapping)
+        ),
+        "identity_engagement": tuple(
+            identity.get(field)
+            for field in (
+                "customer_name",
+                "project_name",
+                "primary_technical_contact",
+                "access_method",
+                "authorized_scope",
+                "engagement_metadata_sha256",
+            )
+        ),
+        "engagement": tuple(
+            engagement.get(field)
+            for field in (
+                "client_name",
+                "project_name",
+                "primary_technical_contact",
+                "access_method",
+                "authorized_scope",
+            )
+        ),
+    }
+
+
+def _assemble_target(
+    canonical: Mapping[str, Any], report_language: str
+) -> dict[str, Any]:
+    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+
+    source_projection = _assessment_truth_projection(canonical)
+    localized = rebuild_client_artifacts(
+        {"json": _localized_draft_view(canonical, report_language)}
+    )
+    localized_json = (
+        localized.get("json")
+        if isinstance(localized.get("json"), Mapping)
+        else {}
+    )
+    if not localized_json:
+        raise ValueError("localized_full_assembler_json_required")
+    if _assessment_truth_projection(localized_json) != source_projection:
+        raise ValueError("localized_assessment_truth_parity_mismatch")
+    if (
+        localized.get("approval_status") != "pending_human_approval"
+        or localized.get("delivery_status") != "blocked_pending_human_approval"
+        or localized.get("client_delivery_allowed") is not False
+    ):
+        raise ValueError("localized_artifact_approval_invalidation_failed")
+    return localized
+
+
 def _english_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
     identity, assessment, stages, generated_at = _render_inputs(canonical)
     repository = str(identity.get("repository") or "repository")
@@ -124,11 +529,9 @@ def _spanish_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
 def _render_target(
     canonical: Mapping[str, Any], report_language: str
 ) -> dict[str, Any]:
-    if report_language == "en":
-        return _english_artifacts(canonical)
-    if report_language == "es-MX":
-        return _spanish_artifacts(canonical)
-    raise ValueError("unsupported_report_language")
+    if report_language not in SUPPORTED_REPORT_LANGUAGES:
+        raise ValueError("unsupported_report_language")
+    return _assemble_target(canonical, report_language)
 
 
 def _safe_repository(value: Any) -> str:
@@ -154,18 +557,135 @@ def _localized_filename(
     )
 
 
+def _accepted_filename(
+    *, canonical: Mapping[str, Any], run_id: str, report_language: str
+) -> str:
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    repository = _safe_repository(identity.get("repository"))
+    locale = "en" if report_language == "en" else "es-MX"
+    return (
+        f"nico-comprehensive-assessment-{repository}-{run_id}-{locale}-"
+        "APPROVED-ACCEPTED-EDITION.pdf"
+    )
+
+
+def _claimed_object_hash_valid(
+    value: Mapping[str, Any],
+    claim_field: str,
+) -> bool:
+    payload = deepcopy(dict(value))
+    claimed = str(payload.pop(claim_field, "") or "").strip().casefold()
+    if not re.fullmatch(r"[0-9a-f]{64}", claimed):
+        return False
+    actual = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    return claimed == actual
+
+
+def _accepted_source_binding(
+    status: Mapping[str, Any],
+    reports: Mapping[str, Any],
+    identity_binding: Mapping[str, str],
+    source_language: str,
+    pdf_bytes: bytes,
+) -> dict[str, str]:
+    lifecycle = _source_lifecycle_projection(
+        status,
+        reports,
+        reports.get("json") or {},
+    )
+    if lifecycle["approval_status"] != "approved_final":
+        return {}
+
+    accepted = status.get("accepted_edition")
+    if not isinstance(accepted, Mapping):
+        raise ValueError("accepted_edition_identity_required")
+    if not _claimed_object_hash_valid(
+        accepted,
+        "accepted_edition_manifest_sha256",
+    ):
+        raise ValueError("accepted_edition_manifest_hash_mismatch")
+
+    review = accepted.get("review")
+    if not isinstance(review, Mapping) or not _claimed_object_hash_valid(
+        review,
+        "approval_certificate_sha256",
+    ):
+        raise ValueError("accepted_edition_review_certificate_hash_mismatch")
+    if str(review.get("decision") or "").strip().casefold() != "approved":
+        raise ValueError("accepted_edition_review_decision_invalid")
+    if (
+        accepted.get("accepted_edition") is not True
+        or accepted.get("client_delivery_allowed") is not False
+        or str(accepted.get("delivery_status") or "") != "pending_authorization"
+    ):
+        raise ValueError("accepted_edition_lifecycle_invalid")
+
+    for field in ("run_id", "repository", "commit_sha"):
+        if str(accepted.get(field) or "").strip() != str(
+            identity_binding.get(field) or ""
+        ).strip():
+            raise ValueError(f"accepted_edition_identity_mismatch:{field}")
+    accepted_language = _normalize_report_language(
+        accepted.get("report_language")
+    )
+    if accepted_language != source_language:
+        raise ValueError("accepted_edition_language_mismatch")
+
+    digests = accepted.get("artifact_digests")
+    pdf_digest = digests.get("pdf") if isinstance(digests, Mapping) else None
+    accepted_pdf_sha256 = str(
+        pdf_digest.get("sha256") if isinstance(pdf_digest, Mapping) else ""
+    ).strip().casefold()
+    if not re.fullmatch(r"[0-9a-f]{64}", accepted_pdf_sha256):
+        raise ValueError("accepted_edition_pdf_digest_required")
+    if accepted_pdf_sha256 != hashlib.sha256(pdf_bytes).hexdigest():
+        raise ValueError("accepted_edition_pdf_digest_mismatch")
+    if isinstance(pdf_digest, Mapping) and pdf_digest.get("size_bytes") is not None:
+        try:
+            accepted_pdf_size = int(pdf_digest["size_bytes"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("accepted_edition_pdf_size_invalid") from exc
+        if accepted_pdf_size != len(pdf_bytes):
+            raise ValueError("accepted_edition_pdf_size_mismatch")
+
+    validation = validate_accepted_edition(reports, accepted)
+    if (
+        validation.get("status") != "valid"
+        or list(validation.get("validation_errors") or [])
+    ):
+        raise ValueError("accepted_edition_manifest_invalid")
+
+    return {
+        "pdf_sha256": accepted_pdf_sha256,
+        "report_language": accepted_language,
+        "manifest_sha256": str(
+            accepted.get("accepted_edition_manifest_sha256") or ""
+        ).strip().casefold(),
+    }
+
+
 def _frozen_source_pdf_response(
     status: Mapping[str, Any], report_language: str
 ) -> Response | None:
     """Return an already-persisted source-language PDF without re-rendering it.
 
-    Historical terminal runs can contain canonical JSON that was normalized after the
-    canonical hash was bound. Some older normalization revisions removed fields, so the
-    predecessor JSON cannot be reconstructed safely from the persisted object. The
-    original frozen PDF does not need that reconstruction: it is already the artifact
-    produced by the exact terminal run. For the run's source language only, validate the
-    stored PDF bytes and exact run identity and return those bytes unchanged. Cross-
-    language projection still goes through the canonical-hash gate below.
+    For the run's source language only, validate the stored PDF bytes, exact run
+    identity, source locale, and canonical JSON hash before returning bytes unchanged.
+    A historical artifact whose stored JSON no longer proves the asserted truth hash
+    cannot safely carry that hash in a current-release response and therefore fails
+    closed.
     """
 
     target_language = _normalize_report_language(report_language)
@@ -181,8 +701,10 @@ def _frozen_source_pdf_response(
     if not canonical:
         return None
 
+    canonical_copy = deepcopy(dict(canonical))
+    identity_binding = _validate_status_canonical_identity(status, canonical_copy)
     source_language = _normalize_report_language(
-        status.get("report_language") or "en"
+        identity_binding["report_language"]
     )
     if target_language != source_language:
         return None
@@ -203,7 +725,6 @@ def _frozen_source_pdf_response(
     if stored_pdf_sha256 and stored_pdf_sha256 != actual_pdf_sha256:
         raise ValueError("source_report_pdf_hash_mismatch")
 
-    canonical_copy = deepcopy(dict(canonical))
     identity = (
         canonical_copy.get("identity")
         if isinstance(canonical_copy.get("identity"), Mapping)
@@ -233,25 +754,73 @@ def _frozen_source_pdf_response(
 
     stored_truth_sha256 = str(reports.get("canonical_truth_sha256") or "").strip()
     if not stored_truth_sha256:
-        return None
+        raise ValueError("canonical_truth_hash_required")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", stored_truth_sha256):
+        raise ValueError("canonical_truth_hash_invalid")
+    if stored_truth_sha256.casefold() != _canonical_hash(canonical_copy):
+        raise ValueError("canonical_truth_hash_mismatch")
 
-    filename = _localized_filename(
-        canonical=canonical_copy,
-        run_id=run_id,
-        report_language=target_language,
+    source_lifecycle = _source_lifecycle_projection(
+        status,
+        reports,
+        canonical_copy,
     )
+    accepted_binding = _accepted_source_binding(
+        status,
+        reports,
+        identity_binding,
+        source_language,
+        pdf_bytes,
+    )
+
+    stored_filename = str(reports.get("pdf_filename") or "").replace('"', "").strip()
+    if stored_filename:
+        filename = stored_filename
+    elif accepted_binding:
+        filename = _accepted_filename(
+            canonical=canonical_copy,
+            run_id=run_id,
+            report_language=target_language,
+        )
+    else:
+        filename = _localized_filename(
+            canonical=canonical_copy,
+            run_id=run_id,
+            report_language=target_language,
+        )
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-NICO-Run-ID": run_id,
+        "X-NICO-Commit-SHA": identity_binding["commit_sha"],
+        "X-NICO-Report-Language": target_language,
+        "X-NICO-Canonical-Truth-SHA256": stored_truth_sha256,
+        "X-NICO-PDF-SHA256": actual_pdf_sha256,
+        "X-NICO-Artifact-SHA256": actual_pdf_sha256,
+        "X-NICO-Frozen-Source-Artifact": "true",
+        "X-NICO-Assessment-Rerun": "false",
+        "X-NICO-Approval-Status": str(source_lifecycle["approval_status"]),
+        "X-NICO-Delivery-Status": str(source_lifecycle["delivery_status"]),
+        "X-NICO-Client-Delivery-Allowed": str(
+            source_lifecycle["client_delivery_allowed"]
+        ).lower(),
+        "X-NICO-Localized-Artifact-Requires-New-Approval": "false",
+    }
+    if accepted_binding:
+        headers.update(
+            {
+                "X-NICO-Accepted-PDF-SHA256": accepted_binding["pdf_sha256"],
+                "X-NICO-Accepted-Edition-Language": accepted_binding[
+                    "report_language"
+                ],
+                "X-NICO-Accepted-Edition-Manifest-SHA256": accepted_binding[
+                    "manifest_sha256"
+                ],
+            }
+        )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-NICO-Run-ID": run_id,
-            "X-NICO-Report-Language": target_language,
-            "X-NICO-Canonical-Truth-SHA256": stored_truth_sha256,
-            "X-NICO-PDF-SHA256": actual_pdf_sha256,
-            "X-NICO-Frozen-Source-Artifact": "true",
-            "X-NICO-Assessment-Rerun": "false",
-        },
+        headers=headers,
     )
 
 
@@ -280,14 +849,20 @@ def build_same_run_locale_report(
         raise ValueError("terminal_canonical_report_json_required")
 
     canonical_copy = deepcopy(dict(canonical))
+    identity_binding = _validate_status_canonical_identity(status, canonical_copy)
     canonical_truth_sha256 = _canonical_hash(canonical_copy)
     expected_truth_sha256 = str(reports.get("canonical_truth_sha256") or "").strip()
-    if expected_truth_sha256 and expected_truth_sha256 != canonical_truth_sha256:
+    if not expected_truth_sha256:
+        raise ValueError("canonical_truth_hash_required")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_truth_sha256):
+        raise ValueError("canonical_truth_hash_invalid")
+    if expected_truth_sha256.casefold() != canonical_truth_sha256:
         raise ValueError("canonical_truth_hash_mismatch")
 
     source_language = _normalize_report_language(
-        status.get("report_language") or "en"
+        identity_binding["report_language"]
     )
+    source_artifacts_reused = False
     if target_language == source_language:
         markdown = reports.get("markdown")
         html = reports.get("html")
@@ -311,27 +886,39 @@ def build_same_run_locale_report(
                 "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
                 "pdf_page_count": reports.get("pdf_page_count"),
             }
+            source_artifacts_reused = True
         else:
             artifacts = _render_target(canonical_copy, target_language)
     else:
         artifacts = _render_target(canonical_copy, target_language)
 
-    identity = (
-        canonical_copy.get("identity")
-        if isinstance(canonical_copy.get("identity"), Mapping)
+    run_id = identity_binding["run_id"]
+
+    localized_artifact_json = (
+        deepcopy(dict(artifacts.get("json") or {}))
+        if isinstance(artifacts.get("json"), Mapping)
         else {}
     )
-    run_id = str(status.get("run_id") or identity.get("run_id") or "")
-    if not run_id:
-        raise ValueError("run_id_required")
+    regenerated = not source_artifacts_reused
+    source_lifecycle = _source_lifecycle_projection(
+        status,
+        reports,
+        canonical_copy,
+    )
+    artifact_lifecycle = _localized_artifact_lifecycle(
+        source_lifecycle,
+        artifacts,
+        localized_artifact_json,
+        regenerated=regenerated,
+    )
 
     source_report_id = str(reports.get("report_id") or "")
     result = {
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "run_id": run_id,
-        "repository": str(status.get("repository") or ""),
-        "commit_sha": str(status.get("commit_sha") or ""),
+        "repository": identity_binding["repository"],
+        "commit_sha": identity_binding["commit_sha"],
         "source_report_id": source_report_id,
         "source_report_language": source_language,
         "report_language": target_language,
@@ -340,15 +927,27 @@ def build_same_run_locale_report(
         "canonical_truth_preserved": True,
         "canonical_truth_sha256": canonical_truth_sha256,
         "source_integrity_sha256": str(status.get("integrity_sha256") or ""),
-        "human_review_required": True,
-        "client_delivery_allowed": False,
+        "human_review_required": source_lifecycle["human_review_required"],
+        "human_review_completed": source_lifecycle["human_review_completed"],
+        "client_delivery_allowed": source_lifecycle["client_delivery_allowed"],
+        "approval_status": source_lifecycle["approval_status"],
+        "delivery_status": source_lifecycle["delivery_status"],
+        "human_review_status": source_lifecycle["human_review_status"],
+        "client_delivery_status": source_lifecycle["client_delivery_status"],
+        "canonical_run_lifecycle": deepcopy(source_lifecycle),
         "approval_state_mutated": False,
         "delivery_state_mutated": False,
+        "localized_artifact_approval_invalidated": regenerated,
+        "localized_artifact_requires_new_approval": regenerated,
+        "localized_artifact_lifecycle": deepcopy(artifact_lifecycle),
         "report": {
             "service_id": "comprehensive",
             "report_id": source_report_id,
             "presentation_language": target_language,
             "canonical_truth_sha256": canonical_truth_sha256,
+            # The endpoint's canonical JSON/hash always identify the immutable source
+            # assessment. The full assembler's locale-specific draft JSON is exposed
+            # separately because its language and exact-artifact lifecycle differ.
             "json": canonical_copy,
             "markdown": artifacts["markdown"],
             "html": artifacts["html"],
@@ -360,10 +959,51 @@ def build_same_run_locale_report(
             ),
             "pdf_sha256": artifacts["pdf_sha256"],
             "pdf_page_count": artifacts.get("pdf_page_count"),
-            "human_review_required": True,
-            "client_delivery_allowed": False,
+            "human_review_required": artifact_lifecycle[
+                "human_review_required"
+            ],
+            "human_review_completed": artifact_lifecycle[
+                "human_review_completed"
+            ],
+            "client_delivery_allowed": artifact_lifecycle[
+                "client_delivery_allowed"
+            ],
+            "approval_status": artifact_lifecycle["approval_status"],
+            "delivery_status": artifact_lifecycle["delivery_status"],
+            "human_review_status": artifact_lifecycle["human_review_status"],
+            "client_delivery_status": artifact_lifecycle[
+                "client_delivery_status"
+            ],
+            "localized_artifact_canonical_json_sha256": str(
+                artifacts.get("canonical_json_sha256") or ""
+            ),
         },
     }
+    if localized_artifact_json:
+        result["report"]["localized_artifact_json"] = localized_artifact_json
+        result["report"]["localized_artifact_canonical_json"] = str(
+            artifacts.get("canonical_json") or ""
+        )
+    for field in (
+        "findings_csv",
+        "findings_csv_sha256",
+        "evidence_csv",
+        "evidence_csv_sha256",
+        "candidate_register_json",
+        "candidate_register_sha256",
+        "remediation_backlog_json",
+        "remediation_backlog_sha256",
+        "artifact_manifest",
+        "evidence_manifest_json",
+        "evidence_manifest_sha256",
+        "draft_artifact_identity",
+        "review_package_ready",
+        "human_review_status",
+        "client_delivery_status",
+        "report_finality",
+    ):
+        if field in artifacts:
+            result["report"][field] = deepcopy(artifacts[field])
     return result
 
 
@@ -394,18 +1034,29 @@ def build_same_run_locale_pdf_response(
         headers={
             "Content-Disposition": f'attachment; filename="{report["pdf_filename"]}"',
             "X-NICO-Run-ID": str(projection["run_id"]),
+            "X-NICO-Commit-SHA": str(projection["commit_sha"]),
             "X-NICO-Report-Language": str(projection["report_language"]),
             "X-NICO-Canonical-Truth-SHA256": str(
                 projection["canonical_truth_sha256"]
             ),
+            "X-NICO-PDF-SHA256": actual_sha256,
+            "X-NICO-Artifact-SHA256": actual_sha256,
             "X-NICO-Assessment-Rerun": "false",
+            "X-NICO-Approval-Status": "pending_human_approval",
+            "X-NICO-Delivery-Status": "blocked_pending_human_approval",
+            "X-NICO-Client-Delivery-Allowed": "false",
+            "X-NICO-Localized-Artifact-Requires-New-Approval": "true",
+            "X-NICO-Localized-Artifact-Approval-Invalidated": "true",
+            "X-NICO-Artifact-Finality": "automated_draft",
         },
     )
 
 
 def _controller_status(target: FastAPI, run_id: str) -> Mapping[str, Any]:
     controller = getattr(target.state, "comprehensive_api_controller", None)
-    if controller is None or not callable(getattr(controller, "status", None)):
+    if controller is None or not callable(
+        getattr(controller, "status_read_only", None)
+    ):
         raise HTTPException(
             status_code=503,
             detail={
@@ -414,7 +1065,7 @@ def _controller_status(target: FastAPI, run_id: str) -> Mapping[str, Any]:
             },
         )
     try:
-        return controller.status(run_id)
+        return controller.status_read_only(run_id)
     except KeyError as exc:
         raise HTTPException(
             status_code=404,

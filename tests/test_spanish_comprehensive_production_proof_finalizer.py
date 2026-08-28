@@ -18,6 +18,7 @@ def test_spanish_proof_finalizer_tracks_completed_source_workflow_on_main() -> N
     assert "RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}" in text
     assert "SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}" in text
     assert "SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}" in text
+    assert "SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}" in text
     assert "statuses: write" in text
 
 
@@ -25,10 +26,11 @@ def test_spanish_proof_finalizer_preserves_terminal_truth_and_only_fails_closed(
     text = FINALIZER.read_text(encoding="utf-8")
 
     assert 'if observed in {"success", "failure", "error"}:' in text
-    assert 'latest.get(status_context, "missing")' in text
+    assert 'description.startswith(source_marker + " ")' in text
+    assert 'observed = str(latest.get("state") or "missing")' in text
     assert '"state": "failure"' in text
     assert '"state": "success"' not in text
-    assert "completed without publishing terminal commit status" in text
+    assert "completed without terminal commit status" in text
     assert "ended before terminal publication" in text
 
 
@@ -36,7 +38,7 @@ def test_spanish_proof_finalizer_reads_exact_sha_status_before_writing() -> None
     text = FINALIZER.read_text(encoding="utf-8")
 
     get_status = text.index('f"https://api.github.com/repos/{repository}/commits/{sha}/status"')
-    observed = text.index('observed = latest.get(status_context, "missing")')
+    observed = text.index('observed = str(latest.get("state") or "missing")')
     post_status = text.index('f"https://api.github.com/repos/{repository}/statuses/{sha}"')
     assert get_status < observed < post_status
 

@@ -50,6 +50,8 @@ def test_queue_consumes_protected_canonical_phase1_projection() -> None:
     assert '"X-NICO-Admin-Token"' in component
     assert 'type="password"' in component
     assert "COMPREHENSIVE_REVIEW_QUEUE" in proxy
+    assert "COMPREHENSIVE_AUTHORIZE_DELIVERY" in proxy
+    assert 'method === "POST" && COMPREHENSIVE_AUTHORIZE_DELIVERY.test(path)' in proxy
     assert "protectedReviewRoute" in proxy
     assert 'headers.set("X-NICO-Admin-Token", adminToken)' in proxy
     assert '@app.get("/assessment/comprehensive-run/{run_id}/review-queue")' in api_routes

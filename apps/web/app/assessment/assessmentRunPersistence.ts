@@ -6,6 +6,9 @@ export type PersistedRun = {
   repository: string;
   client: string;
   project: string;
+  primaryTechnicalContact: string;
+  accessMethod: string;
+  authorizedScope: string;
   customerId: string;
   projectId: string;
   startedAt: number;
@@ -15,6 +18,7 @@ export type PersistedRun = {
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
 const EXACT_RUN_STORAGE_PREFIX = "nico.comprehensive.exact-run.v1.";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
+const NEW_ASSESSMENT_QUERY_KEY = "new_assessment";
 const TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT = new Set<string>();
 
 function normalizePersistedRun(value: unknown): PersistedRun | null {
@@ -33,6 +37,9 @@ function normalizePersistedRun(value: unknown): PersistedRun | null {
     repository: String(record.repository || ""),
     client: String(record.client || ""),
     project: String(record.project || ""),
+    primaryTechnicalContact: String(record.primaryTechnicalContact || ""),
+    accessMethod: String(record.accessMethod || ""),
+    authorizedScope: String(record.authorizedScope || ""),
     customerId: String(record.customerId || "default_customer"),
     projectId: String(record.projectId || "default_project"),
     startedAt:
@@ -74,10 +81,11 @@ export function readPersistedRun(): PersistedRun | null {
   if (typeof window === "undefined") {
     return null;
   }
-  const urlRunId =
-    new URL(window.location.href).searchParams
-      .get(ACTIVE_RUN_QUERY_KEY)
-      ?.trim() || "";
+  const url = new URL(window.location.href);
+  const urlRunId = url.searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim() || "";
+  if (!urlRunId && url.searchParams.has(NEW_ASSESSMENT_QUERY_KEY)) {
+    return null;
+  }
   if (!urlRunId) {
     return readStoredRun();
   }
@@ -102,6 +110,9 @@ export function readPersistedRun(): PersistedRun | null {
     repository: "",
     client: "",
     project: "",
+    primaryTechnicalContact: "",
+    accessMethod: "",
+    authorizedScope: "",
     customerId: "default_customer",
     projectId: "default_project",
     startedAt: Date.now(),
@@ -120,7 +131,7 @@ export function clearPersistedRun(preserveExplicitUrl = false): void {
     if (!urlRunId || !active || active.runId === urlRunId) {
       window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
     }
-    if (urlRunId) {
+    if (urlRunId && !preserveExplicitUrl) {
       window.localStorage.removeItem(exactRunStorageKey(urlRunId));
     }
   } catch {
@@ -137,6 +148,7 @@ export function clearPersistedRun(preserveExplicitUrl = false): void {
   }
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
+  url.searchParams.set(NEW_ASSESSMENT_QUERY_KEY, String(Date.now()));
   window.history.replaceState(
     window.history.state,
     "",
@@ -159,6 +171,7 @@ export function writePersistedRun(value: PersistedRun): void {
   const url = new URL(window.location.href);
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId);
+  url.searchParams.delete(NEW_ASSESSMENT_QUERY_KEY);
   window.history.replaceState(
     window.history.state,
     "",

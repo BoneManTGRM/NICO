@@ -159,12 +159,22 @@ def render_paired_substantive_review_pdf(
         canvas.drawString(
             .48 * inch,
             .29 * inch,
-            "NICO | Comprehensive client review | automated draft",
+            (
+                "NICO | revisión integral del cliente | borrador automatizado"
+                if spanish
+                else "NICO | Comprehensive client review | automated draft"
+            ),
         )
         canvas.drawRightString(
             8.02 * inch,
             .29 * inch,
-            f"Review page {page} of {COMPANION_PAGE_COUNT} | Sections {first}-{last} of {SECTION_COUNT}",
+            (
+                f"Página de revisión {page} de {COMPANION_PAGE_COUNT} | "
+                f"Secciones {first}-{last} de {SECTION_COUNT}"
+                if spanish
+                else f"Review page {page} of {COMPANION_PAGE_COUNT} | "
+                f"Sections {first}-{last} of {SECTION_COUNT}"
+            ),
         )
         canvas.restoreState()
 

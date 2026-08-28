@@ -1,6 +1,10 @@
 "use client";
 
 import {useEffect, useRef} from "react";
+import {
+  REPORT_LOCALE_CHANGE_EVENT,
+  reportLanguageForRequest,
+} from "./assessment/assessmentLocale";
 
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const COPY_MARKDOWN_LABEL = /(?:copy\s+markdown|copiar\s+markdown)/i;
@@ -8,13 +12,27 @@ const STATUS_ATTR = "data-nico-markdown-action-status";
 
 type CacheEntry = {
   runId: string;
+  commitSha: string;
+  reportLanguage: ReportLanguage;
   markdown: string;
   promise: Promise<string> | null;
 };
 
+type ReportLanguage = "en" | "es-MX";
+
 function spanish(): boolean {
-  return window.location.pathname.startsWith("/es/")
+  const path = window.location.pathname.toLowerCase();
+  const queryLocale = new URL(window.location.href).searchParams.get("lang")?.toLowerCase();
+  return path === "/es-mx"
+    || path.startsWith("/es-mx/")
+    || path.startsWith("/es/")
+    || queryLocale === "es-mx"
+    || queryLocale === "es"
     || document.documentElement.lang.toLowerCase().startsWith("es");
+}
+
+function activeReportLanguage(): ReportLanguage {
+  return reportLanguageForRequest(spanish() ? "es-MX" : "en");
 }
 
 function visibleRunId(actions: Element | null = null): string {
@@ -37,8 +55,12 @@ function visibleRunId(actions: Element | null = null): string {
   return "";
 }
 
-function markdownHref(runId: string): string {
-  return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/markdown`;
+function visibleCommitSha(actions: Element | null = null): string {
+  return String(actions?.getAttribute("data-commit-sha") || "").trim();
+}
+
+function markdownHref(runId: string, reportLanguage: ReportLanguage): string {
+  return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}`;
 }
 
 function showStatus(container: Element | null, message: string, failure = false): void {
@@ -91,13 +113,28 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
   if (entry.promise) return entry.promise;
 
   entry.promise = (async () => {
-    const response = await fetch(markdownHref(entry.runId), {
+    const response = await fetch(markdownHref(entry.runId, entry.reportLanguage), {
       method: "GET",
       cache: "no-store",
-      headers: {Accept: "text/markdown"},
+      headers: {Accept: "application/json"},
     });
     if (!response.ok) throw new Error(`markdown_http_${response.status}`);
-    const markdown = await response.text();
+    const payload = await response.json() as {
+      run_id?: unknown;
+      commit_sha?: unknown;
+      report_language?: unknown;
+      assessment_rerun?: unknown;
+      report?: {markdown?: unknown};
+    };
+    if (String(payload.run_id || "") !== entry.runId) throw new Error("markdown_run_identity_mismatch");
+    if (entry.commitSha && String(payload.commit_sha || "") !== entry.commitSha) {
+      throw new Error("markdown_commit_identity_mismatch");
+    }
+    if (String(payload.report_language || "") !== entry.reportLanguage) {
+      throw new Error("markdown_report_language_mismatch");
+    }
+    if (payload.assessment_rerun !== false) throw new Error("markdown_assessment_rerun_not_proven_false");
+    const markdown = String(payload.report?.markdown || "");
     if (!markdown.trim()) throw new Error("markdown_empty");
     entry.markdown = markdown;
     return markdown;
@@ -135,8 +172,15 @@ export default function AssessmentMarkdownCopyBridge() {
     function entryForVisibleRun(actions: Element | null = null): CacheEntry | null {
       const runId = visibleRunId(actions);
       if (!runId) return null;
-      if (!cache.current || cache.current.runId !== runId) {
-        cache.current = {runId, markdown: "", promise: null};
+      const commitSha = visibleCommitSha(actions);
+      const reportLanguage = activeReportLanguage();
+      if (
+        !cache.current
+        || cache.current.runId !== runId
+        || cache.current.commitSha !== commitSha
+        || cache.current.reportLanguage !== reportLanguage
+      ) {
+        cache.current = {runId, commitSha, reportLanguage, markdown: "", promise: null};
       }
       return cache.current;
     }
@@ -217,17 +261,19 @@ export default function AssessmentMarkdownCopyBridge() {
     }
 
     document.addEventListener("click", handleCopyMarkdownClick, true);
+    window.addEventListener(REPORT_LOCALE_CHANGE_EVENT, prefetch);
     const observer = new MutationObserver(() => window.requestAnimationFrame(prefetch));
     observer.observe(document.body, {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["disabled", "data-assessment-report-ready", "data-run-id"],
+      attributeFilter: ["disabled", "data-assessment-report-ready", "data-run-id", "data-commit-sha"],
     });
     prefetch();
 
     return () => {
       document.removeEventListener("click", handleCopyMarkdownClick, true);
+      window.removeEventListener(REPORT_LOCALE_CHANGE_EVENT, prefetch);
       observer.disconnect();
     };
   }, []);
@@ -235,4 +281,4 @@ export default function AssessmentMarkdownCopyBridge() {
   return null;
 }
 
-export {copyText, enabledCopyButton, markdownHref, visibleRunId};
+export {activeReportLanguage, copyText, enabledCopyButton, markdownHref, visibleCommitSha, visibleRunId};

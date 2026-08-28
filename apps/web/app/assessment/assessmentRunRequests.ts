@@ -28,6 +28,10 @@ const READINESS_CLIENT_TIMEOUT_MS = 48_000;
 // Exact-run status is idempotent recovery truth, so allow the proxy's 60s read window
 // to finish and retry the GET in the browser without ever replaying continuation.
 const RUN_STATUS_CLIENT_TIMEOUT_MS = 75_000;
+// Intake and every other mutation are single-dispatch. The browser waits beyond the
+// proxy's 240s mutation envelope, but never replays an ambiguous paid-run creation or
+// a protected human-review decision.
+const MUTATION_CLIENT_TIMEOUT_MS = 260_000;
 // The server proxy gives a single non-replayable continuation up to 240s. Keep the
 // browser envelope slightly larger so the proxy remains the authoritative timeout
 // boundary and can return a recoverable exact-run status instruction.
@@ -50,6 +54,14 @@ const BACKEND_UNAVAILABLE_CODES = new Set([
   "assessment_readiness_timeout",
   "assessment_run_status_timeout",
   "assessment_run_continue_timeout",
+  "assessment_intake_timeout",
+  "assessment_intake_outcome_unknown",
+  "assessment_mutation_timeout",
+  "assessment_mutation_outcome_unknown",
+]);
+const AMBIGUOUS_INTAKE_OUTCOME_CODES = new Set([
+  "assessment_intake_timeout",
+  "assessment_intake_outcome_unknown",
 ]);
 const RECOVERABLE_READINESS_REASONS = new Set([
   "comprehensive_database_unavailable",
@@ -83,6 +95,10 @@ const PROVIDER_SNAPSHOT_CODES = new Set([
 type AttemptResult =
   | {retry: true}
   | {retry: false; result: Result};
+
+export function isAmbiguousIntakeOutcome(code: unknown): boolean {
+  return AMBIGUOUS_INTAKE_OUTCOME_CODES.has(String(code || "").trim());
+}
 
 function browserHeaders(init?: HeadersInit): Headers {
   const headers = new Headers(init);
@@ -170,6 +186,8 @@ function readinessCanRecoverOnSameStore(result: Result): boolean {
 function timeoutErrorFor(
   readinessPreflight: boolean,
   runContinueRequest: boolean,
+  intakeRequest: boolean,
+  mutatingRequest: boolean,
   copy: ReturnType<typeof copyFor>,
 ): AssessmentApiError {
   if (readinessPreflight) {
@@ -188,6 +206,20 @@ function timeoutErrorFor(
         retryable: true,
       },
     );
+  }
+  if (intakeRequest) {
+    return new AssessmentApiError(copy.serviceUnavailableMessage, {
+      status: 504,
+      code: "assessment_intake_timeout",
+      retryable: false,
+    });
+  }
+  if (mutatingRequest) {
+    return new AssessmentApiError(copy.backendError, {
+      status: 504,
+      code: "assessment_mutation_timeout",
+      retryable: false,
+    });
   }
   return new AssessmentApiError(
     copy.runStatusUnavailableMessage || copy.backendError,
@@ -216,25 +248,30 @@ export async function requestWithRetry(
   const boundInit = bindExpectedCommitSha(path, init);
   const method = String(boundInit.method || "GET").toUpperCase();
   const readinessPreflight = path === READINESS_PATH;
+  const intakeRequest = method === "POST" && path === INTAKE_PATH;
   const runStatusRequest = method === "GET" && RUN_STATUS_PATH.test(path);
   const runContinueRequest = method === "POST" && RUN_CONTINUE_PATH.test(path);
-  // Continuation is not safely replayable. Exact-run status is idempotent durable
-  // recovery truth and may retry after transient transport failure. Readiness remains
-  // semantic-only and may re-probe only when parsed diagnostics prove same-store recovery.
+  const mutatingRequest = method !== "GET" && method !== "HEAD";
+  // No mutation is safely replayable: intake can create another paid run, continuation
+  // advances execution, and protected review actions record human decisions. Exact-run
+  // status is idempotent durable recovery truth and may retry after transport failure.
+  // Readiness remains semantic-only and may re-probe only after same-store proof.
   const boundedRequest =
-    readinessPreflight || runStatusRequest || runContinueRequest;
+    readinessPreflight || runStatusRequest || mutatingRequest;
   const requestTimeoutMs = readinessPreflight
     ? READINESS_CLIENT_TIMEOUT_MS
     : runStatusRequest
       ? RUN_STATUS_CLIENT_TIMEOUT_MS
       : runContinueRequest
         ? RUN_CONTINUE_CLIENT_TIMEOUT_MS
+        : mutatingRequest
+          ? MUTATION_CLIENT_TIMEOUT_MS
         : 0;
   const retryDelays = readinessPreflight
     ? READINESS_RETRY_DELAYS_MS
     : runStatusRequest
       ? CLIENT_RETRY_DELAYS_MS
-      : boundedRequest
+      : mutatingRequest
         ? [0]
         : CLIENT_RETRY_DELAYS_MS;
   let lastError: unknown = null;
@@ -281,6 +318,8 @@ export async function requestWithRetry(
               timeoutErrorFor(
                 readinessPreflight,
                 runContinueRequest,
+                intakeRequest,
+                mutatingRequest,
                 copy,
               ),
             );
@@ -332,19 +371,44 @@ export async function requestWithRetry(
   }
 
   if (lastError instanceof AssessmentApiError) {
+    if (
+      mutatingRequest &&
+      !runContinueRequest &&
+      (lastError.retryable || TRANSIENT_STATUS.has(lastError.status))
+    ) {
+      throw new AssessmentApiError(
+        intakeRequest ? copy.serviceUnavailableMessage : copy.backendError,
+        {
+          status: lastError.status,
+          code: intakeRequest
+            ? "assessment_intake_outcome_unknown"
+            : "assessment_mutation_outcome_unknown",
+          retryable: false,
+          requestId: lastError.requestId,
+        },
+      );
+    }
     throw lastError;
   }
   if (lastError instanceof Error) {
     throw new AssessmentApiError(lastError.message || copy.backendError, {
       status: 0,
-      code: "assessment_network_error",
-      retryable: true,
+      code: intakeRequest
+        ? "assessment_intake_outcome_unknown"
+        : mutatingRequest && !runContinueRequest
+          ? "assessment_mutation_outcome_unknown"
+          : "assessment_network_error",
+      retryable: !(mutatingRequest && !runContinueRequest),
     });
   }
   throw new AssessmentApiError(copy.backendError, {
     status: 0,
-    code: "assessment_network_error",
-    retryable: true,
+    code: intakeRequest
+      ? "assessment_intake_outcome_unknown"
+      : mutatingRequest && !runContinueRequest
+        ? "assessment_mutation_outcome_unknown"
+        : "assessment_network_error",
+    retryable: !(mutatingRequest && !runContinueRequest),
   });
 }
 
@@ -423,6 +487,11 @@ function preRunIssueMessage(
       ? "La solicitud contiene un conflicto con el commit inmutable esperado."
       : "The request conflicts with the expected immutable commit.";
   }
+  if (isAmbiguousIntakeOutcome(code)) {
+    return spanish
+      ? "La solicitud de evaluación podría haber creado ya una ejecución, por lo que NICO no la repitió. Verifica o recupera la ejecución existente antes de restablecer esta solicitud."
+      : "The assessment request may already have created a run, so NICO did not replay it. Verify or recover the existing run before resetting this request.";
+  }
 
   // Do not leak arbitrary English backend prose into es-MX presentation. English may
   // retain the bounded backend message; Spanish falls back to its canonical copy unless
@@ -476,7 +545,9 @@ export function issueFor(
       title: copy.serviceUnavailableTitle,
       message: runCreated
         ? copy.runStatusUnavailableMessage
-        : copy.serviceUnavailableMessage,
+        : isAmbiguousIntakeOutcome(code)
+          ? preRunIssueMessage(apiError, code, copy)
+          : copy.serviceUnavailableMessage,
       code,
       requestId,
       retryable,

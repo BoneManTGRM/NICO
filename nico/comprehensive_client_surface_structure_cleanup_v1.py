@@ -124,11 +124,26 @@ def sanitize_client_rendered_stage(stage: Mapping[str, Any]) -> dict[str, Any]:
     for field in _CLIENT_STAGE_FIELDS:
         if field not in item:
             continue
-        values = client_surface_values(
-            item.get(field),
-            limit=_line_capacity(item.get(field)),
-            item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
-        )
+        if (
+            (
+                stage_id == "client_evidence_summary"
+                or stage_id.startswith("client_human_evidence_")
+            )
+            and field in {"evidence", "unavailable"}
+        ):
+            raw_values = item.get(field)
+            if isinstance(raw_values, (list, tuple)):
+                values = [str(value) for value in raw_values if str(value or "").strip()]
+            elif raw_values not in (None, ""):
+                values = [str(raw_values)]
+            else:
+                values = []
+        else:
+            values = client_surface_values(
+                item.get(field),
+                limit=_line_capacity(item.get(field)),
+                item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
+            )
         if field == "evidence":
             values = [value for value in values if not _INTERNAL_DOTTED_LINE.match(value)]
         if field == "findings" and stage_id == "dependency_security_static_analysis":
@@ -187,7 +202,11 @@ def premium_renderer_clean_lines(values: Any) -> list[str]:
     output: list[str] = []
     seen: set[str] = set()
     for raw in raw_values:
-        item = humanize_client_surface_value(raw, item_limit=1200)
+        item = (
+            str(raw).replace("\x7f", "-").strip()
+            if isinstance(raw, str)
+            else humanize_client_surface_value(raw, item_limit=1200)
+        )
         if not item or not re.search(r"[A-Za-z0-9]", item):
             continue
         key = item.casefold()

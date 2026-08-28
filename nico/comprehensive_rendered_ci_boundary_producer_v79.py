@@ -80,7 +80,9 @@ def _resolved_language(
 
     language, source = language_truth._resolve_report_language(canonical)
     normalized = str(language or "").strip()
-    if str(source or "").startswith("request:"):
+    if str(source or "").startswith(
+        ("request:", "run_identity:", "explicit:identity.")
+    ):
         return "es-MX" if normalized.casefold().startswith("es") else "en"
     if normalized.casefold().startswith("es"):
         return "es-MX"

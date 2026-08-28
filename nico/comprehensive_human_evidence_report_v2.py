@@ -27,14 +27,14 @@ def _strict_context_snapshot(context: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "report_language": v1._text(context.get("report_language"), 40) or "en",
         "display_values": {
-            "customer_name": v1._text(engagement.get("client_name"), 180),
-            "project_name": v1._text(engagement.get("project_name"), 180),
-            "primary_technical_contact": v1._text(
+            "customer_name": v1._engagement_literal(engagement.get("client_name"), 180),
+            "project_name": v1._engagement_literal(engagement.get("project_name"), 180),
+            "primary_technical_contact": v1._engagement_literal(
                 engagement.get("primary_technical_contact"),
                 600,
             ),
-            "access_method": v1._text(engagement.get("access_method"), 1200),
-            "authorized_scope": v1._text(engagement.get("authorized_scope"), 4000),
+            "access_method": v1._engagement_literal(engagement.get("access_method"), 1200),
+            "authorized_scope": v1._engagement_literal(engagement.get("authorized_scope"), 4000),
         },
         "human_evidence": v1._verified_human_evidence(context.get("human_evidence")),
     }
@@ -207,7 +207,7 @@ def _install_spanish_scoring_unavailable_translation() -> dict[str, bool]:
 
     def translate(value: str, key: str) -> str:
         if (
-            key == "unavailable_data_notes"
+            key in {"unavailable_data_notes", "unavailable"}
             and " ".join(str(value or "").split()).strip()
             == _CANONICAL_SCORING_UNAVAILABLE_EN
         ):
@@ -215,6 +215,8 @@ def _install_spanish_scoring_unavailable_translation() -> dict[str, bool]:
         return original(value, key)
 
     translate._nico_scoring_unavailable_es_v1 = True
+    if getattr(current, "_nico_client_literal_guard_v1", False):
+        translate._nico_client_literal_guard_v1 = True
     canonical._translate_presentation_field = translate
     return {"spanish_scoring_unavailable_note_localized": True}
 

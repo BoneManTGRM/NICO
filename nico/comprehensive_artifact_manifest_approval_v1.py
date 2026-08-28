@@ -567,7 +567,11 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     base_pdf = base64.b64decode(str(output.get("pdf_base64") or ""))
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("Artifact manifest requires a valid Comprehensive PDF.")
-    supplement = _render_manifest_approval_supplement(canonical, entries)
+    supplement_entries = deepcopy(entries)
+    for item in supplement_entries:
+        item["sha256"] = None
+        item["digest_status"] = "bound_in_detached_manifest_after_final_rendering"
+    supplement = _render_manifest_approval_supplement(canonical, supplement_entries)
     final_pdf = _append_pdf(base_pdf, supplement)
     page_count = len(PdfReader(io.BytesIO(final_pdf)).pages)
     if page_count > MAX_CLIENT_PDF_PAGES:
@@ -622,6 +626,7 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
         "canonical_json_file_digest_bound_externally": True,
         "manifest_self_digest_bound_externally": True,
         "exact_artifact_approval_required": True,
+        "digest_independent_manifest_supplement": True,
     }
     canonical_json = _json_bytes(canonical)
     canonical_json_sha256 = _sha256(canonical_json)
@@ -645,6 +650,7 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
         "approval": deepcopy(canonical["approval"]),
         "self_digest_location": "package.evidence_manifest_sha256",
         "rule": "Approval is valid only for the exact PDF, canonical JSON, and detached manifest digests retained with this run and commit.",
+        "digest_independent_manifest_supplement": True,
     }
     manifest_json = _json_bytes(manifest)
     manifest_sha256 = _sha256(manifest_json)
@@ -717,6 +723,7 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
             "delivery_status": "blocked_pending_human_approval",
             "human_review_required": True,
             "client_delivery_allowed": False,
+            "digest_independent_manifest_supplement": True,
         }
     )
     completion = deepcopy(dict(output.get("client_report_completion") or {}))
@@ -731,9 +738,325 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
             "human_review_status": "pending",
             "client_delivery_status": "blocked",
             "page_count": page_count,
+            "digest_independent_manifest_supplement": True,
         }
     )
     output["client_report_completion"] = completion
+    return output
+
+
+def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Recompute a pending draft manifest after a pre-approval artifact update.
+
+    The manifest/approval supplement already retained in the PDF is deliberately
+    digest-independent. Re-rendering it would duplicate pages and navigation. This
+    path therefore keeps the current report bytes, rebuilds every retained digest
+    from those bytes, and resets the exact-artifact lifecycle to pending.
+    """
+
+    output = deepcopy(dict(package))
+    existing_manifest = output.get("artifact_manifest")
+    if not isinstance(existing_manifest, Mapping):
+        raise ValueError("Artifact manifest rebinding requires an existing detached manifest.")
+    existing_identity = output.get("draft_artifact_identity")
+    if (
+        _text(existing_manifest.get("artifact_schema")) != MANIFEST_SCHEMA
+        or not _text(existing_manifest.get("manifest_id"))
+        or not isinstance(existing_identity, Mapping)
+        or _text(existing_identity.get("artifact_schema"))
+        != "nico.comprehensive-draft-artifact-identity.v1"
+        or any(
+            not _text(existing_identity.get(field))
+            for field in (
+                "pdf_sha256",
+                "canonical_json_sha256",
+                "evidence_manifest_sha256",
+                "manifest_id",
+            )
+        )
+    ):
+        raise ValueError("Artifact manifest rebinding requires a complete exact draft identity.")
+    lifecycle = output.get("json")
+    lifecycle = lifecycle.get("lifecycle") if isinstance(lifecycle, Mapping) else {}
+    lifecycle = lifecycle if isinstance(lifecycle, Mapping) else {}
+    if (
+        output.get("client_delivery_allowed") is True
+        or isinstance(output.get("accepted_edition"), Mapping)
+        or _text(output.get("human_review_status")).casefold() == "approved"
+        or _text(output.get("approval_status")).casefold() in {"approved", "approved_final"}
+        or _text(lifecycle.get("human_review_status")).casefold() == "approved"
+        or lifecycle.get("client_delivery_allowed") is True
+    ):
+        raise ValueError("Approved or delivery-authorized artifacts cannot be rebound in place.")
+    completion = output.get("client_report_completion")
+    completion = completion if isinstance(completion, Mapping) else {}
+    embedded_manifest = output.get("json")
+    embedded_manifest = (
+        embedded_manifest.get("artifact_manifest")
+        if isinstance(embedded_manifest, Mapping)
+        else {}
+    )
+    embedded_manifest = embedded_manifest if isinstance(embedded_manifest, Mapping) else {}
+    if not all(
+        marker is True
+        for marker in (
+            output.get("digest_independent_manifest_supplement"),
+            completion.get("digest_independent_manifest_supplement"),
+            existing_manifest.get("digest_independent_manifest_supplement"),
+            embedded_manifest.get("digest_independent_manifest_supplement"),
+        )
+    ):
+        raise ValueError(
+            "Artifact manifest rebinding requires a digest-independent manifest supplement; regenerate this draft first."
+        )
+    canonical = (
+        deepcopy(dict(output.get("json") or {}))
+        if isinstance(output.get("json"), Mapping)
+        else {}
+    )
+    identity = _canonical_identity(canonical)
+    canonical["lifecycle"] = _lifecycle()
+    canonical["approval"] = _pending_approval_record()
+    canonical["review_package_ready"] = True
+    canonical["human_review_required"] = True
+    canonical["client_delivery_allowed"] = False
+    canonical["report_finality"] = "automated_draft"
+    canonical["approval_status"] = "pending_human_approval"
+    canonical["delivery_status"] = "blocked_pending_human_approval"
+
+    markdown = str(output.get("markdown") or "")
+    rendered_html = str(output.get("html") or "")
+    if not markdown or not rendered_html:
+        raise ValueError("Artifact manifest rebinding requires retained Markdown and HTML.")
+    try:
+        pdf = base64.b64decode(str(output.get("pdf_base64") or ""), validate=True)
+        page_count = len(PdfReader(io.BytesIO(pdf)).pages)
+    except Exception as exc:
+        raise ValueError("Artifact manifest rebinding requires a valid Comprehensive PDF.") from exc
+    if not pdf.startswith(b"%PDF") or page_count < 1:
+        raise ValueError("Artifact manifest rebinding requires a valid Comprehensive PDF.")
+    if page_count > MAX_CLIENT_PDF_PAGES:
+        raise ValueError(
+            f"Comprehensive client package exceeds the {MAX_CLIENT_PDF_PAGES}-page hard boundary: {page_count}"
+        )
+
+    from nico import comprehensive_manifest_navigation_v1 as navigation
+
+    run = _safe_filename(identity.get("run_id"), "run")
+    retained = {
+        "findings_csv": str(output.get("findings_csv") or "").encode("utf-8"),
+        "evidence_csv": str(output.get("evidence_csv") or "").encode("utf-8"),
+        "candidate_register_json": str(
+            output.get("candidate_register_json") or ""
+        ).encode("utf-8"),
+        "remediation_backlog_json": str(
+            output.get("remediation_backlog_json") or ""
+        ).encode("utf-8"),
+    }
+    missing_retained = sorted(name for name, content in retained.items() if not content)
+    if missing_retained:
+        raise ValueError(
+            "Artifact manifest rebinding omitted retained structured artifacts: "
+            + ", ".join(missing_retained)
+        )
+    token = navigation._CONTEXT.set(deepcopy(output))
+    try:
+        entries = [
+            _artifact_entry(
+                artifact_type="findings_csv",
+                filename=f"nico-{run}-findings.csv",
+                content=retained["findings_csv"],
+                schema_version="nico.findings-csv.v1",
+                identity=identity,
+            ),
+            _artifact_entry(
+                artifact_type="evidence_csv",
+                filename=f"nico-{run}-evidence.csv",
+                content=retained["evidence_csv"],
+                schema_version="nico.evidence-csv.v1",
+                identity=identity,
+            ),
+            _artifact_entry(
+                artifact_type="candidate_register_json",
+                filename=f"nico-{run}-candidate-register.json",
+                content=retained["candidate_register_json"],
+                schema_version="nico.canonical-scanner-findings.v1",
+                identity=identity,
+            ),
+            _artifact_entry(
+                artifact_type="remediation_backlog_json",
+                filename=f"nico-{run}-remediation-backlog.json",
+                content=retained["remediation_backlog_json"],
+                schema_version="nico.remediation-backlog.v1",
+                identity=identity,
+            ),
+            _artifact_entry(
+                artifact_type="markdown_report",
+                filename=f"nico-{run}.md",
+                content=markdown.encode("utf-8"),
+                schema_version="text/markdown",
+                identity=identity,
+            ),
+            _artifact_entry(
+                artifact_type="html_report",
+                filename=f"nico-{run}.html",
+                content=rendered_html.encode("utf-8"),
+                schema_version="text/html",
+                identity=identity,
+            ),
+        ]
+        pdf_entry = _artifact_entry(
+            artifact_type="comprehensive_pdf",
+            filename=f"nico-{run}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf",
+            content=pdf,
+            schema_version="application/pdf",
+            identity=identity,
+        )
+    finally:
+        navigation._CONTEXT.reset(token)
+
+    pdf_sha256 = _sha256(pdf)
+    canonical_truth_payload = deepcopy(canonical)
+    canonical_truth_payload.pop("artifacts", None)
+    canonical_truth_payload.pop("artifact_manifest", None)
+    canonical_truth_payload_sha256 = _sha256(_json_bytes(canonical_truth_payload))
+    canonical["artifacts"] = [
+        *deepcopy(entries),
+        deepcopy(pdf_entry),
+        {
+            "artifact_type": "canonical_json",
+            "filename": f"nico-{run}-canonical.json",
+            "sha256": canonical_truth_payload_sha256,
+            "digest_scope": "canonical_truth_payload_excluding_artifact_self_reference",
+            "schema_version": "nico.canonical-report-truth.v1",
+            "run_id": identity.get("run_id"),
+            "commit_sha": identity.get("commit_sha"),
+            "digest_status": "payload_digest_retained; file_digest_in_detached_manifest",
+        },
+        {
+            "artifact_type": "evidence_manifest_json",
+            "filename": f"nico-{run}-evidence-manifest.json",
+            "sha256": None,
+            "digest_scope": "detached_self_digest_returned_outside_manifest",
+            "schema_version": MANIFEST_SCHEMA,
+            "run_id": identity.get("run_id"),
+            "commit_sha": identity.get("commit_sha"),
+            "digest_status": "detached_self_digest",
+        },
+    ]
+    manifest_id = (
+        f"NICO-MANIFEST-{_sha256(_json_bytes({'identity': identity, 'pdf': pdf_sha256, 'entries': entries}))[:20].upper()}"
+    )
+    canonical["artifact_manifest"] = {
+        "artifact_schema": MANIFEST_SCHEMA,
+        "manifest_id": manifest_id,
+        "identity": identity,
+        "artifact_count": len(canonical["artifacts"]),
+        "artifacts": deepcopy(canonical["artifacts"]),
+        "pdf_self_digest_bound_externally": True,
+        "canonical_json_file_digest_bound_externally": True,
+        "manifest_self_digest_bound_externally": True,
+        "exact_artifact_approval_required": True,
+        "digest_independent_manifest_supplement": True,
+    }
+    canonical_json = _json_bytes(canonical)
+    canonical_json_sha256 = _sha256(canonical_json)
+    token = navigation._CONTEXT.set(deepcopy(output))
+    try:
+        canonical_entry = _artifact_entry(
+            artifact_type="canonical_json",
+            filename=f"nico-{run}-canonical.json",
+            content=canonical_json,
+            schema_version="nico.canonical-report-truth.v1",
+            identity=identity,
+        )
+    finally:
+        navigation._CONTEXT.reset(token)
+    manifest = {
+        "artifact_schema": MANIFEST_SCHEMA,
+        "manifest_id": manifest_id,
+        "identity": identity,
+        "lifecycle": deepcopy(canonical["lifecycle"]),
+        "artifacts": [*deepcopy(entries), deepcopy(pdf_entry), canonical_entry],
+        "approval": deepcopy(canonical["approval"]),
+        "self_digest_location": "package.evidence_manifest_sha256",
+        "rule": "Approval is valid only for the exact PDF, canonical JSON, and detached manifest digests retained with this run and commit.",
+        "digest_independent_manifest_supplement": True,
+    }
+    manifest_json = _json_bytes(manifest)
+    manifest_sha256 = _sha256(manifest_json)
+    draft_identity = {
+        "artifact_schema": "nico.comprehensive-draft-artifact-identity.v1",
+        "repository": identity.get("repository"),
+        "commit_sha": identity.get("commit_sha"),
+        "run_id": identity.get("run_id"),
+        "pdf_sha256": pdf_sha256,
+        "canonical_json_sha256": canonical_json_sha256,
+        "evidence_manifest_sha256": manifest_sha256,
+        "manifest_id": manifest_id,
+        "report_finality": "automated_draft",
+        "human_review_status": "pending",
+        "client_delivery_status": "blocked",
+    }
+    output.update(
+        {
+            "json": canonical,
+            "canonical_json": canonical_json.decode("utf-8"),
+            "canonical_json_sha256": canonical_json_sha256,
+            "json_sha256": canonical_json_sha256,
+            "canonical_truth_sha256": canonical_json_sha256,
+            "findings_csv_sha256": _sha256(retained["findings_csv"]),
+            "evidence_csv_sha256": _sha256(retained["evidence_csv"]),
+            "candidate_register_sha256": _sha256(retained["candidate_register_json"]),
+            "remediation_backlog_sha256": _sha256(retained["remediation_backlog_json"]),
+            "artifact_manifest": manifest,
+            "evidence_manifest_json": manifest_json.decode("utf-8"),
+            "evidence_manifest_sha256": manifest_sha256,
+            "draft_artifact_identity": draft_identity,
+            "pdf_sha256": pdf_sha256,
+            "pdf_size_bytes": len(pdf),
+            "pdf_page_count": page_count,
+            "final_package_page_count": page_count,
+            "markdown_sha256": _sha256(markdown.encode("utf-8")),
+            "html_sha256": _sha256(rendered_html.encode("utf-8")),
+            "review_package_ready": True,
+            "human_review_status": "pending",
+            "client_delivery_status": "blocked",
+            "report_finality": "automated_draft",
+            "approval_status": "pending_human_approval",
+            "delivery_status": "blocked_pending_human_approval",
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+            "digest_independent_manifest_supplement": True,
+        }
+    )
+    updated_completion = deepcopy(dict(output.get("client_report_completion") or {}))
+    updated_completion.update(
+        {
+            "artifact_manifest_present": True,
+            "detached_manifest_binds_final_pdf": True,
+            "detached_manifest_binds_canonical_json": True,
+            "exact_artifact_approval_record_present": True,
+            "review_package_ready": True,
+            "human_review_status": "pending",
+            "client_delivery_status": "blocked",
+            "page_count": page_count,
+            "digest_independent_manifest_supplement": True,
+        }
+    )
+    output["client_report_completion"] = updated_completion
+    content_integrity = deepcopy(dict(output.get("content_integrity") or {}))
+    content_integrity.update(
+        {
+            "markdown_sha256": output["markdown_sha256"],
+            "html_sha256": output["html_sha256"],
+            "pdf_sha256": output["pdf_sha256"],
+            "json_sha256": canonical_json_sha256,
+            "canonical_json_sha256": canonical_json_sha256,
+            "evidence_manifest_sha256": manifest_sha256,
+        }
+    )
+    output["content_integrity"] = content_integrity
     return output
 
 
@@ -987,5 +1310,6 @@ __all__ = [
     "MAX_CLIENT_PDF_PAGES",
     "VERSION",
     "attach_artifact_manifest",
+    "rebind_artifact_manifest",
     "install_comprehensive_artifact_manifest_approval_v1",
 ]

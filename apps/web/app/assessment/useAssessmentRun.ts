@@ -2,6 +2,7 @@
 
 import {useEffect, useRef, useState} from "react";
 import {copyFor} from "./assessmentCopy";
+import {reportLanguageForRequest} from "./assessmentLocale";
 import {AssessmentApiError, scopeId, terminal, wait} from "./assessmentModel";
 import {preserveRunIdentity, type RunIdentityFallback} from "./assessmentRunIdentity";
 import {
@@ -11,6 +12,7 @@ import {
   type PersistedRun,
 } from "./assessmentRunPersistence";
 import {
+  isAmbiguousIntakeOutcome,
   issueFor,
   requestWithRetry,
   type AssessmentRunIssue,
@@ -23,6 +25,7 @@ import {
   MAX_POLL_ATTEMPTS,
   POLL_INTERVAL_MS,
   type Locale,
+  type EngagementMetadata,
   type Phase,
   type Result,
   type Scope,
@@ -46,6 +49,7 @@ export type AssessmentRunController = {
   attempt: number;
   elapsed: number;
   running: boolean;
+  protectedRunId: string;
   setRepository: (value: string) => void;
   setClient: (value: string) => void;
   setProject: (value: string) => void;
@@ -61,6 +65,51 @@ function exactRunId(value: Result | null | undefined): string {
   return String(
     value?.run_id || value?.record?.identity?.run_id || "",
   ).trim();
+}
+
+function validEngagementMetadata(value: unknown): value is EngagementMetadata {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const metadata = value as Record<string, unknown>;
+  return metadata.artifact_schema === "nico.comprehensive_engagement_metadata.v1"
+    && /^[a-f0-9]{64}$/.test(String(metadata.engagement_metadata_sha256 || ""))
+    && [
+      "client_name",
+      "project_name",
+      "primary_technical_contact",
+      "access_method",
+      "authorized_scope",
+    ].every((field) => typeof metadata[field] === "string");
+}
+
+function engagementMetadataFor(value: Result | null | undefined): EngagementMetadata | null {
+  const direct = value?.engagement_metadata;
+  if (validEngagementMetadata(direct)) return direct;
+  const retained = value?.record?.engagement_metadata;
+  return validEngagementMetadata(retained) ? retained : null;
+}
+
+function engagementEvidence(
+  primaryTechnicalContact: string,
+  accessMethod: string,
+  authorizedScope: string,
+): StrategicHumanEvidenceInput {
+  if (![primaryTechnicalContact, accessMethod, authorizedScope].some((item) => item.trim())) {
+    return {};
+  }
+  return {
+    stakeholder_context: {
+      evidence: {
+        ...(primaryTechnicalContact.trim() ? {primary_technical_contact: [primaryTechnicalContact]} : {}),
+        ...(accessMethod.trim() ? {access_method: [accessMethod]} : {}),
+        ...(authorizedScope.trim() ? {authorized_scope: [authorizedScope]} : {}),
+      },
+      reviewer: "",
+      observed_at: "",
+      source_reference: "",
+      excluded: false,
+      exclusion_rationale: "",
+    },
+  };
 }
 
 function canonicalProgress(value: Result | null | undefined): number | null {
@@ -138,6 +187,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const [attempt, setAttempt] = useState(0);
   const [started, setStarted] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [protectedRunId, setProtectedRunId] = useState("");
   const sequence = useRef(0);
   const bootstrapped = useRef(false);
   const recoveryInFlight = useRef(false);
@@ -169,9 +219,15 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       bootstrapped.current = true;
       const persisted = readPersistedRun();
       if (persisted) {
+        setProtectedRunId(persisted.runId);
         setRepository(persisted.repository);
         setClient(persisted.client);
         setProject(persisted.project);
+        setHumanEvidence(engagementEvidence(
+          persisted.primaryTechnicalContact,
+          persisted.accessMethod,
+          persisted.authorizedScope,
+        ));
         setAuthorized(true);
         void resumePersistedRun(persisted);
       }
@@ -196,9 +252,14 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     };
     window.addEventListener("pageshow", restoreAfterPageResume);
     window.addEventListener("online", restoreAfterPageResume);
+    const restoreAfterForeground = () => {
+      if (document.visibilityState === "visible") restoreAfterPageResume();
+    };
+    document.addEventListener("visibilitychange", restoreAfterForeground);
     return () => {
       window.removeEventListener("pageshow", restoreAfterPageResume);
       window.removeEventListener("online", restoreAfterPageResume);
+      document.removeEventListener("visibilitychange", restoreAfterForeground);
       sequence.current += 1;
     };
   }, [locale]);
@@ -235,17 +296,40 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     runResult: Result,
     scope: Scope,
     startedAt: number,
+    exactFallback?: PersistedRun,
   ): void {
     const runId = exactRunId(runResult);
     if (!runId) {
       return;
     }
+    setProtectedRunId(runId);
+    const engagement = engagementMetadataFor(runResult);
+    const stored = exactFallback ?? readPersistedRun();
+    const fallback = stored?.runId === runId ? stored : null;
+    const stakeholder = humanEvidence.stakeholder_context?.evidence || {};
+    const clientValue = engagement?.client_name ?? fallback?.client ?? client;
+    const projectValue = engagement?.project_name ?? fallback?.project ?? project;
+    const primaryTechnicalContact = engagement?.primary_technical_contact
+      ?? fallback?.primaryTechnicalContact
+      ?? stakeholder.primary_technical_contact?.[0]
+      ?? "";
+    const accessMethod = engagement?.access_method
+      ?? fallback?.accessMethod
+      ?? stakeholder.access_method?.[0]
+      ?? "";
+    const authorizedScope = engagement?.authorized_scope
+      ?? fallback?.authorizedScope
+      ?? stakeholder.authorized_scope?.[0]
+      ?? "";
     writePersistedRun({
       version: 1,
       runId,
-      repository: String(runResult.repository || repository || ""),
-      client,
-      project,
+      repository: String(runResult.repository || fallback?.repository || repository || ""),
+      client: clientValue,
+      project: projectValue,
+      primaryTechnicalContact,
+      accessMethod,
+      authorizedScope,
       customerId: String(
         runResult.customer_id || scope.customerId || "default_customer",
       ),
@@ -255,6 +339,23 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       startedAt,
       locale,
     });
+  }
+
+  function hydrateEngagementMetadata(value: Result): void {
+    const engagement = engagementMetadataFor(value);
+    if (!engagement) return;
+    const clientValue = String(engagement.client_name ?? "");
+    const projectValue = String(engagement.project_name ?? "");
+    const primaryTechnicalContact = String(engagement.primary_technical_contact ?? "");
+    const accessMethod = String(engagement.access_method ?? "");
+    const authorizedScope = String(engagement.authorized_scope ?? "");
+    setClient(clientValue);
+    setProject(projectValue);
+    setHumanEvidence(engagementEvidence(
+      primaryTechnicalContact,
+      accessMethod,
+      authorizedScope,
+    ));
   }
 
   async function verifyRuntimePersistence(): Promise<void> {
@@ -338,6 +439,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
           return;
         }
         persistExactRun(current, scope, startedAt);
+        hydrateEngagementMetadata(current);
         publishResult(current);
         const stable = terminal(service, current);
         if (stable) {
@@ -361,7 +463,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         setMessage(
           `${copy.service.label}: ${
             copy.stageLabels[currentStageId] ||
-            currentStageId.replaceAll("_", " ") ||
+            (currentStageId ? copy.unknownStage : "") ||
             copy.phases.running
           }.`,
         );
@@ -466,7 +568,8 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (token !== sequence.current) {
         return;
       }
-      persistExactRun(recovered, scope, persisted.startedAt);
+      persistExactRun(recovered, scope, persisted.startedAt, persisted);
+      hydrateEngagementMetadata(recovered);
       publishResult(recovered);
       const stable = terminal(service, recovered);
       if (stable) {
@@ -490,6 +593,27 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   }
 
   async function run(): Promise<void> {
+    if (
+      issue &&
+      !issue.runCreated &&
+      isAmbiguousIntakeOutcome(issue.code)
+    ) {
+      setError(
+        locale === "es-MX"
+          ? "El resultado de la solicitud anterior es incierto. Restablece la solicitud antes de iniciar otra evaluación."
+          : "The prior intake outcome is unknown. Reset the request before starting another assessment.",
+      );
+      return;
+    }
+    if (exactRunId(latestResult.current) || readPersistedRun()?.runId) {
+      setError(
+        locale === "es-MX"
+          ? "La ejecución exacta está protegida. Usa «Iniciar una nueva evaluación» antes de crear otra."
+          : "The exact run is protected. Use Start new assessment before creating another.",
+      );
+      setIssue(null);
+      return;
+    }
     clearPersistedRun(false);
     if (!authorized) {
       setError(copy.authError);
@@ -520,7 +644,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       authorized: true,
       timeframe_days: 180,
       assessment_depth: "strategic",
-      report_language: locale,
+      report_language: reportLanguageForRequest(locale),
       human_evidence: compactStrategicHumanEvidence(humanEvidence),
     };
 
@@ -567,6 +691,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     sequence.current += 1;
     recoveryInFlight.current = false;
     activeContinuationRunId.current = "";
+    setProtectedRunId("");
     clearPersistedRun(false);
     setRepository("");
     setClient("");
@@ -590,10 +715,14 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     const persisted = readPersistedRun();
     const runId = String(result?.run_id || persisted?.runId || "").trim();
     if (!runId) {
+      if (issue && isAmbiguousIntakeOutcome(issue.code)) {
+        return;
+      }
       await run();
       return;
     }
     const scope = currentScope();
+    const stakeholder = humanEvidence.stakeholder_context?.evidence || {};
     await resumePersistedRun(
       persisted || {
         version: 1,
@@ -601,6 +730,9 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         repository,
         client,
         project,
+        primaryTechnicalContact: stakeholder.primary_technical_contact?.[0] || "",
+        accessMethod: stakeholder.access_method?.[0] || "",
+        authorizedScope: stakeholder.authorized_scope?.[0] || "",
         customerId: scope.customerId,
         projectId: scope.projectId,
         startedAt: Date.now(),
@@ -624,6 +756,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     attempt,
     elapsed,
     running,
+    protectedRunId,
     setRepository,
     setClient,
     setProject,

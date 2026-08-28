@@ -26,12 +26,12 @@ BASE = {
 }
 
 
-def test_approved_complete_edition_allows_delivery() -> None:
+def test_approved_complete_edition_remains_pending_separate_delivery_authorization() -> None:
     result = build_accepted_report_edition(**BASE)
 
     assert result["accepted_edition"] is True
-    assert result["client_delivery_allowed"] is True
-    assert result["delivery_status"] == "approved_for_delivery"
+    assert result["client_delivery_allowed"] is False
+    assert result["delivery_status"] == "pending_authorization"
     assert result["validation_errors"] == []
     assert set(result["artifact_digests"]) == {
         "markdown",
@@ -111,3 +111,17 @@ def test_artifact_digest_changes_when_report_changes() -> None:
         first["review"]["approval_certificate_sha256"]
         != second["review"]["approval_certificate_sha256"]
     )
+
+
+def test_optional_detached_evidence_manifest_is_bound_into_accepted_edition() -> None:
+    values = dict(BASE)
+    values["artifacts"] = {
+        **BASE["artifacts"],
+        "evidence_manifest": '{"manifest_id":"NICO-MANIFEST-EXACT"}',
+    }
+
+    result = build_accepted_report_edition(**values)
+
+    assert result["accepted_edition"] is True
+    assert result["artifact_digests"]["evidence_manifest"]["size_bytes"] > 0
+    assert len(result["artifact_digests"]["evidence_manifest"]["sha256"]) == 64

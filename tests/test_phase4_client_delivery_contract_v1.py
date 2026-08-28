@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 from copy import deepcopy
+from datetime import UTC, datetime
 
 import pytest
 from pypdf import PdfWriter
@@ -17,6 +18,7 @@ from nico.comprehensive_client_delivery_contract_v1 import (
     validate_approval_receipt,
     validate_full_lifecycle,
 )
+from nico.comprehensive_review_work_safe_v1 import apply_review_work_action
 
 
 def _pdf() -> str:
@@ -49,17 +51,29 @@ def _record(ecosystem: str = "python") -> dict:
         },
         "review_requires_individual_attention": True,
         "grouped_review_eligible": False,
-        "human_disposition": {
-            "decision": "confirmed_material",
-            "reviewer": "Alice Security",
-            "reviewer_role": "Cybersecurity specialist",
-        },
+        "homogeneous_evidence": True,
+        "homogeneous_verdict": True,
+        "review_routing_class": "HUMAN_TECHNICAL_REVIEW",
     }
     register = {
         "artifact_schema": "nico.canonical_scanner_finding_register.v1",
         "candidate_lineage_version": "nico.candidate_lineage.v1",
         "candidate_record_count": 1,
         "findings": [candidate],
+        "review_workload_clusters": [
+            {
+                "cluster_id": candidate["cluster_id"],
+                "candidate_ids": [candidate["candidate_id"]],
+                "candidate_record_count": 1,
+                "cluster_size": 1,
+                "representative_candidate_id": candidate["candidate_id"],
+                "grouped_review_eligible": False,
+                "grouped_human_review_cluster": False,
+                "homogeneous_evidence": True,
+                "homogeneous_verdict": True,
+                "underlying_candidate_disposition_required": True,
+            }
+        ],
         "technical_triage": {
             "version": "nico.technical_triage.v1",
             "total_candidates": 1,
@@ -112,36 +126,7 @@ def _record(ecosystem: str = "python") -> dict:
         "workspace_id": f"workspace-{ecosystem}",
         "tenant_id": f"tenant-{ecosystem}",
     }
-    ledger = {
-        "artifact_schema": "nico.comprehensive_review_work_ledger.v2",
-        "run_id": run_id,
-        "repository": repo,
-        "commit_sha": commit,
-        "evidence_ledger_id": f"ledger-{ecosystem}",
-        "scope_binding": scope,
-        "review_source_sha256": "f" * 64,
-        "human_dispositions_pending": 0,
-        "human_dispositions_completed": 1,
-        "confirmed_material_findings": 1,
-        "quality_control_sample_size": 1,
-        "dispositions": {candidate["candidate_id"]: candidate["human_disposition"]},
-        "audit_events": [
-            {
-                "sequence": 1,
-                "action": "disposition_candidate",
-                "reviewer": "Alice Security",
-                "reviewer_role": "Cybersecurity specialist",
-            }
-        ],
-        "operational_timing": {
-            "assessment_runtime_seconds": 600,
-            "automated_processing_duration_seconds": 540,
-            "review_elapsed_minutes": 50,
-            "review_active_minutes": 45,
-            "estimated_combined_specialist_hours": 0.75,
-        },
-    }
-    return {
+    record = {
         "artifact_schema": "nico.comprehensive_run.v1",
         "identity": {
             "run_id": run_id,
@@ -191,12 +176,44 @@ def _record(ecosystem: str = "python") -> dict:
             },
             "final_comprehensive_report_generation": {"report_package": package},
         },
-        "review_work_ledger": ledger,
         "generator_versions": canonical["generator_versions"],
         "integrity_sha256": "3" * 64,
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    ledger = apply_review_work_action(
+        record,
+        {
+            "action": "disposition_candidate",
+            "candidate_id": candidate["candidate_id"],
+            "disposition": "confirmed",
+            "rationale": "Exact evidence supports the recorded human disposition.",
+            "residual_risk": "Recorded fixture residual risk.",
+            "residual_risk_owner": "Alice Security",
+            "reviewer": "Alice Security",
+            "reviewer_role": "Cybersecurity specialist",
+            "review_authorized": True,
+            "authorization_confirmed": True,
+        },
+        now=datetime(2026, 8, 21, 14, 0, tzinfo=UTC),
+    )
+    ledger.update(
+        {
+            "human_dispositions_pending": 0,
+            "human_dispositions_completed": 1,
+            "confirmed_material_findings": 1,
+            "quality_control_sample_size": 0,
+            "operational_timing": {
+                "assessment_runtime_seconds": 600,
+                "automated_processing_duration_seconds": 540,
+                "review_elapsed_minutes": 50,
+                "review_active_minutes": 45,
+                "estimated_combined_specialist_hours": 0.75,
+            },
+        }
+    )
+    record["review_work_ledger"] = ledger
+    return record
 
 
 def _manifest(record: dict) -> dict:
@@ -214,6 +231,9 @@ def _manifest(record: dict) -> dict:
             "decided_at": "2026-08-21T15:00:00+00:00",
         },
     }
+    manifest["review"]["approval_certificate_sha256"] = canonical_sha256(
+        manifest["review"]
+    )
     manifest["accepted_edition_manifest_sha256"] = canonical_sha256(manifest)
     return manifest
 
@@ -251,6 +271,137 @@ def test_explicit_human_approval_receipt_binds_exact_client_project_run_and_arti
     assert validate_approval_receipt(record, manifest, receipt)["status"] == "valid"
 
 
+def test_spanish_read_only_access_literal_is_authorized_without_rewriting() -> None:
+    record = _record()
+    evidence = record["human_evidence"]["modules"]["stakeholder_context"][
+        "evidence"
+    ]
+    evidence["client_identity"] = ["Compañía Águila, S.A. de C.V."]
+    evidence["project_identity"] = ["Proyecto Ñandú / Release 2.0"]
+    evidence["access_method"] = ["GitHub Enterprise - acceso de solo lectura"]
+    evidence["authorized_scope"] = [
+        "organizacion/proyecto - rama release/2026.08; código, configuración y CI/CD."
+    ]
+
+    result = validate_full_lifecycle(record)
+
+    assert result["status"] == "ready_for_explicit_human_approval"
+    assert "repository_access_not_read_only" not in result["validation_errors"]
+    assert evidence["access_method"] == [
+        "GitHub Enterprise - acceso de solo lectura"
+    ]
+
+
+@pytest.mark.parametrize(
+    "access_method",
+    [
+        "GitHub read-only access; no write access",
+        "GitHub Enterprise - solo lectura; sin acceso de escritura",
+    ],
+)
+def test_explicitly_denied_write_capability_preserves_read_only_authorization(
+    access_method: str,
+) -> None:
+    record = _record()
+    evidence = record["human_evidence"]["modules"]["stakeholder_context"][
+        "evidence"
+    ]
+    evidence["access_method"] = [access_method]
+
+    result = validate_full_lifecycle(record)
+
+    assert result["status"] == "ready_for_explicit_human_approval"
+    assert evidence["access_method"] == [access_method]
+
+
+@pytest.mark.parametrize(
+    "access_method",
+    [
+        "GitHub Enterprise - no es solo lectura; acceso de escritura total",
+        "This access is not read-only and permits write access",
+        "This access is not readonly",
+        "GitHub Enterprise - no es sololectura",
+        "GitHub read-only access with write permissions",
+        "GitHub read-only access; no write access except maintainers can write",
+    ],
+)
+def test_negated_read_only_or_affirmative_write_capability_fails_closed(
+    access_method: str,
+) -> None:
+    record = _record()
+    evidence = record["human_evidence"]["modules"]["stakeholder_context"][
+        "evidence"
+    ]
+    evidence["access_method"] = [access_method]
+
+    result = validate_full_lifecycle(record)
+
+    assert result["status"] == "blocked"
+    assert "repository_access_not_read_only" in result["validation_errors"]
+    assert evidence["access_method"] == [access_method]
+
+
+def test_receipt_rejects_reviewer_identity_different_from_accepted_edition() -> None:
+    record = _record()
+    manifest = _manifest(record)
+    with pytest.raises(
+        ClientDeliveryContractError,
+        match="approval_manifest_reviewer_mismatch",
+    ):
+        build_approval_receipt(
+            record,
+            manifest,
+            reviewer="Mallory Security",
+            reviewer_role="Security reviewer",
+            decision="approved",
+            decided_at="2026-08-21T15:00:00+00:00",
+            decision_reason="Exact evidence and residual risk were reviewed and accepted.",
+        )
+
+
+def test_review_projection_failure_is_fail_closed_for_lifecycle_and_receipt() -> None:
+    record = _record()
+    manifest = _manifest(record)
+    receipt = build_approval_receipt(
+        record,
+        manifest,
+        reviewer="Alice Security",
+        reviewer_role="Cybersecurity specialist",
+        decision="approved",
+        decided_at="2026-08-21T15:00:00+00:00",
+        decision_reason="Exact evidence and residual risk were reviewed and accepted.",
+    )
+    register = record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]["json"]["assessment"]["canonical_scanner_finding_register"]
+    register.pop("review_workload_clusters")
+
+    lifecycle = validate_full_lifecycle(record)
+    receipt_validation = validate_approval_receipt(record, manifest, receipt)
+
+    assert lifecycle["status"] == "blocked"
+    assert lifecycle["validation_errors"] == ["review_work_projection_invalid"]
+    assert receipt_validation == {
+        "status": "invalid",
+        "validation_errors": ["review_work_projection_invalid"],
+        "client_delivery_authorized": False,
+    }
+
+
+def test_production_integrity_install_keeps_authoritative_candidate_contract() -> None:
+    import nico.comprehensive_client_delivery_contract_v1 as delivery
+    from nico.comprehensive_report_review_integrity_v1 import (
+        _install_exception_first_delivery_contract,
+    )
+
+    before = delivery._candidate_contract
+    status = _install_exception_first_delivery_contract()
+
+    assert delivery._candidate_contract is before
+    assert getattr(before, "_nico_exception_first_v1", False) is True
+    assert status["phase4_exception_first_candidate_contract"] is True
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [
@@ -262,8 +413,8 @@ def test_explicit_human_approval_receipt_binds_exact_client_project_run_and_arti
         (lambda r: r["scanner_execution_contract"]["executions"][0].update({"status": "failed"}), "required_scanner_execution_failed"),
         (lambda r: r["scanner_execution_contract"].update({"support_status": "unsupported_not_assessed"}), "unsupported_ecosystem_not_assessed"),
         (lambda r: r["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"].update({"candidate_record_count": 2}), "candidate_register_count_mismatch"),
-        (lambda r: r["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"]["findings"][0].pop("candidate_lineage_version"), None),
-        (lambda r: (r["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"]["findings"][0].pop("human_disposition"), r["review_work_ledger"]["dispositions"].clear()), "mandatory_individual_review_unresolved"),
+        (lambda r: r["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"]["findings"][0].pop("candidate_lineage_version"), "review_work_projection_invalid"),
+        (lambda r: r["review_work_ledger"]["dispositions"].clear(), "human_dispositions_pending"),
         (lambda r: r["review_work_ledger"].update({"human_dispositions_pending": 1}), "human_dispositions_pending"),
         (lambda r: r["review_work_ledger"]["scope_binding"].update({"project_id": "other-project"}), "cross_project_id_review_mismatch"),
         (lambda r: r["stage_results"]["final_comprehensive_report_generation"]["report_package"].update({"package_classification": "internal_test"}), "internal_or_test_package_presented_as_client_final"),
@@ -326,9 +477,6 @@ def test_every_declared_required_scanner_has_a_retained_execution() -> None:
 
 def test_candidate_dispositions_reconcile_exactly_with_the_canonical_register() -> None:
     missing = _record()
-    candidate = missing["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"]["findings"][0]
-    candidate["review_requires_individual_attention"] = False
-    candidate.pop("human_disposition", None)
     missing["review_work_ledger"]["dispositions"].clear()
     missing["review_work_ledger"]["human_dispositions_pending"] = 0
     missing_result = validate_full_lifecycle(missing)

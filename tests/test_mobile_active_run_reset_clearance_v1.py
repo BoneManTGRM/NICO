@@ -55,7 +55,9 @@ def test_mobile_document_reserves_space_below_the_fixed_panel() -> None:
 
 
 def test_repair_does_not_change_run_reset_or_approval_boundaries() -> None:
-    assert 'window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY)' in COMPONENT
+    assert "function removeStoredRunIfMatching" in COMPONENT
+    assert "storedRunId === runId" in COMPONENT
+    assert "removeStoredRunIfMatching(window.localStorage, exactRunId)" in COMPONENT
     assert 'url.searchParams.delete(ACTIVE_RUN_QUERY_KEY)' in COMPONENT
     assert 'url.searchParams.set("new_assessment", String(Date.now()))' in COMPONENT
     assert "human_review" not in COMPONENT

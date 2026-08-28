@@ -13,9 +13,12 @@ def _read(path: str) -> str:
 def test_completed_assessment_adds_exact_run_final_review_action() -> None:
     source = _read("apps/web/app/AssessmentFinalReviewAction.tsx")
     navigation = _read("apps/web/app/PrimaryNavigation.tsx")
+    layout = _read("apps/web/app/layout.tsx")
 
-    assert 'import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";' in navigation
-    assert "<AssessmentFinalReviewAction />" in navigation
+    assert 'import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";' in layout
+    assert "<AssessmentFinalReviewAction />" in layout
+    assert "AssessmentFinalReviewAction" not in navigation
+    assert (layout + navigation).count("<AssessmentFinalReviewAction />") == 1
     assert "Review and accept this report" in source
     assert "Revisar y aceptar este informe" in source
     assert "/operations/final-review?${query}" in source
@@ -108,7 +111,7 @@ def test_operator_workspaces_preserve_mexican_spanish_locale() -> None:
 
     assert 'import OperatorWorkspaceLocale from "./OperatorWorkspaceLocale";' in navigation
     assert "<OperatorWorkspaceLocale />" in navigation
-    assert 'queryLocale === "es-MX"' in navigation
+    assert 'queryLocale === "es-mx"' in navigation
     assert 'params.set("lang", "es-MX")' in navigation
     assert "withLanguage(link.href, spanishActive)" in navigation
     assert "REVISIÓN FINAL DE NICO" in locale

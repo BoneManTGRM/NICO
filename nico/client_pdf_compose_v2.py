@@ -31,6 +31,11 @@ _REVIEW_SECTION_HEADINGS = (
     "personal, secuencia y costo",
 )
 
+_CI_BOUNDARY_HEADINGS = (
+    "ci/cd operational readiness and historical health",
+    "preparacion operativa y salud historica de ci/cd",
+)
+
 
 def _normalized(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", str(value or ""))
@@ -110,6 +115,14 @@ def compose_compact_client_pdf(
     retained: list[Any] = []
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
+        if ci_boundary is not None and _page_heading(
+            extracted,
+            _CI_BOUNDARY_HEADINGS,
+        ):
+            # The separately rendered boundary is the authoritative physical
+            # edition. Retaining the base copy as well creates two body pages
+            # for one semantic section and shifts every later TOC target.
+            continue
         if _page_heading(
             extracted,
             (
@@ -166,25 +179,14 @@ def compose_compact_client_pdf(
             f"{MAX_CLIENT_PDF_PAGES}-page boundary"
         )
 
-    max_retained = max(0, MAX_CLIENT_PDF_PAGES - reserved_count)
-    retained = retained[:max_retained]
-    if not retained:
+    total_page_count = len(retained) + reserved_count
+    if total_page_count > MAX_CLIENT_PDF_PAGES:
         raise ValueError(
-            "client-ready PDF cannot preserve a primary report page with all required pages"
+            "client-ready PDF cannot preserve every primary and required page within "
+            f"the {MAX_CLIENT_PDF_PAGES}-page boundary: {total_page_count}"
         )
 
-    available_review_pages = max(
-        0,
-        MAX_CLIENT_PDF_PAGES
-        - len(retained)
-        - register_and_gate_count
-        - required_ci_boundary_count,
-    )
-    selected_review_pages = (
-        list(review.pages[: min(review_count, available_review_pages)])
-        if review is not None
-        else []
-    )
+    selected_review_pages = list(review.pages) if review is not None else []
     if review is not None and len(selected_review_pages) != required_review_count:
         raise ValueError(
             "client-ready PDF cannot preserve the complete Comprehensive review companion "

@@ -3,7 +3,11 @@ from __future__ import annotations
 from nico import comprehensive_human_evidence_report_v1 as v1
 from nico import comprehensive_human_evidence_report_v2 as v2
 from nico.comprehensive_decision_grade_markdown_v5 import _stage_summaries
-from nico.comprehensive_engagement_metadata_v1 import build_comprehensive_engagement_metadata
+from nico.comprehensive_engagement_metadata_v1 import (
+    build_comprehensive_engagement_metadata,
+    display_identity_projection,
+)
+from nico.comprehensive_report_package import _markdown, _semantic_html
 from nico.strategic_human_evidence_v1 import normalize_strategic_human_evidence
 
 
@@ -92,3 +96,70 @@ def test_tampered_engagement_metadata_is_not_labeled_as_client_supplied_evidence
     )
     assert snapshot["human_evidence"] == {}
     assert v2._inject_human_review_stages({}, snapshot) == {}
+
+
+def test_canonical_engagement_values_are_not_duplicated_by_generic_human_stage() -> None:
+    human_evidence = normalize_strategic_human_evidence(
+        {
+            "stakeholder_context": {
+                "evidence": {
+                    "objectives": ["Objective  with  spaces\n## not a heading"],
+                    "constraints": ["<script>alert('client')</script>"],
+                    "primary_technical_contact": ["Casey  Contact\nSecurity lead"],
+                    "access_method": ["Read  only\nGitHub API"],
+                    "authorized_scope": ["repository/main\nsource and CI"],
+                }
+            }
+        }
+    )
+    engagement = build_comprehensive_engagement_metadata(
+        client_name="Client  Name",
+        project_name="Project  Name",
+        human_evidence=human_evidence,
+    )
+    snapshot = v2._strict_context_snapshot(
+        {
+            "engagement_metadata": engagement,
+            "human_evidence": human_evidence,
+        }
+    )
+    summary = v1._client_summary_stage(snapshot, spanish=False)
+    human_stages = v1._human_module_stage_specs(snapshot, spanish=False)
+    stakeholder_lines = [
+        line
+        for stage in human_stages
+        if str(stage.get("stage_id") or "").startswith(
+            "client_human_evidence_stakeholder_context"
+        )
+        for line in stage.get("evidence") or []
+    ]
+    for exact in (
+        engagement["primary_technical_contact"],
+        engagement["access_method"],
+        engagement["authorized_scope"],
+    ):
+        assert all(exact not in line for line in stakeholder_lines)
+        assert sum(exact in line for line in summary["evidence"]) == 1
+    assert any("Objective  with  spaces\n## not a heading" in line for line in stakeholder_lines)
+
+    identity = {
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "a" * 40,
+        "run_id": "comprun_human_literal_safety",
+        "evidence_ledger_id": "ledger_human_literal_safety",
+        "customer_id": "customer_human_literal_safety",
+        "project_id": "project_human_literal_safety",
+        **display_identity_projection(engagement),
+    }
+    markdown = _markdown(
+        identity,
+        {"maturity_signal": {}, "sections": []},
+        [summary, *human_stages],
+        "2026-08-28T00:00:00Z",
+    )
+    assert "<script>" not in markdown
+    assert "&lt;script&gt;alert('client')&lt;/script&gt;" in markdown
+    assert "Objective  with  spaces<br/>## not a heading" in markdown
+    rendered = _semantic_html(markdown, "NICO Comprehensive")
+    assert "<script>" not in rendered
+    assert "<h2>not a heading</h2>" not in rendered

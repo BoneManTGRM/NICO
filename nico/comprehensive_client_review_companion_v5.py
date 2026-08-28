@@ -96,6 +96,23 @@ def _text(value: Any, limit: int = 1400) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
+def _authored_display(
+    value: Any,
+    key: str,
+    *,
+    spanish: bool,
+    limit: int,
+) -> str:
+    rendered = _text(value, limit)
+    if not spanish or not rendered:
+        return rendered
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation_field,
+    )
+
+    return _translate_presentation_field(rendered, key)
+
+
 def _values(value: Any, *, limit: int = 8, item_limit: int = 850) -> list[str]:
     if isinstance(value, Mapping):
         values: Iterable[Any] = (
@@ -287,7 +304,11 @@ def _finding_summary(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
     return summary if isinstance(summary, Mapping) else {}
 
 
-def _top_findings(canonical: Mapping[str, Any]) -> list[str]:
+def _top_findings(
+    canonical: Mapping[str, Any],
+    *,
+    spanish: bool,
+) -> list[str]:
     register = canonical.get("client_finding_remediation_register")
     if not isinstance(register, Mapping):
         return []
@@ -297,9 +318,19 @@ def _top_findings(canonical: Mapping[str, Any]) -> list[str]:
             continue
         priority = _text(raw.get("priority") or "P2", 20).upper()
         identifier = _text(raw.get("finding_id") or raw.get("id"), 120)
-        title = _text(raw.get("title") or raw.get("decision_title"), 320)
+        title = _authored_display(
+            raw.get("title") or raw.get("decision_title"),
+            "title",
+            spanish=spanish,
+            limit=320,
+        )
         location = _text(raw.get("location") or raw.get("path"), 420)
-        impact = _text(raw.get("business_impact") or raw.get("impact"), 420)
+        impact = _authored_display(
+            raw.get("business_impact") or raw.get("impact"),
+            "business_impact",
+            spanish=spanish,
+            limit=420,
+        )
         output.append(
             " · ".join(
                 value
@@ -450,7 +481,7 @@ def substantive_review_sections(
     output: list[dict[str, Any]] = []
     scanner_totals = _register_summary(canonical)
     decision_summary = _finding_summary(canonical)
-    top_findings = _top_findings(canonical)
+    top_findings = _top_findings(canonical, spanish=spanish)
     for index, raw in enumerate(legacy, start=1):
         section = deepcopy(dict(raw))
         details = _base_section_details(str(section["id"]), spanish=spanish)
@@ -461,12 +492,21 @@ def substantive_review_sections(
         if section["id"] == "risk_reduction_and_executive_briefing":
             findings = top_findings or findings
             evidence = _values(
-                [
-                    f"Decision findings: {decision_summary.get('decision_finding_count', 0)}",
-                    f"Exact-source findings: {decision_summary.get('exact_source_code_finding_count', 0)}",
-                    f"Confirmed material scanner findings: {scanner_totals.get('material', 0)}",
-                    f"Review-required scanner candidates: {scanner_totals.get('review_required', 0)}",
-                ],
+                (
+                    [
+                        f"Hallazgos de decisión: {decision_summary.get('decision_finding_count', 0)}",
+                        f"Hallazgos con ubicación exacta: {decision_summary.get('exact_source_code_finding_count', 0)}",
+                        f"Hallazgos materiales confirmados por analizadores: {scanner_totals.get('material', 0)}",
+                        f"Candidatos de analizadores que requieren revisión: {scanner_totals.get('review_required', 0)}",
+                    ]
+                    if spanish
+                    else [
+                        f"Decision findings: {decision_summary.get('decision_finding_count', 0)}",
+                        f"Exact-source findings: {decision_summary.get('exact_source_code_finding_count', 0)}",
+                        f"Confirmed material scanner findings: {scanner_totals.get('material', 0)}",
+                        f"Review-required scanner candidates: {scanner_totals.get('review_required', 0)}",
+                    ]
+                ),
                 limit=6,
             )
         elif section["id"] == "historical_trends_and_change_failure":

@@ -14,6 +14,10 @@ from nico.comprehensive_artifact_manifest_approval_v1 import (
     MANIFEST_SCHEMA,
     MAX_CLIENT_PDF_PAGES,
     attach_artifact_manifest,
+    rebind_artifact_manifest,
+)
+from nico.comprehensive_exact_artifact_hash_binding_v1 import (
+    _validate_exact_artifact_hashes,
 )
 
 
@@ -274,6 +278,87 @@ def test_regenerated_package_creates_new_draft_identity_and_never_reuses_approva
     assert second["json"]["approval"]["decision"] == "pending"
     assert second["json"]["approval"]["approval_record_id"] is None
     assert second["client_delivery_allowed"] is False
+
+
+def test_preapproval_artifact_update_rebinds_manifest_without_duplicating_pages() -> None:
+    first = attach_artifact_manifest(_package())
+    changed = dict(first)
+    changed["json"] = dict(first["json"])
+    changed["json"]["human_review_truth"] = {
+        "authorized_human_disposition_pending": 0,
+        "authorized_human_disposition_completed": 1,
+    }
+    changed["markdown"] += "\n\n## Human Review and Approval Truth\n\nDisposition complete.\n"
+    changed["html"] += "<section><h2>Human Review and Approval Truth</h2></section>"
+    changed["findings_csv"] += "NICO-FINDING-2,P1\n"
+    original_pdf = changed["pdf_base64"]
+    original_core_pages = changed["core_report_page_count"]
+
+    rebound = rebind_artifact_manifest(changed)
+
+    _validate_exact_artifact_hashes(rebound)
+    assert rebound["pdf_page_count"] == first["pdf_page_count"]
+    assert rebound["pdf_base64"] == original_pdf
+    assert rebound["core_report_page_count"] == original_core_pages
+    assert rebound["draft_artifact_identity"] != first["draft_artifact_identity"]
+    assert rebound["findings_csv"] == changed["findings_csv"]
+    findings_entry = next(
+        item
+        for item in rebound["artifact_manifest"]["artifacts"]
+        if item["artifact_type"] == "findings_csv"
+    )
+    assert findings_entry["sha256"] == hashlib.sha256(
+        changed["findings_csv"].encode("utf-8")
+    ).hexdigest()
+    assert rebound["json"]["approval"]["decision"] == "pending"
+    assert rebound["client_delivery_allowed"] is False
+    assert rebound["json_sha256"] == rebound["canonical_json_sha256"]
+    assert rebound["canonical_truth_sha256"] == rebound["canonical_json_sha256"]
+    assert rebound["content_integrity"]["json_sha256"] == rebound["canonical_json_sha256"]
+
+
+def test_visible_manifest_supplement_never_embeds_preliminary_artifact_hashes() -> None:
+    result = attach_artifact_manifest(_package())
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(base64.b64decode(result["pdf_base64"]))).pages
+    )
+
+    assert result["digest_independent_manifest_supplement"] is True
+    assert result["client_report_completion"]["digest_independent_manifest_supplement"] is True
+    assert result["artifact_manifest"]["digest_independent_manifest_supplement"] is True
+    assert result["json"]["artifact_manifest"]["digest_independent_manifest_supplement"] is True
+    for item in result["artifact_manifest"]["artifacts"]:
+        if item["artifact_type"] in {
+            "findings_csv",
+            "evidence_csv",
+            "candidate_register_json",
+            "remediation_backlog_json",
+        }:
+            assert item["sha256"] not in pdf_text
+
+
+def test_legacy_digest_bearing_manifest_cannot_be_rebound_in_place() -> None:
+    result = attach_artifact_manifest(_package())
+    result.pop("digest_independent_manifest_supplement")
+    result["client_report_completion"].pop("digest_independent_manifest_supplement")
+    result["artifact_manifest"].pop("digest_independent_manifest_supplement")
+    result["json"]["artifact_manifest"].pop("digest_independent_manifest_supplement")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="regenerate this draft first"):
+        rebind_artifact_manifest(result)
+
+
+def test_approved_or_delivery_authorized_artifact_cannot_be_rebound() -> None:
+    result = attach_artifact_manifest(_package())
+    result["client_delivery_allowed"] = True
+
+    import pytest
+
+    with pytest.raises(ValueError, match="cannot be rebound"):
+        rebind_artifact_manifest(result)
 
 
 def test_runtime_binds_manifest_after_priority_and_review_layers() -> None:

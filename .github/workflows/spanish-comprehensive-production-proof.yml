@@ -29,6 +29,8 @@ jobs:
       NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
       GITHUB_TOKEN: ${{ github.token }}
       RELEASE_SHA: ${{ github.sha }}
+      SOURCE_RUN_ID: ${{ github.run_id }}
+      SOURCE_RUN_ATTEMPT: ${{ github.run_attempt }}
       STATUS_CONTEXT: NICO Spanish Comprehensive Production Proof
       PYTHONUNBUFFERED: "1"
       NICO_SPANISH_PROOF_TELEMETRY_SECONDS: "30"
@@ -48,7 +50,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Running fresh bilingual commercial Comprehensive production proof",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} fresh bilingual Comprehensive proof running",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -58,6 +60,15 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
             --data-binary @/tmp/spanish-status.json
+
+      - name: Validate configured production scope
+        run: |
+          set -euo pipefail
+          test "${NICO_PRODUCTION_FRONTEND_URL}" = "https://app.nicoaudit.com"
+          test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "BoneManTGRM/NICO"
+          test -n "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}"
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
 
       - name: Wait for exact frontend and backend deployments
         run: |
@@ -154,6 +165,8 @@ jobs:
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
+            --source-workflow-run-id "${SOURCE_RUN_ID}" \
+            --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
             --timeout-seconds 5400 \
             --output audit-results/spanish-comprehensive-live-proof.json
 
@@ -161,12 +174,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: spanish-comprehensive-production-proof-${{ github.sha }}-${{ github.run_id }}
+          name: spanish-comprehensive-production-proof-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             audit-results/spanish-comprehensive-frontend-release.json
             audit-results/spanish-comprehensive-live-proof.json
             audit-results/spanish-comprehensive-live-proof.progress.json
             audit-results/spanish-comprehensive-live-proof.png
+            audit-results/nico-comprehensive-en-automated-draft-pending-human-approval.pdf
+            audit-results/nico-comprehensive-es-MX-automated-draft-pending-human-approval.pdf
           if-no-files-found: warn
           retention-days: 90
 
@@ -179,6 +194,7 @@ jobs:
           import json
           import os
           from pathlib import Path
+          from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
           payload = json.loads(
               Path("audit-results/spanish-comprehensive-live-proof.json").read_text(encoding="utf-8")
@@ -186,6 +202,18 @@ jobs:
           assert payload["artifact_schema"] == "nico.spanish_comprehensive_live_acceptance.v3.2"
           assert payload["status"] == "passed"
           assert payload["expected_sha"] == os.environ["RELEASE_SHA"]
+          assert payload["source_workflow_run_id"] == os.environ["SOURCE_RUN_ID"]
+          assert payload["source_workflow_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
+          assert payload["source_binding"] == f"{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']}"
+          assert len(payload["canonical_truth_sha256"]) == 64
+          assert set(payload["canonical_truth_sha256"]) <= set("0123456789abcdef")
+          assert payload["canonical_truth_unchanged_after_localized_rendering"] is True
+          assert payload["canonical_truth_digest_computed_from_json"] is True
+          assert payload["localized_pdf_artifact_hash_headers_verified"] is True
+          assert payload["localized_report_get_count"] == 2
+          assert payload["localized_report_mutation_request_count"] == 0
+          assert payload["terminal_state_unchanged_after_localized_reads"] is True
+          assert payload["terminal_state_before_localized_reads"] == payload["terminal_state_after_localized_reads"]
           assert payload["report_language_requested"] == "es-MX"
           assert payload["spanish_route_verified"] is True
           assert payload["document_language_verified"] is True
@@ -195,6 +223,8 @@ jobs:
           assert payload["production_proof_project_id"] == "spanish_comprehensive_production"
           assert payload["start_request_count"] == 1
           assert payload["duplicate_intake_absent"] is True
+          assert payload["running_reload_recovery_verified"] is True
+          assert payload["running_background_foreground_recovery_verified"] is True
           assert payload["terminal"]["phase"] == "Se requiere revisión experta"
           assert payload["terminal"]["review"] == "Revisión interna requerida"
           assert payload["terminal"]["report"] == "Completa"
@@ -213,13 +243,28 @@ jobs:
           assert payload["authorized_scope_verified_in_canonical_truth"] is True
           assert payload["same_run_bilingual_pdf_verified"] is True
           assert payload["same_run_bilingual_assessment_rerun"] is False
-          assert 0 < int(payload["spanish_pdf_page_count"]) < 44
-          assert 0 < int(payload["english_pdf_page_count"]) < 44
-          assert payload["commercial_proof_client_name"] == "NICO Acceptance Client"
-          assert payload["commercial_proof_project_name"] == "NICO Acceptance Project"
-          assert payload["commercial_proof_primary_technical_contact"] == "NICO Acceptance Contact"
-          assert payload["commercial_proof_access_method"] == "GitHub HTTPS/API - read-only"
-          assert payload["commercial_proof_authorized_scope"] == "Full repository at exact assessed SHA - read-only"
+          assert payload["pdf_renderer_page_boundary"] == MAX_CLIENT_PDF_PAGES
+          assert 0 < int(payload["spanish_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES
+          assert 0 < int(payload["english_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES
+          for key in (
+              "client_name",
+              "project_name",
+              "primary_technical_contact",
+              "access_method",
+              "authorized_scope",
+          ):
+              assert payload[f"commercial_proof_{key}"] == payload[f"actual_browser_intake_{key}"]
+          for key in ("spanish_pdf_path", "english_pdf_path"):
+              artifact = Path(payload[key])
+              assert artifact.is_file()
+              assert artifact.parent == Path("audit-results")
+              assert "pending-human-approval" in artifact.name
+              assert "authorized" not in artifact.name
+          assert payload["localized_pdf_artifacts_pending_human_approval"] is True
+          assert payload["five_field_literals_verified_in_both_pdfs"] is True
+          assert payload["five_fields_consolidated_in_both_client_evidence_summaries"] is True
+          assert payload["spanish_pdf_sha256"] == payload["pdf_sha256"]
+          assert len(payload["english_pdf_sha256"]) == 64
 
           assert payload["human_review_required"] is True
           assert payload["client_delivery_allowed"] is False
@@ -234,7 +279,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Fresh bilingual PDFs preserve supplied client metadata and compact pagination",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} bilingual Comprehensive proof passed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -254,7 +299,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": "Fresh bilingual commercial Comprehensive production proof failed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} bilingual Comprehensive proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY

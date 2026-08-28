@@ -425,8 +425,12 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
     assert "human review work units" in text.lower()
     assert "grouped human-review clusters" in text.lower()
     assert "until triaged" not in text.lower()
-    assert "APPROVED FINAL" in text
-    assert "CLIENT DELIVERY AUTHORIZED" in text
+    assert (
+        "Only an authorized human reviewer may approve the exact immutable artifacts."
+        in text
+    )
+    assert "Client delivery requires a separate authorized action." in text
+    assert "APPROVED FINAL and CLIENT DELIVERY AUTHORIZED" not in text
 
 
 def test_spanish_phase1_review_gate_is_laid_out_from_spanish_copy() -> None:
@@ -475,6 +479,8 @@ def test_spanish_phase1_review_gate_is_laid_out_from_spanish_copy() -> None:
         "Límite del paquete del cliente",
         "permanecen en JSON y CSV canónicos",
         "Dependencias",
+        "Solo un revisor humano autorizado puede aprobar los artefactos inmutables exactos.",
+        "La entrega al cliente requiere una acción autorizada independiente.",
     ):
         assert expected in text
     for forbidden in (
@@ -483,5 +489,6 @@ def test_spanish_phase1_review_gate_is_laid_out_from_spanish_copy() -> None:
         "Client package boundary",
         "Full candidate evidence",
         "Dependency",
+        "FINAL APROBADO y ENTREGA AUTORIZADA",
     ):
         assert forbidden not in text

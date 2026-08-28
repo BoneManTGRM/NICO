@@ -87,3 +87,55 @@ def test_v98_does_not_change_english_report_data_directly() -> None:
     canonical_value = source
     _ = localize_current_report_copy_v98(source)
     assert canonical_value == source
+
+
+def test_v98_localizes_late_deployment_tree_scanner_and_candidate_grammars() -> None:
+    source = "\n".join(
+        (
+            "Non-success or unresolved deployment observations: 3.",
+            "Outcome classification breakdown: No disponible.",
+            "Top-level entries[0]: Dockerfile",
+            "pip-audit: completed; commit exacto=sí; artefacto=conservado; conteo de hallazgos materiales confirmados=0; carga de hallazgos sin procesar incluida=no.",
+            "Dependency: raw=21; confirmed_material=0; review_required=21; excluded_test_only=0; approved_or_nonblocking=0.",
+            "- Static · B105 · tool=bandit; package=requests; installed=2.31.0; fixed=2.32.0; location=nico/admin_security.py; disposition=review_required · El triaje técnico permanece separado.",
+        )
+    )
+
+    localized = localize_current_report_copy_v98(source)
+
+    assert "Observaciones de despliegues no exitosos o no resueltos: 3." in localized
+    assert "Desglose de la clasificación de resultados: No disponible." in localized
+    assert "Elementos de nivel superior[0]: Dockerfile" in localized
+    assert "pip-audit: ejecución completada; commit exacto=sí" in localized
+    assert "Dependencias: brutos=21; materiales confirmados=0; requieren revisión=21" in localized
+    assert "Análisis estático · B105 · herramienta=bandit" in localized
+    assert "paquete=requests" in localized
+    assert "versión instalada=2.31.0" in localized
+    assert "versión corregida=2.32.0" in localized
+    assert "ubicación=nico/admin_security.py" in localized
+    assert "disposición=revisión requerida" in localized
+
+    for leaked in (
+        "Non-success or unresolved deployment observations",
+        "Outcome classification breakdown",
+        "Top-level entries",
+        ": completed; commit exacto=",
+        "Dependency: raw=",
+        "tool=",
+        "location=",
+        "disposition=review_required",
+    ):
+        assert leaked not in localized
+
+
+def test_v98_localizes_authorized_human_disposition_score_effect() -> None:
+    source = "Score effect: assurance-only until triaged."
+
+    localized = localize_current_report_copy_v98(source)
+
+    assert source not in localized
+    assert localized == (
+        "Efecto en la puntuación: solo aseguramiento mientras la disposición humana "
+        "autorizada siga pendiente; el estado del triaje técnico de NICO se informa "
+        "por separado."
+    )

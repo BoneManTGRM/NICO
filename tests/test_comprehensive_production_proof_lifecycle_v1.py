@@ -117,8 +117,13 @@ def test_release_and_green_gates_require_spanish_production_proof() -> None:
     # monitors must instead be exact-main aware for the Spanish proof to be meaningful.
     assert "statuses: write" in watch
     assert "NICO Production Acceptance Green Watch" in watch
+    assert 'marker_match = re.match(r"^(source:\\d+:\\d+) ", spanish_description)' in watch
+    assert 'description = f"{source_marker} all exact-main production acceptance contexts succeeded"' in watch
     assert "TRACKING_ISSUE_NUMBER" not in watch
     assert "NOTIFICATION_MARKER_PREFIX" in notifier
+    assert "NICO Production Acceptance Green Watch" in notifier
+    assert 'source_marker = marker_match.group(1)' in notifier
+    assert 'startswith(\n                          source_marker + " "' in notifier
     assert "nico-production-acceptance-green-notifier:v2:" in notifier
     assert "notification_marker = f" in notifier
     assert "main_sha" in notifier

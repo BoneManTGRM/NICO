@@ -13,7 +13,7 @@ def test_unified_acceptance_requires_exact_custom_domain_release_before_browser_
     script = SCRIPT.read_text(encoding="utf-8")
 
     release_gate = "Verify exact production frontend release and copy contract"
-    browser_run = "Run two consecutive authoritative strategic assessment passes"
+    browser_run = "Observe the same completed run twice for 90 seconds"
     assert release_gate in workflow
     assert workflow.index(release_gate) < workflow.index(browser_run)
     assert "scripts/production_frontend_release_identity.py" in workflow

@@ -65,3 +65,42 @@ def test_ui_and_report_locale_preferences_have_separate_authorities() -> None:
     assert 'searchParams.set("report_locale", locale)' in locale
     assert "persistUiLocale" in locale
     assert "persistReportLocale" in locale
+
+    bridge = source("apps/web/app/AssessmentReviewPdfDownload.tsx")
+    assert "function spanishUi(): boolean" in bridge
+    assert "startExactRunDownload(runId, activeReportLanguage())" in bridge
+    status_call = bridge.split("showStatus(\n        actions,", 1)[1].split(
+        ");", 1
+    )[0]
+    assert "spanishUi()" in status_call
+    assert "activeReportLanguage()" not in status_call
+
+
+def test_es_mx_alias_uses_the_same_assessment_route_guards_and_preserves_exact_run_state() -> None:
+    locale = source("apps/web/app/assessment/assessmentLocale.ts")
+    navigation = source("apps/web/app/PrimaryNavigation.tsx")
+
+    assert 'normalized === "/es-mx"' in locale
+    assert 'pathname === "/es-mx"' in locale
+    assert '? "/es-mx"' in locale
+    assert 'params.delete("run_id")' not in locale
+    assert "const params = new URLSearchParams" in locale
+    assert "normalizedHash" in locale
+    assert 'pathname === "/es-mx"' in navigation
+    assert "function refreshLanguageSwitchHref" in navigation
+    assert "window.location.pathname" in navigation
+    assert "window.location.search" in navigation
+    assert "window.location.hash" in navigation
+    assert "onPointerDown={refreshLanguageSwitchHref}" in navigation
+    assert "refreshLanguageSwitchHref(event);" in navigation
+
+    guarded_routes = (
+        "apps/web/app/GenericRepositoryExample.tsx",
+        "apps/web/app/UnifiedAssessmentPublicGuard.tsx",
+        "apps/web/app/AssessmentFailureEvidencePanel.tsx",
+        "apps/web/app/AssessmentFinalReviewAction.tsx",
+        "apps/web/app/WorkflowCallout.tsx",
+    )
+    for path in guarded_routes:
+        route_source = source(path)
+        assert '"/es-mx"' in route_source, f"{path} omits the public es-MX alias"

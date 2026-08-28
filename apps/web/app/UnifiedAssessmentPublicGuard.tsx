@@ -15,7 +15,7 @@ function setText(element: HTMLElement | null | undefined, value: string): void {
 }
 
 function isAssessmentPath(pathname: string): boolean {
-  return pathname === "/assessment" || pathname === "/es/assessment";
+  return pathname === "/assessment" || pathname === "/es/assessment" || pathname === "/es-mx";
 }
 
 function spanishPage(pathname: string): boolean {

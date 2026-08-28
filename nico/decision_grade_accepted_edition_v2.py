@@ -111,6 +111,12 @@ def build_accepted_report_edition(
         }
     if missing_artifacts:
         errors.append("missing_required_artifacts:" + ",".join(missing_artifacts))
+    if artifacts.get("evidence_manifest") not in (None, "", b""):
+        encoded = _bytes(artifacts["evidence_manifest"])
+        artifact_digests["evidence_manifest"] = {
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "size_bytes": len(encoded),
+        }
 
     report_artifact_digest = _sha256(artifact_digests)
     timestamp = str(
@@ -142,9 +148,9 @@ def build_accepted_report_edition(
         "review": review_certificate,
         "validation_errors": errors,
         "accepted_edition": approved,
-        "delivery_status": "approved_for_delivery" if approved else "blocked",
+        "delivery_status": "pending_authorization" if approved else "blocked",
         "human_review_required": True,
-        "client_delivery_allowed": approved,
+        "client_delivery_allowed": False,
     }
     manifest["accepted_edition_manifest_sha256"] = _sha256(manifest)
     return manifest

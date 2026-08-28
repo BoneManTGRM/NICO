@@ -28,6 +28,7 @@ _CANONICAL_PARITY_EXACT = {
     "Functional QA": "QA funcional",
     "Platform Parity": "Paridad de plataformas",
     "Stakeholder and Business Alignment": "Alineación comercial y de partes interesadas",
+    "Target complexity is at most 30": "La complejidad objetivo es de 30 como máximo",
     "Workflow outcome classes:": (
         "Clases de resultados de los flujos de trabajo: no se conservaron "
         "resultados clasificados."
@@ -138,7 +139,9 @@ _PROTECTED_FIELDS = {
     "candidate_id",
     "candidate_state",
     "code",
+    "client_name",
     "commit_sha",
+    "customer_name",
     "customer_id",
     "evidence_ledger_id",
     "exact_source",
@@ -156,6 +159,10 @@ _PROTECTED_FIELDS = {
     "path",
     "problematic_code",
     "project_id",
+    "project_name",
+    "primary_technical_contact",
+    "access_method",
+    "authorized_scope",
     "presented_status",
     "raw_output",
     "raw_payload",
@@ -204,6 +211,11 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA",
     ),
     ("AUTOMATED DRAFT", "BORRADOR AUTOMATIZADO"),
+    ("Primary technical contact", "Contacto técnico principal"),
+    ("Project display name", "Nombre del proyecto"),
+    ("Client display name", "Nombre del cliente"),
+    ("Access method", "Método de acceso"),
+    ("Authorized scope", "Alcance autorizado"),
     ("Not scored", "Sin puntuación"),
     ("Not supplied", "No suministrado"),
     ("Product Engineering", "Ingeniería de producto"),
@@ -2796,21 +2808,88 @@ def _localize_tree(
     value: Any,
     key: str = "",
     path: tuple[str, ...] = (),
+    *,
+    engagement_literals: tuple[str, ...] = (),
+    preserve_engagement_literals: bool = False,
+    preserve_client_literal_lines: bool = False,
 ) -> Any:
     if any(segment in _RAW_CANONICAL_SUBTREES for segment in path):
         return deepcopy(value)
     if key in _PROTECTED_FIELDS:
         return deepcopy(value)
     if isinstance(value, Mapping):
+        client_evidence_summary = (
+            str(value.get("stage_id") or "").strip() == "client_evidence_summary"
+        )
+        client_human_evidence = str(value.get("stage_id") or "").strip().startswith(
+            "client_human_evidence_"
+        )
         return {
-            str(name): _localize_tree(item, str(name), (*path, str(name)))
+            str(name): _localize_tree(
+                item,
+                str(name),
+                (*path, str(name)),
+                engagement_literals=engagement_literals,
+                preserve_engagement_literals=(
+                    preserve_engagement_literals
+                    or (
+                        client_evidence_summary
+                        and str(name) in {"evidence", "unavailable"}
+                    )
+                ),
+                preserve_client_literal_lines=(
+                    preserve_client_literal_lines
+                    or (client_human_evidence and str(name) == "evidence")
+                ),
+            )
             for name, item in value.items()
         }
     if isinstance(value, list):
-        return [_localize_tree(item, key, path) for item in value]
+        return [
+            _localize_tree(
+                item,
+                key,
+                path,
+                engagement_literals=engagement_literals,
+                preserve_engagement_literals=preserve_engagement_literals,
+                preserve_client_literal_lines=preserve_client_literal_lines,
+            )
+            for item in value
+        ]
     if isinstance(value, tuple):
-        return tuple(_localize_tree(item, key, path) for item in value)
+        return tuple(
+            _localize_tree(
+                item,
+                key,
+                path,
+                engagement_literals=engagement_literals,
+                preserve_engagement_literals=preserve_engagement_literals,
+                preserve_client_literal_lines=preserve_client_literal_lines,
+            )
+            for item in value
+        )
     if isinstance(value, str):
+        if preserve_client_literal_lines:
+            from nico.comprehensive_human_evidence_report_v1 import (
+                _translate_client_literal_line,
+            )
+
+            return _translate_client_literal_line(value)
+        if preserve_engagement_literals and engagement_literals:
+            placeholders: dict[str, str] = {}
+            protected = value
+            for literal in engagement_literals:
+                if literal not in protected:
+                    continue
+                token = f"\ue100{len(placeholders)}\ue101"
+                while token in protected:
+                    token += "\ue102"
+                protected = protected.replace(literal, token)
+                placeholders[token] = literal
+            translated = _translate_presentation_field(protected, key)
+            for token, literal in placeholders.items():
+                translated = translated.replace(token, literal)
+            return translated
         return _translate_presentation_field(value, key)
     return deepcopy(value)
 
@@ -2832,10 +2911,34 @@ def _render_inputs(
         or canonical.get("generation_timestamp")
         or ""
     )
+    engagement_literals = tuple(
+        sorted(
+            {
+                str(identity.get(field))
+                for field in (
+                    "customer_name",
+                    "project_name",
+                    "primary_technical_contact",
+                    "access_method",
+                    "authorized_scope",
+                )
+                if isinstance(identity.get(field), str) and identity.get(field)
+            },
+            key=lambda item: (-len(item), item),
+        )
+    )
     return (
         _localize_tree(identity, path=("identity",)),
-        _localize_tree(assessment, path=("assessment",)),
-        _localize_tree(stages, path=("stage_summaries",)),
+        _localize_tree(
+            assessment,
+            path=("assessment",),
+            engagement_literals=engagement_literals,
+        ),
+        _localize_tree(
+            stages,
+            path=("stage_summaries",),
+            engagement_literals=engagement_literals,
+        ),
         generated_at,
     )
 

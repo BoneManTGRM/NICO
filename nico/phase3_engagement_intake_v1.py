@@ -15,6 +15,13 @@ REVIEW_PATCH = "_nico_phase3_review_identity_v1"
 RECOVERY_PATCH = "_nico_phase3_recovery_identity_v1"
 ENGAGEMENT_MODULE = "stakeholder_context"
 ENGAGEMENT_FIELDS = ("access_method", "primary_technical_contact", "authorized_scope")
+_ENGAGEMENT_LITERAL_LIMITS = {
+    "client_identity": 180,
+    "project_identity": 180,
+    "primary_technical_contact": 600,
+    "access_method": 1200,
+    "authorized_scope": 4000,
+}
 # These scopes are explicitly non-client. The reserved production-proof pair exists only
 # for isolated release verification and is protected independently by the proof lifecycle.
 PLACEHOLDER_CUSTOMERS = {
@@ -41,6 +48,20 @@ def _values(value: Any) -> list[str]:
     if isinstance(value, (list, tuple, set)):
         return [_text(item) for item in value if _text(item)]
     return [] if value in (None, "") else [_text(value)]
+
+
+def _literal_values(value: Any, *, limit: int) -> list[str]:
+    """Return bounded engagement values without rewriting human-entered text."""
+
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    values = list(value) if isinstance(value, (list, tuple)) else [value]
+    output: list[str] = []
+    for item in values:
+        literal = _literal(item, limit)
+        if literal:
+            output.append(literal)
+    return output
 
 
 def _module(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -78,8 +99,8 @@ def validate_and_enrich_intake(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Bind client identity and scope without changing the ten-module evidence schema."""
 
     body = deepcopy(dict(payload))
-    client = _text(body.get("client_name"), 300)
-    project = _text(body.get("project_name"), 300)
+    client = (_literal_values(body.get("client_name"), limit=180) or [""])[0]
+    project = (_literal_values(body.get("project_name"), limit=180) or [""])[0]
     client_mode = _client_mode(body, client, project)
     human = (
         deepcopy(dict(body.get("human_evidence") or {}))
@@ -97,7 +118,14 @@ def validate_and_enrich_intake(payload: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("client_identity_required_for_client_engagement")
         if not project:
             raise ValueError("project_identity_required_for_client_engagement")
-        missing = [field for field in ENGAGEMENT_FIELDS if not _values(evidence.get(field))]
+        missing = [
+            field
+            for field in ENGAGEMENT_FIELDS
+            if not _literal_values(
+                evidence.get(field),
+                limit=_ENGAGEMENT_LITERAL_LIMITS[field],
+            )
+        ]
         if missing:
             raise ValueError("client_engagement_context_required:" + ",".join(missing))
         evidence.update(
@@ -144,11 +172,41 @@ def engagement_truth(record: Mapping[str, Any]) -> dict[str, Any]:
     mode = declared if declared in {"internal", "client"} else inferred
     truth = {
         "mode": mode,
-        "client_identity": (_values(evidence.get("client_identity")) or [""])[0],
-        "project_identity": (_values(evidence.get("project_identity")) or [""])[0],
-        "primary_technical_contact": (_values(evidence.get("primary_technical_contact")) or [""])[0],
-        "access_method": (_values(evidence.get("access_method")) or [""])[0],
-        "authorized_scope": (_values(evidence.get("authorized_scope")) or [""])[0],
+        "client_identity": (
+            _literal_values(
+                evidence.get("client_identity"),
+                limit=_ENGAGEMENT_LITERAL_LIMITS["client_identity"],
+            )
+            or [""]
+        )[0],
+        "project_identity": (
+            _literal_values(
+                evidence.get("project_identity"),
+                limit=_ENGAGEMENT_LITERAL_LIMITS["project_identity"],
+            )
+            or [""]
+        )[0],
+        "primary_technical_contact": (
+            _literal_values(
+                evidence.get("primary_technical_contact"),
+                limit=_ENGAGEMENT_LITERAL_LIMITS["primary_technical_contact"],
+            )
+            or [""]
+        )[0],
+        "access_method": (
+            _literal_values(
+                evidence.get("access_method"),
+                limit=_ENGAGEMENT_LITERAL_LIMITS["access_method"],
+            )
+            or [""]
+        )[0],
+        "authorized_scope": (
+            _literal_values(
+                evidence.get("authorized_scope"),
+                limit=_ENGAGEMENT_LITERAL_LIMITS["authorized_scope"],
+            )
+            or [""]
+        )[0],
     }
     truth["client_delivery_identity_valid"] = bool(
         mode == "client"
@@ -193,6 +251,7 @@ def _guard_service(service: Any) -> bool:
         decision: str,
         decision_reason: str,
         decided_at: str | None = None,
+        expected_artifact_identity: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if str(decision or "").casefold() == "approved" and not client_delivery_identity_valid(load(run_id)):
             raise ValueError("client_delivery_identity_required_for_final_approval")
@@ -203,6 +262,7 @@ def _guard_service(service: Any) -> bool:
             decision=decision,
             decision_reason=decision_reason,
             decided_at=decided_at,
+            expected_artifact_identity=expected_artifact_identity,
         )
 
     service.review = guarded_review

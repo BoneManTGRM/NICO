@@ -73,10 +73,16 @@ const COPY = {
     sessionStop: "Stop measured specialist session",
     completeStudy: "Complete empirical study",
     warning: "Reviewer identity, role, and explicit authorization are persisted with every action. The admin token stays only in this open page.",
+    status: "Status",
+    combinedHours: "Combined specialist hours",
+    fourHoursVerified: "≤ 4 hours verified",
+    auditEvents: "Audit events",
+    yes: "yes",
+    no: "no",
   },
   "es-MX": {
     title: "Controles de revisión humana de Fase 2",
-    lead: "Registra decisiones autorizadas de especialistas contra el registro canónico exacto. Cada acción grupal conserva una decisión por candidato subyacente. Nada aquí autoriza la entrega al cliente.",
+    lead: "Registra decisiones autorizadas de especialistas con base en el registro canónico exacto. Cada acción grupal conserva una decisión por candidato subyacente. Nada aquí autoriza la entrega al cliente.",
     language: "English",
     run: "ID de ejecución exacta",
     token: "Token de administrador",
@@ -113,6 +119,12 @@ const COPY = {
     sessionStop: "Detener sesión medida de especialista",
     completeStudy: "Completar estudio empírico",
     warning: "La identidad, función y autorización explícita del revisor se conservan con cada acción. El token administrativo permanece únicamente en esta página abierta.",
+    status: "Estado",
+    combinedHours: "Horas combinadas de especialistas",
+    fourHoursVerified: "≤ 4 horas verificadas",
+    auditEvents: "Eventos de auditoría",
+    yes: "sí",
+    no: "no",
   },
 } as const;
 
@@ -129,18 +141,43 @@ const ACTIONS: {value: Action; en: string; es: string}[] = [
   {value: "complete_empirical_study", en: "Complete empirical reviewer-time study", es: "Completar estudio empírico de tiempo"},
 ];
 
+const DISPOSITIONS = [
+  {value: "confirmed", en: "confirmed", es: "Confirmado"},
+  {value: "false_positive", en: "false positive", es: "Falso positivo"},
+  {value: "not_applicable", en: "not applicable", es: "No aplica"},
+  {value: "accepted_risk", en: "accepted risk", es: "Riesgo aceptado"},
+  {value: "needs_more_evidence", en: "needs more evidence", es: "Requiere más evidencia"},
+] as const;
+
+const QC_OUTCOMES = [
+  {value: "agree", en: "agree", es: "De acuerdo"},
+  {value: "disagree", en: "disagree", es: "En desacuerdo"},
+] as const;
+
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
-function errorMessage(value: unknown): string {
-  if (value instanceof Error) return value.message;
-  return String(value || "Review work request failed.");
+function errorMessage(value: unknown, locale: Locale): string {
+  const message = value instanceof Error ? value.message : String(value || "Review work request failed.");
+  if (locale === "es-MX") {
+    return message.startsWith("No fue posible")
+      ? message
+      : "No fue posible completar la solicitud protegida de trabajo de revisión.";
+  }
+  return message;
 }
 
-async function parseResponse(response: Response): Promise<Projection> {
+async function parseResponse(response: Response, locale: Locale): Promise<Projection> {
   const payload = await response.json().catch(() => ({})) as Projection & {detail?: unknown; error?: unknown};
   if (!response.ok) {
+    if (locale === "es-MX") {
+      const detail = payload.detail;
+      const detailRecord = detail && typeof detail === "object" ? detail as JsonRecord : {};
+      const rawCode = String(detailRecord.code || "").trim();
+      const code = /^[A-Z0-9_.-]+$/.test(rawCode) ? rawCode : "";
+      throw new Error(`No fue posible completar la solicitud protegida de trabajo de revisión (HTTP ${response.status}${code ? ` · ${code}` : ""}).`);
+    }
     const detail = payload.detail;
     const message = typeof detail === "string"
       ? detail
@@ -150,6 +187,18 @@ async function parseResponse(response: Response): Promise<Projection> {
     throw new Error(message);
   }
   return payload;
+}
+
+function empiricalStatus(value: unknown, locale: Locale): string {
+  const status = String(value || "not_yet_measured");
+  if (locale === "en") return status;
+  const labels: Record<string, string> = {
+    not_yet_measured: "Aún no medido",
+    verified_within_four_hours: "Verificado dentro de cuatro horas",
+    measured_over_four_hours: "Medido en más de cuatro horas",
+  };
+  const label = labels[status];
+  return label || `Estado técnico: ${status}`;
 }
 
 export default function ReviewWorkPanel() {
@@ -188,6 +237,14 @@ export default function ReviewWorkPanel() {
     setLocale(params.get("lang") === "es-MX" ? "es-MX" : "en");
   }, []);
 
+  function switchLocale(): void {
+    const nextLocale: Locale = locale === "es-MX" ? "en" : "es-MX";
+    const target = new URL(window.location.href);
+    target.searchParams.set("lang", nextLocale);
+    if (runId.trim()) target.searchParams.set("run_id", runId.trim());
+    window.location.assign(`${target.pathname}${target.search}${target.hash}`);
+  }
+
   const url = useMemo(
     () => `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/review-work`,
     [runId],
@@ -203,9 +260,9 @@ export default function ReviewWorkPanel() {
         cache: "no-store",
         headers: {Accept: "application/json", "X-NICO-Admin-Token": adminToken},
       });
-      setProjection(await parseResponse(response));
+      setProjection(await parseResponse(response, locale));
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, locale));
     } finally {
       setBusy(false);
     }
@@ -251,9 +308,9 @@ export default function ReviewWorkPanel() {
         headers: {"Content-Type": "application/json", Accept: "application/json", "X-NICO-Admin-Token": adminToken},
         body: JSON.stringify(actionPayload()),
       });
-      setProjection(await parseResponse(response));
+      setProjection(await parseResponse(response, locale));
     } catch (caught) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, locale));
     } finally {
       setBusy(false);
     }
@@ -265,8 +322,8 @@ export default function ReviewWorkPanel() {
 
   return <section className={styles.panel} data-phase2-review-work="true" data-client-delivery-allowed="false">
     <div className={styles.header}>
-      <div><p className={styles.eyebrow}>NICO COMPREHENSIVE · PHASE 2</p><h2>{copy.title}</h2></div>
-      <button type="button" className={styles.language} onClick={() => setLocale(locale === "en" ? "es-MX" : "en")}>{copy.language}</button>
+      <div><p className={styles.eyebrow}>{locale === "es-MX" ? "NICO COMPREHENSIVE · FASE 2" : "NICO COMPREHENSIVE · PHASE 2"}</p><h2>{copy.title}</h2></div>
+      <button type="button" className={styles.language} onClick={switchLocale}>{copy.language}</button>
     </div>
     <p>{copy.lead}</p>
     <p className={styles.boundary}>{copy.noDelivery}</p>
@@ -281,8 +338,8 @@ export default function ReviewWorkPanel() {
     <div className={styles.actions}><button type="button" onClick={load} disabled={busy || !runId.trim() || !adminToken.trim()}>{projection ? copy.refresh : copy.load}</button></div>
 
     {projection ? <div className={styles.summary}>
-      <article><b>{projection.dispositioned_candidate_count ?? 0}/{projection.candidate_count ?? 0}</b><span>{locale === "es-MX" ? "candidatos dispuestos" : "candidates dispositioned"}</span></article>
-      <article><b>{projection.quality_control_completed_count ?? 0}/{projection.quality_control_required_count ?? 0}</b><span>{locale === "es-MX" ? "muestras QC completas" : "QC samples complete"}</span></article>
+      <article><b>{projection.dispositioned_candidate_count ?? 0}/{projection.candidate_count ?? 0}</b><span>{locale === "es-MX" ? "candidatos con disposición" : "candidates dispositioned"}</span></article>
+      <article><b>{projection.quality_control_completed_count ?? 0}/{projection.quality_control_required_count ?? 0}</b><span>{locale === "es-MX" ? "muestras de control de calidad completadas" : "QC samples complete"}</span></article>
       <article><b>{projection.open_evidence_request_count ?? 0}</b><span>{locale === "es-MX" ? "solicitudes de evidencia abiertas" : "open evidence requests"}</span></article>
       <article><b>{Array.isArray(projection.unresolved_high_impact_candidate_ids) ? projection.unresolved_high_impact_candidate_ids.length : 0}</b><span>{locale === "es-MX" ? "escalamientos abiertos" : "open high-impact escalations"}</span></article>
       <article className={styles.wide}><b>{projection.ready_for_final_approval ? copy.ready : copy.notReady}</b><span>{locale === "es-MX" ? "La aprobación final sigue siendo una decisión humana separada." : "Final approval remains a separate human decision."}</span></article>
@@ -294,14 +351,14 @@ export default function ReviewWorkPanel() {
       {!sessionActions && action !== "stakeholder_evidence" ? <label>{copy.target}<input value={targetId} onChange={(event) => setTargetId(event.target.value)} autoComplete="off" /></label> : null}
       {action === "assign" ? <><label>{copy.assignee}<input value={assignee} onChange={(event) => setAssignee(event.target.value)} /></label><label>{copy.specialistRole}<input value={specialistRole} onChange={(event) => setSpecialistRole(event.target.value)} /></label></> : null}
       {action === "disposition_candidate" || action === "disposition_group" ? <>
-        <label>{copy.disposition}<select value={disposition} onChange={(event) => setDisposition(event.target.value)}><option value="confirmed">confirmed</option><option value="false_positive">false positive</option><option value="not_applicable">not applicable</option><option value="accepted_risk">accepted risk</option><option value="needs_more_evidence">needs more evidence</option></select></label>
+        <label>{copy.disposition}<select value={disposition} onChange={(event) => setDisposition(event.target.value)}>{DISPOSITIONS.map((item) => <option key={item.value} value={item.value}>{locale === "es-MX" ? item.es : item.en}</option>)}</select></label>
         <label className={styles.full}>{copy.rationale}<textarea value={rationale} onChange={(event) => setRationale(event.target.value)} /></label>
         <label>{copy.residualRisk}<input value={residualRisk} onChange={(event) => setResidualRisk(event.target.value)} /></label>
         <label>{copy.residualOwner}<input value={residualRiskOwner} onChange={(event) => setResidualRiskOwner(event.target.value)} /></label>
         <label className={styles.full}>{copy.escalation}<textarea value={escalationResolution} onChange={(event) => setEscalationResolution(event.target.value)} /></label>
         <label>{copy.escalationOwner}<input value={escalationOwner} onChange={(event) => setEscalationOwner(event.target.value)} /></label>
       </> : null}
-      {action === "quality_control" ? <><label>{copy.qcOutcome}<select value={qcOutcome} onChange={(event) => setQcOutcome(event.target.value)}><option value="agree">agree</option><option value="disagree">disagree</option></select></label><label className={styles.full}>{copy.qcNote}<textarea value={qcNote} onChange={(event) => setQcNote(event.target.value)} /></label></> : null}
+      {action === "quality_control" ? <><label>{copy.qcOutcome}<select value={qcOutcome} onChange={(event) => setQcOutcome(event.target.value)}>{QC_OUTCOMES.map((item) => <option key={item.value} value={item.value}>{locale === "es-MX" ? item.es : item.en}</option>)}</select></label><label className={styles.full}>{copy.qcNote}<textarea value={qcNote} onChange={(event) => setQcNote(event.target.value)} /></label></> : null}
       {action === "request_evidence" ? <><label className={styles.full}>{copy.requestText}<textarea value={requestText} onChange={(event) => setRequestText(event.target.value)} /></label><label>{copy.requestOwner}<input value={requestOwner} onChange={(event) => setRequestOwner(event.target.value)} /></label></> : null}
       {action === "resolve_evidence_request" ? <><label className={styles.full}>{copy.resolution}<textarea value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} /></label><label className={styles.full}>{copy.references}<textarea value={evidenceReferences} onChange={(event) => setEvidenceReferences(event.target.value)} /></label></> : null}
       {action === "stakeholder_evidence" ? <><label className={styles.full}>{copy.stakeholderStatement}<textarea value={stakeholderStatement} onChange={(event) => setStakeholderStatement(event.target.value)} /></label><label>{copy.sourceRole}<input value={sourceRole} onChange={(event) => setSourceRole(event.target.value)} /></label><label>{copy.evidenceReference}<input value={evidenceReference} onChange={(event) => setEvidenceReference(event.target.value)} /></label></> : null}
@@ -309,7 +366,7 @@ export default function ReviewWorkPanel() {
       <div className={`${styles.actions} ${styles.full}`}><button type="submit" disabled={busy || !projection || !reviewer.trim() || !reviewerRole.trim()}>{busy ? copy.recording : action === "start_session" ? copy.sessionStart : action === "stop_session" ? copy.sessionStop : action === "complete_empirical_study" ? copy.completeStudy : copy.submit}</button></div>
     </form>
 
-    {projection ? <details className={styles.empirical}><summary>{copy.empirical}</summary><dl><div><dt>Status</dt><dd>{String(empirical.status || "not_yet_measured")}</dd></div><div><dt>Combined specialist hours</dt><dd>{String(empirical.combined_specialist_hours ?? 0)}</dd></div><div><dt>≤ 4 hours verified</dt><dd>{empirical.four_combined_specialist_hours_empirically_proven === true ? "yes" : "no"}</dd></div><div><dt>Audit events</dt><dd>{String(projection.ledger ? (Array.isArray(ledger.audit_events) ? ledger.audit_events.length : 0) : 0)}</dd></div></dl></details> : null}
+    {projection ? <details className={styles.empirical}><summary>{copy.empirical}</summary><dl><div><dt>{copy.status}</dt><dd>{empiricalStatus(empirical.status, locale)}</dd></div><div><dt>{copy.combinedHours}</dt><dd>{String(empirical.combined_specialist_hours ?? 0)}</dd></div><div><dt>{copy.fourHoursVerified}</dt><dd>{empirical.four_combined_specialist_hours_empirically_proven === true ? copy.yes : copy.no}</dd></div><div><dt>{copy.auditEvents}</dt><dd>{String(projection.ledger ? (Array.isArray(ledger.audit_events) ? ledger.audit_events.length : 0) : 0)}</dd></div></dl></details> : null}
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
   </section>;
 }

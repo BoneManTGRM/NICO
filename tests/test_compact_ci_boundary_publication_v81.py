@@ -179,7 +179,7 @@ def test_direct_compact_finalizer_binds_ci_boundary_after_review_rebuild(
     assert len(PdfReader(io.BytesIO(pdf)).pages) <= MAX_CLIENT_PDF_PAGES
 
 
-def test_compact_pdf_reserves_ci_boundary_when_base_body_fills_page_budget() -> None:
+def test_compact_pdf_fails_closed_when_required_pages_exceed_page_budget() -> None:
     canonical = {
         "report_language": "en",
         "identity": {
@@ -198,19 +198,17 @@ def test_compact_pdf_reserves_ci_boundary_when_base_body_fills_page_budget() -> 
     gate_pdf = _pdf_pages(("Human review gate",))
     ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=False)
 
-    pdf = compose_compact_client_pdf(
-        base_pdf,
-        register_pdf,
-        gate_pdf,
-        review_pdf=review_pdf,
-        ci_boundary_pdf=ci_boundary_pdf,
-    )
-    reader = PdfReader(io.BytesIO(pdf))
-    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-
-    assert len(reader.pages) == MAX_CLIENT_PDF_PAGES
-    assert "A. CI/CD configuration maturity:" in extracted
-    assert "D. Historical workflow outcomes" in extracted
-    assert "Review page 8" in extracted
-    assert "Finding register" in extracted
-    assert "Human review gate" in extracted
+    # Sixty primary pages plus the review, register, gate, and CI boundary require
+    # 71 pages. Silently evicting primary evidence to hit a cosmetic budget would
+    # violate artifact integrity, so the compositor must reject this impossible set.
+    with pytest.raises(
+        ValueError,
+        match="cannot preserve every primary and required page within the 60-page boundary: 71",
+    ):
+        compose_compact_client_pdf(
+            base_pdf,
+            register_pdf,
+            gate_pdf,
+            review_pdf=review_pdf,
+            ci_boundary_pdf=ci_boundary_pdf,
+        )

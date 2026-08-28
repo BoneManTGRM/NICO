@@ -78,6 +78,23 @@ def _clean_stage_evidence(values: Any) -> list[str]:
     return output
 
 
+def _clean_client_literal_stage_evidence(values: Any) -> list[str]:
+    """Retain exact client evidence while removing only empty/punctuation rows."""
+
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        item = str(raw) if raw is not None else ""
+        if not item.strip() or not any(character.isalnum() for character in item):
+            continue
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(item)
+    return output
+
+
 def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
     output = deepcopy(dict(canonical))
     stages: list[dict[str, Any]] = []
@@ -86,7 +103,14 @@ def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
             continue
         stage = deepcopy(dict(raw))
         stage_id = _text(stage.get("stage_id"), 120)
-        stage["evidence"] = _clean_stage_evidence(stage.get("evidence"))
+        if stage_id == "client_evidence_summary" or stage_id.startswith(
+            "client_human_evidence_"
+        ):
+            stage["evidence"] = _clean_client_literal_stage_evidence(
+                stage.get("evidence")
+            )
+        else:
+            stage["evidence"] = _clean_stage_evidence(stage.get("evidence"))
         if stage_id == "risk_reduction_and_executive_briefing":
             stage["status"] = "review_required"
             stage["summary"] = (

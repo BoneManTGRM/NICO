@@ -71,6 +71,35 @@ def test_pdf_bridge_prefers_canonical_run_binding_and_cannot_swallow_early_click
     assert handler.index(ready) < handler.index(exact) < handler.index(bound) < handler.index(cancel)
 
 
+def test_approved_pdf_bypasses_localization_and_verifies_exact_accepted_bytes() -> None:
+    workspace = _source("apps/web/app/assessment/AssessmentWorkspace.tsx")
+    bridge = _source("apps/web/app/AssessmentReviewPdfDownload.tsx")
+    handler = bridge[bridge.index("function handleReviewPdfClick") :]
+
+    assert 'data-assessment-pdf-kind="accepted-edition"' in workspace
+    assert 'data-assessment-pdf-kind="localized-draft-pending-approval"' in workspace
+    assert "onClick={downloadApprovedPdf}" in workspace
+    assert "onClick={downloadPdf}" in workspace
+    assert "!exactApprovedPdfAvailable || approvedLocaleMismatch" in workspace
+    assert "acceptedPdfIdentity?.reportLanguage !== requestedReportLanguage" in workspace
+    assert "copy.newApprovalRequired" in workspace
+    assert "observedSha256 !== acceptedPdfSha256" in workspace
+    assert 'response.headers.get("x-nico-artifact-sha256")' in workspace
+    assert 'response.headers.get("x-nico-accepted-pdf-sha256")' in workspace
+    assert "APPROVED-ACCEPTED-EDITION.pdf" in workspace
+
+    kind_guard = (
+        'if (button.getAttribute("data-assessment-pdf-kind") !== '
+        "REVIEW_PDF_KIND) return;"
+    )
+    cancel = "event.preventDefault();"
+    assert kind_guard in handler
+    assert handler.index(kind_guard) < handler.index(cancel)
+    assert "approved" not in bridge.split("const REVIEW_PDF_LABEL =", 1)[1].split(
+        ";", 1
+    )[0]
+
+
 def test_final_review_bridge_prefers_canonical_run_binding_without_approval_side_effect() -> None:
     source = _source("apps/web/app/AssessmentFinalReviewAction.tsx")
     resolver = source[source.index("function visibleRunId") : source.index("function reportExists")]

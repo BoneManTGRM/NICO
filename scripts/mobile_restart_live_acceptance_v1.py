@@ -4,12 +4,20 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Browser, Page, sync_playwright
+
+from comprehensive_production_run_handoff_v1 import (
+    load_source_proof,
+    require_canonical_json_digest,
+    require_matching_canonical_truth_digest,
+    source_binding_marker,
+)
 
 VERSION = "nico.mobile_restart_live_acceptance.v1"
 WORKSPACE_SELECTOR = (
@@ -49,9 +57,24 @@ def _write(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _require_existing_source_args(args: argparse.Namespace) -> str:
+    source_proof = getattr(args, "source_proof", None)
+    if not isinstance(source_proof, Path) or not source_proof.is_file():
+        raise ValueError("existing_run_source_proof_required")
+    marker = source_binding_marker(
+        getattr(args, "source_workflow_run_id", ""),
+        getattr(args, "source_workflow_run_attempt", ""),
+    )
+    if float(getattr(args, "observation_seconds", 0.0) or 0.0) < 90.0:
+        raise ValueError("terminal_observation_must_be_at_least_90_seconds")
+    if getattr(args, "ui_locale", "") not in {"en", "es-MX"}:
+        raise ValueError("supported_ui_locale_required")
+    return marker
+
+
 def _ui_state(page: Page) -> dict[str, str]:
     value = page.evaluate(
-        """selector => {
+        r"""selector => {
           const section = document.querySelector(selector);
           const compact = value => String(value || '').replace(/\s+/g, ' ').trim();
           if (!section) {
@@ -231,6 +254,12 @@ def _verify_manifest_and_pdf(page: Page, frontend_origin: str, run_id: str) -> d
     assert reports.get("artifact_delivery") == "on_demand_exact_run"
     assert reports.get("pdf_available") is True
     assert reports.get("markdown_available") is True
+    canonical_truth_sha256 = str(
+        reports.get("canonical_truth_sha256") or ""
+    ).lower()
+    assert re.fullmatch(r"[0-9a-f]{64}", canonical_truth_sha256), {
+        "missing_or_invalid_manifest_canonical_truth_sha256": canonical_truth_sha256,
+    }
     for embedded in ("pdf_base64", "markdown", "html", "json"):
         assert embedded not in reports, f"Projected browser response embedded {embedded}"
 
@@ -244,100 +273,865 @@ def _verify_manifest_and_pdf(page: Page, frontend_origin: str, run_id: str) -> d
     assert pdf_bytes.startswith(b"%PDF"), "Exact-run report did not have a PDF signature"
     observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
     expected_sha = str(pdf.headers.get("x-nico-artifact-sha256") or "").lower()
-    assert not expected_sha or expected_sha == observed_sha
+    assert re.fullmatch(r"[0-9a-f]{64}", expected_sha), {
+        "missing_or_invalid_artifact_sha256_header": expected_sha,
+    }
+    assert expected_sha == observed_sha
     assert pdf.headers.get("x-nico-run-id") == run_id
+    pdf_canonical_truth_sha256 = require_matching_canonical_truth_digest(
+        canonical_truth_sha256,
+        pdf.headers.get("x-nico-canonical-truth-sha256"),
+    )
     return {
         "terminal_manifest_size_bytes": len(status_bytes),
         "terminal_manifest_bounded": True,
         "report_artifact_delivery": reports.get("artifact_delivery"),
         "pdf_size_bytes": len(pdf_bytes),
         "pdf_sha256": observed_sha,
+        "pdf_artifact_hash_header_verified": True,
+        "canonical_truth_sha256": pdf_canonical_truth_sha256,
+        "pdf_canonical_truth_digest_verified": True,
         "pdf_signature_verified": True,
         "pdf_run_identity_verified": True,
     }
 
 
 def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
-    context = browser.new_context(
-        viewport={"width": 390, "height": 844},
-        locale="en-US",
-        service_workers="block",
-        extra_http_headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    _require_existing_source_args(args)
+    return run_existing_proof(browser, args)
+
+
+def _continuation_count(requests: list[dict[str, str]]) -> int:
+    return sum(
+        1
+        for item in requests
+        if item.get("method") == "POST"
+        and item.get("path", "").startswith("/api/nico/assessment/comprehensive-run/")
+        and item.get("path", "").endswith("/continue")
     )
-    page = context.new_page()
-    requests: list[dict[str, str]] = []
+
+
+def _blocking_overlay_count(page: Any) -> int:
+    return int(
+        page.evaluate(
+            """() => Array.from(document.querySelectorAll('body *')).filter(node => {
+              const style = getComputedStyle(node);
+              const rect = node.getBoundingClientRect();
+              return style.position === 'fixed'
+                && style.display !== 'none'
+                && style.visibility !== 'hidden'
+                && Number(style.opacity || 1) > 0
+                && style.pointerEvents !== 'none'
+                && rect.width >= innerWidth * 0.7
+                && rect.height >= innerHeight * 0.7;
+            }).length"""
+        )
+    )
+
+
+def _prove_visibility_hidden_visible(
+    page: Any,
+    context: Any,
+    *,
+    timeout_ms: int,
+) -> dict[str, Any]:
+    raw_context = getattr(context, "_context", context)
+    raw_page = getattr(page, "_page", page)
+    initial = str(raw_page.evaluate("() => document.visibilityState"))
+    assert initial == "visible", f"Assessment page was not initially visible: {initial}"
+    raw_page.evaluate(
+        """() => {
+          window.__nicoVisibilityTransitions = [];
+          document.addEventListener('visibilitychange', () => {
+            window.__nicoVisibilityTransitions.push(document.visibilityState);
+          });
+        }"""
+    )
+    background = raw_context.new_page()
+    try:
+        background.goto("about:blank")
+        background.bring_to_front()
+        raw_page.wait_for_function(
+            "() => document.hidden === true && document.visibilityState === 'hidden'",
+            timeout=timeout_ms,
+        )
+        hidden = str(raw_page.evaluate("() => document.visibilityState"))
+        raw_page.bring_to_front()
+        raw_page.wait_for_function(
+            "() => document.hidden === false && document.visibilityState === 'visible'",
+            timeout=timeout_ms,
+        )
+        visible = str(raw_page.evaluate("() => document.visibilityState"))
+    finally:
+        background.close()
+    transitions = list(
+        raw_page.evaluate("() => Array.from(window.__nicoVisibilityTransitions || [])")
+        or []
+    )
+    assert hidden == "hidden" and visible == "visible", transitions
+    assert transitions[-2:] == ["hidden", "visible"], transitions
+    return {
+        "initial_visibility": initial,
+        "terminal_visibility_transitions": ["hidden", "visible"],
+        "observed_visibility_transitions": transitions,
+        "document_hidden_observed": True,
+        "document_visible_after_foreground": True,
+    }
+
+
+def _verify_canonical_truth(
+    page: Any,
+    *,
+    frontend_origin: str,
+    run_id: str,
+    expected_sha: str,
+    expected_digest: str,
+) -> dict[str, Any]:
+    status = page.request.get(
+        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
+        headers={
+            "Accept": "application/json",
+            BROWSER_PROJECTION_HEADER: BROWSER_PROJECTION_VALUE,
+            "Cache-Control": "no-store",
+        },
+        timeout=60_000,
+    )
+    assert status.ok, f"Canonical terminal status returned HTTP {status.status}"
+    payload = status.json()
+    reports = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
+    assert payload.get("run_id") == run_id
+    assert payload.get("commit_sha") == expected_sha
+    assert payload.get("terminal") is True
+    assert payload.get("human_review_required") is True
+    assert payload.get("client_delivery_allowed") is False
+
+    report = page.request.get(
+        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/json",
+        headers={"Accept": "application/json", "Cache-Control": "no-store"},
+        timeout=120_000,
+    )
+    assert report.ok, f"Canonical report JSON returned HTTP {report.status}"
+    canonical = report.json()
+    assert isinstance(canonical, dict)
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
+    lifecycle = canonical.get("lifecycle") if isinstance(canonical.get("lifecycle"), dict) else {}
+    assert str(identity.get("run_id") or "") == run_id
+    assert str(identity.get("commit_sha") or "") == expected_sha
+    computed_digest = require_canonical_json_digest(
+        canonical,
+        report.headers.get("x-nico-canonical-truth-sha256"),
+    )
+    digest = require_matching_canonical_truth_digest(
+        expected_digest,
+        reports.get("canonical_truth_sha256"),
+        computed_digest,
+    )
+    return {
+        "canonical_truth_sha256": digest,
+        "canonical_run_id": run_id,
+        "canonical_commit_sha": expected_sha,
+        "canonical_truth_digest_computed_from_json": True,
+        "lifecycle_status": str(payload.get("status") or ""),
+        "current_stage": str(payload.get("current_stage") or ""),
+        "revision": payload.get("revision"),
+        "integrity_sha256": str(payload.get("integrity_sha256") or ""),
+        "human_review_required": payload.get("human_review_required"),
+        "client_delivery_allowed": payload.get("client_delivery_allowed"),
+        "human_review_status": str(
+            canonical.get("human_review_status")
+            or lifecycle.get("human_review_status")
+            or ""
+        ),
+        "approval_status": str(canonical.get("approval_status") or ""),
+        "canonical_client_delivery_allowed": canonical.get(
+            "client_delivery_allowed"
+        ),
+    }
+
+
+def _mobile_locale_surface(page: Any, locale: str, run_id: str) -> dict[str, Any]:
+    spanish = locale == "es-MX"
+    expected_path = "/es/assessment" if spanish else "/assessment"
+    value = dict(
+        page.evaluate(
+            """() => ({
+              pathname: window.location.pathname,
+              document_language: String(document.documentElement.lang || ''),
+              workspace_locale: String(document.querySelector('main[data-workspace="assessment"]')?.getAttribute('data-assessment-locale') || ''),
+            })"""
+        )
+        or {}
+    )
+    assert str(value.get("pathname") or "").startswith(expected_path), value
+    assert str(value.get("document_language") or "").lower().startswith(
+        "es" if spanish else "en"
+    ), value
+    assert str(value.get("workspace_locale") or "") == (
+        "es-MX" if spanish else "en"
+    ), value
+    query = parse_qs(urlparse(str(page.url)).query)
+    assert query.get("run_id") == [run_id], query
+    assert "report_language" not in query, query
+    body = page.locator(WORKSPACE_SELECTOR).first.inner_text()
+    expected_authored = "Identidad técnica" if spanish else "Technical identity"
+    assert expected_authored in body
+    if spanish:
+        for leaked in (
+            "Start new assessment",
+            "Internal review required",
+            "Technical identity",
+        ):
+            assert leaked not in body, {"english_leak": leaked}
+    return {
+        **value,
+        "ui_locale": locale,
+        "run_id": run_id,
+        "authored_copy_localized": True,
+    }
+
+
+def _mobile_review_locale_surface(
+    page: Any,
+    locale: str,
+    run_id: str,
+) -> dict[str, Any]:
+    spanish = locale == "es-MX"
+    query = parse_qs(urlparse(str(page.url)).query)
+    assert query.get("run_id") == [run_id], query
+    if spanish:
+        assert query.get("lang") == ["es-MX"], query
+    document_language = str(
+        page.evaluate("() => document.documentElement.lang || ''")
+    )
+    assert document_language.lower().startswith("es" if spanish else "en")
+    workspace = page.locator("main[data-review-contract='accepted-edition-v2']")
+    workspace.wait_for(state="visible", timeout=120_000)
+    expected_heading = (
+        "Revisión final interna y autorización para el cliente."
+        if spanish
+        else "Internal final review and client-ready authorization."
+    )
+    heading = workspace.locator("h1").inner_text().strip()
+    assert heading == expected_heading
+    return {
+        "ui_locale": locale,
+        "document_language": document_language,
+        "heading": heading,
+        "run_id_preserved": True,
+        "requested_locale_preserved": True,
+    }
+
+
+def _mobile_locale_round_trip(
+    page: Any,
+    *,
+    source_locale: str,
+    run_id: str,
+    expected_sha: str,
+    timeout_ms: int,
+) -> dict[str, Any]:
+    target_locale = "en" if source_locale == "es-MX" else "es-MX"
+    source_surface = _mobile_locale_surface(page, source_locale, run_id)
+    switcher = page.locator(
+        'a.language-switcher[data-preserves-assessment-state="true"]'
+    ).first
+    switcher.wait_for(state="visible", timeout=timeout_ms)
+    switcher.click()
+    page.locator(WORKSPACE_SELECTOR).first.wait_for(state="visible", timeout=timeout_ms)
+    target_terminal = _wait_for_terminal_ui_ready(
+        page,
+        run_id,
+        expected_sha,
+        120.0,
+    )
+    target_surface = _mobile_locale_surface(page, target_locale, run_id)
+
+    return_switcher = page.locator(
+        'a.language-switcher[data-preserves-assessment-state="true"]'
+    ).first
+    return_switcher.wait_for(state="visible", timeout=timeout_ms)
+    return_switcher.click()
+    page.locator(WORKSPACE_SELECTOR).first.wait_for(state="visible", timeout=timeout_ms)
+    source_terminal_after = _wait_for_terminal_ui_ready(
+        page,
+        run_id,
+        expected_sha,
+        120.0,
+    )
+    source_surface_after = _mobile_locale_surface(page, source_locale, run_id)
+    return {
+        "source_locale": source_locale,
+        "target_locale": target_locale,
+        "source_surface": source_surface,
+        "target_surface": target_surface,
+        "source_surface_after_round_trip": source_surface_after,
+        "target_terminal_run_id": target_terminal.get("run_id"),
+        "source_terminal_run_id_after_round_trip": source_terminal_after.get("run_id"),
+        "locale_control_used_twice": True,
+        "same_run_preserved": True,
+        "same_commit_preserved": True,
+        "authored_copy_localized": True,
+    }
+
+
+def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
+    metrics = dict(
+        page.evaluate(
+            f"""() => {{
+              const targets = Array.from(document.querySelectorAll(
+                '{REPORT_ACTIONS_SELECTOR} button, [data-assessment-internal-review="true"]'
+              )).map((node) => {{
+                const rect = node.getBoundingClientRect();
+                const style = getComputedStyle(node);
+                return {{
+                  label: String(node.textContent || '').trim(),
+                  width: rect.width,
+                  height: rect.height,
+                  left: rect.left,
+                  right: rect.right,
+                  display: style.display,
+                  visibility: style.visibility,
+                  pointer_events: style.pointerEvents,
+                }};
+              }});
+              return {{
+                viewport_width: document.documentElement.clientWidth,
+                document_scroll_width: document.documentElement.scrollWidth,
+                body_scroll_width: document.body.scrollWidth,
+                targets,
+              }};
+            }}"""
+        )
+        or {{}}
+    )
+    viewport_width = float(metrics.get("viewport_width") or 0)
+    assert viewport_width > 0, metrics
+    assert float(metrics.get("document_scroll_width") or 0) <= viewport_width + 1, metrics
+    assert float(metrics.get("body_scroll_width") or 0) <= viewport_width + 1, metrics
+    targets = list(metrics.get("targets") or [])
+    assert len(targets) >= 3, metrics
+    for target in targets:
+        assert float(target.get("width") or 0) >= 44, target
+        assert float(target.get("height") or 0) >= 44, target
+        assert float(target.get("left", -1)) >= 0, target
+        assert float(target.get("right", viewport_width + 1)) <= viewport_width + 1, target
+        assert target.get("display") != "none", target
+        assert target.get("visibility") != "hidden", target
+        assert target.get("pointer_events") != "none", target
+    return {
+        **metrics,
+        "horizontal_overflow_absent": True,
+        "minimum_touch_target_px": 44,
+        "terminal_actions_reachable": True,
+    }
+
+
+def _active_report_language(page: Any) -> str:
+    language = str(
+        page.evaluate(
+            f"""() => {{
+              const actions = document.querySelector('{REPORT_ACTIONS_SELECTOR}');
+              return String(actions?.getAttribute('data-requested-report-language') || '');
+            }}"""
+        )
+    ).strip()
+    assert language in {"en", "es-MX"}, {
+        "unsupported_requested_report_language": language,
+    }
+    return language
+
+
+def _click_markdown_and_verify(
+    page: Any,
+    run_id: str,
+    *,
+    expected_sha: str,
+    expected_canonical_digest: str,
+) -> dict[str, Any]:
+    actions = page.locator(REPORT_ACTIONS_SELECTOR).first
+    markdown = actions.get_by_role("button", name=re.compile("markdown", re.I)).first
+    report_language = _active_report_language(page)
+    markdown_kind = str(
+        markdown.get_attribute("data-assessment-markdown-kind") or ""
+    ).strip()
+    button_language = str(markdown.get_attribute("data-report-language") or "").strip()
+    assert markdown_kind in {
+        "accepted-source-rendering",
+        "localized-draft-pending-approval",
+    }, {"markdown_action_kind": markdown_kind}
+    assert button_language == report_language
+    markdown_path = (
+        f"/api/nico/assessment/comprehensive-run/{run_id}/"
+        f"localized-report/{report_language}"
+    )
+    origin = urlparse(str(page.url))
+    response = page.request.get(
+        f"{origin.scheme}://{origin.netloc}{markdown_path}",
+        headers={"Accept": "application/json", "Cache-Control": "no-store"},
+        timeout=120_000,
+    )
+    body = response.body()
+    assert response.ok, f"Markdown action returned HTTP {response.status}"
+    assert body.strip(), "Localized Markdown route returned an empty response"
+    payload = response.json()
+    report = payload.get("report") if isinstance(payload.get("report"), dict) else {}
+    localized_lifecycle = (
+        payload.get("localized_artifact_lifecycle")
+        if isinstance(payload.get("localized_artifact_lifecycle"), dict)
+        else {}
+    )
+    rendered_markdown = str(report.get("markdown") or "")
+    assert payload.get("run_id") == run_id
+    assert payload.get("commit_sha") == expected_sha
+    assert payload.get("report_language") == report_language
+    assert payload.get("assessment_rerun") is False
+    assert rendered_markdown.strip(), "Localized Markdown payload was empty"
+    canonical_digest = require_matching_canonical_truth_digest(
+        expected_canonical_digest,
+        payload.get("canonical_truth_sha256"),
+        report.get("canonical_truth_sha256"),
+    )
+    if markdown_kind == "accepted-source-rendering":
+        assert payload.get("source_report_language") == report_language
+        assert payload.get("localized_artifact_requires_new_approval") is False
+    else:
+        assert localized_lifecycle.get("client_delivery_allowed") is False
+        assert report.get("client_delivery_allowed") is False
+
+    markdown.click()
+    gesture_count = 1
+    deadline = time.monotonic() + 30.0
+    last = ""
+    while time.monotonic() < deadline:
+        last = actions.inner_text()
+        if (
+            ("Markdown copied" in last or "Markdown copiado" in last)
+            and markdown.is_enabled()
+        ):
+            break
+        ready_to_copy = (
+            "Markdown ready. Click Copy Markdown." in last
+            or "Markdown listo. Pulsa Copiar Markdown." in last
+        )
+        if ready_to_copy and gesture_count == 1:
+            page.wait_for_timeout(1_250)
+            markdown.click()
+            gesture_count += 1
+        page.wait_for_timeout(100)
+    else:
+        raise AssertionError(f"Markdown action did not report success: {last}")
+    return {
+        "http_status": response.status,
+        "size_bytes": len(body),
+        "markdown_size_bytes": len(rendered_markdown.encode("utf-8")),
+        "report_language": report_language,
+        "markdown_action_kind": markdown_kind,
+        "markdown_route": markdown_path,
+        "canonical_truth_sha256": canonical_digest,
+        "assessment_rerun_verified_false": True,
+        "run_identity_verified": True,
+        "commit_identity_verified": True,
+        "locale_identity_verified": True,
+        "lifecycle_contract_verified": True,
+        "verification_get_count": 1,
+        "user_gesture_count": gesture_count,
+        "localized_success": "Markdown copiado" if "Markdown copiado" in last else "Markdown copied",
+        "action_reenabled": True,
+    }
+
+
+def _observe_terminal_stability(
+    page: Any,
+    *,
+    run_id: str,
+    expected_sha: str,
+    expected_canonical_digest: str,
+    seconds: float,
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if seconds < 90.0:
+        raise ValueError("terminal_observation_must_be_at_least_90_seconds")
+    started = time.monotonic()
+    baseline_index = len(requests)
+    stable_url = str(page.url)
+    report_language = _active_report_language(page)
+    markdown_proofs = [
+        _click_markdown_and_verify(
+            page,
+            run_id,
+            expected_sha=expected_sha,
+            expected_canonical_digest=expected_canonical_digest,
+        )
+    ]
+    samples: list[dict[str, Any]] = []
+    deadline = started + seconds
+    while time.monotonic() < deadline:
+        state = _ui_state(page)
+        assert _terminal_ui_ready(state, run_id, expected_sha), state
+        assert str(page.url) == stable_url, {
+            "expected_terminal_url": stable_url,
+            "observed_terminal_url": str(page.url),
+        }
+        assert _blocking_overlay_count(page) == 0
+        assert page.evaluate("() => getComputedStyle(document.body).pointerEvents") != "none"
+        review = page.locator('[data-assessment-internal-review="true"]').first
+        assert review.is_visible(), "Professional review action was not visible"
+        assert run_id in str(review.get_attribute("href") or "")
+        scroll = page.evaluate(
+            """() => {
+              window.scrollTo(0, document.documentElement.scrollHeight);
+              const bottom = window.scrollY;
+              window.scrollTo(0, 0);
+              return {
+                bottom,
+                top: window.scrollY,
+                scroll_height: document.documentElement.scrollHeight,
+                viewport_height: window.innerHeight,
+              };
+            }"""
+        )
+        assert float(scroll.get("scroll_height") or 0) > float(
+            scroll.get("viewport_height") or 0
+        ), scroll
+        assert float(scroll.get("bottom") or 0) > 0, scroll
+        assert float(scroll.get("top", -1)) == 0, scroll
+        samples.append(
+            {
+                "elapsed_seconds": round(time.monotonic() - started, 2),
+                "run_id": state.get("run_id"),
+                "commit_sha": state.get("commit_sha"),
+                "phase": state.get("phase"),
+                "blocking_overlay_count": 0,
+                "scroll": scroll,
+                "request_count": len(requests) - baseline_index,
+            }
+        )
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            page.wait_for_timeout(int(min(5.0, remaining) * 1000))
+    markdown_proofs.append(
+        _click_markdown_and_verify(
+            page,
+            run_id,
+            expected_sha=expected_sha,
+            expected_canonical_digest=expected_canonical_digest,
+        )
+    )
+    duration = time.monotonic() - started
+    observed = requests[baseline_index:]
+    status_path = f"/api/nico/assessment/comprehensive-run/{run_id}"
+    markdown_path = status_path + f"/localized-report/{report_language}"
+    legacy_markdown_path = status_path + "/report/markdown"
+    posts = [item for item in observed if item.get("method") == "POST"]
+    status_gets = [
+        item
+        for item in observed
+        if item.get("method") == "GET" and item.get("path") == status_path
+    ]
+    markdown_gets = [
+        item
+        for item in observed
+        if item.get("method") == "GET" and item.get("path") == markdown_path
+    ]
+    legacy_markdown_gets = [
+        item
+        for item in observed
+        if item.get("method") == "GET" and item.get("path") == legacy_markdown_path
+    ]
+    unexpected = [
+        item
+        for item in observed
+        if item.get("path", "").startswith("/api/nico/assessment/")
+        and not (
+            item.get("method") == "GET"
+            and item.get("path") in {status_path, markdown_path}
+        )
+    ]
+    buckets: dict[int, int] = {}
+    for item in observed:
+        bucket = int(max(0.0, float(item.get("monotonic") or started) - started) // 5)
+        buckets[bucket] = buckets.get(bucket, 0) + 1
+    assert duration >= seconds
+    assert not posts, posts
+    assert len(status_gets) <= 4, status_gets
+    assert len(markdown_gets) <= 2, markdown_gets
+    assert not legacy_markdown_gets, legacy_markdown_gets
+    assert len(markdown_proofs) == 2
+    assert not unexpected, unexpected
+    assert max(buckets.values(), default=0) <= 4, buckets
+    return {
+        "required_seconds": seconds,
+        "observed_seconds": round(duration, 2),
+        "sample_count": len(samples),
+        "status_get_count": len(status_gets),
+        "markdown_get_count": len(markdown_gets),
+        "localized_markdown_get_count": len(markdown_gets),
+        "legacy_markdown_get_count": len(legacy_markdown_gets),
+        "markdown_action_success_count": len(markdown_proofs),
+        "markdown_verification_get_count": sum(
+            int(item["verification_get_count"]) for item in markdown_proofs
+        ),
+        "markdown_report_language": report_language,
+        "markdown_network_path": markdown_path,
+        "post_request_count": len(posts),
+        "unexpected_assessment_request_count": len(unexpected),
+        "max_requests_per_five_seconds": max(buckets.values(), default=0),
+        "terminal_polling_bounded": True,
+        "network_activity_bounded": True,
+        "markdown_network_bounded": True,
+        "blocking_overlay_absent": True,
+        "pointer_interaction_enabled": True,
+        "scroll_responsive": True,
+        "professional_review_action_reachable": True,
+        "markdown_action_proofs": markdown_proofs,
+        "samples": samples,
+    }
+
+
+def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
+    source_marker = _require_existing_source_args(args)
+    handoff = load_source_proof(
+        args.source_proof,
+        expected_sha=args.expected_sha,
+        repository=args.repository,
+        source_workflow_run_id=args.source_workflow_run_id,
+        source_workflow_run_attempt=args.source_workflow_run_attempt,
+    )
+    run_id = str(handoff["run_id"])
+    origin = args.frontend_url.rstrip("/")
+    requests: list[dict[str, Any]] = []
+    prohibited_attempts: list[dict[str, Any]] = []
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    crashes: list[str] = []
+    open_contexts: list[Any] = []
 
     def record_request(request: Any) -> None:
         parsed = urlparse(request.url)
         if parsed.path.startswith("/api/nico/assessment/"):
-            requests.append({"method": request.method, "path": parsed.path})
+            requests.append(
+                {
+                    "method": str(request.method).upper(),
+                    "path": parsed.path,
+                    "resource_type": str(getattr(request, "resource_type", "")),
+                    "monotonic": time.monotonic(),
+                }
+            )
 
-    page.on("request", record_request)
+    def mutation_guard(route: Any, request: Any) -> None:
+        parsed = urlparse(request.url)
+        prohibited = request.method == "POST" and (
+            parsed.path == "/api/nico/assessment/comprehensive-intake"
+            or (
+                parsed.path.startswith("/api/nico/assessment/comprehensive-run/")
+                and parsed.path.endswith("/continue")
+            )
+        )
+        if prohibited:
+            prohibited_attempts.append(
+                {
+                    "method": str(request.method).upper(),
+                    "path": parsed.path,
+                    "monotonic": time.monotonic(),
+                }
+            )
+            route.abort("blockedbyclient")
+            return
+        route.continue_()
+
+    def new_surface(label: str) -> tuple[Any, Any]:
+        context = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            locale="es-MX" if args.ui_locale == "es-MX" else "en-US",
+            service_workers="block",
+            extra_http_headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+        )
+        raw_context = getattr(context, "_context", context)
+        raw_context.grant_permissions(
+            ["clipboard-read", "clipboard-write"],
+            origin=origin,
+        )
+        page = context.new_page()
+        page.on("request", record_request)
+        page.on(
+            "console",
+            lambda message: console_errors.append(f"{label}: {message.text}")
+            if message.type == "error"
+            else None,
+        )
+        page.on("pageerror", lambda error: page_errors.append(f"{label}: {error}"))
+        page.on("crash", lambda: crashes.append(f"{label}: page_crashed"))
+        page.route("**/*", mutation_guard)
+        open_contexts.append(context)
+        return context, page
+
+    def exact_url(probe: str) -> str:
+        assessment_path = "/es/assessment" if args.ui_locale == "es-MX" else "/assessment"
+        return (
+            f"{origin}{assessment_path}?tier=comprehensive"
+            f"&run_id={run_id}&expected_commit_sha={args.expected_sha}"
+            f"&{probe}={time.time_ns()}#assessment"
+        )
+
     started_at = time.time()
+    first_context: Any | None = None
+    second_context: Any | None = None
     try:
-        page.goto(
-            f"{args.frontend_url.rstrip('/')}/assessment?tier=comprehensive&mobile_restart_probe={time.time_ns()}#assessment",
+        first_context, first_page = new_surface("initial_context")
+        first_context_identity = id(getattr(first_context, "_context", first_context))
+        first_page.goto(
+            exact_url("existing_run_probe"),
             wait_until="domcontentloaded",
             timeout=args.navigation_timeout_ms,
         )
-        workspace = page.locator(WORKSPACE_SELECTOR).first
-        workspace.wait_for(state="visible", timeout=args.navigation_timeout_ms)
-        page.get_by_label("Repository owner/name or GitHub URL").fill(args.repository)
-        # This production smoke is an internal assessment. Non-empty client/project
-        # values invoke Phase 3 client-engagement validation and must never be
-        # synthetic labels used only to identify an automated proof run.
-        page.get_by_label("Client name, optional").fill("")
-        page.get_by_label("Project name, optional").fill("")
-        page.locator(AUTHORIZATION_SELECTOR).check()
-        page.locator(ACTION_SELECTOR).click()
-
-        run_id, initial_stored = _wait_for_run_id(page, 180.0)
-        assert _start_count(requests) == 1
-
-        running_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms, expect_active_storage=True)
-        assert _start_count(requests) == 1, "Running-page reload created a duplicate assessment"
-
-        _wait_for_terminal(page, run_id, args.timeout_seconds)
-        terminal_before_reload = _wait_for_terminal_ui_ready(page, run_id, args.expected_sha, 240.0)
-
-        terminal_storage = _stored_run(page)
-        assert not terminal_storage.get("run_id"), terminal_storage
-        assert terminal_storage.get("url_run_id") == run_id
-        terminal_reload = _reload_and_restore(page, run_id, args.navigation_timeout_ms, expect_active_storage=False)
-        _wait_for_terminal(page, run_id, 120.0)
-        terminal_after_reload = _wait_for_terminal_ui_ready(page, run_id, args.expected_sha, 120.0)
-        assert _start_count(requests) == 1, "Terminal-page reload created a duplicate assessment"
-
-        actions = page.locator(REPORT_ACTIONS_SELECTOR).first
-        actions.scroll_into_view_if_needed(timeout=args.navigation_timeout_ms)
-        page.wait_for_timeout(250)
-        scroll_before_resume = float(page.evaluate("() => window.scrollY"))
-        status_before = sum(
-            1
-            for item in requests
-            if item.get("method") == "GET" and item.get("path", "").endswith(run_id)
+        first_page.locator(WORKSPACE_SELECTOR).first.wait_for(
+            state="visible", timeout=args.navigation_timeout_ms
         )
-        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
-        page.wait_for_timeout(750)
-        scroll_after_resume = float(page.evaluate("() => window.scrollY"))
-        terminal_after_pageshow = _ui_state(page)
-        status_after = sum(
-            1
-            for item in requests
-            if item.get("method") == "GET" and item.get("path", "").endswith(run_id)
+        initial = _wait_for_same_run_ui(first_page, run_id, 120.0)
+        terminal_before_reload = _wait_for_terminal_ui_ready(
+            first_page, run_id, args.expected_sha, 240.0
         )
-        assert terminal_after_pageshow.get("run_id") == run_id
-        assert terminal_after_pageshow.get("phase") in TERMINAL_PHASES
-        assert abs(scroll_after_resume - scroll_before_resume) <= 2
-        assert status_after == status_before, "Terminal pageshow restarted exact-run recovery"
-        artifacts = _verify_manifest_and_pdf(page, args.frontend_url.rstrip("/"), run_id)
+        first_locale_surface = _mobile_locale_surface(
+            first_page, args.ui_locale, run_id
+        )
+        terminal_reload = _reload_and_restore(
+            first_page,
+            run_id,
+            args.navigation_timeout_ms,
+            expect_active_storage=False,
+        )
+        terminal_after_reload = _wait_for_terminal_ui_ready(
+            first_page, run_id, args.expected_sha, 120.0
+        )
+        initial_visibility = _prove_visibility_hidden_visible(
+            first_page,
+            first_context,
+            timeout_ms=args.navigation_timeout_ms,
+        )
+        terminal_after_foreground = _wait_for_terminal_ui_ready(
+            first_page, run_id, args.expected_sha, 120.0
+        )
+
+        first_context.close()
+        open_contexts.remove(first_context)
+        first_context = None
+
+        second_context, page = new_surface("clean_reopen_context")
+        second_context_identity = id(getattr(second_context, "_context", second_context))
+        assert second_context_identity != first_context_identity
+        page.goto(
+            exact_url("clean_context_reopen_probe"),
+            wait_until="domcontentloaded",
+            timeout=args.navigation_timeout_ms,
+        )
+        page.locator(WORKSPACE_SELECTOR).first.wait_for(
+            state="visible", timeout=args.navigation_timeout_ms
+        )
+        terminal_after_context_reopen = _wait_for_terminal_ui_ready(
+            page, run_id, args.expected_sha, 240.0
+        )
+        reopened_locale_surface = _mobile_locale_surface(
+            page, args.ui_locale, run_id
+        )
+        reopened_storage = _stored_run(page)
+        assert not reopened_storage.get("run_id"), reopened_storage
+        assert reopened_storage.get("url_run_id") == run_id
+
+        observation = _observe_terminal_stability(
+            page,
+            run_id=run_id,
+            expected_sha=args.expected_sha,
+            expected_canonical_digest=handoff["canonical_truth_sha256"],
+            seconds=args.observation_seconds,
+            requests=requests,
+        )
+        terminal_layout = _mobile_terminal_layout(page)
+        terminal_visibility = _prove_visibility_hidden_visible(
+            page,
+            second_context,
+            timeout_ms=args.navigation_timeout_ms,
+        )
+        terminal_after_second_foreground = _wait_for_terminal_ui_ready(
+            page, run_id, args.expected_sha, 120.0
+        )
+
+        raw_page = getattr(page, "_page", page)
+        raw_page.goto(
+            f"{origin}/privacy",
+            wait_until="domcontentloaded",
+            timeout=args.navigation_timeout_ms,
+        )
+        raw_page.go_back(wait_until="domcontentloaded", timeout=args.navigation_timeout_ms)
+        page.locator(WORKSPACE_SELECTOR).first.wait_for(
+            state="visible", timeout=args.navigation_timeout_ms
+        )
+        terminal_after_navigation = _wait_for_terminal_ui_ready(
+            page, run_id, args.expected_sha, 120.0
+        )
+        navigation_locale_surface = _mobile_locale_surface(
+            page, args.ui_locale, run_id
+        )
+        locale_round_trip = _mobile_locale_round_trip(
+            page,
+            source_locale=args.ui_locale,
+            run_id=run_id,
+            expected_sha=args.expected_sha,
+            timeout_ms=args.navigation_timeout_ms,
+        )
+
+        review_action = page.locator('[data-assessment-internal-review="true"]').first
+        review_action.wait_for(state="visible", timeout=args.navigation_timeout_ms)
+        review_href = str(review_action.get_attribute("href") or "")
+        assert run_id in review_href and "final-review" in review_href, review_href
+        review_action.click()
+        page.wait_for_load_state("domcontentloaded", timeout=args.navigation_timeout_ms)
+        mobile_review_surface = _mobile_review_locale_surface(
+            page, args.ui_locale, run_id
+        )
+        page.go_back(wait_until="domcontentloaded", timeout=args.navigation_timeout_ms)
+        page.locator(WORKSPACE_SELECTOR).first.wait_for(
+            state="visible", timeout=args.navigation_timeout_ms
+        )
+        terminal_after_review_navigation = _wait_for_terminal_ui_ready(
+            page, run_id, args.expected_sha, 120.0
+        )
+        after_review_locale_surface = _mobile_locale_surface(
+            page, args.ui_locale, run_id
+        )
+
+        canonical_truth = _verify_canonical_truth(
+            page,
+            frontend_origin=origin,
+            run_id=run_id,
+            expected_sha=args.expected_sha,
+            expected_digest=handoff["canonical_truth_sha256"],
+        )
+        artifacts = _verify_manifest_and_pdf(page, origin, run_id)
         screenshot_path = args.output.with_suffix(".png")
         screenshot_error = ""
         try:
-            page.screenshot(path=str(screenshot_path), full_page=False, timeout=15_000, animations="disabled")
+            page.screenshot(
+                path=str(screenshot_path),
+                full_page=False,
+                timeout=15_000,
+                animations="disabled",
+            )
         except Exception as exc:
             screenshot_error = f"{type(exc).__name__}: {_bounded(exc, 320)}"
 
+        assert not prohibited_attempts, {
+            "prohibited_mutation_attempts": prohibited_attempts,
+        }
+        assert _start_count(requests) == 0
+        assert _continuation_count(requests) == 0
+        relevant_console = [
+            value
+            for value in console_errors
+            if "favicon" not in value.casefold() and "404" not in value.casefold()
+        ]
+        assert not relevant_console, relevant_console
+        assert not page_errors, page_errors
+        assert not crashes, crashes
         return {
             "artifact_schema": VERSION,
             "status": "passed",
@@ -346,24 +1140,69 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
             "expected_sha": args.expected_sha,
             "run_id": run_id,
             "viewport": {"width": 390, "height": 844},
+            "ui_locale": args.ui_locale,
+            "assessment_path": (
+                "/es/assessment" if args.ui_locale == "es-MX" else "/assessment"
+            ),
+            "browser_evidence_class": (
+                "Playwright Chromium iPhone-sized mobile emulation"
+            ),
+            "safari_equivalent_evidence": "not tested by this Chromium consumer",
+            "real_device_tested": False,
             "started_at_epoch": started_at,
             "finished_at_epoch": time.time(),
-            "start_request_count": _start_count(requests),
-            "duplicate_intake_absent": True,
-            "initial_persistence": initial_stored,
-            "running_reload": running_reload,
+            "source_proof_sha256": handoff["source_proof_sha256"],
+            "source_workflow_run_id": handoff["source_workflow_run_id"],
+            "source_workflow_run_attempt": handoff["source_workflow_run_attempt"],
+            "source_binding": source_marker.removeprefix("source:"),
+            "canonical_truth_sha256": canonical_truth["canonical_truth_sha256"],
+            "fresh_assessment_count": 0,
+            "start_request_count": 0,
+            "continuation_post_count": 0,
+            "prohibited_mutation_attempt_count": 0,
+            "prohibited_mutation_guard_verified": True,
+            "start_dispatch": "not_dispatched_existing_run",
+            "initial_restoration": initial,
             "terminal_before_reload": terminal_before_reload,
+            "first_locale_surface": first_locale_surface,
             "terminal_reload": terminal_reload,
             "terminal_after_reload": terminal_after_reload,
-            "running_restart_recovery_verified": True,
+            "initial_context_visibility": initial_visibility,
+            "terminal_after_foreground": terminal_after_foreground,
+            "terminal_after_context_reopen": terminal_after_context_reopen,
+            "reopened_locale_surface": reopened_locale_surface,
+            "reopened_storage": reopened_storage,
+            "terminal_observation": observation,
+            "terminal_mobile_layout": terminal_layout,
+            "terminal_horizontal_overflow_absent": True,
+            "terminal_touch_targets_verified": True,
+            "terminal_visibility": terminal_visibility,
+            "terminal_visibility_transitions": ["hidden", "visible"],
+            "terminal_after_second_foreground": terminal_after_second_foreground,
+            "terminal_after_navigation": terminal_after_navigation,
+            "navigation_locale_surface": navigation_locale_surface,
+            "mobile_locale_round_trip": locale_round_trip,
+            "mobile_locale_switch_control_verified": True,
+            "terminal_after_review_navigation": terminal_after_review_navigation,
+            "after_review_locale_surface": after_review_locale_surface,
+            "professional_review_href": review_href,
+            "professional_review_locale_surface": mobile_review_surface,
+            "professional_review_navigation_verified": True,
+            "professional_review_locale_preserved": True,
+            "browser_context_count": 2,
+            "first_context_closed_before_reopen": True,
+            "clean_context_reopen_verified": True,
+            "terminal_observation_at_least_90_seconds": True,
             "terminal_restart_recovery_verified": True,
-            "terminal_run_removed_from_active_storage": True,
-            "terminal_pageshow_recovery_absent": True,
-            "terminal_scroll_position_preserved": True,
-            "terminal_storage": terminal_storage,
-            "terminal_after_pageshow": terminal_after_pageshow,
+            "terminal_background_foreground_recovery_verified": True,
+            "terminal_navigation_recovery_verified": True,
+            "terminal_locale_preserved_across_recovery": True,
             "exact_run_identity_preserved": True,
             "report_actions_recovered": True,
+            "canonical_truth": canonical_truth,
+            "console_errors": relevant_console,
+            "page_errors": page_errors,
+            "page_crashes": crashes,
             **artifacts,
             "screenshot": screenshot_path.as_posix() if screenshot_path.exists() else "",
             "screenshot_sha256": hashlib.sha256(screenshot_path.read_bytes()).hexdigest()
@@ -372,7 +1211,8 @@ def run_proof(browser: Browser, args: argparse.Namespace) -> dict[str, Any]:
             "screenshot_error": screenshot_error,
         }
     finally:
-        context.close()
+        for context in list(open_contexts):
+            context.close()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -383,11 +1223,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=float, default=7_200.0)
     parser.add_argument("--navigation-timeout-ms", type=int, default=120_000)
+    parser.add_argument("--source-proof", type=Path, required=True)
+    parser.add_argument("--source-workflow-run-id", required=True)
+    parser.add_argument("--source-workflow-run-attempt", required=True)
+    parser.add_argument("--observation-seconds", type=float, default=90.0)
+    parser.add_argument("--ui-locale", choices=("en", "es-MX"), default="en")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    _require_existing_source_args(args)
     failure: dict[str, Any] | None = None
     try:
         with sync_playwright() as playwright:

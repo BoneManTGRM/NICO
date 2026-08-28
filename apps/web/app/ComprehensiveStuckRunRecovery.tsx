@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useRef, useState} from "react";
+import {UI_LOCALE_CHANGE_EVENT} from "./assessment/assessmentLocale";
 
 const ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1";
 const ACTIVE_RUN_QUERY_KEY = "run_id";
@@ -12,6 +13,7 @@ const RUN_STATUS_REQUEST_TIMEOUT_MS = 90_000;
 const LONG_REQUEST_TIMEOUT_MS = 300_000;
 const LIFECYCLE_PATH = /^\/api\/nico\/(?:diagnostics\/comprehensive-runtime|assessment\/comprehensive-(?:intake|run\/[^/?#]+(?:\/continue)?))(?:[?#]|$)/;
 const RUN_STATUS_PATH = /^\/api\/nico\/assessment\/comprehensive-run\/[^/?#]+$/;
+const RUN_CONTINUE_PATH = /^\/api\/nico\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
 const RUN_PATH = /\/assessment\/comprehensive-run\/([^/?#]+)/;
 const CANONICAL_RUN_ISSUE_SELECTOR =
   '[data-assessment-run-state="true"] [role="alert"]';
@@ -74,7 +76,13 @@ const COPY: Record<"en" | "es", Copy> = {
 
 function isSpanishRoute(): boolean {
   const path = window.location.pathname.toLowerCase();
-  return path === "/es" || path.startsWith("/es/") || path === "/es-mx" || path.startsWith("/es-mx/");
+  const queryLocale = new URLSearchParams(window.location.search).get("lang")?.toLowerCase();
+  return path === "/es"
+    || path.startsWith("/es/")
+    || path === "/es-mx"
+    || path.startsWith("/es-mx/")
+    || queryLocale === "es-mx"
+    || queryLocale === "es";
 }
 
 function requestPath(input: RequestInfo | URL): string {
@@ -106,6 +114,11 @@ function runIdFromLifecyclePath(path: string): string {
   } catch {
     return match[1].trim();
   }
+}
+
+function settlesRunLifecycle(path: string, method: string): boolean {
+  return (method === "GET" && RUN_STATUS_PATH.test(path))
+    || (method === "POST" && RUN_CONTINUE_PATH.test(path));
 }
 
 function combinedRequest(
@@ -171,8 +184,8 @@ function readStoredRun(): {runId: string} | null {
 }
 
 function currentRunId(): string {
-  return readStoredRun()?.runId
-    || new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim()
+  return new URL(window.location.href).searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim()
+    || readStoredRun()?.runId
     || "";
 }
 
@@ -182,31 +195,53 @@ function retainExactRunIdentity(runId: string): void {
   try {
     const raw = window.localStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
     const existing = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-    window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, JSON.stringify({
-      ...existing,
-      version: 1,
-      runId: exactRunId,
-      startedAt: Number(existing.startedAt) > 0 ? Number(existing.startedAt) : Date.now(),
-    }));
+    const existingRunId = String(existing.runId || "").trim();
+    if (!existingRunId || existingRunId === exactRunId) {
+      const retained = existingRunId === exactRunId ? existing : {};
+      window.localStorage.setItem(ACTIVE_RUN_STORAGE_KEY, JSON.stringify({
+        ...retained,
+        version: 1,
+        runId: exactRunId,
+        startedAt: Number(existing.startedAt) > 0 ? Number(existing.startedAt) : Date.now(),
+      }));
+    }
   } catch {
     // The URL remains the exact-run recovery source when storage is unavailable.
   }
   const url = new URL(window.location.href);
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.set(ACTIVE_RUN_QUERY_KEY, exactRunId);
+  url.searchParams.delete("new_assessment");
   url.hash = "assessment";
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
-function clearRunIdentity(): void {
-  activeControllers.forEach((controller) => controller.abort(new DOMException("Assessment recovery canceled.", "AbortError")));
-  activeControllers.clear();
+function removeStoredRunIfMatching(storage: Storage, runId: string): void {
+  if (!runId) return;
   try {
-    window.localStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
-    window.sessionStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    const raw = storage.getItem(ACTIVE_RUN_STORAGE_KEY);
+    if (!raw) return;
+    let storedRunId = "";
+    try {
+      const value = JSON.parse(raw) as Record<string, unknown>;
+      storedRunId = String(value.runId || "").trim();
+    } catch {
+      // A malformed browser pointer has no competing exact-run authority.
+    }
+    if (!storedRunId || storedRunId === runId) {
+      storage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+    }
   } catch {
     // URL cleanup remains the browser-visible recovery boundary.
   }
+}
+
+function clearRunIdentity(runId: string): void {
+  activeControllers.forEach((controller) => controller.abort(new DOMException("Assessment recovery canceled.", "AbortError")));
+  activeControllers.clear();
+  const exactRunId = String(runId || "").trim();
+  removeStoredRunIfMatching(window.localStorage, exactRunId);
+  removeStoredRunIfMatching(window.sessionStorage, exactRunId);
   const url = new URL(window.location.href);
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
@@ -231,11 +266,12 @@ export default function ComprehensiveStuckRunRecovery() {
   const copy = COPY[spanish ? "es" : "en"];
 
   useEffect(() => {
-    setSpanish(isSpanishRoute());
+    const synchronizeLocale = () => setSpanish(isSpanishRoute());
+    synchronizeLocale();
+    window.addEventListener("popstate", synchronizeLocale);
+    window.addEventListener("pageshow", synchronizeLocale);
+    window.addEventListener(UI_LOCALE_CHANGE_EVENT, synchronizeLocale);
     const originalFetch = window.fetch.bind(window);
-    const boundedFetch: typeof window.fetch = (input, init) => combinedRequest(originalFetch, input, init);
-    window.fetch = boundedFetch;
-
     const hideFallback = () => {
       timedOutRunId.current = "";
       setRecoveryRunId("");
@@ -243,6 +279,30 @@ export default function ComprehensiveStuckRunRecovery() {
       setVisible(false);
       clearReservedViewportSpace();
     };
+    const boundedFetch: typeof window.fetch = async (input, init) => {
+      const response = await combinedRequest(originalFetch, input, init);
+      let settledRunId = "";
+      try {
+        const path = requestPath(input);
+        const method = String(
+          init?.method || (input instanceof Request ? input.method : "GET"),
+        ).toUpperCase();
+        if (settlesRunLifecycle(path, method)) {
+          settledRunId = runIdFromLifecyclePath(path);
+        }
+      } catch {
+        // A malformed URL remains owned by the original request path.
+      }
+      if (
+        response.ok
+        && settledRunId
+        && settledRunId === timedOutRunId.current
+      ) {
+        hideFallback();
+      }
+      return response;
+    };
+    window.fetch = boundedFetch;
     const suppressWhenCanonicalIssueVisible = () => {
       if (canonicalRunIssueVisible()) hideFallback();
     };
@@ -258,7 +318,7 @@ export default function ComprehensiveStuckRunRecovery() {
 
       const detail = (event as CustomEvent<TimeoutDetail>).detail || {};
       const path = String(detail.path || "");
-      const timeoutRunId = currentRunId() || runIdFromLifecyclePath(path);
+      const timeoutRunId = runIdFromLifecyclePath(path) || currentRunId();
 
       // Browser age is not evidence that a durable run is invalid or unrecoverable.
       // Recovery controls appear only after a bounded lifecycle request actually
@@ -279,6 +339,9 @@ export default function ComprehensiveStuckRunRecovery() {
     window.addEventListener("nico:comprehensive-request-timeout", timeoutListener);
 
     return () => {
+      window.removeEventListener("popstate", synchronizeLocale);
+      window.removeEventListener("pageshow", synchronizeLocale);
+      window.removeEventListener(UI_LOCALE_CHANGE_EVENT, synchronizeLocale);
       issueObserver.disconnect();
       window.removeEventListener("nico:comprehensive-request-timeout", timeoutListener);
       if (window.fetch === boundedFetch) window.fetch = originalFetch;
@@ -335,7 +398,7 @@ export default function ComprehensiveStuckRunRecovery() {
     window.location.replace(`${url.pathname}${url.search}${url.hash}`);
   };
   const confirmAndClear = () => {
-    if (window.confirm(copy.confirmClear)) clearRunIdentity();
+    if (window.confirm(copy.confirmClear)) clearRunIdentity(runId);
   };
   const localizedReason = reason === "continue" ? copy.continueReason : copy.statusReason;
 

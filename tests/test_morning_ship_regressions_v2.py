@@ -81,13 +81,13 @@ def test_direct_intake_display_metadata_reaches_controller(monkeypatch) -> None:
             },
         )
 
-        assert seen["client_name"] == "Intake Proof Client"
-        assert seen["project_name"] == "Intake Proof Project"
+        assert seen["client_name"] == "  Intake Proof Client  "
+        assert seen["project_name"] == " Intake Proof Project "
         assert seen["customer_id"] == "default_customer"
         assert seen["project_id"] == "default_project"
         assert seen["human_evidence"]
-        assert response["client_name"] == "Intake Proof Client"
-        assert response["project_name"] == "Intake Proof Project"
+        assert response["client_name"] == "  Intake Proof Client  "
+        assert response["project_name"] == " Intake Proof Project "
     finally:
         routes._intake = original_intake
         patch._INSTALLED = original_installed
@@ -279,14 +279,14 @@ def test_exact_main_spanish_proof_requires_the_regressions_to_be_fixed() -> None
         encoding="utf-8"
     )
     for marker in (
-        "NICO Acceptance Client",
-        "NICO Acceptance Project",
-        "NICO Acceptance Contact",
-        "GitHub HTTPS/API - read-only",
-        "Full repository at exact assessed SHA - read-only",
+        "Cody Jenkins",
+        "NICO Audit",
+        "Cody — Repository owner / project lead",
+        "Public GitHub repository via HTTPS/API — read-only access",
+        "BoneManTGRM/NICO — entire repository, current main branch",
         'report_language="es-MX"',
         'report_language="en"',
-        "0 < page_count < 44",
+        "0 < page_count <= MAX_CLIENT_PDF_PAGES",
         "same_run_bilingual_pdf_verified",
         "actual_browser_intake_metadata_verified",
         "durable_engagement_metadata_verified_at_intake",
@@ -299,7 +299,7 @@ def test_exact_main_spanish_proof_requires_the_regressions_to_be_fixed() -> None
         'payload["access_method_verified_in_canonical_truth"] is True',
         'payload["authorized_scope_verified_in_canonical_truth"] is True',
         'payload["same_run_bilingual_pdf_verified"] is True',
-        'int(payload["spanish_pdf_page_count"]) < 44',
-        'int(payload["english_pdf_page_count"]) < 44',
+        'int(payload["spanish_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES',
+        'int(payload["english_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES',
     ):
         assert marker in workflow

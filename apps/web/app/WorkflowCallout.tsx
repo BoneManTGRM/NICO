@@ -1,5 +1,6 @@
 "use client";
 
+import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
 
 type WorkflowCopy = {
@@ -35,7 +36,7 @@ const ENGLISH_COPY: WorkflowCopy = {
   ],
   runLabel: "Create an engagement",
   reviewLabel: "Open Final Review",
-  boundary: "Human review required · Client delivery remains blocked until the exact report and evidence snapshot are approved.",
+  boundary: "Human review and separate delivery authorization required · Client delivery remains blocked until exact-artifact approval and delivery authorization are both recorded.",
 };
 
 const SPANISH_COPY: WorkflowCopy = {
@@ -61,18 +62,36 @@ const SPANISH_COPY: WorkflowCopy = {
   ],
   runLabel: "Crear un encargo",
   reviewLabel: "Abrir Revisión final",
-  boundary: "Revisión humana obligatoria · La entrega permanece bloqueada hasta aprobar el informe exacto y su evidencia.",
+  boundary: "Se requieren revisión humana y una autorización de entrega independiente · La entrega permanece bloqueada hasta registrar tanto la aprobación del artefacto exacto como la autorización de entrega.",
 };
 
 export default function WorkflowCallout() {
   const pathname = usePathname();
-  if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return null;
+  const [currentSearch, setCurrentSearch] = useState("");
 
-  const spanish = pathname.startsWith("/es");
+  useEffect(() => {
+    const synchronizeLocation = () => setCurrentSearch(window.location.search);
+    synchronizeLocation();
+    window.addEventListener("popstate", synchronizeLocation);
+    return () => window.removeEventListener("popstate", synchronizeLocation);
+  }, [pathname]);
+
+  if (
+    pathname.startsWith("/assessment")
+    || pathname.startsWith("/es/assessment")
+    || pathname === "/es-mx"
+    || pathname.startsWith("/es-mx/")
+  ) return null;
+
+  const queryLocale = new URLSearchParams(currentSearch).get("lang")?.toLowerCase();
+  const spanish = pathname.startsWith("/es") || queryLocale === "es-mx" || queryLocale === "es";
   const copy = spanish ? SPANISH_COPY : ENGLISH_COPY;
   const assessmentHref = spanish
     ? "/es/assessment?tier=comprehensive#assessment"
     : "/assessment?tier=comprehensive#assessment";
+  const reviewHref = spanish
+    ? "/operations/final-review?lang=es-MX"
+    : "/operations/final-review";
 
   return (
     <section
@@ -101,7 +120,7 @@ export default function WorkflowCallout() {
       <div className="workflow-banner-footer">
         <div className="workflow-banner-actions">
           <a className="workflow-action-primary" href={assessmentHref}>{copy.runLabel}</a>
-          <a className="workflow-action-secondary" href="/operations/final-review">{copy.reviewLabel}</a>
+          <a className="workflow-action-secondary" href={reviewHref}>{copy.reviewLabel}</a>
         </div>
         <p className="workflow-boundary">{copy.boundary}</p>
       </div>

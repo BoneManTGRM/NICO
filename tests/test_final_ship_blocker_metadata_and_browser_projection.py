@@ -131,7 +131,8 @@ def test_exact_run_views_unmount_optional_evidence_editor() -> None:
         ROOT / "apps/web/app/assessment/StrategicEvidenceForm.tsx"
     ).read_text(encoding="utf-8")
 
-    assert 'disabled={running || Boolean(result?.run_id)}' in workspace
+    assert "disabled={running || hasExactRun}" in workspace
+    assert "protectedRunId || result?.run_id" in workspace
     assert "if (disabled) return null;" in evidence_form
 
 
@@ -143,7 +144,7 @@ def test_compact_mobile_context_uses_three_single_line_controls() -> None:
         "const activeDefinition =", 1
     )[0]
 
-    assert 'const CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"] as const;' in source
+    assert 'const MOBILE_CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"] as const;' in source
     assert '<input\n              type="text"' in mobile_block
     assert "<textarea" not in mobile_block
     assert 'data-mobile-client-engagement-context="true"' in mobile_block

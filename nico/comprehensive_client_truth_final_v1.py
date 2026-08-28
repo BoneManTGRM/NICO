@@ -125,6 +125,72 @@ def _clean_evidence(values: Any) -> list[str]:
     return output
 
 
+def _clean_client_literal_evidence(values: Any) -> list[str]:
+    """Remove empty/internal rows without rewriting retained client literals."""
+
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        item = str(raw) if raw is not None else ""
+        if not item.strip() or item.lstrip().startswith(_INTERNAL_PREFIXES):
+            continue
+        if item not in seen:
+            seen.add(item)
+            output.append(item)
+    return output
+
+
+def _client_summary_evidence(
+    canonical: Mapping[str, Any], values: Any
+) -> list[str]:
+    """Rebind the five engagement rows to verified canonical literals."""
+
+    from nico.comprehensive_report_review_integrity_v1 import (
+        _display_values,
+        _retained_client_summary_lines,
+    )
+
+    identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    language = str(
+        identity.get("report_language")
+        or identity.get("locale")
+        or canonical.get("report_language")
+        or canonical.get("locale")
+        or "en"
+    ).casefold()
+    spanish = language in {"es-mx", "es_mx"}
+    display = _display_values(canonical)
+    labels = (
+        (
+            ("customer_name", "Nombre del cliente"),
+            ("project_name", "Nombre del proyecto"),
+            ("primary_technical_contact", "Contacto técnico principal"),
+            ("access_method", "Método de acceso"),
+            ("authorized_scope", "Alcance autorizado"),
+        )
+        if spanish
+        else (
+            ("customer_name", "Client name"),
+            ("project_name", "Project name"),
+            ("primary_technical_contact", "Primary technical contact"),
+            ("access_method", "Access method"),
+            ("authorized_scope", "Authorized scope"),
+        )
+    )
+    not_supplied = "no suministrado" if spanish else "not supplied"
+    exact_rows = [
+        f"{label}: {display.get(key) or not_supplied}" for key, label in labels
+    ]
+    retained = _clean_client_literal_evidence(
+        _retained_client_summary_lines(values)
+    )
+    return [*exact_rows, *retained]
+
+
 def _sum(summary: Mapping[str, Any], keys: tuple[str, ...]) -> int:
     return sum(_int(summary.get(key)) for key in keys)
 
@@ -289,8 +355,17 @@ def _sync_stages(canonical: dict[str, Any]) -> None:
     stages = _records(canonical.get("stage_summaries"))
     ci_lines = _ci_lines(canonical)
     for stage in stages:
-        stage["evidence"] = _clean_evidence(stage.get("evidence"))
         stage_id = _text(stage.get("stage_id"), 100)
+        if stage_id == "client_evidence_summary":
+            stage["evidence"] = _client_summary_evidence(
+                canonical, stage.get("evidence")
+            )
+        elif stage_id.startswith("client_human_evidence_"):
+            stage["evidence"] = _clean_client_literal_evidence(
+                stage.get("evidence")
+            )
+        else:
+            stage["evidence"] = _clean_evidence(stage.get("evidence"))
         if stage_id == "dependency_security_static_analysis":
             stage["summary"] = (
                 f"{completed} of {applicable} applicable analyzers completed; {incomplete} are incomplete. "

@@ -19,35 +19,45 @@ _DISPLAY_IDENTITY_FIELDS = (
     ("customer_name", ("customer_name", "client_name")),
     ("project_name", ("project_name",)),
     ("primary_technical_contact", ("primary_technical_contact",)),
+    ("access_method", ("access_method",)),
+    ("authorized_scope", ("authorized_scope",)),
 )
+_DISPLAY_IDENTITY_LIMITS = {
+    "customer_name": 180,
+    "project_name": 180,
+    "primary_technical_contact": 600,
+    "access_method": 1200,
+    "authorized_scope": 4000,
+}
 
 
 def report_stage(stage_id: Any) -> bool:
     return str(stage_id or "").strip() in _REPORT_STAGES
 
 
-def _text(value: Any, limit: int = 300) -> str:
-    normalized = " ".join(str(value or "").split()).strip()
-    return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
-
-
-def _nested_display_value(value: Any, keys: tuple[str, ...]) -> str:
+def _nested_display_value(value: Any, keys: tuple[str, ...], limit: int) -> str:
     if isinstance(value, Mapping):
         for key in keys:
             if key in value:
-                direct = _text(value.get(key))
+                direct = _display_literal(value.get(key), limit)
                 if direct:
                     return direct
         for nested in value.values():
-            result = _nested_display_value(nested, keys)
+            result = _nested_display_value(nested, keys, limit)
             if result:
                 return result
     elif isinstance(value, (list, tuple)):
         for nested in value:
-            result = _nested_display_value(nested, keys)
+            result = _nested_display_value(nested, keys, limit)
             if result:
                 return result
     return ""
+
+
+def _display_literal(value: Any, limit: int) -> str:
+    from nico.comprehensive_engagement_metadata_v1 import _literal
+
+    return _literal(value, limit)
 
 
 def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
@@ -67,13 +77,23 @@ def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
     engagement_projection = display_identity_projection(context.get("engagement_metadata"))
     human_evidence = context.get("human_evidence")
     for output_key, source_keys in _DISPLAY_IDENTITY_FIELDS:
+        limit = _DISPLAY_IDENTITY_LIMITS[output_key]
+        if engagement_projection:
+            value = _display_literal(engagement_projection.get(output_key), limit)
+            if value:
+                identity[output_key] = value
+            continue
         direct = ""
         for source_key in source_keys:
-            direct = _text(context.get(source_key))
+            direct = _display_literal(context.get(source_key), limit)
             if direct:
                 break
-        durable = _text(engagement_projection.get(output_key))
-        value = direct or durable or _nested_display_value(human_evidence, source_keys)
+        durable = _display_literal(engagement_projection.get(output_key), limit)
+        value = direct or durable or _nested_display_value(
+            human_evidence,
+            source_keys,
+            limit,
+        )
         if value:
             identity[output_key] = value
     return identity

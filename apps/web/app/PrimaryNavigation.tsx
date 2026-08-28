@@ -2,7 +2,6 @@
 
 import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
-import AssessmentFinalReviewAction from "./AssessmentFinalReviewAction";
 import OperatorWorkspaceLocale from "./OperatorWorkspaceLocale";
 import {
   localePreservingHref,
@@ -65,7 +64,12 @@ const SPANISH_SECONDARY_GROUPS = [
 ] as const;
 
 function serviceForPath(pathname: string): ServiceKey | "" {
-  if (pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment")) return "run-job";
+  if (
+    pathname.startsWith("/assessment")
+    || pathname.startsWith("/es/assessment")
+    || pathname === "/es-mx"
+    || pathname.startsWith("/es-mx/")
+  ) return "run-job";
   if (pathname.startsWith("/full-run")) return "run-job";
   if (pathname.startsWith("/operations")) return "operations";
   if (pathname.startsWith("/retainer-ops")) return "retainer";
@@ -88,7 +92,10 @@ function linkIsActive(pathname: string, href: string): boolean {
 }
 
 function isAssessmentPath(pathname: string): boolean {
-  return pathname.startsWith("/assessment") || pathname.startsWith("/es/assessment");
+  return pathname.startsWith("/assessment")
+    || pathname.startsWith("/es/assessment")
+    || pathname === "/es-mx"
+    || pathname.startsWith("/es-mx/");
 }
 
 function withLanguage(href: string, spanish: boolean): string {
@@ -131,10 +138,21 @@ export default function PrimaryNavigation() {
   }, [pathname]);
 
   const activeService = serviceForPath(pathname);
-  const queryLocale = new URLSearchParams(currentSearch).get("lang");
-  const spanishActive = pathname.startsWith("/es") || queryLocale === "es-MX";
+  const queryLocale = new URLSearchParams(currentSearch).get("lang")?.toLowerCase();
+  const spanishActive = pathname.startsWith("/es") || queryLocale === "es-mx" || queryLocale === "es";
   const currentLocale: CanonicalLocale = spanishActive ? "es-MX" : "en-US";
   const targetLocale: CanonicalLocale = spanishActive ? "en-US" : "es-MX";
+  function refreshLanguageSwitchHref(event: {currentTarget: HTMLAnchorElement}) {
+    event.currentTarget.setAttribute(
+      "href",
+      localePreservingHref(
+        window.location.pathname,
+        window.location.search,
+        window.location.hash,
+        targetLocale,
+      ),
+    );
+  }
   const assessmentHref = assessmentHrefFor(
     pathname,
     currentSearch,
@@ -154,7 +172,6 @@ export default function PrimaryNavigation() {
 
   return <>
     <OperatorWorkspaceLocale />
-    <AssessmentFinalReviewAction />
     <nav
       className="global-nav"
       aria-label={spanishActive ? "Navegación principal de NICO" : "NICO primary navigation"}
@@ -195,7 +212,12 @@ export default function PrimaryNavigation() {
             href={languageHref}
             hrefLang={targetLocale}
             lang={targetLocale}
-            onClick={() => persistUiLocale(targetLocale)}
+            onPointerDown={refreshLanguageSwitchHref}
+            onFocus={refreshLanguageSwitchHref}
+            onClick={(event) => {
+              refreshLanguageSwitchHref(event);
+              persistUiLocale(targetLocale);
+            }}
             aria-label={spanishActive ? "Cambiar a inglés" : "Cambiar a Español"}
             data-preserves-assessment-state="true"
           >

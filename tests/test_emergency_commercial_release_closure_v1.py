@@ -169,9 +169,21 @@ def test_real_intake_persistence_and_report_boundary_keep_all_supplied_display_m
     assert truth_sha == package["canonical_truth_sha256"]
     assert len(truth_sha) == 64
     markdown = package["report_package"]["markdown"]
-    assert "Client display name: NICO Production Metadata Proof" in markdown
-    assert "Project display name: Comprehensive Metadata E2E Proof" in markdown
-    assert "Primary technical contact: NICO Metadata Proof Contact" in markdown
+    assert (
+        'Client display name: <span data-nico-client-literal="true">'
+        "NICO Production Metadata Proof</span>"
+        in markdown
+    )
+    assert (
+        'Project display name: <span data-nico-client-literal="true">'
+        "Comprehensive Metadata E2E Proof</span>"
+        in markdown
+    )
+    assert (
+        'Primary technical contact: <span data-nico-client-literal="true">'
+        "NICO Metadata Proof Contact</span>"
+        in markdown
+    )
     pdf = base64.b64decode(package["report_package"]["pdf_base64"])
     pdf_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages

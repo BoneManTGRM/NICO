@@ -14,10 +14,11 @@ export function terminal(_service: Service, result: Result): Phase | null {
   }
 
   const value = String(result.status || result.record?.status || "").toLowerCase();
-  const deliveryAllowed =
-    result.client_delivery_allowed === true ||
-    result.record?.client_delivery_allowed === true;
-  if (value === "approved" && deliveryAllowed) {
+  // Human approval is a terminal run decision even when the separately issued
+  // client-delivery authorization is still pending or has been invalidated.
+  // Deliberately do not consult client_delivery_allowed: delivery authorization
+  // is a later human boundary and cannot restart completed assessment execution.
+  if (value === "approved") {
     return "complete";
   }
   if (
