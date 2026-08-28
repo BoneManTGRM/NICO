@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from nico.comprehensive_engagement_metadata_v1 import (
@@ -35,6 +36,17 @@ _REPORT_STAGE_IDS = (
     "decision_report_generation",
     "report_generation",
     "reports",
+)
+_REPORT_KEYS = (
+    "service_id",
+    "report_id",
+    "markdown",
+    "html",
+    "pdf_base64",
+    "pdf_filename",
+    "pdf_error",
+    "pdf_sha256",
+    "canonical_truth_sha256",
 )
 _REPORT_MANIFEST_KEYS = (
     "service_id",
@@ -262,7 +274,7 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
             "bounded": True,
             "persisted_record_mutated": False,
             "large_stage_payloads_omitted": True,
-            "report_payload_deferred_to_exact_run_artifact_endpoints": True,
+            "report_payload_deferred_until_terminal": True,
         },
     }
 
@@ -299,13 +311,17 @@ def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _project_report(report: dict[str, Any]) -> dict[str, Any]:
-    """Return only the exact terminal artifact manifest on lifecycle responses.
+    """Attach exact terminal artifacts for established non-browser API consumers."""
 
-    Full Markdown, HTML, PDF bytes, and canonical JSON remain immutable in durable run
-    truth and are served through their exact-run artifact endpoints. Keeping those large
-    artifacts out of status/continuation JSON prevents Safari and other browsers from
-    parsing and retaining the entire report package merely to render action controls.
-    """
+    projected = {key: report[key] for key in _REPORT_KEYS if key in report}
+    json_value = report.get("json")
+    if isinstance(json_value, dict) and json_value:
+        projected["json"] = deepcopy(json_value)
+    return projected
+
+
+def _project_report_manifest(report: dict[str, Any]) -> dict[str, Any]:
+    """Return a lightweight exact-run artifact manifest for browser lifecycle reads."""
 
     projected = {
         key: _bounded_value(report[key])
@@ -379,12 +395,12 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
 class ComprehensiveApiController:
     """Framework-neutral controller for the customer-facing Comprehensive API.
 
-    The durable store keeps the full canonical run and every report artifact. Lifecycle
-    responses expose only a bounded browser-safe projection at every phase, including
-    the terminal human-review boundary. Exact report artifacts are retrieved separately
-    by run ID, so lifecycle polling never has to carry PDF base64, Markdown, HTML, or
-    canonical report JSON. This projection changes transport only; persisted assessment
-    truth, report hashes, human review, and delivery authorization remain unchanged.
+    The durable store keeps the full canonical run. Active-stage response records stay
+    bounded. Established API consumers keep the full terminal report package, while a
+    caller that explicitly requests the browser projection receives only an artifact
+    manifest and retrieves Markdown/HTML/JSON/PDF through exact-run artifact endpoints.
+    This changes browser transport only; durable assessment truth and approval/delivery
+    authority remain unchanged.
     """
 
     def __init__(self, service: ComprehensiveRunService) -> None:
@@ -469,7 +485,12 @@ class ComprehensiveApiController:
         return normalized
 
     @staticmethod
-    def _response(record: dict[str, Any], *, operation: str) -> dict[str, Any]:
+    def _response(
+        record: dict[str, Any],
+        *,
+        operation: str,
+        browser_projection: bool = False,
+    ) -> dict[str, Any]:
         canonical_record = _ordered_record(record)
         identity = canonical_record["identity"]
         display_progress, active_stage_progress = _display_progress(canonical_record)
@@ -507,18 +528,24 @@ class ComprehensiveApiController:
             "response_projection": {
                 "version": VERSION,
                 "bounded": True,
-                "terminal_report_manifest_attached": terminal,
-                "terminal_report_artifacts_inlined": False,
-                "terminal_canonical_json_attached": False,
+                "terminal_report_attached": terminal and not browser_projection,
+                "terminal_canonical_json_attached": terminal and not browser_projection,
+                "terminal_report_manifest_attached": terminal and browser_projection,
+                "terminal_report_artifacts_inlined": terminal and not browser_projection,
                 "full_record_persisted": True,
                 "large_stage_payloads_omitted": True,
-                "exact_run_artifact_endpoints_required": terminal,
+                "exact_run_artifact_endpoints_required": terminal and browser_projection,
+                "browser_projection": browser_projection,
             },
         }
         if terminal:
             report, assessment = _report_outputs(canonical_record)
             if report:
-                response["reports"] = _project_report(report)
+                response["reports"] = (
+                    _project_report_manifest(report)
+                    if browser_projection
+                    else _project_report(report)
+                )
             if assessment:
                 response["assessment"] = _project_assessment(assessment)
         return response
