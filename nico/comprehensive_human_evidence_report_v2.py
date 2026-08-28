@@ -7,10 +7,17 @@ from typing import Any
 
 from nico import comprehensive_human_evidence_report_v1 as v1
 
-VERSION = "nico.comprehensive_human_evidence_report.v3"
+VERSION = "nico.comprehensive_human_evidence_report.v4"
 # The decision-grade report path keeps only 18 evidence lines per stage after its own
 # normalization. Keep a margin so every explicit client-supplied line survives intact.
 _BASE_STAGE_EVIDENCE_LIMIT = 16
+
+_CANONICAL_SCORING_UNAVAILABLE_EN = (
+    "Canonical scoring evidence was unavailable at report-generation time."
+)
+_CANONICAL_SCORING_UNAVAILABLE_ES = (
+    "La evidencia canónica de puntuación no estaba disponible al generar el informe."
+)
 
 
 def _strict_context_snapshot(context: Mapping[str, Any]) -> dict[str, Any]:
@@ -188,6 +195,30 @@ def _install_english_retained_titles() -> dict[str, bool]:
     return {"english_human_stage_titles_normalized": True}
 
 
+def _install_spanish_scoring_unavailable_translation() -> dict[str, bool]:
+    """Close one exact fail-closed es-MX fallback exposed by artifact regression proof."""
+
+    import nico.comprehensive_spanish_canonical_report_v87 as canonical
+
+    current = canonical._translate_presentation_field
+    if getattr(current, "_nico_scoring_unavailable_es_v1", False):
+        return {"spanish_scoring_unavailable_note_localized": True}
+    original = current
+
+    def translate(value: str, key: str) -> str:
+        if (
+            key == "unavailable_data_notes"
+            and " ".join(str(value or "").split()).strip()
+            == _CANONICAL_SCORING_UNAVAILABLE_EN
+        ):
+            return _CANONICAL_SCORING_UNAVAILABLE_ES
+        return original(value, key)
+
+    translate._nico_scoring_unavailable_es_v1 = True
+    canonical._translate_presentation_field = translate
+    return {"spanish_scoring_unavailable_note_localized": True}
+
+
 def install_comprehensive_human_evidence_report_v2() -> dict[str, Any]:
     state = dict(v1.install_comprehensive_human_evidence_report_v1())
     state.update(
@@ -195,6 +226,7 @@ def install_comprehensive_human_evidence_report_v2() -> dict[str, Any]:
             "status": "installed",
             "version": VERSION,
             **_install_english_retained_titles(),
+            **_install_spanish_scoring_unavailable_translation(),
             "base_canonical_stage_injection_bound": True,
             "base_stage_evidence_limit_respected": True,
             "all_verified_human_modules_projected": True,
