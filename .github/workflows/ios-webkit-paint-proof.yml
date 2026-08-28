@@ -66,7 +66,8 @@ jobs:
           assert 'client_context_single_line_input_count' in proof
           assert 'rich_editor_control_count' in proof
           assert 'optional_evidence_editor_unmounted' in proof
-          assert 'single_native_dom_click' in dispatch
+          assert 'result["start_dispatch"] = "not_dispatched_existing_run"' in dispatch
+          assert 'single_native_dom_click' not in dispatch
           assert 'page.expect_download(timeout=240_000)' in download
           assert 'ui_review_pdf_download_verified' in download
           assert 'install_ui_pdf_download_proof(recovery)' in wrapper
