@@ -47,11 +47,30 @@ def test_v3_entrypoint_imports_nico_when_invoked_by_path(tmp_path: Path) -> None
     env = os.environ.copy()
     env["PYTHONPATH"] = str(tmp_path / "stubs")
     script = ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v3.py"
-    import_only = (
-        "import runpy, sys; "
-        f"sys.path.insert(0, {str(script.parent)!r}); "
-        f"runpy.run_path({str(script)!r}, run_name='nico_spanish_proof_import_preflight')"
-    )
+    import_only = f"""
+import runpy
+import sys
+from pathlib import Path
+
+repository_root = Path({str(ROOT)!r})
+sys.path[:] = [
+    {str(script.parent)!r},
+    *(
+        entry
+        for entry in sys.path
+        if Path(entry or ".").resolve() != repository_root
+    ),
+]
+sys.meta_path[:] = [
+    finder
+    for finder in sys.meta_path
+    if "editable" not in type(finder).__module__.casefold()
+]
+runpy.run_path(
+    {str(script)!r},
+    run_name="nico_spanish_proof_import_preflight",
+)
+"""
     completed = subprocess.run(
         [sys.executable, "-c", import_only],
         cwd=tmp_path,
