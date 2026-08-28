@@ -42,6 +42,9 @@ def test_submit_snapshot_recovers_all_five_client_context_values() -> None:
 
     assert 'data-mobile-client-engagement-context="true"' in form
     assert "if (disabled) return null;" in form
+    assert 'section.querySelectorAll(\'input[type="text"], textarea\')' in bridge
+    assert "control instanceof HTMLInputElement" in bridge
+    assert "control instanceof HTMLTextAreaElement" in bridge
     assert "payload.client_name = snapshot.clientName" in bridge
     assert "payload.project_name = snapshot.projectName" in bridge
     assert "payload.human_evidence = humanEvidence" in bridge
