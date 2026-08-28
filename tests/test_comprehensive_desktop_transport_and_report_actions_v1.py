@@ -83,3 +83,19 @@ def test_final_review_bridge_prefers_canonical_run_binding_without_approval_side
     assert "/operations/final-review?" in install
     assert "client_delivery_allowed" not in install
     assert "approved =" not in install
+
+
+def test_final_review_bridge_cannot_self_trigger_terminal_mutation_loop() -> None:
+    source = _source("apps/web/app/AssessmentFinalReviewAction.tsx")
+    install = source[source.index("function installAction") : source.index("export default function AssessmentFinalReviewAction")]
+    effect = source[source.index("export default function AssessmentFinalReviewAction") :]
+    existing = install[install.index("if (existing)") : install.index("const link =")]
+
+    assert 'if (existing.getAttribute("href") !== href)' in existing
+    assert "if (existing.textContent !== label)" in existing
+    assert 'if (existing.getAttribute("aria-label") !== ariaLabel)' in existing
+    assert "let installFrame = 0;" in effect
+    assert "if (installFrame) return;" in effect
+    assert "new MutationObserver(scheduleInstall)" in effect
+    assert '"data-assessment-report-ready"' in effect
+    assert "characterData: true" not in effect
