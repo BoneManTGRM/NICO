@@ -3,16 +3,28 @@ from __future__ import annotations
 import json
 
 from nico.comprehensive_api_controller import ComprehensiveApiController, VERSION
+from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 
 
 def _record(*, terminal: bool) -> dict:
     large = "x" * (2 * 1024 * 1024)
     status = "review_required" if terminal else "running"
-    completed = [
-        "authorization_and_scope",
-        "immutable_repository_snapshot",
-        "repository_and_delivery_evidence",
-    ]
+    completed = (
+        list(COMPREHENSIVE_STAGES)
+        if terminal
+        else [
+            "authorization_and_scope",
+            "immutable_repository_snapshot",
+            "repository_and_delivery_evidence",
+        ]
+    )
+    identity = {
+        "run_id": "comprun_projection_001",
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "b" * 40,
+        "evidence_ledger_id": "ledger_projection_001",
+        "report_language": "en",
+    }
     stage_results = {
         "authorization_and_scope": {
             "status": "complete",
@@ -45,12 +57,24 @@ def _record(*, terminal: bool) -> dict:
             "report_package": {
                 "service_id": "comprehensive",
                 "report_id": "report_projection_001",
+                "report_language": "en",
+                "locale": "en",
                 "markdown": "# NICO Comprehensive Technical Assessment\nArchitecture 88/100",
                 "html": "<!doctype html><html><body>Architecture 88/100</body></html>",
                 "pdf_base64": large,
                 "pdf_filename": "nico-comprehensive.pdf",
                 "canonical_truth_sha256": "a" * 64,
-                "json": {"canonical_truth_sha256": "a" * 64, "raw": large},
+                "json": {
+                    "canonical_truth_sha256": "a" * 64,
+                    "report_language": "en",
+                    "locale": "en",
+                    "identity": identity,
+                    "assessment": {
+                        "report_language": "en",
+                        "locale": "en",
+                    },
+                    "raw": large,
+                },
             },
             "scanner_outputs": {"raw": large},
             "raw_evidence": {"raw": large},
@@ -60,14 +84,10 @@ def _record(*, terminal: bool) -> dict:
         "artifact_schema": "nico.comprehensive_run_record.v4",
         "service_id": "comprehensive",
         "identity": {
-            "run_id": "comprun_projection_001",
-            "repository": "BoneManTGRM/NICO",
-            "commit_sha": "b" * 40,
-            "evidence_ledger_id": "ledger_projection_001",
+            **identity,
             "customer_id": "customer_projection",
             "project_id": "project_projection",
             "assessment_depth": "strategic",
-            "report_language": "en",
         },
         "human_evidence": {
             "artifact_schema": "nico.strategic_human_evidence.v2",

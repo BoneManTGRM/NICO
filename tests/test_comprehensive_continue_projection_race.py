@@ -49,12 +49,30 @@ class _PublicationRaceService:
                     "report_package": {
                         "service_id": "comprehensive",
                         "report_id": "report_projection_race",
+                        "report_language": "en",
+                        "locale": "en",
                         "markdown": "# Terminal report\n",
                         "html": "<h1>Terminal report</h1>",
                         "pdf_base64": "JVBERi0xLjQ=",
                         "pdf_filename": "nico-comprehensive-projection-race.pdf",
                         "canonical_truth_sha256": "truth-sha",
-                        "json": {"technical_maturity": 93},
+                        "json": {
+                            "report_id": "report_projection_race",
+                            "report_language": "en",
+                            "locale": "en",
+                            "identity": {
+                                "run_id": identity["run_id"],
+                                "repository": identity["repository"],
+                                "commit_sha": identity["commit_sha"],
+                                "evidence_ledger_id": identity["evidence_ledger_id"],
+                                "report_language": "en",
+                            },
+                            "assessment": {
+                                "report_language": "en",
+                                "locale": "en",
+                            },
+                            "technical_maturity": 93,
+                        },
                     },
                     "assessment": {
                         "executive_summary": "Terminal assessment",

@@ -134,7 +134,7 @@ def _artifact_record(request: Request, run_id: str) -> tuple[dict[str, Any], dic
                 "client_delivery_allowed": False,
             },
         )
-    report, _assessment = controller_module._report_outputs(record)
+    report, _assessment = controller_module._canonical_final_report_outputs(record)
     if not report:
         raise HTTPException(
             status_code=409,

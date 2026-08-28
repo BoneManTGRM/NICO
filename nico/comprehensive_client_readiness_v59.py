@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from copy import deepcopy
 from functools import wraps
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Pattern
 
 from nico import comprehensive_report_truth_stabilization_v52 as legacy_truth
 
@@ -53,6 +53,27 @@ _KNOWN_IDENTIFIER_REPAIRS = {
     "install_comprehensive_on_production_ app": "install_comprehensive_on_production_app",
     "production_ app": "production_app",
 }
+_REGEX_CASEFOLD_TRANSLATION = str.maketrans(
+    {
+        "\u0131": "i",  # U+0131 matches ASCII i under re.IGNORECASE.
+        "\u017f": "s",  # U+017F matches ASCII s under re.IGNORECASE.
+        "\u0307": "",  # U+0130 casefolds to i + COMBINING DOT ABOVE.
+    }
+)
+_WHITESPACE_RE = re.compile(r"\s+")
+_KNOWN_IDENTIFIER_REPAIR_PLAN: tuple[tuple[str, Pattern[str], str], ...] = tuple(
+    (
+        broken.casefold().translate(_REGEX_CASEFOLD_TRANSLATION),
+        re.compile(re.escape(broken), re.IGNORECASE),
+        canonical,
+    )
+    for broken, canonical in _KNOWN_IDENTIFIER_REPAIRS.items()
+)
+
+# Each item retains the exact historical sequential substitution order. The folded
+# literal is only a no-false-negative precheck; the compiled regular expression still
+# owns matching and replacement semantics.
+_SymbolRepairPlan = tuple[tuple[str, Pattern[str], str], ...]
 
 
 def _text(value: Any) -> str:
@@ -266,17 +287,68 @@ def _symbols(node: Any) -> set[str]:
     return output
 
 
-def _repair_symbols(text: str, symbols: set[str], coverage: int) -> str:
-    repaired = legacy_truth._repair_text(text) if hasattr(legacy_truth, "_repair_text") else text
-    for broken, canonical in _KNOWN_IDENTIFIER_REPAIRS.items():
-        repaired = re.sub(re.escape(broken), canonical, repaired, flags=re.IGNORECASE)
-    for symbol in sorted(symbols, key=len, reverse=True):
-        pattern = (
-            r"(?<![A-Za-z0-9_])"
-            + r"\s*".join(map(re.escape, symbol))
-            + r"(?![A-Za-z0-9_])"
+def _regex_casefold(value: str) -> str:
+    """Match Python's ASCII-letter ``re.IGNORECASE`` equivalence for probes."""
+
+    return str(value or "").casefold().translate(_REGEX_CASEFOLD_TRANSLATION)
+
+
+def _compile_symbol_repair_plan(symbols: set[str]) -> _SymbolRepairPlan:
+    """Compile the existing flexible-identifier regexes once per tree traversal."""
+
+    return tuple(
+        (
+            _regex_casefold(symbol),
+            re.compile(
+                r"(?<![A-Za-z0-9_])"
+                + r"\s*".join(map(re.escape, symbol))
+                + r"(?![A-Za-z0-9_])",
+                re.IGNORECASE,
+            ),
+            symbol,
         )
-        repaired = re.sub(pattern, symbol, repaired, flags=re.IGNORECASE)
+        for symbol in sorted(symbols, key=len, reverse=True)
+    )
+
+
+def _repair_symbols(
+    text: str,
+    symbols: set[str],
+    coverage: int,
+    *,
+    symbol_repair_plan: _SymbolRepairPlan | None = None,
+) -> str:
+    has_whitespace = _WHITESPACE_RE.search(text) is not None
+    repaired = (
+        legacy_truth._repair_text(text)
+        if has_whitespace and hasattr(legacy_truth, "_repair_text")
+        else text
+    )
+    if has_whitespace:
+        known_probe = _regex_casefold(repaired)
+        for broken_probe, pattern, canonical in _KNOWN_IDENTIFIER_REPAIR_PLAN:
+            if broken_probe in known_probe:
+                updated = pattern.sub(canonical, repaired)
+                if updated != repaired:
+                    repaired = updated
+                    # Preserve the historical sequential/cascading replacement
+                    # contract.
+                    known_probe = _regex_casefold(repaired)
+
+    plan = (
+        symbol_repair_plan
+        if symbol_repair_plan is not None
+        else _compile_symbol_repair_plan(symbols)
+    )
+    # A flexible symbol match can differ from its canonical literal only by whitespace
+    # and re.IGNORECASE equivalence. Removing whitespace therefore gives a necessary
+    # (not sufficient) match condition and safely avoids nearly all regex scans in raw
+    # candidate payloads. The compiled expression remains authoritative when the probe
+    # succeeds, preserving boundaries, overlap behavior, casing, and replacement order.
+    symbol_probe = _regex_casefold(_WHITESPACE_RE.sub("", repaired))
+    for canonical_probe, pattern, canonical in plan:
+        if canonical_probe in symbol_probe:
+            repaired = pattern.sub(canonical, repaired)
     repaired = re.sub(r"\bS\s+p\s+ecific correction\b", "Specific correction", repaired)
     repaired = _COVERAGE_TEXT_RE.sub(
         lambda match: (
@@ -348,7 +420,10 @@ def _normalize_tree(
     requested: int,
     symbols: set[str],
     technical_score: int | None,
+    symbol_repair_plan: _SymbolRepairPlan | None = None,
 ) -> Any:
+    if symbol_repair_plan is None:
+        symbol_repair_plan = _compile_symbol_repair_plan(symbols)
     coverage = round(100 * len(completed) / requested) if requested else 0
     if isinstance(node, list):
         return [
@@ -360,11 +435,17 @@ def _normalize_tree(
                 requested=requested,
                 symbols=symbols,
                 technical_score=technical_score,
+                symbol_repair_plan=symbol_repair_plan,
             )
             for value in node
         ]
     if isinstance(node, str):
-        return _repair_symbols(node, symbols, coverage)
+        return _repair_symbols(
+            node,
+            symbols,
+            coverage,
+            symbol_repair_plan=symbol_repair_plan,
+        )
     if not isinstance(node, Mapping):
         return node
 
@@ -377,6 +458,7 @@ def _normalize_tree(
             requested=requested,
             symbols=symbols,
             technical_score=technical_score,
+            symbol_repair_plan=symbol_repair_plan,
         )
         for key, value in node.items()
     }
