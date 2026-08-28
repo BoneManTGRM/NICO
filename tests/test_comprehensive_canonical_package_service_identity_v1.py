@@ -53,7 +53,7 @@ def test_canonical_package_carries_explicit_comprehensive_service_identity(
     canonical = package["json"]
 
     assert result["status"] == "complete"
-    assert result["artifact_schema"] == "nico.comprehensive_canonical_report_source.v6"
+    assert result["artifact_schema"] == "nico.comprehensive_canonical_report_source.v7"
     assert result["service_id"] == "comprehensive"
     assert package["service_id"] == "comprehensive"
     assert canonical["service_id"] == "comprehensive"
