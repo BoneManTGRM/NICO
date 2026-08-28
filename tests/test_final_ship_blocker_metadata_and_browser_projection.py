@@ -45,6 +45,16 @@ def test_canonical_identity_preserves_all_supplied_engagement_metadata() -> None
     }
 
 
+def test_canonical_identity_rejects_tampered_engagement_metadata() -> None:
+    metadata = _engagement_metadata()
+    metadata["client_name"] = "Tampered Client"
+    identity: dict[str, str] = {}
+
+    _attach_engagement_identity(identity, {"engagement_metadata": metadata})
+
+    assert identity == {}
+
+
 def test_canonical_identity_does_not_infer_missing_engagement_metadata() -> None:
     identity: dict[str, str] = {}
 
