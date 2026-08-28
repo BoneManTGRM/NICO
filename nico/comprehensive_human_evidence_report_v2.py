@@ -85,11 +85,24 @@ def _canonical_injection_specs(snapshot: Mapping[str, Any]) -> list[dict[str, An
     return output
 
 
+def _has_verified_human_context(snapshot: Mapping[str, Any]) -> bool:
+    display = snapshot.get("display_values")
+    if isinstance(display, Mapping) and any(
+        str(value or "").strip() for value in display.values()
+    ):
+        return True
+    package = snapshot.get("human_evidence")
+    return isinstance(package, Mapping) and bool(package.get("provided_module_ids"))
+
+
 def _inject_human_review_stages(
     stage_results: Mapping[str, Any],
     snapshot: Mapping[str, Any],
 ) -> dict[str, Any]:
     output = deepcopy(dict(stage_results))
+    if not _has_verified_human_context(snapshot):
+        return output
+
     summary = v1._client_summary_stage(snapshot, spanish=False)
     specs = [summary, *_canonical_injection_specs(snapshot)]
     for spec in specs:
@@ -104,12 +117,6 @@ def _inject_human_review_stages(
             "evidence": _literal_mapping(list(spec.get("evidence") or [])),
             "findings": list(spec.get("findings") or []),
             "unavailable": list(spec.get("unavailable") or []),
-            "human_review_context_only": True,
-            "automated_stage": False,
-            "score_affecting": False,
-            "repository_inferred": False,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
         }
     return output
 
@@ -192,11 +199,12 @@ def build_report_package_with_human_context(
 ) -> dict[str, Any]:
     """Build the established package with verified human input retained end to end.
 
-    This function does not create an alternate assessment. It adds report-only stages to
-    the exact canonical stage population before the existing builder runs, while also
-    binding the v1 locale-aware renderer context for any premium rebuild that occurs in
-    the same call. The supplied values are digest-verified, never inferred from source
-    code, and are explicitly marked non-automated/non-score-affecting.
+    This function does not create an alternate assessment. It adds bounded report-only
+    human-context stages to the exact canonical stage population before the existing
+    builder runs, while also binding the locale-aware premium projection for any rebuild
+    in the same call. Only digest-verified explicit input is projected; missing values are
+    never inferred, and scores, findings, approval, and delivery authority remain owned by
+    their existing canonical sources.
     """
 
     install_comprehensive_human_evidence_report_v2()
