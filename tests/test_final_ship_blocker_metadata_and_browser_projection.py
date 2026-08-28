@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from nico.comprehensive_api_controller import _project_report, _project_report_manifest
 from nico.comprehensive_canonical_report_source_v1 import _attach_engagement_identity
 from nico.comprehensive_engagement_metadata_v1 import (
     build_comprehensive_engagement_metadata,
@@ -68,6 +69,58 @@ def test_canonical_identity_does_not_infer_missing_engagement_metadata() -> None
     )
 
     assert identity == {}
+
+
+def test_browser_terminal_manifest_omits_heavy_artifacts_without_changing_full_api() -> None:
+    report = {
+        "service_id": "comprehensive",
+        "report_id": "report_test",
+        "markdown": "# NICO Comprehensive\n",
+        "html": "<html><body>NICO</body></html>",
+        "pdf_base64": "JVBERi0xLjQK",
+        "pdf_filename": "nico.pdf",
+        "pdf_sha256": "a" * 64,
+        "canonical_truth_sha256": "b" * 64,
+        "json": {"identity": {"run_id": "comprun_test"}},
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+    full = _project_report(report)
+    browser = _project_report_manifest(report)
+
+    assert full["markdown"] == report["markdown"]
+    assert full["html"] == report["html"]
+    assert full["pdf_base64"] == report["pdf_base64"]
+    assert full["json"] == report["json"]
+
+    for heavy_field in ("markdown", "html", "pdf_base64", "json"):
+        assert heavy_field not in browser
+    assert browser["markdown_available"] is True
+    assert browser["html_available"] is True
+    assert browser["pdf_available"] is True
+    assert browser["json_available"] is True
+    assert browser["artifact_delivery"] == "on_demand_exact_run"
+    assert browser["human_review_required"] is True
+    assert browser["client_delivery_allowed"] is False
+
+
+def test_browser_projection_header_is_wired_end_to_end() -> None:
+    requests = (
+        ROOT / "apps/web/app/assessment/assessmentRunRequests.ts"
+    ).read_text(encoding="utf-8")
+    proxy = (
+        ROOT / "apps/web/app/api/nico/[...path]/route.ts"
+    ).read_text(encoding="utf-8")
+    routes = (ROOT / "nico/comprehensive_api_routes.py").read_text(encoding="utf-8")
+
+    assert 'const BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection";' in requests
+    assert 'const BROWSER_PROJECTION_VALUE = "terminal-manifest-v1";' in requests
+    assert 'const BROWSER_PROJECTION_HEADER = "x-nico-browser-projection";' in proxy
+    assert 'headers.set("X-NICO-Browser-Projection", BROWSER_PROJECTION_VALUE);' in proxy
+    assert '_BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"' in routes
+    assert 'request.headers.get("x-nico-browser-projection")' in routes
+    assert routes.count("browser_projection=_browser_projection_requested(request)") >= 3
 
 
 def test_exact_run_views_unmount_optional_evidence_editor() -> None:
