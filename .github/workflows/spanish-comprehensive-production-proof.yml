@@ -155,6 +155,30 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
           timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium
 
+      - name: Verify Spanish proof entrypoint before assessment
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import runpy
+          import sys
+          from pathlib import Path
+
+          script = Path("scripts/spanish_comprehensive_live_acceptance_v3.py").resolve()
+          repository_root = script.parents[1]
+          sys.path[:] = [
+              str(script.parent),
+              *(
+                  entry
+                  for entry in sys.path
+                  if Path(entry or ".").resolve() != repository_root
+              ),
+          ]
+          runpy.run_path(
+              str(script),
+              run_name="nico_spanish_proof_import_preflight",
+          )
+          PY
+
       - name: Run fresh Spanish Comprehensive final-report proof
         id: spanish_proof
         continue-on-error: true
