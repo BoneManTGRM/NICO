@@ -337,6 +337,9 @@ def _prove_visibility_hidden_visible(
 ) -> dict[str, Any]:
     raw_context = getattr(context, "_context", context)
     raw_page = getattr(page, "_page", page)
+    browser = getattr(raw_context, "browser", None)
+    browser_type = getattr(browser, "browser_type", None)
+    browser_engine = str(getattr(browser_type, "name", "") or "").strip().lower()
     initial = str(raw_page.evaluate("() => document.visibilityState"))
     assert initial == "visible", f"Assessment page was not initially visible: {initial}"
     raw_page.evaluate(
@@ -347,23 +350,64 @@ def _prove_visibility_hidden_visible(
           });
         }"""
     )
-    background = raw_context.new_page()
-    try:
-        background.goto("about:blank")
-        background.bring_to_front()
-        raw_page.wait_for_function(
-            "() => document.hidden === true && document.visibilityState === 'hidden'",
-            timeout=timeout_ms,
-        )
-        hidden = str(raw_page.evaluate("() => document.visibilityState"))
-        raw_page.bring_to_front()
-        raw_page.wait_for_function(
-            "() => document.hidden === false && document.visibilityState === 'visible'",
-            timeout=timeout_ms,
-        )
-        visible = str(raw_page.evaluate("() => document.visibilityState"))
-    finally:
-        background.close()
+    if browser_engine == "chromium":
+        # Chromium headless does not guarantee that activating a second Page target
+        # backgrounds the first target. Exercise Chromium's actual lifecycle boundary
+        # instead: Page.setWebLifecycleState(frozen) invokes WebContents::WasHidden,
+        # then active resumes script execution while the page remains hidden until it
+        # is explicitly activated again. This produces browser-owned visibilitychange
+        # events; no page globals or application state are mocked.
+        session = raw_context.new_cdp_session(raw_page)
+        try:
+            session.send("Page.setWebLifecycleState", {"state": "frozen"})
+            session.send("Page.setWebLifecycleState", {"state": "active"})
+            raw_page.wait_for_function(
+                "() => document.hidden === true && document.visibilityState === 'hidden'",
+                timeout=timeout_ms,
+            )
+            hidden = str(raw_page.evaluate("() => document.visibilityState"))
+            raw_page.bring_to_front()
+            raw_page.wait_for_function(
+                "() => document.hidden === false && document.visibilityState === 'visible'",
+                timeout=timeout_ms,
+            )
+            visible = str(raw_page.evaluate("() => document.visibilityState"))
+        finally:
+            try:
+                # Always unfreeze, including after a failed assertion or transport
+                # error. A proof failure must never leave the tested page suspended.
+                session.send("Page.setWebLifecycleState", {"state": "active"})
+            finally:
+                try:
+                    raw_page.bring_to_front()
+                finally:
+                    session.detach()
+        mechanism = "chromium_cdp_web_lifecycle"
+    else:
+        # WebKit has no CDP session. Its Playwright implementation backgrounds a page
+        # when another page in the same context is activated, so retain that native
+        # tab lifecycle proof for the WebKit acceptance job.
+        background = raw_context.new_page()
+        try:
+            background.goto("about:blank")
+            background.bring_to_front()
+            raw_page.wait_for_function(
+                "() => document.hidden === true && document.visibilityState === 'hidden'",
+                timeout=timeout_ms,
+            )
+            hidden = str(raw_page.evaluate("() => document.visibilityState"))
+            raw_page.bring_to_front()
+            raw_page.wait_for_function(
+                "() => document.hidden === false && document.visibilityState === 'visible'",
+                timeout=timeout_ms,
+            )
+            visible = str(raw_page.evaluate("() => document.visibilityState"))
+        finally:
+            try:
+                raw_page.bring_to_front()
+            finally:
+                background.close()
+        mechanism = "browser_tab_activation"
     transitions = list(
         raw_page.evaluate("() => Array.from(window.__nicoVisibilityTransitions || [])")
         or []
@@ -374,6 +418,8 @@ def _prove_visibility_hidden_visible(
         "initial_visibility": initial,
         "terminal_visibility_transitions": ["hidden", "visible"],
         "observed_visibility_transitions": transitions,
+        "browser_engine": browser_engine or "unknown",
+        "visibility_transition_mechanism": mechanism,
         "document_hidden_observed": True,
         "document_visible_after_foreground": True,
     }

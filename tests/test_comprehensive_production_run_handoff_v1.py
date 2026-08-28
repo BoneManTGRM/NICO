@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.comprehensive_production_run_handoff_v1 import (
+    RECOVERED_SOURCE_SCHEMA,
     canonical_json_sha256,
     require_canonical_json_digest,
     require_matching_canonical_truth_digest,
@@ -64,6 +65,88 @@ def _proof() -> dict:
     }
 
 
+def _recovered_proof() -> dict:
+    run_id = "comprun_" + "1" * 32
+    evidence_ledger_id = "ledger_exact_recovered_run"
+    return {
+        "artifact_schema": RECOVERED_SOURCE_SCHEMA,
+        "status": "passed",
+        "expected_sha": SHA,
+        "proof_tool_sha": "b" * 40,
+        "repository": REPOSITORY,
+        "source_workflow_run_id": SOURCE_RUN_ID,
+        "source_workflow_run_attempt": SOURCE_RUN_ATTEMPT,
+        "source_binding": f"{SOURCE_RUN_ID}:{SOURCE_RUN_ATTEMPT}",
+        "source_artifact_digest": "d" * 64,
+        "failed_source_proof_sha256": "e" * 64,
+        "failed_source_job_log_sha256": "f" * 64,
+        "source_script_sha256": "1" * 64,
+        "source_script_control_flow_order_verified": True,
+        "failed_source_control_flow_reached_running_visibility": True,
+        "failed_source_prior_intake_assertions_completed": True,
+        "failed_source_running_reload_completed_before_visibility": True,
+        "source_failure_classified_as_proof_harness_visibility_only": True,
+        "source_producer_lineage_start_request_count": 1,
+        "recovery_start_request_count": 0,
+        "fresh_assessment_count_during_recovery": 0,
+        "duplicate_intake_absent": True,
+        "intake_route_guard_verified": True,
+        "uncontrolled_continuation_route_guard_verified": True,
+        "explicit_same_run_continuation_count": 0,
+        "explicit_same_run_continuation_paths": [],
+        "terminal_ui_mutation_attempt_count": 0,
+        "no_client_mutation_terminal_observation": True,
+        "same_run_recovery_verified": True,
+        "same_commit_recovery_verified": True,
+        "same_evidence_ledger_verified": True,
+        "exact_run_identity_preserved": True,
+        "evidence_ledger_id": evidence_ledger_id,
+        "run_id": run_id,
+        "canonical_truth_sha256": CANONICAL_TRUTH_SHA256,
+        "canonical_truth_digest_computed_from_json": True,
+        "localized_pdf_artifact_hash_headers_verified": True,
+        "terminal_state_unchanged_after_localized_reads": True,
+        "localized_report_mutation_request_count": 0,
+        "same_run_bilingual_pdf_verified": True,
+        "same_run_bilingual_assessment_rerun": False,
+        "spanish_pdf_sha256": "2" * 64,
+        "english_pdf_sha256": "3" * 64,
+        "five_field_literals_verified_in_both_pdfs": True,
+        "five_fields_consolidated_in_both_client_evidence_summaries": True,
+        "source_intake_evidence_class": (
+            "immutable_source_control_flow_plus_durable_exact_run_state"
+        ),
+        "terminal_background_foreground_recovery_verified": True,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+        "initial_canonical_state": {
+            "run_id": run_id,
+            "repository": REPOSITORY,
+            "commit_sha": SHA,
+            "evidence_ledger_id": evidence_ledger_id,
+            "report_language": "es-MX",
+            "terminal": False,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+        "terminal_canonical_state": {
+            "run_id": run_id,
+            "repository": REPOSITORY,
+            "commit_sha": SHA,
+            "evidence_ledger_id": evidence_ledger_id,
+            "terminal": True,
+            "status": "review_required",
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+        "terminal": {
+            "run_id": run_id,
+            "commit_sha": SHA,
+            "phase": "Se requiere revisión experta",
+        },
+    }
+
+
 def _write(tmp_path: Path, payload: dict) -> Path:
     path = tmp_path / "spanish-comprehensive-live-proof.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -91,6 +174,86 @@ def test_valid_source_proof_binds_exact_run_sha_and_workflow(tmp_path: Path) -> 
     assert len(result["source_proof_sha256"]) == 64
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
+
+
+def test_valid_existing_run_recovery_is_a_strict_handoff_source(
+    tmp_path: Path,
+) -> None:
+    payload = _recovered_proof()
+    path = _write(tmp_path, payload)
+
+    result = load_source_proof(
+        path,
+        expected_sha=SHA,
+        repository=REPOSITORY,
+        source_workflow_run_id=SOURCE_RUN_ID,
+        source_workflow_run_attempt=SOURCE_RUN_ATTEMPT,
+    )
+
+    assert result["status"] == "validated"
+    assert result["source_artifact_schema"] == RECOVERED_SOURCE_SCHEMA
+    assert result["source_proof_kind"] == "existing_run_recovery"
+    assert result["run_id"] == payload["run_id"]
+    assert result["producer_start_request_count"] == 1
+    assert result["same_run_bilingual_assessment_rerun"] is False
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False
+
+
+@pytest.mark.parametrize(
+    ("mutation", "code"),
+    (
+        (
+            lambda value: value.update({"fresh_assessment_count_during_recovery": 1}),
+            "recovered_source_started_new_assessment",
+        ),
+        (
+            lambda value: value.update(
+                {
+                    "explicit_same_run_continuation_count": 1,
+                    "explicit_same_run_continuation_paths": ["/continue"],
+                }
+            ),
+            "recovered_source_explicit_continuation_detected",
+        ),
+        (
+            lambda value: value["terminal_canonical_state"].update(
+                {"evidence_ledger_id": "different-ledger"}
+            ),
+            "recovered_source_terminal_ledger_mismatch",
+        ),
+        (
+            lambda value: value.update({"failed_source_job_log_sha256": "invalid"}),
+            "recovered_source_lineage_hashes_invalid",
+        ),
+        (
+            lambda value: value.update({"english_pdf_sha256": "2" * 64}),
+            "recovered_source_pdf_hashes_invalid",
+        ),
+        (
+            lambda value: value.update(
+                {"source_script_control_flow_order_verified": False}
+            ),
+            "recovered_source_script_flow_unproven",
+        ),
+    ),
+)
+def test_existing_run_recovery_handoff_fails_closed(
+    tmp_path: Path,
+    mutation,
+    code: str,
+) -> None:
+    payload = deepcopy(_recovered_proof())
+    mutation(payload)
+
+    with pytest.raises(ValueError, match=code):
+        load_source_proof(
+            _write(tmp_path, payload),
+            expected_sha=SHA,
+            repository=REPOSITORY,
+            source_workflow_run_id=SOURCE_RUN_ID,
+            source_workflow_run_attempt=SOURCE_RUN_ATTEMPT,
+        )
 
 
 @pytest.mark.parametrize(
