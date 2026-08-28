@@ -7,10 +7,30 @@ from typing import Any
 
 from nico import comprehensive_human_evidence_report_v1 as v1
 
-VERSION = "nico.comprehensive_human_evidence_report.v2"
+VERSION = "nico.comprehensive_human_evidence_report.v3"
 # The decision-grade report path keeps only 18 evidence lines per stage after its own
 # normalization. Keep a margin so every explicit client-supplied line survives intact.
 _BASE_STAGE_EVIDENCE_LIMIT = 16
+
+
+def _strict_context_snapshot(context: Mapping[str, Any]) -> dict[str, Any]:
+    """Use only digest-verified human inputs for the new report evidence surfaces."""
+
+    engagement = v1._verified_engagement(context.get("engagement_metadata"))
+    return {
+        "report_language": v1._text(context.get("report_language"), 40) or "en",
+        "display_values": {
+            "customer_name": v1._text(engagement.get("client_name"), 180),
+            "project_name": v1._text(engagement.get("project_name"), 180),
+            "primary_technical_contact": v1._text(
+                engagement.get("primary_technical_contact"),
+                600,
+            ),
+            "access_method": v1._text(engagement.get("access_method"), 1200),
+            "authorized_scope": v1._text(engagement.get("authorized_scope"), 4000),
+        },
+        "human_evidence": v1._verified_human_evidence(context.get("human_evidence")),
+    }
 
 
 def _literal_mapping(lines: list[str]) -> dict[str, str]:
@@ -208,7 +228,7 @@ def build_report_package_with_human_context(
     """
 
     install_comprehensive_human_evidence_report_v2()
-    snapshot = v1._context_snapshot(context)
+    snapshot = _strict_context_snapshot(context)
     stages = _inject_human_review_stages(stage_results, snapshot)
     token = v1._REPORT_CONTEXT.set(snapshot)
     try:
