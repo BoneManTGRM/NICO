@@ -347,6 +347,31 @@ def _native_visibility_requested() -> bool:
     return configured == "1"
 
 
+def _grant_supported_clipboard_permissions(context: Any, *, origin: str) -> str:
+    """Grant only the clipboard permissions supported by the active engine.
+
+    Chromium needs the explicit grant for the two real Copy Markdown gestures.
+    Playwright WebKit rejects ``clipboard-write`` as an unknown permission before
+    the first page can open; its trusted button gesture exercises clipboard write
+    without a synthetic browser-context grant.
+    """
+
+    raw_context = getattr(context, "_context", context)
+    browser = getattr(raw_context, "browser", None)
+    browser_type = getattr(browser, "browser_type", None)
+    browser_engine = str(getattr(browser_type, "name", "") or "").strip().lower()
+    if browser_engine == "chromium":
+        raw_context.grant_permissions(
+            ["clipboard-read", "clipboard-write"],
+            origin=origin,
+        )
+    elif browser_engine != "webkit":
+        raise RuntimeError(
+            f"unsupported_clipboard_permission_browser_engine:{browser_engine or 'unknown'}"
+        )
+    return browser_engine
+
+
 def _launch_chromium(playwright: Any) -> Any:
     headed = _headed_chromium_requested()
     if headed and not os.getenv("DISPLAY", "").strip():
@@ -1202,11 +1227,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             service_workers="block",
             extra_http_headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
         )
-        raw_context = getattr(context, "_context", context)
-        raw_context.grant_permissions(
-            ["clipboard-read", "clipboard-write"],
-            origin=origin,
-        )
+        _grant_supported_clipboard_permissions(context, origin=origin)
         page = context.new_page()
         page.on("request", record_request)
         page.on(

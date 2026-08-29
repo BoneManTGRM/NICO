@@ -181,9 +181,42 @@ class _ChromiumContext(_WebKitContext):
         raise AssertionError(f"Unexpected CDP page: {page!r}")
 
 
+class _PermissionContext:
+    def __init__(self, browser_engine: str) -> None:
+        self.browser = SimpleNamespace(
+            browser_type=SimpleNamespace(name=browser_engine)
+        )
+        self.grants: list[tuple[list[str], str]] = []
+
+    def grant_permissions(self, permissions: list[str], *, origin: str) -> None:
+        if self.browser.browser_type.name == "webkit":
+            raise AssertionError("WebKit must not receive Chromium clipboard permissions")
+        self.grants.append((permissions, origin))
+
+
 def _enable_native_chromium(monkeypatch: Any, recovery: ModuleType) -> None:
     monkeypatch.setenv(recovery.HEADED_CHROMIUM_ENV, "1")
     monkeypatch.setenv(recovery.NATIVE_VISIBILITY_ENV, "1")
+
+
+def test_clipboard_permissions_are_granted_only_to_chromium(monkeypatch: Any) -> None:
+    recovery = _load_recovery(monkeypatch)
+    origin = "https://app.nicoaudit.com"
+    chromium = _PermissionContext("chromium")
+    webkit = _PermissionContext("webkit")
+
+    assert (
+        recovery._grant_supported_clipboard_permissions(chromium, origin=origin)
+        == "chromium"
+    )
+    assert chromium.grants == [
+        (["clipboard-read", "clipboard-write"], origin)
+    ]
+    assert (
+        recovery._grant_supported_clipboard_permissions(webkit, origin=origin)
+        == "webkit"
+    )
+    assert webkit.grants == []
 
 
 def test_headless_chromium_fails_before_claiming_visibility(monkeypatch: Any) -> None:
