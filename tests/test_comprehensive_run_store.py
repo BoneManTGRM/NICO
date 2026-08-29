@@ -119,6 +119,34 @@ def test_recent_runs_are_scoped_to_customer_and_project(tmp_path: Path) -> None:
     assert [item["identity"]["run_id"] for item in records] == ["comprun_001"]
 
 
+def test_schema_upgrade_defers_legacy_commitment_backfill_to_exact_record_access(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "legacy-comprehensive.sqlite3"
+    store = ComprehensiveRunStore(lambda: sqlite3.connect(database), dialect="sqlite")
+    store.ensure_schema()
+    created = store.create(_record("comprun_legacy_001"))
+
+    # Recreate the pre-commitment schema state without changing the canonical run.
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TABLE nico_comprehensive_review_history_commitments")
+
+    store.ensure_schema()
+    with sqlite3.connect(database) as connection:
+        count_after_startup = connection.execute(
+            "SELECT COUNT(*) FROM nico_comprehensive_review_history_commitments"
+        ).fetchone()[0]
+
+    assert count_after_startup == 0
+    assert store.load("comprun_legacy_001") == created
+
+    with sqlite3.connect(database) as connection:
+        count_after_exact_load = connection.execute(
+            "SELECT COUNT(*) FROM nico_comprehensive_review_history_commitments"
+        ).fetchone()[0]
+    assert count_after_exact_load == 1
+
+
 def test_postgres_dialect_uses_psycopg_placeholders() -> None:
     store = ComprehensiveRunStore(lambda: None, dialect="postgres")  # type: ignore[arg-type]
     assert store.placeholder == "%s"
