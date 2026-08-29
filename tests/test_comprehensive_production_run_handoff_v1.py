@@ -565,3 +565,29 @@ def test_desktop_and_webkit_acceptance_cover_visible_actions_and_spanish_recover
     assert "_mobile_review_locale_surface" in mobile
     assert "--ui-locale es-MX" in ios_workflow
     assert 'payload["real_device_tested"] is False' in ios_workflow
+
+
+def test_review_locale_proofs_wait_for_client_projection_before_asserting() -> None:
+    consumers = (
+        (
+            Path("scripts/completed_run_two_pass_acceptance_v1.py"),
+            "_review_locale_surface",
+        ),
+        (
+            Path("scripts/mobile_restart_live_acceptance_v1.py"),
+            "_mobile_review_locale_surface",
+        ),
+    )
+
+    for path, function_name in consumers:
+        source = path.read_text(encoding="utf-8")
+        start = source.index(f"def {function_name}(")
+        end = source.index("\ndef ", start + 1)
+        helper = source[start:end]
+
+        projection_wait = helper.index("page.wait_for_function(")
+        language_read = helper.index("document_language = str(")
+        assert projection_wait < language_read
+        assert "document.documentElement.lang" in helper
+        assert "main[data-review-contract='accepted-edition-v2'] h1" in helper
+        assert "expectedHeading" in helper

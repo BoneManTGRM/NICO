@@ -228,12 +228,23 @@ def _review_locale_surface(page: Page, locale: str, run_id: str) -> dict[str, An
         assert query.get("lang") == ["es-MX"], query
     else:
         assert query.get("lang", ["en"])[0] in {"en", "en-US"}, query
+    workspace = page.locator("main[data-review-contract='accepted-edition-v2']")
+    workspace.wait_for(state="visible", timeout=120_000)
+    expected_language_prefix = "es" if spanish else "en"
+    page.wait_for_function(
+        """([languagePrefix, expectedHeading]) => (
+          (document.documentElement.lang || '').toLowerCase().startsWith(languagePrefix)
+          && document.querySelector(
+            "main[data-review-contract='accepted-edition-v2'] h1"
+          )?.textContent?.trim() === expectedHeading
+        )""",
+        arg=[expected_language_prefix, expected_title],
+        timeout=120_000,
+    )
     document_language = str(
         page.evaluate("() => document.documentElement.lang || ''")
     )
-    assert document_language.lower().startswith("es" if spanish else "en")
-    workspace = page.locator("main[data-review-contract='accepted-edition-v2']")
-    workspace.wait_for(state="visible", timeout=120_000)
+    assert document_language.lower().startswith(expected_language_prefix)
     heading = workspace.locator("h1").inner_text().strip()
     body = workspace.inner_text()
     assert heading == expected_title

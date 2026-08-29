@@ -714,17 +714,28 @@ def _mobile_review_locale_surface(
     assert query.get("run_id") == [run_id], query
     if spanish:
         assert query.get("lang") == ["es-MX"], query
-    document_language = str(
-        page.evaluate("() => document.documentElement.lang || ''")
-    )
-    assert document_language.lower().startswith("es" if spanish else "en")
-    workspace = page.locator("main[data-review-contract='accepted-edition-v2']")
-    workspace.wait_for(state="visible", timeout=120_000)
     expected_heading = (
         "Revisión final interna y autorización para el cliente."
         if spanish
         else "Internal final review and client-ready authorization."
     )
+    workspace = page.locator("main[data-review-contract='accepted-edition-v2']")
+    workspace.wait_for(state="visible", timeout=120_000)
+    expected_language_prefix = "es" if spanish else "en"
+    page.wait_for_function(
+        """([languagePrefix, expectedHeading]) => (
+          (document.documentElement.lang || '').toLowerCase().startsWith(languagePrefix)
+          && document.querySelector(
+            "main[data-review-contract='accepted-edition-v2'] h1"
+          )?.textContent?.trim() === expectedHeading
+        )""",
+        arg=[expected_language_prefix, expected_heading],
+        timeout=120_000,
+    )
+    document_language = str(
+        page.evaluate("() => document.documentElement.lang || ''")
+    )
+    assert document_language.lower().startswith(expected_language_prefix)
     heading = workspace.locator("h1").inner_text().strip()
     assert heading == expected_heading
     return {
