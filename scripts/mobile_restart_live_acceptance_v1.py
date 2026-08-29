@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -34,8 +36,10 @@ ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"
 BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection"
 BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 HEADED_CHROMIUM_ENV = "NICO_PROOF_HEADED_CHROMIUM"
+HEADED_WEBKIT_ENV = "NICO_PROOF_HEADED_WEBKIT"
 NATIVE_VISIBILITY_ENV = "NICO_PROOF_NATIVE_VISIBILITY"
 NATIVE_VISIBILITY_RUNTIME = "nico.playwright_native_visibility.v1"
+WEBKIT_NATIVE_VISIBILITY_RUNTIME = "nico.x11_window_visibility.v1"
 TERMINAL_PHASES = {
     "Internal review required",
     "Revisión interna requerida",
@@ -347,6 +351,13 @@ def _native_visibility_requested() -> bool:
     return configured == "1"
 
 
+def _headed_webkit_requested() -> bool:
+    configured = os.getenv(HEADED_WEBKIT_ENV, "").strip()
+    if configured not in {"", "0", "1"}:
+        raise RuntimeError("nico_proof_headed_webkit_setting_invalid")
+    return configured == "1"
+
+
 def _grant_supported_clipboard_permissions(context: Any, *, origin: str) -> str:
     """Grant only the clipboard permissions supported by the active engine.
 
@@ -381,6 +392,70 @@ def _launch_chromium(playwright: Any) -> Any:
             "headed_chromium_proof_requires_native_visibility_runtime"
         )
     return playwright.chromium.launch(headless=not headed)
+
+
+def _launch_webkit(playwright: Any) -> Any:
+    headed = _headed_webkit_requested()
+    if headed and not os.getenv("DISPLAY", "").strip():
+        raise RuntimeError("headed_webkit_proof_requires_x_display")
+    if headed and shutil.which("xdotool") is None:
+        raise RuntimeError("headed_webkit_proof_requires_xdotool")
+    return playwright.webkit.launch(headless=not headed)
+
+
+def _visible_webkit_window_ids(*, timeout_ms: int) -> list[int]:
+    xdotool = shutil.which("xdotool")
+    if xdotool is None:
+        raise RuntimeError("headed_webkit_proof_requires_xdotool")
+    completed = subprocess.run(
+        [
+            xdotool,
+            "search",
+            "--onlyvisible",
+            "--maxdepth",
+            "1",
+            "--class",
+            "MiniBrowser",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=max(1.0, min(timeout_ms / 1_000, 30.0)),
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "webkit_native_window_search_failed: "
+            f"returncode={completed.returncode} stderr={_bounded(completed.stderr)}"
+        )
+    try:
+        window_ids = sorted({int(value) for value in completed.stdout.split()})
+    except ValueError as exc:
+        raise RuntimeError("webkit_native_window_id_invalid") from exc
+    if len(window_ids) != 1:
+        raise RuntimeError(
+            f"webkit_subject_window_count_must_equal_one:{len(window_ids)}"
+        )
+    return window_ids
+
+
+def _set_webkit_windows_mapped(
+    window_ids: list[int],
+    *,
+    mapped: bool,
+    timeout_ms: int,
+) -> None:
+    xdotool = shutil.which("xdotool")
+    if xdotool is None:
+        raise RuntimeError("headed_webkit_proof_requires_xdotool")
+    action = "windowmap" if mapped else "windowunmap"
+    for window_id in window_ids:
+        subprocess.run(
+            [xdotool, action, "--sync", str(window_id)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=max(1.0, min(timeout_ms / 1_000, 30.0)),
+        )
 
 
 def _prove_visibility_hidden_visible(
@@ -424,6 +499,14 @@ def _prove_visibility_hidden_visible(
         raise RuntimeError(
             "chromium_visibility_proof_requires_native_visibility_runtime"
         )
+    if browser_engine == "webkit" and not _headed_webkit_requested():
+        raise RuntimeError(
+            "webkit_visibility_proof_requires_headed_browser_under_xvfb"
+        )
+    if browser_engine not in {"chromium", "webkit"}:
+        raise RuntimeError(
+            f"unsupported_visibility_browser_engine:{browser_engine or 'unknown'}"
+        )
     subject_session = None
     background_session = None
     background = None
@@ -433,6 +516,8 @@ def _prove_visibility_hidden_visible(
     background_target_id = ""
     subject_target_type = ""
     background_target_type = ""
+    webkit_window_ids: list[int] = []
+    webkit_windows_unmapped = False
     transitions: list[str] = []
     try:
         if browser_engine == "chromium":
@@ -478,15 +563,22 @@ def _prove_visibility_hidden_visible(
                     f"background_target={background_target_id!r}"
                 )
         else:
-            background = raw_context.new_page()
-            background.goto("about:blank")
+            webkit_window_ids = _visible_webkit_window_ids(timeout_ms=timeout_ms)
         raw_page.bring_to_front()
         prepared_visibility = str(
             raw_page.evaluate("() => document.visibilityState")
         )
         assert prepared_visibility == "visible", prepared_visibility
         raw_page.evaluate("() => { window.__nicoVisibilityTransitions = []; }")
-        background.bring_to_front()
+        if browser_engine == "chromium":
+            background.bring_to_front()
+        else:
+            _set_webkit_windows_mapped(
+                webkit_window_ids,
+                mapped=False,
+                timeout_ms=timeout_ms,
+            )
+            webkit_windows_unmapped = True
         # Background documents suppress requestAnimationFrame; bounded interval
         # polling can observe the real hidden state without changing page globals.
         raw_page.wait_for_function(
@@ -495,6 +587,13 @@ def _prove_visibility_hidden_visible(
             timeout=timeout_ms,
         )
         hidden = str(raw_page.evaluate("() => document.visibilityState"))
+        if browser_engine == "webkit":
+            _set_webkit_windows_mapped(
+                webkit_window_ids,
+                mapped=True,
+                timeout_ms=timeout_ms,
+            )
+            webkit_windows_unmapped = False
         raw_page.bring_to_front()
         raw_page.wait_for_function(
             "() => document.hidden === false && document.visibilityState === 'visible'",
@@ -510,6 +609,12 @@ def _prove_visibility_hidden_visible(
         )
     finally:
         try:
+            if webkit_windows_unmapped:
+                _set_webkit_windows_mapped(
+                    webkit_window_ids,
+                    mapped=True,
+                    timeout_ms=timeout_ms,
+                )
             raw_page.bring_to_front()
         finally:
             try:
@@ -525,7 +630,7 @@ def _prove_visibility_hidden_visible(
     mechanism = (
         "opener_tab_activation_without_playwright_focus_emulation"
         if browser_engine == "chromium"
-        else "browser_tab_activation"
+        else "x11_window_unmap_map"
     )
     assert hidden == "hidden" and visible == "visible", transitions
     assert transitions[-2:] == ["hidden", "visible"], transitions
@@ -536,12 +641,18 @@ def _prove_visibility_hidden_visible(
         "browser_engine": browser_engine or "unknown",
         "browser_launch_mode": (
             "headed_xvfb"
-            if browser_engine == "chromium" and _headed_chromium_requested()
+            if (
+                browser_engine == "chromium" and _headed_chromium_requested()
+            ) or (
+                browser_engine == "webkit" and _headed_webkit_requested()
+            )
             else "headless"
         ),
         "visibility_transition_mechanism": mechanism,
         "native_visibility_runtime": (
-            NATIVE_VISIBILITY_RUNTIME if browser_engine == "chromium" else "native"
+            NATIVE_VISIBILITY_RUNTIME
+            if browser_engine == "chromium"
+            else WEBKIT_NATIVE_VISIBILITY_RUNTIME
         ),
         "playwright_focus_emulation_enabled": (
             False if browser_engine == "chromium" else None
@@ -552,6 +663,7 @@ def _prove_visibility_hidden_visible(
             else None
         ),
         "subject_window_id": subject_window_id,
+        "webkit_window_ids": webkit_window_ids,
         "background_window_id": background_window_id,
         "subject_target_id": subject_target_id,
         "background_target_id": background_target_id,

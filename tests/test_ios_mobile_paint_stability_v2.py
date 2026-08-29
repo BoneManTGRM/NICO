@@ -100,7 +100,7 @@ def test_webkit_gate_requires_zero_allocated_evidence_controls_and_failure_layou
     failure = FAILURE_LAYOUT_PROOF.read_text(encoding="utf-8")
 
     assert 'VERSION = "nico.mobile_restart_live_acceptance.webkit.v5"' in source
-    assert "playwright.webkit.launch" in source
+    assert "recovery._launch_webkit(playwright)" in source
     assert 'device_scale_factor", 3' in source
     assert 'is_mobile", True' in source
     assert 'has_touch", True' in source
