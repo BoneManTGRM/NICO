@@ -187,7 +187,15 @@ def _app(record: dict) -> FastAPI:
     return app
 
 
-def test_browser_terminal_status_returns_small_manifest_not_embedded_artifacts() -> None:
+def test_browser_terminal_status_returns_small_manifest_not_embedded_artifacts(
+    monkeypatch,
+) -> None:
+    def fail_if_called(_record):
+        raise AssertionError(
+            "public browser status must not digest the reviewer artifact package"
+        )
+
+    monkeypatch.setattr(routes, "review_artifact_identity", fail_if_called)
     response = TestClient(_app(_record())).get(
         "/assessment/comprehensive-run/comprun_mobile_recovery_001",
         headers={BROWSER_PROJECTION_HEADER: BROWSER_PROJECTION_VALUE},
@@ -204,16 +212,22 @@ def test_browser_terminal_status_returns_small_manifest_not_embedded_artifacts()
     assert "markdown" not in body["reports"]
     assert "html" not in body["reports"]
     assert "json" not in body["reports"]
+    assert "review_artifact_identity" not in body
     assert len(response.content) < 200_000
 
 
 def test_non_browser_status_preserves_full_report_for_existing_consumers() -> None:
-    response = TestClient(_app(_record())).get(
+    record = _record()
+    response = TestClient(_app(record)).get(
         "/assessment/comprehensive-run/comprun_mobile_recovery_001"
     )
 
     assert response.status_code == 200
-    report = response.json()["reports"]
+    payload = response.json()
+    report = payload["reports"]
+    assert payload["review_artifact_identity"] == routes.review_artifact_identity(
+        record
+    )
     assert report["markdown"].startswith("# NICO Comprehensive")
     assert base64.b64decode(report["pdf_base64"]).startswith(b"%PDF")
     assert report["canonical_truth_sha256"] == canonical_sha256(report["json"])

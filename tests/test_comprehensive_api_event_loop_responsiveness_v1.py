@@ -26,6 +26,19 @@ class _BlockingResumeService:
         raise ValueError("blocking_resume_test_complete")
 
 
+class _BlockingLoadService:
+    def __init__(self, started: Event, release: Event) -> None:
+        self.started = started
+        self.release = release
+
+    def load(self, run_id: str) -> dict[str, Any]:
+        del run_id
+        self.started.set()
+        if not self.release.wait(timeout=2.0):
+            raise RuntimeError("blocking_status_test_release_timeout")
+        raise ValueError("blocking_status_test_complete")
+
+
 def test_long_comprehensive_continuation_does_not_starve_event_loop() -> None:
     """A long synchronous stage must not make lightweight API requests unresponsive."""
 
@@ -80,5 +93,62 @@ def test_long_comprehensive_continuation_does_not_starve_event_loop() -> None:
             response = await asyncio.wait_for(continuation, timeout=1.0)
             assert response.status_code == 422
             assert response.json()["detail"] == "blocking_resume_test_complete"
+
+    asyncio.run(exercise())
+
+
+def test_large_terminal_status_load_does_not_starve_event_loop() -> None:
+    """Full-record restore and projection must execute on a worker thread."""
+
+    started = Event()
+    release = Event()
+    service = cast(ComprehensiveRunService, _BlockingLoadService(started, release))
+    controller = ComprehensiveApiController(service)
+    app = FastAPI()
+    register_comprehensive_api_routes(app, controller=controller)
+
+    @app.get("/health-status-concurrency-probe")
+    async def health_status_concurrency_probe() -> dict[str, str]:
+        return {"status": "ok"}
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://nico-test",
+        ) as client:
+            safety_release = Timer(1.0, release.set)
+            safety_release.daemon = True
+            safety_release.start()
+            status = asyncio.create_task(
+                client.get(
+                    "/assessment/comprehensive-run/comprun_status_event_loop_probe",
+                    headers={
+                        "x-nico-browser-projection": "terminal-manifest-v1",
+                    },
+                )
+            )
+            try:
+                began = await asyncio.wait_for(
+                    asyncio.to_thread(started.wait, 0.25),
+                    timeout=0.5,
+                )
+                assert began is True
+
+                probe_started = monotonic()
+                health = await asyncio.wait_for(
+                    client.get("/health-status-concurrency-probe"),
+                    timeout=0.5,
+                )
+                assert health.status_code == 200
+                assert health.json() == {"status": "ok"}
+                assert monotonic() - probe_started < 0.5
+            finally:
+                release.set()
+                safety_release.cancel()
+
+            response = await asyncio.wait_for(status, timeout=1.0)
+            assert response.status_code == 422
+            assert response.json()["detail"] == "blocking_status_test_complete"
 
     asyncio.run(exercise())

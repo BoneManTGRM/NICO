@@ -7,6 +7,7 @@ from copy import deepcopy
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import nico.comprehensive_api_routes as routes
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
@@ -137,3 +138,33 @@ def test_continue_reprojects_terminal_record_after_async_publication_race() -> N
     assert body["reports"]["pdf_base64"] == "JVBERi0xLjQ="
     assert body["assessment"]["maturity_signal"]["technical_maturity"] == 93
     assert body["assessment"]["maturity_signal"]["evidence_adjusted"] == 90
+
+
+def test_browser_continue_reprojects_without_reviewer_package_digest(
+    monkeypatch,
+) -> None:
+    def fail_if_called(_record):
+        raise AssertionError(
+            "public browser continuation must not digest reviewer artifact bodies"
+        )
+
+    monkeypatch.setattr(routes, "review_artifact_identity", fail_if_called)
+    service = _PublicationRaceService()
+    controller = ComprehensiveApiController(service)  # type: ignore[arg-type]
+    app = FastAPI()
+    register_comprehensive_api_routes(app, controller=controller)
+
+    response = TestClient(app).post(
+        "/assessment/comprehensive-run/comprun_projection_race/continue",
+        headers={"x-nico-browser-projection": "terminal-manifest-v1"},
+        json={},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"] == "continued"
+    assert body["terminal"] is True
+    assert body["reports"]["report_id"] == "report_projection_race"
+    assert "markdown" not in body["reports"]
+    assert "pdf_base64" not in body["reports"]
+    assert "review_artifact_identity" not in body

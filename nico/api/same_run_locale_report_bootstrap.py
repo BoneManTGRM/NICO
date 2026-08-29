@@ -24,7 +24,7 @@ from nico.comprehensive_same_run_locale_report_v1 import (
 )
 
 
-VERSION = "nico.api.same_run_locale_report_bootstrap.v7"
+VERSION = "nico.api.same_run_locale_report_bootstrap.v8"
 
 app = spanish_final_report_app
 # This is the actual Railway production entrypoint. Install the report/review integrity

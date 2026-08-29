@@ -338,6 +338,160 @@ def _populate_premium_stage_summaries(package: Mapping[str, Any]) -> dict[str, A
     return result
 
 
+def _prepare_client_artifact_package(
+    package: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Apply the canonical pre-render pipeline without creating artifact bodies."""
+
+    from nico import client_report_completion_v2 as completion
+
+    reconciled = _phase2_review_truth_node(_reconcile(package))
+    prepared = repair_canonical_truth(reconciled)
+    prepared = _phase2_review_truth_node(_reconcile(prepared))
+    # Normalize structured evidence before any presentation renderer can stringify it.
+    install_client_surface_structure_cleanup_v1()
+    prepared = completion.prepare_client_report_package(prepared)
+    install_client_surface_structure_cleanup_v1()
+    install_human_review_worksheet_title_contract_v1()
+    prepared = _populate_premium_stage_summaries(prepared)
+    prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
+    install_human_review_worksheet_title_contract_v1()
+    return prepared
+
+
+def build_localized_markdown_projection(
+    package: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Render the complete client Markdown surface without non-Markdown artifacts."""
+
+    from nico import client_report_completion_v2 as completion
+    from nico import comprehensive_rendered_ci_boundary_producer_v79 as rendered_ci
+    from nico import v2_premium_report_renderer as premium
+    from nico.client_text_status_sanitizer_v1 import sanitize_client_text_status
+    from nico.comprehensive_ci_boundary_compat_v74 import (
+        repair_ci_operational_markdown,
+    )
+    from nico.comprehensive_exact_artifact_hash_binding_v1 import _manifest_guide
+    from nico.comprehensive_four_phase_model_v1 import (
+        apply_four_phase_program,
+        repair_four_phase_markdown,
+    )
+    from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
+        release_comprehensive_spanish_render_input_cache_v94,
+    )
+    from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
+
+    try:
+        prepared = _prepare_client_artifact_package(package)
+        canonical = (
+            deepcopy(dict(prepared.get("json") or {}))
+            if isinstance(prepared.get("json"), Mapping)
+            else {}
+        )
+        if not canonical:
+            raise ValueError("localized_markdown_prepared_canonical_required")
+        identity = (
+            deepcopy(dict(canonical.get("identity") or {}))
+            if isinstance(canonical.get("identity"), Mapping)
+            else {}
+        )
+        generated_at = premium._canonical_generated_at(canonical)
+        identity["generated_at"] = generated_at
+        identity["generation_timestamp"] = generated_at
+        canonical["identity"] = identity
+        canonical["generated_at"] = generated_at
+        canonical["generation_timestamp"] = generated_at
+        assessment = (
+            deepcopy(dict(canonical.get("assessment") or {}))
+            if isinstance(canonical.get("assessment"), Mapping)
+            else {}
+        )
+        stages = premium._canonical_stages(canonical)
+        canonical["stage_summaries"] = deepcopy(stages)
+        assessment["stage_summaries"] = deepcopy(stages)
+        canonical["assessment"] = assessment
+        register = canonical["client_finding_remediation_register"]
+        spanish = _is_spanish(canonical)
+        score_summary = premium._score_summary_markdown(
+            assessment,
+            spanish=spanish,
+        )
+        if spanish:
+            markdown = premium._spanish_markdown(canonical)
+            marker = "## Resumen ejecutivo"
+        else:
+            markdown = premium._markdown(
+                dict(identity),
+                dict(assessment),
+                stages,
+                generated_at,
+            ).replace(
+                "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
+                f"{premium.EN_BOUNDARY} — CLIENT DELIVERY NOT AUTHORIZED",
+            )
+            marker = "## Executive Decision Brief"
+        markdown = (
+            markdown.replace(marker, f"{score_summary}\n{marker}", 1)
+            if marker in markdown
+            else f"{score_summary}\n{markdown}"
+        )
+        markdown = ensure_authoritative_review_gate(
+            markdown,
+            canonical,
+            spanish=spanish,
+        ).strip() + "\n"
+        markdown = sanitize_client_text_status(markdown)
+        markdown = repair_ci_operational_markdown(
+            markdown,
+            canonical,
+            spanish=spanish,
+        )
+        markdown = completion.compact_client_markdown(
+            markdown,
+            canonical,
+            register,
+            spanish=spanish,
+        )
+        markdown = completion._normalize_unapproved_language(
+            completion.merge_review_companion_markdown(
+                markdown,
+                canonical,
+                spanish=spanish,
+            )
+        )
+        markdown = rendered_ci._strip_boundary_lines(markdown)
+        markdown = repair_ci_operational_markdown(
+            markdown,
+            canonical,
+            spanish=spanish,
+        )
+        canonical = apply_four_phase_program(canonical)
+        markdown = repair_four_phase_markdown(
+            markdown,
+            canonical,
+            spanish=spanish,
+        )
+        markdown = (
+            markdown.rstrip()
+            + "\n\n"
+            + _manifest_guide(canonical["identity"])
+        )
+        markdown_text = markdown
+        return {
+            "json": canonical,
+            "markdown": markdown_text,
+            "markdown_sha256": hashlib.sha256(
+                markdown_text.encode("utf-8")
+            ).hexdigest(),
+            "response_bounded": True,
+            "html_rendered": False,
+            "pdf_rendered": False,
+            "assessment_rerun": False,
+        }
+    finally:
+        release_comprehensive_spanish_render_input_cache_v94()
+
+
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Build one bounded client package from canonical finding and scanner truth.
 
@@ -354,30 +508,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        reconciled = _phase2_review_truth_node(_reconcile(package))
-        prepared = repair_canonical_truth(reconciled)
-        prepared = _phase2_review_truth_node(_reconcile(prepared))
-        # The final truth prepare wrapper is itself a stage-evidence normalization
-        # boundary. Install the structured-value cleaner before preparation so no
-        # retained mapping can be irreversibly converted to Python object text.
-        install_client_surface_structure_cleanup_v1()
-        # Scanner applicability, scanner-outcome truth, canonical finding identity,
-        # and the structured remediation register must exist before the premium
-        # compiler derives stages, scores, executive findings, and artifact content.
-        prepared = completion.prepare_client_report_package(prepared)
-        # Preparation extensions can legitimately rebind shared renderers. Reassert
-        # the client-surface and worksheet-title contracts at the exact render boundary.
-        install_client_surface_structure_cleanup_v1()
-        install_human_review_worksheet_title_contract_v1()
-
-        # Derive the complete canonical stage population directly through the same
-        # runtime-bound stage builder used by the renderer. The previous implementation
-        # performed a full throw-away premium render only to discover these stages, then
-        # rendered every Spanish artifact a second time. Populate and sanitize the stage
-        # contract first so the expensive renderer executes exactly once.
-        prepared = _populate_premium_stage_summaries(prepared)
-        prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
-        install_human_review_worksheet_title_contract_v1()
+        prepared = _prepare_client_artifact_package(package)
         rendered = rebuild_single_pass_premium_artifacts(prepared)
 
         canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
@@ -445,7 +576,9 @@ __all__ = [
     "_EXECUTIVE_SUMMARY_SEMANTIC_TRUTH",
     "_phase2_review_truth_node",
     "_phase2_review_truth_text",
+    "_prepare_client_artifact_package",
     "_populate_premium_stage_summaries",
     "_rewrite_phase2_review_truth_pdf",
+    "build_localized_markdown_projection",
     "rebuild_client_artifacts",
 ]

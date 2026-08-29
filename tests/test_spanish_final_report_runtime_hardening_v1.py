@@ -10,9 +10,13 @@ from nico import v2_premium_report_renderer as premium
 def test_phase17_executes_only_one_expensive_premium_render() -> None:
     source = Path("nico/phase17_canonical_artifact_rebuild_v1.py").read_text(encoding="utf-8")
     function_source = source.split("def rebuild_client_artifacts", 1)[1]
+    preparation_source = source.split("def _prepare_client_artifact_package", 1)[
+        1
+    ].split("def build_localized_markdown_projection", 1)[0]
 
     assert function_source.count("rebuild_single_pass_premium_artifacts(") == 1
-    assert "_populate_premium_stage_summaries(prepared)" in function_source
+    assert "_populate_premium_stage_summaries(prepared)" in preparation_source
+    assert "prepared = _prepare_client_artifact_package(package)" in function_source
     assert "release_comprehensive_spanish_render_input_cache_v94()" in function_source
     assert "finally:" in function_source
 

@@ -182,7 +182,8 @@ def test_markdown_copy_uses_same_run_locale_projection_and_locale_keyed_cache() 
     assert "markdownHref(entry.runId, entry.reportLanguage)" in bridge
     assert "payload.report?.markdown" in bridge
     assert "markdown_report_language_mismatch" in bridge
-    assert "REPORT_LOCALE_CHANGE_EVENT" in bridge
+    assert "const reportLanguage = activeReportLanguage();" in bridge
+    assert "REPORT_LOCALE_CHANGE_EVENT" not in bridge
     assert 'data-commit-sha={immutableCommit}' in workspace
 
     assert "/report/markdown" not in repair

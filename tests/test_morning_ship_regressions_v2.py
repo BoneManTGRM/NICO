@@ -252,12 +252,26 @@ def test_final_worker_installs_sparse_reflow_before_freezing_pdf() -> None:
     assert "BORRADOR\\s+AUTOMATIZADO" in reflow_source
 
 
-def test_markdown_bridge_waits_for_terminal_report_before_prefetch() -> None:
+def test_markdown_bridge_fetches_only_after_explicit_ready_copy_gesture() -> None:
     source = Path("apps/web/app/AssessmentMarkdownCopyBridge.tsx").read_text(encoding="utf-8")
-    assert 'actions.getAttribute("data-assessment-report-ready") !== "true"' in source
-    assert "enabledCopyButton(actions)" in source
+    handler_start = source.index("async function handleCopyMarkdownClick")
+    handler_end = source.index(
+        'document.addEventListener("click", handleCopyMarkdownClick, true)', handler_start
+    )
+    handler = source[handler_start:handler_end]
+
+    assert source.count("loadMarkdown(entry)") == 1
+    assert "loadMarkdown(entry)" not in source[:handler_start]
+    assert "loadMarkdown(entry)" not in source[handler_end:]
+    assert 'document.addEventListener("click", handleCopyMarkdownClick, true)' in source
+    assert 'actions.getAttribute("data-assessment-report-ready") !== "true"' in handler
+    assert 'COPY_MARKDOWN_LABEL.test(String(button.textContent || "").trim())' in handler
+    assert handler.index('actions.getAttribute("data-assessment-report-ready") !== "true"') < handler.index(
+        "const entry = entryForVisibleRun(actions)"
+    ) < handler.index("if (!entry.markdown)") < handler.index("void loadMarkdown(entry)") < handler.index(
+        "if (!await copyText(entry.markdown))"
+    )
     assert "Markdown ready. Click Copy Markdown." in source
-    assert "const markdown = entry.markdown || await loadMarkdown(entry)" not in source
 
 
 def test_pdf_bridge_uses_one_user_gesture_dispatch_and_visible_status() -> None:
