@@ -736,6 +736,11 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
     metrics = dict(
         page.evaluate(
             f"""() => {{
+              const state = document.querySelector('[data-assessment-run-state="true"]');
+              const runHeading = state?.querySelector(':scope > .section-head h2');
+              const runHeadingParent = runHeading?.parentElement;
+              const runHeadingRect = runHeading?.getBoundingClientRect();
+              const runHeadingParentRect = runHeadingParent?.getBoundingClientRect();
               const targets = Array.from(document.querySelectorAll(
                 '{REPORT_ACTIONS_SELECTOR} button, [data-assessment-internal-review="true"]'
               )).map((node) => {{
@@ -756,6 +761,17 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
                 viewport_width: document.documentElement.clientWidth,
                 document_scroll_width: document.documentElement.scrollWidth,
                 body_scroll_width: document.body.scrollWidth,
+                run_heading: {{
+                  text: String(runHeading?.textContent || '').trim(),
+                  left: runHeadingRect?.left ?? -1,
+                  right: runHeadingRect?.right ?? -1,
+                  width: runHeadingRect?.width ?? 0,
+                  scroll_width: runHeading?.scrollWidth ?? 0,
+                  client_width: runHeading?.clientWidth ?? 0,
+                  parent_left: runHeadingParentRect?.left ?? -1,
+                  parent_right: runHeadingParentRect?.right ?? -1,
+                  parent_client_width: runHeadingParent?.clientWidth ?? 0,
+                }},
                 targets,
               }};
             }}"""
@@ -766,6 +782,16 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
     assert viewport_width > 0, metrics
     assert float(metrics.get("document_scroll_width") or 0) <= viewport_width + 1, metrics
     assert float(metrics.get("body_scroll_width") or 0) <= viewport_width + 1, metrics
+    heading = dict(metrics.get("run_heading") or {})
+    assert str(heading.get("text") or "").strip(), metrics
+    assert float(heading.get("parent_client_width") or 0) > 0, metrics
+    assert float(heading.get("left", -1)) >= 0, metrics
+    assert float(heading.get("right", viewport_width + 1)) <= viewport_width + 1, metrics
+    assert float(heading.get("parent_left", -1)) >= 0, metrics
+    assert float(heading.get("parent_right", viewport_width + 1)) <= viewport_width + 1, metrics
+    assert float(heading.get("scroll_width") or 0) <= float(
+        heading.get("parent_client_width") or 0
+    ) + 1, metrics
     targets = list(metrics.get("targets") or [])
     assert len(targets) >= 3, metrics
     for target in targets:

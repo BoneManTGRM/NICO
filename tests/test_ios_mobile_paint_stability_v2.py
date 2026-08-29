@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LAYOUT = ROOT / "apps/web/app/layout.tsx"
 MOBILE_CSS = ROOT / "apps/web/styles/assessment-mobile-stability.css"
+WORKSPACE_CSS = ROOT / "apps/web/app/assessment/engagementWorkspace.module.css"
 EVIDENCE_FORM = ROOT / "apps/web/app/assessment/StrategicEvidenceForm.tsx"
 WEBKIT_PROOF = ROOT / "scripts/mobile_restart_live_acceptance_v2.py"
 FAILURE_LAYOUT_PROOF = ROOT / "scripts/mobile_failure_layout_probe.py"
@@ -41,6 +42,23 @@ def test_phone_workspace_removes_known_ios_paint_pressure() -> None:
     assert 'details[class*="stageHistory"]' in source
     assert '[data-assessment-report-ready="true"] .results-grid' in source
     assert "content-visibility: auto" not in source
+
+
+def test_mobile_terminal_run_heading_cannot_expand_the_document_width() -> None:
+    source = WORKSPACE_CSS.read_text(encoding="utf-8")
+    mobile = source.split("@media (max-width: 760px)", 1)[1]
+
+    assert ".stateHeader > div" in mobile
+    header_container = mobile.split(".stateHeader > div", 1)[1].split("}", 1)[0]
+    assert "\n    width: 100%;" in header_container
+    assert "min-width: 0;" in header_container
+    assert "max-width: 100%;" in header_container
+
+    assert ".stateHeader h2" in mobile
+    run_heading = mobile.split(".stateHeader h2", 1)[1].split("}", 1)[0]
+    assert "max-width: 100%;" in run_heading
+    assert "overflow-wrap: anywhere;" in run_heading
+    assert "word-break: break-word;" in run_heading
 
 
 def test_touch_devices_do_not_mount_the_optional_evidence_editor() -> None:
