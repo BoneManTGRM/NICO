@@ -23,6 +23,8 @@ from nico.repository_snapshot import capture_repository_snapshot
 
 VERSION = "nico.comprehensive_api_routes.v17"
 _BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
+_FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
+_ACTIVE_FINAL_REPORT_STATUSES = {"active", "pending", "queued", "running"}
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -329,6 +331,71 @@ def _status_projection(
         # expensive full-package digest. Reviewer/admin reads keep the exact identity.
         include_review_artifact_identity=not browser_projection,
     )
+
+
+def _continue_projection(
+    controller_value: ComprehensiveApiController,
+    run_id: str,
+    payload: dict[str, Any],
+    browser_projection: bool,
+) -> dict[str, Any]:
+    """Assemble the first continuation projection outside the ASGI event loop."""
+
+    return controller_value.continue_run(
+        run_id,
+        payload,
+        browser_projection=browser_projection,
+    )
+
+
+def _continued_browser_projection_is_authoritative(
+    response: Mapping[str, Any],
+) -> bool:
+    """Reuse a bounded continuation projection when no second load adds truth.
+
+    A durable running final-report marker is authoritative for the current tick;
+    asynchronous publication may complete immediately afterward and the next browser
+    poll will observe it. Other nonterminal stages retain the historical reload so no
+    background-stage publication race is widened by this final-report-only repair.
+
+    A terminal response may be reused only before human disposition or delivery.
+    Reviewer and delivery states still reload the full canonical record so their
+    protected receipts remain available to the public projection.
+    """
+
+    if response.get("terminal") is True:
+        return (
+            response.get("human_review_completed") is False
+            and response.get("client_delivery_allowed") is False
+        )
+
+    current_stage = str(response.get("current_stage") or "").strip()
+    if current_stage != _FINAL_REPORT_STAGE_ID:
+        return False
+
+    record = response.get("record")
+    stage_results = (
+        record.get("stage_results")
+        if isinstance(record, Mapping)
+        and isinstance(record.get("stage_results"), Mapping)
+        else {}
+    )
+    final_stage = stage_results.get(_FINAL_REPORT_STAGE_ID)
+    final_status = (
+        str(final_stage.get("status") or "").strip().casefold()
+        if isinstance(final_stage, Mapping)
+        else ""
+    )
+    if final_status in _ACTIVE_FINAL_REPORT_STATUSES:
+        return True
+
+    activity = response.get("active_stage_execution")
+    activity_status = (
+        str(activity.get("status") or "").strip().casefold()
+        if isinstance(activity, Mapping)
+        else ""
+    )
+    return activity_status in _ACTIVE_FINAL_REPORT_STATUSES
 
 
 def _review_queue_error(code: str, message: str) -> HTTPException:
@@ -723,14 +790,36 @@ def register_comprehensive_api_routes(
             raw = await request.body()
             payload = await request.json() if raw else {}
             controller_value = _controller(request)
-            await run_in_threadpool(controller_value.continue_run, run_id, payload)
-            response = await run_in_threadpool(
-                _status_projection,
+            browser_projection = _browser_projection_requested(request)
+            continued = await run_in_threadpool(
+                _continue_projection,
                 controller_value,
                 run_id,
-                _browser_projection_requested(request),
-                "continued",
+                payload,
+                browser_projection,
             )
+            if (
+                browser_projection
+                and _continued_browser_projection_is_authoritative(continued)
+            ):
+                projected_record = (
+                    continued.get("record")
+                    if isinstance(continued.get("record"), dict)
+                    else {}
+                )
+                response = _review_projection(
+                    continued,
+                    projected_record,
+                    include_review_artifact_identity=False,
+                )
+            else:
+                response = await run_in_threadpool(
+                    _status_projection,
+                    controller_value,
+                    run_id,
+                    browser_projection,
+                    "continued",
+                )
             return _with_runtime_truth(request, response)
         except HTTPException:
             raise
