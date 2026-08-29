@@ -469,9 +469,18 @@
     border-radius: 19px;
   }
 
+  .stateHeader > div {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .sectionHeading h2,
   .stateHeader h2 {
+    max-width: 100%;
     font-size: 26px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .secondaryGrid {

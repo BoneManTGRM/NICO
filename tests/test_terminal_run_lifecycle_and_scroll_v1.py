@@ -78,3 +78,13 @@ def test_live_browser_proof_rejects_stale_terminal_recovery() -> None:
     assert 'clean_context_reopen_verified": True' in PROOF
     assert 'terminal_visibility_transitions": ["hidden", "visible"]' in PROOF
     assert 'terminal_observation_at_least_90_seconds": True' in PROOF
+
+
+def test_live_browser_proof_measures_the_terminal_run_heading_geometry() -> None:
+    assert "const runHeading = state?.querySelector(':scope > .section-head h2')" in PROOF
+    assert "run_heading:" in PROOF
+    assert "scroll_width: runHeading?.scrollWidth" in PROOF
+    assert "parent_client_width: runHeadingParent?.clientWidth" in PROOF
+    assert 'heading.get("right"' in PROOF
+    assert 'heading.get("scroll_width"' in PROOF
+    assert 'heading.get("parent_client_width"' in PROOF
