@@ -338,8 +338,22 @@ jobs:
               payload["initial_context_visibility"],
               payload["terminal_visibility"],
           ):
+              assert visibility["browser_engine"] == "chromium"
               assert visibility["browser_launch_mode"] == "headed_xvfb"
-              assert visibility["visibility_transition_mechanism"] == "headed_tab_activation_without_focus_emulation"
+              assert visibility["visibility_transition_mechanism"] == "opener_tab_activation_without_playwright_focus_emulation"
+              assert visibility["native_visibility_runtime"] == "nico.playwright_native_visibility.v1"
+              assert visibility["playwright_focus_emulation_enabled"] is False
+              assert visibility["shared_native_window"] is True
+              assert isinstance(visibility["subject_window_id"], int) and visibility["subject_window_id"] > 0
+              assert isinstance(visibility["background_window_id"], int) and visibility["background_window_id"] > 0
+              assert visibility["subject_window_id"] == visibility["background_window_id"]
+              assert isinstance(visibility["subject_target_id"], str) and visibility["subject_target_id"]
+              assert isinstance(visibility["background_target_id"], str) and visibility["background_target_id"]
+              assert visibility["subject_target_id"] != visibility["background_target_id"]
+              assert visibility["subject_target_type"] == "page"
+              assert visibility["background_target_type"] == "page"
+              assert visibility["document_hidden_observed"] is True
+              assert visibility["document_visible_after_foreground"] is True
               assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]
           assert payload["terminal_observation_at_least_90_seconds"] is True
           assert payload["terminal_observation"]["observed_seconds"] >= 90
