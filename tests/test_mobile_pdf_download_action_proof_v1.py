@@ -39,6 +39,7 @@ def test_mobile_pdf_download_proof_reuses_exact_source_bound_locale_bytes(
     assert captured["response_run_id"] == run_id
     assert captured["response_report_language"] == "en"
     assert captured["assessment_rerun"] is False
+    assert captured["accepted_edition_digest_verified"] is False
     assert captured["evidence_source"] == "exact-sha-spanish-source-proof"
 
 

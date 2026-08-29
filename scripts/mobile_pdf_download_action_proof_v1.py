@@ -200,53 +200,6 @@ def _fetch_captured_pdf(
     assert re.fullmatch(r"[0-9a-f]{64}", header_sha), {
         "missing_or_invalid_artifact_sha256_header": header_sha,
     }
-
-
-def _load_source_bound_pdf(
-    source_proof_path: Path,
-    run_id: str,
-    report_language: str,
-) -> dict[str, Any]:
-    """Reuse exact-SHA bilingual bytes already certified by the source proof."""
-
-    payload = json.loads(source_proof_path.read_text(encoding="utf-8"))
-    assert isinstance(payload, dict), "Source proof must be a JSON object"
-    assert str(payload.get("run_id") or "") == run_id
-    assert payload.get("same_run_bilingual_pdf_verified") is True
-    assert payload.get("same_run_bilingual_assessment_rerun") is False
-    assert payload.get("localized_pdf_artifact_hash_headers_verified") is True
-    assert payload.get("terminal_state_unchanged_after_localized_reads") is True
-    prefix = "spanish" if report_language == "es-MX" else "english"
-    expected_sha = str(payload.get(f"{prefix}_pdf_sha256") or "").lower()
-    assert re.fullmatch(r"[0-9a-f]{64}", expected_sha), expected_sha
-    artifact_name = Path(str(payload.get(f"{prefix}_pdf_path") or "")).name
-    assert artifact_name, f"Source {report_language} PDF path is missing"
-    artifact_path = source_proof_path.parent / artifact_name
-    pdf_bytes = artifact_path.read_bytes()
-    assert pdf_bytes.startswith(b"%PDF"), f"Source {report_language} artifact was not a PDF"
-    assert len(pdf_bytes) > 1_000, f"Source {report_language} PDF was unexpectedly small"
-    observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
-    assert observed_sha == expected_sha, {
-        "source_pdf_sha256": observed_sha,
-        "source_proof_pdf_sha256": expected_sha,
-    }
-    canonical_truth_sha256 = str(
-        payload.get("canonical_truth_sha256") or ""
-    ).lower()
-    assert re.fullmatch(r"[0-9a-f]{64}", canonical_truth_sha256)
-    return {
-        "pdf_bytes": pdf_bytes,
-        "pdf_sha256": observed_sha,
-        "content_disposition": "",
-        "response_run_id": run_id,
-        "artifact_hash_header_verified": True,
-        "canonical_truth_sha256": canonical_truth_sha256,
-        "accepted_pdf_sha256": "",
-        "response_report_language": report_language,
-        "assessment_rerun": False,
-        "localized_draft_identity_verified": True,
-        "evidence_source": "exact-sha-spanish-source-proof",
-    }
     assert header_sha == observed_sha, {
         "captured_pdf_sha256": observed_sha,
         "response_artifact_sha256": header_sha,
@@ -303,6 +256,54 @@ def _load_source_bound_pdf(
         "response_report_language": response_report_language,
         "assessment_rerun": assessment_rerun,
         "localized_draft_identity_verified": action_kind == DRAFT_PDF_KIND,
+    }
+
+
+def _load_source_bound_pdf(
+    source_proof_path: Path,
+    run_id: str,
+    report_language: str,
+) -> dict[str, Any]:
+    """Reuse exact-SHA bilingual bytes already certified by the source proof."""
+
+    payload = json.loads(source_proof_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict), "Source proof must be a JSON object"
+    assert str(payload.get("run_id") or "") == run_id
+    assert payload.get("same_run_bilingual_pdf_verified") is True
+    assert payload.get("same_run_bilingual_assessment_rerun") is False
+    assert payload.get("localized_pdf_artifact_hash_headers_verified") is True
+    assert payload.get("terminal_state_unchanged_after_localized_reads") is True
+    prefix = "spanish" if report_language == "es-MX" else "english"
+    expected_sha = str(payload.get(f"{prefix}_pdf_sha256") or "").lower()
+    assert re.fullmatch(r"[0-9a-f]{64}", expected_sha), expected_sha
+    artifact_name = Path(str(payload.get(f"{prefix}_pdf_path") or "")).name
+    assert artifact_name, f"Source {report_language} PDF path is missing"
+    artifact_path = source_proof_path.parent / artifact_name
+    pdf_bytes = artifact_path.read_bytes()
+    assert pdf_bytes.startswith(b"%PDF"), f"Source {report_language} artifact was not a PDF"
+    assert len(pdf_bytes) > 1_000, f"Source {report_language} PDF was unexpectedly small"
+    observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
+    assert observed_sha == expected_sha, {
+        "source_pdf_sha256": observed_sha,
+        "source_proof_pdf_sha256": expected_sha,
+    }
+    canonical_truth_sha256 = str(
+        payload.get("canonical_truth_sha256") or ""
+    ).lower()
+    assert re.fullmatch(r"[0-9a-f]{64}", canonical_truth_sha256)
+    return {
+        "pdf_bytes": pdf_bytes,
+        "pdf_sha256": observed_sha,
+        "content_disposition": "",
+        "response_run_id": run_id,
+        "artifact_hash_header_verified": True,
+        "canonical_truth_sha256": canonical_truth_sha256,
+        "accepted_pdf_sha256": "",
+        "accepted_edition_digest_verified": False,
+        "response_report_language": report_language,
+        "assessment_rerun": False,
+        "localized_draft_identity_verified": True,
+        "evidence_source": "exact-sha-spanish-source-proof",
     }
 
 
