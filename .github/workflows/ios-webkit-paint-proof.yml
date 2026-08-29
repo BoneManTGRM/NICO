@@ -95,8 +95,8 @@ jobs:
           assert 'Acquire::https::Timeout "20";' in workflow
           assert 'timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps webkit' in workflow
           assert 'NICO_PROOF_HEADED_WEBKIT: "1"' in workflow
-          assert 'sudo apt-get install --no-install-recommends -y xdotool' in workflow
-          assert 'xvfb-run -a python scripts/mobile_restart_live_acceptance_v6.py' in workflow
+          assert 'sudo apt-get install --no-install-recommends -y openbox xdotool' in workflow
+          assert 'xvfb-run -a bash -c' in workflow
           assert 'recovery._launch_webkit(playwright)' in proof
           assert 'if: failure() || cancelled()' in workflow
           assert 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' in workflow
@@ -113,7 +113,7 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
           python -m pip install --disable-pip-version-check --no-cache-dir "pytest==9.1.1"
           timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps webkit
-          sudo apt-get install --no-install-recommends -y xdotool
+          sudo apt-get install --no-install-recommends -y openbox xdotool
 
       - name: Prove installed headed WebKit observes native lifecycle
         if: github.event_name == 'pull_request'
@@ -123,9 +123,11 @@ jobs:
           set -euo pipefail
           command -v xvfb-run
           command -v xdotool
-          xvfb-run -a python -m pytest -q --noconftest \
-            tests/test_mobile_visibility_lifecycle_proof_v1.py \
-            -k installed_headed_webkit_observes_real_browser_visibility
+          xvfb-run -a bash -c \
+            'openbox >/tmp/nico-openbox.log 2>&1 & sleep 1; exec "$@"' -- \
+            python -m pytest -q --noconftest \
+              tests/test_mobile_visibility_lifecycle_proof_v1.py \
+              -k installed_headed_webkit_observes_real_browser_visibility
 
   live-production:
     name: Prove iPhone WebKit intake, failure layout, exact-run recovery, and review PDF download
@@ -307,7 +309,7 @@ jobs:
             'Acquire::https::Timeout "20";' \
             | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
           timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps webkit
-          sudo apt-get install --no-install-recommends -y xdotool
+          sudo apt-get install --no-install-recommends -y openbox xdotool
 
       - name: Validate sole Comprehensive run handoff
         run: |
@@ -330,17 +332,19 @@ jobs:
           command -v xvfb-run
           command -v xdotool
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
-          xvfb-run -a python scripts/mobile_restart_live_acceptance_v6.py \
-            --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
-            --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
-            --expected-sha "${RELEASE_SHA}" \
-            --source-proof source-proof/spanish-comprehensive-live-proof.json \
-            --source-workflow-run-id "${SOURCE_RUN_ID}" \
-            --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
-            --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
-            --observation-seconds 90 \
-            --ui-locale es-MX \
-            --output audit-results/ios-webkit-live-proof.json
+          xvfb-run -a bash -c \
+            'openbox >/tmp/nico-openbox.log 2>&1 & sleep 1; exec "$@"' -- \
+            python scripts/mobile_restart_live_acceptance_v6.py \
+              --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+              --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+              --expected-sha "${RELEASE_SHA}" \
+              --source-proof source-proof/spanish-comprehensive-live-proof.json \
+              --source-workflow-run-id "${SOURCE_RUN_ID}" \
+              --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+              --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
+              --observation-seconds 90 \
+              --ui-locale es-MX \
+              --output audit-results/ios-webkit-live-proof.json
 
       - name: Upload immutable iOS proof
         if: always()
@@ -435,8 +439,8 @@ jobs:
           ):
               assert visibility["browser_engine"] == "webkit"
               assert visibility["browser_launch_mode"] == "headed_xvfb"
-              assert visibility["visibility_transition_mechanism"] == "x11_window_unmap_map"
-              assert visibility["native_visibility_runtime"] == "nico.x11_window_visibility.v1"
+              assert visibility["visibility_transition_mechanism"] == "x11_window_minimize_activate"
+              assert visibility["native_visibility_runtime"] == "nico.x11_window_manager_visibility.v1"
               assert len(visibility["webkit_window_ids"]) == 1
               assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]
               assert visibility["document_hidden_observed"] is True

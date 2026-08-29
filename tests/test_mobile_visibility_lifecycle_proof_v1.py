@@ -449,17 +449,17 @@ def test_headed_webkit_uses_native_x11_window_visibility(
         lambda *, timeout_ms: [41],
     )
 
-    def set_mapped(
+    def set_visibility(
         window_ids: list[int],
         *,
-        mapped: bool,
+        visible: bool,
         timeout_ms: int,
     ) -> None:
         assert timeout_ms == 2_000
-        mappings.append((list(window_ids), mapped))
-        page.set_visibility("visible" if mapped else "hidden")
+        mappings.append((list(window_ids), visible))
+        page.set_visibility("visible" if visible else "hidden")
 
-    monkeypatch.setattr(recovery, "_set_webkit_windows_mapped", set_mapped)
+    monkeypatch.setattr(recovery, "_set_webkit_window_visibility", set_visibility)
 
     proof = recovery._prove_visibility_hidden_visible(page, context, timeout_ms=2_000)
 
@@ -467,8 +467,12 @@ def test_headed_webkit_uses_native_x11_window_visibility(
     assert mappings == [([41], False), ([41], True)]
     assert proof["browser_engine"] == "webkit"
     assert proof["browser_launch_mode"] == "headed_xvfb"
-    assert proof["visibility_transition_mechanism"] == "x11_window_unmap_map"
-    assert proof["native_visibility_runtime"] == "nico.x11_window_visibility.v1"
+    assert proof["visibility_transition_mechanism"] == (
+        "x11_window_minimize_activate"
+    )
+    assert proof["native_visibility_runtime"] == (
+        "nico.x11_window_manager_visibility.v1"
+    )
     assert proof["webkit_window_ids"] == [41]
     assert proof["observed_visibility_transitions"] == ["hidden", "visible"]
     assert page.visibility == "visible"
@@ -524,8 +528,8 @@ def test_webkit_window_commands_are_bounded_and_fail_closed(monkeypatch: Any) ->
 
     monkeypatch.setattr(recovery.subprocess, "run", run)
     assert recovery._visible_webkit_window_ids(timeout_ms=2_000) == [41]
-    recovery._set_webkit_windows_mapped([41], mapped=False, timeout_ms=2_000)
-    recovery._set_webkit_windows_mapped([41], mapped=True, timeout_ms=2_000)
+    recovery._set_webkit_window_visibility([41], visible=False, timeout_ms=2_000)
+    recovery._set_webkit_window_visibility([41], visible=True, timeout_ms=2_000)
 
     assert calls == [
         [
@@ -537,8 +541,8 @@ def test_webkit_window_commands_are_bounded_and_fail_closed(monkeypatch: Any) ->
             "--class",
             "MiniBrowser",
         ],
-        ["/usr/bin/xdotool", "windowunmap", "--sync", "41"],
-        ["/usr/bin/xdotool", "windowmap", "--sync", "41"],
+        ["/usr/bin/xdotool", "windowminimize", "--sync", "41"],
+        ["/usr/bin/xdotool", "windowactivate", "--sync", "41"],
     ]
 
 
@@ -585,11 +589,12 @@ def test_production_webkit_proof_uses_native_window_visibility_under_xvfb() -> N
     lifecycle = SCRIPT.read_text(encoding="utf-8")
 
     assert 'NICO_PROOF_HEADED_WEBKIT: "1"' in workflow
-    assert "sudo apt-get install --no-install-recommends -y xdotool" in workflow
+    assert "sudo apt-get install --no-install-recommends -y openbox xdotool" in workflow
     assert "command -v xvfb-run" in workflow
     assert "command -v xdotool" in workflow
-    assert "xvfb-run -a python -m pytest -q --noconftest" in workflow
-    assert "xvfb-run -a python scripts/mobile_restart_live_acceptance_v6.py" in workflow
+    assert "python -m pytest -q --noconftest" in workflow
+    assert "xvfb-run -a bash -c" in workflow
+    assert "python scripts/mobile_restart_live_acceptance_v6.py" in workflow
     assert "_launch_webkit(playwright)" in launcher
     assert "playwright.webkit.launch(headless=True)" not in launcher
     assert "Object.defineProperty(document" not in lifecycle
@@ -727,10 +732,10 @@ def test_installed_headed_webkit_observes_real_browser_visibility() -> None:
             assert proof["browser_engine"] == "webkit"
             assert proof["browser_launch_mode"] == "headed_xvfb"
             assert proof["visibility_transition_mechanism"] == (
-                "x11_window_unmap_map"
+                "x11_window_minimize_activate"
             )
             assert proof["native_visibility_runtime"] == (
-                "nico.x11_window_visibility.v1"
+                "nico.x11_window_manager_visibility.v1"
             )
             assert len(proof["webkit_window_ids"]) == 1
             assert proof["observed_visibility_transitions"][-2:] == [

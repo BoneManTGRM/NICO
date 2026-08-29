@@ -39,7 +39,7 @@ HEADED_CHROMIUM_ENV = "NICO_PROOF_HEADED_CHROMIUM"
 HEADED_WEBKIT_ENV = "NICO_PROOF_HEADED_WEBKIT"
 NATIVE_VISIBILITY_ENV = "NICO_PROOF_NATIVE_VISIBILITY"
 NATIVE_VISIBILITY_RUNTIME = "nico.playwright_native_visibility.v1"
-WEBKIT_NATIVE_VISIBILITY_RUNTIME = "nico.x11_window_visibility.v1"
+WEBKIT_NATIVE_VISIBILITY_RUNTIME = "nico.x11_window_manager_visibility.v1"
 TERMINAL_PHASES = {
     "Internal review required",
     "Revisión interna requerida",
@@ -438,16 +438,16 @@ def _visible_webkit_window_ids(*, timeout_ms: int) -> list[int]:
     return window_ids
 
 
-def _set_webkit_windows_mapped(
+def _set_webkit_window_visibility(
     window_ids: list[int],
     *,
-    mapped: bool,
+    visible: bool,
     timeout_ms: int,
 ) -> None:
     xdotool = shutil.which("xdotool")
     if xdotool is None:
         raise RuntimeError("headed_webkit_proof_requires_xdotool")
-    action = "windowmap" if mapped else "windowunmap"
+    action = "windowactivate" if visible else "windowminimize"
     for window_id in window_ids:
         subprocess.run(
             [xdotool, action, "--sync", str(window_id)],
@@ -517,7 +517,7 @@ def _prove_visibility_hidden_visible(
     subject_target_type = ""
     background_target_type = ""
     webkit_window_ids: list[int] = []
-    webkit_windows_unmapped = False
+    webkit_window_minimized = False
     transitions: list[str] = []
     try:
         if browser_engine == "chromium":
@@ -573,12 +573,12 @@ def _prove_visibility_hidden_visible(
         if browser_engine == "chromium":
             background.bring_to_front()
         else:
-            _set_webkit_windows_mapped(
+            _set_webkit_window_visibility(
                 webkit_window_ids,
-                mapped=False,
+                visible=False,
                 timeout_ms=timeout_ms,
             )
-            webkit_windows_unmapped = True
+            webkit_window_minimized = True
         # Background documents suppress requestAnimationFrame; bounded interval
         # polling can observe the real hidden state without changing page globals.
         raw_page.wait_for_function(
@@ -588,12 +588,12 @@ def _prove_visibility_hidden_visible(
         )
         hidden = str(raw_page.evaluate("() => document.visibilityState"))
         if browser_engine == "webkit":
-            _set_webkit_windows_mapped(
+            _set_webkit_window_visibility(
                 webkit_window_ids,
-                mapped=True,
+                visible=True,
                 timeout_ms=timeout_ms,
             )
-            webkit_windows_unmapped = False
+            webkit_window_minimized = False
         raw_page.bring_to_front()
         raw_page.wait_for_function(
             "() => document.hidden === false && document.visibilityState === 'visible'",
@@ -609,10 +609,10 @@ def _prove_visibility_hidden_visible(
         )
     finally:
         try:
-            if webkit_windows_unmapped:
-                _set_webkit_windows_mapped(
+            if webkit_window_minimized:
+                _set_webkit_window_visibility(
                     webkit_window_ids,
-                    mapped=True,
+                    visible=True,
                     timeout_ms=timeout_ms,
                 )
             raw_page.bring_to_front()
@@ -630,7 +630,7 @@ def _prove_visibility_hidden_visible(
     mechanism = (
         "opener_tab_activation_without_playwright_focus_emulation"
         if browser_engine == "chromium"
-        else "x11_window_unmap_map"
+        else "x11_window_minimize_activate"
     )
     assert hidden == "hidden" and visible == "visible", transitions
     assert transitions[-2:] == ["hidden", "visible"], transitions
