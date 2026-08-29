@@ -536,8 +536,6 @@ def test_webkit_window_commands_are_bounded_and_fail_closed(monkeypatch: Any) ->
             "/usr/bin/xdotool",
             "search",
             "--onlyvisible",
-            "--maxdepth",
-            "1",
             "--class",
             "MiniBrowser",
         ],

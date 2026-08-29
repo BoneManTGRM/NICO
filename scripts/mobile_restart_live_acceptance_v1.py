@@ -412,8 +412,6 @@ def _visible_webkit_window_ids(*, timeout_ms: int) -> list[int]:
             xdotool,
             "search",
             "--onlyvisible",
-            "--maxdepth",
-            "1",
             "--class",
             "MiniBrowser",
         ],
