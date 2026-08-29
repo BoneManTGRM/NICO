@@ -124,53 +124,6 @@ jobs:
           xvfb-run -a python -m pytest -q \
             tests/test_mobile_visibility_lifecycle_proof_v1.py::test_installed_headed_chromium_observes_real_browser_visibility
 
-      # Temporary read-only causal replay for PR validation. Remove before merge.
-      - name: Download exact Spanish source proof for passive click replay
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.ref == 'fix/mobile-pdf-proof-passive-anchor-observation-20260829'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: spanish-comprehensive-production-proof-078f27dacd4fbea1a3640f95c6ff0152972e955f-33268157671-1
-          path: source-proof
-          github-token: ${{ github.token }}
-          run-id: 33268157671
-
-      - name: Replay exact terminal run with assessment mutations blocked
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.ref == 'fix/mobile-pdf-proof-passive-anchor-observation-20260829'
-        env:
-          NICO_PROOF_HEADED_CHROMIUM: "1"
-          NICO_PROOF_NATIVE_VISIBILITY: "1"
-        run: |
-          set -euo pipefail
-          PROOF_TOOL_SHA="$(git rev-parse HEAD)"
-          xvfb-run -a python scripts/mobile_restart_live_acceptance_v5.py \
-            --frontend-url "https://app.nicoaudit.com" \
-            --repository "BoneManTGRM/NICO" \
-            --expected-sha "078f27dacd4fbea1a3640f95c6ff0152972e955f" \
-            --source-proof source-proof/spanish-comprehensive-live-proof.json \
-            --source-workflow-run-id "33268157671" \
-            --source-workflow-run-attempt "1" \
-            --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
-            --observation-seconds 90 \
-            --ui-locale en \
-            --output audit-results/mobile-pdf-passive-anchor-replay.json
-
-      - name: Upload passive click replay evidence
-        if: >-
-          always() && github.event_name == 'pull_request' &&
-          github.event.pull_request.head.ref == 'fix/mobile-pdf-proof-passive-anchor-observation-20260829'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: mobile-pdf-passive-anchor-replay-${{ github.sha }}-${{ github.run_id }}
-          path: |
-            audit-results/mobile-pdf-passive-anchor-replay.json
-            audit-results/mobile-restart-live-proof.png
-          if-no-files-found: warn
-          retention-days: 7
-
   live-production:
     name: Reload mobile assessment and download the exact review PDF
     if: >-
