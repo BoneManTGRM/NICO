@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -32,6 +33,7 @@ REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]'
 ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"
 BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection"
 BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
+HEADED_CHROMIUM_ENV = "NICO_PROOF_HEADED_CHROMIUM"
 TERMINAL_PHASES = {
     "Internal review required",
     "Revisión interna requerida",
@@ -329,6 +331,20 @@ def _blocking_overlay_count(page: Any) -> int:
     )
 
 
+def _headed_chromium_requested() -> bool:
+    configured = os.getenv(HEADED_CHROMIUM_ENV, "").strip()
+    if configured not in {"", "0", "1"}:
+        raise RuntimeError("nico_proof_headed_chromium_setting_invalid")
+    return configured == "1"
+
+
+def _launch_chromium(playwright: Any) -> Any:
+    headed = _headed_chromium_requested()
+    if headed and not os.getenv("DISPLAY", "").strip():
+        raise RuntimeError("headed_chromium_proof_requires_x_display")
+    return playwright.chromium.launch(headless=not headed)
+
+
 def _prove_visibility_hidden_visible(
     page: Any,
     context: Any,
@@ -350,102 +366,98 @@ def _prove_visibility_hidden_visible(
           });
         }"""
     )
-    if browser_engine == "chromium":
-        # Chromium headless does not guarantee that activating a second Page target
-        # backgrounds the first target. Exercise Chromium's actual lifecycle boundary
-        # instead: Page.setWebLifecycleState(frozen) invokes WebContents::WasHidden,
-        # then active resumes script execution. Some Chromium builds remain hidden
-        # until the page is explicitly activated; others complete the browser-owned
-        # hidden -> visible transition before the next Playwright command. Accept both
-        # timings only when the real visibilitychange events prove the same round trip.
-        # No page globals or application state are mocked.
-        session = raw_context.new_cdp_session(raw_page)
-        try:
-            session.send("Page.setWebLifecycleState", {"state": "frozen"})
-            session.send("Page.setWebLifecycleState", {"state": "active"})
-            # Hidden documents suppress requestAnimationFrame, which is Playwright's
-            # default polling mode. Use bounded interval polling so Chromium can be
-            # observed while it legitimately remains hidden after reactivation.
-            raw_page.wait_for_function(
-                """() => {
-                  const transitions = window.__nicoVisibilityTransitions || [];
-                  const count = transitions.length;
-                  return (
-                    (document.hidden === true
-                      && document.visibilityState === 'hidden')
-                    || (document.hidden === false
-                      && document.visibilityState === 'visible'
-                      && count >= 2
-                      && transitions[count - 2] === 'hidden'
-                      && transitions[count - 1] === 'visible')
-                  );
-                }""",
-                polling=100,
-                timeout=timeout_ms,
+    if browser_engine == "chromium" and not _headed_chromium_requested():
+        raise RuntimeError(
+            "chromium_visibility_proof_requires_headed_browser_under_xvfb"
+        )
+    # Current Chromium headless targets report every Page as visible, including after
+    # Page.setWebLifecycleState. A headed browser under Xvfb gives Chromium a real tab
+    # strip, so activating a second target exercises the browser-owned Page Visibility
+    # boundary without redefining document properties or dispatching synthetic events.
+    # WebKit already exposes this native tab boundary in its Playwright runtime.
+    focus_session = None
+    background = None
+    try:
+        background = raw_context.new_page()
+        background.goto("about:blank")
+        raw_page.bring_to_front()
+        prepared_visibility = str(
+            raw_page.evaluate("() => document.visibilityState")
+        )
+        assert prepared_visibility == "visible", prepared_visibility
+        prepared_transitions = list(
+            raw_page.evaluate(
+                "() => Array.from(window.__nicoVisibilityTransitions || [])"
             )
-            lifecycle_visibility = str(
+            or []
+        )
+        if browser_engine == "chromium":
+            # Playwright enables Chromium focus emulation for every Page target, which
+            # deliberately keeps background tabs visible. Disable only that automation
+            # override while the subject is known to be foregrounded. Require that the
+            # override removal itself causes no visibility change, then clear the event
+            # log so only the deliberate tab activation can prove the hidden boundary.
+            focus_session = raw_context.new_cdp_session(raw_page)
+            focus_session.send(
+                "Emulation.setFocusEmulationEnabled",
+                {"enabled": False},
+            )
+            focus_visibility = str(
                 raw_page.evaluate("() => document.visibilityState")
             )
-            if lifecycle_visibility == "hidden":
-                hidden = lifecycle_visibility
-            else:
-                completed_transitions = list(
-                    raw_page.evaluate(
-                        "() => Array.from(window.__nicoVisibilityTransitions || [])"
-                    )
-                    or []
+            focus_transitions = list(
+                raw_page.evaluate(
+                    "() => Array.from(window.__nicoVisibilityTransitions || [])"
                 )
-                assert (
-                    lifecycle_visibility == "visible"
-                    and completed_transitions[-2:] == ["hidden", "visible"]
-                ), completed_transitions
-                hidden = "hidden"
-            raw_page.bring_to_front()
-            raw_page.wait_for_function(
-                "() => document.hidden === false && document.visibilityState === 'visible'",
-                polling=100,
-                timeout=timeout_ms,
+                or []
             )
-            visible = str(raw_page.evaluate("() => document.visibilityState"))
-        finally:
-            try:
-                # Always unfreeze, including after a failed assertion or transport
-                # error. A proof failure must never leave the tested page suspended.
-                session.send("Page.setWebLifecycleState", {"state": "active"})
-            finally:
-                try:
-                    raw_page.bring_to_front()
-                finally:
-                    session.detach()
-        mechanism = "chromium_cdp_web_lifecycle"
-    else:
-        # WebKit has no CDP session. Its Playwright implementation backgrounds a page
-        # when another page in the same context is activated, so retain that native
-        # tab lifecycle proof for the WebKit acceptance job.
-        background = raw_context.new_page()
+            if (
+                focus_visibility != "visible"
+                or focus_transitions != prepared_transitions
+            ):
+                raise AssertionError(
+                    "chromium_focus_emulation_disable_changed_subject_visibility: "
+                    f"state={focus_visibility!r} "
+                    f"before={prepared_transitions!r} after={focus_transitions!r}"
+                )
+        raw_page.evaluate("() => { window.__nicoVisibilityTransitions = []; }")
+        background.bring_to_front()
+        # Background documents suppress requestAnimationFrame; bounded interval
+        # polling can observe the real hidden state without changing page globals.
+        raw_page.wait_for_function(
+            "() => document.hidden === true && document.visibilityState === 'hidden'",
+            polling=100,
+            timeout=timeout_ms,
+        )
+        hidden = str(raw_page.evaluate("() => document.visibilityState"))
+        raw_page.bring_to_front()
+        raw_page.wait_for_function(
+            "() => document.hidden === false && document.visibilityState === 'visible'",
+            polling=100,
+            timeout=timeout_ms,
+        )
+        visible = str(raw_page.evaluate("() => document.visibilityState"))
+    finally:
         try:
-            background.goto("about:blank")
-            background.bring_to_front()
-            # WebKit also suppresses requestAnimationFrame for a background tab.
-            raw_page.wait_for_function(
-                "() => document.hidden === true && document.visibilityState === 'hidden'",
-                polling=100,
-                timeout=timeout_ms,
-            )
-            hidden = str(raw_page.evaluate("() => document.visibilityState"))
             raw_page.bring_to_front()
-            raw_page.wait_for_function(
-                "() => document.hidden === false && document.visibilityState === 'visible'",
-                polling=100,
-                timeout=timeout_ms,
-            )
-            visible = str(raw_page.evaluate("() => document.visibilityState"))
         finally:
             try:
-                raw_page.bring_to_front()
+                if focus_session is not None:
+                    try:
+                        focus_session.send(
+                            "Emulation.setFocusEmulationEnabled",
+                            {"enabled": True},
+                        )
+                    finally:
+                        focus_session.detach()
             finally:
-                background.close()
-        mechanism = "browser_tab_activation"
+                if background is not None:
+                    background.close()
+    mechanism = (
+        "headed_tab_activation_without_focus_emulation"
+        if browser_engine == "chromium"
+        else "browser_tab_activation"
+    )
     transitions = list(
         raw_page.evaluate("() => Array.from(window.__nicoVisibilityTransitions || [])")
         or []
@@ -457,6 +469,11 @@ def _prove_visibility_hidden_visible(
         "terminal_visibility_transitions": ["hidden", "visible"],
         "observed_visibility_transitions": transitions,
         "browser_engine": browser_engine or "unknown",
+        "browser_launch_mode": (
+            "headed_xvfb"
+            if browser_engine == "chromium" and _headed_chromium_requested()
+            else "headless"
+        ),
         "visibility_transition_mechanism": mechanism,
         "document_hidden_observed": True,
         "document_visible_after_foreground": True,
@@ -1323,7 +1340,7 @@ def main(argv: list[str] | None = None) -> int:
     failure: dict[str, Any] | None = None
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = _launch_chromium(playwright)
             try:
                 result = run_proof(browser, args)
             finally:

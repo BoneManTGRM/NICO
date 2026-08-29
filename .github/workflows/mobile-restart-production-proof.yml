@@ -67,6 +67,8 @@ jobs:
           assert 'archive.ubuntu.com/ubuntu/' in workflow
           assert 'Acquire::https::Timeout "20";' in workflow
           assert 'timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium' in workflow
+          assert 'NICO_PROOF_HEADED_CHROMIUM: "1"' in workflow
+          assert 'xvfb-run -a python scripts/mobile_restart_live_acceptance_v5.py' in workflow
           assert 'if: failure() || cancelled()' in workflow
           assert 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' in workflow
           assert '--source-proof source-proof/spanish-comprehensive-live-proof.json' in workflow
@@ -94,6 +96,7 @@ jobs:
       SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
       SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       STATUS_CONTEXT: NICO Mobile Restart Production Proof
+      NICO_PROOF_HEADED_CHROMIUM: "1"
     steps:
       - name: Check out exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -221,8 +224,9 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
+          command -v xvfb-run
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
-          python scripts/mobile_restart_live_acceptance_v5.py \
+          xvfb-run -a python scripts/mobile_restart_live_acceptance_v5.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -281,6 +285,13 @@ jobs:
           assert payload["first_context_closed_before_reopen"] is True
           assert payload["terminal_background_foreground_recovery_verified"] is True
           assert payload["terminal_visibility_transitions"] == ["hidden", "visible"]
+          for visibility in (
+              payload["initial_context_visibility"],
+              payload["terminal_visibility"],
+          ):
+              assert visibility["browser_launch_mode"] == "headed_xvfb"
+              assert visibility["visibility_transition_mechanism"] == "headed_tab_activation_without_focus_emulation"
+              assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]
           assert payload["terminal_observation_at_least_90_seconds"] is True
           assert payload["terminal_observation"]["observed_seconds"] >= 90
           assert payload["terminal_observation"]["status_get_count"] <= 4
