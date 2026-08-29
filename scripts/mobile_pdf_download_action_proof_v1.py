@@ -321,11 +321,11 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
               window.__nicoReviewPdfDownloadTarget = '';
               window.__nicoAcceptancePdfAnchor = null;
               window.__nicoReviewPdfObserver?.disconnect?.();
-              if (window.__nicoAcceptancePdfOriginalClick) {
-                HTMLAnchorElement.prototype.click = window.__nicoAcceptancePdfOriginalClick;
+              if (window.__nicoAcceptancePdfClickCapture) {
+                document.removeEventListener(
+                  "click", window.__nicoAcceptancePdfClickCapture, true
+                );
               }
-              const originalClick = HTMLAnchorElement.prototype.click;
-              window.__nicoAcceptancePdfOriginalClick = originalClick;
               const capture = link => {
                 if (!(link instanceof HTMLAnchorElement)) return;
                 const value = {
@@ -342,10 +342,12 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
                 window.__nicoReviewPdfDownloadRel = value.rel;
                 window.__nicoReviewPdfDownloadTarget = value.target;
               };
-              HTMLAnchorElement.prototype.click = function(...args) {
-                capture(this);
-                return originalClick.apply(this, args);
+              const captureAnchorClick = event => {
+                const target = event.target instanceof Element ? event.target : null;
+                capture(target?.closest?.('a'));
               };
+              window.__nicoAcceptancePdfClickCapture = captureAnchorClick;
+              document.addEventListener("click", captureAnchorClick, true);
               const observer = new MutationObserver(records => {
                 for (const record of records) {
                   for (const node of record.addedNodes) {
@@ -400,9 +402,11 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             page.evaluate(
                 """() => {
                   window.__nicoReviewPdfObserver?.disconnect?.();
-                  if (window.__nicoAcceptancePdfOriginalClick) {
-                    HTMLAnchorElement.prototype.click = window.__nicoAcceptancePdfOriginalClick;
-                    window.__nicoAcceptancePdfOriginalClick = null;
+                  if (window.__nicoAcceptancePdfClickCapture) {
+                    document.removeEventListener(
+                      "click", window.__nicoAcceptancePdfClickCapture, true
+                    );
+                    window.__nicoAcceptancePdfClickCapture = null;
                   }
                 }"""
             )
