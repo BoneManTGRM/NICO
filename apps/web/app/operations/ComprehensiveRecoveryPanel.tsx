@@ -5,6 +5,8 @@ import {copyFor} from "../assessment/assessmentCopy";
 import styles from "./operations.module.css";
 
 type RecoveryLocale = "en" | "es-MX";
+const ARTIFACT_INTEGRITY_STAGE = "final_report_artifact_integrity";
+const ARTIFACT_INTEGRITY_CODE = "comprehensive_report_artifact_integrity_invalid";
 
 type ComprehensiveProjection = {
   run_id?: string;
@@ -16,6 +18,17 @@ type ComprehensiveProjection = {
   terminal?: boolean;
   human_review_required?: boolean;
   client_delivery_allowed?: boolean;
+  approval_status?: string;
+  delivery_status?: string;
+  error_code?: string;
+  failure_code?: string;
+  technical_reason?: string;
+  failure_reason?: string;
+  blocked_reason?: string;
+  response_projection?: {
+    artifact_integrity_valid?: boolean;
+    review_package_invalidated_by_artifact_mismatch?: boolean;
+  };
   record?: {
     current_stage?: string;
     stage_results?: Record<string, Record<string, unknown>>;
@@ -43,11 +56,33 @@ function detailMessage(payload: unknown, fallback: string): string {
   return String(record.message || record.error || fallback);
 }
 
+function artifactIntegrityBlocked(run: ComprehensiveProjection | null): boolean {
+  return run?.response_projection?.review_package_invalidated_by_artifact_mismatch === true
+    || String(run?.delivery_status || "").trim().toLowerCase() === "blocked_artifact_integrity"
+    || String(run?.approval_status || "").trim().toLowerCase() === "invalidated_artifact_mismatch"
+    || [run?.error_code, run?.failure_code].some(
+      (value) => String(value || "").trim().toLowerCase() === ARTIFACT_INTEGRITY_CODE,
+    );
+}
+
 function runStage(run: ComprehensiveProjection | null): string {
+  if (artifactIntegrityBlocked(run)) return ARTIFACT_INTEGRITY_STAGE;
   return String(run?.current_stage || run?.record?.current_stage || "unknown").trim();
 }
 
-function failureReason(run: ComprehensiveProjection | null, unavailable: string): string {
+function failureReason(
+  run: ComprehensiveProjection | null,
+  unavailable: string,
+  artifactIntegrityReason: string,
+): string {
+  if (artifactIntegrityBlocked(run)) return artifactIntegrityReason;
+  const direct = String(
+    run?.technical_reason
+      || run?.failure_reason
+      || run?.blocked_reason
+      || "",
+  ).trim();
+  if (direct) return direct;
   if (!run?.record?.stage_results) return unavailable;
   const stage = runStage(run);
   const result = run.record.stage_results[stage];
@@ -86,6 +121,11 @@ const SPANISH_STATUS_LABELS: Record<string, string> = {
 
 function stageDisplayLabel(stageId: string, locale: RecoveryLocale): string {
   const canonical = String(stageId || "").trim();
+  if (canonical === ARTIFACT_INTEGRITY_STAGE) {
+    return locale === "es-MX"
+      ? "Integridad del paquete de informe final"
+      : "Final report package integrity";
+  }
   const labels = copyFor(locale).stageLabels as Record<string, string>;
   return labels[canonical] || canonical.replaceAll("_", " ");
 }
@@ -123,7 +163,10 @@ export default function ComprehensiveRecoveryPanel({
     exactIdentity: "ID exacto de ejecución",
     exactIdentityDetail: "Este control nunca crea una ejecución de reemplazo. Vuelve a ingresar al mismo límite público de continuación de la ejecución exacta que usa el espacio de evaluación y conserva el registro duradero.",
     currentStage: "Etapa actual",
+    artifactIntegrityGate: "Control de integridad del artefacto",
     stageAuthority: "La etapa que falló permanece como fuente autoritativa hasta que la recuperación tenga éxito.",
+    artifactIntegrityAuthority: "El paquete exacto permanece bloqueado hasta que se restablezca y se vuelva a validar su integridad.",
+    artifactIntegrityReason: "El paquete exacto del informe final no superó la validación de integridad. La entrega al cliente permanece bloqueada hasta que el paquete conservado se repare y se vuelva a validar.",
     progress: "Progreso",
     progressIntegrity: "La recuperación no fabrica trabajo completado.",
     repository: "Repositorio",
@@ -152,7 +195,10 @@ export default function ComprehensiveRecoveryPanel({
     exactIdentity: "Exact run identity",
     exactIdentityDetail: "This control never creates a replacement run. It re-enters the same public exact-run continuation boundary used by the assessment workspace and preserves the durable record.",
     currentStage: "Current stage",
+    artifactIntegrityGate: "Artifact integrity gate",
     stageAuthority: "The failed stage remains authoritative until recovery succeeds.",
+    artifactIntegrityAuthority: "The exact package remains blocked until artifact integrity is restored and revalidated.",
+    artifactIntegrityReason: "The exact final report package failed artifact-integrity validation. Client delivery remains blocked until the preserved package is repaired and revalidated.",
     progress: "Progress",
     progressIntegrity: "Recovery does not fabricate completed work.",
     repository: "Repository",
@@ -168,8 +214,12 @@ export default function ComprehensiveRecoveryPanel({
     resume: "Resume same Comprehensive run ID",
     helper: "No operator token is required for this bounded Comprehensive recovery because it uses the existing public exact-run status and continuation routes. Human review and client delivery remain fail closed. The first recovery continuation is limited to one stage; a repeated terminal failure remains blocked and visible.",
   };
+  const integrityBlocked = useMemo(() => artifactIntegrityBlocked(run), [run]);
   const stage = useMemo(() => runStage(run), [run]);
-  const reason = useMemo(() => failureReason(run, copy.unavailable), [run, copy.unavailable]);
+  const reason = useMemo(
+    () => failureReason(run, copy.unavailable, copy.artifactIntegrityReason),
+    [run, copy.unavailable, copy.artifactIntegrityReason],
+  );
 
   async function loadExactRun(): Promise<ComprehensiveProjection | null> {
     if (!apiUrl || !targetRunId) return null;
@@ -279,7 +329,7 @@ export default function ComprehensiveRecoveryPanel({
       </div>
 
       <div className={styles.gridFour}>
-        <article className={styles.detailCard}><span>{copy.currentStage}</span><b data-stage-id={run ? stage : "not_loaded"} title={run ? stage : "not_loaded"}>{run ? stageDisplayLabel(stage, locale) : copy.notLoaded}</b><small>{copy.stageAuthority}</small></article>
+        <article className={styles.detailCard}><span>{integrityBlocked ? copy.artifactIntegrityGate : copy.currentStage}</span><b data-stage-id={run ? stage : "not_loaded"} title={run ? stage : "not_loaded"}>{run ? stageDisplayLabel(stage, locale) : copy.notLoaded}</b><small>{integrityBlocked ? copy.artifactIntegrityAuthority : copy.stageAuthority}</small></article>
         <article className={styles.detailCard}><span>{copy.progress}</span><b>{run && Number.isFinite(Number(run.progress_percent)) ? `${Number(run.progress_percent).toFixed(2)}%` : copy.notLoaded}</b><small>{copy.progressIntegrity}</small></article>
         <article className={styles.detailCard}><span>{copy.repository}</span><b>{run?.repository || copy.notLoaded}</b><small>{run?.commit_sha ? `${copy.exactCommit} ${run.commit_sha.slice(0, 12)}` : copy.exactCommitMissing}</small></article>
         <article className={styles.detailCard}><span>{copy.clientDelivery}</span><b data-delivery-state={run?.client_delivery_allowed === true ? "allowed" : "blocked"}>{run?.client_delivery_allowed === true ? copy.allowed : copy.blocked}</b><small>{copy.humanReview}</small></article>

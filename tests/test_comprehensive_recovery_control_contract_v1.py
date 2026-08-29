@@ -41,3 +41,19 @@ def test_comprehensive_recovery_reuses_exact_run_and_bounded_continue() -> None:
     assert "X-NICO-Admin-Token" not in source
     assert "No operator token is required for this bounded Comprehensive recovery" in source
     assert 'disabled={loading || !recoverable(run)}' in source
+
+
+def test_comprehensive_recovery_surfaces_exact_artifact_integrity_block() -> None:
+    source = COMPREHENSIVE_PANEL.read_text(encoding="utf-8")
+
+    assert "function artifactIntegrityBlocked(" in source
+    assert "run?.response_projection?.review_package_invalidated_by_artifact_mismatch === true" in source
+    assert '=== "blocked_artifact_integrity"' in source
+    assert '=== "invalidated_artifact_mismatch"' in source
+    assert "if (artifactIntegrityBlocked(run)) return ARTIFACT_INTEGRITY_STAGE" in source
+    assert "if (artifactIntegrityBlocked(run)) return artifactIntegrityReason" in source
+    assert "run?.technical_reason" in source
+    assert "run?.failure_reason" in source
+    assert "run?.blocked_reason" in source
+    assert 'artifactIntegrityGate: "Artifact integrity gate"' in source
+    assert "integrityBlocked ? copy.artifactIntegrityAuthority : copy.stageAuthority" in source

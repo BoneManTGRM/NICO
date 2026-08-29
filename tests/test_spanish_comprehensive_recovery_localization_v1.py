@@ -74,6 +74,8 @@ def test_spanish_recovery_copy_has_no_known_authored_english_leaks() -> None:
         "Reanudar la ejecución exacta conservada",
         "Motivo técnico conservado",
         "La revisión humana sigue siendo obligatoria",
+        "Control de integridad del artefacto",
+        "El paquete exacto del informe final no superó la validación de integridad",
     ):
         assert required in spanish_copy
 
@@ -89,6 +91,8 @@ def test_spanish_recovery_copy_has_no_known_authored_english_leaks() -> None:
         "Reload exact run state",
         "Working...",
         "Human review remains required",
+        "Artifact integrity gate",
+        "The exact final report package failed artifact-integrity validation",
     ):
         assert forbidden not in spanish_copy
 
@@ -109,3 +113,13 @@ def test_spanish_failure_stage_and_status_are_localized_without_mutating_ids() -
     assert "stageReasonFallback" in source
     assert "<p>{item.message}</p>" not in source
     assert "<dd>{failure.message}</dd>" not in source
+
+
+def test_spanish_failure_panel_localizes_artifact_integrity_diagnostic() -> None:
+    source = _source(FAILURE_PANEL)
+    spanish_copy = _spanish_copy(source)
+
+    assert "Control de integridad del artefacto" in spanish_copy
+    assert "Integridad del paquete de informe final" in source
+    assert "El paquete exacto del informe final no superó la validación de integridad" in spanish_copy
+    assert "artifactIntegrityFailure ? copy.artifactIntegrityReason" in source

@@ -32,6 +32,9 @@ from nico.comprehensive_final_report_background_v1 import (
 )
 from nico.comprehensive_final_report_execution_boundary_v4 import FINAL_REPORT_STAGE_ID
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+from nico.comprehensive_pending_artifact_metadata_repair_v1 import (
+    repair_pending_findings_csv_alias,
+)
 from nico.comprehensive_pre_render_scanner_truth_v65 import (
     install_pre_render_authoritative_scanner_truth,
 )
@@ -233,6 +236,12 @@ class ComprehensiveRunService:
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
         if record.get("terminal"):
+            repaired = repair_pending_findings_csv_alias(record)
+            if repaired != record:
+                return self._store.save(
+                    repaired,
+                    expected_revision=int(record["revision"]),
+                )
             recovered = rewind_blocked_run_for_final_artifact_recovery(record)
             if recovered == record:
                 recovered = rewind_stalled_stage_for_retry(record)

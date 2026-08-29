@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import re
+from copy import deepcopy
 
 from pypdf import PdfReader
 
-from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
+from nico.comprehensive_api_controller import _final_report_package_integrity_bound
+from nico.phase9_comprehensive_report_integration_v1 import (
+    _already_finalized_exact_artifact_result,
+    finalize_report_package,
+)
 
 
 GENERATED_AT = "2026-08-04T16:15:00Z"
@@ -152,3 +158,23 @@ def test_finalizer_is_idempotent():
     assert second["report_package"]["pdf_filename"].count(
         "AUTOMATED-DRAFT-PENDING-APPROVAL"
     ) == 1
+
+
+def test_stale_exact_artifact_alias_cannot_bypass_v2_rebuild():
+    stale = deepcopy(finalize_report_package(_result()))
+    package = stale["report_package"]
+    legacy_bytes = b"legacy,v2,findings,csv\n"
+    package["findings_csv_base64"] = base64.b64encode(legacy_bytes).decode(
+        "ascii"
+    )
+    package["findings_csv_sha256"] = hashlib.sha256(legacy_bytes).hexdigest()
+
+    assert _final_report_package_integrity_bound(package) is False
+    assert _already_finalized_exact_artifact_result(stale) is False
+
+    rebuilt = finalize_report_package(stale)["report_package"]
+
+    assert _final_report_package_integrity_bound(rebuilt) is True
+    assert base64.b64decode(
+        rebuilt["findings_csv_base64"], validate=True
+    ) == rebuilt["findings_csv"].encode("utf-8")

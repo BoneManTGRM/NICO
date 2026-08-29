@@ -10,6 +10,8 @@ import {UI_LOCALE_CHANGE_EVENT} from "./assessment/assessmentLocale";
 import {localizeExactSpanishText} from "./assessment/AssessmentSpanishLocalization";
 
 const TERMINAL_FAILURES = new Set(["failed", "blocked", "error", "interrupted", "rejected"]);
+const ARTIFACT_INTEGRITY_STAGE = "final_report_artifact_integrity";
+const ARTIFACT_INTEGRITY_CODE = "comprehensive_report_artifact_integrity_invalid";
 
 function isFailureEvidence(value: unknown): value is AssessmentFailureEvidence {
   if (!value || typeof value !== "object") return false;
@@ -63,6 +65,9 @@ const SPANISH_STATUS_LABELS: Record<string, string> = {
 function stageDisplayLabel(stageId: string, spanish: boolean): string {
   const canonical = String(stageId || "").trim();
   if (!canonical) return spanish ? "no devuelta" : "not returned";
+  if (canonical === ARTIFACT_INTEGRITY_STAGE) {
+    return spanish ? "Integridad del paquete de informe final" : "Final report package integrity";
+  }
   const labels = copyFor(spanish ? "es-MX" : "en").stageLabels as Record<string, string>;
   return labels[canonical] || (spanish ? copyFor("es-MX").unknownStage : canonical.replaceAll("_", " "));
 }
@@ -210,6 +215,8 @@ export default function AssessmentFailureEvidencePanel() {
   }, [failure, failedStage]);
 
   if (!failure) return null;
+  const artifactIntegrityFailure = failure.code === ARTIFACT_INTEGRITY_CODE
+    || failedStage?.step === ARTIFACT_INTEGRITY_STAGE;
 
   const copy = spanish ? {
     eyebrow: "EVIDENCIA DEL FALLO",
@@ -217,6 +224,8 @@ export default function AssessmentFailureEvidencePanel() {
     summary: "El análisis completado y la identidad exacta de la ejecución permanecen preservados, pero el paquete final no pudo publicarse.",
     blocked: "BLOQUEADA",
     failedStage: "Etapa que falló",
+    artifactIntegrityGate: "Control de integridad del artefacto",
+    artifactIntegrityReason: "El paquete exacto del informe final no superó la validación de integridad. La entrega al cliente permanece bloqueada hasta que el paquete conservado se repare y se vuelva a validar.",
     http: "Estado HTTP original",
     route: "Ruta canónica",
     type: "Tipo de evaluación",
@@ -243,6 +252,8 @@ export default function AssessmentFailureEvidencePanel() {
     summary: "Completed analysis and the exact run identity remain preserved, but the final assessment package could not be published.",
     blocked: "BLOCKED",
     failedStage: "Failed stage",
+    artifactIntegrityGate: "Artifact integrity gate",
+    artifactIntegrityReason: "The exact final report package failed artifact-integrity validation. Client delivery remains blocked until the preserved package is repaired and revalidated.",
     http: "Original HTTP status",
     route: "Canonical route",
     type: "Assessment type",
@@ -269,6 +280,8 @@ export default function AssessmentFailureEvidencePanel() {
     : `/operations/recovery${spanish ? "?lang=es-MX" : ""}`;
   const failedStageId = failedStage?.step || "";
   const failedStageName = failedStageId ? stageDisplayLabel(failedStageId, spanish) : copy.missing;
+  const displayedTechnicalReason = authoredFailureMessage(failure.message, spanish,
+    artifactIntegrityFailure ? copy.artifactIntegrityReason : copy.technicalReasonFallback);
 
   return <section
     className="section panel nico-failure-evidence"
@@ -290,7 +303,7 @@ export default function AssessmentFailureEvidencePanel() {
 
     <div className="nico-failure-evidence__primary">
       <article>
-        <b>{copy.failedStage}</b>
+        <b>{artifactIntegrityFailure ? copy.artifactIntegrityGate : copy.failedStage}</b>
         <span data-stage-id={failedStageId || "unknown_stage"} title={failedStageId || "unknown_stage"}>{failedStageName}</span>
       </article>
       <article>
@@ -303,7 +316,7 @@ export default function AssessmentFailureEvidencePanel() {
       <summary>{copy.details}</summary>
       <dl>
         <div><dt>{copy.code}</dt><dd><code>{failure.code}</code></dd></div>
-        <div><dt>{copy.message}</dt><dd>{authoredFailureMessage(failure.message, spanish, copy.technicalReasonFallback)}</dd></div>
+        <div><dt>{copy.message}</dt><dd>{displayedTechnicalReason}</dd></div>
         {failure.worker ? <>
           <div><dt>{copy.workerModel}</dt><dd><code>{failure.worker.model || copy.missing}</code></dd></div>
           <div><dt>{copy.workerExit}</dt><dd>{failure.worker.exit_code ?? copy.missing}</dd></div>

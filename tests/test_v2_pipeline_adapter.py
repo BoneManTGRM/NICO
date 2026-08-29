@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
+
+from nico.comprehensive_api_controller import (
+    _final_report_package_integrity_bound,
+)
 from nico.v2_pipeline_adapter import apply_v2_pipeline
 
 
@@ -56,3 +63,12 @@ def test_adapter_rebuilds_one_truth_and_review_state():
     assert package["json"]["identity"]["generated_at"] == GENERATED_AT
     assert package["pdf_base64"]
     assert package["markdown"]
+    retained_findings_csv = package["findings_csv"].encode("utf-8")
+    assert base64.b64decode(
+        package["findings_csv_base64"], validate=True
+    ) == retained_findings_csv
+    assert package["findings_csv_sha256"] == hashlib.sha256(
+        retained_findings_csv
+    ).hexdigest()
+    assert json.loads(package["canonical_json"]) == package["json"]
+    assert _final_report_package_integrity_bound(package) is True
