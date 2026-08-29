@@ -35,6 +35,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       NICO_SPANISH_PROOF_TELEMETRY_SECONDS: "30"
       NICO_PROOF_HEADED_CHROMIUM: "1"
+      NICO_PROOF_NATIVE_VISIBILITY: "1"
 
     steps:
       - name: Check out exact release commit
@@ -139,6 +140,7 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir \
             . "playwright==1.61.0" "pypdf==6.15.0" "pytest==9.1.1"
+          python scripts/prepare_playwright_native_visibility_v1.py
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           fi
