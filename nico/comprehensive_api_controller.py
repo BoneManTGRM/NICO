@@ -1052,6 +1052,62 @@ class ComprehensiveApiController:
         record = self._service.load_read_only(self._required(run_id, "run_id"))
         return self._response(record, operation="status")
 
+    def status_artifact_read_only(self, run_id: str) -> dict[str, Any]:
+        """Return validated artifact authority without cloning every artifact body.
+
+        Exact-run artifact endpoints need the canonical terminal package, but they do
+        not need the established non-browser status response to deep-copy that package
+        before immediately reducing it to one artifact.  Validate the stored package
+        through the same canonical response boundary, project only its browser
+        manifest, and then attach the already-validated in-memory package reference for
+        the synchronous artifact builder.  The returned value is request-local and the
+        builders treat the attached package as read-only.
+        """
+
+        record = self._service.load_read_only(self._required(run_id, "run_id"))
+        response = self._response(
+            record,
+            operation="status",
+            browser_projection=True,
+        )
+        manifest = (
+            response.get("reports")
+            if isinstance(response.get("reports"), Mapping)
+            else {}
+        )
+        if not manifest:
+            return response
+
+        stage_results = (
+            record.get("stage_results")
+            if isinstance(record.get("stage_results"), Mapping)
+            else {}
+        )
+        final_stage = stage_results.get(_FINAL_REPORT_STAGE_ID)
+        if not isinstance(final_stage, Mapping):
+            return response
+        candidate = (
+            final_stage.get("report_package")
+            if isinstance(final_stage.get("report_package"), Mapping)
+            else final_stage.get("reports")
+        )
+        if not isinstance(candidate, Mapping):
+            return response
+
+        # `_response(..., browser_projection=True)` attaches a manifest only after the
+        # exact candidate passes package, identity, locale, and lifecycle validation.
+        # Bind the reference back to that manifest so a later structural refactor
+        # cannot accidentally substitute another stage's package here.
+        for field in ("report_id", "canonical_truth_sha256"):
+            if str(candidate.get(field) or "").strip() != str(
+                manifest.get(field) or ""
+            ).strip():
+                return response
+
+        projected = dict(response)
+        projected["reports"] = candidate
+        return projected
+
     def continue_run(
         self,
         run_id: str,

@@ -1260,9 +1260,18 @@ def build_same_run_locale_pdf_response(
 
 def _controller_status(target: FastAPI, run_id: str) -> Mapping[str, Any]:
     controller = getattr(target.state, "comprehensive_api_controller", None)
-    if controller is None or not callable(
+    artifact_reader = (
+        getattr(controller, "status_artifact_read_only", None)
+        if controller is not None
+        else None
+    )
+    fallback_reader = (
         getattr(controller, "status_read_only", None)
-    ):
+        if controller is not None
+        else None
+    )
+    reader = artifact_reader if callable(artifact_reader) else fallback_reader
+    if controller is None or not callable(reader):
         raise HTTPException(
             status_code=503,
             detail={
@@ -1271,7 +1280,7 @@ def _controller_status(target: FastAPI, run_id: str) -> Mapping[str, Any]:
             },
         )
     try:
-        return controller.status_read_only(run_id)
+        return reader(run_id)
     except KeyError as exc:
         raise HTTPException(
             status_code=404,

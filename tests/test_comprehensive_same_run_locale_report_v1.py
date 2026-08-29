@@ -344,6 +344,124 @@ def test_real_cross_locale_markdown_runs_full_preparation_without_pdf(
     assert result["report"]["client_delivery_allowed"] is False
 
 
+def _install_finalized_scanner_register(canonical: dict) -> dict:
+    finding = {
+        "finding_id": "NICO-SCAN-SAME-RUN-001",
+        "candidate_id": "NICO-SCAN-SAME-RUN-001",
+        "category": "static",
+        "scanner": "bandit",
+        "tool": "bandit",
+        "disposition": "review_required",
+        "status": "completed",
+        "evidence": "Synthetic retained candidate for bounded-render regression coverage.",
+        "source_path": "apps/web/app/page.tsx",
+        "path": "apps/web/app/page.tsx",
+        "line": 100,
+        "raw_payload_retention_state": "retained",
+        "raw_fingerprint": "f" * 64,
+    }
+    register = {
+        "findings": [finding],
+        "candidate_record_count": 1,
+        "count_parity_verified": True,
+        "candidate_record_count_matches_raw": True,
+        "raw_payload_retention_complete": True,
+        "mutually_exclusive_dispositions_verified": True,
+        "projection_redaction_preserves_source_fingerprints": True,
+    }
+    canonical["assessment"]["canonical_scanner_finding_register"] = register
+    return register
+
+
+def test_finalized_markdown_preparation_bounds_retained_scanner_candidates(
+    monkeypatch,
+) -> None:
+    from nico import phase17_canonical_artifact_rebuild_v1 as phase17
+    from tests.test_v2_premium_report_renderer import _package
+
+    source = phase17.rebuild_client_artifacts(_package("es-MX"))
+    _install_finalized_scanner_register(source["json"])
+    localized_view = subject._localized_draft_view(source["json"], "en")
+    retained_register = localized_view["assessment"][
+        "canonical_scanner_finding_register"
+    ]
+    assert retained_register["findings"]
+    full_view = deepcopy(localized_view)
+    full_view["v2_prepublication_contract"][
+        "final_register_count_synchronized_before_render"
+    ] = False
+    expected_markdown = phase17.build_localized_markdown_projection(
+        {"json": full_view}
+    )["markdown"]
+
+    observed_preparation_finding_counts = []
+    original_prepare = phase17._prepare_client_artifact_package
+
+    def observe_bounded_preparation(package):
+        register = package["json"]["assessment"][
+            "canonical_scanner_finding_register"
+        ]
+        observed_preparation_finding_counts.append(len(register["findings"]))
+        return original_prepare(package)
+
+    monkeypatch.setattr(
+        phase17,
+        "_prepare_client_artifact_package",
+        observe_bounded_preparation,
+    )
+
+    result = phase17.build_localized_markdown_projection({"json": localized_view})
+
+    assert observed_preparation_finding_counts == [0]
+    assert result["markdown"] == expected_markdown
+    assert result["json"]["assessment"][
+        "canonical_scanner_finding_register"
+    ] is retained_register
+    assert result["json"]["assessment"][
+        "canonical_scanner_finding_register"
+    ]["findings"] == retained_register["findings"]
+    assert result["html_rendered"] is False
+    assert result["pdf_rendered"] is False
+
+
+def test_partial_markdown_package_keeps_full_scanner_preparation_path(
+    monkeypatch,
+) -> None:
+    from nico import phase17_canonical_artifact_rebuild_v1 as phase17
+    from tests.test_v2_premium_report_renderer import _package
+
+    source = phase17.rebuild_client_artifacts(_package("es-MX"))
+    _install_finalized_scanner_register(source["json"])
+    localized_view = subject._localized_draft_view(source["json"], "en")
+    localized_view["v2_prepublication_contract"][
+        "final_register_count_synchronized_before_render"
+    ] = False
+    retained_count = len(
+        localized_view["assessment"]["canonical_scanner_finding_register"][
+            "findings"
+        ]
+    )
+    observed_preparation_finding_counts = []
+    original_prepare = phase17._prepare_client_artifact_package
+
+    def observe_full_preparation(package):
+        register = package["json"]["assessment"][
+            "canonical_scanner_finding_register"
+        ]
+        observed_preparation_finding_counts.append(len(register["findings"]))
+        return original_prepare(package)
+
+    monkeypatch.setattr(
+        phase17,
+        "_prepare_client_artifact_package",
+        observe_full_preparation,
+    )
+
+    phase17.build_localized_markdown_projection({"json": localized_view})
+
+    assert observed_preparation_finding_counts == [retained_count]
+
+
 def test_localized_markdown_route_omits_large_exact_artifact_bodies() -> None:
     status = _status(source_language="en")
     status["reports"]["json"]["large_internal_payload"] = "x" * (2 * 1024 * 1024)
@@ -1204,6 +1322,28 @@ def test_localized_route_status_read_is_non_mutating() -> None:
     assert calls == [("read_only", "comprun_same_run_1")]
 
 
+def test_localized_route_prefers_bounded_artifact_read() -> None:
+    app = FastAPI()
+    calls = []
+
+    def status_artifact_read_only(run_id):
+        calls.append(("artifact_read_only", run_id))
+        return _status()
+
+    def status_read_only(_run_id):
+        raise AssertionError("artifact route must not clone the full status package")
+
+    app.state.comprehensive_api_controller = SimpleNamespace(
+        status_artifact_read_only=status_artifact_read_only,
+        status_read_only=status_read_only,
+    )
+
+    result = subject._controller_status(app, "comprun_same_run_1")
+
+    assert result["run_id"] == "comprun_same_run_1"
+    assert calls == [("artifact_read_only", "comprun_same_run_1")]
+
+
 def test_controller_read_only_status_projects_accepted_edition_without_mutation() -> None:
     from nico.comprehensive_api_controller import ComprehensiveApiController
 
@@ -1249,6 +1389,61 @@ def test_controller_read_only_status_projects_accepted_edition_without_mutation(
     assert projected["accepted_edition"] == record["accepted_edition"]
     assert projected["accepted_edition"] is not record["accepted_edition"]
     projected["accepted_edition"]["review"]["reason"] = "response-only mutation"
+    assert record == before
+
+
+def test_controller_artifact_read_validates_with_browser_projection_without_clone(
+    monkeypatch,
+) -> None:
+    from nico import comprehensive_api_controller as controller_module
+    from nico.comprehensive_api_controller import ComprehensiveApiController
+
+    status = _status(source_language="es-MX")
+    canonical = status["reports"]["json"]
+    record = {
+        "artifact_schema": "nico.comprehensive_run_record.v1",
+        "service_id": "comprehensive",
+        "identity": {
+            **canonical["identity"],
+            "customer_id": "customer_same_run_1",
+            "project_id": "project_same_run_1",
+        },
+        "status": "review_required",
+        "current_stage": "client_acceptance_pending",
+        "completed_stages": ["final_comprehensive_report_generation"],
+        "stage_results": {
+            "final_comprehensive_report_generation": {
+                "status": "complete",
+                "report_package": status["reports"],
+                "assessment": canonical["assessment"],
+            }
+        },
+        "blockers": [],
+        "progress_percent": 100.0,
+        "revision": 9,
+        "terminal": True,
+        "human_review_required": True,
+        "human_review_completed": False,
+        "client_delivery_allowed": False,
+        "integrity_sha256": "record-integrity",
+    }
+    before = deepcopy(record)
+    service = SimpleNamespace(load_read_only=lambda _run_id: record)
+    controller = ComprehensiveApiController(service)
+
+    def fail_unbounded_projection(*_args, **_kwargs):
+        raise AssertionError("artifact read must not deep-project the full package")
+
+    monkeypatch.setattr(controller_module, "_project_report", fail_unbounded_projection)
+
+    projected = controller.status_artifact_read_only("comprun_same_run_1")
+
+    assert projected["response_projection"]["browser_projection"] is True
+    assert projected["response_projection"]["terminal_report_artifacts_inlined"] is False
+    assert projected["reports"] is status["reports"]
+    assert projected["reports"]["canonical_truth_sha256"] == status["reports"][
+        "canonical_truth_sha256"
+    ]
     assert record == before
 
 
