@@ -166,8 +166,8 @@ def _load_and_validate_source_job_log(
         "spanish_comprehensive_live_acceptance_v3.py",
         "in _commercial_spanish_run_proof",
         "running_visibility = base.recovery._prove_visibility_hidden_visible(",
+        "mobile_restart_live_acceptance_v1.py",
         "in _prove_visibility_hidden_visible",
-        "document.hidden === true && document.visibilityState === 'hidden'",
         "TimeoutError: Page.wait_for_function: Timeout",
         "Process completed with exit code 1",
     )

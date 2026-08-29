@@ -57,7 +57,14 @@ class _Page:
             return self.visibility
         raise AssertionError(f"Unexpected evaluate expression: {expression}")
 
-    def wait_for_function(self, expression: str, *, timeout: int) -> None:
+    def wait_for_function(
+        self,
+        expression: str,
+        *,
+        polling: int,
+        timeout: int,
+    ) -> None:
+        assert polling == 100
         assert timeout > 0
         if "window.__nicoVisibilityTransitions" in expression:
             assert self.visibility == "hidden" or (
@@ -188,10 +195,20 @@ def test_chromium_failure_still_unfreezes_and_reactivates_page(monkeypatch: Any)
     recovery = _load_recovery(monkeypatch)
 
     class FailingPage(_Page):
-        def wait_for_function(self, expression: str, *, timeout: int) -> None:
+        def wait_for_function(
+            self,
+            expression: str,
+            *,
+            polling: int,
+            timeout: int,
+        ) -> None:
             if "=== 'hidden'" in expression:
                 raise TimeoutError("synthetic hidden wait failure")
-            super().wait_for_function(expression, timeout=timeout)
+            super().wait_for_function(
+                expression,
+                polling=polling,
+                timeout=timeout,
+            )
 
     page = FailingPage()
     context = _ChromiumContext(page)

@@ -69,8 +69,9 @@ def _source_job_log() -> str:
             "spanish_comprehensive_live_acceptance_v3.py",
             "in _commercial_spanish_run_proof",
             "running_visibility = base.recovery._prove_visibility_hidden_visible(",
+            "mobile_restart_live_acceptance_v1.py",
             "in _prove_visibility_hidden_visible",
-            "document.hidden === true && document.visibilityState === 'hidden'",
+            "raw_page.wait_for_function(\n    ...<12 lines>...\n)",
             "TimeoutError: Page.wait_for_function: Timeout 120000ms exceeded.",
             "Process completed with exit code 1",
         )
@@ -149,6 +150,18 @@ def test_source_job_log_binds_release_attempt_and_visibility_boundary(
 
     path.write_text(
         _source_job_log().replace("SOURCE_RUN_ATTEMPT: 1", "SOURCE_RUN_ATTEMPT: 2"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="failed_source_job_log_control_flow_invalid"):
+        recovery._load_and_validate_source_job_log(
+            path,
+            expected_sha=SHA,
+            source_workflow_run_id=SOURCE_RUN_ID,
+            source_workflow_run_attempt=SOURCE_RUN_ATTEMPT,
+        )
+
+    path.write_text(
+        _source_job_log().replace("mobile_restart_live_acceptance_v1.py", ""),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="failed_source_job_log_control_flow_invalid"):

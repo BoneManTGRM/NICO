@@ -363,6 +363,9 @@ def _prove_visibility_hidden_visible(
         try:
             session.send("Page.setWebLifecycleState", {"state": "frozen"})
             session.send("Page.setWebLifecycleState", {"state": "active"})
+            # Hidden documents suppress requestAnimationFrame, which is Playwright's
+            # default polling mode. Use bounded interval polling so Chromium can be
+            # observed while it legitimately remains hidden after reactivation.
             raw_page.wait_for_function(
                 """() => {
                   const transitions = window.__nicoVisibilityTransitions || [];
@@ -377,6 +380,7 @@ def _prove_visibility_hidden_visible(
                       && transitions[count - 1] === 'visible')
                   );
                 }""",
+                polling=100,
                 timeout=timeout_ms,
             )
             lifecycle_visibility = str(
@@ -399,6 +403,7 @@ def _prove_visibility_hidden_visible(
             raw_page.bring_to_front()
             raw_page.wait_for_function(
                 "() => document.hidden === false && document.visibilityState === 'visible'",
+                polling=100,
                 timeout=timeout_ms,
             )
             visible = str(raw_page.evaluate("() => document.visibilityState"))
@@ -421,14 +426,17 @@ def _prove_visibility_hidden_visible(
         try:
             background.goto("about:blank")
             background.bring_to_front()
+            # WebKit also suppresses requestAnimationFrame for a background tab.
             raw_page.wait_for_function(
                 "() => document.hidden === true && document.visibilityState === 'hidden'",
+                polling=100,
                 timeout=timeout_ms,
             )
             hidden = str(raw_page.evaluate("() => document.visibilityState"))
             raw_page.bring_to_front()
             raw_page.wait_for_function(
                 "() => document.hidden === false && document.visibilityState === 'visible'",
+                polling=100,
                 timeout=timeout_ms,
             )
             visible = str(raw_page.evaluate("() => document.visibilityState"))
