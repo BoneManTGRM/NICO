@@ -17,6 +17,7 @@
     max-height: none;
     overflow-x: hidden;
     overflow-y: auto;
+    scroll-behavior: auto !important;
     background: #030712 !important;
   }
 

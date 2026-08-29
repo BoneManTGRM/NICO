@@ -25,6 +25,11 @@ def test_phone_workspace_removes_known_ios_paint_pressure() -> None:
     source = MOBILE_CSS.read_text(encoding="utf-8")
 
     assert "@media (max-width: 760px)" in source
+    mobile_root = source.split("@media (max-width: 760px)", 1)[1].split(
+        "body.nico-app,\n  body.nico-app * {", 1
+    )[0]
+    assert "html," in mobile_root
+    assert "scroll-behavior: auto !important;" in mobile_root
     assert 'main[data-workspace="assessment"] section#assessment' in source
     assert "overflow: visible !important" in source
     assert "max-height: none !important" in source
