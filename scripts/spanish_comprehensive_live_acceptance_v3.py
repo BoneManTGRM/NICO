@@ -109,6 +109,84 @@ def _assert_engagement_metadata(value: Any, *, boundary: str) -> dict[str, str]:
     return observed
 
 
+def _assert_pending_human_review_state(
+    payload: dict[str, Any],
+    *,
+    boundary: str,
+) -> dict[str, Any]:
+    """Prove that automation stopped before any human approval or delivery act."""
+
+    record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    review_decision_absent = (
+        "review_decision" not in payload and "review_decision" not in record
+    )
+    delivery_authorization_absent = (
+        "delivery_authorization" not in payload
+        and "delivery_authorization" not in record
+    )
+    approved_delivery_package_absent = (
+        "approved_delivery_package" not in payload
+        and "approved_delivery_package" not in record
+    )
+    observed = {
+        "human_review_required": payload.get("human_review_required"),
+        "human_review_completed": payload.get("human_review_completed"),
+        "client_delivery_allowed": payload.get("client_delivery_allowed"),
+        "approval_status": str(payload.get("approval_status") or ""),
+        "delivery_status": str(payload.get("delivery_status") or ""),
+        "accepted_edition_absent": (
+            "accepted_edition" not in payload and "accepted_edition" not in record
+        ),
+        "review_decision_absent": review_decision_absent,
+        "approved_final_absent": str(payload.get("approval_status") or "")
+        != "approved_final",
+        "delivery_authorization_absent": (
+            payload.get("client_delivery_allowed") is False
+            and str(payload.get("delivery_status") or "") == "blocked"
+            and delivery_authorization_absent
+        ),
+        "approved_delivery_package_absent": approved_delivery_package_absent,
+    }
+    expected = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "client_delivery_allowed": False,
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked",
+        "accepted_edition_absent": True,
+        "review_decision_absent": True,
+        "approved_final_absent": True,
+        "delivery_authorization_absent": True,
+        "approved_delivery_package_absent": True,
+    }
+    assert observed == expected, {"boundary": boundary, "observed": observed}
+    assert str(payload.get("status") or "") == "review_required", {
+        "boundary": boundary,
+        "status": payload.get("status"),
+    }
+    assert record.get("human_review_required") is True, {
+        "boundary": boundary,
+        "record_human_review_required": record.get("human_review_required"),
+    }
+    assert record.get("human_review_completed") is False, {
+        "boundary": boundary,
+        "record_human_review_completed": record.get("human_review_completed"),
+    }
+    assert record.get("client_delivery_allowed") is False, {
+        "boundary": boundary,
+        "record_client_delivery_allowed": record.get("client_delivery_allowed"),
+    }
+    assert str(record.get("delivery_status") or "") == "blocked", {
+        "boundary": boundary,
+        "record_delivery_status": record.get("delivery_status"),
+    }
+    assert "accepted_edition" not in record, {
+        "boundary": boundary,
+        "record_accepted_edition_present": True,
+    }
+    return expected
+
+
 def _terminal_mutation_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
     reports = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
@@ -127,6 +205,18 @@ def _terminal_mutation_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         "record_integrity_sha256": record.get("integrity_sha256"),
         "record_current_stage": record.get("current_stage"),
         "canonical_truth_sha256": reports.get("canonical_truth_sha256"),
+        "human_review_required": payload.get("human_review_required"),
+        "human_review_completed": payload.get("human_review_completed"),
+        "client_delivery_allowed": payload.get("client_delivery_allowed"),
+        "approval_status": payload.get("approval_status"),
+        "delivery_status": payload.get("delivery_status"),
+        "accepted_edition_present": "accepted_edition" in payload,
+        "review_decision_present": "review_decision" in payload
+        or "review_decision" in record,
+        "delivery_authorization_present": "delivery_authorization" in payload
+        or "delivery_authorization" in record,
+        "approved_delivery_package_present": "approved_delivery_package" in payload
+        or "approved_delivery_package" in record,
     }
 
 
@@ -401,8 +491,10 @@ def _verify_localized_spanish_terminal_artifacts(
     reports = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
     assert payload.get("run_id") == run_id
     assert payload.get("terminal") is True
-    assert payload.get("human_review_required") is True
-    assert payload.get("client_delivery_allowed") is False
+    pending_human_review = _assert_pending_human_review_state(
+        payload,
+        boundary="terminal_status_before_localized_reads",
+    )
     assert reports.get("response_bounded") is True
     assert reports.get("artifact_delivery") == "on_demand_exact_run"
     assert reports.get("pdf_available") is True
@@ -499,6 +591,11 @@ def _verify_localized_spanish_terminal_artifacts(
     )
     status_after_payload = status_after.json()
     assert isinstance(status_after_payload, dict)
+    pending_human_review_after = _assert_pending_human_review_state(
+        status_after_payload,
+        boundary="terminal_status_after_localized_reads",
+    )
+    assert pending_human_review_after == pending_human_review
     terminal_state_after_localized_reads = _terminal_mutation_snapshot(
         status_after_payload
     )
@@ -562,8 +659,7 @@ def _verify_localized_spanish_terminal_artifacts(
         "terminal_state_after_localized_reads": terminal_state_after_localized_reads,
         "terminal_state_unchanged_after_localized_reads": True,
         "pdf_renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
-        "human_review_required": True,
-        "client_delivery_allowed": False,
+        **pending_human_review,
     }
 
 

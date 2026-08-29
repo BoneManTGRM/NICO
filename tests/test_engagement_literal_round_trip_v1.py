@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import subprocess
@@ -671,6 +672,7 @@ def test_production_v2_hash_binds_exact_stored_json_and_allows_same_run_locale(
 ) -> None:
     canonical = _canonical(PRIMARY, "es-MX")
     expected = _ORIGINAL_HASH(canonical)
+    source_pdf = b"%PDF-1.4\nsource"
     script = """
 import json, sys
 import nico.api.same_run_locale_report_bootstrap  # noqa: F401
@@ -706,7 +708,8 @@ print(json.dumps({
             "json": canonical,
             "markdown": "# informe",
             "html": "<article>informe</article>",
-            "pdf_base64": base64.b64encode(b"%PDF-1.4\nsource").decode("ascii"),
+            "pdf_base64": base64.b64encode(source_pdf).decode("ascii"),
+            "pdf_sha256": hashlib.sha256(source_pdf).hexdigest(),
         },
     }
     monkeypatch.setattr(

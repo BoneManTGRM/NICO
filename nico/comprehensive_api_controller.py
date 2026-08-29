@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
+import re
 from copy import deepcopy
 from typing import Any, Mapping
 
+from nico.comprehensive_client_delivery_contract_v1 import (
+    canonical_sha256,
+    reviewer_binding,
+)
 from nico.comprehensive_engagement_metadata_v1 import (
     build_comprehensive_engagement_metadata,
     verify_comprehensive_engagement_metadata,
 )
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+from nico.comprehensive_report_package import _canonical_hash as _legacy_canonical_hash
 from nico.comprehensive_run_service import ComprehensiveRunService
+from nico.decision_grade_accepted_edition_guard_v1 import validate_accepted_edition
 
 VERSION = "nico.comprehensive_api_controller.v8"
 MAX_PROJECTED_STRING_CHARS = 1_200
@@ -22,7 +32,9 @@ _OMITTED_STAGE_KEYS = {
     "reports",
     "pdf_base64",
     "markdown",
+    "markdown_sha256",
     "html",
+    "html_sha256",
     "raw_evidence",
     "raw_evidence_json",
     "scanner_outputs",
@@ -31,23 +43,54 @@ _OMITTED_STAGE_KEYS = {
     "evidence_bundle_json",
     "evidence_ledger_json",
 }
-_REPORT_STAGE_IDS = (
-    "final_comprehensive_report_generation",
-    "risk_reduction_and_executive_briefing",
-    "decision_report_generation",
-    "report_generation",
-    "reports",
+_FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
+_FINAL_REPORT_STAGE_SUCCESS_STATUSES = {
+    "complete",
+    "completed",
+    "passed",
+    "review_required",
+    "success",
+    "succeeded",
+}
+_FINAL_REPORT_RUN_STATUSES = {
+    "complete",
+    "completed",
+    "review_required",
+    "approved",
+    "rejected",
+    "declined",
+}
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+_MANIFEST_FAMILY_FIELDS = (
+    "artifact_manifest",
+    "evidence_manifest_json",
+    "evidence_manifest_sha256",
+    "canonical_json",
+    "canonical_json_sha256",
+    "draft_artifact_identity",
 )
 _REPORT_KEYS = (
     "service_id",
     "report_id",
     "markdown",
+    "markdown_sha256",
     "html",
+    "html_sha256",
     "pdf_base64",
     "pdf_filename",
     "pdf_error",
     "pdf_sha256",
     "canonical_truth_sha256",
+    "canonical_json",
+    "canonical_json_sha256",
+    "findings_csv",
+    "findings_csv_sha256",
+    "evidence_csv",
+    "evidence_csv_sha256",
+    "candidate_register_json",
+    "candidate_register_sha256",
+    "remediation_backlog_json",
+    "remediation_backlog_sha256",
     "artifact_manifest",
     "evidence_manifest_json",
     "evidence_manifest_sha256",
@@ -316,35 +359,542 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _normalized_report_language(value: Any) -> str:
+    normalized = str(value or "").strip().casefold().replace("_", "-")
+    if normalized == "en":
+        return "en"
+    if normalized == "es-mx":
+        return "es-MX"
+    return ""
+
+
+def _final_report_identity_and_language_bound(
+    record: Mapping[str, Any],
+    report: Mapping[str, Any],
+) -> bool:
+    """Require the final package JSON to bind exact run and locale truth."""
+
+    run_identity = (
+        record.get("identity")
+        if isinstance(record.get("identity"), Mapping)
+        else {}
+    )
+    canonical = report.get("json") if isinstance(report.get("json"), Mapping) else {}
+    canonical_identity = (
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
+        run_value = str(run_identity.get(field) or "").strip()
+        canonical_value = str(canonical_identity.get(field) or "").strip()
+        if not run_value or not canonical_value or run_value != canonical_value:
+            return False
+
+    run_language = _normalized_report_language(run_identity.get("report_language"))
+    if not run_language:
+        return False
+    canonical_assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    canonical_language_values = [
+        value
+        for value in (
+            canonical.get("report_language"),
+            canonical.get("locale"),
+            canonical_identity.get("report_language"),
+            canonical_identity.get("locale"),
+            canonical_assessment.get("report_language"),
+            canonical_assessment.get("locale"),
+        )
+        if str(value or "").strip()
+    ]
+    if not canonical_language_values:
+        return False
+    language_values = [
+        *canonical_language_values,
+        *[
+            value
+            for value in (report.get("report_language"), report.get("locale"))
+            if str(value or "").strip()
+        ],
+    ]
+    normalized_languages = {
+        _normalized_report_language(value) for value in language_values
+    }
+    if "" in normalized_languages or normalized_languages != {run_language}:
+        return False
+
+    report_id = str(report.get("report_id") or "").strip()
+    canonical_report_id = str(canonical.get("report_id") or "").strip()
+    if canonical_report_id and report_id != canonical_report_id:
+        return False
+    return True
+
+
+def _final_report_package_integrity_bound(report: Mapping[str, Any]) -> bool:
+    """Require immutable JSON/PDF digests before treating a final stage as authority."""
+
+    canonical = report.get("json")
+    if not isinstance(canonical, Mapping) or not canonical:
+        return False
+    truth_sha256 = str(report.get("canonical_truth_sha256") or "").strip().casefold()
+    if not _SHA256_RE.fullmatch(truth_sha256):
+        return False
+    if not _canonical_truth_hash_integrity_bound(report, canonical):
+        return False
+
+    if not isinstance(report.get("markdown"), str) or not report.get("markdown"):
+        return False
+    if not isinstance(report.get("html"), str) or not report.get("html"):
+        return False
+    encoded_pdf = report.get("pdf_base64")
+    if not isinstance(encoded_pdf, str) or not encoded_pdf.strip():
+        return False
+    if str(report.get("pdf_error") or "").strip():
+        return False
+    try:
+        pdf = base64.b64decode(encoded_pdf.strip(), validate=True)
+    except (TypeError, ValueError):
+        return False
+    if not pdf.startswith(b"%PDF"):
+        return False
+    pdf_sha256 = str(report.get("pdf_sha256") or "").strip().casefold()
+    if not _SHA256_RE.fullmatch(pdf_sha256):
+        return False
+    if pdf_sha256 != hashlib.sha256(pdf).hexdigest():
+        return False
+
+    for value_key, digest_key in (
+        ("markdown", "markdown_sha256"),
+        ("html", "html_sha256"),
+    ):
+        claimed = str(report.get(digest_key) or "").strip().casefold()
+        if not claimed:
+            continue
+        if not _SHA256_RE.fullmatch(claimed):
+            return False
+        observed = hashlib.sha256(str(report[value_key]).encode("utf-8")).hexdigest()
+        if claimed != observed:
+            return False
+    if not _retained_manifest_integrity_bound(report):
+        return False
+    return True
+
+
+def _manifest_family_claimed(report: Mapping[str, Any]) -> bool:
+    top_level_claimed = any(
+        report.get(field) not in (None, "") for field in _MANIFEST_FAMILY_FIELDS
+    )
+    canonical = report.get("json")
+    nested_manifest_claimed = (
+        isinstance(canonical, Mapping)
+        and isinstance(canonical.get("artifact_manifest"), Mapping)
+    )
+    return top_level_claimed or nested_manifest_claimed
+
+
+def _canonical_truth_hash_integrity_bound(
+    report: Mapping[str, Any],
+    canonical: Mapping[str, Any] | None = None,
+) -> bool:
+    """Accept current raw hashes or exact manifest-bound legacy report hashes."""
+
+    canonical_value = canonical if isinstance(canonical, Mapping) else report.get("json")
+    if not isinstance(canonical_value, Mapping) or not canonical_value:
+        return False
+    stored = str(report.get("canonical_truth_sha256") or "").strip().casefold()
+    if not _SHA256_RE.fullmatch(stored):
+        return False
+    if stored == canonical_sha256(canonical_value):
+        return True
+    # Reports persisted before the raw-hash transition excluded nested rendered
+    # presentation fields from this one digest. Permit that exact historical value
+    # only when the complete retained manifest family separately binds every byte.
+    if stored != _legacy_canonical_hash(canonical_value):
+        return False
+    return _manifest_family_claimed(report) and _retained_manifest_integrity_bound(
+        report
+    )
+
+
+def _retained_manifest_integrity_bound(report: Mapping[str, Any]) -> bool:
+    """Bind detached evidence-manifest claims to their exact retained bytes."""
+
+    if not _manifest_family_claimed(report):
+        return True
+    if any(report.get(field) in (None, "") for field in _MANIFEST_FAMILY_FIELDS):
+        return False
+
+    manifest_text = report.get("evidence_manifest_json")
+    manifest_sha256 = str(
+        report.get("evidence_manifest_sha256") or ""
+    ).strip().casefold()
+    manifest_claimed = manifest_text not in (None, "") or bool(manifest_sha256)
+    parsed_manifest: Mapping[str, Any] | None = None
+    if manifest_claimed:
+        if not isinstance(manifest_text, str) or not manifest_text:
+            return False
+        if not _SHA256_RE.fullmatch(manifest_sha256):
+            return False
+        manifest_bytes = manifest_text.encode("utf-8")
+        if hashlib.sha256(manifest_bytes).hexdigest() != manifest_sha256:
+            return False
+        try:
+            parsed = json.loads(manifest_text)
+        except (TypeError, ValueError):
+            return False
+        if not isinstance(parsed, Mapping):
+            return False
+        parsed_manifest = parsed
+
+    detached_manifest = report.get("artifact_manifest")
+    if detached_manifest is not None:
+        if (
+            not isinstance(detached_manifest, Mapping)
+            or parsed_manifest is None
+            or dict(detached_manifest) != dict(parsed_manifest)
+        ):
+            return False
+
+    canonical_text = report.get("canonical_json")
+    canonical_json_sha256 = str(
+        report.get("canonical_json_sha256") or ""
+    ).strip().casefold()
+    canonical_claimed = canonical_text not in (None, "") or bool(
+        canonical_json_sha256
+    )
+    observed_canonical_sha256 = ""
+    if canonical_claimed:
+        if not isinstance(canonical_text, str) or not canonical_text:
+            return False
+        if not _SHA256_RE.fullmatch(canonical_json_sha256):
+            return False
+        observed_canonical_sha256 = hashlib.sha256(
+            canonical_text.encode("utf-8")
+        ).hexdigest()
+        if observed_canonical_sha256 != canonical_json_sha256:
+            return False
+        try:
+            parsed_canonical = json.loads(canonical_text)
+        except (TypeError, ValueError):
+            return False
+        if not isinstance(parsed_canonical, Mapping):
+            return False
+        canonical_mapping = report.get("json")
+        if (
+            not isinstance(canonical_mapping, Mapping)
+            or dict(parsed_canonical) != dict(canonical_mapping)
+        ):
+            return False
+
+    draft_identity = report.get("draft_artifact_identity")
+    if (
+        not isinstance(draft_identity, Mapping)
+        or not isinstance(detached_manifest, Mapping)
+        or parsed_manifest is None
+        or not observed_canonical_sha256
+    ):
+        return False
+
+    manifest_id = str(detached_manifest.get("manifest_id") or "").strip()
+    if not manifest_id or str(draft_identity.get("manifest_id") or "").strip() != manifest_id:
+        return False
+    observed_claims = {
+        "pdf_sha256": str(report.get("pdf_sha256") or "").strip().casefold(),
+        "canonical_json_sha256": observed_canonical_sha256,
+        "evidence_manifest_sha256": manifest_sha256,
+    }
+    for field, observed in observed_claims.items():
+        if (
+            not _SHA256_RE.fullmatch(observed)
+            or str(report.get(field) or "").strip().casefold() != observed
+            or str(draft_identity.get(field) or "").strip().casefold() != observed
+        ):
+            return False
+
+    canonical = report.get("json")
+    canonical_identity = (
+        canonical.get("identity")
+        if isinstance(canonical, Mapping)
+        and isinstance(canonical.get("identity"), Mapping)
+        else {}
+    )
+    manifest_identity = (
+        detached_manifest.get("identity")
+        if isinstance(detached_manifest.get("identity"), Mapping)
+        else {}
+    )
+    for field in ("run_id", "repository", "commit_sha", "evidence_ledger_id"):
+        expected = str(canonical_identity.get(field) or "").strip()
+        if (
+            not expected
+            or str(manifest_identity.get(field) or "").strip() != expected
+        ):
+            return False
+        # Historical draft identities predate this field, but every detached
+        # manifest has always carried it. New drafts bind it explicitly too.
+        if field != "evidence_ledger_id" or draft_identity.get(field) not in (
+            None,
+            "",
+        ):
+            if str(draft_identity.get(field) or "").strip() != expected:
+                return False
+    try:
+        from nico.comprehensive_exact_artifact_hash_binding_v1 import (
+            _validate_exact_artifact_hashes,
+        )
+
+        _validate_exact_artifact_hashes(report)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _accepted_final_report_integrity_bound(
+    record: Mapping[str, Any],
+    report: Mapping[str, Any],
+) -> bool:
+    """Prevent approval or delivery state from carrying across changed artifacts."""
+
+    status = str(record.get("status") or "").strip().casefold()
+    if status != "approved":
+        return record.get("client_delivery_allowed") is not True
+    if record.get("human_review_completed") is not True:
+        return False
+    if not _review_decision_integrity_bound(record):
+        return False
+    accepted = record.get("accepted_edition")
+    if not isinstance(accepted, Mapping):
+        return False
+    if (
+        accepted.get("accepted_edition") is not True
+        or accepted.get("client_delivery_allowed") is not False
+        or str(accepted.get("delivery_status") or "").strip()
+        != "pending_authorization"
+    ):
+        return False
+
+    manifest_payload = deepcopy(dict(accepted))
+    manifest_sha256 = str(
+        manifest_payload.pop("accepted_edition_manifest_sha256", "") or ""
+    ).strip().casefold()
+    if (
+        not _SHA256_RE.fullmatch(manifest_sha256)
+        or manifest_sha256 != canonical_sha256(manifest_payload)
+    ):
+        return False
+
+    review = accepted.get("review")
+    if not isinstance(review, Mapping):
+        return False
+    review_payload = deepcopy(dict(review))
+    certificate_sha256 = str(
+        review_payload.pop("approval_certificate_sha256", "") or ""
+    ).strip().casefold()
+    if (
+        not _SHA256_RE.fullmatch(certificate_sha256)
+        or certificate_sha256 != canonical_sha256(review_payload)
+    ):
+        return False
+    try:
+        reviewer_binding(
+            reviewer=str(review.get("reviewer") or ""),
+            reviewer_role=str(review.get("reviewer_role") or ""),
+            decision=str(review.get("decision") or ""),
+            decided_at=str(review.get("decided_at") or ""),
+            decision_reason=str(review.get("reason") or ""),
+        )
+    except ValueError:
+        return False
+
+    validation = validate_accepted_edition(report, accepted)
+    if validation.get("status") != "valid" or list(
+        validation.get("validation_errors") or []
+    ):
+        return False
+
+    return True
+
+
+def _client_delivery_integrity_bound(record: Mapping[str, Any]) -> bool:
+    """Validate the distinct post-approval human delivery authorization chain."""
+
+    if record.get("client_delivery_allowed") is not True:
+        return True
+    if (
+        str(record.get("status") or "").strip().casefold() != "approved"
+        or record.get("human_review_completed") is not True
+        or not _review_decision_integrity_bound(record)
+    ):
+        return False
+    accepted = record.get("accepted_edition")
+    if not isinstance(accepted, Mapping):
+        return False
+    try:
+        from nico.comprehensive_approved_delivery_v4 import (
+            validate_approved_delivery_package,
+        )
+        from nico.comprehensive_delivery_authorization_v1 import (
+            validate_delivery_authorization,
+        )
+
+        authorization = validate_delivery_authorization(
+            record,
+            accepted,
+            record.get("delivery_authorization"),
+        )
+        delivery = validate_approved_delivery_package(
+            record,
+            record.get("approved_delivery_package"),
+        )
+    except (TypeError, ValueError):
+        return False
+    return (
+        authorization.get("status") == "valid"
+        and not list(authorization.get("validation_errors") or [])
+        and delivery.get("status") == "valid"
+        and not list(delivery.get("validation_errors") or [])
+    )
+
+
+def _review_decision_integrity_bound(record: Mapping[str, Any]) -> bool:
+    """Bind the exposed receipt to the final review transition it represents."""
+
+    decision = record.get("review_decision")
+    if decision is None:
+        history = record.get("review_history")
+        return (
+            not history
+            and not isinstance(record.get("accepted_edition"), Mapping)
+            and str(record.get("status") or "").strip().casefold()
+            not in {"approved", "rejected"}
+        )
+    if not isinstance(decision, Mapping):
+        return False
+    try:
+        from nico.comprehensive_run_record import _review_manifest_errors
+
+        if _review_manifest_errors(record, decision):
+            return False
+    except (TypeError, ValueError):
+        return False
+
+    history = record.get("review_history")
+    if not isinstance(history, list) or not history:
+        return False
+    final_history_entry = history[-1]
+    if not isinstance(final_history_entry, Mapping) or dict(final_history_entry) != dict(
+        decision
+    ):
+        return False
+
+    review = decision.get("review")
+    if not isinstance(review, Mapping):
+        return False
+    review_decision = str(review.get("decision") or "").strip().casefold()
+    expected_status = {
+        "approved": "approved",
+        "rejected": "rejected",
+        "request_more_evidence": "review_required",
+    }.get(review_decision)
+    if expected_status is None:
+        return False
+    if str(record.get("status") or "").strip().casefold() != expected_status:
+        return False
+
+    accepted = record.get("accepted_edition")
+    if review_decision == "approved":
+        return isinstance(accepted, Mapping) and dict(accepted) == dict(decision)
+    return not isinstance(accepted, Mapping)
+
+
+def _rejected_review_integrity_bound(record: Mapping[str, Any]) -> bool:
+    """Require the exact final hashed human decision before projecting rejection."""
+
+    if str(record.get("status") or "").strip().casefold() not in {
+        "rejected",
+        "declined",
+    }:
+        return True
+    if (
+        record.get("human_review_completed") is not True
+        or record.get("client_delivery_allowed") is True
+        or isinstance(record.get("accepted_edition"), Mapping)
+    ):
+        return False
+    decision = record.get("review_decision")
+    if not isinstance(decision, Mapping):
+        return False
+    review = decision.get("review")
+    if (
+        not isinstance(review, Mapping)
+        or str(review.get("decision") or "").strip().casefold() != "rejected"
+    ):
+        return False
+    return _review_decision_integrity_bound(record)
+
+
+def _canonical_final_report_outputs(
+    record: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return only the language-bound package published by the canonical final stage.
+
+    Earlier decision/report stages may contain useful internal drafts. They are never
+    final artifact authority and must not become downloadable merely because a later
+    final-render failure made the run terminal.
+    """
+
+    if record.get("terminal") is not True:
+        return {}, {}
+    if str(record.get("status") or "").strip().casefold() not in _FINAL_REPORT_RUN_STATUSES:
+        return {}, {}
+    if _FINAL_REPORT_STAGE_ID not in {
+        str(item) for item in record.get("completed_stages") or []
+    }:
+        return {}, {}
     stage_results = (
         record.get("stage_results")
         if isinstance(record.get("stage_results"), dict)
         else {}
     )
-    report: dict[str, Any] = {}
-    assessment: dict[str, Any] = {}
-    for stage_id in _REPORT_STAGE_IDS:
-        stage = stage_results.get(stage_id)
-        if not isinstance(stage, dict):
-            continue
-        if not report:
-            candidate = (
-                stage.get("report_package")
-                if isinstance(stage.get("report_package"), dict)
-                else stage.get("reports")
-            )
-            if isinstance(candidate, dict):
-                report = candidate
-        if not assessment and isinstance(stage.get("assessment"), dict):
-            assessment = stage["assessment"]
-        if report and assessment:
-            break
-    if not report and isinstance(record.get("reports"), dict):
-        report = record["reports"]
-    if not assessment and isinstance(record.get("assessment"), dict):
-        assessment = record["assessment"]
+    final_stage = stage_results.get(_FINAL_REPORT_STAGE_ID)
+    if not isinstance(final_stage, dict):
+        return {}, {}
+    if (
+        str(final_stage.get("status") or "").strip().casefold()
+        not in _FINAL_REPORT_STAGE_SUCCESS_STATUSES
+    ):
+        return {}, {}
+    candidate = (
+        final_stage.get("report_package")
+        if isinstance(final_stage.get("report_package"), dict)
+        else final_stage.get("reports")
+    )
+    if not isinstance(candidate, dict) or not _final_report_identity_and_language_bound(
+        record,
+        candidate,
+    ):
+        return {}, {}
+    if not _final_report_package_integrity_bound(candidate):
+        return {}, {}
+    if not _accepted_final_report_integrity_bound(record, candidate):
+        return {}, {}
+    report = candidate
+    assessment = (
+        final_stage.get("assessment")
+        if isinstance(final_stage.get("assessment"), dict)
+        else {}
+    )
     return report, assessment
+
+
+def _report_outputs(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Compatibility hook over the one canonical final artifact source."""
+
+    return _canonical_final_report_outputs(record)
 
 
 def _project_report(report: dict[str, Any]) -> dict[str, Any]:
@@ -542,10 +1092,105 @@ class ComprehensiveApiController:
         identity = canonical_record["identity"]
         display_progress, active_stage_progress = _display_progress(canonical_record)
         terminal = bool(canonical_record.get("terminal"))
-        human_review_completed = (
-            canonical_record.get("human_review_completed") is True
+        report: dict[str, Any] = {}
+        assessment: dict[str, Any] = {}
+        if terminal:
+            report, assessment = _report_outputs(canonical_record)
+        terminal_report_available = bool(report)
+        canonical_status = str(canonical_record.get("status") or "unknown")
+        normalized_status = canonical_status.casefold()
+        approved_status = normalized_status == "approved"
+        rejected_status = normalized_status in {"rejected", "declined"}
+        terminal_report_required = (
+            terminal and normalized_status in _FINAL_REPORT_RUN_STATUSES
         )
-        delivery_allowed = canonical_record.get("client_delivery_allowed") is True
+        artifact_integrity_failed = (
+            terminal_report_required and not terminal_report_available
+        )
+        review_decision_integrity_valid = _review_decision_integrity_bound(
+            canonical_record
+        )
+        rejection_integrity_failed = (
+            rejected_status
+            and not _rejected_review_integrity_bound(canonical_record)
+        )
+        delivery_integrity_failed = (
+            canonical_record.get("client_delivery_allowed") is True
+            and not _client_delivery_integrity_bound(canonical_record)
+        )
+        projected_status = (
+            "blocked"
+            if artifact_integrity_failed or rejection_integrity_failed
+            else canonical_status
+        )
+        human_review_completed = (
+            (
+                approved_status
+                and canonical_record.get("human_review_completed") is True
+                and not artifact_integrity_failed
+            )
+            or (
+                rejected_status
+                and not artifact_integrity_failed
+                and not rejection_integrity_failed
+            )
+        )
+        delivery_allowed = (
+            approved_status
+            and human_review_completed
+            and canonical_record.get("client_delivery_allowed") is True
+            and not artifact_integrity_failed
+            and not delivery_integrity_failed
+        )
+        approval_status = (
+            "invalidated_artifact_mismatch"
+            if artifact_integrity_failed
+            else "invalidated_review_receipt_mismatch"
+            if rejection_integrity_failed
+            else "approved_final"
+            if approved_status and human_review_completed
+            else "rejected"
+            if rejected_status
+            else "pending_human_approval"
+        )
+        stale_approval_state_suppressed = (
+            not approved_status
+            and not rejected_status
+            and (
+                canonical_record.get("human_review_completed") is True
+                or isinstance(canonical_record.get("accepted_edition"), Mapping)
+            )
+        )
+        projected_delivery_status = (
+            "blocked_artifact_integrity"
+            if artifact_integrity_failed
+            else "blocked_review_integrity"
+            if rejection_integrity_failed
+            else "blocked_authorization_integrity"
+            if delivery_integrity_failed
+            else "approved_for_delivery"
+            if delivery_allowed
+            else "pending_authorization"
+            if approved_status and human_review_completed
+            else "blocked"
+        )
+        projection_record = canonical_record
+        if (
+            artifact_integrity_failed
+            or rejection_integrity_failed
+            or delivery_integrity_failed
+            or stale_approval_state_suppressed
+            or canonical_record.get("human_review_completed") is not human_review_completed
+            or canonical_record.get("client_delivery_allowed") is not delivery_allowed
+        ):
+            projection_record = dict(canonical_record)
+            if artifact_integrity_failed or rejection_integrity_failed:
+                projection_record["canonical_status"] = canonical_status
+                projection_record["status"] = "blocked"
+            projection_record["human_review_completed"] = human_review_completed
+            projection_record["client_delivery_allowed"] = delivery_allowed
+        projected_record = _project_record(projection_record)
+        projected_record["delivery_status"] = projected_delivery_status
         response: dict[str, Any] = {
             "artifact_schema": VERSION,
             "service_id": "comprehensive",
@@ -562,7 +1207,8 @@ class ComprehensiveApiController:
                 canonical_record.get("engagement_metadata")
             ),
             "human_evidence_summary": _human_evidence_summary(canonical_record),
-            "status": canonical_record["status"],
+            "status": projected_status,
+            "canonical_status": canonical_status,
             "current_stage": canonical_record["current_stage"],
             "completed_stages": list(canonical_record["completed_stages"]),
             "progress_percent": display_progress,
@@ -573,31 +1219,57 @@ class ComprehensiveApiController:
             "human_review_required": True,
             "human_review_completed": human_review_completed,
             "client_delivery_allowed": delivery_allowed,
-            "delivery_status": (
-                "approved_for_delivery"
-                if delivery_allowed
-                else "pending_authorization"
-                if str(canonical_record.get("status") or "").casefold()
-                == "approved"
-                else "blocked"
-            ),
+            "approval_status": approval_status,
+            "delivery_status": projected_delivery_status,
             "integrity_sha256": canonical_record["integrity_sha256"],
-            "record": _project_record(canonical_record),
+            "record": projected_record,
             "response_projection": {
                 "version": VERSION,
                 "bounded": True,
-                "terminal_report_attached": terminal and not browser_projection,
-                "terminal_canonical_json_attached": terminal and not browser_projection,
-                "terminal_report_manifest_attached": terminal and browser_projection,
-                "terminal_report_artifacts_inlined": terminal and not browser_projection,
+                "terminal_report_attached": terminal_report_available
+                and not browser_projection,
+                "terminal_canonical_json_attached": terminal_report_available
+                and not browser_projection,
+                "terminal_report_manifest_attached": terminal_report_available
+                and browser_projection,
+                "terminal_report_artifacts_inlined": terminal_report_available
+                and not browser_projection,
                 "full_record_persisted": True,
                 "large_stage_payloads_omitted": True,
-                "exact_run_artifact_endpoints_required": terminal and browser_projection,
+                "exact_run_artifact_endpoints_required": terminal_report_available
+                and browser_projection,
                 "browser_projection": browser_projection,
+                "artifact_integrity_valid": not artifact_integrity_failed,
+                "terminal_report_package_integrity_valid": (
+                    terminal_report_available
+                ),
+                "rejection_review_integrity_valid": (
+                    not rejection_integrity_failed
+                ),
+                "review_decision_integrity_valid": (
+                    review_decision_integrity_valid
+                ),
+                "delivery_authorization_integrity_valid": (
+                    not delivery_integrity_failed
+                ),
+                "approval_invalidated_by_artifact_mismatch": (
+                    artifact_integrity_failed
+                ),
+                "review_package_invalidated_by_artifact_mismatch": (
+                    artifact_integrity_failed
+                ),
+                "rejection_invalidated_by_review_mismatch": (
+                    rejection_integrity_failed
+                ),
+                "delivery_authorization_invalidated": (
+                    delivery_integrity_failed
+                ),
+                "stale_approval_state_suppressed": (
+                    stale_approval_state_suppressed
+                ),
             },
         }
         if terminal:
-            report, assessment = _report_outputs(canonical_record)
             if report:
                 response["reports"] = (
                     _project_report_manifest(report)
@@ -606,7 +1278,13 @@ class ComprehensiveApiController:
                 )
             if assessment:
                 response["assessment"] = _project_assessment(assessment)
-            accepted_edition = _project_accepted_edition(canonical_record)
+            accepted_edition = (
+                _project_accepted_edition(canonical_record)
+                if approved_status
+                and human_review_completed
+                and not artifact_integrity_failed
+                else {}
+            )
             if accepted_edition:
                 response["accepted_edition"] = accepted_edition
         return response

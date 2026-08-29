@@ -1,18 +1,33 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 
 from nico.comprehensive_api_controller import ComprehensiveApiController, VERSION
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
+from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 
 
 def _record(*, terminal: bool) -> dict:
     large = "x" * (2 * 1024 * 1024)
     status = "review_required" if terminal else "running"
-    completed = [
-        "authorization_and_scope",
-        "immutable_repository_snapshot",
-        "repository_and_delivery_evidence",
-    ]
+    completed = (
+        list(COMPREHENSIVE_STAGES)
+        if terminal
+        else [
+            "authorization_and_scope",
+            "immutable_repository_snapshot",
+            "repository_and_delivery_evidence",
+        ]
+    )
+    identity = {
+        "run_id": "comprun_projection_001",
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "b" * 40,
+        "evidence_ledger_id": "ledger_projection_001",
+        "report_language": "en",
+    }
     stage_results = {
         "authorization_and_scope": {
             "status": "complete",
@@ -45,29 +60,44 @@ def _record(*, terminal: bool) -> dict:
             "report_package": {
                 "service_id": "comprehensive",
                 "report_id": "report_projection_001",
+                "report_language": "en",
+                "locale": "en",
                 "markdown": "# NICO Comprehensive Technical Assessment\nArchitecture 88/100",
                 "html": "<!doctype html><html><body>Architecture 88/100</body></html>",
                 "pdf_base64": large,
                 "pdf_filename": "nico-comprehensive.pdf",
                 "canonical_truth_sha256": "a" * 64,
-                "json": {"canonical_truth_sha256": "a" * 64, "raw": large},
+                "json": {
+                    "canonical_truth_sha256": "a" * 64,
+                    "report_language": "en",
+                    "locale": "en",
+                    "identity": identity,
+                    "assessment": {
+                        "report_language": "en",
+                        "locale": "en",
+                    },
+                    "raw": large,
+                },
             },
             "scanner_outputs": {"raw": large},
             "raw_evidence": {"raw": large},
         },
     }
+    report = stage_results["final_comprehensive_report_generation"]["report_package"]
+    canonical = report["json"]
+    canonical.pop("canonical_truth_sha256", None)
+    pdf = b"%PDF-1.4\n" + (b"x" * (2 * 1024 * 1024)) + b"\n%%EOF\n"
+    report["pdf_base64"] = base64.b64encode(pdf).decode("ascii")
+    report["pdf_sha256"] = hashlib.sha256(pdf).hexdigest()
+    report["canonical_truth_sha256"] = canonical_sha256(canonical)
     return {
         "artifact_schema": "nico.comprehensive_run_record.v4",
         "service_id": "comprehensive",
         "identity": {
-            "run_id": "comprun_projection_001",
-            "repository": "BoneManTGRM/NICO",
-            "commit_sha": "b" * 40,
-            "evidence_ledger_id": "ledger_projection_001",
+            **identity,
             "customer_id": "customer_projection",
             "project_id": "project_projection",
             "assessment_depth": "strategic",
-            "report_language": "en",
         },
         "human_evidence": {
             "artifact_schema": "nico.strategic_human_evidence.v2",
@@ -139,10 +169,12 @@ def test_terminal_response_attaches_one_report_package_outside_projected_record(
     assert response["terminal"] is True
     assert response["status"] == "review_required"
     assert response["reports"]["service_id"] == "comprehensive"
-    assert response["reports"]["pdf_base64"] == "x" * (2 * 1024 * 1024)
+    assert base64.b64decode(response["reports"]["pdf_base64"]).startswith(b"%PDF")
     assert response["reports"]["json"] == persisted_json
     assert response["reports"]["json"] is not persisted_json
-    assert response["reports"]["json"]["canonical_truth_sha256"] == "a" * 64
+    assert response["reports"]["canonical_truth_sha256"] == canonical_sha256(
+        response["reports"]["json"]
+    )
     assert response["reports"]["json"]["raw"] == "x" * (2 * 1024 * 1024)
     assert response["assessment"]["maturity_signal"]["presented_score"] == 86
     assert response["assessment"]["sections"][0]["label"] == "Architecture"

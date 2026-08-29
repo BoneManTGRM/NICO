@@ -7,16 +7,12 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
+from nico.comprehensive_client_delivery_contract_v1 import human_reviewer_identity
+
 VERSION = "nico.comprehensive_review_work.v1"
 LEDGER_SCHEMA = "nico.comprehensive_review_work_ledger.v1"
 PROJECTION_SCHEMA = "nico.comprehensive_review_work_projection.v1"
-_REPORT_STAGE_IDS = (
-    "final_comprehensive_report_generation",
-    "risk_reduction_and_executive_briefing",
-    "decision_report_generation",
-    "report_generation",
-    "reports",
-)
+_FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 _ALLOWED_DISPOSITIONS = {
     "confirmed",
     "false_positive",
@@ -75,53 +71,41 @@ def canonical_candidate_register(record: Mapping[str, Any]) -> dict[str, Any]:
     identity = _identity(record)
     stage_results = record.get("stage_results")
     stage_results = stage_results if isinstance(stage_results, Mapping) else {}
-    packages: list[Mapping[str, Any]] = []
-    for stage_id in _REPORT_STAGE_IDS:
-        stage = stage_results.get(stage_id)
-        if not isinstance(stage, Mapping):
-            continue
-        package = stage.get("report_package")
-        if not isinstance(package, Mapping):
-            package = stage.get("reports")
-        if isinstance(package, Mapping):
-            packages.append(package)
-    top = record.get("reports")
-    if isinstance(top, Mapping):
-        packages.append(top)
-
-    for package in packages:
-        canonical = package.get("json")
-        if not isinstance(canonical, Mapping):
-            continue
-        canonical_identity = canonical.get("identity")
-        if not isinstance(canonical_identity, Mapping):
-            continue
-        for field, expected in identity.items():
-            if _text(canonical_identity.get(field)) != expected:
-                raise ValueError(f"review_work_identity_mismatch:{field}")
-        assessment = canonical.get("assessment")
-        if not isinstance(assessment, Mapping):
-            continue
-        register = assessment.get("canonical_scanner_finding_register")
-        if not isinstance(register, Mapping):
-            continue
-        findings = register.get("findings")
-        if not isinstance(findings, list):
-            raise ValueError("review_work_canonical_findings_missing")
-        candidates = [dict(item) for item in findings if isinstance(item, Mapping)]
-        if len(candidates) != len(findings):
-            raise ValueError("review_work_canonical_findings_malformed")
-        ids = [_text(item.get("candidate_id")) for item in candidates]
-        if any(not item for item in ids) or len(set(ids)) != len(ids):
-            raise ValueError("review_work_candidate_identity_invalid")
-        try:
-            declared = int(register.get("candidate_record_count"))
-        except (TypeError, ValueError):
-            declared = -1
-        if declared != len(candidates):
-            raise ValueError("review_work_candidate_count_mismatch")
-        return deepcopy(dict(register))
-    raise ValueError("review_work_canonical_register_unavailable")
+    stage = stage_results.get(_FINAL_REPORT_STAGE_ID)
+    package = stage.get("report_package") if isinstance(stage, Mapping) else None
+    canonical = package.get("json") if isinstance(package, Mapping) else None
+    if not isinstance(canonical, Mapping):
+        raise ValueError("review_work_canonical_register_unavailable")
+    canonical_identity = canonical.get("identity")
+    if not isinstance(canonical_identity, Mapping):
+        raise ValueError("review_work_canonical_register_unavailable")
+    for field, expected in identity.items():
+        if _text(canonical_identity.get(field)) != expected:
+            raise ValueError(f"review_work_identity_mismatch:{field}")
+    assessment = canonical.get("assessment")
+    register = (
+        assessment.get("canonical_scanner_finding_register")
+        if isinstance(assessment, Mapping)
+        else None
+    )
+    if not isinstance(register, Mapping):
+        raise ValueError("review_work_canonical_register_unavailable")
+    findings = register.get("findings")
+    if not isinstance(findings, list):
+        raise ValueError("review_work_canonical_findings_missing")
+    candidates = [dict(item) for item in findings if isinstance(item, Mapping)]
+    if len(candidates) != len(findings):
+        raise ValueError("review_work_canonical_findings_malformed")
+    ids = [_text(item.get("candidate_id")) for item in candidates]
+    if any(not item for item in ids) or len(set(ids)) != len(ids):
+        raise ValueError("review_work_candidate_identity_invalid")
+    try:
+        declared = int(register.get("candidate_record_count"))
+    except (TypeError, ValueError):
+        declared = -1
+    if declared != len(candidates):
+        raise ValueError("review_work_candidate_count_mismatch")
+    return deepcopy(dict(register))
 
 
 def _catalog(register: Mapping[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
@@ -239,13 +223,10 @@ def ledger_for_record(record: Mapping[str, Any], register: Mapping[str, Any] | N
 def _require_human(payload: Mapping[str, Any]) -> tuple[str, str]:
     if payload.get("review_authorized") is not True or payload.get("authorization_confirmed") is not True:
         raise ValueError("explicit_review_authorization_required")
-    reviewer = _text(payload.get("reviewer"))
-    reviewer_role = _text(payload.get("reviewer_role"))
-    if not reviewer:
-        raise ValueError("reviewer_required")
-    if not reviewer_role:
-        raise ValueError("reviewer_role_required")
-    return reviewer, reviewer_role
+    return human_reviewer_identity(
+        reviewer=_text(payload.get("reviewer")),
+        reviewer_role=_text(payload.get("reviewer_role")),
+    )
 
 
 def _append_event(ledger: dict[str, Any], *, action: str, reviewer: str, reviewer_role: str, payload: Mapping[str, Any], now: datetime) -> None:

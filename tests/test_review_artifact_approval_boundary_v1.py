@@ -58,7 +58,7 @@ def test_review_api_forwards_exact_artifact_identity_and_returns_conflict(
             "review_authorized": True,
             "authorization_confirmed": True,
             "reviewer": "Authorized Human",
-            "reviewer_role": "Principal reviewer",
+            "reviewer_role": "Security reviewer",
             "decision": "approved",
             "decision_reason": "Reviewed the exact immutable artifacts.",
             "expected_artifact_identity": expected_identity,
@@ -186,7 +186,7 @@ def test_accepted_edition_preserves_exact_pdf_and_optionally_binds_manifest(
     accepted = build_reviewed_edition(
         record,
         reviewer="Authorized Human",
-        reviewer_role="Principal reviewer",
+        reviewer_role="Security reviewer",
         decision="approved",
         decision_reason="Reviewed the exact immutable artifacts.",
         decided_at="2026-08-28T00:00:00+00:00",

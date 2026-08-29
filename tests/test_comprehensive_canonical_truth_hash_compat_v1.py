@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from copy import deepcopy
 
 from nico import comprehensive_canonical_truth_hash_compat_v1 as compat
@@ -8,6 +9,7 @@ from nico.comprehensive_canonical_truth_hash_compat_v1 import (
     reconcile_known_post_render_hash_drift,
     synchronize_report_package_hash,
 )
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_report_package import _canonical_hash
 
 
@@ -65,6 +67,7 @@ def _historically_drifted_status() -> tuple[dict, dict, str]:
             "pre_render_truth_reconciliation": True,
         }
     )
+    pdf = b"%PDF-1.4\nfrozen"
     status = {
         "run_id": original["identity"]["run_id"],
         "repository": original["identity"]["repository"],
@@ -80,7 +83,8 @@ def _historically_drifted_status() -> tuple[dict, dict, str]:
             "json": drifted,
             "markdown": "# frozen source report",
             "html": "<article>frozen source report</article>",
-            "pdf_base64": base64.b64encode(b"%PDF-1.4\nfrozen").decode("ascii"),
+            "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+            "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
         },
     }
     return status, original, expected
@@ -89,6 +93,7 @@ def _historically_drifted_status() -> tuple[dict, dict, str]:
 def test_future_report_hash_is_bound_to_final_persisted_canonical_json() -> None:
     canonical = _canonical()
     canonical["pre_render_truth_reconciliation"] = True
+    canonical["nested_render_metadata"] = {"markdown": "exact retained value"}
     result = {
         "canonical_truth_sha256": "stale",
         "report_package": {
@@ -99,12 +104,48 @@ def test_future_report_hash_is_bound_to_final_persisted_canonical_json() -> None
     before = deepcopy(result)
 
     synchronized = synchronize_report_package_hash(result)
-    expected = _canonical_hash(canonical)
+    expected = canonical_sha256(canonical)
 
     assert synchronized["canonical_truth_sha256"] == expected
     assert synchronized["report_package"]["canonical_truth_sha256"] == expected
     assert synchronized["report_package"]["json"] == canonical
     assert result == before
+    assert expected != _canonical_hash(canonical)
+
+
+def test_legacy_hash_without_exact_manifest_cannot_ignore_nested_rendered_field_tamper() -> None:
+    from nico.comprehensive_api_controller import (
+        _canonical_truth_hash_integrity_bound,
+        _final_report_package_integrity_bound,
+    )
+
+    canonical = _canonical()
+    canonical["nested_render_metadata"] = {"markdown": "original retained value"}
+    pdf = b"%PDF-1.4\n%%EOF\n"
+    report = {
+        "report_id": "comprehensive_report_unbound_legacy_hash",
+        "report_language": "en",
+        "markdown": "# frozen source report",
+        "html": "<article>frozen source report</article>",
+        "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+        "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
+        "json": canonical,
+        "canonical_truth_sha256": _canonical_hash(canonical),
+    }
+    assert report["canonical_truth_sha256"] != canonical_sha256(canonical)
+    assert _canonical_truth_hash_integrity_bound(report) is False
+    assert _final_report_package_integrity_bound(report) is False
+
+    report["json"]["nested_render_metadata"]["markdown"] = (
+        "tampered retained value"
+    )
+
+    # The historical digest deliberately ignored keys named ``markdown``. Without
+    # the complete exact-artifact manifest family, that compatibility digest cannot
+    # authorize current artifact recovery or publication.
+    assert report["canonical_truth_sha256"] == _canonical_hash(report["json"])
+    assert _canonical_truth_hash_integrity_bound(report) is False
+    assert _final_report_package_integrity_bound(report) is False
 
 
 def test_known_historical_post_render_metadata_drift_recovers_exact_stored_truth() -> None:

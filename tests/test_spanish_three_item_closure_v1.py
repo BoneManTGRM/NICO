@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from copy import deepcopy
 
 from nico import comprehensive_same_run_locale_report_v1 as same_run
@@ -118,6 +119,7 @@ def test_locale_change_reuses_same_frozen_run_without_assessment_rerun(monkeypat
         "client_delivery_allowed": False,
     }
     truth_sha = _canonical_hash(canonical)
+    source_pdf = b"%PDF-1.4\nsource"
     status = {
         "run_id": canonical["identity"]["run_id"],
         "repository": canonical["identity"]["repository"],
@@ -133,7 +135,8 @@ def test_locale_change_reuses_same_frozen_run_without_assessment_rerun(monkeypat
             "json": canonical,
             "markdown": "# source",
             "html": "<article>source</article>",
-            "pdf_base64": base64.b64encode(b"%PDF-1.4\nsource").decode("ascii"),
+            "pdf_base64": base64.b64encode(source_pdf).decode("ascii"),
+            "pdf_sha256": hashlib.sha256(source_pdf).hexdigest(),
         },
     }
     before = deepcopy(status)

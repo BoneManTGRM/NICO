@@ -18,6 +18,7 @@ from nico.comprehensive_client_surface_structure_cleanup_v1 import (
     install_client_surface_structure_cleanup_v1,
     project_client_stage_summaries,
 )
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_client_truth_canonical_v2 import (
     install_comprehensive_client_truth_canonical_v2,
 )
@@ -395,7 +396,20 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         # preparation/rendering. Reassert the terminal language producer and validator at
         # the exact last mutable boundary, immediately before client-report finalization.
         _reassert_terminal_report_language_authority()
-        return completion.finalize_client_report_package(sanitized)
+        finalized = completion.finalize_client_report_package(sanitized)
+        final_canonical = (
+            finalized.get("json")
+            if isinstance(finalized.get("json"), Mapping)
+            else {}
+        )
+        if final_canonical:
+            # Finalization legitimately appends deterministic manifest/navigation
+            # metadata. Bind the persisted truth hash only after that last mutation so
+            # publication and read authority describe the same canonical object.
+            finalized["canonical_truth_sha256"] = canonical_sha256(
+                final_canonical
+            )
+        return finalized
     finally:
         # Render-input cache entries retain the entire canonical tree and its localized
         # projection. Final-report execution is serialized, so those heavyweight objects

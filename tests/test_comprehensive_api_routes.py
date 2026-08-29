@@ -236,5 +236,18 @@ def test_route_review_projection_preserves_pending_authorization_state() -> None
     assert projected["delivery_status"] == "pending_authorization"
     assert projected["record"]["delivery_status"] == "pending_authorization"
     record["client_delivery_allowed"] = True
-    authorized = routes._review_projection(response, record)
+    raw_flag_only = routes._review_projection(response, record)
+    assert raw_flag_only["client_delivery_allowed"] is False
+    assert raw_flag_only["delivery_status"] == "pending_authorization"
+
+    authorized_response = {
+        **response,
+        "client_delivery_allowed": True,
+        "delivery_status": "approved_for_delivery",
+        "response_projection": {
+            "delivery_authorization_integrity_valid": True,
+        },
+    }
+    authorized = routes._review_projection(authorized_response, record)
+    assert authorized["client_delivery_allowed"] is True
     assert authorized["delivery_status"] == "approved_for_delivery"

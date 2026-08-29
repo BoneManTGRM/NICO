@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from copy import deepcopy
 
 from fastapi import FastAPI
@@ -7,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 
 
 class _PublicationRaceService:
@@ -49,12 +52,30 @@ class _PublicationRaceService:
                     "report_package": {
                         "service_id": "comprehensive",
                         "report_id": "report_projection_race",
+                        "report_language": "en",
+                        "locale": "en",
                         "markdown": "# Terminal report\n",
                         "html": "<h1>Terminal report</h1>",
                         "pdf_base64": "JVBERi0xLjQ=",
                         "pdf_filename": "nico-comprehensive-projection-race.pdf",
                         "canonical_truth_sha256": "truth-sha",
-                        "json": {"technical_maturity": 93},
+                        "json": {
+                            "report_id": "report_projection_race",
+                            "report_language": "en",
+                            "locale": "en",
+                            "identity": {
+                                "run_id": identity["run_id"],
+                                "repository": identity["repository"],
+                                "commit_sha": identity["commit_sha"],
+                                "evidence_ledger_id": identity["evidence_ledger_id"],
+                                "report_language": "en",
+                            },
+                            "assessment": {
+                                "report_language": "en",
+                                "locale": "en",
+                            },
+                            "technical_maturity": 93,
+                        },
                     },
                     "assessment": {
                         "executive_summary": "Terminal assessment",
@@ -74,6 +95,12 @@ class _PublicationRaceService:
             "terminal": True,
             "integrity_sha256": "terminal-integrity",
         }
+        report = self.terminal["stage_results"][
+            "final_comprehensive_report_generation"
+        ]["report_package"]
+        pdf = base64.b64decode(report["pdf_base64"], validate=True)
+        report["pdf_sha256"] = hashlib.sha256(pdf).hexdigest()
+        report["canonical_truth_sha256"] = canonical_sha256(report["json"])
 
     def resume(self, run_id: str, *, max_stages: int | None = None) -> dict:
         assert run_id == "comprun_projection_race"

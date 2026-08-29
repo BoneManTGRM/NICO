@@ -6,6 +6,7 @@ import json
 from copy import deepcopy
 from typing import Any, Mapping
 
+from nico.comprehensive_client_delivery_contract_v1 import reviewer_binding
 from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
 from nico.decision_grade_accepted_edition_guard_v1 import (
     current_report_artifact_digest,
@@ -196,6 +197,14 @@ def build_reviewed_edition(
         decision=decision,
         decision_reason=decision_reason,
         decided_at=decided_at,
+    )
+    review = manifest.get("review") if isinstance(manifest.get("review"), Mapping) else {}
+    reviewer_binding(
+        reviewer=str(review.get("reviewer") or ""),
+        reviewer_role=str(review.get("reviewer_role") or ""),
+        decision=str(review.get("decision") or ""),
+        decided_at=str(review.get("decided_at") or ""),
+        decision_reason=str(review.get("reason") or ""),
     )
     return _bind_review_ledger_to_manifest(manifest, _review_ledger_binding(record))
 

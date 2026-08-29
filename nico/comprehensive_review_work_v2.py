@@ -9,6 +9,7 @@ from math import ceil
 from typing import Any
 
 from nico import comprehensive_review_work_v1 as legacy
+from nico.comprehensive_client_delivery_contract_v1 import human_reviewer_identity
 
 VERSION = "nico.comprehensive_review_work.v2"
 PROJECTION_SCHEMA = "nico.comprehensive_review_work_projection.v2"
@@ -279,13 +280,10 @@ def _record_with_ledger(record: Mapping[str, Any], ledger: Mapping[str, Any]) ->
 def _require_human(payload: Mapping[str, Any]) -> tuple[str, str]:
     if payload.get("review_authorized") is not True or payload.get("authorization_confirmed") is not True:
         raise ValueError("explicit_review_authorization_required")
-    reviewer = _text(payload.get("reviewer"))
-    role = _text(payload.get("reviewer_role"))
-    if not reviewer:
-        raise ValueError("reviewer_required")
-    if not role:
-        raise ValueError("reviewer_role_required")
-    return reviewer, role
+    return human_reviewer_identity(
+        reviewer=_text(payload.get("reviewer")),
+        reviewer_role=_text(payload.get("reviewer_role")),
+    )
 
 
 def _record_reviewer_identity(

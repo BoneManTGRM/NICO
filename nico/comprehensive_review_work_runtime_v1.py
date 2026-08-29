@@ -21,6 +21,7 @@ from nico.comprehensive_review_work_record_v1 import apply_review_work_ledger
 from nico.comprehensive_review_work_safe_v1 import (
     apply_review_work_action,
     assert_ready_for_approval,
+    canonical_candidate_register,
     review_work_projection,
 )
 from nico.comprehensive_review_decision_v1 import (
@@ -34,13 +35,6 @@ _SERVICE_MARKER = "_nico_phase2_review_work_service_v3"
 _REVIEW_MARKER = "_nico_phase2_review_approval_gate_v3"
 _REGISTER_MARKER = "_nico_phase2_review_work_routes_v3"
 _ORIGINAL_REGISTER: Callable[..., Any] | None = None
-_REPORT_STAGE_IDS = (
-    "final_comprehensive_report_generation",
-    "risk_reduction_and_executive_briefing",
-    "decision_report_generation",
-    "report_generation",
-    "reports",
-)
 
 
 def _review_action_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -64,33 +58,13 @@ def _normalize_review_ledger(ledger: dict[str, Any]) -> dict[str, Any]:
 
 
 def _canonical_scanner_register_present(record: Mapping[str, Any]) -> bool:
-    if isinstance(record.get("review_work_ledger"), Mapping):
-        return True
-    stage_results = record.get("stage_results")
-    stage_results = stage_results if isinstance(stage_results, Mapping) else {}
-    packages: list[Mapping[str, Any]] = []
-    for stage_id in _REPORT_STAGE_IDS:
-        stage = stage_results.get(stage_id)
-        if not isinstance(stage, Mapping):
-            continue
-        package = stage.get("report_package")
-        if not isinstance(package, Mapping):
-            package = stage.get("reports")
-        if isinstance(package, Mapping):
-            packages.append(package)
-    top = record.get("reports")
-    if isinstance(top, Mapping):
-        packages.append(top)
-    for package in packages:
-        canonical = package.get("json")
-        if not isinstance(canonical, Mapping):
-            continue
-        assessment = canonical.get("assessment")
-        if isinstance(assessment, Mapping) and isinstance(
-            assessment.get("canonical_scanner_finding_register"), Mapping
-        ):
-            return True
-    return False
+    try:
+        canonical_candidate_register(record)
+    except ValueError as exc:
+        if str(exc) == "review_work_canonical_register_unavailable":
+            return False
+        raise
+    return True
 
 
 def _decision_timestamp(decided_at: str | None) -> str:
@@ -107,6 +81,7 @@ def _install_service_methods() -> None:
     if not getattr(service_class, _SERVICE_MARKER, False):
         def review_work(self: Any, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             record = self._store.load(run_id)
+            service_module._require_exact_final_report_integrity(record)
             previous_revision = int(record["revision"])
             ledger = apply_review_work_action(_review_action_record(record), payload)
             ledger = _normalize_review_ledger(ledger)
@@ -133,6 +108,7 @@ def _install_service_methods() -> None:
         expected_artifact_identity: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
+        service_module._require_exact_final_report_integrity(record)
         previous_revision = int(record["revision"])
         normalized_decision = str(decision or "").strip().casefold()
         canonical_phase2 = False
@@ -143,11 +119,10 @@ def _install_service_methods() -> None:
                 readiness_projection = assert_ready_for_approval(
                     _review_action_record(record)
                 )
-        if normalized_decision == "approved":
-            assert_expected_review_artifact_identity(
-                record,
-                expected_artifact_identity,
-            )
+        assert_expected_review_artifact_identity(
+            record,
+            expected_artifact_identity,
+        )
 
         timestamp = _decision_timestamp(decided_at)
         decision_record = record
@@ -219,6 +194,7 @@ def _install_registration_wrapper() -> None:
                     routes_module._authorize_review(x_nico_admin_token)
                     controller = routes_module._controller(request)
                     record = routes_module._service(controller).load(run_id)
+                    service_module._require_exact_final_report_integrity(record)
                     return routes_module._with_runtime_truth(
                         request,
                         review_work_projection(_review_action_record(record)),

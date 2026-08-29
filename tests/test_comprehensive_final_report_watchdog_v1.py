@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import sqlite3
 import threading
 import time
 from pathlib import Path
 
 import nico.comprehensive_final_report_background_v1 as background
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_final_report_background_v1 import FinalReportPublicationCoordinator
 from nico.comprehensive_final_report_execution_boundary_v4 import FINAL_REPORT_STAGE_ID
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
@@ -81,11 +83,12 @@ def _context(record: dict) -> dict:
 
 
 def _valid_result(context: dict, *, suffix: str = "ok") -> dict:
-    pdf = base64.b64encode(b"%PDF-1.4\n%%EOF\n").decode("ascii")
+    pdf_bytes = b"%PDF-1.4\n%%EOF\n"
     identity = {
         key: context[key]
         for key in ("run_id", "repository", "commit_sha", "evidence_ledger_id")
     }
+    canonical = {"identity": identity}
     return {
         "status": "complete",
         **identity,
@@ -93,9 +96,10 @@ def _valid_result(context: dict, *, suffix: str = "ok") -> dict:
             "report_id": f"report_{context['run_id']}_{suffix}",
             "markdown": "# NICO Comprehensive\n",
             "html": "<h1>NICO Comprehensive</h1>",
-            "pdf_base64": pdf,
-            "canonical_truth_sha256": "d" * 64,
-            "json": {"identity": identity},
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+            "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+            "canonical_truth_sha256": canonical_sha256(canonical),
+            "json": canonical,
         },
     }
 

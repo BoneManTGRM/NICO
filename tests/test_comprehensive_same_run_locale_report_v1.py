@@ -49,6 +49,7 @@ def _canonical(report_language: str = "en") -> dict:
 
 def _status(*, source_language: str = "en") -> dict:
     canonical = _canonical(source_language)
+    pdf = b"%PDF-1.4\nsource"
     return {
         "run_id": canonical["identity"]["run_id"],
         "repository": canonical["identity"]["repository"],
@@ -65,7 +66,8 @@ def _status(*, source_language: str = "en") -> dict:
             "json": canonical,
             "markdown": "# source report",
             "html": "<article>source report</article>",
-            "pdf_base64": base64.b64encode(b"%PDF-1.4\nsource").decode("ascii"),
+            "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+            "pdf_sha256": subject.hashlib.sha256(pdf).hexdigest(),
         },
     }
 
@@ -74,13 +76,33 @@ def _approved_status(
     *,
     source_language: str = "en",
     client_delivery_allowed: bool = False,
+    canonical_updates: dict | None = None,
+    include_evidence_manifest: bool = False,
 ) -> dict:
     from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
 
     status = _status(source_language=source_language)
     canonical = status["reports"]["json"]
+    if canonical_updates:
+        canonical.update(deepcopy(canonical_updates))
+        status["reports"]["canonical_truth_sha256"] = subject._canonical_hash(
+            canonical
+        )
     identity = canonical["identity"]
     pdf_bytes = base64.b64decode(status["reports"]["pdf_base64"], validate=True)
+    artifacts = {
+        "markdown": status["reports"]["markdown"],
+        "html": status["reports"]["html"],
+        "pdf": pdf_bytes,
+        "json": canonical,
+    }
+    if include_evidence_manifest:
+        status["reports"]["evidence_manifest_json"] = (
+            '{"manifest_id":"exact-source-manifest"}'
+        )
+        artifacts["evidence_manifest"] = status["reports"][
+            "evidence_manifest_json"
+        ]
     accepted = build_accepted_report_edition(
         repository=identity["repository"],
         commit_sha=identity["commit_sha"],
@@ -90,14 +112,9 @@ def _approved_status(
         evidence_bundle_hash="evidence-same-run-1",
         report_language=source_language,
         assessment_depth=identity["assessment_depth"],
-        artifacts={
-            "markdown": status["reports"]["markdown"],
-            "html": status["reports"]["html"],
-            "pdf": pdf_bytes,
-            "json": canonical,
-        },
+        artifacts=artifacts,
         reviewer="Authorized Reviewer",
-        reviewer_role="security-reviewer",
+        reviewer_role="Security reviewer",
         decision="approved",
         decision_reason="Exact source edition reviewed.",
         decided_at="2026-08-28T12:00:00+00:00",
@@ -115,6 +132,10 @@ def _approved_status(
             "accepted_edition": accepted,
         }
     )
+    if client_delivery_allowed:
+        status["response_projection"] = {
+            "delivery_authorization_integrity_valid": True,
+        }
     return status
 
 
@@ -170,6 +191,53 @@ def test_source_locale_reuses_terminal_artifacts_without_rerender(monkeypatch):
     assert result["report"]["html"] == status["reports"]["html"]
     assert result["report"]["pdf_base64"] == status["reports"]["pdf_base64"]
     assert result["assessment_rerun"] is False
+
+
+def test_presentation_approval_fields_cannot_promote_authoritative_pending_run() -> None:
+    status = _status(source_language="en")
+    status["status"] = "review_required"
+    status["human_review_completed"] = False
+    status["client_delivery_allowed"] = False
+    status["reports"].update(
+        {
+            "approval_status": "approved_final",
+            "human_review_status": "approved",
+            "client_delivery_allowed": True,
+        }
+    )
+    status["reports"]["json"].update(
+        {
+            "approval_status": "approved_final",
+            "human_review_status": "approved",
+            "client_delivery_allowed": True,
+        }
+    )
+    status["reports"]["canonical_truth_sha256"] = subject._canonical_hash(
+        status["reports"]["json"]
+    )
+
+    result = subject.build_same_run_locale_report(status, "en")
+
+    assert result["approval_status"] == "pending_human_approval"
+    assert result["human_review_completed"] is False
+    assert result["client_delivery_allowed"] is False
+    assert result["delivery_status"] == "blocked_pending_human_approval"
+    assert result["report"]["approval_status"] == "pending_human_approval"
+
+
+def test_unattested_delivery_flag_cannot_authorize_localized_artifacts() -> None:
+    status = _approved_status(client_delivery_allowed=True)
+    status.pop("response_projection")
+
+    result = subject.build_same_run_locale_report(status, "en")
+
+    assert result["approval_status"] == "approved_final"
+    assert result["human_review_completed"] is True
+    assert result["client_delivery_allowed"] is False
+    assert result["delivery_status"] == "blocked_authorization_integrity"
+    assert result["canonical_run_lifecycle"][
+        "delivery_authorization_integrity_valid"
+    ] is False
 
 
 def test_frozen_source_pdf_response_exposes_exact_artifact_digest() -> None:
@@ -440,24 +508,17 @@ def test_alternate_locale_calls_full_production_assembler_and_invalidates_approv
 ):
     from nico import phase17_canonical_artifact_rebuild_v1 as phase17
 
-    status = _status(source_language="en")
-    status["reports"]["json"].update(
-        {
+    status = _approved_status(
+        source_language="en",
+        client_delivery_allowed=True,
+        canonical_updates={
             "approval": {"decision": "approved", "reviewer_identity": "human"},
             "accepted_edition": {"accepted_edition": True},
             "human_review_completed": True,
             "client_delivery_allowed": True,
             "approval_status": "approved_final",
             "delivery_status": "authorized",
-        }
-    )
-    status.update(
-        {
-            "human_review_completed": True,
-            "client_delivery_allowed": True,
-            "approval_status": "approved_final",
-            "delivery_status": "authorized",
-        }
+        },
     )
     status["reports"].update(
         {
@@ -466,9 +527,6 @@ def test_alternate_locale_calls_full_production_assembler_and_invalidates_approv
             "approval_status": "approved_final",
             "delivery_status": "authorized",
         }
-    )
-    status["reports"]["canonical_truth_sha256"] = subject._canonical_hash(
-        status["reports"]["json"]
     )
     before = deepcopy(status)
     calls = []
@@ -562,21 +620,17 @@ def test_real_controller_approved_status_derives_consistent_source_lifecycle(
     controller_delivery_status,
     expected_delivery_status,
 ) -> None:
-    status = _status(source_language="en")
-    status.update(
-        {
-            "status": "approved",
-            "human_review_completed": True,
-            "client_delivery_allowed": delivery_allowed,
-            "delivery_status": controller_delivery_status,
-            "record": {
-                "status": "approved",
-                "human_review_completed": True,
-                "client_delivery_allowed": delivery_allowed,
-                "delivery_status": controller_delivery_status,
-            },
-        }
+    status = _approved_status(
+        source_language="en",
+        client_delivery_allowed=delivery_allowed,
     )
+    status["delivery_status"] = controller_delivery_status
+    status["record"] = {
+        "status": "approved",
+        "human_review_completed": True,
+        "client_delivery_allowed": delivery_allowed,
+        "delivery_status": controller_delivery_status,
+    }
 
     result = subject.build_same_run_locale_report(status, "en")
 
@@ -649,7 +703,10 @@ def test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation() 
     )
     source = rebuild_client_artifacts(package)
     source_json = deepcopy(source["json"])
-    source_hash = subject._canonical_hash(source_json)
+    source_hash = subject.canonical_sha256(source_json)
+    reports = deepcopy(source)
+    reports["report_id"] = "comprehensive_report_same_run_real"
+    reports["canonical_truth_sha256"] = source_hash
     status = {
         "run_id": source_json["identity"]["run_id"],
         "repository": source_json["identity"]["repository"],
@@ -657,16 +714,7 @@ def test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation() 
         "evidence_ledger_id": source_json["identity"]["evidence_ledger_id"],
         "report_language": "en",
         "terminal": True,
-        "reports": {
-            "report_id": "comprehensive_report_same_run_real",
-            "canonical_truth_sha256": source_hash,
-            "json": source_json,
-            "markdown": source["markdown"],
-            "html": source["html"],
-            "pdf_base64": source["pdf_base64"],
-            "pdf_sha256": source["pdf_sha256"],
-            "pdf_page_count": source["pdf_page_count"],
-        },
+        "reports": reports,
     }
     before = deepcopy(status)
 
@@ -901,9 +949,14 @@ def test_controller_read_only_status_projects_accepted_edition_without_mutation(
         },
         "status": "approved",
         "current_stage": "human_review_request",
-        "completed_stages": [],
-        "stage_results": {},
-        "reports": status["reports"],
+        "completed_stages": ["final_comprehensive_report_generation"],
+        "stage_results": {
+            "final_comprehensive_report_generation": {
+                "status": "complete",
+                "report_package": status["reports"],
+                "assessment": status["reports"]["json"]["assessment"],
+            }
+        },
         "blockers": [],
         "progress_percent": 100.0,
         "revision": 9,
@@ -912,6 +965,8 @@ def test_controller_read_only_status_projects_accepted_edition_without_mutation(
         "human_review_completed": True,
         "client_delivery_allowed": False,
         "accepted_edition": status["accepted_edition"],
+        "review_decision": deepcopy(status["accepted_edition"]),
+        "review_history": [deepcopy(status["accepted_edition"])],
         "integrity_sha256": "record-integrity",
     }
     before = deepcopy(record)

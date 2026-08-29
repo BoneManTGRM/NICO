@@ -48,6 +48,7 @@ def _result() -> dict:
             "repository": "BoneManTGRM/NICO",
             "commit_sha": "a" * 40,
             "run_id": "comprun_phase17",
+            "evidence_ledger_id": "ledger_phase17",
             "generated_at": GENERATED_AT,
         },
         "generated_at": GENERATED_AT,

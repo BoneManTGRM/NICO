@@ -274,12 +274,14 @@ jobs:
       - name: Validate sole Comprehensive run handoff
         run: |
           set -euo pipefail
+          PROOF_TOOL_SHA="$(git rev-parse HEAD)"
           python scripts/comprehensive_production_run_handoff_v1.py \
             --source-proof source-proof/spanish-comprehensive-live-proof.json \
             --expected-sha "${RELEASE_SHA}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --source-workflow-run-id "${SOURCE_RUN_ID}" \
             --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+            --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
             --output audit-results/comprehensive-run-handoff.json
 
       - name: Prove WebKit intake, bilingual failure layout, recovery, and review PDF download
@@ -287,6 +289,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
+          PROOF_TOOL_SHA="$(git rev-parse HEAD)"
           python scripts/mobile_restart_live_acceptance_v6.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
@@ -294,6 +297,7 @@ jobs:
             --source-proof source-proof/spanish-comprehensive-live-proof.json \
             --source-workflow-run-id "${SOURCE_RUN_ID}" \
             --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+            --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
             --observation-seconds 90 \
             --ui-locale es-MX \
             --output audit-results/ios-webkit-live-proof.json

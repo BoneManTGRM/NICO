@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI, Header, HTTPException, Request
 
 import nico.comprehensive_api_routes as routes_module
+import nico.comprehensive_run_service as service_module
 from nico.comprehensive_report_review_integrity_v1 import (
     install_comprehensive_report_review_integrity_v1,
 )
@@ -74,6 +75,7 @@ def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[s
                 routes_module._authorize_review(x_nico_admin_token)
                 controller = routes_module._controller(request)
                 record = routes_module._service(controller).load(run_id)
+                service_module._require_exact_final_report_integrity(record)
                 return routes_module._with_runtime_truth(
                     request,
                     review_work_projection(_review_action_record(record)),

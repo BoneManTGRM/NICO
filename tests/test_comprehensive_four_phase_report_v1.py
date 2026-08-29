@@ -31,6 +31,7 @@ def _canonical(*, language: str = "en") -> dict:
             "project_id": "project_test",
             "evidence_ledger_id": "ledger_test",
             "report_language": language,
+            "generated_at": "2026-08-28T00:00:00Z",
         },
         "locale": language,
         "report_language": language,

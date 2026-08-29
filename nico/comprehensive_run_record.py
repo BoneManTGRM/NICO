@@ -294,10 +294,32 @@ def _validate_record(
         violations.append("client_delivery_must_remain_blocked")
 
     review_decision = record.get("review_decision")
+    review_history_value = record.get("review_history")
+    review_history = review_history_value if isinstance(review_history_value, list) else []
+    if review_history_value is not None and not isinstance(review_history_value, list):
+        violations.append("review_history_invalid")
+    if review_history:
+        final_history_entry = review_history[-1]
+        if not isinstance(review_decision, Mapping):
+            violations.append("review_history_requires_review_decision")
+        elif not isinstance(final_history_entry, Mapping) or dict(
+            final_history_entry
+        ) != dict(review_decision):
+            violations.append("review_decision_history_mismatch")
+    if status in {"approved", "rejected"}:
+        if not review_history:
+            violations.append(f"{status}_review_history_required")
+        if not isinstance(review_decision, Mapping):
+            violations.append(f"{status}_review_decision_required")
+
     if review_decision is not None:
         review_errors = _review_manifest_errors(record, review_decision)
         violations.extend(f"review_decision:{item}" for item in review_errors)
-        review = review_decision.get("review") if isinstance(review_decision, Mapping) else {}
+        review_decision_mapping = (
+            review_decision if isinstance(review_decision, Mapping) else {}
+        )
+        review = review_decision_mapping.get("review")
+        review = review if isinstance(review, Mapping) else {}
         decision = str(review.get("decision") or "").casefold()
         expected_status = {
             "approved": "approved",
@@ -306,6 +328,30 @@ def _validate_record(
         }.get(decision)
         if expected_status and status != expected_status:
             violations.append("review_decision_status_mismatch")
+        if not review_history:
+            violations.append("review_decision_history_required")
+        else:
+            final_history_entry = review_history[-1]
+            if (
+                not isinstance(final_history_entry, Mapping)
+                or dict(final_history_entry) != dict(review_decision_mapping)
+            ):
+                violations.append("review_decision_history_mismatch")
+        accepted = record.get("accepted_edition")
+        if decision == "approved":
+            if not isinstance(accepted, Mapping) or dict(accepted) != dict(
+                review_decision_mapping
+            ):
+                violations.append("approved_accepted_edition_history_mismatch")
+        elif isinstance(accepted, Mapping):
+            violations.append("nonapproval_must_not_retain_accepted_edition")
+
+    accepted = record.get("accepted_edition")
+    if status == "approved" and isinstance(accepted, Mapping):
+        if not review_history or not isinstance(review_history[-1], Mapping) or dict(
+            accepted
+        ) != dict(review_history[-1]):
+            violations.append("approved_accepted_edition_history_mismatch")
 
     if require_strategic_context:
         human_evidence = record.get("human_evidence")

@@ -3,9 +3,12 @@ from __future__ import annotations
 import re
 from copy import deepcopy
 from functools import wraps
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Pattern
 
 from nico import comprehensive_report_truth_stabilization_v52 as legacy_truth
+from nico.comprehensive_engagement_metadata_v1 import (
+    verify_comprehensive_engagement_metadata,
+)
 
 VERSION = "nico.comprehensive_client_readiness.v59"
 _MARKER = "_nico_comprehensive_client_readiness_v59"
@@ -53,6 +56,108 @@ _KNOWN_IDENTIFIER_REPAIRS = {
     "install_comprehensive_on_production_ app": "install_comprehensive_on_production_app",
     "production_ app": "production_app",
 }
+_REGEX_CASEFOLD_TRANSLATION = str.maketrans(
+    {
+        "\u0131": "i",  # U+0131 matches ASCII i under re.IGNORECASE.
+        "\u017f": "s",  # U+017F matches ASCII s under re.IGNORECASE.
+        "\u0307": "",  # U+0130 casefolds to i + COMBINING DOT ABOVE.
+    }
+)
+_WHITESPACE_RE = re.compile(r"\s+")
+_ENGAGEMENT_LITERAL_FIELDS = (
+    "client_name",
+    "project_name",
+    "primary_technical_contact",
+    "access_method",
+    "authorized_scope",
+)
+_PRESERVED_LITERAL_KEYS = {
+    *_ENGAGEMENT_LITERAL_FIELDS,
+    "accepted_edition_manifest_sha256",
+    "artifact_id",
+    "branch",
+    "candidate_id",
+    "candidate_ids",
+    "canonical_truth_sha256",
+    "class_name",
+    "commit",
+    "commit_sha",
+    "component",
+    "customer_name",
+    "dependency",
+    "evidence_bundle_hash",
+    "evidence_id",
+    "evidence_ledger_id",
+    "exact_source",
+    "file",
+    "filename",
+    "finding_id",
+    "function",
+    "function_name",
+    "manifest_id",
+    "package",
+    "path",
+    "pdf_filename",
+    "pdf_sha256",
+    "report_id",
+    "repository",
+    "rule_id",
+    "run_id",
+    "scanner_run_id",
+    "source_path",
+    "symbol",
+    "tree_sha",
+    "url",
+}
+_NARRATIVE_SYMBOL_REPAIR_KEYS = {
+    "description",
+    "executive_summary",
+    "recommendation",
+    "recommendations",
+    "recommended_correction",
+    "remediation",
+    "remediation_guidance",
+    "specific_correction",
+    "summary",
+    "table_label",
+}
+_SYMBOL_REPAIR_FORBIDDEN_SUBTREES = {
+    "accepted_edition",
+    "approval_receipt",
+    "artifact_manifest",
+    "attachments",
+    "canonical_evidence",
+    "delivery_authorization",
+    "engagement_metadata",
+    "evidence",
+    "evidence_artifact_bundle",
+    "evidence_bundle",
+    "evidence_bundle_json",
+    "evidence_manifest_json",
+    "human_evidence",
+    "identity",
+    "raw_evidence",
+    "raw_evidence_json",
+    "raw_payload",
+    "review_work_ledger",
+    "scanner_artifacts",
+    "scanner_outputs",
+    "scanner_outputs_json",
+    "source_artifact",
+}
+_KNOWN_IDENTIFIER_REPAIR_PLAN: tuple[tuple[str, Pattern[str], str], ...] = tuple(
+    (
+        broken.casefold().translate(_REGEX_CASEFOLD_TRANSLATION),
+        re.compile(re.escape(broken), re.IGNORECASE),
+        canonical,
+    )
+    for broken, canonical in _KNOWN_IDENTIFIER_REPAIRS.items()
+)
+
+# Each item retains the exact historical sequential substitution order. The folded
+# literal is only a no-false-negative precheck; the compiled regular expression still
+# owns matching and replacement semantics.
+_SymbolRepairPlan = tuple[tuple[str, Pattern[str], str], ...]
 
 
 def _text(value: Any) -> str:
@@ -252,13 +357,17 @@ def _maturity_label(score: Any) -> str:
 
 
 def _symbols(node: Any) -> set[str]:
+    """Collect authored code symbols without inspecting immutable evidence payloads."""
+
     output: set[str] = set()
     if isinstance(node, Mapping):
         for key in ("symbol", "function", "component", "function_name"):
             value = node.get(key)
             if isinstance(value, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{2,}", value):
                 output.add(value)
-        for value in node.values():
+        for key, value in node.items():
+            if str(key).casefold() in _SYMBOL_REPAIR_FORBIDDEN_SUBTREES:
+                continue
             output.update(_symbols(value))
     elif isinstance(node, list):
         for value in node:
@@ -266,17 +375,150 @@ def _symbols(node: Any) -> set[str]:
     return output
 
 
-def _repair_symbols(text: str, symbols: set[str], coverage: int) -> str:
-    repaired = legacy_truth._repair_text(text) if hasattr(legacy_truth, "_repair_text") else text
-    for broken, canonical in _KNOWN_IDENTIFIER_REPAIRS.items():
-        repaired = re.sub(re.escape(broken), canonical, repaired, flags=re.IGNORECASE)
-    for symbol in sorted(symbols, key=len, reverse=True):
-        pattern = (
-            r"(?<![A-Za-z0-9_])"
-            + r"\s*".join(map(re.escape, symbol))
-            + r"(?![A-Za-z0-9_])"
+def _regex_casefold(value: str) -> str:
+    """Match Python's ASCII-letter ``re.IGNORECASE`` equivalence for probes."""
+
+    return str(value or "").casefold().translate(_REGEX_CASEFOLD_TRANSLATION)
+
+
+def _compile_symbol_repair_plan(symbols: set[str]) -> _SymbolRepairPlan:
+    """Compile the existing flexible-identifier regexes once per tree traversal."""
+
+    grouped: dict[str, set[str]] = {}
+    for symbol in symbols:
+        grouped.setdefault(_regex_casefold(symbol), set()).add(symbol)
+
+    # Case-insensitive matching cannot truthfully choose between identifiers such as
+    # ``Audit`` and ``audit``. Leave the ambiguous group untouched instead of
+    # arbitrarily changing authored text (and therefore artifact hashes).
+    unambiguous = {
+        next(iter(values))
+        for values in grouped.values()
+        if len(values) == 1
+    }
+    return tuple(
+        (
+            _regex_casefold(symbol),
+            re.compile(
+                r"(?<![A-Za-z0-9_])"
+                + r"\s*".join(map(re.escape, symbol))
+                + r"(?![A-Za-z0-9_])",
+                re.IGNORECASE,
+            ),
+            symbol,
         )
-        repaired = re.sub(pattern, symbol, repaired, flags=re.IGNORECASE)
+        for symbol in sorted(
+            unambiguous,
+            key=lambda value: (-len(value), value.casefold(), value),
+        )
+    )
+
+
+def _engagement_literal_pattern(canonical: Mapping[str, Any]) -> Pattern[str] | None:
+    """Protect the five signed client literals wherever report prose repeats them."""
+
+    metadata = canonical.get("engagement_metadata")
+    if not isinstance(metadata, Mapping):
+        return None
+    try:
+        if not verify_comprehensive_engagement_metadata(metadata):
+            return None
+    except (TypeError, ValueError):
+        return None
+    literals = {
+        str(metadata.get(field) or "")
+        for field in _ENGAGEMENT_LITERAL_FIELDS
+        if str(metadata.get(field) or "")
+    }
+    if not literals:
+        return None
+    return re.compile(
+        "|".join(
+            re.escape(value)
+            for value in sorted(literals, key=lambda item: (-len(item), item))
+        )
+    )
+
+
+def _repair_narrative_symbols(
+    text: str,
+    symbols: set[str],
+    coverage: int,
+    *,
+    symbol_repair_plan: _SymbolRepairPlan,
+    engagement_literal_pattern: Pattern[str] | None,
+) -> str:
+    """Repair authored narrative while leaving every repeated client literal exact."""
+
+    if engagement_literal_pattern is None:
+        return _repair_symbols(
+            text,
+            symbols,
+            coverage,
+            symbol_repair_plan=symbol_repair_plan,
+        )
+    output: list[str] = []
+    cursor = 0
+    for match in engagement_literal_pattern.finditer(text):
+        output.append(
+            _repair_symbols(
+                text[cursor : match.start()],
+                symbols,
+                coverage,
+                symbol_repair_plan=symbol_repair_plan,
+            )
+        )
+        output.append(match.group(0))
+        cursor = match.end()
+    output.append(
+        _repair_symbols(
+            text[cursor:],
+            symbols,
+            coverage,
+            symbol_repair_plan=symbol_repair_plan,
+        )
+    )
+    return "".join(output)
+
+
+def _repair_symbols(
+    text: str,
+    symbols: set[str],
+    coverage: int,
+    *,
+    symbol_repair_plan: _SymbolRepairPlan | None = None,
+) -> str:
+    has_whitespace = _WHITESPACE_RE.search(text) is not None
+    repaired = (
+        legacy_truth._repair_text(text)
+        if has_whitespace and hasattr(legacy_truth, "_repair_text")
+        else text
+    )
+    if has_whitespace:
+        known_probe = _regex_casefold(repaired)
+        for broken_probe, pattern, canonical in _KNOWN_IDENTIFIER_REPAIR_PLAN:
+            if broken_probe in known_probe:
+                updated = pattern.sub(canonical, repaired)
+                if updated != repaired:
+                    repaired = updated
+                    # Preserve the historical sequential/cascading replacement
+                    # contract.
+                    known_probe = _regex_casefold(repaired)
+
+    plan = (
+        symbol_repair_plan
+        if symbol_repair_plan is not None
+        else _compile_symbol_repair_plan(symbols)
+    )
+    # A flexible symbol match can differ from its canonical literal only by whitespace
+    # and re.IGNORECASE equivalence. Removing whitespace therefore gives a necessary
+    # (not sufficient) match condition and safely avoids nearly all regex scans in raw
+    # candidate payloads. The compiled expression remains authoritative when the probe
+    # succeeds, preserving boundaries, overlap behavior, casing, and replacement order.
+    symbol_probe = _regex_casefold(_WHITESPACE_RE.sub("", repaired))
+    for canonical_probe, pattern, canonical in plan:
+        if canonical_probe in symbol_probe:
+            repaired = pattern.sub(canonical, repaired)
     repaired = re.sub(r"\bS\s+p\s+ecific correction\b", "Specific correction", repaired)
     repaired = _COVERAGE_TEXT_RE.sub(
         lambda match: (
@@ -348,7 +590,13 @@ def _normalize_tree(
     requested: int,
     symbols: set[str],
     technical_score: int | None,
+    symbol_repair_plan: _SymbolRepairPlan | None = None,
+    engagement_literal_pattern: Pattern[str] | None = None,
+    repair_narrative: bool = False,
+    symbol_repair_allowed: bool = True,
 ) -> Any:
+    if symbol_repair_plan is None:
+        symbol_repair_plan = _compile_symbol_repair_plan(symbols)
     coverage = round(100 * len(completed) / requested) if requested else 0
     if isinstance(node, list):
         return [
@@ -360,16 +608,37 @@ def _normalize_tree(
                 requested=requested,
                 symbols=symbols,
                 technical_score=technical_score,
+                symbol_repair_plan=symbol_repair_plan,
+                engagement_literal_pattern=engagement_literal_pattern,
+                repair_narrative=repair_narrative,
+                symbol_repair_allowed=symbol_repair_allowed,
             )
             for value in node
         ]
     if isinstance(node, str):
-        return _repair_symbols(node, symbols, coverage)
+        if not symbol_repair_allowed or not repair_narrative:
+            return node
+        return _repair_narrative_symbols(
+            node,
+            symbols,
+            coverage,
+            symbol_repair_plan=symbol_repair_plan,
+            engagement_literal_pattern=engagement_literal_pattern,
+        )
     if not isinstance(node, Mapping):
         return node
 
-    output = {
-        key: _normalize_tree(
+    output: dict[str, Any] = {}
+    for key, value in node.items():
+        normalized_key = str(key).casefold()
+        if (
+            normalized_key == "engagement_metadata"
+            or normalized_key in _PRESERVED_LITERAL_KEYS
+            or normalized_key in _SYMBOL_REPAIR_FORBIDDEN_SUBTREES
+        ):
+            output[key] = deepcopy(value)
+            continue
+        output[key] = _normalize_tree(
             value,
             truth=truth,
             completed=completed,
@@ -377,9 +646,17 @@ def _normalize_tree(
             requested=requested,
             symbols=symbols,
             technical_score=technical_score,
+            symbol_repair_plan=symbol_repair_plan,
+            engagement_literal_pattern=engagement_literal_pattern,
+            repair_narrative=(
+                symbol_repair_allowed
+                and normalized_key in _NARRATIVE_SYMBOL_REPAIR_KEYS
+            ),
+            symbol_repair_allowed=(
+                symbol_repair_allowed
+                and normalized_key not in _SYMBOL_REPAIR_FORBIDDEN_SUBTREES
+            ),
         )
-        for key, value in node.items()
-    }
     output = _synchronize_scanner_row(output, truth)
 
     for field in (
@@ -447,6 +724,7 @@ def reconcile_client_readiness(canonical: Mapping[str, Any]) -> dict[str, Any]:
         technical_score = None
 
     symbols = _symbols(output)
+    engagement_literal_pattern = _engagement_literal_pattern(output)
     output = _normalize_tree(
         output,
         truth=truth,
@@ -455,6 +733,7 @@ def reconcile_client_readiness(canonical: Mapping[str, Any]) -> dict[str, Any]:
         requested=requested,
         symbols=symbols,
         technical_score=technical_score,
+        engagement_literal_pattern=engagement_literal_pattern,
     )
 
     coverage = round(100 * len(completed) / requested) if requested else 0

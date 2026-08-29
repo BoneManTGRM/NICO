@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any
 
 from nico import comprehensive_spanish_presentation_parity_v1 as v1
@@ -8,6 +9,15 @@ from nico import comprehensive_spanish_presentation_parity_v1 as v1
 VERSION = "nico.comprehensive-spanish-presentation-parity.v2"
 _MARKER = "__nico_comprehensive_spanish_presentation_parity_v2__"
 _BASE_ASSERT_SPANISH_FULL_DATA_PARITY = v1._assert_spanish_full_data_parity
+
+
+@lru_cache(maxsize=1024)
+def _safe_replace_pattern(source: str) -> re.Pattern[str] | None:
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9 /&'’().,+\-]*", source):
+        left_guard = r"(?<![A-Za-z0-9_])" if source[0].isalnum() else ""
+        right_guard = r"(?![A-Za-z0-9_])" if source[-1].isalnum() else ""
+        return re.compile(f"{left_guard}{re.escape(source)}{right_guard}")
+    return None
 
 
 def _safe_replace(text: str, source: str, target: str) -> str:
@@ -22,11 +32,9 @@ def _safe_replace(text: str, source: str, target: str) -> str:
 
     if not source:
         return text
-    if re.fullmatch(r"[A-Za-z][A-Za-z0-9 /&'’().,+\-]*", source):
-        left_guard = r"(?<![A-Za-z0-9_])" if source[0].isalnum() else ""
-        right_guard = r"(?![A-Za-z0-9_])" if source[-1].isalnum() else ""
-        pattern = f"{left_guard}{re.escape(source)}{right_guard}"
-        return re.sub(pattern, lambda _match: target, text)
+    pattern = _safe_replace_pattern(source)
+    if pattern is not None:
+        return pattern.sub(lambda _match: target, text)
     return text.replace(source, target)
 
 

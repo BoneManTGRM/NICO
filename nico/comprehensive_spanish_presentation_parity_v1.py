@@ -5,7 +5,7 @@ import html
 import io
 import re
 from copy import deepcopy
-from functools import wraps
+from functools import lru_cache, wraps
 from typing import Any, Mapping
 
 VERSION = "nico.comprehensive-spanish-presentation-parity.v1"
@@ -154,12 +154,21 @@ def _looks_like_source_atom(text: str) -> bool:
     return False
 
 
+@lru_cache(maxsize=1024)
+def _safe_replace_pattern(source: str) -> re.Pattern[str] | None:
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9 /&'’().,+\-]*", source):
+        return re.compile(
+            rf"(?<![A-Za-z0-9_]){re.escape(source)}(?![A-Za-z0-9_])"
+        )
+    return None
+
+
 def _safe_replace(text: str, source: str, target: str) -> str:
     if not source:
         return text
-    if re.fullmatch(r"[A-Za-z][A-Za-z0-9 /&'’().,+\-]*", source):
-        pattern = rf"(?<![A-Za-z0-9_]){re.escape(source)}(?![A-Za-z0-9_])"
-        return re.sub(pattern, lambda _m: target, text)
+    pattern = _safe_replace_pattern(source)
+    if pattern is not None:
+        return pattern.sub(lambda _match: target, text)
     return text.replace(source, target)
 
 

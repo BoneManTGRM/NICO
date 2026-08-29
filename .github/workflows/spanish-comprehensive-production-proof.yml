@@ -184,15 +184,67 @@ jobs:
         continue-on-error: true
         timeout-minutes: 100
         run: |
+          set -uo pipefail
+          mkdir -p audit-results
+          SOURCE_PROOF_LOG="audit-results/spanish-comprehensive-source-proof.log"
+          set +e
+          {
+            printf 'RELEASE_SHA: %s\n' "${RELEASE_SHA}"
+            printf 'SOURCE_RUN_ID: %s\n' "${SOURCE_RUN_ID}"
+            printf 'SOURCE_RUN_ATTEMPT: %s\n' "${SOURCE_RUN_ATTEMPT}"
+            python scripts/spanish_comprehensive_live_acceptance_v3.py \
+              --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+              --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+              --expected-sha "${RELEASE_SHA}" \
+              --source-workflow-run-id "${SOURCE_RUN_ID}" \
+              --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+              --timeout-seconds 5400 \
+              --output audit-results/spanish-comprehensive-live-proof.json
+          } 2>&1 | tee "${SOURCE_PROOF_LOG}"
+          SOURCE_PIPE_STATUS=("${PIPESTATUS[@]}")
+          SOURCE_PROOF_EXIT="${SOURCE_PIPE_STATUS[0]}"
+          SOURCE_LOG_EXIT="${SOURCE_PIPE_STATUS[1]}"
+          set -e
+          printf 'Process completed with exit code %s\n' "${SOURCE_PROOF_EXIT}" \
+            | tee -a "${SOURCE_PROOF_LOG}"
+          printf '%s\n' "${SOURCE_PROOF_EXIT}" > audit-results/spanish-comprehensive-source-proof.exit-code
+          if [ "${SOURCE_LOG_EXIT}" -ne 0 ]; then
+            exit "${SOURCE_LOG_EXIT}"
+          fi
+          exit "${SOURCE_PROOF_EXIT}"
+
+      - name: Recover visibility-only failure without new intake
+        id: spanish_recovery
+        if: steps.spanish_proof.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 100
+        run: |
           set -euo pipefail
-          python scripts/spanish_comprehensive_live_acceptance_v3.py \
+          FAILED_SOURCE_PROOF="audit-results/spanish-comprehensive-failed-source-proof.json"
+          RECOVERED_PROOF="audit-results/spanish-comprehensive-existing-run-recovery-proof.json"
+          test -s audit-results/spanish-comprehensive-live-proof.json
+          test -s audit-results/spanish-comprehensive-source-proof.log
+          test "$(cat audit-results/spanish-comprehensive-source-proof.exit-code)" = "1"
+          cp audit-results/spanish-comprehensive-live-proof.json "${FAILED_SOURCE_PROOF}"
+          PROOF_TOOL_SHA="$(git rev-parse HEAD)"
+          SOURCE_SCRIPT_SHA256="$(sha256sum scripts/spanish_comprehensive_live_acceptance_v3.py | awk '{print $1}')"
+          SOURCE_ARTIFACT_DIGEST="$(sha256sum "${FAILED_SOURCE_PROOF}" | awk '{print $1}')"
+          python scripts/spanish_comprehensive_existing_run_recovery_v1.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
+            --proof-tool-sha "${PROOF_TOOL_SHA}" \
+            --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
+            --failed-source-proof "${FAILED_SOURCE_PROOF}" \
+            --failed-source-job-log audit-results/spanish-comprehensive-source-proof.log \
+            --source-script scripts/spanish_comprehensive_live_acceptance_v3.py \
+            --expected-source-script-sha256 "${SOURCE_SCRIPT_SHA256}" \
+            --source-artifact-digest "sha256:${SOURCE_ARTIFACT_DIGEST}" \
             --source-workflow-run-id "${SOURCE_RUN_ID}" \
             --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
             --timeout-seconds 5400 \
-            --output audit-results/spanish-comprehensive-live-proof.json
+            --output "${RECOVERED_PROOF}"
+          cp "${RECOVERED_PROOF}" audit-results/spanish-comprehensive-live-proof.json
 
       - name: Upload immutable Spanish proof
         if: always()
@@ -204,6 +256,11 @@ jobs:
             audit-results/spanish-comprehensive-live-proof.json
             audit-results/spanish-comprehensive-live-proof.progress.json
             audit-results/spanish-comprehensive-live-proof.png
+            audit-results/spanish-comprehensive-source-proof.log
+            audit-results/spanish-comprehensive-source-proof.exit-code
+            audit-results/spanish-comprehensive-failed-source-proof.json
+            audit-results/spanish-comprehensive-existing-run-recovery-proof.json
+            audit-results/spanish-comprehensive-existing-run-recovery-proof.png
             audit-results/nico-comprehensive-en-automated-draft-pending-human-approval.pdf
             audit-results/nico-comprehensive-es-MX-automated-draft-pending-human-approval.pdf
           if-no-files-found: warn
@@ -213,22 +270,110 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          test "${{ steps.spanish_proof.outcome }}" = "success"
+          SOURCE_PROOF_OUTCOME="${{ steps.spanish_proof.outcome }}"
+          RECOVERY_OUTCOME="${{ steps.spanish_recovery.outcome }}"
+          if [ "${SOURCE_PROOF_OUTCOME}" = "success" ]; then
+            test "${RECOVERY_OUTCOME}" = "skipped"
+            export NICO_SPANISH_PROOF_MODE="fresh"
+          elif [ "${SOURCE_PROOF_OUTCOME}" = "failure" ]; then
+            test "${RECOVERY_OUTCOME}" = "success"
+            export NICO_SPANISH_PROOF_MODE="recovered"
+          else
+            echo "Unsupported Spanish source proof outcome: ${SOURCE_PROOF_OUTCOME}" >&2
+            exit 1
+          fi
           python - <<'PY'
+          import hashlib
           import json
           import os
+          import subprocess
           from pathlib import Path
-          from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-          payload = json.loads(
-              Path("audit-results/spanish-comprehensive-live-proof.json").read_text(encoding="utf-8")
+          from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
+          from scripts.comprehensive_production_run_handoff_v1 import load_source_proof
+
+          proof_path = Path("audit-results/spanish-comprehensive-live-proof.json")
+          payload = json.loads(proof_path.read_text(encoding="utf-8"))
+          mode = os.environ["NICO_SPANISH_PROOF_MODE"]
+          fresh_schema = "nico.spanish_comprehensive_live_acceptance.v3.2"
+          recovered_schema = "nico.spanish_comprehensive_existing_run_recovery.v1"
+          assert payload["artifact_schema"] == (
+              fresh_schema if mode == "fresh" else recovered_schema
           )
-          assert payload["artifact_schema"] == "nico.spanish_comprehensive_live_acceptance.v3.2"
+          source_exit = Path(
+              "audit-results/spanish-comprehensive-source-proof.exit-code"
+          ).read_text(encoding="utf-8").strip()
+          assert source_exit == ("0" if mode == "fresh" else "1")
           assert payload["status"] == "passed"
           assert payload["expected_sha"] == os.environ["RELEASE_SHA"]
           assert payload["source_workflow_run_id"] == os.environ["SOURCE_RUN_ID"]
           assert payload["source_workflow_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
           assert payload["source_binding"] == f"{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']}"
+
+          if mode == "fresh":
+              assert payload["start_request_count"] == 1
+              assert payload["running_reload_recovery_verified"] is True
+              assert payload["running_background_foreground_recovery_verified"] is True
+              intake = {
+                  key: payload[f"actual_browser_intake_{key}"]
+                  for key in (
+                      "client_name",
+                      "project_name",
+                      "primary_technical_contact",
+                      "access_method",
+                      "authorized_scope",
+                  )
+              }
+          else:
+              checkout_sha = subprocess.check_output(
+                  ["git", "rev-parse", "HEAD"],
+                  text=True,
+              ).strip()
+              handoff = load_source_proof(
+                  proof_path,
+                  expected_sha=os.environ["RELEASE_SHA"],
+                  repository=os.environ["NICO_PRODUCTION_SMOKE_REPOSITORY"],
+                  source_workflow_run_id=os.environ["SOURCE_RUN_ID"],
+                  source_workflow_run_attempt=os.environ["SOURCE_RUN_ATTEMPT"],
+                  expected_proof_tool_sha=checkout_sha,
+              )
+              assert handoff["source_proof_kind"] == "existing_run_recovery"
+              assert payload["proof_tool_sha"] == checkout_sha
+              assert payload["expected_proof_tool_sha"] == checkout_sha
+              failed_proof = Path(
+                  "audit-results/spanish-comprehensive-failed-source-proof.json"
+              )
+              source_log = Path("audit-results/spanish-comprehensive-source-proof.log")
+              source_script = Path(
+                  "scripts/spanish_comprehensive_live_acceptance_v3.py"
+              )
+              failed_digest = hashlib.sha256(failed_proof.read_bytes()).hexdigest()
+              assert payload["source_artifact_digest"] == failed_digest
+              assert payload["failed_source_proof_sha256"] == failed_digest
+              assert payload["failed_source_job_log_sha256"] == hashlib.sha256(
+                  source_log.read_bytes()
+              ).hexdigest()
+              assert payload["source_script_sha256"] == hashlib.sha256(
+                  source_script.read_bytes()
+              ).hexdigest()
+              assert payload["source_failure_classified_as_proof_harness_visibility_only"] is True
+              assert payload["failed_source_control_flow_reached_running_visibility"] is True
+              assert payload["failed_source_prior_intake_assertions_completed"] is True
+              assert payload["failed_source_running_reload_completed_before_visibility"] is True
+              assert payload["source_producer_lineage_start_request_count"] == 1
+              assert payload["recovery_start_request_count"] == 0
+              assert payload["fresh_assessment_count_during_recovery"] == 0
+              assert payload["blocked_ui_continuation_attempt_count"] == 0
+              assert payload["blocked_ui_continuation_attempt_paths"] == []
+              assert payload["explicit_same_run_continuation_count"] == 0
+              assert payload["explicit_same_run_continuation_paths"] == []
+              assert payload["terminal_ui_mutation_attempt_count"] == 0
+              assert payload["same_run_recovery_verified"] is True
+              assert payload["same_commit_recovery_verified"] is True
+              assert payload["same_evidence_ledger_verified"] is True
+              assert payload["no_client_mutation_terminal_observation"] is True
+              intake = payload["durable_engagement_metadata_on_recovery"]
+
           assert len(payload["canonical_truth_sha256"]) == 64
           assert set(payload["canonical_truth_sha256"]) <= set("0123456789abcdef")
           assert payload["canonical_truth_unchanged_after_localized_rendering"] is True
@@ -245,10 +390,7 @@ jobs:
           assert payload["production_proof_scope_verified"] is True
           assert payload["production_proof_customer_id"] == "nico_production_proof"
           assert payload["production_proof_project_id"] == "spanish_comprehensive_production"
-          assert payload["start_request_count"] == 1
           assert payload["duplicate_intake_absent"] is True
-          assert payload["running_reload_recovery_verified"] is True
-          assert payload["running_background_foreground_recovery_verified"] is True
           assert payload["terminal"]["phase"] == "Se requiere revisión experta"
           assert payload["terminal"]["review"] == "Revisión interna requerida"
           assert payload["terminal"]["report"] == "Completa"
@@ -277,7 +419,7 @@ jobs:
               "access_method",
               "authorized_scope",
           ):
-              assert payload[f"commercial_proof_{key}"] == payload[f"actual_browser_intake_{key}"]
+              assert payload[f"commercial_proof_{key}"] == intake[key]
           for key in ("spanish_pdf_path", "english_pdf_path"):
               artifact = Path(payload[key])
               assert artifact.is_file()
@@ -291,7 +433,15 @@ jobs:
           assert len(payload["english_pdf_sha256"]) == 64
 
           assert payload["human_review_required"] is True
+          assert payload["human_review_completed"] is False
+          assert payload["approval_status"] == "pending_human_approval"
+          assert payload["review_decision_absent"] is True
+          assert payload["approved_final_absent"] is True
           assert payload["client_delivery_allowed"] is False
+          assert payload["delivery_status"] == "blocked"
+          assert payload["delivery_authorization_absent"] is True
+          assert payload["approved_delivery_package_absent"] is True
+          assert payload["accepted_edition_absent"] is True
           PY
 
       - name: Publish successful Spanish proof status

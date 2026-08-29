@@ -5,11 +5,13 @@ import hashlib
 import json
 from copy import deepcopy
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import nico.comprehensive_api_routes as routes
 from nico.comprehensive_api_controller import ComprehensiveApiController
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_mobile_recovery_v1 import (
     ARTIFACT_ROUTE_PATHS,
     BROWSER_PROJECTION_HEADER,
@@ -35,20 +37,36 @@ def _record(*, terminal: bool = True) -> dict:
     markdown = "# NICO Comprehensive Technical Assessment\n\nFinal report pending human approval.\n"
     html = "<!doctype html><html><body><h1>NICO Comprehensive Technical Assessment</h1></body></html>"
     canonical = {
-        "canonical_truth_sha256": "a" * 64,
-        "assessment": {"maturity_signal": {"level": "Senior", "presented_score": 91}},
+        "report_language": "en",
+        "locale": "en",
+        "identity": {
+            "run_id": "comprun_mobile_recovery_001",
+            "repository": "BoneManTGRM/NICO",
+            "commit_sha": "b" * 40,
+            "evidence_ledger_id": "ledger_mobile_recovery_001",
+            "report_language": "en",
+            "locale": "en",
+        },
+        "assessment": {
+            "report_language": "en",
+            "locale": "en",
+            "maturity_signal": {"level": "Senior", "presented_score": 91},
+        },
         "large": "z" * (2 * 1024 * 1024),
     }
+    truth_sha256 = canonical_sha256(canonical)
     report = {
         "service_id": "comprehensive",
         "report_id": "report_mobile_recovery_001",
+        "report_language": "en",
+        "locale": "en",
         "markdown": markdown,
         "html": html,
         "json": canonical,
         "pdf_base64": base64.b64encode(pdf).decode("ascii"),
         "pdf_filename": "nico-comprehensive-FINAL-PENDING-APPROVAL.pdf",
         "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
-        "canonical_truth_sha256": "a" * 64,
+        "canonical_truth_sha256": truth_sha256,
     }
     assessment = {
         "executive_summary": "Decision-grade assessment complete pending expert review.",
@@ -106,7 +124,7 @@ def _record(*, terminal: bool = True) -> dict:
 def _approved_record(
     *,
     accepted_pdf_sha256: str = "",
-    client_delivery_allowed: bool = True,
+    client_delivery_allowed: bool = False,
 ) -> dict:
     from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
 
@@ -116,6 +134,7 @@ def _approved_record(
     ]
     identity = record["identity"]
     report["json"]["identity"] = deepcopy(identity)
+    report["canonical_truth_sha256"] = canonical_sha256(report["json"])
     pdf = base64.b64decode(report["pdf_base64"], validate=True)
     accepted = build_accepted_report_edition(
         repository=identity["repository"],
@@ -133,7 +152,7 @@ def _approved_record(
             "json": report["json"],
         },
         reviewer="Authorized Reviewer",
-        reviewer_role="security-reviewer",
+        reviewer_role="Security reviewer",
         decision="approved",
         decision_reason="Exact immutable report reviewed.",
         decided_at="2026-08-28T12:00:00+00:00",
@@ -146,6 +165,8 @@ def _approved_record(
             "human_review_completed": True,
             "client_delivery_allowed": client_delivery_allowed,
             "accepted_edition": accepted,
+            "review_decision": deepcopy(accepted),
+            "review_history": [deepcopy(accepted)],
         }
     )
     return record
@@ -195,7 +216,7 @@ def test_non_browser_status_preserves_full_report_for_existing_consumers() -> No
     report = response.json()["reports"]
     assert report["markdown"].startswith("# NICO Comprehensive")
     assert base64.b64decode(report["pdf_base64"]).startswith(b"%PDF")
-    assert report["json"]["canonical_truth_sha256"] == "a" * 64
+    assert report["canonical_truth_sha256"] == canonical_sha256(report["json"])
     assert report["json"]["assessment"]["maturity_signal"]["presented_score"] == 91
     assert len(report["json"]["large"]) == 2 * 1024 * 1024
 
@@ -226,7 +247,9 @@ def test_exact_run_artifact_routes_stream_canonical_content() -> None:
     assert "x-nico-accepted-pdf-sha256" not in pdf.headers
     assert "FINAL-PENDING-APPROVAL.pdf" in pdf.headers["content-disposition"]
     assert canonical.status_code == 200
-    assert canonical.json()["canonical_truth_sha256"] == "a" * 64
+    assert canonical.headers["x-nico-canonical-truth-sha256"] == canonical_sha256(
+        canonical.json()
+    )
     assert len(json.dumps(canonical.json())) > 2 * 1024 * 1024
 
 
@@ -278,8 +301,8 @@ def test_approved_pdf_route_streams_only_exact_accepted_edition_bytes() -> None:
     assert exact.headers["x-nico-report-language"] == "en"
     assert exact.headers["x-nico-assessment-rerun"] == "false"
     assert exact.headers["x-nico-approval-status"] == "approved_final"
-    assert exact.headers["x-nico-delivery-status"] == "authorized"
-    assert exact.headers["x-nico-client-delivery-allowed"] == "true"
+    assert exact.headers["x-nico-delivery-status"] == "pending_authorization"
+    assert exact.headers["x-nico-client-delivery-allowed"] == "false"
     assert "FINAL-PENDING-APPROVAL.pdf" in exact.headers[
         "content-disposition"
     ]
@@ -301,14 +324,156 @@ def test_approved_pdf_route_streams_only_exact_accepted_edition_bytes() -> None:
     )
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == (
-        "comprehensive_report_pdf_not_accepted_edition"
+        "comprehensive_report_artifact_missing"
     )
     assert blocked.json()["detail"]["client_delivery_allowed"] is False
 
 
-def test_approved_pdf_route_rejects_manifest_and_language_tampering() -> None:
-    from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
+@pytest.mark.parametrize(
+    "path",
+    (
+        "report/markdown",
+        "report/html",
+        "report/json",
+    ),
+)
+def test_approved_non_pdf_routes_require_the_same_exact_accepted_edition(
+    path: str,
+) -> None:
+    response = TestClient(_app(_approved_record())).get(
+        f"/assessment/comprehensive-run/comprun_mobile_recovery_001/{path}"
+    )
 
+    assert response.status_code == 200
+    assert response.headers["x-nico-approval-status"] == "approved_final"
+    assert response.headers["x-nico-delivery-status"] == "pending_authorization"
+    assert response.headers["x-nico-client-delivery-allowed"] == "false"
+
+
+def test_raw_delivery_flag_cannot_replace_distinct_authorization_receipt() -> None:
+    record = _approved_record(client_delivery_allowed=True)
+    client = TestClient(_app(record))
+
+    artifact = client.get(
+        "/assessment/comprehensive-run/comprun_mobile_recovery_001/report/pdf"
+    )
+    status = client.get(
+        "/assessment/comprehensive-run/comprun_mobile_recovery_001"
+    ).json()
+
+    assert artifact.status_code == 200
+    assert artifact.headers["x-nico-approval-status"] == "approved_final"
+    assert artifact.headers["x-nico-delivery-status"] == "pending_authorization"
+    assert artifact.headers["x-nico-client-delivery-allowed"] == "false"
+    assert status["status"] == "approved"
+    assert status["human_review_completed"] is True
+    assert status["client_delivery_allowed"] is False
+    assert status["delivery_status"] == "blocked_authorization_integrity"
+    assert status["response_projection"][
+        "delivery_authorization_invalidated"
+    ] is True
+
+
+@pytest.mark.parametrize(
+    ("path", "artifact"),
+    (
+        ("report/markdown", "markdown"),
+        ("report/html", "html"),
+        ("report/json", "json"),
+    ),
+)
+def test_approved_non_pdf_routes_reject_artifacts_changed_after_approval(
+    path: str,
+    artifact: str,
+) -> None:
+    record = _approved_record()
+    report = record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]
+    if artifact == "json":
+        report["json"]["assessment"]["maturity_signal"]["presented_score"] = 92
+        report["canonical_truth_sha256"] = canonical_sha256(report["json"])
+    else:
+        report[artifact] += "\nchanged after exact human approval"
+
+    response = TestClient(_app(record)).get(
+        f"/assessment/comprehensive-run/comprun_mobile_recovery_001/{path}"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == (
+        "comprehensive_report_artifact_missing"
+    )
+    assert "x-nico-approval-status" not in response.headers
+    assert "x-nico-client-delivery-allowed" not in response.headers
+
+
+def test_status_projection_invalidates_approval_when_exact_artifacts_change() -> None:
+    record = _approved_record()
+    report = record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]
+    report["markdown"] += "\nchanged after exact human approval"
+
+    response = TestClient(_app(record)).get(
+        "/assessment/comprehensive-run/comprun_mobile_recovery_001"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "blocked"
+    assert body["canonical_status"] == "approved"
+    assert body["approval_status"] == "invalidated_artifact_mismatch"
+    assert body["human_review_completed"] is False
+    assert body["client_delivery_allowed"] is False
+    assert body["delivery_status"] == "blocked_artifact_integrity"
+    assert body["record"]["status"] == "blocked"
+    assert body["record"]["human_review_completed"] is False
+    assert body["record"]["client_delivery_allowed"] is False
+    assert "accepted_edition" not in body
+    assert "reports" not in body
+    assert body["response_projection"][
+        "approval_invalidated_by_artifact_mismatch"
+    ] is True
+
+
+def test_pending_status_cannot_reuse_stale_completed_approval_state() -> None:
+    record = _approved_record()
+    record["status"] = "review_required"
+
+    body = TestClient(_app(record)).get(
+        "/assessment/comprehensive-run/comprun_mobile_recovery_001"
+    ).json()
+
+    assert body["status"] == "review_required"
+    assert body["approval_status"] == "pending_human_approval"
+    assert body["human_review_completed"] is False
+    assert body["client_delivery_allowed"] is False
+    assert "accepted_edition" not in body
+    assert "review_decision" not in body
+    assert body["response_projection"]["stale_approval_state_suppressed"] is True
+
+
+def test_rejected_status_requires_exact_hashed_human_decision() -> None:
+    record = _record()
+    record["status"] = "rejected"
+    record["human_review_completed"] = False
+
+    body = TestClient(_app(record)).get(
+        "/assessment/comprehensive-run/comprun_mobile_recovery_001"
+    ).json()
+
+    assert body["status"] == "blocked"
+    assert body["canonical_status"] == "rejected"
+    assert body["approval_status"] == "invalidated_review_receipt_mismatch"
+    assert body["human_review_completed"] is False
+    assert body["client_delivery_allowed"] is False
+    assert body["response_projection"][
+        "rejection_invalidated_by_review_mismatch"
+    ] is True
+
+
+def test_approved_pdf_route_rejects_manifest_and_language_tampering() -> None:
     tampered_manifest = _approved_record()
     tampered_manifest["accepted_edition"]["review"]["reason"] = "tampered"
     manifest_response = TestClient(_app(tampered_manifest)).get(
@@ -316,10 +481,7 @@ def test_approved_pdf_route_rejects_manifest_and_language_tampering() -> None:
     )
     assert manifest_response.status_code == 409
     assert manifest_response.json()["detail"]["code"] == (
-        "comprehensive_report_pdf_not_accepted_edition"
-    )
-    assert manifest_response.json()["detail"]["reason"] == (
-        "accepted_edition_manifest_hash_mismatch"
+        "comprehensive_report_artifact_missing"
     )
 
     wrong_language = _approved_record()
@@ -332,10 +494,21 @@ def test_approved_pdf_route_rejects_manifest_and_language_tampering() -> None:
     )
     assert language_response.status_code == 409
     assert language_response.json()["detail"]["code"] == (
-        "comprehensive_report_pdf_not_accepted_edition"
+        "comprehensive_report_artifact_missing"
     )
-    assert language_response.json()["detail"]["reason"] == (
-        "accepted_edition_language_mismatch"
+
+    delivery_rewritten = _approved_record()
+    accepted = delivery_rewritten["accepted_edition"]
+    accepted["client_delivery_allowed"] = True
+    accepted["delivery_status"] = "approved_for_delivery"
+    accepted.pop("accepted_edition_manifest_sha256")
+    accepted["accepted_edition_manifest_sha256"] = canonical_sha256(accepted)
+    rewritten_response = TestClient(_app(delivery_rewritten)).get(
+        "/assessment/comprehensive-run/comprun_mobile_recovery_001/report/pdf"
+    )
+    assert rewritten_response.status_code == 409
+    assert rewritten_response.json()["detail"]["code"] == (
+        "comprehensive_report_artifact_missing"
     )
 
 
@@ -354,10 +527,7 @@ def test_approved_pdf_route_rejects_current_bytes_changed_after_approval() -> No
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == (
-        "comprehensive_report_pdf_not_accepted_edition"
-    )
-    assert response.json()["detail"]["reason"] == (
-        "accepted_edition_pdf_digest_mismatch"
+        "comprehensive_report_artifact_missing"
     )
 
 

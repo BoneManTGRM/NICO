@@ -15,6 +15,70 @@ _DIGEST_INDEPENDENT_MANIFEST_MARKER = (
 )
 _ENTRIES_MARKER = "__nico_exact_artifact_entries_v1__"
 _ATTACH_MARKER = "__nico_exact_artifact_attach_v1__"
+_REQUIRED_DETACHED_ARTIFACT_TYPES = frozenset(
+    {
+        "findings_csv",
+        "evidence_csv",
+        "candidate_register_json",
+        "remediation_backlog_json",
+        "markdown_report",
+        "html_report",
+        "comprehensive_pdf",
+        "canonical_json",
+    }
+)
+_EXPECTED_CANONICAL_MANIFEST_TYPES = (
+    _REQUIRED_DETACHED_ARTIFACT_TYPES | {"evidence_manifest_json"}
+)
+_AUTOMATED_DRAFT_LIFECYCLE = {
+    "report_finality": "automated_draft",
+    "automated_status": "complete",
+    "client_review_package_status": "ready",
+    "human_review_status": "pending",
+    "client_delivery_status": "blocked",
+    "review_package_ready": True,
+    "human_approval_required": True,
+    "client_delivery_allowed": False,
+}
+_PENDING_HUMAN_APPROVAL = {
+    "artifact_schema": "nico.comprehensive-exact-artifact-approval.v1",
+    "reviewer_identity": None,
+    "reviewer_role": None,
+    "reviewer_authorized": False,
+    "review_timestamp": None,
+    "decision": "pending",
+    "residual_risk_acceptance": None,
+    "approved_pdf_sha256": None,
+    "approved_json_sha256": None,
+    "evidence_manifest_sha256": None,
+    "approval_record_id": None,
+    "reviewer_notes": None,
+    "exact_artifact_approval_required": True,
+    "client_delivery_allowed": False,
+}
+_CANONICAL_DRAFT_AUTHORITY_FIELDS = {
+    "human_review_required": True,
+    "human_review_completed": False,
+    "client_delivery_allowed": False,
+    "report_finality": "automated_draft",
+    "approval_status": "pending_human_approval",
+    "delivery_status": "blocked_pending_human_approval",
+    "review_package_ready": True,
+}
+_CANONICAL_ASSESSMENT_DRAFT_AUTHORITY_FIELDS = {
+    "human_review_required": True,
+    "client_delivery_allowed": False,
+    "report_finality": "automated_draft",
+    "human_review_status": "pending_human_approval",
+    "client_delivery_status": "blocked",
+    "automated_status": "complete",
+}
+_CANONICAL_ASSESSMENT_OPTIONAL_AUTHORITY_FIELDS = {
+    "human_review_completed": False,
+    "approval_status": "pending_human_approval",
+    "delivery_status": "blocked_pending_human_approval",
+    "review_package_ready": True,
+}
 
 
 def _text(value: Any, limit: int = 1000) -> str:
@@ -123,7 +187,19 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     ]
     if not artifacts:
         raise ValueError("Detached artifact manifest contains no artifacts")
+    artifact_types = [_text(item.get("artifact_type"), 100) for item in artifacts]
+    if (
+        len(artifact_types) != len(_REQUIRED_DETACHED_ARTIFACT_TYPES)
+        or len(set(artifact_types)) != len(artifact_types)
+        or set(artifact_types) != _REQUIRED_DETACHED_ARTIFACT_TYPES
+    ):
+        raise ValueError("Detached artifact manifest artifact set is incomplete or invalid")
+    artifacts_by_type = {
+        artifact_type: item
+        for artifact_type, item in zip(artifact_types, artifacts, strict=True)
+    }
 
+    observed_artifact_hashes: dict[str, str] = {}
     for item in artifacts:
         artifact_type = _text(item.get("artifact_type"), 100)
         content = _artifact_bytes(result, artifact_type)
@@ -140,6 +216,24 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
         if actual_size != expected_size:
             raise ValueError(
                 f"artifact {artifact_type} byte-size mismatch: {actual_size} != {expected_size}"
+            )
+        observed_artifact_hashes[artifact_type] = actual_sha
+
+    for artifact_type, digest_field in {
+        "findings_csv": "findings_csv_sha256",
+        "evidence_csv": "evidence_csv_sha256",
+        "candidate_register_json": "candidate_register_sha256",
+        "remediation_backlog_json": "remediation_backlog_sha256",
+        "markdown_report": "markdown_sha256",
+        "html_report": "html_sha256",
+        "comprehensive_pdf": "pdf_sha256",
+        "canonical_json": "canonical_json_sha256",
+    }.items():
+        if _text(result.get(digest_field), 100).lower() != observed_artifact_hashes[
+            artifact_type
+        ]:
+            raise ValueError(
+                f"package {digest_field} does not match retained artifact bytes"
             )
 
     manifest_text = str(result.get("evidence_manifest_json") or "")
@@ -167,12 +261,183 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     canonical_identity = canonical.get("identity") if isinstance(canonical, Mapping) else None
     if not isinstance(manifest_identity, Mapping) or not isinstance(canonical_identity, Mapping):
         raise ValueError("exact artifact identity binding is missing")
+    canonical_manifest = (
+        canonical.get("artifact_manifest") if isinstance(canonical, Mapping) else None
+    )
+    if not isinstance(canonical_manifest, Mapping):
+        raise ValueError("canonical artifact manifest is missing")
+    for field, expected in _CANONICAL_DRAFT_AUTHORITY_FIELDS.items():
+        if canonical.get(field) != expected:
+            raise ValueError(f"canonical report authority field {field} is invalid")
+    assessment = canonical.get("assessment")
+    if not isinstance(assessment, Mapping):
+        raise ValueError("canonical assessment is missing")
+    for field, expected in _CANONICAL_ASSESSMENT_DRAFT_AUTHORITY_FIELDS.items():
+        if assessment.get(field) != expected:
+            raise ValueError(
+                f"canonical assessment authority field {field} is invalid"
+            )
+    for field, expected in _CANONICAL_ASSESSMENT_OPTIONAL_AUTHORITY_FIELDS.items():
+        if field in assessment and assessment.get(field) != expected:
+            raise ValueError(
+                f"canonical assessment authority field {field} is invalid"
+            )
+    for source_name, source in (
+        ("detached manifest", manifest),
+        ("canonical report", canonical),
+    ):
+        if source.get("lifecycle") != _AUTOMATED_DRAFT_LIFECYCLE:
+            raise ValueError(f"{source_name} lifecycle authority claims are invalid")
+        if source.get("approval") != _PENDING_HUMAN_APPROVAL:
+            raise ValueError(f"{source_name} approval authority claims are invalid")
+    if (
+        manifest.get("lifecycle") != canonical.get("lifecycle")
+        or manifest.get("approval") != canonical.get("approval")
+    ):
+        raise ValueError("detached and canonical authority claims do not match")
+    canonical_artifacts = [
+        item
+        for item in canonical_manifest.get("artifacts") or []
+        if isinstance(item, Mapping)
+    ]
+    canonical_artifact_types = [
+        _text(item.get("artifact_type"), 100) for item in canonical_artifacts
+    ]
+    if (
+        len(canonical_artifact_types) != len(_EXPECTED_CANONICAL_MANIFEST_TYPES)
+        or len(set(canonical_artifact_types)) != len(canonical_artifact_types)
+        or set(canonical_artifact_types) != _EXPECTED_CANONICAL_MANIFEST_TYPES
+    ):
+        raise ValueError("canonical artifact manifest artifact set is incomplete or invalid")
+    canonical_artifact_count = canonical_manifest.get("artifact_count")
+    if (
+        isinstance(canonical_artifact_count, bool)
+        or not isinstance(canonical_artifact_count, int)
+        or canonical_artifact_count != len(canonical_artifacts)
+    ):
+        raise ValueError("canonical artifact manifest artifact count is invalid")
+    detached_artifact_count = manifest.get("artifact_count")
+    if detached_artifact_count is not None and (
+        isinstance(detached_artifact_count, bool)
+        or not isinstance(detached_artifact_count, int)
+        or detached_artifact_count != len(artifacts)
+    ):
+        raise ValueError("detached artifact manifest artifact count is invalid")
+    canonical_artifacts_by_type = {
+        artifact_type: item
+        for artifact_type, item in zip(
+            canonical_artifact_types,
+            canonical_artifacts,
+            strict=True,
+        )
+    }
+    if _text(canonical_manifest.get("manifest_id"), 200) != manifest_id:
+        raise ValueError("detached and canonical artifact manifest identity mismatch")
+    shared_manifest_identity = {
+        "repository": _text(canonical_identity.get("repository"), 1000),
+        "commit_sha": _text(canonical_identity.get("commit_sha"), 1000),
+        "run_id": _text(canonical_identity.get("run_id"), 1000),
+        "evidence_ledger_id": _text(
+            canonical_identity.get("evidence_ledger_id"), 1000
+        ),
+        "customer_id": _text(canonical_identity.get("customer_id"), 1000),
+        "project_id": _text(canonical_identity.get("project_id"), 1000),
+        "report_language": _text(
+            canonical_identity.get("report_language")
+            or canonical.get("report_language"),
+            1000,
+        ),
+        "generation_timestamp": _text(
+            canonical_identity.get("generated_at")
+            or canonical_identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp"),
+            1000,
+        ),
+    }
+    for field, expected in shared_manifest_identity.items():
+        if not expected or _text(manifest_identity.get(field), 1000) != expected:
+            raise ValueError(f"detached evidence manifest identity {field} mismatch")
+        if field in identity and _text(identity.get(field), 1000) != expected:
+            raise ValueError(f"draft artifact identity {field} mismatch")
+    for artifact_type in _REQUIRED_DETACHED_ARTIFACT_TYPES - {"canonical_json"}:
+        if artifacts_by_type[artifact_type] != canonical_artifacts_by_type[artifact_type]:
+            raise ValueError(
+                f"detached artifact {artifact_type} does not match canonical manifest"
+            )
+    for artifact_type in ("canonical_json", "evidence_manifest_json"):
+        item = canonical_artifacts_by_type[artifact_type]
+        for field in ("run_id", "commit_sha"):
+            expected = _text(canonical_identity.get(field), 1000)
+            if not expected or _text(item.get(field), 1000) != expected:
+                raise ValueError(
+                    f"canonical artifact {artifact_type} identity {field} mismatch"
+                )
+        for field in (
+            "repository",
+            "evidence_ledger_id",
+            "customer_id",
+            "project_id",
+        ):
+            if field in item and _text(item.get(field), 1000) != shared_manifest_identity[
+                field
+            ]:
+                raise ValueError(
+                    f"canonical artifact {artifact_type} identity {field} mismatch"
+                )
+        if "generated_at" in item and _text(
+            item.get("generated_at"), 1000
+        ) != shared_manifest_identity["generation_timestamp"]:
+            raise ValueError(
+                f"canonical artifact {artifact_type} identity generated_at mismatch"
+            )
     for field in ("repository", "commit_sha", "run_id"):
         expected = _text(canonical_identity.get(field), 1000)
         if not expected or _text(manifest_identity.get(field), 1000) != expected:
             raise ValueError(f"detached evidence manifest identity {field} mismatch")
         if _text(identity.get(field), 1000) != expected:
             raise ValueError(f"draft artifact identity {field} mismatch")
+    expected_evidence_ledger_id = _text(
+        canonical_identity.get("evidence_ledger_id"), 1000
+    )
+    if (
+        not expected_evidence_ledger_id
+        or _text(manifest_identity.get("evidence_ledger_id"), 1000)
+        != expected_evidence_ledger_id
+    ):
+        raise ValueError(
+            "detached evidence manifest identity evidence_ledger_id mismatch"
+        )
+    # Older retained draft identities predate this field. Keep those readable,
+    # while binding every newly produced (and every field-bearing) identity.
+    if (
+        "evidence_ledger_id" in identity
+        and _text(identity.get("evidence_ledger_id"), 1000)
+        != expected_evidence_ledger_id
+    ):
+        raise ValueError("draft artifact identity evidence_ledger_id mismatch")
+    for artifact_type, item in artifacts_by_type.items():
+        for field in ("repository", "commit_sha", "run_id", "evidence_ledger_id"):
+            expected = _text(canonical_identity.get(field), 1000)
+            if not expected or _text(item.get(field), 1000) != expected:
+                raise ValueError(
+                    f"detached artifact {artifact_type} identity {field} mismatch"
+                )
+        for field in ("customer_id", "project_id"):
+            if field in item and _text(item.get(field), 1000) != shared_manifest_identity[
+                field
+            ]:
+                raise ValueError(
+                    f"detached artifact {artifact_type} identity {field} mismatch"
+                )
+        if "generated_at" in item and _text(
+            item.get("generated_at"), 1000
+        ) != shared_manifest_identity["generation_timestamp"]:
+            raise ValueError(
+                f"detached artifact {artifact_type} identity generated_at mismatch"
+            )
+    if canonical_manifest.get("identity") != manifest_identity:
+        raise ValueError("detached and canonical artifact manifest identity mismatch")
     checks = {
         "pdf_sha256": _sha256(pdf),
         "canonical_json_sha256": _sha256(canonical_json),

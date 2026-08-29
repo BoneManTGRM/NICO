@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import sqlite3
 import time
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from nico.comprehensive_capability_registry import execution_plan
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.comprehensive_run_store import ComprehensiveRunStore
@@ -37,6 +39,7 @@ def _executors() -> dict[str, object]:
                 "client_delivery_allowed": False,
             }
             if _capability == "final_report_generation":
+                pdf_bytes = b"%PDF-1.4\n%%EOF\n"
                 identity = {
                     key: context[key]
                     for key in (
@@ -46,6 +49,7 @@ def _executors() -> dict[str, object]:
                         "evidence_ledger_id",
                     )
                 }
+                canonical = {"identity": identity}
                 output["report_package"] = {
                     "report_id": f"report_{context['run_id']}",
                     "markdown": (
@@ -55,12 +59,11 @@ def _executors() -> dict[str, object]:
                     "html": (
                         "<html><body>NICO Comprehensive Technical Assessment</body></html>"
                     ),
-                    "pdf_base64": base64.b64encode(
-                        b"%PDF-1.4\n%%EOF\n"
-                    ).decode("ascii"),
+                    "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+                    "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
                     "pdf_page_count": 1,
-                    "json": {"identity": identity},
-                    "canonical_truth_sha256": "a" * 64,
+                    "json": canonical,
+                    "canonical_truth_sha256": canonical_sha256(canonical),
                     "human_review_required": True,
                     "client_delivery_allowed": False,
                 }

@@ -5,6 +5,7 @@ import io
 import zipfile
 from copy import deepcopy
 from datetime import UTC, datetime
+from functools import lru_cache
 
 import pytest
 
@@ -18,7 +19,6 @@ from nico.comprehensive_approved_delivery_v4 import (
     bind_phase4_approval_manifest,
     validate_approved_delivery_package,
 )
-from nico.comprehensive_final_decision_truth_v1 import synchronize_final_decision_truth
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_delivery_authorization_v1 import (
     authorize_accepted_edition,
@@ -29,7 +29,9 @@ from nico.comprehensive_review_decision_v1 import (
     review_artifact_identity,
 )
 from nico.comprehensive_review_work_safe_v1 import apply_review_work_action
+from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
+from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
 
 
 def _pdf() -> str:
@@ -43,7 +45,8 @@ def _pdf() -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def _record() -> dict:
+@lru_cache(maxsize=1)
+def _record_template() -> dict:
     identity = {
         "run_id": "comprun_phase4_delivery",
         "repository": "OutsideOrg/python-service",
@@ -56,6 +59,7 @@ def _record() -> dict:
         "tenant_id": "tenant-phase4",
         "assessment_depth": "comprehensive",
         "report_language": "en",
+        "generated_at": "2026-08-21T13:00:00Z",
     }
     finding = {
         "candidate_id": "candidate-phase4-1",
@@ -108,6 +112,17 @@ def _record() -> dict:
             "total_candidates": 1,
             "triaged_candidates": 1,
         },
+        "totals": {
+            "raw": 1,
+            "approved_or_nonblocking": 0,
+            "excluded_test_only": 0,
+            "material": 0,
+            "review_required": 1,
+            "exact_source": 0,
+            "source_path": 1,
+            "payload_without_source": 0,
+            "count_only": 0,
+        },
         "scanner_versions": {"bandit": "1.9.0"},
     }
     canonical = {
@@ -121,8 +136,12 @@ def _record() -> dict:
                 "evidence_ledger_id",
                 "report_language",
                 "assessment_depth",
+                "customer_id",
+                "project_id",
+                "generated_at",
             )
         },
+        "generated_at": identity["generated_at"],
         "report_language": "en",
         "assessment_depth": "comprehensive",
         "assessment": {"canonical_scanner_finding_register": register},
@@ -161,6 +180,7 @@ def _record() -> dict:
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    package = rebuild_client_artifacts(package)
     return {
         "identity": identity,
         "status": "review_required",
@@ -169,6 +189,7 @@ def _record() -> dict:
         "human_review_completed": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
+        "completed_stages": list(COMPREHENSIVE_STAGES),
         "human_evidence": {
             "modules": {
                 "stakeholder_context": {
@@ -190,10 +211,17 @@ def _record() -> dict:
                 "snapshot": {"tree_sha": "d" * 40, "commit_sha": identity["commit_sha"]}
             },
             "deep_scanner_triage": {"scanner_run_id": "scan-phase4"},
-            "final_comprehensive_report_generation": {"report_package": package},
+            "final_comprehensive_report_generation": {
+                "status": "complete",
+                "report_package": package,
+            },
         },
         "generator_versions": canonical["generator_versions"],
     }
+
+
+def _record() -> dict:
+    return deepcopy(_record_template())
 
 
 def _reviewed_record() -> dict:
@@ -217,14 +245,7 @@ def _reviewed_record() -> dict:
 
 
 def _approved_pending_authorization() -> tuple[dict, dict]:
-    decision_record = synchronize_final_decision_truth(
-        _reviewed_record(),
-        decision="approved",
-        reviewer="Alice Security",
-        reviewer_role="Cybersecurity specialist",
-        decision_reason="All exact candidate and residual-risk review gates are complete.",
-        decided_at="2026-08-21T15:00:00+00:00",
-    )
+    decision_record = _reviewed_record()
     manifest = build_reviewed_edition(
         decision_record,
         reviewer="Alice Security",
@@ -236,6 +257,8 @@ def _approved_pending_authorization() -> tuple[dict, dict]:
     decision_record["status"] = "approved"
     decision_record["human_review_completed"] = True
     decision_record["accepted_edition"] = deepcopy(manifest)
+    decision_record["review_decision"] = deepcopy(manifest)
+    decision_record["review_history"] = [deepcopy(manifest)]
     return decision_record, manifest
 
 
@@ -540,7 +563,10 @@ def test_report_regeneration_after_approval_invalidates_receipt() -> None:
     package["markdown"] += "\nRegenerated after approval.\n"
     validation = validate_approved_delivery_package(tampered, tampered["approved_delivery_package"])
     assert validation["status"] == "invalid"
-    assert "artifact_hash_mismatch" in validation["validation_errors"]
+    assert "exact_artifact_hash_binding_invalid" in validation["validation_errors"]
+    assert "delivery_authorization_current_artifact_mismatch:artifact_digests" in validation[
+        "validation_errors"
+    ]
 
 
 def test_accepted_reviewer_identity_cannot_be_rewritten_after_approval() -> None:

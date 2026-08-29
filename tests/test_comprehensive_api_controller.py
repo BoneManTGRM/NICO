@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import sqlite3
 import time
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 
 from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_capability_registry import execution_plan
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.comprehensive_run_store import ComprehensiveRunStore
@@ -42,8 +44,21 @@ def _controller(path: Path) -> ComprehensiveApiController:
                         "evidence_ledger_id",
                     )
                 }
+                identity["report_language"] = "en"
+                pdf = b"%PDF-1.4\n%%EOF\n"
+                canonical = {
+                    "report_language": "en",
+                    "locale": "en",
+                    "identity": identity,
+                    "assessment": {
+                        "report_language": "en",
+                        "locale": "en",
+                    },
+                }
                 result["report_package"] = {
                     "report_id": f"report_{context['run_id']}",
+                    "report_language": "en",
+                    "locale": "en",
                     "markdown": (
                         "# NICO Comprehensive Technical Assessment\n"
                         "CLIENT DELIVERY NOT AUTHORIZED"
@@ -51,12 +66,11 @@ def _controller(path: Path) -> ComprehensiveApiController:
                     "html": (
                         "<html><body>NICO Comprehensive Technical Assessment</body></html>"
                     ),
-                    "pdf_base64": base64.b64encode(
-                        b"%PDF-1.4\n%%EOF\n"
-                    ).decode("ascii"),
+                    "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+                    "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
                     "pdf_page_count": 1,
-                    "json": {"identity": identity},
-                    "canonical_truth_sha256": "a" * 64,
+                    "json": canonical,
+                    "canonical_truth_sha256": canonical_sha256(canonical),
                     "human_review_required": True,
                     "client_delivery_allowed": False,
                 }
@@ -204,13 +218,47 @@ def test_request_validation_rejects_missing_identity_and_invalid_bounds(
 def test_controller_projects_human_approval_separately_from_delivery_authorization(
     tmp_path: Path,
 ) -> None:
+    from nico.decision_grade_accepted_edition_v2 import build_accepted_report_edition
+
     controller = _controller(tmp_path / "state-matrix.db")
     controller.start(_payload())
+    _continue_to_review(controller, "comprun_api_001")
     record = controller._service.load_read_only("comprun_api_001")  # type: ignore[attr-defined]
+    report = record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]
+    identity = report["json"]["identity"]
+    identity["assessment_depth"] = record["identity"]["assessment_depth"]
+    report["canonical_truth_sha256"] = canonical_sha256(report["json"])
+    pdf = base64.b64decode(report["pdf_base64"], validate=True)
+    accepted = build_accepted_report_edition(
+        repository=identity["repository"],
+        commit_sha=identity["commit_sha"],
+        tree_sha="tree-api-controller-001",
+        run_id=identity["run_id"],
+        scanner_run_id="scanner-api-controller-001",
+        evidence_bundle_hash="evidence-api-controller-001",
+        report_language=identity["report_language"],
+        assessment_depth=identity["assessment_depth"],
+        artifacts={
+            "markdown": report["markdown"],
+            "html": report["html"],
+            "pdf": pdf,
+            "json": report["json"],
+        },
+        reviewer="Authorized Reviewer",
+        reviewer_role="Security reviewer",
+        decision="approved",
+        decision_reason="Exact immutable report reviewed.",
+        decided_at="2026-08-28T12:00:00+00:00",
+    )
     record["status"] = "approved"
     record["terminal"] = True
     record["human_review_completed"] = True
     record["client_delivery_allowed"] = False
+    record["accepted_edition"] = accepted
+    record["review_decision"] = accepted
+    record["review_history"] = [accepted]
 
     pending = controller._response(record, operation="status")
     assert pending["status"] == "approved"
@@ -220,8 +268,18 @@ def test_controller_projects_human_approval_separately_from_delivery_authorizati
     assert pending["record"]["delivery_status"] == "pending_authorization"
 
     record["client_delivery_allowed"] = True
-    authorized = controller._response(record, operation="status")
-    assert authorized["human_review_completed"] is True
-    assert authorized["client_delivery_allowed"] is True
-    assert authorized["delivery_status"] == "approved_for_delivery"
-    assert authorized["record"]["delivery_status"] == "approved_for_delivery"
+    unauthorized_flag = controller._response(record, operation="status")
+    assert unauthorized_flag["status"] == "approved"
+    assert unauthorized_flag["approval_status"] == "approved_final"
+    assert unauthorized_flag["human_review_completed"] is True
+    assert unauthorized_flag["client_delivery_allowed"] is False
+    assert unauthorized_flag["delivery_status"] == (
+        "blocked_authorization_integrity"
+    )
+    assert unauthorized_flag["record"]["client_delivery_allowed"] is False
+    assert unauthorized_flag["record"]["delivery_status"] == (
+        "blocked_authorization_integrity"
+    )
+    assert unauthorized_flag["response_projection"][
+        "delivery_authorization_invalidated"
+    ] is True
