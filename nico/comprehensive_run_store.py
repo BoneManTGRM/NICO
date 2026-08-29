@@ -68,6 +68,44 @@ def _assert_review_history_commitment(
     return history
 
 
+def _initialize_missing_review_history_commitment(
+    cursor: Any,
+    *,
+    placeholder: str,
+    run_id: str,
+    payload: Any,
+) -> tuple[int, str]:
+    normalized_run_id = str(run_id or "").strip()
+    if not normalized_run_id:
+        raise ValueError("review_history_commitment_run_id_required")
+    history = _review_history(_decode_run_payload(payload))
+    history_digest = _review_history_sha256(history)
+    cursor.execute(
+        """
+        INSERT INTO nico_comprehensive_review_history_commitments (
+            run_id, event_count, chain_sha256
+        ) VALUES ("""
+        + ",".join([placeholder] * 3)
+        + ") ON CONFLICT (run_id) DO NOTHING",
+        (normalized_run_id, len(history), history_digest),
+    )
+    cursor.execute(
+        f"""
+        SELECT event_count, chain_sha256
+        FROM nico_comprehensive_review_history_commitments
+        WHERE run_id = {placeholder}
+        """,
+        (normalized_run_id,),
+    )
+    commitment = cursor.fetchone()
+    if commitment is None or (
+        int(commitment[0]) != len(history)
+        or str(commitment[1]).strip().casefold() != history_digest
+    ):
+        raise ValueError("review_history_commitment_backfill_conflict")
+    return int(commitment[0]), str(commitment[1])
+
+
 class ConnectionLike(Protocol):
     def cursor(self) -> Any: ...
     def commit(self) -> None: ...
@@ -182,42 +220,6 @@ class ComprehensiveRunStore:
             cursor.execute(run_statement)
             cursor.execute(final_report_job_statement)
             cursor.execute(review_history_statement)
-            cursor.execute(
-                """
-                SELECT runs.run_id, runs.payload
-                FROM nico_comprehensive_runs AS runs
-                LEFT JOIN nico_comprehensive_review_history_commitments AS commitments
-                    ON commitments.run_id = runs.run_id
-                WHERE commitments.run_id IS NULL
-                """
-            )
-            for run_id, payload in cursor.fetchall():
-                history = _review_history(_decode_run_payload(payload))
-                history_digest = _review_history_sha256(history)
-                p = self.placeholder
-                cursor.execute(
-                    """
-                    INSERT INTO nico_comprehensive_review_history_commitments (
-                        run_id, event_count, chain_sha256
-                    ) VALUES ("""
-                    + ",".join([p] * 3)
-                    + ") ON CONFLICT (run_id) DO NOTHING",
-                    (str(run_id), len(history), history_digest),
-                )
-                cursor.execute(
-                    f"""
-                    SELECT event_count, chain_sha256
-                    FROM nico_comprehensive_review_history_commitments
-                    WHERE run_id = {p}
-                    """,
-                    (str(run_id),),
-                )
-                commitment = cursor.fetchone()
-                if commitment is None or (
-                    int(commitment[0]) != len(history)
-                    or str(commitment[1]).strip().casefold() != history_digest
-                ):
-                    raise ValueError("review_history_commitment_backfill_conflict")
             connection.commit()
 
     def create(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -275,18 +277,30 @@ class ComprehensiveRunStore:
                 (normalized,),
             )
             row = cursor.fetchone()
-        if row is None:
-            raise ComprehensiveRunNotFound(normalized)
-        payload = _decode_run_payload(row[0])
-        if row[1] is None or row[2] is None:
-            raise ValueError("review_history_commitment_missing")
-        _assert_review_history_commitment(
-            payload,
-            committed_count=row[1],
-            committed_sha256=row[2],
-            allow_append=False,
-        )
-        return restore_comprehensive_run_record(payload)
+            if row is None:
+                raise ComprehensiveRunNotFound(normalized)
+            payload = _decode_run_payload(row[0])
+            initialized = row[1] is None or row[2] is None
+            commitment = (
+                _initialize_missing_review_history_commitment(
+                    cursor,
+                    placeholder=p,
+                    run_id=normalized,
+                    payload=payload,
+                )
+                if initialized
+                else (int(row[1]), str(row[2]))
+            )
+            _assert_review_history_commitment(
+                payload,
+                committed_count=commitment[0],
+                committed_sha256=commitment[1],
+                allow_append=False,
+            )
+            restored = restore_comprehensive_run_record(payload)
+            if initialized:
+                connection.commit()
+            return restored
 
     def save(self, record: dict[str, Any], *, expected_revision: int) -> dict[str, Any]:
         canonical = self._validated_copy(record)
@@ -309,17 +323,29 @@ class ComprehensiveRunStore:
             cursor = connection.cursor()
             cursor.execute(
                 f"""
-                SELECT event_count, chain_sha256
-                FROM nico_comprehensive_review_history_commitments
-                WHERE run_id = {p}
+                SELECT runs.payload, commitments.event_count, commitments.chain_sha256
+                FROM nico_comprehensive_runs AS runs
+                LEFT JOIN nico_comprehensive_review_history_commitments AS commitments
+                    ON commitments.run_id = runs.run_id
+                WHERE runs.run_id = {p}
                 """,
                 (identity["run_id"],),
             )
-            commitment = cursor.fetchone()
-            if commitment is None:
+            persisted = cursor.fetchone()
+            if persisted is None:
                 raise ComprehensiveRunConflict(
                     f"review_history_commitment_missing:{identity['run_id']}"
                 )
+            commitment = (
+                _initialize_missing_review_history_commitment(
+                    cursor,
+                    placeholder=p,
+                    run_id=identity["run_id"],
+                    payload=persisted[0],
+                )
+                if persisted[1] is None or persisted[2] is None
+                else (int(persisted[1]), str(persisted[2]))
+            )
             history = _assert_review_history_commitment(
                 canonical,
                 committed_count=commitment[0],
@@ -534,7 +560,8 @@ class ComprehensiveRunStore:
         bounded_limit = max(1, min(200, int(limit)))
         p = self.placeholder
         statement = f"""
-        SELECT runs.payload, commitments.event_count, commitments.chain_sha256
+        SELECT runs.run_id, runs.payload,
+               commitments.event_count, commitments.chain_sha256
         FROM nico_comprehensive_runs AS runs
         LEFT JOIN nico_comprehensive_review_history_commitments AS commitments
             ON commitments.run_id = runs.run_id
@@ -542,22 +569,35 @@ class ComprehensiveRunStore:
         ORDER BY runs.updated_at DESC, runs.run_id DESC
         LIMIT {p}
         """
+        records: list[dict[str, Any]] = []
         with self._connection() as connection:
             cursor = connection.cursor()
             cursor.execute(statement, (customer, project, bounded_limit))
             rows = cursor.fetchall()
-        records: list[dict[str, Any]] = []
-        for row in rows:
-            payload = _decode_run_payload(row[0])
-            if row[1] is None or row[2] is None:
-                raise ValueError("review_history_commitment_missing")
-            _assert_review_history_commitment(
-                payload,
-                committed_count=row[1],
-                committed_sha256=row[2],
-                allow_append=False,
-            )
-            records.append(restore_comprehensive_run_record(payload))
+            initialized = False
+            for row in rows:
+                payload = _decode_run_payload(row[1])
+                row_initialized = row[2] is None or row[3] is None
+                commitment = (
+                    _initialize_missing_review_history_commitment(
+                        cursor,
+                        placeholder=p,
+                        run_id=str(row[0]),
+                        payload=payload,
+                    )
+                    if row_initialized
+                    else (int(row[2]), str(row[3]))
+                )
+                _assert_review_history_commitment(
+                    payload,
+                    committed_count=commitment[0],
+                    committed_sha256=commitment[1],
+                    allow_append=False,
+                )
+                records.append(restore_comprehensive_run_record(payload))
+                initialized = initialized or row_initialized
+            if initialized:
+                connection.commit()
         return records
 
     def _validated_copy(self, record: dict[str, Any]) -> dict[str, Any]:
