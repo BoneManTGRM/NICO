@@ -482,7 +482,7 @@ jobs:
           assert all(item["observation"]["visible_pdf_action_count"] == 2 for item in payload["runs"])
           assert all(item["observation"]["pdf_ui_action_digests_stable"] is True for item in payload["runs"])
           assert all(item["observation"]["pdf_ui_actions_network_bounded"] is True for item in payload["runs"])
-          assert all(item["observation"]["pdf_ui_action_browser_get_count"] == 2 for item in payload["runs"])
+          assert all(item["observation"]["pdf_ui_action_anchor_click_count"] == 2 for item in payload["runs"])
           assert all(len(item["observation"]["pdf_ui_action_proofs"]) == 2 for item in payload["runs"])
           assert all(
               proof["ui_review_pdf_lifecycle_contract_verified"] is True

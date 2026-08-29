@@ -112,6 +112,9 @@ def test_mobile_pdf_download_proof_uses_real_anchor_contract_not_download_events
     assert 'document.addEventListener("click", captureAnchorClick, true)' in source
     assert source.count("document.removeEventListener(") == 2
     assert "window.__nicoAcceptancePdfClickCapture" in source
+    assert "window.__nicoReviewPdfAnchorClickCount" in source
+    assert "assert anchor_click_count == 1" in source
+    assert 'browser_context.on("request", observe_gesture_request)' not in source
     assert "MutationObserver" in source
     assert 'data-nico-review-pdf-download="true"' in source
     assert "window.__nicoReviewPdfDownloadHref" in source

@@ -87,7 +87,8 @@ def test_production_workflows_execute_non_retrying_download_entry_points() -> No
     assert 'payload["terminal_observation"]["legacy_markdown_get_count"] == 0' in mobile
     assert 'payload["terminal_observation"]["markdown_action_success_count"] == 2' in mobile
     assert 'payload["ui_review_pdf_lifecycle_contract_verified"] is True' in mobile
-    assert 'payload["ui_review_pdf_user_gesture_request_count"] == 1' in mobile
+    assert 'payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1' in mobile
+    assert 'payload["ui_review_pdf_anchor_click_observation_verified"] is True' in mobile
     assert "python scripts/mobile_restart_live_acceptance_v1.py" not in mobile
 
     assert "python scripts/mobile_restart_live_acceptance_v6.py" in ios
@@ -107,5 +108,6 @@ def test_production_workflows_execute_non_retrying_download_entry_points() -> No
     assert 'payload["terminal_observation"]["legacy_markdown_get_count"] == 0' in ios
     assert 'payload["terminal_observation"]["markdown_action_success_count"] == 2' in ios
     assert 'payload["ui_review_pdf_lifecycle_contract_verified"] is True' in ios
-    assert 'payload["ui_review_pdf_user_gesture_request_count"] == 1' in ios
+    assert 'payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1' in ios
+    assert 'payload["ui_review_pdf_anchor_click_observation_verified"] is True' in ios
     assert "python scripts/mobile_restart_live_acceptance_v2.py" not in ios

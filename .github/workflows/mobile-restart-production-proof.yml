@@ -435,7 +435,8 @@ jobs:
           assert payload["pdf_artifact_hash_header_verified"] is True
           assert payload["pdf_canonical_truth_digest_verified"] is True
           assert payload["ui_review_pdf_download_verified"] is True
-          assert payload["ui_review_pdf_user_gesture_request_count"] == 1
+          assert payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1
+          assert payload["ui_review_pdf_anchor_click_observation_verified"] is True
           assert payload["ui_review_pdf_signature_verified"] is True
           assert payload["ui_review_pdf_artifact_hash_header_verified"] is True
           assert payload["ui_review_pdf_canonical_truth_digest_verified"] is True

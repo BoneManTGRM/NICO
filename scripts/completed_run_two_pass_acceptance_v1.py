@@ -56,7 +56,8 @@ def _observe_terminal(
     duration = time.monotonic() - started
     assert duration >= seconds
     for item in (first_pdf, second_pdf):
-        assert item["ui_review_pdf_user_gesture_request_count"] == 1, item
+        assert item["ui_review_pdf_user_gesture_anchor_click_count"] == 1, item
+        assert item["ui_review_pdf_anchor_click_observation_verified"] is True, item
         assert item["ui_review_pdf_signature_verified"] is True, item
         assert item["ui_review_pdf_exact_run_response_verified"] is True, item
         assert item["ui_review_pdf_artifact_hash_header_verified"] is True, item
@@ -101,11 +102,11 @@ def _observe_terminal(
     assert not unexpected, unexpected
     assert proof["legacy_markdown_get_count"] == 0, proof
     assert proof["markdown_action_success_count"] == 2, proof
-    pdf_user_gesture_get_count = sum(
-        int(item["ui_review_pdf_user_gesture_request_count"])
+    pdf_anchor_click_count = sum(
+        int(item["ui_review_pdf_user_gesture_anchor_click_count"])
         for item in (first_pdf, second_pdf)
     )
-    assert pdf_user_gesture_get_count == 2
+    assert pdf_anchor_click_count == 2
     proof["desktop_viewport_verified"] = True
     proof["observed_seconds_including_pdf_actions"] = round(duration, 2)
     proof["visible_pdf_action_count"] = 2
@@ -113,7 +114,7 @@ def _observe_terminal(
     proof["pdf_ui_action_digests_stable"] = True
     proof["pdf_ui_actions_exact_run_bound"] = True
     proof["pdf_ui_actions_network_bounded"] = True
-    proof["pdf_ui_action_browser_get_count"] = pdf_user_gesture_get_count
+    proof["pdf_ui_action_anchor_click_count"] = pdf_anchor_click_count
     proof["network_request_count_including_pdf_actions"] = len(observed)
     proof["unexpected_request_count_including_pdf_actions"] = len(unexpected)
     proof["final_pdf_artifact"] = second_pdf
