@@ -25,6 +25,9 @@ from comprehensive_production_run_handoff_v1 import (
     source_binding_marker,
 )
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
+from nico.spanish_client_evidence_summary_contract_v1 import (
+    client_evidence_summary_has_five_fields,
+)
 import spanish_comprehensive_live_acceptance_v1 as base
 import spanish_comprehensive_live_acceptance_v2 as telemetry
 from provider_neutral_repository_locator_contract_v1 import SPANISH_REPOSITORY_LABEL
@@ -35,6 +38,7 @@ SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"
 SPANISH_TERMINAL_REPORT = "Completa"
 SPANISH_MATURITY_LABELS = {"Excepcional", "Sólido", "Moderado", "Débil", "Crítico"}
 FORBIDDEN_ENGLISH_MATURITY_LABELS = {"Exceptional", "Strong", "Moderate", "Weak", "Critical"}
+LOCALIZED_PDF_TIMEOUT_MS = 300_000
 
 PROOF_CLIENT_NAME = "Cody Jenkins"
 PROOF_PROJECT_NAME = "NICO Audit"
@@ -328,7 +332,7 @@ def _fetch_localized_pdf(
     response = page.request.get(
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf",
         headers={"Accept": "application/pdf", "Cache-Control": "no-store"},
-        timeout=120_000,
+        timeout=LOCALIZED_PDF_TIMEOUT_MS,
     )
     pdf_bytes = response.body()
     assert response.ok, (
@@ -379,56 +383,12 @@ def _fetch_localized_pdf(
             "missing_commercial_metadata": expected,
         }
 
-    spanish = report_language == "es-MX"
-    summary_heading = (
-        "Resumen de evidencia del cliente" if spanish else "Client Evidence Summary"
-    )
-    following_heading = (
-        "Separación de ejecución y disposición"
-        if spanish
-        else "Execution and disposition are separate"
-    )
-    summary_labels = (
-        (
-            "Nombre del cliente",
-            "Nombre del proyecto",
-            "Contacto técnico principal",
-            "Método de acceso",
-            "Alcance autorizado",
-        )
-        if spanish
-        else (
-            "Client name",
-            "Project name",
-            "Primary technical contact",
-            "Access method",
-            "Authorized scope",
-        )
-    )
     summary_values = tuple(_expected_engagement_metadata().values())
-    summary_verified = False
-    search_at = 0
-    while True:
-        heading_at = rendered_compact.find(summary_heading, search_at)
-        if heading_at < 0:
-            break
-        following_at = rendered_compact.find(
-            following_heading,
-            heading_at + len(summary_heading),
-        )
-        if following_at < 0:
-            search_at = heading_at + len(summary_heading)
-            continue
-        window = rendered_compact[heading_at:following_at]
-        label_positions = [window.find(label) for label in summary_labels]
-        if (
-            all(position >= 0 for position in label_positions)
-            and label_positions == sorted(label_positions)
-            and all(value in window for value in summary_values)
-        ):
-            summary_verified = True
-            break
-        search_at = heading_at + len(summary_heading)
+    summary_verified = client_evidence_summary_has_five_fields(
+        rendered_compact,
+        report_language=report_language,
+        expected_values=summary_values,
+    )
     assert summary_verified, {
         "report_language": report_language,
         "client_evidence_summary_five_fields_consolidated": False,

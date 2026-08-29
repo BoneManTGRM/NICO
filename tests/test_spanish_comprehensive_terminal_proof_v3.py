@@ -20,6 +20,8 @@ def test_v3_proof_binds_distinct_spanish_terminal_fields() -> None:
     assert 'terminal.get("phase") == SPANISH_TERMINAL_PHASE' in source
     assert 'terminal.get("review") == SPANISH_TERMINAL_REVIEW' in source
     assert 'terminal.get("report") == SPANISH_TERMINAL_REPORT' in source
+    assert "LOCALIZED_PDF_TIMEOUT_MS = 300_000" in source
+    assert "timeout=LOCALIZED_PDF_TIMEOUT_MS" in source
     assert "return telemetry.main(argv)" in source
 
 
