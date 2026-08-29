@@ -201,8 +201,7 @@ def _enable_native_chromium(monkeypatch: Any, recovery: ModuleType) -> None:
 
 
 def _enable_native_webkit(monkeypatch: Any, recovery: ModuleType) -> None:
-    monkeypatch.setenv(recovery.HEADED_WEBKIT_ENV, "1")
-    monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, "1")
 
 
 def test_clipboard_permissions_are_granted_only_to_chromium(monkeypatch: Any) -> None:
@@ -419,66 +418,45 @@ def test_chromium_launcher_rejects_invalid_mode_or_missing_display(
         recovery._launch_chromium(playwright)
 
 
-def test_headless_webkit_fails_before_claiming_visibility(monkeypatch: Any) -> None:
+def test_unprepared_webkit_fails_before_claiming_visibility(monkeypatch: Any) -> None:
     recovery = _load_recovery(monkeypatch)
-    monkeypatch.delenv(recovery.HEADED_WEBKIT_ENV, raising=False)
+    monkeypatch.delenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, raising=False)
     page = _Page()
     context = _WebKitContext(page)
 
     with pytest.raises(
         RuntimeError,
-        match="webkit_visibility_proof_requires_headed_browser_under_xvfb",
+        match="webkit_visibility_proof_requires_prepared_runtime",
     ):
         recovery._prove_visibility_hidden_visible(page, context, timeout_ms=2_000)
 
     assert page.visibility == "visible"
 
 
-def test_headed_webkit_uses_native_x11_window_visibility(
+def test_prepared_webkit_uses_native_tab_visibility(
     monkeypatch: Any,
 ) -> None:
     recovery = _load_recovery(monkeypatch)
     _enable_native_webkit(monkeypatch, recovery)
     page = _Page()
     context = _WebKitContext(page)
-    mappings: list[tuple[list[int], bool]] = []
-
-    monkeypatch.setattr(
-        recovery,
-        "_visible_webkit_window_ids",
-        lambda *, timeout_ms: [41],
-    )
-
-    def set_visibility(
-        window_ids: list[int],
-        *,
-        visible: bool,
-        timeout_ms: int,
-    ) -> None:
-        assert timeout_ms == 2_000
-        mappings.append((list(window_ids), visible))
-        page.set_visibility("visible" if visible else "hidden")
-
-    monkeypatch.setattr(recovery, "_set_webkit_window_visibility", set_visibility)
-
     proof = recovery._prove_visibility_hidden_visible(page, context, timeout_ms=2_000)
 
-    assert context.background.closed is False
-    assert mappings == [([41], False), ([41], True)]
+    assert context.background.closed is True
     assert proof["browser_engine"] == "webkit"
-    assert proof["browser_launch_mode"] == "headed_xvfb"
+    assert proof["browser_launch_mode"] == "headless"
     assert proof["visibility_transition_mechanism"] == (
-        "x11_window_minimize_activate"
+        "browser_tab_activation_without_forced_active_emulation"
     )
     assert proof["native_visibility_runtime"] == (
-        "nico.x11_window_manager_visibility.v1"
+        "nico.playwright_webkit_native_visibility.v1"
     )
-    assert proof["webkit_window_ids"] == [41]
+    assert proof["playwright_active_and_focused_override_enabled"] is False
     assert proof["observed_visibility_transitions"] == ["hidden", "visible"]
     assert page.visibility == "visible"
 
 
-def test_webkit_launcher_requires_display_and_xdotool(monkeypatch: Any) -> None:
+def test_webkit_launcher_requires_prepared_runtime(monkeypatch: Any) -> None:
     recovery = _load_recovery(monkeypatch)
     calls: list[bool] = []
     playwright = SimpleNamespace(
@@ -487,61 +465,23 @@ def test_webkit_launcher_requires_display_and_xdotool(monkeypatch: Any) -> None:
         )
     )
 
-    monkeypatch.delenv(recovery.HEADED_WEBKIT_ENV, raising=False)
+    monkeypatch.delenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, raising=False)
+    with pytest.raises(
+        RuntimeError,
+        match="webkit_visibility_proof_requires_prepared_runtime",
+    ):
+        recovery._launch_webkit(playwright)
+
+    monkeypatch.setenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, "yes")
+    with pytest.raises(
+        RuntimeError,
+        match="nico_proof_webkit_native_visibility_setting_invalid",
+    ):
+        recovery._launch_webkit(playwright)
+
+    monkeypatch.setenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, "1")
     recovery._launch_webkit(playwright)
-
-    monkeypatch.setenv(recovery.HEADED_WEBKIT_ENV, "yes")
-    with pytest.raises(RuntimeError, match="nico_proof_headed_webkit_setting_invalid"):
-        recovery._launch_webkit(playwright)
-
-    monkeypatch.setenv(recovery.HEADED_WEBKIT_ENV, "1")
-    monkeypatch.delenv("DISPLAY", raising=False)
-    with pytest.raises(RuntimeError, match="headed_webkit_proof_requires_x_display"):
-        recovery._launch_webkit(playwright)
-
-    monkeypatch.setenv("DISPLAY", ":99")
-    monkeypatch.setattr(recovery.shutil, "which", lambda _name: None)
-    with pytest.raises(RuntimeError, match="headed_webkit_proof_requires_xdotool"):
-        recovery._launch_webkit(playwright)
-
-    monkeypatch.setattr(recovery.shutil, "which", lambda _name: "/usr/bin/xdotool")
-    recovery._launch_webkit(playwright)
-    assert calls == [True, False]
-
-
-def test_webkit_window_commands_are_bounded_and_fail_closed(monkeypatch: Any) -> None:
-    recovery = _load_recovery(monkeypatch)
-    calls: list[list[str]] = []
-
-    monkeypatch.setattr(recovery.shutil, "which", lambda _name: "/usr/bin/xdotool")
-
-    def run(command: list[str], **kwargs: Any) -> Any:
-        calls.append(command)
-        assert kwargs["capture_output"] is True
-        assert kwargs["text"] is True
-        assert kwargs["timeout"] == 2.0
-        if command[1] == "search":
-            assert kwargs["check"] is False
-            return SimpleNamespace(returncode=0, stdout="41\n", stderr="")
-        assert kwargs["check"] is True
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(recovery.subprocess, "run", run)
-    assert recovery._visible_webkit_window_ids(timeout_ms=2_000) == [41]
-    recovery._set_webkit_window_visibility([41], visible=False, timeout_ms=2_000)
-    recovery._set_webkit_window_visibility([41], visible=True, timeout_ms=2_000)
-
-    assert calls == [
-        [
-            "/usr/bin/xdotool",
-            "search",
-            "--onlyvisible",
-            "--class",
-            "MiniBrowser",
-        ],
-        ["/usr/bin/xdotool", "windowminimize", "--sync", "41"],
-        ["/usr/bin/xdotool", "windowactivate", "--sync", "41"],
-    ]
+    assert calls == [True]
 
 
 def test_production_chromium_proofs_use_headed_browser_under_xvfb() -> None:
@@ -579,19 +519,19 @@ def test_production_chromium_proofs_use_headed_browser_under_xvfb() -> None:
         assert "_launch_chromium(playwright)" in source
 
 
-def test_production_webkit_proof_uses_native_window_visibility_under_xvfb() -> None:
+def test_production_webkit_proof_uses_prepared_native_tab_visibility() -> None:
     workflow = IOS_WORKFLOW.read_text(encoding="utf-8")
     launcher = (ROOT / "scripts/mobile_restart_live_acceptance_v2.py").read_text(
         encoding="utf-8"
     )
     lifecycle = SCRIPT.read_text(encoding="utf-8")
 
-    assert 'NICO_PROOF_HEADED_WEBKIT: "1"' in workflow
-    assert "sudo apt-get install --no-install-recommends -y openbox xdotool" in workflow
-    assert "command -v xvfb-run" in workflow
-    assert "command -v xdotool" in workflow
+    assert 'NICO_PROOF_WEBKIT_NATIVE_VISIBILITY: "1"' in workflow
+    assert "python scripts/prepare_playwright_webkit_native_visibility_v1.py" in workflow
     assert "python -m pytest -q --noconftest" in workflow
-    assert "xvfb-run -a bash -c" in workflow
+    assert "NICO_PROOF_" + "HEADED_WEBKIT" not in workflow
+    assert "open" + "box" not in workflow
+    assert "xdo" + "tool" not in workflow
     assert "python scripts/mobile_restart_live_acceptance_v6.py" in workflow
     assert "_launch_webkit(playwright)" in launcher
     assert "playwright.webkit.launch(headless=True)" not in launcher
@@ -697,8 +637,8 @@ def test_installed_headed_chromium_observes_real_browser_visibility() -> None:
             browser.close()
 
 
-def test_installed_headed_webkit_observes_real_browser_visibility() -> None:
-    """Exercise the pinned headed WebKit/X11 lifecycle on PR CI and production."""
+def test_installed_webkit_observes_real_browser_visibility() -> None:
+    """Exercise the prepared pinned WebKit tab lifecycle on PR CI."""
 
     sync_api = pytest.importorskip("playwright.sync_api")
     scripts = str(ROOT / "scripts")
@@ -711,8 +651,8 @@ def test_installed_headed_webkit_observes_real_browser_visibility() -> None:
     assert spec is not None and spec.loader is not None
     recovery = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(recovery)
-    if not recovery._headed_webkit_requested():
-        pytest.skip("Headed WebKit proof mode is enabled by the iOS workflow")
+    if not recovery._webkit_native_visibility_requested():
+        pytest.skip("Prepared WebKit proof mode is enabled by the iOS workflow")
 
     with sync_api.sync_playwright() as playwright:
         browser = recovery._launch_webkit(playwright)
@@ -728,14 +668,14 @@ def test_installed_headed_webkit_observes_real_browser_visibility() -> None:
             )
 
             assert proof["browser_engine"] == "webkit"
-            assert proof["browser_launch_mode"] == "headed_xvfb"
+            assert proof["browser_launch_mode"] == "headless"
             assert proof["visibility_transition_mechanism"] == (
-                "x11_window_minimize_activate"
+                "browser_tab_activation_without_forced_active_emulation"
             )
             assert proof["native_visibility_runtime"] == (
-                "nico.x11_window_manager_visibility.v1"
+                "nico.playwright_webkit_native_visibility.v1"
             )
-            assert len(proof["webkit_window_ids"]) == 1
+            assert proof["playwright_active_and_focused_override_enabled"] is False
             assert proof["observed_visibility_transitions"][-2:] == [
                 "hidden",
                 "visible",
