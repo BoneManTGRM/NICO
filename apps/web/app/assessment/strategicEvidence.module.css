@@ -413,7 +413,7 @@
 }
 
 .evidenceTextareaLabel {
-  text-transform: capitalize;
+  text-transform: none;
 }
 
 .evidenceTextareaLabel small {
