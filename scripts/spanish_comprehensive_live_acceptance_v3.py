@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from pypdf import PdfReader
 
 # Release automation invokes this file by path, which otherwise exposes only the
@@ -38,7 +39,8 @@ SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"
 SPANISH_TERMINAL_REPORT = "Completa"
 SPANISH_MATURITY_LABELS = {"Excepcional", "Sólido", "Moderado", "Débil", "Crítico"}
 FORBIDDEN_ENGLISH_MATURITY_LABELS = {"Exceptional", "Strong", "Moderate", "Weak", "Critical"}
-LOCALIZED_PDF_TIMEOUT_MS = 300_000
+LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS = 300.0
+LOCALIZED_PDF_READ_TIMEOUT_SECONDS = 300.0
 
 PROOF_CLIENT_NAME = "Cody Jenkins"
 PROOF_PROJECT_NAME = "NICO Audit"
@@ -323,20 +325,34 @@ def _fetch_and_verify_durable_engagement(
 
 
 def _fetch_localized_pdf(
-    page: Any,
     *,
     frontend_origin: str,
     run_id: str,
     report_language: str,
 ) -> dict[str, Any]:
-    response = page.request.get(
-        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf",
-        headers={"Accept": "application/pdf", "Cache-Control": "no-store"},
-        timeout=LOCALIZED_PDF_TIMEOUT_MS,
-    )
-    pdf_bytes = response.body()
-    assert response.ok, (
-        f"Same-run localized {report_language} PDF returned HTTP {response.status}"
+    transport = httpx.HTTPTransport(verify=True, trust_env=False, retries=0)
+    with httpx.Client(
+        transport=transport,
+        timeout=httpx.Timeout(
+            connect=LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS,
+            read=LOCALIZED_PDF_READ_TIMEOUT_SECONDS,
+            write=30.0,
+            pool=30.0,
+        ),
+        follow_redirects=False,
+        trust_env=False,
+    ) as client:
+        response = client.get(
+            f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf",
+            headers={
+                "Accept": "application/pdf",
+                "Accept-Encoding": "identity",
+                "Cache-Control": "no-store",
+            },
+        )
+        pdf_bytes = response.content
+    assert response.status_code == 200, (
+        f"Same-run localized {report_language} PDF returned HTTP {response.status_code}"
     )
     assert pdf_bytes.startswith(b"%PDF"), f"{report_language} report was not a PDF"
     assert response.headers.get("x-nico-run-id") == run_id
@@ -510,13 +526,11 @@ def _verify_localized_spanish_terminal_artifacts(
         }
 
     spanish_pdf = _fetch_localized_pdf(
-        page,
         frontend_origin=frontend_origin,
         run_id=run_id,
         report_language="es-MX",
     )
     english_pdf = _fetch_localized_pdf(
-        page,
         frontend_origin=frontend_origin,
         run_id=run_id,
         report_language="en",
