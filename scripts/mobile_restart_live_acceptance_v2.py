@@ -223,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     args = recovery.parse_args(argv)
     try:
         with sync_playwright() as playwright:
-            raw_browser = playwright.webkit.launch(headless=True)
+            raw_browser = recovery._launch_webkit(playwright)
             browser = _IPhoneBrowser(raw_browser)
             try:
                 failure_layouts = failure_layout.prove_failure_layouts(browser, args)

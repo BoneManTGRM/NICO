@@ -36,6 +36,8 @@ BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 HEADED_CHROMIUM_ENV = "NICO_PROOF_HEADED_CHROMIUM"
 NATIVE_VISIBILITY_ENV = "NICO_PROOF_NATIVE_VISIBILITY"
 NATIVE_VISIBILITY_RUNTIME = "nico.playwright_native_visibility.v1"
+WEBKIT_NATIVE_VISIBILITY_ENV = "NICO_PROOF_WEBKIT_NATIVE_VISIBILITY"
+WEBKIT_NATIVE_VISIBILITY_RUNTIME = "nico.playwright_webkit_native_visibility.v1"
 TERMINAL_PHASES = {
     "Internal review required",
     "Revisión interna requerida",
@@ -347,6 +349,13 @@ def _native_visibility_requested() -> bool:
     return configured == "1"
 
 
+def _webkit_native_visibility_requested() -> bool:
+    configured = os.getenv(WEBKIT_NATIVE_VISIBILITY_ENV, "").strip()
+    if configured not in {"", "0", "1"}:
+        raise RuntimeError("nico_proof_webkit_native_visibility_setting_invalid")
+    return configured == "1"
+
+
 def _grant_supported_clipboard_permissions(context: Any, *, origin: str) -> str:
     """Grant only the clipboard permissions supported by the active engine.
 
@@ -381,6 +390,12 @@ def _launch_chromium(playwright: Any) -> Any:
             "headed_chromium_proof_requires_native_visibility_runtime"
         )
     return playwright.chromium.launch(headless=not headed)
+
+
+def _launch_webkit(playwright: Any) -> Any:
+    if not _webkit_native_visibility_requested():
+        raise RuntimeError("webkit_visibility_proof_requires_prepared_runtime")
+    return playwright.webkit.launch(headless=True)
 
 
 def _prove_visibility_hidden_visible(
@@ -423,6 +438,12 @@ def _prove_visibility_hidden_visible(
     if browser_engine == "chromium" and not _native_visibility_requested():
         raise RuntimeError(
             "chromium_visibility_proof_requires_native_visibility_runtime"
+        )
+    if browser_engine == "webkit" and not _webkit_native_visibility_requested():
+        raise RuntimeError("webkit_visibility_proof_requires_prepared_runtime")
+    if browser_engine not in {"chromium", "webkit"}:
+        raise RuntimeError(
+            f"unsupported_visibility_browser_engine:{browser_engine or 'unknown'}"
         )
     subject_session = None
     background_session = None
@@ -525,7 +546,7 @@ def _prove_visibility_hidden_visible(
     mechanism = (
         "opener_tab_activation_without_playwright_focus_emulation"
         if browser_engine == "chromium"
-        else "browser_tab_activation"
+        else "webkit_protocol_active_and_focused_transition"
     )
     assert hidden == "hidden" and visible == "visible", transitions
     assert transitions[-2:] == ["hidden", "visible"], transitions
@@ -541,10 +562,20 @@ def _prove_visibility_hidden_visible(
         ),
         "visibility_transition_mechanism": mechanism,
         "native_visibility_runtime": (
-            NATIVE_VISIBILITY_RUNTIME if browser_engine == "chromium" else "native"
+            NATIVE_VISIBILITY_RUNTIME
+            if browser_engine == "chromium"
+            else WEBKIT_NATIVE_VISIBILITY_RUNTIME
         ),
         "playwright_focus_emulation_enabled": (
             False if browser_engine == "chromium" else None
+        ),
+        "playwright_forced_active_override_enabled": (
+            False if browser_engine == "webkit" else None
+        ),
+        "webkit_active_transition_protocol": (
+            "Emulation.setActiveAndFocused"
+            if browser_engine == "webkit"
+            else None
         ),
         "shared_native_window": (
             subject_window_id == background_window_id

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/mobile_restart_live_acceptance_v1.py"
 SPANISH_WORKFLOW = ROOT / ".github/workflows/spanish-comprehensive-production-proof.yml"
 MOBILE_WORKFLOW = ROOT / ".github/workflows/mobile-restart-production-proof.yml"
+IOS_WORKFLOW = ROOT / ".github/workflows/ios-webkit-paint-proof.yml"
 
 
 def _load_recovery(monkeypatch: Any) -> ModuleType:
@@ -197,6 +198,10 @@ class _PermissionContext:
 def _enable_native_chromium(monkeypatch: Any, recovery: ModuleType) -> None:
     monkeypatch.setenv(recovery.HEADED_CHROMIUM_ENV, "1")
     monkeypatch.setenv(recovery.NATIVE_VISIBILITY_ENV, "1")
+
+
+def _enable_native_webkit(monkeypatch: Any, recovery: ModuleType) -> None:
+    monkeypatch.setenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, "1")
 
 
 def test_clipboard_permissions_are_granted_only_to_chromium(monkeypatch: Any) -> None:
@@ -413,19 +418,73 @@ def test_chromium_launcher_rejects_invalid_mode_or_missing_display(
         recovery._launch_chromium(playwright)
 
 
-def test_webkit_retains_native_tab_visibility_transition(monkeypatch: Any) -> None:
+def test_unprepared_webkit_fails_before_claiming_visibility(monkeypatch: Any) -> None:
     recovery = _load_recovery(monkeypatch)
+    monkeypatch.delenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, raising=False)
     page = _Page()
     context = _WebKitContext(page)
 
+    with pytest.raises(
+        RuntimeError,
+        match="webkit_visibility_proof_requires_prepared_runtime",
+    ):
+        recovery._prove_visibility_hidden_visible(page, context, timeout_ms=2_000)
+
+    assert page.visibility == "visible"
+
+
+def test_prepared_webkit_uses_native_tab_visibility(
+    monkeypatch: Any,
+) -> None:
+    recovery = _load_recovery(monkeypatch)
+    _enable_native_webkit(monkeypatch, recovery)
+    page = _Page()
+    context = _WebKitContext(page)
     proof = recovery._prove_visibility_hidden_visible(page, context, timeout_ms=2_000)
 
     assert context.background.closed is True
     assert proof["browser_engine"] == "webkit"
     assert proof["browser_launch_mode"] == "headless"
-    assert proof["visibility_transition_mechanism"] == "browser_tab_activation"
+    assert proof["visibility_transition_mechanism"] == (
+        "webkit_protocol_active_and_focused_transition"
+    )
+    assert proof["native_visibility_runtime"] == (
+        "nico.playwright_webkit_native_visibility.v1"
+    )
+    assert proof["playwright_forced_active_override_enabled"] is False
+    assert proof["webkit_active_transition_protocol"] == (
+        "Emulation.setActiveAndFocused"
+    )
     assert proof["observed_visibility_transitions"] == ["hidden", "visible"]
     assert page.visibility == "visible"
+
+
+def test_webkit_launcher_requires_prepared_runtime(monkeypatch: Any) -> None:
+    recovery = _load_recovery(monkeypatch)
+    calls: list[bool] = []
+    playwright = SimpleNamespace(
+        webkit=SimpleNamespace(
+            launch=lambda *, headless: calls.append(headless) or object()
+        )
+    )
+
+    monkeypatch.delenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, raising=False)
+    with pytest.raises(
+        RuntimeError,
+        match="webkit_visibility_proof_requires_prepared_runtime",
+    ):
+        recovery._launch_webkit(playwright)
+
+    monkeypatch.setenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, "yes")
+    with pytest.raises(
+        RuntimeError,
+        match="nico_proof_webkit_native_visibility_setting_invalid",
+    ):
+        recovery._launch_webkit(playwright)
+
+    monkeypatch.setenv(recovery.WEBKIT_NATIVE_VISIBILITY_ENV, "1")
+    recovery._launch_webkit(playwright)
+    assert calls == [True]
 
 
 def test_production_chromium_proofs_use_headed_browser_under_xvfb() -> None:
@@ -461,6 +520,26 @@ def test_production_chromium_proofs_use_headed_browser_under_xvfb() -> None:
         source = launcher.read_text(encoding="utf-8")
         assert ".chromium.launch(headless=True)" not in source
         assert "_launch_chromium(playwright)" in source
+
+
+def test_production_webkit_proof_uses_prepared_native_tab_visibility() -> None:
+    workflow = IOS_WORKFLOW.read_text(encoding="utf-8")
+    launcher = (ROOT / "scripts/mobile_restart_live_acceptance_v2.py").read_text(
+        encoding="utf-8"
+    )
+    lifecycle = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'NICO_PROOF_WEBKIT_NATIVE_VISIBILITY: "1"' in workflow
+    assert "python scripts/prepare_playwright_webkit_native_visibility_v1.py" in workflow
+    assert "python -m pytest -q --noconftest" in workflow
+    assert "NICO_PROOF_" + "HEADED_WEBKIT" not in workflow
+    assert "open" + "box" not in workflow
+    assert "xdo" + "tool" not in workflow
+    assert "python scripts/mobile_restart_live_acceptance_v6.py" in workflow
+    assert "_launch_webkit(playwright)" in launcher
+    assert "playwright.webkit.launch(headless=True)" not in launcher
+    assert "Object.defineProperty(document" not in lifecycle
+    assert "dispatchEvent(new Event('visibilitychange'))" not in lifecycle
 
 
 def test_production_final_gates_use_authoritative_visibility_mechanism() -> None:
@@ -553,6 +632,57 @@ def test_installed_headed_chromium_observes_real_browser_visibility() -> None:
                 timeout_ms=10_000,
             )
             assert repeated["observed_visibility_transitions"] == [
+                "hidden",
+                "visible",
+            ]
+            assert page.evaluate("() => document.visibilityState") == "visible"
+        finally:
+            browser.close()
+
+
+def test_installed_webkit_observes_real_browser_visibility() -> None:
+    """Exercise the prepared pinned WebKit tab lifecycle on PR CI."""
+
+    sync_api = pytest.importorskip("playwright.sync_api")
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    spec = importlib.util.spec_from_file_location(
+        "nico_mobile_visibility_webkit_integration_subject",
+        SCRIPT,
+    )
+    assert spec is not None and spec.loader is not None
+    recovery = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(recovery)
+    if not recovery._webkit_native_visibility_requested():
+        pytest.skip("Prepared WebKit proof mode is enabled by the iOS workflow")
+
+    with sync_api.sync_playwright() as playwright:
+        browser = recovery._launch_webkit(playwright)
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            page.set_content("<main>NICO WebKit lifecycle integration proof</main>")
+
+            proof = recovery._prove_visibility_hidden_visible(
+                page,
+                context,
+                timeout_ms=10_000,
+            )
+
+            assert proof["browser_engine"] == "webkit"
+            assert proof["browser_launch_mode"] == "headless"
+            assert proof["visibility_transition_mechanism"] == (
+                "webkit_protocol_active_and_focused_transition"
+            )
+            assert proof["native_visibility_runtime"] == (
+                "nico.playwright_webkit_native_visibility.v1"
+            )
+            assert proof["playwright_forced_active_override_enabled"] is False
+            assert proof["webkit_active_transition_protocol"] == (
+                "Emulation.setActiveAndFocused"
+            )
+            assert proof["observed_visibility_transitions"][-2:] == [
                 "hidden",
                 "visible",
             ]
