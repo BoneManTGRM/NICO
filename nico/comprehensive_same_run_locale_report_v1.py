@@ -25,10 +25,11 @@ from nico.comprehensive_spanish_canonical_report_v87 import (
 from nico.decision_grade_accepted_edition_guard_v1 import validate_accepted_edition
 
 
-VERSION = "nico.comprehensive_same_run_locale_report.v2"
+VERSION = "nico.comprehensive_same_run_locale_report.v3"
 ROUTE = "/assessment/comprehensive-run/{run_id}/localized-report/{report_language}"
 PDF_ROUTE = f"{ROUTE}/pdf"
 SUPPORTED_REPORT_LANGUAGES = ("en", "es-MX")
+MAX_LOCALIZED_MARKDOWN_BYTES = 4 * 1024 * 1024
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -541,6 +542,169 @@ def _render_target(
     if report_language not in SUPPORTED_REPORT_LANGUAGES:
         raise ValueError("unsupported_report_language")
     return _assemble_target(canonical, report_language)
+
+
+def _bounded_markdown(value: Any) -> tuple[str, str]:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("localized_report_markdown_required")
+    encoded = value.encode("utf-8")
+    if len(encoded) > MAX_LOCALIZED_MARKDOWN_BYTES:
+        raise ValueError("localized_report_markdown_too_large")
+    return value, hashlib.sha256(encoded).hexdigest()
+
+
+def build_same_run_locale_markdown_projection(
+    status: Mapping[str, Any],
+    report_language: str,
+) -> dict[str, Any]:
+    """Return only the bounded Markdown view used by the assessment workspace.
+
+    The canonical package can contain tens of megabytes of JSON, HTML, manifests,
+    CSV, and base64 PDF data. Copy-Markdown callers use none of those bodies. Keeping
+    them out of this response prevents an exact-run reconnect from competing with a
+    second full artifact assembly while retaining immutable identity, canonical truth,
+    and fail-closed review/delivery lifecycle metadata.
+    """
+
+    target_language = _normalize_report_language(report_language)
+    if status.get("terminal") is not True:
+        raise ValueError("terminal_report_required")
+
+    reports = (
+        status.get("reports") if isinstance(status.get("reports"), Mapping) else {}
+    )
+    canonical = reports.get("json") if isinstance(reports.get("json"), Mapping) else {}
+    if not canonical:
+        raise ValueError("terminal_canonical_report_json_required")
+    canonical_copy = deepcopy(dict(canonical))
+    identity_binding = _validate_status_canonical_identity(status, canonical_copy)
+
+    expected_truth_sha256 = str(reports.get("canonical_truth_sha256") or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_truth_sha256):
+        raise ValueError(
+            "canonical_truth_hash_required"
+            if not expected_truth_sha256
+            else "canonical_truth_hash_invalid"
+        )
+    if not controller_module._canonical_truth_hash_integrity_bound(
+        reports,
+        canonical_copy,
+    ):
+        raise ValueError("canonical_truth_hash_mismatch")
+    canonical_truth_sha256 = expected_truth_sha256.casefold()
+
+    source_language = _normalize_report_language(identity_binding["report_language"])
+    source_lifecycle = _source_lifecycle_projection(status, reports, canonical_copy)
+    if source_lifecycle["approval_status"] == "approved_final":
+        # An approved source lifecycle may be projected only when the accepted exact
+        # byte set remains valid. Pending/rejected runs avoid this PDF decode entirely.
+        if not controller_module._final_report_package_integrity_bound(reports):
+            raise ValueError("source_report_artifact_integrity_invalid")
+        try:
+            source_pdf = base64.b64decode(
+                str(reports.get("pdf_base64") or ""), validate=True
+            )
+        except Exception as exc:
+            raise ValueError("accepted_edition_pdf_required") from exc
+        _accepted_source_binding(
+            status,
+            reports,
+            identity_binding,
+            source_language,
+            source_pdf,
+        )
+
+    regenerated = target_language != source_language
+    if regenerated:
+        localized_view = _localized_draft_view(canonical_copy, target_language)
+        from nico.phase17_canonical_artifact_rebuild_v1 import (
+            build_localized_markdown_projection,
+        )
+
+        localized = build_localized_markdown_projection({"json": localized_view})
+        localized_json = (
+            localized.get("json")
+            if isinstance(localized.get("json"), Mapping)
+            else {}
+        )
+        if not localized_json:
+            raise ValueError("localized_markdown_prepared_canonical_required")
+        if _assessment_truth_projection(localized_json) != _assessment_truth_projection(
+            canonical_copy
+        ):
+            raise ValueError("localized_assessment_truth_parity_mismatch")
+        markdown_value = localized.get("markdown")
+        artifact_lifecycle = _localized_artifact_lifecycle(
+            source_lifecycle,
+            {},
+            localized_json,
+            regenerated=True,
+        )
+    else:
+        markdown_value = reports.get("markdown")
+        artifact_lifecycle = deepcopy(source_lifecycle)
+
+    markdown, markdown_sha256 = _bounded_markdown(markdown_value)
+    if not regenerated:
+        claimed_markdown_sha256 = str(reports.get("markdown_sha256") or "").strip()
+        if claimed_markdown_sha256:
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", claimed_markdown_sha256):
+                raise ValueError("source_report_markdown_hash_invalid")
+            if claimed_markdown_sha256.casefold() != markdown_sha256:
+                raise ValueError("source_report_markdown_hash_mismatch")
+
+    source_report_id = identity_binding["report_id"]
+    return {
+        "artifact_schema": VERSION,
+        "service_id": "comprehensive",
+        "projection_kind": "localized_markdown",
+        "response_bounded": True,
+        "run_id": identity_binding["run_id"],
+        "repository": identity_binding["repository"],
+        "commit_sha": identity_binding["commit_sha"],
+        "evidence_ledger_id": identity_binding["evidence_ledger_id"],
+        "source_report_id": source_report_id,
+        "source_report_language": source_language,
+        "report_language": target_language,
+        "same_canonical_run": True,
+        "assessment_rerun": False,
+        "canonical_truth_preserved": True,
+        "canonical_truth_sha256": canonical_truth_sha256,
+        "source_integrity_sha256": str(status.get("integrity_sha256") or ""),
+        "human_review_required": source_lifecycle["human_review_required"],
+        "human_review_completed": source_lifecycle["human_review_completed"],
+        "client_delivery_allowed": source_lifecycle["client_delivery_allowed"],
+        "approval_status": source_lifecycle["approval_status"],
+        "delivery_status": source_lifecycle["delivery_status"],
+        "human_review_status": source_lifecycle["human_review_status"],
+        "client_delivery_status": source_lifecycle["client_delivery_status"],
+        "canonical_run_lifecycle": deepcopy(source_lifecycle),
+        "approval_state_mutated": False,
+        "delivery_state_mutated": False,
+        "localized_artifact_approval_invalidated": regenerated,
+        "localized_artifact_requires_new_approval": regenerated,
+        "localized_artifact_lifecycle": deepcopy(artifact_lifecycle),
+        "report": {
+            "service_id": "comprehensive",
+            "report_id": source_report_id,
+            "presentation_language": target_language,
+            "canonical_truth_sha256": canonical_truth_sha256,
+            "markdown": markdown,
+            "markdown_sha256": markdown_sha256,
+            "response_bounded": True,
+            "human_review_required": artifact_lifecycle["human_review_required"],
+            "human_review_completed": artifact_lifecycle["human_review_completed"],
+            "client_delivery_allowed": artifact_lifecycle[
+                "client_delivery_allowed"
+            ],
+            "approval_status": artifact_lifecycle["approval_status"],
+            "delivery_status": artifact_lifecycle["delivery_status"],
+            "human_review_status": artifact_lifecycle["human_review_status"],
+            "client_delivery_status": artifact_lifecycle[
+                "client_delivery_status"
+            ],
+        },
+    }
 
 
 def _safe_repository(value: Any) -> str:
@@ -1135,7 +1299,10 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
         def localized_report(run_id: str, report_language: str) -> dict[str, Any]:
             try:
                 status = _controller_status(target, run_id)
-                return build_same_run_locale_report(status, report_language)
+                return build_same_run_locale_markdown_projection(
+                    status,
+                    report_language,
+                )
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 

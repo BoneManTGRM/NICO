@@ -21,7 +21,7 @@ from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 
-VERSION = "nico.comprehensive_api_routes.v16"
+VERSION = "nico.comprehensive_api_routes.v17"
 _BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 
 COMPREHENSIVE_API_ROUTES = {
@@ -213,6 +213,8 @@ def _approved_delivery_projection(record: dict[str, Any]) -> dict[str, Any]:
 def _review_projection(
     response: dict[str, Any],
     record: dict[str, Any],
+    *,
+    include_review_artifact_identity: bool = True,
 ) -> dict[str, Any]:
     response_projection = (
         response.get("response_projection")
@@ -248,11 +250,9 @@ def _review_projection(
             and response.get("human_review_completed") is True
             else "blocked"
         )
-    projected = {
-        **response,
-        "delivery_status": delivery_status,
-        "review_artifact_identity": review_artifact_identity(record),
-    }
+    projected = {**response, "delivery_status": delivery_status}
+    if include_review_artifact_identity:
+        projected["review_artifact_identity"] = review_artifact_identity(record)
     review_decision = record.get("review_decision")
     if (
         not approval_invalidated
@@ -306,6 +306,29 @@ def _review_projection(
         public_record["client_delivery_allowed"] = allowed
         public_record["delivery_status"] = projected["delivery_status"]
     return projected
+
+
+def _status_projection(
+    controller_value: ComprehensiveApiController,
+    run_id: str,
+    browser_projection: bool,
+    operation: str = "status",
+) -> dict[str, Any]:
+    """Load and assemble an exact status response outside the ASGI event loop."""
+
+    record = _service(controller_value).load(run_id)
+    response = controller_value._response(
+        record,
+        operation=operation,
+        browser_projection=browser_projection,
+    )
+    return _review_projection(
+        response,
+        record,
+        # Public terminal consumers cannot approve an artifact and do not consume this
+        # expensive full-package digest. Reviewer/admin reads keep the exact identity.
+        include_review_artifact_identity=not browser_projection,
+    )
 
 
 def _review_queue_error(code: str, message: str) -> HTTPException:
@@ -679,16 +702,13 @@ def register_comprehensive_api_routes(
     ) -> dict[str, Any]:
         try:
             controller_value = _controller(request)
-            record = _service(controller_value).load(run_id)
-            response = controller_value._response(
-                record,
-                operation="status",
-                browser_projection=_browser_projection_requested(request),
+            response = await run_in_threadpool(
+                _status_projection,
+                controller_value,
+                run_id,
+                _browser_projection_requested(request),
             )
-            return _with_runtime_truth(
-                request,
-                _review_projection(response, record),
-            )
+            return _with_runtime_truth(request, response)
         except HTTPException:
             raise
         except Exception as exc:
@@ -704,16 +724,14 @@ def register_comprehensive_api_routes(
             payload = await request.json() if raw else {}
             controller_value = _controller(request)
             await run_in_threadpool(controller_value.continue_run, run_id, payload)
-            record = _service(controller_value).load(run_id)
-            response = controller_value._response(
-                record,
-                operation="continued",
-                browser_projection=_browser_projection_requested(request),
+            response = await run_in_threadpool(
+                _status_projection,
+                controller_value,
+                run_id,
+                _browser_projection_requested(request),
+                "continued",
             )
-            return _with_runtime_truth(
-                request,
-                _review_projection(response, record),
-            )
+            return _with_runtime_truth(request, response)
         except HTTPException:
             raise
         except Exception as exc:

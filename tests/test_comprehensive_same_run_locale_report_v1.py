@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 from nico import comprehensive_same_run_locale_report_v1 as subject
@@ -191,6 +192,275 @@ def test_source_locale_reuses_terminal_artifacts_without_rerender(monkeypatch):
     assert result["report"]["html"] == status["reports"]["html"]
     assert result["report"]["pdf_base64"] == status["reports"]["pdf_base64"]
     assert result["assessment_rerun"] is False
+
+
+def test_markdown_projection_reuses_source_without_full_artifact_render(monkeypatch):
+    status = _status(source_language="en")
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("bounded source Markdown must not render artifact bodies")
+
+    monkeypatch.setattr(subject, "_render_target", fail_if_called)
+    monkeypatch.setattr(subject, "_assemble_target", fail_if_called)
+    monkeypatch.setattr(subject, "_pdf", fail_if_called)
+    monkeypatch.setattr(subject, "render_spanish_pdf", fail_if_called)
+
+    result = subject.build_same_run_locale_markdown_projection(status, "en")
+
+    assert result["response_bounded"] is True
+    assert result["report"]["markdown"] == status["reports"]["markdown"]
+    assert result["localized_artifact_requires_new_approval"] is False
+    assert result["assessment_rerun"] is False
+    assert set(result["report"]).isdisjoint(
+        {"json", "localized_artifact_json", "html", "pdf_base64", "artifact_manifest"}
+    )
+
+
+def test_cross_locale_markdown_projection_never_invokes_pdf_or_full_assembler(
+    monkeypatch,
+):
+    from nico import phase17_canonical_artifact_rebuild_v1 as phase17
+
+    status = _status(source_language="es-MX")
+    prepared_source = phase17.build_localized_markdown_projection(
+        {"json": status["reports"]["json"]}
+    )["json"]
+    status["reports"]["json"] = prepared_source
+    status["reports"]["canonical_truth_sha256"] = subject.canonical_sha256(
+        prepared_source
+    )
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("bounded cross-locale Markdown must not build PDF/HTML")
+
+    monkeypatch.setattr(subject, "_render_target", fail_if_called)
+    monkeypatch.setattr(subject, "_assemble_target", fail_if_called)
+    monkeypatch.setattr(subject, "_pdf", fail_if_called)
+    monkeypatch.setattr(subject, "render_spanish_pdf", fail_if_called)
+
+    result = subject.build_same_run_locale_markdown_projection(status, "en")
+
+    assert result["source_report_language"] == "es-MX"
+    assert result["report_language"] == "en"
+    assert result["report"]["markdown"].startswith(
+        "# NICO Comprehensive Technical Assessment"
+    )
+    assert result["localized_artifact_requires_new_approval"] is True
+    assert result["localized_artifact_lifecycle"]["client_delivery_allowed"] is False
+    assert result["report"]["client_delivery_allowed"] is False
+
+
+@pytest.mark.parametrize(
+    ("source_language", "target_language", "required_headings"),
+    (
+        (
+            "en",
+            "es-MX",
+            (
+                "## Programa de evaluación en cuatro fases",
+                "## Resumen canónico de puntuación",
+                "## Preparación operativa y salud histórica de CI/CD",
+                "## Revisión integral del cliente",
+                "## QA funcional",
+                "## Paridad de plataformas",
+                "## Puerta de revisión humana y aceptación",
+                "## Manifiesto de artefactos del cliente",
+            ),
+        ),
+        (
+            "es-MX",
+            "en",
+            (
+                "## Four-Phase Assessment Program",
+                "## Canonical Score Summary",
+                "## CI/CD Operational Readiness and Historical Health",
+                "## Comprehensive Client Review",
+                "## Functional QA",
+                "## Platform Parity",
+                "## Human Review and Acceptance Gate",
+                "## Client Artifact Manifest",
+            ),
+        ),
+    ),
+)
+def test_real_cross_locale_markdown_runs_full_preparation_without_pdf(
+    monkeypatch,
+    source_language,
+    target_language,
+    required_headings,
+):
+    from nico import phase17_canonical_artifact_rebuild_v1 as phase17
+    from tests.test_v2_premium_report_renderer import _package
+
+    source = phase17.rebuild_client_artifacts(_package(source_language))
+    canonical = deepcopy(source["json"])
+    report_id = f"comprehensive_report_markdown_{source_language}"
+    canonical["report_id"] = report_id
+    source["json"] = canonical
+    source["report_id"] = report_id
+    source["canonical_truth_sha256"] = subject.canonical_sha256(canonical)
+    expected_markdown = phase17.rebuild_client_artifacts(
+        {"json": subject._localized_draft_view(canonical, target_language)}
+    )["markdown"]
+    identity = canonical["identity"]
+    status = {
+        "run_id": identity["run_id"],
+        "repository": identity["repository"],
+        "commit_sha": identity["commit_sha"],
+        "evidence_ledger_id": identity["evidence_ledger_id"],
+        "report_language": source_language,
+        "terminal": True,
+        "integrity_sha256": "real-prepared-run-integrity",
+        "human_review_required": True,
+        "human_review_completed": False,
+        "client_delivery_allowed": False,
+        "reports": source,
+    }
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("Markdown projection must not invoke an artifact renderer")
+
+    monkeypatch.setattr(phase17, "rebuild_single_pass_premium_artifacts", fail_if_called)
+    monkeypatch.setattr(subject, "_render_target", fail_if_called)
+    monkeypatch.setattr(subject, "_pdf", fail_if_called)
+    monkeypatch.setattr(subject, "render_spanish_pdf", fail_if_called)
+
+    result = subject.build_same_run_locale_markdown_projection(
+        status,
+        target_language,
+    )
+
+    rendered = result["report"]["markdown"]
+    assert rendered == expected_markdown
+    assert result["report"]["markdown_sha256"] == subject.hashlib.sha256(
+        expected_markdown.encode("utf-8")
+    ).hexdigest()
+    for heading in required_headings:
+        assert heading in rendered
+    assert result["evidence_ledger_id"] == identity["evidence_ledger_id"]
+    assert result["source_report_id"] == report_id
+    assert result["report"]["report_id"] == report_id
+    assert result["response_bounded"] is True
+    assert result["report"]["client_delivery_allowed"] is False
+
+
+def test_localized_markdown_route_omits_large_exact_artifact_bodies() -> None:
+    status = _status(source_language="en")
+    status["reports"]["json"]["large_internal_payload"] = "x" * (2 * 1024 * 1024)
+    status["reports"]["canonical_truth_sha256"] = subject._canonical_hash(
+        status["reports"]["json"]
+    )
+    status["reports"].update(
+        {
+            "candidate_register_json": "c" * (2 * 1024 * 1024),
+            "canonical_json": "j" * (2 * 1024 * 1024),
+            "evidence_csv": "e" * (2 * 1024 * 1024),
+        }
+    )
+    app = FastAPI()
+    app.state.comprehensive_api_controller = SimpleNamespace(
+        status_read_only=lambda _run_id: status
+    )
+    subject.install_same_run_locale_report(app)
+
+    response = TestClient(app).get(
+        "/assessment/comprehensive-run/comprun_same_run_1/localized-report/en"
+    )
+
+    assert response.status_code == 200
+    assert len(response.content) < 16 * 1024
+    payload = response.json()
+    assert payload["run_id"] == status["run_id"]
+    assert payload["commit_sha"] == status["commit_sha"]
+    assert payload["canonical_truth_sha256"] == status["reports"][
+        "canonical_truth_sha256"
+    ]
+    assert payload["response_bounded"] is True
+    assert payload["client_delivery_allowed"] is False
+    assert set(payload["report"]).isdisjoint(
+        {
+            "json",
+            "localized_artifact_json",
+            "html",
+            "pdf_base64",
+            "candidate_register_json",
+            "canonical_json",
+            "evidence_csv",
+            "artifact_manifest",
+        }
+    )
+    assert "large_internal_payload" not in response.text
+
+
+def test_markdown_projection_uses_canonical_report_id_fallback() -> None:
+    status = _status(source_language="en")
+    status["reports"].pop("report_id")
+
+    result = subject.build_same_run_locale_markdown_projection(status, "en")
+
+    assert result["source_report_id"] == status["reports"]["json"]["report_id"]
+    assert result["report"]["report_id"] == status["reports"]["json"]["report_id"]
+    assert result["evidence_ledger_id"] == status["evidence_ledger_id"]
+
+
+def test_pdf_route_does_not_use_bounded_markdown_builder(monkeypatch) -> None:
+    from fastapi import Response
+
+    status = _status(source_language="en")
+    app = FastAPI()
+    app.state.comprehensive_api_controller = SimpleNamespace(
+        status_read_only=lambda _run_id: status
+    )
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("PDF route must retain the exact PDF builder")
+
+    monkeypatch.setattr(
+        subject,
+        "build_same_run_locale_markdown_projection",
+        fail_if_called,
+    )
+    monkeypatch.setattr(
+        subject,
+        "build_same_run_locale_pdf_response",
+        lambda *_args, **_kwargs: Response(
+            content=b"%PDF-1.4\nbounded-route-test",
+            media_type="application/pdf",
+        ),
+    )
+    subject.install_same_run_locale_report(app)
+
+    response = TestClient(app).get(
+        "/assessment/comprehensive-run/comprun_same_run_1/localized-report/en/pdf"
+    )
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF")
+
+
+def test_localized_markdown_projection_fails_closed_above_response_ceiling() -> None:
+    status = _status(source_language="en")
+    status["reports"]["markdown"] = "m" * (
+        subject.MAX_LOCALIZED_MARKDOWN_BYTES + 1
+    )
+
+    with pytest.raises(ValueError, match="localized_report_markdown_too_large"):
+        subject.build_same_run_locale_markdown_projection(status, "en")
+
+
+@pytest.mark.parametrize(
+    ("claim", "reason"),
+    (
+        ("not-a-sha", "source_report_markdown_hash_invalid"),
+        ("0" * 64, "source_report_markdown_hash_mismatch"),
+    ),
+)
+def test_source_markdown_digest_claim_fails_closed(claim: str, reason: str) -> None:
+    status = _status(source_language="en")
+    status["reports"]["markdown_sha256"] = claim
+
+    with pytest.raises(ValueError, match=reason):
+        subject.build_same_run_locale_markdown_projection(status, "en")
 
 
 def test_presentation_approval_fields_cannot_promote_authoritative_pending_run() -> None:

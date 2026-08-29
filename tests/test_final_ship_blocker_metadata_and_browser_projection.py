@@ -120,7 +120,8 @@ def test_browser_projection_header_is_wired_end_to_end() -> None:
     assert 'headers.set("X-NICO-Browser-Projection", BROWSER_PROJECTION_VALUE);' in proxy
     assert '_BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"' in routes
     assert 'request.headers.get("x-nico-browser-projection")' in routes
-    assert routes.count("browser_projection=_browser_projection_requested(request)") >= 3
+    assert routes.count("_browser_projection_requested(request)") >= 4
+    assert "include_review_artifact_identity=not browser_projection" in routes
 
 
 def test_exact_run_views_unmount_optional_evidence_editor() -> None:

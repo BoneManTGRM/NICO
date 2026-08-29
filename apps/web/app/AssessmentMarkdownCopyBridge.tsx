@@ -1,10 +1,7 @@
 "use client";
 
 import {useEffect, useRef} from "react";
-import {
-  REPORT_LOCALE_CHANGE_EVENT,
-  reportLanguageForRequest,
-} from "./assessment/assessmentLocale";
+import {reportLanguageForRequest} from "./assessment/assessmentLocale";
 
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const COPY_MARKDOWN_LABEL = /(?:copy\s+markdown|copiar\s+markdown)/i;
@@ -185,18 +182,6 @@ export default function AssessmentMarkdownCopyBridge() {
       return cache.current;
     }
 
-    function prefetch(): void {
-      const actions = document.querySelector(REPORT_ACTIONS_SELECTOR);
-      if (!actions) return;
-      if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
-      if (!enabledCopyButton(actions)) return;
-      const entry = entryForVisibleRun(actions);
-      if (!entry || entry.markdown || entry.promise) return;
-      void loadMarkdown(entry).catch(() => {
-        // An explicit user click retries and renders the localized failure state.
-      });
-    }
-
     async function handleCopyMarkdownClick(event: MouseEvent): Promise<void> {
       const target = event.target instanceof Element ? event.target : null;
       const button = target?.closest("button");
@@ -232,17 +217,23 @@ export default function AssessmentMarkdownCopyBridge() {
             : "Preparing Markdown. When it is ready, click Copy Markdown again.",
         );
         void loadMarkdown(entry)
-          .then(() => showStatus(
-            actions,
-            spanish() ? "Markdown listo. Pulsa Copiar Markdown." : "Markdown ready. Click Copy Markdown.",
-          ))
-          .catch(() => showStatus(
-            actions,
-            spanish()
-              ? "No se pudo preparar Markdown. Vuelve a intentarlo."
-              : "Markdown could not be prepared. Try again.",
-            true,
-          ));
+          .then(() => {
+            guardedUntil.current = 0;
+            showStatus(
+              actions,
+              spanish() ? "Markdown listo. Pulsa Copiar Markdown." : "Markdown ready. Click Copy Markdown.",
+            );
+          })
+          .catch(() => {
+            guardedUntil.current = 0;
+            showStatus(
+              actions,
+              spanish()
+                ? "No se pudo preparar Markdown. Vuelve a intentarlo."
+                : "Markdown could not be prepared. Try again.",
+              true,
+            );
+          });
         return;
       }
 
@@ -261,20 +252,9 @@ export default function AssessmentMarkdownCopyBridge() {
     }
 
     document.addEventListener("click", handleCopyMarkdownClick, true);
-    window.addEventListener(REPORT_LOCALE_CHANGE_EVENT, prefetch);
-    const observer = new MutationObserver(() => window.requestAnimationFrame(prefetch));
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ["disabled", "data-assessment-report-ready", "data-run-id", "data-commit-sha"],
-    });
-    prefetch();
 
     return () => {
       document.removeEventListener("click", handleCopyMarkdownClick, true);
-      window.removeEventListener(REPORT_LOCALE_CHANGE_EVENT, prefetch);
-      observer.disconnect();
     };
   }, []);
 
