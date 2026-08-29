@@ -546,7 +546,7 @@ def _prove_visibility_hidden_visible(
     mechanism = (
         "opener_tab_activation_without_playwright_focus_emulation"
         if browser_engine == "chromium"
-        else "browser_tab_activation_without_forced_active_emulation"
+        else "webkit_protocol_active_and_focused_transition"
     )
     assert hidden == "hidden" and visible == "visible", transitions
     assert transitions[-2:] == ["hidden", "visible"], transitions
@@ -569,8 +569,13 @@ def _prove_visibility_hidden_visible(
         "playwright_focus_emulation_enabled": (
             False if browser_engine == "chromium" else None
         ),
-        "playwright_active_and_focused_override_enabled": (
+        "playwright_forced_active_override_enabled": (
             False if browser_engine == "webkit" else None
+        ),
+        "webkit_active_transition_protocol": (
+            "Emulation.setActiveAndFocused"
+            if browser_engine == "webkit"
+            else None
         ),
         "shared_native_window": (
             subject_window_id == background_window_id

@@ -434,9 +434,10 @@ jobs:
           ):
               assert visibility["browser_engine"] == "webkit"
               assert visibility["browser_launch_mode"] == "headless"
-              assert visibility["visibility_transition_mechanism"] == "browser_tab_activation_without_forced_active_emulation"
+              assert visibility["visibility_transition_mechanism"] == "webkit_protocol_active_and_focused_transition"
               assert visibility["native_visibility_runtime"] == "nico.playwright_webkit_native_visibility.v1"
-              assert visibility["playwright_active_and_focused_override_enabled"] is False
+              assert visibility["playwright_forced_active_override_enabled"] is False
+              assert visibility["webkit_active_transition_protocol"] == "Emulation.setActiveAndFocused"
               assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]
               assert visibility["document_hidden_observed"] is True
               assert visibility["document_visible_after_foreground"] is True

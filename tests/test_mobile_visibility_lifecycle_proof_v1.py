@@ -446,12 +446,15 @@ def test_prepared_webkit_uses_native_tab_visibility(
     assert proof["browser_engine"] == "webkit"
     assert proof["browser_launch_mode"] == "headless"
     assert proof["visibility_transition_mechanism"] == (
-        "browser_tab_activation_without_forced_active_emulation"
+        "webkit_protocol_active_and_focused_transition"
     )
     assert proof["native_visibility_runtime"] == (
         "nico.playwright_webkit_native_visibility.v1"
     )
-    assert proof["playwright_active_and_focused_override_enabled"] is False
+    assert proof["playwright_forced_active_override_enabled"] is False
+    assert proof["webkit_active_transition_protocol"] == (
+        "Emulation.setActiveAndFocused"
+    )
     assert proof["observed_visibility_transitions"] == ["hidden", "visible"]
     assert page.visibility == "visible"
 
@@ -670,12 +673,15 @@ def test_installed_webkit_observes_real_browser_visibility() -> None:
             assert proof["browser_engine"] == "webkit"
             assert proof["browser_launch_mode"] == "headless"
             assert proof["visibility_transition_mechanism"] == (
-                "browser_tab_activation_without_forced_active_emulation"
+                "webkit_protocol_active_and_focused_transition"
             )
             assert proof["native_visibility_runtime"] == (
                 "nico.playwright_webkit_native_visibility.v1"
             )
-            assert proof["playwright_active_and_focused_override_enabled"] is False
+            assert proof["playwright_forced_active_override_enabled"] is False
+            assert proof["webkit_active_transition_protocol"] == (
+                "Emulation.setActiveAndFocused"
+            )
             assert proof["observed_visibility_transitions"][-2:] == [
                 "hidden",
                 "visible",

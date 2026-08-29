@@ -32,10 +32,12 @@ def test_prepare_is_exact_idempotent_and_preserves_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     preparation = _load()
-    original = b"prefix exact WebKit override suffix"
-    patched = b"prefix guarded WebKit override suffix"
-    monkeypatch.setattr(preparation, "ORIGINAL", "exact WebKit override")
-    monkeypatch.setattr(preparation, "PATCHED", "guarded WebKit override")
+    original = b"prefix exact WebKit override middle exact activation suffix"
+    patched = b"prefix guarded WebKit override middle serial activation suffix"
+    monkeypatch.setattr(preparation, "ORIGINAL_INITIALIZE", "exact WebKit override")
+    monkeypatch.setattr(preparation, "PATCHED_INITIALIZE", "guarded WebKit override")
+    monkeypatch.setattr(preparation, "ORIGINAL_BRING_TO_FRONT", "exact activation")
+    monkeypatch.setattr(preparation, "PATCHED_BRING_TO_FRONT", "serial activation")
     monkeypatch.setattr(preparation, "ORIGINAL_SHA256", _sha256(original))
     monkeypatch.setattr(preparation, "PATCHED_SHA256", _sha256(patched))
     bundle = tmp_path / "coreBundle.js"
@@ -71,5 +73,5 @@ def test_preparation_contract_pins_one_version_and_exact_hashes() -> None:
         "6be5c2ea035554e9b184b1dbc7aa5e7f1fb428dd1b5c202022858dcfae9bee27"
     )
     assert preparation.PATCHED_SHA256 == (
-        "f59c337b321f0172eb26e2c721e04852f2495d41b2da4b8bcdf99de501b9e083"
+        "498eff53f0a286a13393671ef045fb9b54cf67b514215e40311ff50e9b574317"
     )
