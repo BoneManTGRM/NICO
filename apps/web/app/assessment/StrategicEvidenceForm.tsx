@@ -15,6 +15,50 @@ import {
 
 const MOBILE_CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"] as const;
 
+const EVIDENCE_FIELD_LABELS = {
+  en: {
+    test_cases: "Test cases",
+    observed_results: "Observed results",
+    matrix: "Coverage matrix",
+    observations: "Observations",
+    objectives: "Objectives",
+    constraints: "Constraints",
+    access_method: "Access Method",
+    primary_technical_contact: "Primary Technical Contact",
+    authorized_scope: "Authorized Scope",
+    incidents: "Incidents",
+    success_measures: "Success measures",
+    requirements: "Requirements",
+    authority_status: "Source authority status",
+    decisions: "Decisions",
+  },
+  "es-MX": {
+    test_cases: "Casos de prueba",
+    observed_results: "Resultados observados",
+    matrix: "Matriz de cobertura",
+    observations: "Observaciones",
+    objectives: "Objetivos",
+    constraints: "Restricciones",
+    access_method: "Método de acceso",
+    primary_technical_contact: "Contacto técnico principal",
+    authorized_scope: "Alcance autorizado",
+    incidents: "Incidentes",
+    success_measures: "Medidas de éxito",
+    requirements: "Requisitos",
+    authority_status: "Estado de autoridad de la fuente",
+    decisions: "Decisiones",
+  },
+} satisfies Record<Locale, Record<string, string>>;
+
+const UNKNOWN_EVIDENCE_FIELD_LABEL = {
+  en: "Additional evidence",
+  "es-MX": "Evidencia adicional",
+} satisfies Record<Locale, string>;
+
+function evidenceFieldLabel(name: string, locale: Locale): string {
+  return EVIDENCE_FIELD_LABELS[locale][name] || UNKNOWN_EVIDENCE_FIELD_LABEL[locale];
+}
+
 const TEXT = {
   en: {
     eyebrow: "OPTIONAL HUMAN EVIDENCE",
@@ -44,13 +88,7 @@ const TEXT = {
     mobileStable: "The full optional evidence editor is not loaded on phones or touch-first devices. Client and project names above are optional display metadata and do not make the fields below required. Add only the client context available for this assessment.",
     mobileClientTitle: "Optional client context",
     mobileClientBody: "For the standard public assessment, Access Method, Primary Technical Contact, and Authorized Scope are optional context. Missing values remain unassessed and are never inferred or fabricated.",
-    field: (name: string) => name === "access_method"
-      ? "Access Method"
-      : name === "primary_technical_contact"
-        ? "Primary Technical Contact"
-        : name === "authorized_scope"
-          ? "Authorized Scope"
-          : name.replaceAll("_", " "),
+    field: (name: string) => evidenceFieldLabel(name, "en"),
   },
   "es-MX": {
     eyebrow: "EVIDENCIA HUMANA OPCIONAL",
@@ -80,13 +118,7 @@ const TEXT = {
     mobileStable: "El editor completo de evidencia opcional no se carga en teléfonos ni dispositivos principalmente táctiles. Los nombres de cliente y proyecto de arriba son metadatos de presentación opcionales y no hacen obligatorios los campos de abajo. Agrega únicamente el contexto del cliente disponible para esta evaluación.",
     mobileClientTitle: "Contexto opcional del cliente",
     mobileClientBody: "En la evaluación pública estándar, Método de acceso, Contacto técnico principal y Alcance autorizado son contexto opcional. Los valores faltantes permanecen sin evaluar y nunca se infieren ni se inventan.",
-    field: (name: string) => name === "access_method"
-      ? "Método de acceso"
-      : name === "primary_technical_contact"
-        ? "Contacto técnico principal"
-        : name === "authorized_scope"
-          ? "Alcance autorizado"
-          : name.replaceAll("_", " "),
+    field: (name: string) => evidenceFieldLabel(name, "es-MX"),
   },
 } satisfies Record<Locale, Record<string, unknown>>;
 
