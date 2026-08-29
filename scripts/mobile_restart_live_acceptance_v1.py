@@ -737,7 +737,12 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
         page.evaluate(
             f"""() => {{
               const state = document.querySelector('[data-assessment-run-state="true"]');
+              const runHeader = state?.querySelector(':scope > .section-head');
+              const runStatus = runHeader?.querySelector(':scope > .status');
               const runHeading = state?.querySelector(':scope > .section-head h2');
+              const runHeaderRect = runHeader?.getBoundingClientRect();
+              const runHeaderStyle = runHeader ? getComputedStyle(runHeader) : null;
+              const runStatusRect = runStatus?.getBoundingClientRect();
               const runHeadingParent = runHeading?.parentElement;
               const runHeadingRect = runHeading?.getBoundingClientRect();
               const runHeadingParentRect = runHeadingParent?.getBoundingClientRect();
@@ -761,6 +766,15 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
                 viewport_width: document.documentElement.clientWidth,
                 document_scroll_width: document.documentElement.scrollWidth,
                 body_scroll_width: document.body.scrollWidth,
+                run_header: {{
+                  left: runHeaderRect?.left ?? -1,
+                  right: runHeaderRect?.right ?? -1,
+                  width: runHeaderRect?.width ?? 0,
+                  flex_direction: runHeaderStyle?.flexDirection ?? '',
+                  status_left: runStatusRect?.left ?? -1,
+                  status_right: runStatusRect?.right ?? -1,
+                  status_width: runStatusRect?.width ?? 0,
+                }},
                 run_heading: {{
                   text: String(runHeading?.textContent || '').trim(),
                   left: runHeadingRect?.left ?? -1,
@@ -782,6 +796,14 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
     assert viewport_width > 0, metrics
     assert float(metrics.get("document_scroll_width") or 0) <= viewport_width + 1, metrics
     assert float(metrics.get("body_scroll_width") or 0) <= viewport_width + 1, metrics
+    header = dict(metrics.get("run_header") or {})
+    assert header.get("flex_direction") == "column", metrics
+    assert float(header.get("left", -1)) >= 0, metrics
+    assert float(header.get("right", viewport_width + 1)) <= viewport_width + 1, metrics
+    assert float(header.get("width") or 0) > 0, metrics
+    assert float(header.get("status_left", -1)) >= 0, metrics
+    assert float(header.get("status_right", viewport_width + 1)) <= viewport_width + 1, metrics
+    assert float(header.get("status_width") or 0) <= float(header.get("width") or 0) + 1, metrics
     heading = dict(metrics.get("run_heading") or {})
     assert str(heading.get("text") or "").strip(), metrics
     assert float(heading.get("parent_client_width") or 0) > 0, metrics
