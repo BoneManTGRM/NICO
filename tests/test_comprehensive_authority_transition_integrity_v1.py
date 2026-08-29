@@ -15,6 +15,9 @@ from nico.comprehensive_api_controller import (
     _final_report_package_integrity_bound,
 )
 from nico.comprehensive_review_decision_v1 import review_artifact_identity
+from nico.comprehensive_pending_artifact_metadata_repair_v1 import (
+    repair_pending_findings_csv_alias,
+)
 from nico.comprehensive_review_work_runtime_v1 import (
     install_comprehensive_review_work_runtime_v1,
 )
@@ -121,6 +124,41 @@ def _corrupt_canonical_truth_hash(record: dict) -> dict:
     report["canonical_truth_sha256"] = "0" * 64
     output["integrity_sha256"] = _record_hash(output)
     assert validate_comprehensive_run_record(output)["status"] == "valid"
+    return output
+
+
+def _apply_legacy_findings_csv_alias_defect(record: dict) -> dict:
+    output = deepcopy(record)
+    stage_results = output["stage_results"]
+    final_stage = stage_results["final_comprehensive_report_generation"]
+    evidence = dict(final_stage.get("evidence") or {})
+    evidence.update(
+        {
+            "v2_single_source_pipeline": True,
+            "final_artifact_generation_complete": True,
+        }
+    )
+    final_stage["evidence"] = evidence
+    stage_results.setdefault(
+        "cross_format_truth_verification",
+        {
+            "status": "complete",
+            "failed_checks": [],
+            "final_artifact_truth": {"status": "verified", "failed_checks": []},
+        },
+    )
+    stage_results.setdefault("human_review_request", {"status": "complete"})
+    stage_results.setdefault(
+        "client_acceptance_pending", {"status": "review_required"}
+    )
+    report = final_stage["report_package"]
+    legacy_bytes = b"legacy,v2,findings,csv\n"
+    assert legacy_bytes != report["findings_csv"].encode("utf-8")
+    report["findings_csv_base64"] = base64.b64encode(legacy_bytes).decode("ascii")
+    report["findings_csv_sha256"] = hashlib.sha256(legacy_bytes).hexdigest()
+    output["integrity_sha256"] = _record_hash(output)
+    assert validate_comprehensive_run_record(output)["status"] == "valid"
+    assert _final_report_package_integrity_bound(report) is False
     return output
 
 
@@ -292,6 +330,65 @@ def test_pdf_substitution_cannot_hide_behind_a_stripped_manifest_entry(
     for path in ("report/pdf", "localized-report/en/pdf"):
         response = client.get(f"/assessment/comprehensive-run/{run_id}/{path}")
         assert response.status_code == 409
+
+
+def test_resume_repairs_only_the_known_pending_v2_findings_csv_alias(
+    authorized_record: dict,
+) -> None:
+    affected = _apply_legacy_findings_csv_alias_defect(
+        _review_ready(authorized_record)
+    )
+    previous_revision = int(affected["revision"])
+    previous_report = affected["stage_results"][
+        "final_comprehensive_report_generation"
+    ]["report_package"]
+    previous_manifest = deepcopy(previous_report["artifact_manifest"])
+    previous_pdf = previous_report["pdf_base64"]
+
+    service = ComprehensiveRunService(_Store(affected), {})
+    repaired = service.resume(affected["identity"]["run_id"])
+    report = repaired["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]
+
+    assert repaired["revision"] == previous_revision + 1
+    assert repaired["status"] == "review_required"
+    assert repaired["terminal"] is True
+    assert repaired["human_review_completed"] is False
+    assert repaired["client_delivery_allowed"] is False
+    assert report["artifact_manifest"] == previous_manifest
+    assert report["pdf_base64"] == previous_pdf
+    assert base64.b64decode(report["findings_csv_base64"], validate=True) == (
+        report["findings_csv"].encode("utf-8")
+    )
+    assert report["findings_csv_sha256"] == hashlib.sha256(
+        report["findings_csv"].encode("utf-8")
+    ).hexdigest()
+    assert _final_report_package_integrity_bound(report) is True
+    assert repaired["artifact_metadata_repair_history"][-1][
+        "retained_artifact_bytes_changed"
+    ] is False
+
+    # The migration is durable and idempotent; a second continuation is a no-op.
+    assert service.resume(affected["identity"]["run_id"]) == repaired
+
+
+def test_pending_alias_repair_keeps_unknown_integrity_failures_blocked(
+    authorized_record: dict,
+) -> None:
+    affected = _apply_legacy_findings_csv_alias_defect(
+        _corrupt_canonical_truth_hash(_review_ready(authorized_record))
+    )
+
+    assert repair_pending_findings_csv_alias(affected) == affected
+
+
+def test_pending_alias_repair_never_mutates_reviewed_artifacts(
+    authorized_record: dict,
+) -> None:
+    affected = _apply_legacy_findings_csv_alias_defect(authorized_record)
+
+    assert repair_pending_findings_csv_alias(affected) == affected
 
 
 @pytest.mark.parametrize(

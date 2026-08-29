@@ -222,7 +222,15 @@ def _is_exact_immutable_package(result: Mapping[str, Any]) -> bool:
     }
     if not _REQUIRED_ARTIFACT_TYPES.issubset(payload_types):
         return False
-    return True
+
+    # Compatibility may recognize historical package shapes, but it must never
+    # bypass the exact artifact predicate enforced by public reads.  A structurally
+    # complete package with one stale retained-artifact alias must be rebuilt.
+    from nico.comprehensive_api_controller import (
+        _final_report_package_integrity_bound,
+    )
+
+    return _final_report_package_integrity_bound(package)
 
 
 def _install_exact_artifact_idempotence() -> bool:

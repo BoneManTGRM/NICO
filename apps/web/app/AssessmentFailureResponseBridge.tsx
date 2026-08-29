@@ -13,6 +13,9 @@ const COMPREHENSIVE_ROUTE = /^\/api\/nico\/assessment\/(?:comprehensive-intake|c
 const LEGACY_RUN_ROUTE = /^\/api\/nico\/assessment\/(?:mid-run|full-run)(?:\/[^/?#]+\/status)?$/;
 const TERMINAL_FAILURES = new Set(["blocked", "failed", "error", "interrupted", "rejected"]);
 const NORMAL_REVIEW_REASONS = new Set(["pending_human_approval", "internal_approval_required", "pending_internal_approval"]);
+const ARTIFACT_INTEGRITY_STAGE = "final_report_artifact_integrity";
+const ARTIFACT_INTEGRITY_CODE = "comprehensive_report_artifact_integrity_invalid";
+const ARTIFACT_INTEGRITY_REASON = "The exact final report package failed artifact-integrity validation. Client delivery remains blocked until the preserved package is repaired and revalidated.";
 
 type JsonRecord = Record<string, unknown>;
 type ProgressRecord = {
@@ -130,6 +133,14 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
   const runRecord = record(payload.record || source.record);
   const reportContract = record(source.report_contract || payload.report_contract || runRecord.report_contract);
   const scanner = record(source.scanner || payload.scanner);
+  const responseProjection = record(
+    source.response_projection
+      || payload.response_projection
+      || runRecord.response_projection,
+  );
+  const artifactIntegrityFailure = responseProjection.review_package_invalidated_by_artifact_mismatch === true
+    || text(source.delivery_status, payload.delivery_status, runRecord.delivery_status).toLowerCase() === "blocked_artifact_integrity"
+    || text(source.approval_status, payload.approval_status).toLowerCase() === "invalidated_artifact_mismatch";
   const progress = progressItems(source.progress || payload.progress || runRecord.progress);
   const failedStageResult = stageResultFailure(runRecord.stage_results)
     || stageResultFailure(source.stage_results)
@@ -161,6 +172,7 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
   if (!status) return null;
 
   const failedStage = bounded(text(
+    artifactIntegrityFailure ? ARTIFACT_INTEGRITY_STAGE : "",
     source.failed_stage,
     source.blocked_stage,
     source.failure_stage,
@@ -176,6 +188,7 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
     "unknown_stage",
   ), 80);
   const failureReason = bounded(text(
+    artifactIntegrityFailure ? ARTIFACT_INTEGRITY_REASON : "",
     source.attention_summary,
     payload.attention_summary,
     source.failure_reason,
@@ -193,15 +206,18 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
     payload.error,
     "A required assessment stage failed or was blocked.",
   ), 320);
-  const technicalReason = bounded(text(
-    worker?.error,
-    source.technical_reason,
-    payload.technical_reason,
-    source.error_message,
-    payload.error_message,
-    failureReason,
-  ), 1200);
+  const technicalReason = artifactIntegrityFailure
+    ? failureReason
+    : bounded(text(
+      worker?.error,
+      source.technical_reason,
+      payload.technical_reason,
+      source.error_message,
+      payload.error_message,
+      failureReason,
+    ), 1200);
   const code = bounded(text(
+    artifactIntegrityFailure ? ARTIFACT_INTEGRITY_CODE : "",
     source.error_code,
     payload.error_code,
     source.failure_code,

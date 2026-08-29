@@ -354,18 +354,48 @@ def _prove_visibility_hidden_visible(
         # Chromium headless does not guarantee that activating a second Page target
         # backgrounds the first target. Exercise Chromium's actual lifecycle boundary
         # instead: Page.setWebLifecycleState(frozen) invokes WebContents::WasHidden,
-        # then active resumes script execution while the page remains hidden until it
-        # is explicitly activated again. This produces browser-owned visibilitychange
-        # events; no page globals or application state are mocked.
+        # then active resumes script execution. Some Chromium builds remain hidden
+        # until the page is explicitly activated; others complete the browser-owned
+        # hidden -> visible transition before the next Playwright command. Accept both
+        # timings only when the real visibilitychange events prove the same round trip.
+        # No page globals or application state are mocked.
         session = raw_context.new_cdp_session(raw_page)
         try:
             session.send("Page.setWebLifecycleState", {"state": "frozen"})
             session.send("Page.setWebLifecycleState", {"state": "active"})
             raw_page.wait_for_function(
-                "() => document.hidden === true && document.visibilityState === 'hidden'",
+                """() => {
+                  const transitions = window.__nicoVisibilityTransitions || [];
+                  const count = transitions.length;
+                  return (
+                    (document.hidden === true
+                      && document.visibilityState === 'hidden')
+                    || (document.hidden === false
+                      && document.visibilityState === 'visible'
+                      && count >= 2
+                      && transitions[count - 2] === 'hidden'
+                      && transitions[count - 1] === 'visible')
+                  );
+                }""",
                 timeout=timeout_ms,
             )
-            hidden = str(raw_page.evaluate("() => document.visibilityState"))
+            lifecycle_visibility = str(
+                raw_page.evaluate("() => document.visibilityState")
+            )
+            if lifecycle_visibility == "hidden":
+                hidden = lifecycle_visibility
+            else:
+                completed_transitions = list(
+                    raw_page.evaluate(
+                        "() => Array.from(window.__nicoVisibilityTransitions || [])"
+                    )
+                    or []
+                )
+                assert (
+                    lifecycle_visibility == "visible"
+                    and completed_transitions[-2:] == ["hidden", "visible"]
+                ), completed_transitions
+                hidden = "hidden"
             raw_page.bring_to_front()
             raw_page.wait_for_function(
                 "() => document.hidden === false && document.visibilityState === 'visible'",

@@ -152,7 +152,17 @@ def _already_finalized_exact_artifact_result(result: Mapping[str, Any]) -> bool:
     }
     if not _REQUIRED_ARTIFACT_TYPES.issubset(manifest_payload_types):
         return False
-    return True
+
+    # Idempotent publication is safe only when the existing package passes the
+    # exact same complete predicate as a public exact-run read.  The historical
+    # shape checks above did not bind auxiliary retained artifacts such as the
+    # findings CSV, so a post-seal alias mutation could incorrectly skip the V2
+    # rebuild and be rejected only after the run became terminal.
+    from nico.comprehensive_api_controller import (
+        _final_report_package_integrity_bound,
+    )
+
+    return _final_report_package_integrity_bound(package)
 
 
 def canonicalize_findings(findings: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:

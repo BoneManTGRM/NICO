@@ -59,6 +59,12 @@ class _Page:
 
     def wait_for_function(self, expression: str, *, timeout: int) -> None:
         assert timeout > 0
+        if "window.__nicoVisibilityTransitions" in expression:
+            assert self.visibility == "hidden" or (
+                self.visibility == "visible"
+                and self.transitions[-2:] == ["hidden", "visible"]
+            ), (expression, self.visibility, self.transitions)
+            return
         expected = "hidden" if "=== 'hidden'" in expression else "visible"
         assert self.visibility == expected, (expression, self.visibility)
 
@@ -97,6 +103,19 @@ class _ChromiumContext:
 
     def new_page(self) -> Any:
         raise AssertionError("Headless Chromium proof must not rely on tab activation")
+
+
+class _EagerVisibleCDPSession(_CDPSession):
+    def send(self, method: str, params: dict[str, str]) -> None:
+        super().send(method, params)
+        if params == {"state": "active"}:
+            self.page.set_visibility("visible")
+
+
+class _EagerVisibleChromiumContext(_ChromiumContext):
+    def __init__(self, page: _Page) -> None:
+        super().__init__(page)
+        self.session = _EagerVisibleCDPSession(page)
 
 
 class _BackgroundPage:
@@ -138,6 +157,29 @@ def test_headless_chromium_uses_browser_lifecycle_not_second_tab(monkeypatch: An
     assert context.session.detached is True
     assert proof["browser_engine"] == "chromium"
     assert proof["visibility_transition_mechanism"] == "chromium_cdp_web_lifecycle"
+    assert proof["observed_visibility_transitions"] == ["hidden", "visible"]
+    assert page.visibility == "visible"
+
+
+def test_headless_chromium_accepts_completed_browser_lifecycle_round_trip(
+    monkeypatch: Any,
+) -> None:
+    recovery = _load_recovery(monkeypatch)
+    page = _Page()
+    context = _EagerVisibleChromiumContext(page)
+
+    proof = recovery._prove_visibility_hidden_visible(page, context, timeout_ms=2_000)
+
+    assert context.session.commands == [
+        ("Page.setWebLifecycleState", {"state": "frozen"}),
+        ("Page.setWebLifecycleState", {"state": "active"}),
+        ("Page.setWebLifecycleState", {"state": "active"}),
+    ]
+    assert context.session.detached is True
+    assert proof["browser_engine"] == "chromium"
+    assert proof["visibility_transition_mechanism"] == (
+        "chromium_cdp_web_lifecycle"
+    )
     assert proof["observed_visibility_transitions"] == ["hidden", "visible"]
     assert page.visibility == "visible"
 

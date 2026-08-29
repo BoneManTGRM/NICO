@@ -32,6 +32,19 @@ def test_bridge_preserves_backend_failure_payload_without_relabeling_it_successf
     assert "failure_code" in source
 
 
+def test_bridge_projects_exact_artifact_integrity_failure_instead_of_acceptance_stage() -> None:
+    source = _read("apps/web/app/AssessmentFailureResponseBridge.tsx")
+
+    assert 'const ARTIFACT_INTEGRITY_STAGE = "final_report_artifact_integrity"' in source
+    assert 'const ARTIFACT_INTEGRITY_CODE = "comprehensive_report_artifact_integrity_invalid"' in source
+    assert "responseProjection.review_package_invalidated_by_artifact_mismatch === true" in source
+    assert '=== "blocked_artifact_integrity"' in source
+    assert '=== "invalidated_artifact_mismatch"' in source
+    assert 'artifactIntegrityFailure ? ARTIFACT_INTEGRITY_STAGE : ""' in source
+    assert 'artifactIntegrityFailure ? ARTIFACT_INTEGRITY_REASON : ""' in source
+    assert 'artifactIntegrityFailure ? ARTIFACT_INTEGRITY_CODE : ""' in source
+
+
 def test_failure_panel_supports_bilingual_semantic_state_and_hides_unavailable_report_actions() -> None:
     source = _read("apps/web/app/AssessmentFailureEvidencePanel.tsx")
 
@@ -49,3 +62,13 @@ def test_failure_panel_supports_bilingual_semantic_state_and_hides_unavailable_r
     assert '<details className="help-details nico-failure-evidence__details">' in source
     assert 'href={recoveryHref}' in source
     assert '`/operations/recovery?run_id=${encodeURIComponent(failure.run_id)}' in source
+
+
+def test_failure_panel_names_artifact_integrity_gate_without_calling_acceptance_failed() -> None:
+    source = _read("apps/web/app/AssessmentFailureEvidencePanel.tsx")
+
+    assert 'artifactIntegrityGate: "Artifact integrity gate"' in source
+    assert 'artifactIntegrityGate: "Control de integridad del artefacto"' in source
+    assert "artifactIntegrityFailure ? copy.artifactIntegrityGate : copy.failedStage" in source
+    assert 'return spanish ? "Integridad del paquete de informe final" : "Final report package integrity"' in source
+    assert "artifactIntegrityFailure ? copy.artifactIntegrityReason : copy.technicalReasonFallback" in source

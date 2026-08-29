@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import base64
-import csv
 import hashlib
-import io
 import re
 from copy import deepcopy
 from typing import Any, Mapping
@@ -247,31 +245,6 @@ def _normalize_artifact_filenames(package: dict[str, Any]) -> None:
     )
 
 
-def _findings_csv(findings: list[Mapping[str, Any]]) -> bytes:
-    output = io.StringIO(newline="")
-    fields = [
-        "finding_id", "aliases", "priority", "category", "title", "location", "status",
-        "recommendation", "owner_role", "effort", "acceptance_criteria",
-    ]
-    writer = csv.DictWriter(output, fieldnames=fields)
-    writer.writeheader()
-    for item in findings:
-        writer.writerow({
-            "finding_id": item.get("finding_id") or item.get("id"),
-            "aliases": " | ".join(_text(value) for value in item.get("finding_aliases") or []),
-            "priority": item.get("priority"),
-            "category": item.get("category"),
-            "title": item.get("title") or item.get("decision_title"),
-            "location": item.get("location"),
-            "status": item.get("status"),
-            "recommendation": item.get("recommendation"),
-            "owner_role": item.get("owner_role"),
-            "effort": item.get("effort"),
-            "acceptance_criteria": " | ".join(_text(value) for value in item.get("acceptance_criteria") or []),
-        })
-    return output.getvalue().encode("utf-8")
-
-
 def _assert_canonical_population(findings: list[Mapping[str, Any]]) -> None:
     keys = [semantic_finding_key(item) for item in findings]
     if len(keys) != len(set(keys)):
@@ -337,10 +310,16 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
     rebuilt_canonical = package.get("json")
     if not isinstance(rebuilt_canonical, Mapping):
         raise ValueError("v2 artifact rebuild did not preserve canonical JSON")
-    canonical = apply_automated_draft_truth(deepcopy(dict(rebuilt_canonical)))
+    # ``rebuild_client_artifacts`` is the exact-artifact binding boundary.  Do not
+    # mutate its canonical JSON afterward: the detached manifest, canonical JSON
+    # bytes, and draft identity all bind that exact object.  Automated-draft truth
+    # was applied before the rebuild, so the rebuilt value is now authoritative.
+    canonical = deepcopy(dict(rebuilt_canonical))
     findings = list(canonical.get("canonical_findings") or [])
     _assert_canonical_population(findings)
     digest = canonical_truth_sha256(canonical)
+    if digest != _text(package.get("canonical_truth_sha256")):
+        raise ValueError("v2 artifact rebuild returned stale canonical truth binding")
     package.update(
         {
             "json": canonical,
@@ -352,7 +331,13 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         }
     )
 
-    csv_bytes = _findings_csv(findings)
+    # The rebuild also owns the retained findings CSV and its manifest digest.
+    # Reuse those exact bytes for the legacy base64 alias instead of publishing a
+    # second CSV under the same ``findings_csv_sha256`` field.
+    findings_csv = package.get("findings_csv")
+    if not isinstance(findings_csv, str) or not findings_csv:
+        raise ValueError("v2 artifact rebuild did not retain the findings CSV")
+    csv_bytes = findings_csv.encode("utf-8")
     package.update({
         "findings_csv_base64": base64.b64encode(csv_bytes).decode("ascii"),
         "findings_csv_sha256": hashlib.sha256(csv_bytes).hexdigest(),
@@ -405,6 +390,16 @@ def apply_v2_pipeline(result: Mapping[str, Any]) -> dict[str, Any]:
         "automated_draft_until_human_approval": True,
     })
     package["phase16_delivery_verification"] = assert_client_delivery_package(package)
+
+    # Enforce the same immutable package predicate used by public exact-run reads.
+    # A package that cannot be read or reviewed must never complete its generation
+    # stage and become a terminal run.
+    from nico.comprehensive_api_controller import (
+        _final_report_package_integrity_bound,
+    )
+
+    if not _final_report_package_integrity_bound(package):
+        raise ValueError("v2 publication exact-artifact integrity binding failed")
 
     state = derive_assessment_state(
         package_complete=True,
