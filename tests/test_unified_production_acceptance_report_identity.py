@@ -173,12 +173,14 @@ def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
     assert "python scripts/completed_run_two_pass_acceptance_v1.py" in source
     assert "same_immutable_completed_run" in completed_runner
     assert 'proof["visible_pdf_action_count"] = 2' in completed_runner
-    assert 'item["ui_review_pdf_user_gesture_request_count"] == 1' in completed_runner
+    assert 'item["ui_review_pdf_user_gesture_anchor_click_count"] == 1' in completed_runner
+    assert 'item["ui_review_pdf_anchor_click_observation_verified"] is True' in completed_runner
+    assert 'item["ui_review_pdf_source_artifact_reused"] is True' in completed_runner
     assert 'item["ui_review_pdf_artifact_hash_header_verified"] is True' in completed_runner
     assert 'item["ui_review_pdf_canonical_truth_digest_verified"] is True' in completed_runner
     assert 'item["ui_review_pdf_lifecycle_contract_verified"] is True' in completed_runner
     assert 'item["ui_review_pdf_network_path"]' in completed_runner
-    assert 'proof["pdf_ui_action_browser_get_count"] = pdf_user_gesture_get_count' in completed_runner
+    assert 'proof["pdf_ui_action_anchor_click_count"] = pdf_anchor_click_count' in completed_runner
     assert 'first_pdf["ui_review_pdf_download_sha256"]' in completed_runner
     assert 'second_pdf["ui_review_pdf_download_sha256"]' in completed_runner
     assert "_review_locale_surface(page, locale, run_id)" in completed_runner
@@ -189,7 +191,7 @@ def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
     assert "--passes 2" in source
     assert "--observation-seconds 90" in source
     assert 'item["observation"]["visible_pdf_action_count"] == 2' in source
-    assert 'item["observation"]["pdf_ui_action_browser_get_count"] == 2' in source
+    assert 'item["observation"]["pdf_ui_action_anchor_click_count"] == 2' in source
     assert 'len(item["observation"]["pdf_ui_action_proofs"]) == 2' in source
     assert 'item["professional_review_locale_preserved"] is True' in source
     assert "--source-proof source-proof/spanish-comprehensive-live-proof.json" in source

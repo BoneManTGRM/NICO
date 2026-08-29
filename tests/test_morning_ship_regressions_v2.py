@@ -281,7 +281,8 @@ def test_pdf_bridge_uses_one_user_gesture_dispatch_and_visible_status() -> None:
     assert source.count("link.click();") == 1
     assert "PDF requested. Check the new tab or your downloads." in source
     assert "data-nico-review-pdf-action-status" in source
-    assert "assert len(gesture_pdf_requests) == 1" in proof
+    assert "assert anchor_click_count == 1" in proof
+    assert 'browser_context.on("request", observe_gesture_request)' not in proof
     assert '"ui_review_pdf_single_dispatch_verified": True' in proof
 
 
