@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -9,6 +10,9 @@ SOURCE = (
 ).read_text(encoding="utf-8")
 STYLES = (
     ROOT / "apps" / "web" / "app" / "assessment" / "strategicEvidence.module.css"
+).read_text(encoding="utf-8")
+DEFINITIONS_SOURCE = (
+    ROOT / "apps" / "web" / "app" / "assessment" / "strategicEvidence.ts"
 ).read_text(encoding="utf-8")
 
 EXPECTED_FIELD_LABELS = {
@@ -35,11 +39,41 @@ EXPECTED_FIELD_LABELS = {
 }
 
 
+def _authored_field_labels(locale: str) -> dict[str, str]:
+    labels = SOURCE.split("const EVIDENCE_FIELD_LABELS = {", 1)[1].split(
+        "} satisfies Record<Locale, Record<string, string>>;", 1
+    )[0]
+    if locale == "en":
+        body = labels.split("  en: {", 1)[1].split('\n  },\n  "es-MX": {', 1)[0]
+    else:
+        body = labels.split('  "es-MX": {', 1)[1].rsplit("\n  },", 1)[0]
+    return dict(re.findall(r'^    ([a-z_]+): "([^"]+)",$', body, re.MULTILINE))
+
+
+def _authoritative_evidence_fields() -> set[str]:
+    definitions = DEFINITIONS_SOURCE.split(
+        "export const STRATEGIC_EVIDENCE_DEFINITIONS", 1
+    )[1].split("]\n\nexport function evidenceFields", 1)[0]
+    field_arrays = re.findall(
+        r'(?:requiredFields|fields): \[([^\]]*)\]', definitions
+    )
+    return {
+        field
+        for field_array in field_arrays
+        for field in re.findall(r'"([a-z_]+)"', field_array)
+    }
+
+
 def test_mobile_client_engagement_labels_are_bilingual() -> None:
-    for english, spanish in EXPECTED_FIELD_LABELS.values():
-        assert f'"{english}"' in SOURCE
-        assert f'"{spanish}"' in SOURCE
+    assert _authored_field_labels("en") == {
+        key: english for key, (english, _) in EXPECTED_FIELD_LABELS.items()
+    }
+    assert _authored_field_labels("es-MX") == {
+        key: spanish for key, (_, spanish) in EXPECTED_FIELD_LABELS.items()
+    }
     assert '<span>{copy.field(field)}</span>' in SOURCE
+    assert 'field: (name: string) => evidenceFieldLabel(name, "en")' in SOURCE
+    assert 'field: (name: string) => evidenceFieldLabel(name, "es-MX")' in SOURCE
 
 
 def test_client_engagement_transport_keys_remain_stable() -> None:
@@ -54,8 +88,9 @@ def test_client_engagement_transport_keys_remain_stable() -> None:
 
 
 def test_known_evidence_fields_are_localized_without_machine_key_fallback() -> None:
-    for key in EXPECTED_FIELD_LABELS:
-        assert f'{key}: "' in SOURCE
+    assert set(EXPECTED_FIELD_LABELS) == _authoritative_evidence_fields()
+    assert set(_authored_field_labels("en")) == _authoritative_evidence_fields()
+    assert set(_authored_field_labels("es-MX")) == _authoritative_evidence_fields()
     assert 'name.replaceAll("_", " ")' not in SOURCE
     assert 'EVIDENCE_FIELD_LABELS[locale][name]' in SOURCE
     assert '"Additional evidence"' in SOURCE
