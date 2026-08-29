@@ -165,3 +165,12 @@ def test_navigation_and_assessment_cards_remain_mobile_contained() -> None:
         "max-width: min(680px, calc(100vw - 32px));",
     ):
         assert required in polish
+
+
+def test_closed_more_panel_cannot_contribute_mobile_document_width() -> None:
+    navigation = NAV_STYLES.read_text(encoding="utf-8")
+    closed_panel = navigation.split(
+        ".nav-more:not([open]) > .nav-more-panel {", 1
+    )[1].split("}", 1)[0]
+
+    assert "display: none;" in closed_panel

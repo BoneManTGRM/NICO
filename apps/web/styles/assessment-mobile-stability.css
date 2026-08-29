@@ -64,6 +64,7 @@
 
   main[data-workspace="assessment"] [class*="hero"] {
     background: #07101f !important;
+    overflow: hidden !important;
   }
 
   main[data-workspace="assessment"] [class*="panel"],

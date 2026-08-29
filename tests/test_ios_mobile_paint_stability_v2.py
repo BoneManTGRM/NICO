@@ -44,6 +44,15 @@ def test_phone_workspace_removes_known_ios_paint_pressure() -> None:
     assert "content-visibility: auto" not in source
 
 
+def test_mobile_hero_clips_its_decorative_overflow() -> None:
+    source = MOBILE_CSS.read_text(encoding="utf-8")
+    hero = source.split(
+        'main[data-workspace="assessment"] [class*="hero"] {', 1
+    )[1].split("}", 1)[0]
+
+    assert "overflow: hidden !important;" in hero
+
+
 def test_mobile_terminal_run_heading_cannot_expand_the_document_width() -> None:
     source = WORKSPACE_CSS.read_text(encoding="utf-8")
     mobile = source.split("@media (max-width: 760px)", 1)[1]
