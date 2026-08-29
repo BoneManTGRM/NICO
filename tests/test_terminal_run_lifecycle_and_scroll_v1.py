@@ -95,3 +95,11 @@ def test_live_browser_proof_measures_the_terminal_run_heading_geometry() -> None
     assert 'heading.get("parent_client_width"' in PROOF
     assert 'header.get("flex_direction") == "column"' in PROOF
     assert 'header.get("status_right"' in PROOF
+
+
+def test_live_browser_proof_reports_bounded_global_overflow_offenders() -> None:
+    assert "const visibleBodyElements" in PROOF
+    assert "viewport_overflowing_elements" in PROOF
+    assert "intrinsic_overflow_elements" in PROOF
+    assert ".slice(0, 20)" in PROOF
+    assert "data_keys" in PROOF

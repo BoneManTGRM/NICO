@@ -746,6 +746,52 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
               const runHeadingParent = runHeading?.parentElement;
               const runHeadingRect = runHeading?.getBoundingClientRect();
               const runHeadingParentRect = runHeadingParent?.getBoundingClientRect();
+              const viewportWidth = document.documentElement.clientWidth;
+              const visibleBodyElements = Array.from(document.body.querySelectorAll('*'))
+                .map((node) => {{
+                  const rect = node.getBoundingClientRect();
+                  const style = getComputedStyle(node);
+                  return {{node, rect, style}};
+                }})
+                .filter((item) => (
+                  item.style.display !== 'none'
+                  && item.style.visibility !== 'hidden'
+                  && item.rect.width > 0
+                  && item.rect.height > 0
+                ));
+              const overflowIdentity = (item) => ({{
+                tag: String(item.node.tagName || '').toLowerCase(),
+                id: String(item.node.id || '').slice(0, 120),
+                class_name: String(item.node.className || '').slice(0, 180),
+                data_keys: Array.from(item.node.attributes || [])
+                  .map((attribute) => String(attribute.name || ''))
+                  .filter((name) => name.startsWith('data-'))
+                  .slice(0, 8),
+                left: item.rect.left,
+                right: item.rect.right,
+                width: item.rect.width,
+                scroll_width: item.node.scrollWidth || 0,
+                client_width: item.node.clientWidth || 0,
+                overflow_x: item.style.overflowX,
+                position: item.style.position,
+                white_space: item.style.whiteSpace,
+              }});
+              const viewportOverflowingElements = visibleBodyElements
+                .filter((item) => item.rect.left < -1 || item.rect.right > viewportWidth + 1)
+                .sort((left, right) => (
+                  Math.max(-right.rect.left, right.rect.right - viewportWidth)
+                  - Math.max(-left.rect.left, left.rect.right - viewportWidth)
+                ))
+                .slice(0, 20)
+                .map(overflowIdentity);
+              const intrinsicOverflowElements = visibleBodyElements
+                .filter((item) => item.node.scrollWidth > item.node.clientWidth + 1)
+                .sort((left, right) => (
+                  (right.node.scrollWidth - right.node.clientWidth)
+                  - (left.node.scrollWidth - left.node.clientWidth)
+                ))
+                .slice(0, 20)
+                .map(overflowIdentity);
               const targets = Array.from(document.querySelectorAll(
                 '{REPORT_ACTIONS_SELECTOR} button, [data-assessment-internal-review="true"]'
               )).map((node) => {{
@@ -766,6 +812,8 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
                 viewport_width: document.documentElement.clientWidth,
                 document_scroll_width: document.documentElement.scrollWidth,
                 body_scroll_width: document.body.scrollWidth,
+                viewport_overflowing_elements: viewportOverflowingElements,
+                intrinsic_overflow_elements: intrinsicOverflowElements,
                 run_header: {{
                   left: runHeaderRect?.left ?? -1,
                   right: runHeaderRect?.right ?? -1,
