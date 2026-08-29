@@ -48,6 +48,13 @@ def test_mobile_terminal_run_heading_cannot_expand_the_document_width() -> None:
     source = WORKSPACE_CSS.read_text(encoding="utf-8")
     mobile = source.split("@media (max-width: 760px)", 1)[1]
 
+    assert ".stateHeader {" in mobile
+    state_header = mobile.split(".stateHeader {", 1)[1].split("}", 1)[0]
+    assert "align-items: stretch;" in state_header
+    assert "flex-direction: column;" in state_header
+    assert "min-width: 0;" in state_header
+    assert "max-width: 100%;" in state_header
+
     assert ".stateHeader > div" in mobile
     header_container = mobile.split(".stateHeader > div", 1)[1].split("}", 1)[0]
     assert "\n    width: 100%;" in header_container
@@ -59,6 +66,12 @@ def test_mobile_terminal_run_heading_cannot_expand_the_document_width() -> None:
     assert "max-width: 100%;" in run_heading
     assert "overflow-wrap: anywhere;" in run_heading
     assert "word-break: break-word;" in run_heading
+
+    assert ".stateHeader > span" in mobile
+    run_status = mobile.split(".stateHeader > span", 1)[1].split("}", 1)[0]
+    assert "align-self: stretch;" in run_status
+    assert "max-width: 100%;" in run_status
+    assert "white-space: normal;" in run_status
 
 
 def test_touch_devices_do_not_mount_the_optional_evidence_editor() -> None:

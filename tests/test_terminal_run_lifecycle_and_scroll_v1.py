@@ -81,10 +81,17 @@ def test_live_browser_proof_rejects_stale_terminal_recovery() -> None:
 
 
 def test_live_browser_proof_measures_the_terminal_run_heading_geometry() -> None:
+    assert "const runHeader = state?.querySelector(':scope > .section-head')" in PROOF
+    assert "const runStatus = runHeader?.querySelector(':scope > .status')" in PROOF
     assert "const runHeading = state?.querySelector(':scope > .section-head h2')" in PROOF
+    assert "run_header:" in PROOF
+    assert "flex_direction: runHeaderStyle?.flexDirection" in PROOF
+    assert "status_right: runStatusRect?.right" in PROOF
     assert "run_heading:" in PROOF
     assert "scroll_width: runHeading?.scrollWidth" in PROOF
     assert "parent_client_width: runHeadingParent?.clientWidth" in PROOF
     assert 'heading.get("right"' in PROOF
     assert 'heading.get("scroll_width"' in PROOF
     assert 'heading.get("parent_client_width"' in PROOF
+    assert 'header.get("flex_direction") == "column"' in PROOF
+    assert 'header.get("status_right"' in PROOF

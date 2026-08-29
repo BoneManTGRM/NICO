@@ -469,10 +469,24 @@
     border-radius: 19px;
   }
 
+  .stateHeader {
+    align-items: stretch;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .stateHeader > div {
     width: 100%;
     min-width: 0;
     max-width: 100%;
+  }
+
+  .stateHeader > span {
+    align-self: stretch;
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
   }
 
   .sectionHeading h2,
