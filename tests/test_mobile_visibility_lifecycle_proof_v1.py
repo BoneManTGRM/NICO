@@ -588,6 +588,7 @@ def test_production_webkit_proof_uses_native_window_visibility_under_xvfb() -> N
     assert "sudo apt-get install --no-install-recommends -y xdotool" in workflow
     assert "command -v xvfb-run" in workflow
     assert "command -v xdotool" in workflow
+    assert "xvfb-run -a python -m pytest -q --noconftest" in workflow
     assert "xvfb-run -a python scripts/mobile_restart_live_acceptance_v6.py" in workflow
     assert "_launch_webkit(playwright)" in launcher
     assert "playwright.webkit.launch(headless=True)" not in launcher
