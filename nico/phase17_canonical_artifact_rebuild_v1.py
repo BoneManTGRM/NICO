@@ -359,6 +359,92 @@ def _prepare_client_artifact_package(
     return prepared
 
 
+_SCANNER_REGISTER_FIELD = "canonical_scanner_finding_register"
+
+
+def _bounded_localized_preparation_input(
+    package: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], Mapping[str, Any] | None, dict[str, Any] | None]:
+    """Keep retained raw scanner payloads out of an already-finalized render pass.
+
+    A terminal canonical report can retain many megabytes of exact scanner candidates
+    under ``assessment.canonical_scanner_finding_register.findings``.  Those raw
+    candidates are canonical evidence, but the client renderer consumes the already
+    synchronized remediation register plus the scanner register's bounded totals,
+    triage, lineage, and workload metadata.  Re-running the complete preparation chain
+    over every retained candidate made one Copy-Markdown request exceed 30 seconds.
+
+    Compact only canonicals that carry the final-publication contracts proving those
+    client projections were synchronized.  The complete register is reattached to the
+    returned canonical after Markdown rendering, so canonical truth is never removed
+    from the durable or returned package.  Older or partial packages retain the full
+    preparation path unchanged.
+    """
+
+    canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    register = (
+        assessment.get(_SCANNER_REGISTER_FIELD)
+        if isinstance(assessment.get(_SCANNER_REGISTER_FIELD), Mapping)
+        else None
+    )
+    findings = register.get("findings") if isinstance(register, Mapping) else None
+    pipeline = (
+        canonical.get("v2_pipeline_contract")
+        if isinstance(canonical.get("v2_pipeline_contract"), Mapping)
+        else {}
+    )
+    prepublication = (
+        canonical.get("v2_prepublication_contract")
+        if isinstance(canonical.get("v2_prepublication_contract"), Mapping)
+        else {}
+    )
+    client_register = canonical.get("client_finding_remediation_register")
+    candidate_record_count = register.get("candidate_record_count") if register else None
+    eligible = bool(
+        isinstance(register, Mapping)
+        and isinstance(findings, list)
+        and findings
+        and isinstance(client_register, Mapping)
+        and pipeline.get("authoritative_premium_truth_projection") is True
+        and pipeline.get("structured_finding_remediation_register") is True
+        and pipeline.get("full_evidence_retained_outside_client_pdf") is True
+        and prepublication.get("final_register_count_synchronized_before_render")
+        is True
+        and prepublication.get("comprehensive_client_truth_final_version")
+        == "nico.comprehensive-client-truth-final.v1"
+        and register.get("count_parity_verified") is True
+        and register.get("candidate_record_count_matches_raw") is True
+        and register.get("raw_payload_retention_complete") is True
+        and register.get("mutually_exclusive_dispositions_verified") is True
+        and register.get("projection_redaction_preserves_source_fingerprints") is True
+        and isinstance(candidate_record_count, int)
+        and not isinstance(candidate_record_count, bool)
+        and candidate_record_count == len(findings)
+    )
+    if not eligible:
+        return package, None, None
+
+    compact_register = {
+        str(key): deepcopy(value)
+        for key, value in register.items()
+        if str(key) != "findings"
+    }
+    render_register = dict(compact_register)
+    render_register["findings"] = []
+    render_assessment = dict(assessment)
+    render_assessment[_SCANNER_REGISTER_FIELD] = render_register
+    render_canonical = dict(canonical)
+    render_canonical["assessment"] = render_assessment
+    render_package = dict(package)
+    render_package["json"] = render_canonical
+    return render_package, register, compact_register
+
+
 def build_localized_markdown_projection(
     package: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -382,7 +468,10 @@ def build_localized_markdown_projection(
     from nico.v2_authoritative_review_gate import ensure_authoritative_review_gate
 
     try:
-        prepared = _prepare_client_artifact_package(package)
+        preparation_input, retained_register, compact_register = (
+            _bounded_localized_preparation_input(package)
+        )
+        prepared = _prepare_client_artifact_package(preparation_input)
         canonical = (
             deepcopy(dict(prepared.get("json") or {}))
             if isinstance(prepared.get("json"), Mapping)
@@ -406,6 +495,8 @@ def build_localized_markdown_projection(
             if isinstance(canonical.get("assessment"), Mapping)
             else {}
         )
+        if compact_register is not None:
+            assessment[_SCANNER_REGISTER_FIELD] = compact_register
         stages = premium._canonical_stages(canonical)
         canonical["stage_summaries"] = deepcopy(stages)
         assessment["stage_summaries"] = deepcopy(stages)
@@ -477,6 +568,10 @@ def build_localized_markdown_projection(
             + _manifest_guide(canonical["identity"])
         )
         markdown_text = markdown
+        if retained_register is not None:
+            returned_assessment = dict(canonical.get("assessment") or {})
+            returned_assessment[_SCANNER_REGISTER_FIELD] = retained_register
+            canonical["assessment"] = returned_assessment
         return {
             "json": canonical,
             "markdown": markdown_text,
