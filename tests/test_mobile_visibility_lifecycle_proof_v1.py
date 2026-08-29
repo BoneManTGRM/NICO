@@ -430,6 +430,39 @@ def test_production_chromium_proofs_use_headed_browser_under_xvfb() -> None:
         assert "_launch_chromium(playwright)" in source
 
 
+def test_production_final_gates_use_authoritative_visibility_mechanism() -> None:
+    expected = "opener_tab_activation_without_playwright_focus_emulation"
+    retired = "headed_tab_activation_without_focus_emulation"
+    required_contracts = (
+        'visibility["browser_engine"] == "chromium"',
+        'visibility["browser_launch_mode"] == "headed_xvfb"',
+        'visibility["native_visibility_runtime"] == "nico.playwright_native_visibility.v1"',
+        'visibility["playwright_focus_emulation_enabled"] is False',
+        'visibility["shared_native_window"] is True',
+        'isinstance(visibility["subject_window_id"], int)',
+        'isinstance(visibility["background_window_id"], int)',
+        'visibility["subject_window_id"] == visibility["background_window_id"]',
+        'isinstance(visibility["subject_target_id"], str)',
+        'isinstance(visibility["background_target_id"], str)',
+        'visibility["subject_target_id"] != visibility["background_target_id"]',
+        'visibility["subject_target_type"] == "page"',
+        'visibility["background_target_type"] == "page"',
+        'visibility["document_hidden_observed"] is True',
+        'visibility["document_visible_after_foreground"] is True',
+        'visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]',
+    )
+
+    for workflow_path in (SPANISH_WORKFLOW, MOBILE_WORKFLOW):
+        workflow = workflow_path.read_text(encoding="utf-8")
+        assert (
+            f'visibility["visibility_transition_mechanism"] == "{expected}"'
+            in workflow
+        )
+        assert retired not in workflow
+        for contract in required_contracts:
+            assert contract in workflow
+
+
 def test_installed_headed_chromium_observes_real_browser_visibility() -> None:
     """Exercise the pinned browser when this test runs in a Playwright job.
 
