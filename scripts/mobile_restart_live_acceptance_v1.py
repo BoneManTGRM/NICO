@@ -844,6 +844,7 @@ def _mobile_terminal_layout(page: Any) -> dict[str, Any]:
     assert viewport_width > 0, metrics
     assert float(metrics.get("document_scroll_width") or 0) <= viewport_width + 1, metrics
     assert float(metrics.get("body_scroll_width") or 0) <= viewport_width + 1, metrics
+    assert not list(metrics.get("viewport_overflowing_elements") or []), metrics
     header = dict(metrics.get("run_header") or {})
     assert header.get("flex_direction") == "column", metrics
     assert float(header.get("left", -1)) >= 0, metrics

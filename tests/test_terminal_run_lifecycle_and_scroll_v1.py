@@ -101,5 +101,6 @@ def test_live_browser_proof_reports_bounded_global_overflow_offenders() -> None:
     assert "const visibleBodyElements" in PROOF
     assert "viewport_overflowing_elements" in PROOF
     assert "intrinsic_overflow_elements" in PROOF
-    assert ".slice(0, 20)" in PROOF
+    assert PROOF.count(".slice(0, 20)") == 2
     assert "data_keys" in PROOF
+    assert 'not list(metrics.get("viewport_overflowing_elements") or [])' in PROOF
