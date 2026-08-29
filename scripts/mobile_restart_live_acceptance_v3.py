@@ -295,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     recovery._require_existing_source_args(args)
     try:
         with sync_playwright() as playwright:
-            browser: Browser = playwright.chromium.launch(headless=True)
+            browser: Browser = recovery._launch_chromium(playwright)
             try:
                 result = run_proof(browser, args)
             finally:

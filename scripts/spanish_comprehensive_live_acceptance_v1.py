@@ -399,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = recovery._launch_chromium(playwright)
                 try:
                     result = run_proof(browser, args)
                 finally:

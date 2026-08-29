@@ -774,7 +774,7 @@ def main(argv: list[str] | None = None) -> int:
     spanish.install_spanish_terminal_boundary()
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = base.recovery._launch_chromium(playwright)
             try:
                 result = run_recovery(browser, args)
             finally:
