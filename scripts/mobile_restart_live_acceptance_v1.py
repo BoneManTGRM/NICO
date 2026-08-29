@@ -34,6 +34,8 @@ ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"
 BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection"
 BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 HEADED_CHROMIUM_ENV = "NICO_PROOF_HEADED_CHROMIUM"
+NATIVE_VISIBILITY_ENV = "NICO_PROOF_NATIVE_VISIBILITY"
+NATIVE_VISIBILITY_RUNTIME = "nico.playwright_native_visibility.v1"
 TERMINAL_PHASES = {
     "Internal review required",
     "Revisión interna requerida",
@@ -338,10 +340,21 @@ def _headed_chromium_requested() -> bool:
     return configured == "1"
 
 
+def _native_visibility_requested() -> bool:
+    configured = os.getenv(NATIVE_VISIBILITY_ENV, "").strip()
+    if configured not in {"", "0", "1"}:
+        raise RuntimeError("nico_proof_native_visibility_setting_invalid")
+    return configured == "1"
+
+
 def _launch_chromium(playwright: Any) -> Any:
     headed = _headed_chromium_requested()
     if headed and not os.getenv("DISPLAY", "").strip():
         raise RuntimeError("headed_chromium_proof_requires_x_display")
+    if headed and not _native_visibility_requested():
+        raise RuntimeError(
+            "headed_chromium_proof_requires_native_visibility_runtime"
+        )
     return playwright.chromium.launch(headless=not headed)
 
 
@@ -361,65 +374,92 @@ def _prove_visibility_hidden_visible(
     raw_page.evaluate(
         """() => {
           window.__nicoVisibilityTransitions = [];
-          document.addEventListener('visibilitychange', () => {
-            window.__nicoVisibilityTransitions.push(document.visibilityState);
-          });
+          if (typeof window.__nicoVisibilityObserver !== 'function') {
+            window.__nicoVisibilityObserver = () => {
+              window.__nicoVisibilityTransitions.push(document.visibilityState);
+            };
+            document.addEventListener(
+              'visibilitychange',
+              window.__nicoVisibilityObserver,
+            );
+          }
         }"""
     )
     if browser_engine == "chromium" and not _headed_chromium_requested():
         raise RuntimeError(
             "chromium_visibility_proof_requires_headed_browser_under_xvfb"
         )
-    # Current Chromium headless targets report every Page as visible, including after
-    # Page.setWebLifecycleState. A headed browser under Xvfb gives Chromium a real tab
-    # strip, so activating a second target exercises the browser-owned Page Visibility
-    # boundary without redefining document properties or dispatching synthetic events.
-    # WebKit already exposes this native tab boundary in its Playwright runtime.
-    focus_session = None
+    # Current Chromium headless targets report every Page as visible. The pinned proof
+    # runtime prevents Playwright's private focus-emulation session from registering a
+    # visible capturer before target initialization. An opener-created sibling tab in
+    # the same native window can therefore exercise Chromium's browser-owned Page
+    # Visibility boundary without redefining document properties or dispatching events.
+    # WebKit already exposes a native tab boundary in its Playwright runtime.
+    if browser_engine == "chromium" and not _native_visibility_requested():
+        raise RuntimeError(
+            "chromium_visibility_proof_requires_native_visibility_runtime"
+        )
+    subject_session = None
+    background_session = None
     background = None
+    subject_window_id: int | None = None
+    background_window_id: int | None = None
+    subject_target_id = ""
+    background_target_id = ""
+    subject_target_type = ""
+    background_target_type = ""
+    transitions: list[str] = []
     try:
-        background = raw_context.new_page()
-        background.goto("about:blank")
+        if browser_engine == "chromium":
+            with raw_page.expect_popup(timeout=timeout_ms) as popup:
+                opened = raw_page.evaluate(
+                    "() => Boolean(window.open('about:blank', '_blank'))"
+                )
+                assert opened is True, "chromium_same_window_popup_was_blocked"
+            background = popup.value
+            background.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+            subject_session = raw_context.new_cdp_session(raw_page)
+            background_session = raw_context.new_cdp_session(background)
+            subject_target = subject_session.send("Target.getTargetInfo")
+            background_target = background_session.send("Target.getTargetInfo")
+            subject_target_id = str(subject_target["targetInfo"]["targetId"])
+            background_target_id = str(background_target["targetInfo"]["targetId"])
+            subject_target_type = str(subject_target["targetInfo"].get("type", ""))
+            background_target_type = str(
+                background_target["targetInfo"].get("type", "")
+            )
+            if subject_target_type != "page" or background_target_type != "page":
+                raise AssertionError(
+                    "chromium_visibility_targets_must_be_pages: "
+                    f"subject_type={subject_target_type!r} "
+                    f"background_type={background_target_type!r}"
+                )
+            subject_window = subject_session.send(
+                "Browser.getWindowForTarget",
+                {"targetId": subject_target_id},
+            )
+            background_window = background_session.send(
+                "Browser.getWindowForTarget",
+                {"targetId": background_target_id},
+            )
+            subject_window_id = int(subject_window["windowId"])
+            background_window_id = int(background_window["windowId"])
+            if subject_window_id != background_window_id:
+                raise AssertionError(
+                    "chromium_visibility_tabs_not_in_same_native_window: "
+                    f"subject_window={subject_window_id} "
+                    f"background_window={background_window_id} "
+                    f"subject_target={subject_target_id!r} "
+                    f"background_target={background_target_id!r}"
+                )
+        else:
+            background = raw_context.new_page()
+            background.goto("about:blank")
         raw_page.bring_to_front()
         prepared_visibility = str(
             raw_page.evaluate("() => document.visibilityState")
         )
         assert prepared_visibility == "visible", prepared_visibility
-        prepared_transitions = list(
-            raw_page.evaluate(
-                "() => Array.from(window.__nicoVisibilityTransitions || [])"
-            )
-            or []
-        )
-        if browser_engine == "chromium":
-            # Playwright enables Chromium focus emulation for every Page target, which
-            # deliberately keeps background tabs visible. Disable only that automation
-            # override while the subject is known to be foregrounded. Require that the
-            # override removal itself causes no visibility change, then clear the event
-            # log so only the deliberate tab activation can prove the hidden boundary.
-            focus_session = raw_context.new_cdp_session(raw_page)
-            focus_session.send(
-                "Emulation.setFocusEmulationEnabled",
-                {"enabled": False},
-            )
-            focus_visibility = str(
-                raw_page.evaluate("() => document.visibilityState")
-            )
-            focus_transitions = list(
-                raw_page.evaluate(
-                    "() => Array.from(window.__nicoVisibilityTransitions || [])"
-                )
-                or []
-            )
-            if (
-                focus_visibility != "visible"
-                or focus_transitions != prepared_transitions
-            ):
-                raise AssertionError(
-                    "chromium_focus_emulation_disable_changed_subject_visibility: "
-                    f"state={focus_visibility!r} "
-                    f"before={prepared_transitions!r} after={focus_transitions!r}"
-                )
         raw_page.evaluate("() => { window.__nicoVisibilityTransitions = []; }")
         background.bring_to_front()
         # Background documents suppress requestAnimationFrame; bounded interval
@@ -437,30 +477,30 @@ def _prove_visibility_hidden_visible(
             timeout=timeout_ms,
         )
         visible = str(raw_page.evaluate("() => document.visibilityState"))
+        transitions = list(
+            raw_page.evaluate(
+                "() => Array.from(window.__nicoVisibilityTransitions || [])"
+            )
+            or []
+        )
     finally:
         try:
             raw_page.bring_to_front()
         finally:
             try:
-                if focus_session is not None:
-                    try:
-                        focus_session.send(
-                            "Emulation.setFocusEmulationEnabled",
-                            {"enabled": True},
-                        )
-                    finally:
-                        focus_session.detach()
+                if background_session is not None:
+                    background_session.detach()
             finally:
-                if background is not None:
-                    background.close()
+                try:
+                    if subject_session is not None:
+                        subject_session.detach()
+                finally:
+                    if background is not None:
+                        background.close()
     mechanism = (
-        "headed_tab_activation_without_focus_emulation"
+        "opener_tab_activation_without_playwright_focus_emulation"
         if browser_engine == "chromium"
         else "browser_tab_activation"
-    )
-    transitions = list(
-        raw_page.evaluate("() => Array.from(window.__nicoVisibilityTransitions || [])")
-        or []
     )
     assert hidden == "hidden" and visible == "visible", transitions
     assert transitions[-2:] == ["hidden", "visible"], transitions
@@ -475,6 +515,23 @@ def _prove_visibility_hidden_visible(
             else "headless"
         ),
         "visibility_transition_mechanism": mechanism,
+        "native_visibility_runtime": (
+            NATIVE_VISIBILITY_RUNTIME if browser_engine == "chromium" else "native"
+        ),
+        "playwright_focus_emulation_enabled": (
+            False if browser_engine == "chromium" else None
+        ),
+        "shared_native_window": (
+            subject_window_id == background_window_id
+            if browser_engine == "chromium"
+            else None
+        ),
+        "subject_window_id": subject_window_id,
+        "background_window_id": background_window_id,
+        "subject_target_id": subject_target_id,
+        "background_target_id": background_target_id,
+        "subject_target_type": subject_target_type,
+        "background_target_type": background_target_type,
         "document_hidden_observed": True,
         "document_visible_after_foreground": True,
     }
