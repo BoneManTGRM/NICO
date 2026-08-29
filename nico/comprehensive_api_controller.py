@@ -1112,6 +1112,8 @@ class ComprehensiveApiController:
         self,
         run_id: str,
         payload: dict[str, Any] | None = None,
+        *,
+        browser_projection: bool = False,
     ) -> dict[str, Any]:
         body = self._object(payload or {})
         bounded = body.get("max_stages")
@@ -1122,7 +1124,11 @@ class ComprehensiveApiController:
             self._required(run_id, "run_id"),
             max_stages=max_stages,
         )
-        return self._response(record, operation="continued")
+        return self._response(
+            record,
+            operation="continued",
+            browser_projection=browser_projection,
+        )
 
     @staticmethod
     def _object(payload: Any) -> dict[str, Any]:

@@ -137,8 +137,13 @@ class ObservableComprehensiveApiController(ComprehensiveApiController):
         record: dict[str, Any],
         *,
         operation: str,
+        browser_projection: bool = False,
     ) -> dict[str, Any]:
-        response = self._response(record, operation=operation)
+        response = self._response(
+            record,
+            operation=operation,
+            browser_projection=browser_projection,
+        )
         activity = describe_final_report_activity(self._service, record)
         if activity:
             response["active_stage_execution"] = activity
@@ -157,6 +162,8 @@ class ObservableComprehensiveApiController(ComprehensiveApiController):
         self,
         run_id: str,
         payload: dict[str, Any] | None = None,
+        *,
+        browser_projection: bool = False,
     ) -> dict[str, Any]:
         body = self._object(payload or {})
         bounded = body.get("max_stages")
@@ -167,7 +174,11 @@ class ObservableComprehensiveApiController(ComprehensiveApiController):
             self._required(run_id, "run_id"),
             max_stages=max_stages,
         )
-        return self._response_with_activity(record, operation="continued")
+        return self._response_with_activity(
+            record,
+            operation="continued",
+            browser_projection=browser_projection,
+        )
 
 
 __all__ = [

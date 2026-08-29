@@ -112,6 +112,68 @@ class _PublicationRaceService:
         return deepcopy(self.terminal)
 
 
+class _ActivePublicationService(_PublicationRaceService):
+    """Expose a durable active marker that is already authoritative for this tick."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.load_calls = 0
+        self.running["stage_results"] = {
+            "final_comprehensive_report_generation": {
+                "status": "running",
+                "reason": "final_report_background_publication_in_progress",
+                "stage_execution": {
+                    "lease_id": "frpub_projection_active",
+                    "detached_background_execution": True,
+                },
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            }
+        }
+
+    def load(self, run_id: str) -> dict:
+        assert run_id == "comprun_projection_race"
+        self.load_calls += 1
+        raise AssertionError(
+            "an active final-report continuation must not reload the full run"
+        )
+
+
+class _CompletedPublicationService(_PublicationRaceService):
+    """Return the terminal record adopted by the first continuation load."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.load_calls = 0
+
+    def resume(self, run_id: str, *, max_stages: int | None = None) -> dict:
+        assert run_id == "comprun_projection_race"
+        return deepcopy(self.terminal)
+
+    def load(self, run_id: str) -> dict:
+        assert run_id == "comprun_projection_race"
+        self.load_calls += 1
+        raise AssertionError(
+            "an adopted terminal continuation must not reload the full run"
+        )
+
+
+class _NonFinalPublicationRaceService(_PublicationRaceService):
+    """Keep the historical reload for a non-final background publication race."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.running["current_stage"] = "source_code_understanding"
+        self.running["stage_results"] = {
+            "source_code_understanding": {
+                "status": "running",
+                "reason": "background_stage_execution_in_progress",
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            }
+        }
+
+
 def test_continue_reprojects_terminal_record_after_async_publication_race() -> None:
     service = _PublicationRaceService()
     controller = ComprehensiveApiController(service)  # type: ignore[arg-type]
@@ -168,3 +230,73 @@ def test_browser_continue_reprojects_without_reviewer_package_digest(
     assert "markdown" not in body["reports"]
     assert "pdf_base64" not in body["reports"]
     assert "review_artifact_identity" not in body
+
+
+def test_browser_continue_reuses_durable_active_projection_without_full_reload() -> None:
+    service = _ActivePublicationService()
+    controller = ComprehensiveApiController(service)  # type: ignore[arg-type]
+    app = FastAPI()
+    register_comprehensive_api_routes(app, controller=controller)
+
+    response = TestClient(app).post(
+        "/assessment/comprehensive-run/comprun_projection_race/continue",
+        headers={"x-nico-browser-projection": "terminal-manifest-v1"},
+        json={"max_stages": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"] == "continued"
+    assert body["status"] == "running"
+    assert body["terminal"] is False
+    assert body["record"]["stage_results"][
+        "final_comprehensive_report_generation"
+    ]["status"] == "running"
+    assert body["human_review_required"] is True
+    assert body["client_delivery_allowed"] is False
+    assert "review_artifact_identity" not in body
+    assert service.load_calls == 0
+
+
+def test_browser_continue_reuses_adopted_terminal_projection_without_full_reload() -> None:
+    service = _CompletedPublicationService()
+    controller = ComprehensiveApiController(service)  # type: ignore[arg-type]
+    app = FastAPI()
+    register_comprehensive_api_routes(app, controller=controller)
+
+    response = TestClient(app).post(
+        "/assessment/comprehensive-run/comprun_projection_race/continue",
+        headers={"x-nico-browser-projection": "terminal-manifest-v1"},
+        json={"max_stages": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"] == "continued"
+    assert body["status"] == "review_required"
+    assert body["terminal"] is True
+    assert body["reports"]["report_id"] == "report_projection_race"
+    assert body["reports"]["response_bounded"] is True
+    assert "markdown" not in body["reports"]
+    assert "pdf_base64" not in body["reports"]
+    assert "review_artifact_identity" not in body
+    assert service.load_calls == 0
+
+
+def test_browser_continue_retains_non_final_background_publication_reload() -> None:
+    service = _NonFinalPublicationRaceService()
+    controller = ComprehensiveApiController(service)  # type: ignore[arg-type]
+    app = FastAPI()
+    register_comprehensive_api_routes(app, controller=controller)
+
+    response = TestClient(app).post(
+        "/assessment/comprehensive-run/comprun_projection_race/continue",
+        headers={"x-nico-browser-projection": "terminal-manifest-v1"},
+        json={"max_stages": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "review_required"
+    assert body["terminal"] is True
+    assert body["reports"]["report_id"] == "report_projection_race"
