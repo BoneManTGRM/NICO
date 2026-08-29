@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
 
@@ -198,6 +200,53 @@ def _fetch_captured_pdf(
     assert re.fullmatch(r"[0-9a-f]{64}", header_sha), {
         "missing_or_invalid_artifact_sha256_header": header_sha,
     }
+
+
+def _load_source_bound_pdf(
+    source_proof_path: Path,
+    run_id: str,
+    report_language: str,
+) -> dict[str, Any]:
+    """Reuse exact-SHA bilingual bytes already certified by the source proof."""
+
+    payload = json.loads(source_proof_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict), "Source proof must be a JSON object"
+    assert str(payload.get("run_id") or "") == run_id
+    assert payload.get("same_run_bilingual_pdf_verified") is True
+    assert payload.get("same_run_bilingual_assessment_rerun") is False
+    assert payload.get("localized_pdf_artifact_hash_headers_verified") is True
+    assert payload.get("terminal_state_unchanged_after_localized_reads") is True
+    prefix = "spanish" if report_language == "es-MX" else "english"
+    expected_sha = str(payload.get(f"{prefix}_pdf_sha256") or "").lower()
+    assert re.fullmatch(r"[0-9a-f]{64}", expected_sha), expected_sha
+    artifact_name = Path(str(payload.get(f"{prefix}_pdf_path") or "")).name
+    assert artifact_name, f"Source {report_language} PDF path is missing"
+    artifact_path = source_proof_path.parent / artifact_name
+    pdf_bytes = artifact_path.read_bytes()
+    assert pdf_bytes.startswith(b"%PDF"), f"Source {report_language} artifact was not a PDF"
+    assert len(pdf_bytes) > 1_000, f"Source {report_language} PDF was unexpectedly small"
+    observed_sha = hashlib.sha256(pdf_bytes).hexdigest()
+    assert observed_sha == expected_sha, {
+        "source_pdf_sha256": observed_sha,
+        "source_proof_pdf_sha256": expected_sha,
+    }
+    canonical_truth_sha256 = str(
+        payload.get("canonical_truth_sha256") or ""
+    ).lower()
+    assert re.fullmatch(r"[0-9a-f]{64}", canonical_truth_sha256)
+    return {
+        "pdf_bytes": pdf_bytes,
+        "pdf_sha256": observed_sha,
+        "content_disposition": "",
+        "response_run_id": run_id,
+        "artifact_hash_header_verified": True,
+        "canonical_truth_sha256": canonical_truth_sha256,
+        "accepted_pdf_sha256": "",
+        "response_report_language": report_language,
+        "assessment_rerun": False,
+        "localized_draft_identity_verified": True,
+        "evidence_source": "exact-sha-spanish-source-proof",
+    }
     assert header_sha == observed_sha, {
         "captured_pdf_sha256": observed_sha,
         "response_artifact_sha256": header_sha,
@@ -257,7 +306,11 @@ def _fetch_captured_pdf(
     }
 
 
-def install_ui_pdf_download_proof(recovery: Any) -> None:
+def install_ui_pdf_download_proof(
+    recovery: Any,
+    *,
+    source_proof_path: Path | None = None,
+) -> None:
     current = recovery._verify_manifest_and_pdf
     if getattr(current, "_nico_ui_pdf_download_proof_v1", False):
         return
@@ -448,13 +501,21 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             assert run_id in requested_filename, requested_filename
         assert "FINAL-PENDING-APPROVAL" not in requested_filename, requested_filename
 
-        captured = _fetch_captured_pdf(
-            page,
-            requested_url,
-            run_id,
-            action_kind=action_kind,
-            report_language=action_report_language,
-        )
+        if action_kind == DRAFT_PDF_KIND:
+            assert source_proof_path is not None, "Exact-SHA source proof is required"
+            captured = _load_source_bound_pdf(
+                source_proof_path,
+                run_id,
+                action_report_language,
+            )
+        else:
+            captured = _fetch_captured_pdf(
+                page,
+                requested_url,
+                run_id,
+                action_kind=action_kind,
+                report_language=action_report_language,
+            )
         pdf_bytes = captured["pdf_bytes"]
         observed_sha = str(captured["pdf_sha256"])
         content_disposition = str(captured["content_disposition"])
@@ -510,6 +571,10 @@ def install_ui_pdf_download_proof(recovery: Any) -> None:
             "ui_review_pdf_action_lifecycle": contract["lifecycle"],
             "ui_review_pdf_action_set": action_records,
             "ui_review_pdf_network_path": artifact_url_suffix,
+            "ui_review_pdf_artifact_evidence_source": captured.get(
+                "evidence_source", "live-exact-artifact-response"
+            ),
+            "ui_review_pdf_source_artifact_reused": action_kind == DRAFT_PDF_KIND,
             "ui_review_pdf_user_gesture_anchor_click_count": anchor_click_count,
             "ui_review_pdf_anchor_click_observation_verified": True,
             "ui_review_pdf_single_dispatch_verified": True,

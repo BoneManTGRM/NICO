@@ -80,7 +80,7 @@ jobs:
           assert 'single_native_dom_click' not in dispatch
           assert 'page.expect_download(timeout=240_000)' in download
           assert 'ui_review_pdf_download_verified' in download
-          assert 'install_ui_pdf_download_proof(recovery)' in wrapper
+          assert 'install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)' in wrapper
           assert 'useRichEvidenceEditor' in component
           assert 'data-evidence-editor-mounted="false"' in component
           assert 'data-mobile-evidence-note="true"' in component
@@ -432,6 +432,8 @@ jobs:
           assert payload["ui_review_pdf_download_verified"] is True
           assert payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1
           assert payload["ui_review_pdf_anchor_click_observation_verified"] is True
+          assert payload["ui_review_pdf_source_artifact_reused"] is True
+          assert payload["ui_review_pdf_artifact_evidence_source"] == "exact-sha-spanish-source-proof"
           assert payload["ui_review_pdf_signature_verified"] is True
           assert payload["pdf_artifact_hash_header_verified"] is True
           assert payload["ui_review_pdf_artifact_hash_header_verified"] is True

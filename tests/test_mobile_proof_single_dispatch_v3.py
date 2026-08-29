@@ -57,10 +57,10 @@ def test_pdf_download_wrappers_preserve_single_dispatch_and_add_real_ui_download
     proof = PDF_PROOF.read_text(encoding="utf-8")
 
     assert "import mobile_restart_live_acceptance_v3 as single_dispatch" in chromium
-    assert "install_ui_pdf_download_proof(recovery)" in chromium
+    assert "install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)" in chromium
     assert "return single_dispatch.main(argv)" in chromium
     assert "import mobile_restart_live_acceptance_v4 as webkit_single_dispatch" in webkit
-    assert "install_ui_pdf_download_proof(recovery)" in webkit
+    assert "install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)" in webkit
     assert "return webkit_single_dispatch.main(argv)" in webkit
     assert 'page.expect_download(timeout=240_000)' in proof
     assert 'ui_review_pdf_original_user_gesture_preserved' in proof
@@ -89,6 +89,7 @@ def test_production_workflows_execute_non_retrying_download_entry_points() -> No
     assert 'payload["ui_review_pdf_lifecycle_contract_verified"] is True' in mobile
     assert 'payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1' in mobile
     assert 'payload["ui_review_pdf_anchor_click_observation_verified"] is True' in mobile
+    assert 'payload["ui_review_pdf_source_artifact_reused"] is True' in mobile
     assert "python scripts/mobile_restart_live_acceptance_v1.py" not in mobile
 
     assert "python scripts/mobile_restart_live_acceptance_v6.py" in ios
@@ -110,4 +111,5 @@ def test_production_workflows_execute_non_retrying_download_entry_points() -> No
     assert 'payload["ui_review_pdf_lifecycle_contract_verified"] is True' in ios
     assert 'payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1' in ios
     assert 'payload["ui_review_pdf_anchor_click_observation_verified"] is True' in ios
+    assert 'payload["ui_review_pdf_source_artifact_reused"] is True' in ios
     assert "python scripts/mobile_restart_live_acceptance_v2.py" not in ios

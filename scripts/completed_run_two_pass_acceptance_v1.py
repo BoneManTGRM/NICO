@@ -58,6 +58,10 @@ def _observe_terminal(
     for item in (first_pdf, second_pdf):
         assert item["ui_review_pdf_user_gesture_anchor_click_count"] == 1, item
         assert item["ui_review_pdf_anchor_click_observation_verified"] is True, item
+        assert item["ui_review_pdf_source_artifact_reused"] is True, item
+        assert item["ui_review_pdf_artifact_evidence_source"] == (
+            "exact-sha-spanish-source-proof"
+        ), item
         assert item["ui_review_pdf_signature_verified"] is True, item
         assert item["ui_review_pdf_exact_run_response_verified"] is True, item
         assert item["ui_review_pdf_artifact_hash_header_verified"] is True, item
@@ -486,7 +490,7 @@ def main(argv: list[str] | None = None) -> int:
         source_workflow_run_attempt=args.source_workflow_run_attempt,
         expected_proof_tool_sha=args.expected_proof_tool_sha,
     )
-    install_ui_pdf_download_proof(recovery)
+    install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:

@@ -66,7 +66,7 @@ jobs:
           assert '_ORIGINAL_RUN_PROOF(SingleDispatchBrowser(browser), args)' in proof
           assert 'page.expect_download(timeout=240_000)' in download
           assert 'ui_review_pdf_download_verified' in download
-          assert 'install_ui_pdf_download_proof(recovery)' in wrapper
+          assert 'install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)' in wrapper
           assert 'archive.ubuntu.com/ubuntu/' in workflow
           assert 'Acquire::https::Timeout "20";' in workflow
           assert 'timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium' in workflow
@@ -437,6 +437,8 @@ jobs:
           assert payload["ui_review_pdf_download_verified"] is True
           assert payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1
           assert payload["ui_review_pdf_anchor_click_observation_verified"] is True
+          assert payload["ui_review_pdf_source_artifact_reused"] is True
+          assert payload["ui_review_pdf_artifact_evidence_source"] == "exact-sha-spanish-source-proof"
           assert payload["ui_review_pdf_signature_verified"] is True
           assert payload["ui_review_pdf_artifact_hash_header_verified"] is True
           assert payload["ui_review_pdf_canonical_truth_digest_verified"] is True

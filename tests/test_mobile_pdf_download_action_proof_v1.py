@@ -1,8 +1,45 @@
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
 from scripts import mobile_pdf_download_action_proof_v1 as proof
+
+
+def test_mobile_pdf_download_proof_reuses_exact_source_bound_locale_bytes(
+    tmp_path: Path,
+) -> None:
+    run_id = "comprun_source_bound"
+    pdf_bytes = b"%PDF-1.7\n" + (b"source-bound\n" * 100)
+    pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    artifact = tmp_path / "nico-comprehensive-en-automated-draft-pending-human-approval.pdf"
+    artifact.write_bytes(pdf_bytes)
+    source = tmp_path / "spanish-comprehensive-live-proof.json"
+    source.write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "same_run_bilingual_pdf_verified": True,
+                "same_run_bilingual_assessment_rerun": False,
+                "localized_pdf_artifact_hash_headers_verified": True,
+                "terminal_state_unchanged_after_localized_reads": True,
+                "english_pdf_sha256": pdf_sha256,
+                "english_pdf_path": f"audit-results/{artifact.name}",
+                "canonical_truth_sha256": "a" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured = proof._load_source_bound_pdf(source, run_id, "en")
+
+    assert captured["pdf_bytes"] == pdf_bytes
+    assert captured["pdf_sha256"] == pdf_sha256
+    assert captured["response_run_id"] == run_id
+    assert captured["response_report_language"] == "en"
+    assert captured["assessment_rerun"] is False
+    assert captured["evidence_source"] == "exact-sha-spanish-source-proof"
 
 
 def test_mobile_pdf_download_proof_tracks_localized_draft_contract() -> None:
@@ -121,6 +158,8 @@ def test_mobile_pdf_download_proof_uses_real_anchor_contract_not_download_events
     assert "window.__nicoAcceptancePdfAnchor" in source
     assert "unquote(parsed_anchor.path) == artifact_url_suffix" in source
     assert "_fetch_captured_pdf(" in source
+    assert "_load_source_bound_pdf(" in source
+    assert '"exact-sha-spanish-source-proof"' in source
     assert "_validate_response_filename(" in source
     assert 're.fullmatch(r"[0-9a-f]{64}", header_sha)' in source
     assert "assert header_sha == observed_sha" in source

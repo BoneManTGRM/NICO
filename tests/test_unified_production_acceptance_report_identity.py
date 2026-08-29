@@ -175,6 +175,7 @@ def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
     assert 'proof["visible_pdf_action_count"] = 2' in completed_runner
     assert 'item["ui_review_pdf_user_gesture_anchor_click_count"] == 1' in completed_runner
     assert 'item["ui_review_pdf_anchor_click_observation_verified"] is True' in completed_runner
+    assert 'item["ui_review_pdf_source_artifact_reused"] is True' in completed_runner
     assert 'item["ui_review_pdf_artifact_hash_header_verified"] is True' in completed_runner
     assert 'item["ui_review_pdf_canonical_truth_digest_verified"] is True' in completed_runner
     assert 'item["ui_review_pdf_lifecycle_contract_verified"] is True' in completed_runner

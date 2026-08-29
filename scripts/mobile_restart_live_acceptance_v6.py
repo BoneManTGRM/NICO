@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     recovery._require_existing_source_args(args)
     install_exact_sha_navigation(single_dispatch, args.expected_sha)
     install_provider_neutral_repository_locator(single_dispatch)
-    install_ui_pdf_download_proof(recovery)
+    install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)
     return webkit_single_dispatch.main(argv)
 
 
