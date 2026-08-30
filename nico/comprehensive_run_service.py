@@ -49,7 +49,10 @@ from nico.comprehensive_run_record import (
     apply_comprehensive_stage_result,
     create_comprehensive_run_record,
 )
-from nico.comprehensive_run_store import ComprehensiveRunStore
+from nico.comprehensive_run_store import (
+    BrowserProjectionBuilder,
+    ComprehensiveRunStore,
+)
 from nico.comprehensive_stage_adapter import CapabilityExecutor, bind_capability_executors
 from nico.comprehensive_stage_execution_timeout_v1 import execute_stage_with_timeout
 from nico.comprehensive_stage_watchdog_v1 import (
@@ -61,7 +64,7 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v16"
+VERSION = "nico.comprehensive_run_service.v17"
 
 _EXECUTIVE_BRIEFING_STAGE_ID = "risk_reduction_and_executive_briefing"
 _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
@@ -227,6 +230,19 @@ class ComprehensiveRunService:
         """Load and integrity-validate a run without continuation or maintenance."""
 
         return self._store.load(run_id)
+
+    def bind_browser_projection_builder(
+        self,
+        builder: BrowserProjectionBuilder,
+    ) -> None:
+        """Install the durable request projection after the controller is available."""
+
+        self._store.bind_browser_projection_builder(builder)
+
+    def load_browser_projection(self, run_id: str) -> dict[str, Any] | None:
+        """Load transaction-bound browser status without materializing full evidence."""
+
+        return self._store.load_browser_projection(run_id)
 
     def resume(
         self,
