@@ -67,6 +67,54 @@ def test_mobile_pdf_download_proof_tracks_localized_draft_contract() -> None:
     )
 
 
+def test_mobile_pdf_download_proof_reuses_one_direct_verification_per_page_run() -> None:
+    class Page:
+        pass
+
+    calls: list[tuple[object, str, str]] = []
+
+    def current(page: object, frontend_origin: str, run_id: str) -> dict[str, object]:
+        calls.append((page, frontend_origin, run_id))
+        return {
+            "pdf_sha256": "a" * 64,
+            "canonical_truth_sha256": "b" * 64,
+            "pdf_run_identity_verified": True,
+            "pdf_signature_verified": True,
+        }
+
+    cache: dict[tuple[int, str, str], dict[str, object]] = {}
+    page = Page()
+    first, first_reused = proof._reuse_direct_verification(
+        cache,
+        current,
+        page,
+        "https://app.nicoaudit.com/",
+        "comprun_contract",
+    )
+    second, second_reused = proof._reuse_direct_verification(
+        cache,
+        current,
+        page,
+        "https://app.nicoaudit.com",
+        "comprun_contract",
+    )
+    second["pdf_sha256"] = "changed"
+    third, third_reused = proof._reuse_direct_verification(
+        cache,
+        current,
+        page,
+        "https://app.nicoaudit.com",
+        "comprun_contract",
+    )
+
+    assert calls == [(page, "https://app.nicoaudit.com/", "comprun_contract")]
+    assert first_reused is False
+    assert second_reused is True
+    assert third_reused is True
+    assert first["pdf_sha256"] == "a" * 64
+    assert third["pdf_sha256"] == "a" * 64
+
+
 def test_mobile_pdf_download_proof_tracks_exact_accepted_edition_contract() -> None:
     contract = proof._pdf_action_contract(
         "comprun_contract",
@@ -166,6 +214,8 @@ def test_mobile_pdf_download_proof_uses_real_anchor_contract_not_download_events
     assert "assert header_sha == observed_sha" in source
     assert 'response.headers.get("x-nico-canonical-truth-sha256")' in source
     assert 'captured["canonical_truth_sha256"] == direct_canonical_truth_sha256' in source
+    assert "_reuse_direct_verification(" in source
+    assert '"ui_review_pdf_direct_verification_reused": direct_reused' in source
     assert 'x-nico-accepted-pdf-sha256' in source
     assert '"ui_review_pdf_action_kind": action_kind' in source
     assert '"ui_review_pdf_network_path": artifact_url_suffix' in source
