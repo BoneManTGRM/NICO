@@ -76,11 +76,27 @@ def _body_without_generated_toc(pdf_bytes: bytes) -> PdfReader:
     reader = PdfReader(io.BytesIO(pdf_bytes))
     writer = PdfWriter()
     writer.add_page(reader.pages[0])
-    for page in reader.pages[2:]:
+    body_start = 1
+    while body_start < len(reader.pages):
+        text = reader.pages[body_start].extract_text() or ""
+        if "Table of Contents" not in text and "Tabla de contenido" not in text:
+            break
+        body_start += 1
+    for page in reader.pages[body_start:]:
         writer.add_page(page)
     output = io.BytesIO()
     writer.write(output)
     return PdfReader(io.BytesIO(output.getvalue()))
+
+
+def _generated_toc_text(reader: PdfReader) -> str:
+    pages: list[str] = []
+    for page in reader.pages[1:]:
+        text = page.extract_text() or ""
+        if "Table of Contents" not in text and "Tabla de contenido" not in text:
+            break
+        pages.append(text)
+    return "\n".join(pages)
 
 
 def _outline_titles(value) -> list[str]:
@@ -121,7 +137,7 @@ def test_semantic_navigation_uses_the_canonical_manifest_and_preserves_every_bod
 
     output = semantic_renumber_and_outline(source)
     reader = PdfReader(io.BytesIO(output))
-    toc_text = reader.pages[1].extract_text() or ""
+    toc_text = _generated_toc_text(reader)
     outline_titles = _outline_titles(reader.outline)
     full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
@@ -154,7 +170,7 @@ def test_semantic_navigation_localizes_all_generated_navigation_for_es_mx() -> N
     output = semantic_renumber_and_outline(source)
     reader = PdfReader(io.BytesIO(output))
     full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    toc_text = reader.pages[1].extract_text() or ""
+    toc_text = _generated_toc_text(reader)
 
     assert "Tabla de contenido" in toc_text
     assert "Table of Contents" not in full_text
@@ -243,3 +259,35 @@ def test_spanish_scorecard_cells_and_wrapped_final_heading_keep_real_toc_targets
     assert toc_lines[toc_lines.index("Auditoría de código") + 1] == "4"
     approval_title = "Registro de revisión humana y aprobación de artefactos exactos"
     assert toc_lines[toc_lines.index(approval_title) + 1] == "5"
+
+
+def test_spanish_semantic_toc_paginates_above_the_four_phase_matrix() -> None:
+    from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
+    from nico.comprehensive_semantic_navigation_v1 import (
+        semantic_renumber_and_outline,
+    )
+
+    navigated = semantic_renumber_and_outline(_semantic_fixture(spanish=True))
+    rendered = apply_four_phase_pdf(
+        navigated,
+        {
+            "identity": {"report_language": "es-MX"},
+            "assessment_state": "review_required",
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+        spanish=True,
+    )
+    reader = PdfReader(io.BytesIO(rendered))
+    toc_pages = [
+        page.extract_text() or ""
+        for page in reader.pages
+        if "Tabla de contenido" in (page.extract_text() or "")
+    ]
+
+    assert len(toc_pages) == 2
+    assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in toc_pages[0]
+    assert (
+        "Registro de revisión humana y aprobación de artefactos exactos"
+        in toc_pages[1]
+    )

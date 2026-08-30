@@ -7,8 +7,11 @@ from typing import Any, Mapping
 
 from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
-VERSION = "nico.comprehensive_semantic_navigation.v1.4"
-_TOC_ROWS_PER_PAGE = 39
+VERSION = "nico.comprehensive_semantic_navigation.v1.5"
+# The first generated TOC page later receives the four-phase assessment matrix at
+# y=46..192.  With the established 15.8-point row pitch, row 33 starts inside that
+# reserved surface.  Paginate after 32 rows so every navigation entry remains visible.
+_TOC_ROWS_PER_PAGE = 32
 
 # Known historic/localized heading variants are recognition aliases only.
 # Presentation labels always come from the canonical semantic manifest.

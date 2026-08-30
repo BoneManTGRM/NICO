@@ -591,3 +591,18 @@ def test_review_locale_proofs_wait_for_client_projection_before_asserting() -> N
         assert "document.documentElement.lang" in helper
         assert "main[data-review-contract='accepted-edition-v2'] h1" in helper
         assert "expectedHeading" in helper
+
+
+def test_desktop_acceptance_waits_for_authored_locale_projection_before_reading() -> None:
+    path = Path("scripts/completed_run_two_pass_acceptance_v1.py")
+    source = path.read_text(encoding="utf-8")
+    start = source.index("def _locale_surface(")
+    end = source.index("\ndef ", start + 1)
+    helper = source[start:end]
+
+    projection_wait = helper.index("page.wait_for_function(")
+    surface_read = helper.index("value = page.evaluate(")
+    assert projection_wait < surface_read
+    assert 'main[data-workspace="assessment"]' in helper
+    assert "workspace.innerText" in helper
+    assert "expectedMarker" in helper

@@ -127,6 +127,30 @@ def _observe_terminal(
 
 def _locale_surface(page: Page, locale: str) -> dict[str, str]:
     expected_spanish = locale == "es-MX"
+    expected_path = "/es/assessment" if expected_spanish else "/assessment"
+    expected_language_prefix = "es" if expected_spanish else "en"
+    expected_workspace_locale = "es-MX" if expected_spanish else "en"
+    expected_navigation_locale = "es-MX" if expected_spanish else "en-US"
+    marker = "Identidad técnica" if expected_spanish else "Technical identity"
+    page.wait_for_function(
+        """([expectedPath, languagePrefix, workspaceLocale, navigationLocale, expectedMarker]) => {
+          const workspace = document.querySelector('main[data-workspace="assessment"]');
+          const navigation = document.querySelector('nav.global-nav');
+          return window.location.pathname.startsWith(expectedPath)
+            && (document.documentElement.lang || '').toLowerCase().startsWith(languagePrefix)
+            && workspace?.getAttribute('data-assessment-locale') === workspaceLocale
+            && navigation?.getAttribute('data-locale') === navigationLocale
+            && String(workspace.innerText || '').includes(expectedMarker);
+        }""",
+        arg=[
+            expected_path,
+            expected_language_prefix,
+            expected_workspace_locale,
+            expected_navigation_locale,
+            marker,
+        ],
+        timeout=120_000,
+    )
     value = page.evaluate(
         """() => ({
           document_language: String(document.documentElement.lang || ''),
@@ -137,19 +161,15 @@ def _locale_surface(page: Page, locale: str) -> dict[str, str]:
         })"""
     )
     surface = {str(key): str(item or "") for key, item in dict(value or {}).items()}
-    expected_path = "/es/assessment" if expected_spanish else "/assessment"
     assert surface["pathname"].startswith(expected_path), surface
     assert surface["document_language"].lower().startswith(
-        "es" if expected_spanish else "en"
+        expected_language_prefix
     ), surface
-    assert surface["workspace_locale"] == ("es-MX" if expected_spanish else "en"), surface
-    assert surface["navigation_locale"] == (
-        "es-MX" if expected_spanish else "en-US"
-    ), surface
+    assert surface["workspace_locale"] == expected_workspace_locale, surface
+    assert surface["navigation_locale"] == expected_navigation_locale, surface
     query = parse_qs(urlparse(str(page.url)).query)
     assert len(query.get("run_id", [])) == 1, query
     assert "report_language" not in query, query
-    marker = "Identidad técnica" if expected_spanish else "Technical identity"
     body = page.locator("body").inner_text()
     assert marker in body, {"locale": locale, "missing_authored_marker": marker}
     if expected_spanish:
