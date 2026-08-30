@@ -135,6 +135,29 @@ def test_external_evidence_closes_item_nine_fail_closed() -> None:
         raise AssertionError("A pending exact-current-head context must fail closed")
 
 
+def test_external_evidence_accepts_current_completed_run_two_pass_schema() -> None:
+    sha = "5" * 40
+    acceptance, audit, release, status = evidence(sha)
+    acceptance["artifact_schema"] = (
+        "nico.completed-run-two-pass-production-acceptance.v1"
+    )
+
+    validate_external(acceptance, audit, release, status, sha)
+
+
+def test_external_evidence_rejects_unknown_unified_acceptance_schema() -> None:
+    sha = "6" * 40
+    acceptance, audit, release, status = evidence(sha)
+    acceptance["artifact_schema"] = "nico.unknown-production-acceptance.v1"
+
+    try:
+        validate_external(acceptance, audit, release, status, sha)
+    except ValueError as exc:
+        assert "Unified Production Acceptance did not pass" in str(exc)
+    else:
+        raise AssertionError("An unknown Unified acceptance schema must fail closed")
+
+
 def test_workflow_creates_one_post_acceptance_comprehensive_report_with_phase2_truth() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     assert 'workflows: ["Unified Production Acceptance"]' in source
