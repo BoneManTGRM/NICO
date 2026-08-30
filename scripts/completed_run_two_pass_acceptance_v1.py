@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -23,7 +24,7 @@ from mobile_pdf_download_action_proof_v1 import install_ui_pdf_download_proof
 
 VERSION = "nico.completed-run-two-pass-production-acceptance.v1"
 REVIEW_PDF_REENTRY_SETTLEMENT_MS = 1_600
-FINAL_CANONICAL_READ_TIMEOUT_MS = 300_000
+FINAL_CANONICAL_READ_TIMEOUT_SECONDS = 300
 
 
 def _write(path: Path, value: Any) -> None:
@@ -32,6 +33,35 @@ def _write(path: Path, value: Any) -> None:
         json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+
+def _read_final_canonical(
+    frontend_url: str,
+    run_id: str,
+) -> tuple[dict[str, Any], str]:
+    """Read final immutable truth without Playwright's shorter socket idle limit."""
+
+    request = urllib.request.Request(
+        f"{frontend_url.rstrip('/')}/api/nico/assessment/comprehensive-run/"
+        f"{run_id}/report/json",
+        headers={"Accept": "application/json", "Cache-Control": "no-store"},
+        method="GET",
+    )
+    with urllib.request.urlopen(
+        request,
+        timeout=FINAL_CANONICAL_READ_TIMEOUT_SECONDS,
+    ) as response:
+        assert 200 <= response.status < 300
+        canonical_digest_header = response.headers.get(
+            "x-nico-canonical-truth-sha256"
+        )
+        canonical = json.loads(response.read().decode("utf-8"))
+    assert isinstance(canonical, dict)
+    canonical_digest = require_canonical_json_digest(
+        canonical,
+        canonical_digest_header,
+    )
+    return canonical, canonical_digest
 
 
 def _settle_review_pdf_reentry_guard(page: Page) -> None:
@@ -588,25 +618,12 @@ def main(argv: list[str] | None = None) -> int:
                 verified_canonical_truth=first_pass["canonical_truth"],
             )
             runs = [first_pass, second_pass]
-            request = playwright.request.new_context(
-                extra_http_headers={"Accept": "application/json", "Cache-Control": "no-store"}
-            )
-            try:
-                response = request.get(
-                    f"{args.frontend_url.rstrip('/')}/api/nico/assessment/comprehensive-run/"
-                    f"{handoff['run_id']}/report/json",
-                    timeout=FINAL_CANONICAL_READ_TIMEOUT_MS,
-                )
-                assert response.ok
-                canonical = response.json()
-                canonical_digest = require_canonical_json_digest(
-                    canonical,
-                    response.headers.get("x-nico-canonical-truth-sha256"),
-                )
-            finally:
-                request.dispose()
         finally:
             browser.close()
+    canonical, canonical_digest = _read_final_canonical(
+        args.frontend_url,
+        handoff["run_id"],
+    )
     identity = canonical.get("identity") if isinstance(canonical, dict) else {}
     assert identity.get("run_id") == handoff["run_id"]
     assert identity.get("commit_sha") == args.expected_sha
