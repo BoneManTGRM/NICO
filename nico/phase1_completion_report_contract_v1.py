@@ -19,6 +19,11 @@ _EXPLICIT_APPROVAL_BOUNDARIES = (
     ),
 )
 
+_UNIFIED_ACCEPTANCE_SCHEMAS = {
+    "nico.unified_live_acceptance.v1",
+    "nico.completed-run-two-pass-production-acceptance.v1",
+}
+
 
 def load_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -128,7 +133,10 @@ def validate_external(
     status: dict[str, Any],
     expected_sha: str,
 ) -> None:
-    if acceptance.get("artifact_schema") != "nico.unified_live_acceptance.v1" or acceptance.get("status") != "passed":
+    if (
+        acceptance.get("artifact_schema") not in _UNIFIED_ACCEPTANCE_SCHEMAS
+        or acceptance.get("status") != "passed"
+    ):
         raise ValueError("Unified Production Acceptance did not pass")
     if acceptance.get("expected_deployed_sha") != expected_sha:
         raise ValueError("Unified Production Acceptance is bound to a different SHA")
