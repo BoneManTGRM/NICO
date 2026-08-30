@@ -131,7 +131,10 @@ def _locale_surface(page: Page, locale: str) -> dict[str, str]:
     expected_language_prefix = "es" if expected_spanish else "en"
     expected_workspace_locale = "es-MX" if expected_spanish else "en"
     expected_navigation_locale = "es-MX" if expected_spanish else "en-US"
-    marker = "Identidad técnica" if expected_spanish else "Technical identity"
+    # Unified acceptance runs at a desktop viewport.  The compact-only identity
+    # summary is not rendered there, so bind locale settlement to authored copy
+    # that the desktop result surface actually exposes.
+    marker = "Madurez técnica" if expected_spanish else "Technical maturity"
     page.wait_for_function(
         """([expectedPath, languagePrefix, workspaceLocale, navigationLocale, expectedMarker]) => {
           const workspace = document.querySelector('main[data-workspace="assessment"]');
