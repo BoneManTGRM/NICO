@@ -606,3 +606,17 @@ def test_desktop_acceptance_waits_for_authored_locale_projection_before_reading(
     assert 'main[data-workspace="assessment"]' in helper
     assert "workspace.innerText" in helper
     assert "expectedMarker" in helper
+    assert (
+        'marker = "Madurez técnica" if expected_spanish else "Technical maturity"'
+        in helper
+    )
+    assert "Technical identity" not in helper
+    assert "Identidad técnica" not in helper
+
+    workspace_source = Path(
+        "apps/web/app/assessment/AssessmentWorkspace.tsx"
+    ).read_text(encoding="utf-8")
+    desktop_start = workspace_source.index("function renderDesktopResult()")
+    desktop_end = workspace_source.index("function renderStatePanel()", desktop_start)
+    desktop_renderer = workspace_source[desktop_start:desktop_end]
+    assert "copy.technicalMaturityLabel" in desktop_renderer
