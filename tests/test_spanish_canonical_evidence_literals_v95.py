@@ -97,10 +97,18 @@ def test_non_evidence_fields_never_use_flattened_machine_literal_exemption() -> 
     assert serialized_canonical_evidence_literal(value, "summary") is False
 
 
-def test_worker_installs_evidence_guard_before_runtime_cache() -> None:
-    source = Path("nico/api/final_report_worker_bootstrap.py").read_text(encoding="utf-8")
-    guard = source.index("install_comprehensive_spanish_canonical_evidence_literals_v95()")
-    cache = source.index("install_comprehensive_spanish_final_report_runtime_cache_v94()")
-    assert guard < cache
-    assert "presentation_prose_still_fail_closed" in source
-    assert "canonical_evidence_literals_preserved" in source
+def test_production_report_entrypoints_install_evidence_guard_before_runtime_cache() -> None:
+    for path in (
+        "nico/api/final_report_worker_bootstrap.py",
+        "nico/api/spanish_final_report_bootstrap.py",
+    ):
+        source = Path(path).read_text(encoding="utf-8")
+        guard = source.index(
+            "install_comprehensive_spanish_canonical_evidence_literals_v95()"
+        )
+        cache = source.index(
+            "install_comprehensive_spanish_final_report_runtime_cache_v94()"
+        )
+        assert guard < cache
+        assert "presentation_prose_still_fail_closed" in source
+        assert "canonical_evidence_byte_preserving" in source

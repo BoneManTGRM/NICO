@@ -14,6 +14,7 @@ from playwright.sync_api import Page, sync_playwright
 import mobile_restart_live_acceptance_v1 as recovery
 from comprehensive_production_run_handoff_v1 import (
     load_source_proof,
+    retain_unified_english_pdf,
     require_canonical_json_digest,
     require_matching_canonical_truth_digest,
     source_binding_marker,
@@ -626,6 +627,14 @@ def main(argv: list[str] | None = None) -> int:
     args.artifact_dir.mkdir(parents=True, exist_ok=True)
     canonical_path = args.artifact_dir / "pass-2-comprehensive.json"
     _write(canonical_path, canonical)
+    retained_pdf = retain_unified_english_pdf(
+        args.source_proof,
+        args.artifact_dir,
+        run_id=handoff["run_id"],
+        expected_sha=args.expected_sha,
+        repository=args.repository,
+        expected_download_sha256=second_pass["ui_review_pdf_download_sha256"],
+    )
     unique_run_ids = sorted({str(item["run_id"]) for item in runs})
     result = {
         "artifact_schema": VERSION,
@@ -647,6 +656,7 @@ def main(argv: list[str] | None = None) -> int:
         "continuation_post_count": 0,
         "runs": runs,
         "canonical_json": canonical_path.as_posix(),
+        "retained_english_pdf": retained_pdf,
         "proof": {
             "same_immutable_completed_run": unique_run_ids == [handoff["run_id"]],
             "two_terminal_observation_passes": True,
@@ -663,6 +673,11 @@ def main(argv: list[str] | None = None) -> int:
                 for item in runs
             ),
             "canonical_truth_bound_to_retrieved_json": True,
+            "phase1_binder_pdf_retained": (
+                retained_pdf["filename"] == "pass-2-comprehensive.pdf"
+                and retained_pdf["sha256"]
+                == second_pass["ui_review_pdf_download_sha256"]
+            ),
             "pass_two_reuses_json_verified_immutable_truth": (
                 runs[0]["canonical_truth_reused_from_pass"] is None
                 and runs[1]["canonical_truth_reused_from_pass"] == 1

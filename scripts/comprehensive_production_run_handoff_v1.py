@@ -462,6 +462,78 @@ def load_source_proof(
     }
 
 
+def retain_unified_english_pdf(
+    source_proof_path: Path,
+    artifact_dir: Path,
+    *,
+    run_id: str,
+    expected_sha: str,
+    repository: str,
+    expected_download_sha256: str,
+) -> dict[str, Any]:
+    """Retain the exact source-certified English PDF required by the Phase 1 binder."""
+
+    payload = json.loads(source_proof_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError("source_proof_must_be_mapping")
+    if _text(payload.get("run_id")) != run_id:
+        raise ValueError("source_pdf_run_id_mismatch")
+    if _text(payload.get("expected_sha")) != expected_sha:
+        raise ValueError("source_pdf_release_sha_mismatch")
+    if _text(payload.get("repository")).casefold() != repository.casefold():
+        raise ValueError("source_pdf_repository_mismatch")
+    if payload.get("same_run_bilingual_pdf_verified") is not True:
+        raise ValueError("source_pdf_bilingual_proof_missing")
+    if payload.get("same_run_bilingual_assessment_rerun") is not False:
+        raise ValueError("source_pdf_assessment_rerun_detected")
+    if payload.get("localized_pdf_artifact_hash_headers_verified") is not True:
+        raise ValueError("source_pdf_hash_header_unproven")
+    if payload.get("human_review_required") is not True:
+        raise ValueError("source_pdf_human_review_boundary_missing")
+    if payload.get("client_delivery_allowed") is not False:
+        raise ValueError("source_pdf_delivery_boundary_invalid")
+
+    proof_sha256 = _text(payload.get("english_pdf_sha256")).lower()
+    expected_download = _text(expected_download_sha256).lower()
+    if not _SHA256.fullmatch(proof_sha256):
+        raise ValueError("source_pdf_digest_missing_or_invalid")
+    if not _SHA256.fullmatch(expected_download):
+        raise ValueError("observed_pdf_digest_missing_or_invalid")
+    if proof_sha256 != expected_download:
+        raise ValueError("source_pdf_observed_digest_mismatch")
+
+    filename = Path(_text(payload.get("english_pdf_path"))).name
+    if not filename:
+        raise ValueError("source_pdf_filename_missing")
+    source_path = source_proof_path.parent / filename
+    pdf_bytes = source_path.read_bytes()
+    if not pdf_bytes.startswith(b"%PDF") or len(pdf_bytes) <= 1_000:
+        raise ValueError("source_pdf_bytes_invalid")
+    observed_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    if observed_sha256 != proof_sha256:
+        raise ValueError("source_pdf_retained_bytes_mismatch")
+
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    retained_path = artifact_dir / "pass-2-comprehensive.pdf"
+    retained_path.write_bytes(pdf_bytes)
+    if hashlib.sha256(retained_path.read_bytes()).hexdigest() != proof_sha256:
+        raise ValueError("retained_pdf_write_verification_failed")
+    return {
+        "path": retained_path.as_posix(),
+        "filename": retained_path.name,
+        "artifact_type": "comprehensive_pdf",
+        "run_id": run_id,
+        "repository": repository,
+        "commit_sha": expected_sha,
+        "sha256": proof_sha256,
+        "size_bytes": len(pdf_bytes),
+        "source_filename": filename,
+        "publication_state": "retained_in_unified_production_acceptance",
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validate the sole production Comprehensive run handoff."

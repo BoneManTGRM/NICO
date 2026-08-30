@@ -16,6 +16,9 @@ from nico.comprehensive_production_runtime_recovery_v1 import (
 from nico.comprehensive_spanish_assessment_scope_v97 import (
     install_comprehensive_spanish_assessment_scope_v97,
 )
+from nico.comprehensive_spanish_canonical_evidence_literals_v95 import (
+    install_comprehensive_spanish_canonical_evidence_literals_v95,
+)
 from nico.comprehensive_spanish_current_copy_worker_v98 import (
     install_comprehensive_spanish_current_copy_worker_v98,
 )
@@ -52,6 +55,40 @@ if SPANISH_ASSESSMENT_SCOPE.get("production_assessment_scope_translation_support
     raise RuntimeError("Spanish production assessment scope is not translatable")
 if SPANISH_ASSESSMENT_SCOPE.get("unknown_assessment_scope_contract_unregistered") is not True:
     raise RuntimeError("Spanish assessment-scope contract registered unapproved prose")
+
+# Same-run locale projection executes in this parent process before any isolated
+# renderer handoff. Preserve exact repository/scanner evidence here as well as in the
+# worker, and bind it before v94 captures the field translator.
+SPANISH_CANONICAL_EVIDENCE_LITERALS = (
+    install_comprehensive_spanish_canonical_evidence_literals_v95()
+)
+setattr(
+    app.state,
+    "nico_spanish_canonical_evidence_literals",
+    SPANISH_CANONICAL_EVIDENCE_LITERALS,
+)
+if SPANISH_CANONICAL_EVIDENCE_LITERALS.get("status") not in {
+    "installed",
+    "already_installed",
+}:
+    raise RuntimeError(
+        "Spanish canonical-evidence literal guard did not install: "
+        f"{SPANISH_CANONICAL_EVIDENCE_LITERALS}"
+    )
+if SPANISH_CANONICAL_EVIDENCE_LITERALS.get("bound") is not True:
+    raise RuntimeError("Spanish canonical-evidence literal guard is not bound")
+if (
+    SPANISH_CANONICAL_EVIDENCE_LITERALS.get(
+        "report_owned_presentation_prose_still_fail_closed"
+    )
+    is not True
+):
+    raise RuntimeError("Spanish presentation prose no longer fails closed")
+if (
+    SPANISH_CANONICAL_EVIDENCE_LITERALS.get("canonical_evidence_byte_preserving")
+    is not True
+):
+    raise RuntimeError("Spanish canonical evidence literals are not preserved")
 
 # Bind the current report's approved Spanish presentation phrases before v94 captures
 # process-local translator references. The detached renderer installs the same contract

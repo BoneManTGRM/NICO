@@ -1075,7 +1075,12 @@ def build_same_run_locale_report(
             source_pdf_bytes,
         )
     source_artifacts_reused = False
-    if target_language == source_language:
+    force_pending_draft_regeneration = (
+        status.get("_nico_force_pending_draft_artifact_regeneration") is True
+        and source_lifecycle["approval_status"] == "pending_human_approval"
+        and source_lifecycle["client_delivery_allowed"] is False
+    )
+    if target_language == source_language and not force_pending_draft_regeneration:
         markdown = reports.get("markdown")
         html = reports.get("html")
         encoded_pdf = reports.get("pdf_base64")

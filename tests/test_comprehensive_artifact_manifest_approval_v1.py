@@ -350,12 +350,14 @@ def test_preapproval_artifact_update_rebinds_manifest_without_duplicating_pages(
     assert rebound["content_integrity"]["json_sha256"] == rebound["canonical_json_sha256"]
 
 
-def test_visible_manifest_supplement_never_embeds_preliminary_artifact_hashes() -> None:
+def test_visible_manifest_supplement_embeds_final_pre_render_artifact_hashes_only() -> None:
     result = attach_artifact_manifest(_package())
     pdf_text = "\n".join(
         page.extract_text() or ""
         for page in PdfReader(io.BytesIO(base64.b64decode(result["pdf_base64"]))).pages
     )
+    compact_pdf_text = "".join(pdf_text.split())
+    normalized_pdf_text = " ".join(pdf_text.split())
 
     assert result["digest_independent_manifest_supplement"] is True
     assert result["client_report_completion"]["digest_independent_manifest_supplement"] is True
@@ -367,8 +369,18 @@ def test_visible_manifest_supplement_never_embeds_preliminary_artifact_hashes() 
             "evidence_csv",
             "candidate_register_json",
             "remediation_backlog_json",
+            "markdown_report",
+            "html_report",
         }:
-            assert item["sha256"] not in pdf_text
+            assert item["sha256"] in compact_pdf_text
+
+    # These bytes do not exist until after the supplement is rendered, so their
+    # final digests remain detached rather than becoming self-referential copy.
+    assert result["pdf_sha256"] not in compact_pdf_text
+    assert result["canonical_json_sha256"] not in compact_pdf_text
+    assert result["evidence_manifest_sha256"] not in compact_pdf_text
+    assert "Not available" not in pdf_text
+    assert "final immutable bytes existed before this PDF was rendered" in normalized_pdf_text
 
 
 def _replace_detached_manifest(result: dict, manifest: dict) -> None:

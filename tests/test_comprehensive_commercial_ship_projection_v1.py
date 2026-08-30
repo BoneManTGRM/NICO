@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 from copy import deepcopy
 from pathlib import Path
@@ -9,8 +10,12 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico.comprehensive_commercial_ship_projection_v3 import (
+    _source_pdf_requires_integrity_reprojection,
     compact_sparse_limitation_pages,
     project_canonical_for_client_presentation,
+)
+from nico.comprehensive_spanish_current_copy_worker_v98 import (
+    localize_current_report_copy_v98,
 )
 
 
@@ -128,6 +133,122 @@ def test_deployment_projection_does_not_guess_failure_split() -> None:
     assert "failed/non-success=not separately evidenced" in text
     assert "unresolved=not separately evidenced" in text
     assert "failed-or-unresolved remainder=4" in text
+
+
+def test_spanish_projection_localizes_dynamic_deployment_taxonomy() -> None:
+    source = (
+        "Deployment outcome taxonomy (unscored context): observed=10; "
+        "successful=6; failed/non-success=not separately evidenced; "
+        "unresolved=not separately evidenced; failed-or-unresolved remainder=4."
+    )
+
+    translated = localize_current_report_copy_v98(source)
+
+    assert translated == (
+        "Taxonomía de resultados de despliegue (contexto sin puntuación): "
+        "observados=10; exitosos=6; fallidos/no exitosos=no se evidenciaron "
+        "por separado; no resueltos=no se evidenciaron por separado; "
+        "remanente fallido o no resuelto=4."
+    )
+
+    score_boundary = (
+        "Canonical scoring is reconciled to retained evidence without recomputing "
+        "or inflating either score; evidence limitations remain explicit. Candidate "
+        "volume and reviewer workload are operational review metrics and have no "
+        "numeric technical-maturity or Evidence-Adjusted score effect."
+    )
+    translated_boundary = localize_current_report_copy_v98(score_boundary)
+    assert "Canonical scoring is reconciled" not in translated_boundary
+    assert "Candidate volume and reviewer workload" not in translated_boundary
+    assert "La puntuación canónica se concilia con la evidencia conservada" in (
+        translated_boundary
+    )
+    assert "no tienen efecto numérico" in translated_boundary
+
+    jobs_without_numerator = (
+        "Workflow jobs: 23 observed; successful count and success rate are not "
+        "reported because a supported numerator was not retained."
+    )
+    translated_jobs = localize_current_report_copy_v98(jobs_without_numerator)
+    assert translated_jobs == (
+        "Trabajos de flujo de trabajo: 23 observados; no se informan el conteo "
+        "exitoso ni la tasa de éxito porque no se conservó un numerador compatible."
+    )
+
+    metadata_boundary = (
+        "Client and project display metadata are descriptive and do not replace "
+        "canonical scope identifiers."
+    )
+    assert localize_current_report_copy_v98(metadata_boundary) == (
+        "Los metadatos descriptivos del cliente y del proyecto no sustituyen los "
+        "identificadores canónicos de alcance."
+    )
+
+    complexity_acceptance = (
+        "The exact-SHA rerun no longer reports cyclomatic complexity above 30 at "
+        "nico/comprehensive_approved_delivery_v4.py:338"
+    )
+    assert localize_current_report_copy_v98(complexity_acceptance) == (
+        "La nueva ejecución con SHA exacto ya no informa una complejidad ciclomática "
+        "superior a 30 en nico/comprehensive_approved_delivery_v4.py:338"
+    )
+    assert localize_current_report_copy_v98(
+        "Complexity risk: observed; 50 exact-source complexity findings remain "
+        "pending human review."
+    ) == (
+        "Riesgo de complejidad: observado; 50 hallazgos de complejidad con fuente "
+        "exacta siguen pendientes de revisión humana."
+    )
+    assert localize_current_report_copy_v98(
+        "The repository's complete required-check suite passes on the remediation commit"
+    ) == (
+        "El conjunto completo de comprobaciones requeridas del repositorio se aprueba "
+        "en el commit de remediación"
+    )
+    assert localize_current_report_copy_v98(
+        "No new material regression or cross-format report-truth mismatch is introduced"
+    ) == (
+        "No se introduce ninguna regresión material nueva ni discrepancia de verdad "
+        "del informe entre formatos"
+    )
+
+
+def test_pending_frozen_source_with_suppressed_known_hashes_is_reprojected() -> None:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(54, 720, "Client Artifact Manifest")
+    pdf.drawString(54, 700, "findings_csv | findings.csv | Not available")
+    pdf.save()
+    artifact_types = (
+        "findings_csv",
+        "evidence_csv",
+        "candidate_register_json",
+        "remediation_backlog_json",
+        "markdown_report",
+        "html_report",
+    )
+    status = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "reports": {
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
+            "artifact_manifest": {
+                "artifacts": [
+                    {"artifact_type": kind, "sha256": f"{index + 1}" * 64}
+                    for index, kind in enumerate(artifact_types)
+                ]
+            },
+        },
+    }
+
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is True
+
+    status["human_review_completed"] = True
+    status["approval_status"] = "approved"
+    status["client_delivery_allowed"] = True
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is False
 
 
 def _pdf_with_sparse_limitation_pair() -> bytes:
