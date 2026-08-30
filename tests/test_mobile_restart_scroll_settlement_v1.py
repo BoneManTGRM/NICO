@@ -13,10 +13,11 @@ def test_terminal_scroll_round_trip_waits_for_each_smooth_scroll_to_settle() -> 
     )[0]
     assert "document.scrollingElement || document.documentElement" in helper
     assert "Math.abs(window.scrollY - maxY) <= 2" in helper
-    assert "Math.abs(window.scrollY) <= 1" in helper
+    assert "window.scrollY === 0" in helper
+    assert "Math.abs(window.scrollY) <= 1" not in helper
     assert helper.count("page.wait_for_function(") == 2
     assert helper.index("Math.abs(window.scrollY - maxY) <= 2") < helper.index(
-        "Math.abs(window.scrollY) <= 1"
+        "window.scrollY === 0"
     )
 
 

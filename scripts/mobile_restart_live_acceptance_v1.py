@@ -1080,7 +1080,7 @@ def _exercise_scroll_round_trip(page: Any) -> dict[str, Any]:
     bottom = page.evaluate("() => window.scrollY")
     page.evaluate("() => window.scrollTo(0, 0)")
     page.wait_for_function(
-        "() => Math.abs(window.scrollY) <= 1",
+        "() => window.scrollY === 0",
         timeout=10_000,
     )
     settled = page.evaluate(
