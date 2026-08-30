@@ -21,6 +21,7 @@ from comprehensive_production_run_handoff_v1 import (
 from mobile_pdf_download_action_proof_v1 import install_ui_pdf_download_proof
 
 VERSION = "nico.completed-run-two-pass-production-acceptance.v1"
+REVIEW_PDF_REENTRY_SETTLEMENT_MS = 1_600
 
 
 def _write(path: Path, value: Any) -> None:
@@ -29,6 +30,12 @@ def _write(path: Path, value: Any) -> None:
         json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+
+def _settle_review_pdf_reentry_guard(page: Page) -> None:
+    """Wait past the product bridge's bounded 1.5-second duplicate-click guard."""
+
+    page.wait_for_timeout(REVIEW_PDF_REENTRY_SETTLEMENT_MS)
 
 
 def _observe_terminal(
@@ -56,6 +63,7 @@ def _observe_terminal(
         requests=requests,
     )
     first_pdf = recovery._verify_manifest_and_pdf(page, frontend_origin, run_id)
+    _settle_review_pdf_reentry_guard(page)
     second_pdf = recovery._verify_manifest_and_pdf(page, frontend_origin, run_id)
     duration = time.monotonic() - started
     assert duration >= seconds
