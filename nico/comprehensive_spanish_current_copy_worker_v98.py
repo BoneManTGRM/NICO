@@ -4,11 +4,12 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.6"
+VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.7"
 _ONE_ARG_MARKER = "__nico_spanish_current_copy_worker_one_v98__"
 _TWO_ARG_MARKER = "__nico_spanish_current_copy_worker_two_v98__"
 
 _STATE_ES = {
+    "execution completed": "ejecución completada",
     "completed": "ejecución completada",
     "complete": "ejecución completada",
     "succeeded": "exitosa",
@@ -109,6 +110,16 @@ _SCANNER_STATE_RE = re.compile(
     r"(?P<prefix>(?:^|\n)[^\n:]{1,100}: )"
     r"(?P<state>completed|complete|succeeded|success|passed|failed|not_applicable|not applicable|unavailable|unknown)"
     r"(?=; (?:commit exacto|exact commit)=)",
+    re.IGNORECASE,
+)
+_SCANNER_EXECUTION_SUMMARY_RE = re.compile(
+    r"(?P<prefix>(?:^|\n)[^\n:]{1,100}: )"
+    r"(?P<state>execution completed|completed|complete|succeeded|success|passed|failed|"
+    r"not_applicable|not applicable|unavailable|unknown); "
+    r"exact commit=(?P<commit>yes|no); "
+    r"artifact=(?P<artifact>retained|missing); "
+    r"confirmed material finding count=(?P<count>\d+); "
+    r"raw finding payload embedded=(?P<raw>yes|no)\.",
     re.IGNORECASE,
 )
 _CANDIDATE_CATEGORY_SUMMARY_RE = re.compile(
@@ -340,6 +351,19 @@ def _translate_structured_current_report_copy(text: str) -> str:
         state = _STATE_ES.get(match.group("state").casefold(), match.group("state"))
         return f"{match.group('prefix')}{state}"
 
+    def scanner_execution_summary(match: re.Match[str]) -> str:
+        boolean = {"yes": "sí", "no": "no"}
+        artifact = {"retained": "conservado", "missing": "faltante"}
+        state = _STATE_ES[match.group("state").casefold()]
+        return (
+            f"{match.group('prefix')}{state}; "
+            f"commit exacto={boolean[match.group('commit').casefold()]}; "
+            f"artefacto={artifact[match.group('artifact').casefold()]}; "
+            "conteo de hallazgos materiales confirmados="
+            f"{match.group('count')}; carga de hallazgos sin procesar incluida="
+            f"{boolean[match.group('raw').casefold()]}."
+        )
+
     def candidate_summary(match: re.Match[str]) -> str:
         category = _CANDIDATE_CATEGORY_ES[match.group("category").casefold()]
         return (
@@ -435,6 +459,11 @@ def _translate_structured_current_report_copy(text: str) -> str:
         )
     if "Top-level entries[" in output:
         output = _TOP_LEVEL_ENTRY_RE.sub(top_level_entry, output)
+    if "; exact commit=" in output.casefold():
+        output = _SCANNER_EXECUTION_SUMMARY_RE.sub(
+            scanner_execution_summary,
+            output,
+        )
     if "; commit exacto=" in output or "; exact commit=" in output:
         output = _SCANNER_STATE_RE.sub(scanner_state, output)
     if ": raw=" in output:

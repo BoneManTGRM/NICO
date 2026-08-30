@@ -10,6 +10,15 @@ from pypdf import PdfReader
 
 SCHEMA = "nico.phase1-completion-bound-report.v1"
 
+_EXPLICIT_APPROVAL_BOUNDARIES = (
+    "Only an authorized reviewer may change the status to APPROVED FINAL",
+    "Only an authorized human reviewer may approve the exact immutable artifacts",
+    (
+        "Only an authorized human reviewer may approve the exact immutable PDF, "
+        "canonical JSON, and detached evidence manifest digests"
+    ),
+)
+
 
 def load_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -78,12 +87,16 @@ def extract_report(text: str, expected_sha: str) -> dict[str, Any]:
         raise ValueError("Source Comprehensive report is not bound to the expected commit")
     required = {
         "technical/human separation": "Technical triage remains proposal-only",
-        "explicit approval": "Only an authorized reviewer may change the status to APPROVED FINAL",
         "blocked delivery": "client delivery remains blocked",
     }
     for label, phrase in required.items():
         if phrase.lower() not in compact.lower():
             raise ValueError(f"Source Comprehensive report is missing {label}")
+    if not any(
+        phrase.lower() in compact.lower()
+        for phrase in _EXPLICIT_APPROVAL_BOUNDARIES
+    ):
+        raise ValueError("Source Comprehensive report is missing explicit approval")
     _require_score_separation(compact)
 
     report = {
