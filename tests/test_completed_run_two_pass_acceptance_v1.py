@@ -34,19 +34,19 @@ def test_unified_waits_for_review_pdf_reentry_guard_between_real_clicks() -> Non
     assert first < settlement < second
 
 
-def test_unified_final_canonical_read_allows_large_frozen_report_response() -> None:
+def test_unified_final_canonical_read_avoids_playwright_socket_idle_timeout() -> None:
     source = Path("scripts/completed_run_two_pass_acceptance_v1.py").read_text(
         encoding="utf-8"
     )
     tree = ast.parse(source)
-    timeout_ms = next(
+    timeout_seconds = next(
         (
             node.value.value
             for node in tree.body
             if isinstance(node, ast.Assign)
             and any(
                 isinstance(target, ast.Name)
-                and target.id == "FINAL_CANONICAL_READ_TIMEOUT_MS"
+                and target.id == "FINAL_CANONICAL_READ_TIMEOUT_SECONDS"
                 for target in node.targets
             )
             and isinstance(node.value, ast.Constant)
@@ -55,9 +55,14 @@ def test_unified_final_canonical_read_allows_large_frozen_report_response() -> N
         None,
     )
 
-    assert timeout_ms is not None
-    assert timeout_ms >= 300_000
-    assert "timeout=FINAL_CANONICAL_READ_TIMEOUT_MS" in source
+    assert timeout_seconds is not None
+    assert timeout_seconds >= 300
+    assert "with urllib.request.urlopen(" in source
+    assert "timeout=FINAL_CANONICAL_READ_TIMEOUT_SECONDS" in source
+    assert '"Cache-Control": "no-store"' in source
+    assert "response.read()" in source
+    assert "require_canonical_json_digest(" in source
+    assert "playwright.request.new_context" not in source
 
 
 def test_unified_reuses_verified_first_pass_truth_before_fresh_final_read() -> None:
@@ -71,7 +76,7 @@ def test_unified_reuses_verified_first_pass_truth_before_fresh_final_read() -> N
         'verified_canonical_truth=first_pass["canonical_truth"]', second_pass
     )
     fresh_final_read = source.index(
-        "request = playwright.request.new_context", reuse
+        "canonical, canonical_digest = _read_final_canonical(", reuse
     )
 
     assert "def _reuse_verified_canonical_truth(" in source
