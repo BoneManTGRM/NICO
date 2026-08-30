@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.11"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.12"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -39,6 +39,9 @@ _ES_PHRASES = {
     "History-aware secret evidence was separated into verified material findings, review-required candidates, explicit example placeholders, and non-production observations.": (
         "La evidencia de secretos con conocimiento del historial se separó en hallazgos materiales verificados, candidatos que requieren "
         "revisión, marcadores explícitos de ejemplo y observaciones ajenas a producción."
+    ),
+    "Snapshot-bound source footprint and measured complexity evidence were evaluated without score override.": (
+        "Se evaluaron la huella del código fuente vinculada a la instantánea y la evidencia de complejidad medida sin sobrescribir la puntuación."
     ),
     "Sustainable delivery capacity is derived from immutable architecture maintainability and workflow automation; mutable activity volume is unscored context.": (
         "La capacidad de entrega sostenible se deriva de la mantenibilidad inmutable de la arquitectura y la automatización de los flujos "
@@ -76,6 +79,7 @@ _SPANISH_LEAK_MARKERS = (
     "Exact-commit executable source signals were analyzed",
     "Authoritative manifests and contextual dependency evidence were reconciled",
     "History-aware secret evidence was separated",
+    "Snapshot-bound source footprint and measured complexity evidence were evaluated",
     "Non-success deployment classification",
     "Job success rate",
     "Successful workflow runs",

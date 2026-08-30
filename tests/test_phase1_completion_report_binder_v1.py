@@ -28,7 +28,8 @@ def report_text(sha: str) -> str:
     Human review work units: 50 from 62 observations.
     Technical triage remains proposal-only. Authorized human approval remains pending and client delivery remains blocked.
     Candidate workload has no numeric technical-maturity or Evidence-Adjusted score effect.
-    Only an authorized reviewer may change the status to APPROVED FINAL and CLIENT DELIVERY AUTHORIZED.
+    Only an authorized human reviewer may approve the exact immutable PDF, canonical JSON, and detached evidence manifest digests.
+    Automation cannot change this package to APPROVED FINAL or CLIENT DELIVERY AUTHORIZED.
     """
 
 
@@ -104,6 +105,21 @@ def test_report_contract_covers_items_one_through_eight() -> None:
     rows = dod_rows(report)
     assert len(rows) == 9
     assert rows[-1][0] == "9. Required current-head checks pass"
+
+
+def test_report_contract_requires_an_explicit_authorized_human_approval_boundary() -> None:
+    sha = "4" * 40
+    source = report_text(sha).replace(
+        "Only an authorized human reviewer may approve the exact immutable PDF, canonical JSON, and detached evidence manifest digests.",
+        "Human approval is pending.",
+    )
+
+    try:
+        extract_report(source, sha)
+    except ValueError as exc:
+        assert "missing explicit approval" in str(exc)
+    else:
+        raise AssertionError("A generic pending label must not satisfy the authorized-human approval boundary")
 
 
 def test_external_evidence_closes_item_nine_fail_closed() -> None:

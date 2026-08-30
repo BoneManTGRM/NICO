@@ -128,6 +128,27 @@ def test_v98_localizes_late_deployment_tree_scanner_and_candidate_grammars() -> 
         assert leaked not in localized
 
 
+def test_v98_localizes_final_scanner_summary_and_priority_reason_before_pdf_layout() -> None:
+    scanner = (
+        "pip-audit: completed; exact commit=yes; artifact=retained; "
+        "confirmed material finding count=0; raw finding payload embedded=no."
+    )
+    priority = (
+        "top_technical_priorities[0].reason: Snapshot-bound source footprint and "
+        "measured complexity evidence were evaluated without score override."
+    )
+
+    localized = localize_current_report_copy_v98(f"{scanner}\n{priority}")
+
+    assert "pip-audit: ejecución completada; commit exacto=sí" in localized
+    assert "artefacto=conservado" in localized
+    assert "conteo de hallazgos materiales confirmados=0" in localized
+    assert "carga de hallazgos sin procesar incluida=no" in localized
+    assert "Se evaluaron la huella del código fuente vinculada a la instantánea" in localized
+    assert "completed; exact commit=" not in localized
+    assert "Snapshot-bound source footprint" not in localized
+
+
 def test_v98_localizes_authorized_human_disposition_score_effect() -> None:
     source = "Score effect: assurance-only until triaged."
 
