@@ -38,6 +38,25 @@ def _settle_review_pdf_reentry_guard(page: Page) -> None:
     page.wait_for_timeout(REVIEW_PDF_REENTRY_SETTLEMENT_MS)
 
 
+def _reuse_verified_canonical_truth(
+    canonical_truth: dict[str, Any],
+    *,
+    run_id: str,
+    expected_sha: str,
+    expected_digest: str,
+) -> dict[str, Any]:
+    """Reuse pass one's JSON-verified immutable truth during pass two."""
+
+    reused = dict(canonical_truth)
+    assert reused["canonical_run_id"] == run_id, reused
+    assert reused["canonical_commit_sha"] == expected_sha, reused
+    assert reused["canonical_truth_sha256"] == expected_digest, reused
+    assert reused["canonical_truth_digest_computed_from_json"] is True, reused
+    assert reused["human_review_required"] is True, reused
+    assert reused["client_delivery_allowed"] is False, reused
+    return reused
+
+
 def _observe_terminal(
     page: Page,
     *,
@@ -303,6 +322,7 @@ def _run_pass(
     *,
     pass_number: int,
     locale: str,
+    verified_canonical_truth: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_id = str(handoff["run_id"])
     context = browser.new_context(
@@ -427,13 +447,23 @@ def _run_pass(
             page, run_id, args.expected_sha, 120.0
         )
 
-        canonical_truth = recovery._verify_canonical_truth(
-            page,
-            frontend_origin=args.frontend_url.rstrip("/"),
-            run_id=run_id,
-            expected_sha=args.expected_sha,
-            expected_digest=handoff["canonical_truth_sha256"],
-        )
+        if verified_canonical_truth is None:
+            canonical_truth = recovery._verify_canonical_truth(
+                page,
+                frontend_origin=args.frontend_url.rstrip("/"),
+                run_id=run_id,
+                expected_sha=args.expected_sha,
+                expected_digest=handoff["canonical_truth_sha256"],
+            )
+            canonical_truth_reused_from_pass = None
+        else:
+            canonical_truth = _reuse_verified_canonical_truth(
+                verified_canonical_truth,
+                run_id=run_id,
+                expected_sha=args.expected_sha,
+                expected_digest=handoff["canonical_truth_sha256"],
+            )
+            canonical_truth_reused_from_pass = 1
 
         screenshot = args.screenshot_dir / f"pass-{pass_number}-{locale}.png"
         screenshot.parent.mkdir(parents=True, exist_ok=True)
@@ -490,6 +520,7 @@ def _run_pass(
             ),
             "network_activity_exact_run_bound": True,
             "canonical_truth": canonical_truth,
+            "canonical_truth_reused_from_pass": canonical_truth_reused_from_pass,
             "console_errors": relevant_console,
             "page_errors": page_errors,
             "screenshot": screenshot.as_posix(),
@@ -540,13 +571,21 @@ def main(argv: list[str] | None = None) -> int:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
-            runs = [
-                # The exact source proof is Spanish. Exercise that source-language
-                # pass before the regenerated English pass so any browser-managed
-                # target-language downloads are the final localized work in the run.
-                _run_pass(browser, args, handoff, pass_number=1, locale="es-MX"),
-                _run_pass(browser, args, handoff, pass_number=2, locale="en"),
-            ]
+            # The exact source proof is Spanish. Exercise that source-language
+            # pass before the regenerated English pass so any browser-managed
+            # target-language downloads are the final localized work in the run.
+            first_pass = _run_pass(
+                browser, args, handoff, pass_number=1, locale="es-MX"
+            )
+            second_pass = _run_pass(
+                browser,
+                args,
+                handoff,
+                pass_number=2,
+                locale="en",
+                verified_canonical_truth=first_pass["canonical_truth"],
+            )
+            runs = [first_pass, second_pass]
             request = playwright.request.new_context(
                 extra_http_headers={"Accept": "application/json", "Cache-Control": "no-store"}
             )
@@ -624,6 +663,10 @@ def main(argv: list[str] | None = None) -> int:
                 for item in runs
             ),
             "canonical_truth_bound_to_retrieved_json": True,
+            "pass_two_reuses_json_verified_immutable_truth": (
+                runs[0]["canonical_truth_reused_from_pass"] is None
+                and runs[1]["canonical_truth_reused_from_pass"] == 1
+            ),
             "markdown_http_and_localized_success_verified": all(
                 len(item["observation"]["markdown_action_proofs"]) == 2
                 for item in runs
