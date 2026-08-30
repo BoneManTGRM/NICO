@@ -23,6 +23,7 @@ from mobile_pdf_download_action_proof_v1 import install_ui_pdf_download_proof
 
 VERSION = "nico.completed-run-two-pass-production-acceptance.v1"
 REVIEW_PDF_REENTRY_SETTLEMENT_MS = 1_600
+FINAL_CANONICAL_READ_TIMEOUT_MS = 300_000
 
 
 def _write(path: Path, value: Any) -> None:
@@ -594,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
                 response = request.get(
                     f"{args.frontend_url.rstrip('/')}/api/nico/assessment/comprehensive-run/"
                     f"{handoff['run_id']}/report/json",
-                    timeout=120_000,
+                    timeout=FINAL_CANONICAL_READ_TIMEOUT_MS,
                 )
                 assert response.ok
                 canonical = response.json()

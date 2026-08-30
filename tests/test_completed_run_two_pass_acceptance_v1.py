@@ -34,6 +34,32 @@ def test_unified_waits_for_review_pdf_reentry_guard_between_real_clicks() -> Non
     assert first < settlement < second
 
 
+def test_unified_final_canonical_read_allows_large_frozen_report_response() -> None:
+    source = Path("scripts/completed_run_two_pass_acceptance_v1.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(source)
+    timeout_ms = next(
+        (
+            node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "FINAL_CANONICAL_READ_TIMEOUT_MS"
+                for target in node.targets
+            )
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, int)
+        ),
+        None,
+    )
+
+    assert timeout_ms is not None
+    assert timeout_ms >= 300_000
+    assert "timeout=FINAL_CANONICAL_READ_TIMEOUT_MS" in source
+
+
 def test_unified_reuses_verified_first_pass_truth_before_fresh_final_read() -> None:
     source = Path("scripts/completed_run_two_pass_acceptance_v1.py").read_text(
         encoding="utf-8"
