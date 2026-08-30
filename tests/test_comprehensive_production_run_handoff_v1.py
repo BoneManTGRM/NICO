@@ -581,13 +581,23 @@ def test_unified_serializes_bounded_markdown_before_regenerated_pdf_dispatches()
 
     main_start = source.index("def main(")
     main = source[main_start:]
-    source_locale_pass = main.index(
-        '_run_pass(browser, args, handoff, pass_number=1, locale="es-MX")'
-    )
+    source_locale_pass = main.index("first_pass = _run_pass(")
     regenerated_locale_pass = main.index(
-        '_run_pass(browser, args, handoff, pass_number=2, locale="en")'
+        "second_pass = _run_pass(", source_locale_pass
     )
-    assert source_locale_pass < regenerated_locale_pass
+    runs_assignment = main.index(
+        "runs = [first_pass, second_pass]", regenerated_locale_pass
+    )
+    source_pass = main[source_locale_pass:regenerated_locale_pass]
+    regenerated_pass = main[regenerated_locale_pass:runs_assignment]
+    assert 'pass_number=1, locale="es-MX"' in source_pass
+    assert "pass_number=2" in regenerated_pass
+    assert 'locale="en"' in regenerated_pass
+    assert (
+        'verified_canonical_truth=first_pass["canonical_truth"]'
+        in regenerated_pass
+    )
+    assert source_locale_pass < regenerated_locale_pass < runs_assignment
 
 
 def test_review_locale_proofs_wait_for_client_projection_before_asserting() -> None:
