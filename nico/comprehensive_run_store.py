@@ -7,9 +7,12 @@ from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Callable, Iterator, Protocol
 
-from nico.comprehensive_run_record import restore_comprehensive_run_record, validate_comprehensive_run_record
+from nico.comprehensive_run_record import (
+    restore_comprehensive_run_record,
+    validate_comprehensive_run_record,
+)
 
-VERSION = "nico.comprehensive_run_store.v4"
+VERSION = "nico.comprehensive_run_store.v5"
 _FINAL_REPORT_JOB_TERMINAL_STATUSES = (
     "complete",
     "blocked",
@@ -46,6 +49,22 @@ def _decode_run_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("persisted_payload_must_be_object")
     return payload
+
+
+def _browser_projection_json(projection: Mapping[str, Any]) -> str:
+    return json.dumps(
+        projection,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+
+
+def _browser_projection_sha256(projection: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        _browser_projection_json(projection).encode("utf-8")
+    ).hexdigest()
 
 
 def _assert_review_history_commitment(
@@ -114,6 +133,7 @@ class ConnectionLike(Protocol):
 
 
 ConnectionFactory = Callable[[], ConnectionLike]
+BrowserProjectionBuilder = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 class ComprehensiveRunConflict(RuntimeError):
@@ -162,6 +182,17 @@ class ComprehensiveRunStore:
             raise ValueError("unsupported_dialect")
         self._connection_factory = connection_factory
         self._dialect = normalized
+        self._browser_projection_builder: BrowserProjectionBuilder | None = None
+
+    def bind_browser_projection_builder(
+        self,
+        builder: BrowserProjectionBuilder,
+    ) -> None:
+        """Bind the request-layer projector used for durable bounded status reads."""
+
+        if not callable(builder):
+            raise TypeError("browser_projection_builder_must_be_callable")
+        self._browser_projection_builder = builder
 
     @property
     def placeholder(self) -> str:
@@ -215,15 +246,27 @@ class ComprehensiveRunStore:
             chain_sha256 TEXT NOT NULL
         )
         """
+        browser_projection_statement = f"""
+        CREATE TABLE IF NOT EXISTS nico_comprehensive_browser_projections (
+            run_id TEXT PRIMARY KEY,
+            revision INTEGER NOT NULL,
+            run_integrity_sha256 TEXT NOT NULL,
+            projection_sha256 TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            projection {payload_type} NOT NULL
+        )
+        """
         with self._connection() as connection:
             cursor = connection.cursor()
             cursor.execute(run_statement)
             cursor.execute(final_report_job_statement)
             cursor.execute(review_history_statement)
+            cursor.execute(browser_projection_statement)
             connection.commit()
 
     def create(self, record: dict[str, Any]) -> dict[str, Any]:
         canonical = self._validated_copy(record)
+        browser_projection = self._build_browser_projection(canonical)
         identity = canonical["identity"]
         p = self.placeholder
         statement = f"""
@@ -252,6 +295,11 @@ class ComprehensiveRunStore:
                         len(history),
                         _review_history_sha256(history),
                     ),
+                )
+                self._write_browser_projection(
+                    cursor,
+                    canonical,
+                    browser_projection,
                 )
             except Exception as exc:
                 connection.rollback()
@@ -302,8 +350,112 @@ class ComprehensiveRunStore:
                 connection.commit()
             return restored
 
+    def load_browser_projection(self, run_id: str) -> dict[str, Any] | None:
+        """Load a small, transaction-bound browser response without the canonical tree.
+
+        The full run remains the only artifact and review authority. This projection is
+        generated from a fully validated run during the same create/save transaction,
+        then hash-checked and cross-checked against the canonical row metadata here.
+        Missing legacy projections fall back to the established full read path at the
+        route boundary; a present but inconsistent projection fails closed.
+        """
+
+        normalized = str(run_id or "").strip()
+        if not normalized:
+            raise ValueError("run_id_required")
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT projections.projection,
+                       projections.projection_sha256,
+                       projections.revision,
+                       projections.run_integrity_sha256,
+                       runs.customer_id,
+                       runs.project_id,
+                       runs.repository,
+                       runs.commit_sha,
+                       runs.status,
+                       runs.revision,
+                       runs.terminal,
+                       runs.integrity_sha256
+                FROM nico_comprehensive_browser_projections AS projections
+                INNER JOIN nico_comprehensive_runs AS runs
+                    ON runs.run_id = projections.run_id
+                WHERE projections.run_id = {p}
+                """,
+                (normalized,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+
+        projection = _decode_run_payload(row[0])
+        claimed_projection_sha256 = str(row[1] or "").strip().casefold()
+        if claimed_projection_sha256 != _browser_projection_sha256(projection):
+            raise ValueError("browser_projection_hash_mismatch")
+
+        projection_revision = int(row[2])
+        projection_run_integrity = str(row[3] or "").strip().casefold()
+        run_revision = int(row[9])
+        run_integrity = str(row[11] or "").strip().casefold()
+        if projection_revision != run_revision:
+            raise ValueError("browser_projection_revision_mismatch")
+        if projection_run_integrity != run_integrity:
+            raise ValueError("browser_projection_run_integrity_mismatch")
+
+        record = (
+            projection.get("record")
+            if isinstance(projection.get("record"), Mapping)
+            else {}
+        )
+        identity = (
+            record.get("identity")
+            if isinstance(record.get("identity"), Mapping)
+            else {}
+        )
+        response_projection = (
+            projection.get("response_projection")
+            if isinstance(projection.get("response_projection"), Mapping)
+            else {}
+        )
+        expected_values = {
+            "run_id": normalized,
+            "customer_id": str(row[4]),
+            "project_id": str(row[5]),
+            "repository": str(row[6]),
+            "commit_sha": str(row[7]),
+        }
+        for field, expected in expected_values.items():
+            observed = str(
+                projection.get(field)
+                if field in projection
+                else identity.get(field)
+                or ""
+            ).strip()
+            if observed != expected:
+                raise ValueError(f"browser_projection_identity_mismatch:{field}")
+        if int(projection.get("revision") or -1) != run_revision:
+            raise ValueError("browser_projection_response_revision_mismatch")
+        if (
+            str(projection.get("integrity_sha256") or "").strip().casefold()
+            != run_integrity
+        ):
+            raise ValueError("browser_projection_response_integrity_mismatch")
+        if str(projection.get("canonical_status") or "").strip() != str(row[8]):
+            raise ValueError("browser_projection_status_mismatch")
+        if bool(projection.get("terminal")) != bool(row[10]):
+            raise ValueError("browser_projection_terminal_mismatch")
+        if response_projection.get("browser_projection") is not True:
+            raise ValueError("browser_projection_contract_missing")
+        if response_projection.get("durable_projection") is not True:
+            raise ValueError("browser_projection_durability_contract_missing")
+        return deepcopy(projection)
+
     def save(self, record: dict[str, Any], *, expected_revision: int) -> dict[str, Any]:
         canonical = self._validated_copy(record)
+        browser_projection = self._build_browser_projection(canonical)
         identity = canonical["identity"]
         current_revision = int(canonical["revision"])
         if current_revision != int(expected_revision) + 1:
@@ -377,6 +529,11 @@ class ComprehensiveRunStore:
                 raise ComprehensiveRunConflict(
                     f"review_history_commitment_conflict:{identity['run_id']}"
                 )
+            self._write_browser_projection(
+                cursor,
+                canonical,
+                browser_projection,
+            )
             connection.commit()
         return _copy_record_for_store(canonical)
 
@@ -600,6 +757,57 @@ class ComprehensiveRunStore:
                 connection.commit()
         return records
 
+    def _build_browser_projection(
+        self,
+        record: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        builder = self._browser_projection_builder
+        if builder is None:
+            return None
+        projection = builder(record)
+        if not isinstance(projection, dict):
+            raise TypeError("browser_projection_must_be_object")
+        return projection
+
+    def _write_browser_projection(
+        self,
+        cursor: Any,
+        record: dict[str, Any],
+        projection: dict[str, Any] | None,
+    ) -> None:
+        if projection is None:
+            return
+        identity = record["identity"]
+        run_id = str(identity["run_id"])
+        revision = int(record["revision"])
+        run_integrity = str(record["integrity_sha256"])
+        updated_at = str(record["updated_at"])
+        serialized = _browser_projection_json(projection)
+        projection_sha256 = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        p = self.placeholder
+        cursor.execute(
+            f"""
+            INSERT INTO nico_comprehensive_browser_projections (
+                run_id, revision, run_integrity_sha256,
+                projection_sha256, updated_at, projection
+            ) VALUES ({','.join([p] * 6)})
+            ON CONFLICT (run_id) DO UPDATE SET
+                revision = excluded.revision,
+                run_integrity_sha256 = excluded.run_integrity_sha256,
+                projection_sha256 = excluded.projection_sha256,
+                updated_at = excluded.updated_at,
+                projection = excluded.projection
+            """,
+            (
+                run_id,
+                revision,
+                run_integrity,
+                projection_sha256,
+                updated_at,
+                serialized,
+            ),
+        )
+
     def _validated_copy(self, record: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(record, dict):
             raise TypeError("run_record_must_be_object")
@@ -632,6 +840,7 @@ class ComprehensiveRunStore:
 
 
 __all__ = [
+    "BrowserProjectionBuilder",
     "ComprehensiveRunConflict",
     "ComprehensiveRunNotFound",
     "ComprehensiveRunStore",
