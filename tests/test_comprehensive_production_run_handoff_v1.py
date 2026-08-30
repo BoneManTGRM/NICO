@@ -567,6 +567,29 @@ def test_desktop_and_webkit_acceptance_cover_visible_actions_and_spanish_recover
     assert 'payload["real_device_tested"] is False' in ios_workflow
 
 
+def test_unified_serializes_bounded_markdown_before_regenerated_pdf_dispatches() -> None:
+    path = Path("scripts/completed_run_two_pass_acceptance_v1.py")
+    source = path.read_text(encoding="utf-8")
+    observe_start = source.index("def _observe_terminal(")
+    observe_end = source.index("\ndef ", observe_start + 1)
+    observe = source[observe_start:observe_end]
+
+    markdown_stability = observe.index("proof = recovery._observe_terminal_stability(")
+    first_pdf = observe.index("first_pdf = recovery._verify_manifest_and_pdf")
+    second_pdf = observe.index("second_pdf = recovery._verify_manifest_and_pdf")
+    assert markdown_stability < first_pdf < second_pdf
+
+    main_start = source.index("def main(")
+    main = source[main_start:]
+    source_locale_pass = main.index(
+        '_run_pass(browser, args, handoff, pass_number=1, locale="es-MX")'
+    )
+    regenerated_locale_pass = main.index(
+        '_run_pass(browser, args, handoff, pass_number=2, locale="en")'
+    )
+    assert source_locale_pass < regenerated_locale_pass
+
+
 def test_review_locale_proofs_wait_for_client_projection_before_asserting() -> None:
     consumers = (
         (
