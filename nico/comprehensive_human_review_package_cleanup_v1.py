@@ -474,7 +474,9 @@ def _digest_markup(value: Any) -> str:
     raw = _text(value, 900)
     if re.fullmatch(r"[0-9a-fA-F]{64}", raw):
         return html.escape(raw[:32]) + "<br/>" + html.escape(raw[32:])
-    return _filename_markup(raw or "Bound in detached manifest after final rendering")
+    return _filename_markup(
+        raw or "Digest unavailable — artifact integrity not established"
+    )
 
 
 def render_manifest_approval_supplement(
@@ -663,7 +665,7 @@ def render_manifest_approval_supplement(
         artifact_table,
         Spacer(1, .08 * inch),
         p(
-            "The final PDF and canonical JSON byte digests are recorded in the detached evidence manifest after rendering. A document cannot truthfully embed its own final byte digest without changing that digest. The detached manifest binds those final hashes to the same run, commit, and manifest ID.",
+            "The SHA-256 values shown above bind retained artifacts whose final immutable bytes existed before this PDF was rendered. The final PDF and canonical JSON digests are recorded in the detached evidence manifest after rendering; the manifest's own digest is returned outside that manifest in the exact draft identity. A document cannot truthfully embed its own final byte digest without changing that digest.",
             body,
         ),
         PageBreak(),

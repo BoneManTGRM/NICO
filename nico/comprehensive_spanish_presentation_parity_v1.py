@@ -271,7 +271,7 @@ def _render_manifest_spanish(canonical: Mapping[str, Any], entries: list[dict[st
         artifact_rows.append([
             item.get("artifact_type") or "",
             item.get("filename") or "",
-            item.get("sha256") or "Vinculado en el manifiesto separado tras el renderizado final",
+            item.get("sha256") or "SHA-256 no disponible — integridad del artefacto no establecida",
         ])
     artifact_table = Table([[p(cell, small, 900) for cell in row] for row in artifact_rows], colWidths=[1.35 * inch, 2.75 * inch, 3.3 * inch], repeatRows=1)
     artifact_table.setStyle(TableStyle([
@@ -291,7 +291,7 @@ def _render_manifest_spanish(canonical: Mapping[str, Any], entries: list[dict[st
         p("Artefactos estructurados conservados", heading),
         artifact_table,
         Spacer(1, .08 * inch),
-        p("Los hashes finales de bytes del PDF y del JSON canónico se registran en el manifiesto de evidencia separado después del renderizado. Un documento no puede incorporar verazmente su propio hash final sin cambiarlo. El manifiesto separado vincula esos hashes finales con la misma ejecución, commit e ID de manifiesto.", body),
+        p("Los valores SHA-256 mostrados arriba vinculan artefactos conservados cuyos bytes finales inmutables existían antes de renderizar este PDF. Los hashes finales del PDF y del JSON canónico se registran después del renderizado en el manifiesto de evidencia separado; el hash propio del manifiesto se devuelve fuera de este en la identidad exacta del borrador. Un documento no puede incorporar verazmente su propio hash final sin cambiarlo.", body),
         PageBreak(),
         p("Registro de revisión humana y aprobación de artefactos exactos", title),
         p("PAQUETE DE REVISIÓN LISTO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA", warning),

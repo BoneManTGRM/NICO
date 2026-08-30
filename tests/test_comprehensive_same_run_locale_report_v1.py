@@ -639,6 +639,58 @@ def test_frozen_source_pdf_response_exposes_exact_artifact_digest() -> None:
     assert response.headers["x-nico-artifact-sha256"] == expected
 
 
+def test_pending_source_can_regenerate_without_reusing_frozen_artifacts(
+    monkeypatch,
+) -> None:
+    status = _status(source_language="en")
+    status["_nico_force_pending_draft_artifact_regeneration"] = True
+    before = deepcopy(status)
+    regenerated_pdf = b"%PDF-1.4\nregenerated-pending-draft"
+    calls: list[str] = []
+
+    def render(_canonical, report_language):
+        calls.append(report_language)
+        return {
+            "markdown": "# regenerated",
+            "html": "<article>regenerated</article>",
+            "pdf_base64": base64.b64encode(regenerated_pdf).decode("ascii"),
+            "pdf_sha256": subject.hashlib.sha256(regenerated_pdf).hexdigest(),
+            "pdf_page_count": 1,
+        }
+
+    monkeypatch.setattr(subject, "_render_target", render)
+
+    result = subject.build_same_run_locale_report(status, "en")
+
+    assert status == before
+    assert calls == ["en"]
+    assert result["report"]["pdf_sha256"] == subject.hashlib.sha256(
+        regenerated_pdf
+    ).hexdigest()
+    assert result["localized_artifact_approval_invalidated"] is True
+    assert result["localized_artifact_requires_new_approval"] is True
+    assert result["approval_status"] == "pending_human_approval"
+    assert result["client_delivery_allowed"] is False
+
+
+def test_regeneration_marker_cannot_replace_approved_source_artifact(monkeypatch) -> None:
+    status = _approved_status(client_delivery_allowed=True)
+    status["_nico_force_pending_draft_artifact_regeneration"] = True
+    source_pdf = base64.b64decode(status["reports"]["pdf_base64"])
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("approved source artifact must remain immutable")
+
+    monkeypatch.setattr(subject, "_render_target", fail_if_called)
+
+    result = subject.build_same_run_locale_report(status, "en")
+
+    assert base64.b64decode(result["report"]["pdf_base64"]) == source_pdf
+    assert result["localized_artifact_approval_invalidated"] is False
+    assert result["localized_artifact_requires_new_approval"] is False
+    assert result["approval_status"] == "approved_final"
+
+
 @pytest.mark.parametrize(
     ("delivery_allowed", "expected_delivery_status"),
     ((False, "pending_authorization"), (True, "authorized")),

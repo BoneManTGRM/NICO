@@ -54,6 +54,14 @@ _TECHNICAL_MATURITY_RE = re.compile(
     r"(?P<review_required>\d+) review-required candidates and "
     r"(?P<confirmed>\d+) confirmed material findings as explicit review context\."
 )
+_COMPLEXITY_RISK_RE = re.compile(
+    r"Complexity risk: observed; (?P<count>\d+) exact-source complexity findings "
+    r"remain pending human review\."
+)
+_COMPLEXITY_ACCEPTANCE_RE = re.compile(
+    r"The exact-SHA rerun no longer reports cyclomatic complexity above "
+    r"(?P<threshold>\d+) at (?P<location>\S+)"
+)
 _CANDIDATE_VOLUME_RE = re.compile(
     r"Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or "
     r"(?:Evidence-Adjusted|Ajuste por evidencia) score effect\."
@@ -78,6 +86,20 @@ _UNRESOLVED_DEPLOYMENTS_RE = re.compile(
 _OUTCOME_CLASSIFICATION_RE = re.compile(
     r"Outcome classification breakdown: (?P<value>[^\r\n]+?)(?P<period>\.)?(?=\r?$|\n)",
     re.IGNORECASE | re.MULTILINE,
+)
+_WORKFLOW_JOBS_WITH_RATE_RE = re.compile(
+    r"Workflow jobs: (?P<successful>\d+) successful of (?P<observed>\d+) observed "
+    r"\((?P<rate>\d+(?:\.\d+)?%)\)\."
+)
+_WORKFLOW_JOBS_WITHOUT_RATE_RE = re.compile(
+    r"Workflow jobs: (?P<observed>\d+) observed; successful count and success rate "
+    r"are not reported because a supported numerator was not retained\."
+)
+_DEPLOYMENT_TAXONOMY_RE = re.compile(
+    r"Deployment outcome taxonomy \(unscored context\): observed=(?P<observed>\d+); "
+    r"successful=(?P<successful>\d+); failed/non-success=(?P<failed>[^;]+); "
+    r"unresolved=(?P<unresolved>[^;.]+)"
+    r"(?:; failed-or-unresolved remainder=(?P<remainder>\d+))?\."
 )
 _TOP_LEVEL_ENTRY_RE = re.compile(
     r"Top-level entries\[(?P<index>\d+)\]: (?P<value>[^\r\n]+)",
@@ -116,6 +138,18 @@ _CANDIDATE_DISPOSITION_ES = {
 }
 
 _STATIC_GENERATOR_COPY = {
+    "The repository's complete required-check suite passes on the remediation commit": (
+        "El conjunto completo de comprobaciones requeridas del repositorio se aprueba en el commit de remediación"
+    ),
+    "No new material regression or cross-format report-truth mismatch is introduced": (
+        "No se introduce ninguna regresión material nueva ni discrepancia de verdad del informe entre formatos"
+    ),
+    "Client and project display metadata are descriptive and do not replace canonical scope identifiers.": (
+        "Los metadatos descriptivos del cliente y del proyecto no sustituyen los identificadores canónicos de alcance."
+    ),
+    "Canonical scoring is reconciled to retained evidence without recomputing or inflating either score; evidence limitations remain explicit.": (
+        "La puntuación canónica se concilia con la evidencia conservada sin recalcular ni inflar ninguna puntuación; las limitaciones de evidencia permanecen explícitas."
+    ),
     "Score effect: assurance-only until triaged.": (
         "Efecto en la puntuación: solo aseguramiento mientras la disposición humana "
         "autorizada siga pendiente; el estado del triaje técnico de NICO se informa "
@@ -142,12 +176,16 @@ _STRUCTURED_TRIGGER_TOKENS = (
     "Provider-neutral immutable CI objective coverage:",
     "CI control assurance incomplete;",
     "Technical maturity remains based on exact-commit technical controls.",
+    "Complexity risk: observed;",
+    "The exact-SHA rerun no longer reports cyclomatic complexity above",
     "Candidate volume and reviewer workload are operational review metrics",
     "Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.",
     "applicable analyzers completed;",
     "Review-required scanner candidates:",
     "Non-success or unresolved deployment observations:",
     "Outcome classification breakdown:",
+    "Workflow jobs:",
+    "Deployment outcome taxonomy (unscored context):",
     "Top-level entries[",
     "; commit exacto=",
     "; exact commit=",
@@ -216,6 +254,20 @@ def _translate_structured_current_report_copy(text: str) -> str:
             "explícito de revisión."
         )
 
+    def complexity_risk(match: re.Match[str]) -> str:
+        return (
+            "Riesgo de complejidad: observado; "
+            f"{match.group('count')} hallazgos de complejidad con fuente exacta "
+            "siguen pendientes de revisión humana."
+        )
+
+    def complexity_acceptance(match: re.Match[str]) -> str:
+        return (
+            "La nueva ejecución con SHA exacto ya no informa una complejidad "
+            f"ciclomática superior a {match.group('threshold')} en "
+            f"{match.group('location')}"
+        )
+
     def analyzer_completion(match: re.Match[str]) -> str:
         return (
             "Analizadores aplicables completados: "
@@ -242,6 +294,40 @@ def _translate_structured_current_report_copy(text: str) -> str:
         return (
             "Desglose de la clasificación de resultados: "
             f"{match.group('value')}{match.group('period') or ''}"
+        )
+
+    def deployment_taxonomy(match: re.Match[str]) -> str:
+        def metric(value: str) -> str:
+            if value.strip().casefold() == "not separately evidenced":
+                return "no se evidenciaron por separado"
+            return value.strip()
+
+        translated = (
+            "Taxonomía de resultados de despliegue (contexto sin puntuación): "
+            f"observados={match.group('observed')}; "
+            f"exitosos={match.group('successful')}; "
+            f"fallidos/no exitosos={metric(match.group('failed'))}; "
+            f"no resueltos={metric(match.group('unresolved'))}"
+        )
+        if match.group("remainder") is not None:
+            translated += (
+                "; remanente fallido o no resuelto="
+                f"{match.group('remainder')}"
+            )
+        return translated + "."
+
+    def workflow_jobs_with_rate(match: re.Match[str]) -> str:
+        return (
+            "Trabajos de flujo de trabajo: "
+            f"{match.group('successful')} exitosos de {match.group('observed')} "
+            f"observados ({match.group('rate')})."
+        )
+
+    def workflow_jobs_without_rate(match: re.Match[str]) -> str:
+        return (
+            "Trabajos de flujo de trabajo: "
+            f"{match.group('observed')} observados; no se informan el conteo exitoso "
+            "ni la tasa de éxito porque no se conservó un numerador compatible."
         )
 
     def top_level_entry(match: re.Match[str]) -> str:
@@ -314,6 +400,10 @@ def _translate_structured_current_report_copy(text: str) -> str:
         output = _PROVIDER_ASSURANCE_RE.sub(assurance, output)
     if "Technical maturity remains based on exact-commit technical controls." in output:
         output = _TECHNICAL_MATURITY_RE.sub(technical_maturity, output)
+    if "Complexity risk: observed;" in output:
+        output = _COMPLEXITY_RISK_RE.sub(complexity_risk, output)
+    if "The exact-SHA rerun no longer reports cyclomatic complexity above" in output:
+        output = _COMPLEXITY_ACCEPTANCE_RE.sub(complexity_acceptance, output)
     if "Candidate volume and reviewer workload are operational review metrics" in output:
         output = _CANDIDATE_VOLUME_RE.sub(
             "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación de Ajuste por evidencia.",
@@ -335,6 +425,14 @@ def _translate_structured_current_report_copy(text: str) -> str:
         output = _UNRESOLVED_DEPLOYMENTS_RE.sub(unresolved_deployments, output)
     if "Outcome classification breakdown:" in output:
         output = _OUTCOME_CLASSIFICATION_RE.sub(outcome_classification, output)
+    if "Deployment outcome taxonomy (unscored context):" in output:
+        output = _DEPLOYMENT_TAXONOMY_RE.sub(deployment_taxonomy, output)
+    if "Workflow jobs:" in output:
+        output = _WORKFLOW_JOBS_WITH_RATE_RE.sub(workflow_jobs_with_rate, output)
+        output = _WORKFLOW_JOBS_WITHOUT_RATE_RE.sub(
+            workflow_jobs_without_rate,
+            output,
+        )
     if "Top-level entries[" in output:
         output = _TOP_LEVEL_ENTRY_RE.sub(top_level_entry, output)
     if "; commit exacto=" in output or "; exact commit=" in output:

@@ -475,7 +475,7 @@ def _render_spanish_manifest(
                 _artifact_label(item.get("artifact_type")),
                 item.get("filename") or "",
                 item.get("sha256")
-                or "Vinculado en el manifiesto separado después del renderizado final",
+                or "SHA-256 no disponible — integridad del artefacto no establecida",
             ]
         )
     artifact_table = Table(
@@ -505,7 +505,7 @@ def _render_spanish_manifest(
         artifact_table,
         Spacer(1, .08 * inch),
         p(
-            "Los hashes finales del PDF y del JSON canónico se registran en el manifiesto de evidencia separado después del renderizado. Un documento no puede incorporar de forma veraz su propio hash final sin modificarlo. El manifiesto separado vincula esos hashes finales con la misma ejecución, commit e ID de manifiesto.",
+            "Los valores SHA-256 mostrados arriba vinculan artefactos conservados cuyos bytes finales inmutables existían antes de renderizar este PDF. Los hashes finales del PDF y del JSON canónico se registran después del renderizado en el manifiesto de evidencia separado; el hash propio del manifiesto se devuelve fuera de este en la identidad exacta del borrador. Un documento no puede incorporar de forma veraz su propio hash final sin modificarlo.",
             body,
         ),
         PageBreak(),

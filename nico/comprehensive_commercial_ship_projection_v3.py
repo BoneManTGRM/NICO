@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
+import io
 import re
 from functools import wraps
 from typing import Any, Mapping
+
+from pypdf import PdfReader
 
 from nico import comprehensive_commercial_ship_projection_v1 as v1
 from nico import comprehensive_pdf_reflow_v1 as pdf_reflow
@@ -15,7 +19,19 @@ _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
 _RESPONSE_MARKER = "__nico_commercial_ship_pdf_response_v3__"
+_FROZEN_SOURCE_MARKER = "__nico_commercial_ship_frozen_source_v3__"
+_REPORT_MARKER = "__nico_commercial_ship_report_v3__"
 _INSTALLED = False
+_VISIBLE_MANIFEST_TYPES = frozenset(
+    {
+        "findings_csv",
+        "evidence_csv",
+        "candidate_register_json",
+        "remediation_backlog_json",
+        "markdown_report",
+        "html_report",
+    }
+)
 
 # Correct the helper before any stage projection is evaluated.
 v1._is_deployment_metric = _deployment_metric_order_independent
@@ -57,8 +73,57 @@ def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, 
     }
 
 
+def _source_pdf_requires_integrity_reprojection(
+    status: Mapping[str, Any],
+    report_language: str,
+) -> bool:
+    """Repair only pending frozen drafts that suppress already-known artifact hashes."""
+
+    if str(report_language or "") not in {"en", "es-MX"}:
+        return False
+    if status.get("human_review_required") is not True:
+        return False
+    if status.get("human_review_completed") is not False:
+        return False
+    if str(status.get("approval_status") or "") != "pending_human_approval":
+        return False
+    if status.get("client_delivery_allowed") is not False:
+        return False
+
+    reports = status.get("reports")
+    reports = reports if isinstance(reports, Mapping) else {}
+    manifest = reports.get("artifact_manifest")
+    manifest = manifest if isinstance(manifest, Mapping) else {}
+    artifacts = [
+        item
+        for item in manifest.get("artifacts") or []
+        if isinstance(item, Mapping)
+    ]
+    visible_digests = {
+        str(item.get("artifact_type") or ""): str(item.get("sha256") or "").lower()
+        for item in artifacts
+        if str(item.get("artifact_type") or "") in _VISIBLE_MANIFEST_TYPES
+    }
+    if set(visible_digests) != _VISIBLE_MANIFEST_TYPES:
+        return False
+    if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in visible_digests.values()):
+        return False
+
+    try:
+        pdf_bytes = base64.b64decode(str(reports.get("pdf_base64") or ""), validate=True)
+        if not pdf_bytes.startswith(b"%PDF"):
+            return False
+        visible_text = "".join(
+            "".join((page.extract_text() or "").split())
+            for page in PdfReader(io.BytesIO(pdf_bytes)).pages
+        )
+    except Exception:
+        return False
+    return any(digest not in visible_text for digest in visible_digests.values())
+
+
 def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
-    """Bind presentation-only ship fixes without replacing final assembled source PDFs."""
+    """Bind presentation-only ship fixes while preserving valid frozen source PDFs."""
 
     global _INSTALLED
     if _INSTALLED:
@@ -69,6 +134,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             "final_assembled_source_pdf_preserved": True,
             "sparse_stage_reflow_before_final_navigation": True,
             "localized_sparse_stage_reflow_supported": True,
+            "pending_legacy_manifest_integrity_reprojection": True,
             "canonical_truth_mutated": False,
             "assessment_rerun": False,
             "human_review_required": True,
@@ -144,6 +210,44 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         setattr(translated, "_nico_previous", current_dynamic)
         spanish_report._localize_dynamic_sentence = translated
 
+    current_frozen_source = locale_report._frozen_source_pdf_response
+    if not getattr(current_frozen_source, _FROZEN_SOURCE_MARKER, False):
+
+        @wraps(current_frozen_source)
+        def frozen_source_with_integrity_gate(
+            status: Mapping[str, Any],
+            report_language: str,
+        ) -> Any:
+            if _source_pdf_requires_integrity_reprojection(status, report_language):
+                return None
+            return current_frozen_source(status, report_language)
+
+        setattr(frozen_source_with_integrity_gate, _FROZEN_SOURCE_MARKER, True)
+        setattr(frozen_source_with_integrity_gate, "_nico_previous", current_frozen_source)
+        locale_report._frozen_source_pdf_response = frozen_source_with_integrity_gate
+
+    current_report = locale_report.build_same_run_locale_report
+    if not getattr(current_report, _REPORT_MARKER, False):
+
+        @wraps(current_report)
+        def report_with_integrity_gate(
+            status: Mapping[str, Any],
+            report_language: str,
+        ) -> dict[str, Any]:
+            if _source_pdf_requires_integrity_reprojection(
+                status,
+                report_language,
+            ):
+                source = dict(status)
+                source["_nico_force_pending_draft_artifact_regeneration"] = True
+            else:
+                source = status
+            return current_report(source, report_language)
+
+        setattr(report_with_integrity_gate, _REPORT_MARKER, True)
+        setattr(report_with_integrity_gate, "_nico_previous", current_report)
+        locale_report.build_same_run_locale_report = report_with_integrity_gate
+
     current_response = locale_report.build_same_run_locale_pdf_response
     if not getattr(current_response, _RESPONSE_MARKER, False):
 
@@ -179,6 +283,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         "sparse_limitation_compaction_before_final_navigation": True,
         "sparse_stage_reflow_before_final_navigation": True,
         "localized_sparse_stage_reflow_supported": True,
+        "pending_legacy_manifest_integrity_reprojection": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_compaction": True,
         "final_assembled_source_pdf_preserved": True,
         "cross_locale_projection_from_same_canonical_snapshot": True,

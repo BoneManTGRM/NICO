@@ -421,7 +421,8 @@ def _render_manifest_approval_supplement(
             [
                 item.get("artifact_type") or "",
                 item.get("filename") or "",
-                item.get("sha256") or "Bound in detached manifest after final rendering",
+                item.get("sha256")
+                or "Digest unavailable — artifact integrity not established",
             ]
         )
     artifact_table = Table(
@@ -451,7 +452,7 @@ def _render_manifest_approval_supplement(
         artifact_table,
         Spacer(1, .08 * inch),
         p(
-            "The final PDF and canonical JSON byte digests are recorded in the detached evidence manifest after rendering. A document cannot truthfully embed its own final byte digest without changing that digest. The detached manifest binds those final hashes to the same run, commit, and manifest ID.",
+            "The SHA-256 values shown above bind retained artifacts whose final immutable bytes existed before this PDF was rendered. The final PDF and canonical JSON digests are recorded in the detached evidence manifest after rendering; the manifest's own digest is returned outside that manifest in the exact draft identity. A document cannot truthfully embed its own final byte digest without changing that digest.",
             body,
         ),
         PageBreak(),
@@ -598,10 +599,10 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     base_pdf = base64.b64decode(str(output.get("pdf_base64") or ""))
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("Artifact manifest requires a valid Comprehensive PDF.")
+    # These retained artifacts already have immutable final bytes. Showing their
+    # known digests does not create a self-reference: only the PDF, canonical JSON,
+    # and detached manifest self-digest are produced after this supplement renders.
     supplement_entries = deepcopy(entries)
-    for item in supplement_entries:
-        item["sha256"] = None
-        item["digest_status"] = "bound_in_detached_manifest_after_final_rendering"
     supplement = _render_manifest_approval_supplement(canonical, supplement_entries)
     final_pdf = _append_pdf(base_pdf, supplement)
     page_count = len(PdfReader(io.BytesIO(final_pdf)).pages)
