@@ -43,7 +43,10 @@ def _observe_terminal(
 ) -> dict[str, Any]:
     started = time.monotonic()
     baseline_index = len(requests)
-    first_pdf = recovery._verify_manifest_and_pdf(page, frontend_origin, run_id)
+    # The pending-review PDF action starts a browser-managed localized render and
+    # returns after proving the exact anchor dispatch. Complete the bounded Markdown
+    # observations first so the proof does not create a concurrent reconstruction of
+    # the same canonical package while that native download remains in flight.
     proof = recovery._observe_terminal_stability(
         page,
         run_id=run_id,
@@ -52,6 +55,7 @@ def _observe_terminal(
         seconds=seconds,
         requests=requests,
     )
+    first_pdf = recovery._verify_manifest_and_pdf(page, frontend_origin, run_id)
     second_pdf = recovery._verify_manifest_and_pdf(page, frontend_origin, run_id)
     duration = time.monotonic() - started
     assert duration >= seconds
@@ -529,8 +533,11 @@ def main(argv: list[str] | None = None) -> int:
         browser = playwright.chromium.launch(headless=True)
         try:
             runs = [
-                _run_pass(browser, args, handoff, pass_number=1, locale="en"),
-                _run_pass(browser, args, handoff, pass_number=2, locale="es-MX"),
+                # The exact source proof is Spanish. Exercise that source-language
+                # pass before the regenerated English pass so any browser-managed
+                # target-language downloads are the final localized work in the run.
+                _run_pass(browser, args, handoff, pass_number=1, locale="es-MX"),
+                _run_pass(browser, args, handoff, pass_number=2, locale="en"),
             ]
             request = playwright.request.new_context(
                 extra_http_headers={"Accept": "application/json", "Cache-Control": "no-store"}
