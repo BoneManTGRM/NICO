@@ -299,6 +299,10 @@ export default function GenericRepositoryExample() {
       applyAssessmentRepositoryPlaceholder();
       return;
     }
+    if (!isLegacyHomeRoute()) {
+      removeCommercialOpsPanel();
+      return;
+    }
 
     let cancelled = false; let attempts = 0;
     const applyHostedUiPolish = (config?: RuntimeConfig, diagnostics?: Record<string, unknown>, trends?: Record<string, unknown>) => {

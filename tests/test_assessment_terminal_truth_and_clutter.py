@@ -47,3 +47,16 @@ def test_commercial_ops_panel_is_limited_to_legacy_home() -> None:
     assert "if (!isLegacyHomeRoute())" in source
     assert "removeCommercialOpsPanel();" in source
     assert "if (!isLegacyHomeRoute()) return;" in source
+
+
+def test_non_home_navigation_does_not_issue_unused_cross_origin_runtime_requests() -> None:
+    source = _read("apps/web/app/GenericRepositoryExample.tsx")
+    effect_before_fetch = source.split(
+        "export default function GenericRepositoryExample()",
+        1,
+    )[1].split("let cancelled", 1)[0]
+
+    assert "if (!isLegacyHomeRoute())" in effect_before_fetch
+    non_home_branch = effect_before_fetch.split("if (!isLegacyHomeRoute())", 1)[1]
+    assert "removeCommercialOpsPanel();" in non_home_branch
+    assert "return;" in non_home_branch

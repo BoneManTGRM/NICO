@@ -191,3 +191,55 @@ def test_scorecard_control_cells_do_not_steal_semantic_navigation_targets() -> N
     by_id = {record["section_id"]: record for record in records}
     assert by_id["code_audit"]["source_page_index"] == 2
     assert by_id["dependency_library_ecosystem"]["source_page_index"] == 2
+
+
+def test_spanish_scorecard_cells_and_wrapped_final_heading_keep_real_toc_targets() -> None:
+    from nico.comprehensive_semantic_navigation_v1 import (
+        semantic_entry_records,
+        semantic_renumber_and_outline,
+    )
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(48, 744, "NICO Comprehensive | BORRADOR AUTOMATIZADO")
+    pdf.showPage()
+
+    pdf.drawString(48, 744, "Cuadro de puntuación técnica")
+    pdf.drawString(48, 710, "Auditoría de código")
+    pdf.drawString(200, 710, "96/100")
+    pdf.drawString(48, 690, "Ecosistema de dependencias y bibliotecas")
+    pdf.drawString(200, 690, "96/100")
+    pdf.showPage()
+
+    pdf.drawString(48, 744, "Auditoría de código")
+    pdf.drawString(48, 720, "SÓLIDO · 96/100")
+    pdf.drawString(48, 680, "Ecosistema de dependencias y bibliotecas")
+    pdf.drawString(48, 656, "FUERTE PROVISIONAL — REVISIÓN HUMANA REQUERIDA · 96/100")
+    pdf.showPage()
+
+    pdf.drawString(
+        48,
+        744,
+        "Registro de revisión humana y aprobación de artefactos",
+    )
+    pdf.drawString(48, 724, "exactos")
+    pdf.drawString(48, 690, "APROBACIÓN HUMANA PENDIENTE")
+    pdf.showPage()
+    pdf.save()
+
+    records, spanish = semantic_entry_records(
+        PdfReader(io.BytesIO(buffer.getvalue()))
+    )
+    by_id = {record["section_id"]: record for record in records}
+
+    assert spanish is True
+    assert by_id["code_audit"]["source_page_index"] == 2
+    assert by_id["dependency_library_ecosystem"]["source_page_index"] == 2
+    assert by_id["human_review_exact_artifact_approval"]["source_page_index"] == 3
+
+    output = semantic_renumber_and_outline(buffer.getvalue())
+    toc_lines = (PdfReader(io.BytesIO(output)).pages[1].extract_text() or "").splitlines()
+
+    assert toc_lines[toc_lines.index("Auditoría de código") + 1] == "4"
+    approval_title = "Registro de revisión humana y aprobación de artefactos exactos"
+    assert toc_lines[toc_lines.index(approval_title) + 1] == "5"
