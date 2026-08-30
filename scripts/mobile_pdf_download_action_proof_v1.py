@@ -307,6 +307,29 @@ def _load_source_bound_pdf(
     }
 
 
+def _reuse_direct_verification(
+    cache: dict[tuple[int, str, str], dict[str, Any]],
+    current: Any,
+    page: Any,
+    frontend_origin: str,
+    run_id: str,
+) -> tuple[dict[str, Any], bool]:
+    """Reuse one exact live PDF verification across repeated actions on a page.
+
+    The draft action intentionally leaves the browser-owned download untouched.
+    Re-reading the same direct PDF before the next action can therefore overlap
+    that native transfer and reconstruct the same immutable package twice.
+    """
+
+    key = (id(page), frontend_origin.rstrip("/"), run_id)
+    cached = cache.get(key)
+    if cached is not None:
+        return dict(cached), True
+    direct = dict(current(page, frontend_origin, run_id))
+    cache[key] = dict(direct)
+    return direct, False
+
+
 def install_ui_pdf_download_proof(
     recovery: Any,
     *,
@@ -315,9 +338,16 @@ def install_ui_pdf_download_proof(
     current = recovery._verify_manifest_and_pdf
     if getattr(current, "_nico_ui_pdf_download_proof_v1", False):
         return
+    direct_verifications: dict[tuple[int, str, str], dict[str, Any]] = {}
 
     def verify_manifest_and_pdf(page: Any, frontend_origin: str, run_id: str) -> dict[str, Any]:
-        direct = dict(current(page, frontend_origin, run_id))
+        direct, direct_reused = _reuse_direct_verification(
+            direct_verifications,
+            current,
+            page,
+            frontend_origin,
+            run_id,
+        )
         actions = page.locator(REPORT_ACTIONS_SELECTOR).first
         actions.wait_for(state="visible", timeout=120_000)
         report_language = _active_report_language(page)
@@ -576,6 +606,7 @@ def install_ui_pdf_download_proof(
                 "evidence_source", "live-exact-artifact-response"
             ),
             "ui_review_pdf_source_artifact_reused": action_kind == DRAFT_PDF_KIND,
+            "ui_review_pdf_direct_verification_reused": direct_reused,
             "ui_review_pdf_user_gesture_anchor_click_count": anchor_click_count,
             "ui_review_pdf_anchor_click_observation_verified": True,
             "ui_review_pdf_single_dispatch_verified": True,
