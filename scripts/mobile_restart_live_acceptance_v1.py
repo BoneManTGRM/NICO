@@ -1062,6 +1062,45 @@ def _click_markdown_and_verify(
     }
 
 
+def _exercise_scroll_round_trip(page: Any) -> dict[str, Any]:
+    page.evaluate(
+        """() => {
+          const root = document.scrollingElement || document.documentElement;
+          window.scrollTo(0, root.scrollHeight);
+        }"""
+    )
+    page.wait_for_function(
+        """() => {
+          const root = document.scrollingElement || document.documentElement;
+          const maxY = Math.max(0, root.scrollHeight - window.innerHeight);
+          return maxY > 0 && Math.abs(window.scrollY - maxY) <= 2;
+        }""",
+        timeout=10_000,
+    )
+    bottom = page.evaluate("() => window.scrollY")
+    page.evaluate("() => window.scrollTo(0, 0)")
+    page.wait_for_function(
+        "() => Math.abs(window.scrollY) <= 1",
+        timeout=10_000,
+    )
+    settled = page.evaluate(
+        """() => {
+          const root = document.scrollingElement || document.documentElement;
+          return {
+            top: window.scrollY,
+            scroll_height: root.scrollHeight,
+            viewport_height: window.innerHeight,
+          };
+        }"""
+    )
+    return {
+        "bottom": bottom,
+        "top": settled["top"],
+        "scroll_height": settled["scroll_height"],
+        "viewport_height": settled["viewport_height"],
+    }
+
+
 def _observe_terminal_stability(
     page: Any,
     *,
@@ -1099,19 +1138,7 @@ def _observe_terminal_stability(
         review = page.locator('[data-assessment-internal-review="true"]').first
         assert review.is_visible(), "Professional review action was not visible"
         assert run_id in str(review.get_attribute("href") or "")
-        scroll = page.evaluate(
-            """() => {
-              window.scrollTo(0, document.documentElement.scrollHeight);
-              const bottom = window.scrollY;
-              window.scrollTo(0, 0);
-              return {
-                bottom,
-                top: window.scrollY,
-                scroll_height: document.documentElement.scrollHeight,
-                viewport_height: window.innerHeight,
-              };
-            }"""
-        )
+        scroll = _exercise_scroll_round_trip(page)
         assert float(scroll.get("scroll_height") or 0) > float(
             scroll.get("viewport_height") or 0
         ), scroll
