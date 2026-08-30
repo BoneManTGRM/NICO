@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
-VERSION = "nico.comprehensive_semantic_navigation.v1.3"
+VERSION = "nico.comprehensive_semantic_navigation.v1.4"
 _TOC_ROWS_PER_PAGE = 39
 
 # Known historic/localized heading variants are recognition aliases only.
@@ -49,6 +49,10 @@ _TECHNICAL_SCORECARD_SECTION_IDS = {
     "architecture_technical_debt",
     "velocity_complexity",
 }
+_TECHNICAL_SCORECARD_PAGE_MARKERS = (
+    "canonical technical scorecard",
+    "cuadro de puntuación técnica",
+)
 _SCORECARD_PLAIN_STATUS = re.compile(
     r"^(?:"
     r"strong|moderate|weak|exceptional|pending|not\s+scored|"
@@ -118,6 +122,32 @@ def _section_for_line(raw_line: str) -> tuple[Mapping[str, Any], bool] | None:
     return None
 
 
+def _section_for_visible_heading(
+    lines: list[str],
+    line_index: int,
+) -> tuple[Mapping[str, Any], bool, int] | None:
+    """Recognize one heading, including a bounded adjacent-line visual wrap."""
+
+    direct = _section_for_line(lines[line_index])
+    if direct is not None:
+        section, numbered = direct
+        return section, numbered, line_index
+
+    joined = _text(lines[line_index], 400)
+    if not joined:
+        return None
+    for cursor in range(line_index + 1, min(len(lines), line_index + 3)):
+        following = _text(lines[cursor], 240)
+        if not following:
+            break
+        joined = f"{joined} {following}"
+        wrapped = _section_for_line(joined)
+        if wrapped is not None:
+            section, numbered = wrapped
+            return section, numbered, cursor
+    return None
+
+
 def _scorecard_table_followup(next_nonempty: str) -> bool:
     """Return True when the next line looks like compact scorecard-cell content.
 
@@ -179,20 +209,20 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
         lines = [line for line in page_text.splitlines()]
         page_folded = page_text.casefold()
         for line_index, raw_line in enumerate(lines):
-            match = _section_for_line(raw_line)
+            match = _section_for_visible_heading(lines, line_index)
             if match is None:
                 continue
-            section, numbered = match
+            section, numbered, heading_end_index = match
             section_id = _text(section.get("section_id"), 120)
             if not section_id:
                 continue
             next_nonempty = ""
-            for following in lines[line_index + 1 :]:
+            for following in lines[heading_end_index + 1 :]:
                 if _text(following):
                     next_nonempty = _text(following, 300)
                     break
             if (
-                "canonical technical scorecard" in page_folded
+                any(marker in page_folded for marker in _TECHNICAL_SCORECARD_PAGE_MARKERS)
                 and section_id in _TECHNICAL_SCORECARD_SECTION_IDS
                 and _scorecard_table_followup(next_nonempty)
             ):
