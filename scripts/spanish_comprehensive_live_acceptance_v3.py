@@ -41,6 +41,8 @@ SPANISH_MATURITY_LABELS = {"Excepcional", "Sólido", "Moderado", "Débil", "Crí
 FORBIDDEN_ENGLISH_MATURITY_LABELS = {"Exceptional", "Strong", "Moderate", "Weak", "Critical"}
 LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS = 300.0
 LOCALIZED_PDF_READ_TIMEOUT_SECONDS = 300.0
+CANONICAL_JSON_CONNECT_TIMEOUT_SECONDS = 300.0
+CANONICAL_JSON_READ_TIMEOUT_SECONDS = 300.0
 
 PROOF_CLIENT_NAME = "Cody Jenkins"
 PROOF_PROJECT_NAME = "NICO Audit"
@@ -443,6 +445,49 @@ def _fetch_localized_pdf(
     }
 
 
+def _fetch_canonical_json(
+    *,
+    frontend_origin: str,
+    run_id: str,
+) -> tuple[dict[str, Any], str, str]:
+    """Read large immutable canonical truth outside Playwright's socket lifecycle."""
+
+    transport = httpx.HTTPTransport(verify=True, trust_env=False, retries=0)
+    with httpx.Client(
+        transport=transport,
+        timeout=httpx.Timeout(
+            connect=CANONICAL_JSON_CONNECT_TIMEOUT_SECONDS,
+            read=CANONICAL_JSON_READ_TIMEOUT_SECONDS,
+            write=30.0,
+            pool=30.0,
+        ),
+        follow_redirects=False,
+        trust_env=False,
+    ) as client:
+        response = client.get(
+            f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/json",
+            headers={
+                "Accept": "application/json",
+                "Accept-Encoding": "identity",
+                "Cache-Control": "no-store",
+            },
+        )
+        canonical_bytes = response.content
+    assert response.status_code == 200, (
+        f"Exact-run canonical report JSON returned HTTP {response.status_code}"
+    )
+    canonical = json.loads(canonical_bytes.decode("utf-8"))
+    assert isinstance(canonical, dict)
+    canonical_digest_header = str(
+        response.headers.get("x-nico-canonical-truth-sha256") or ""
+    ).lower()
+    computed_digest = require_canonical_json_digest(
+        canonical,
+        canonical_digest_header,
+    )
+    return canonical, canonical_digest_header, computed_digest
+
+
 def _verify_localized_spanish_terminal_artifacts(
     page: Any,
     *,
@@ -491,22 +536,13 @@ def _verify_localized_spanish_terminal_artifacts(
     )
     assert terminal_top == terminal_record
 
-    canonical_response = page.request.get(
-        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/json",
-        headers={"Accept": "application/json", "Cache-Control": "no-store"},
-        timeout=120_000,
-    )
-    assert canonical_response.ok, (
-        f"Exact-run canonical report JSON returned HTTP {canonical_response.status}"
-    )
-    canonical_response_sha256 = str(
-        canonical_response.headers.get("x-nico-canonical-truth-sha256") or ""
-    ).lower()
-    canonical = canonical_response.json()
-    assert isinstance(canonical, dict)
-    computed_canonical_truth_sha256 = require_canonical_json_digest(
+    (
         canonical,
         canonical_response_sha256,
+        computed_canonical_truth_sha256,
+    ) = _fetch_canonical_json(
+        frontend_origin=frontend_origin,
+        run_id=run_id,
     )
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
     assert str(identity.get("run_id") or "") == run_id
@@ -535,20 +571,13 @@ def _verify_localized_spanish_terminal_artifacts(
         run_id=run_id,
         report_language="en",
     )
-    canonical_after = page.request.get(
-        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/json",
-        headers={"Accept": "application/json", "Cache-Control": "no-store"},
-        timeout=120_000,
-    )
-    assert canonical_after.ok, (
-        "Exact-run canonical report JSON could not be refetched after localized rendering: "
-        f"HTTP {canonical_after.status}"
-    )
-    canonical_after_payload = canonical_after.json()
-    assert isinstance(canonical_after_payload, dict)
-    canonical_after_computed_sha256 = require_canonical_json_digest(
+    (
         canonical_after_payload,
-        canonical_after.headers.get("x-nico-canonical-truth-sha256"),
+        _canonical_after_response_sha256,
+        canonical_after_computed_sha256,
+    ) = _fetch_canonical_json(
+        frontend_origin=frontend_origin,
+        run_id=run_id,
     )
     status_after = page.request.get(
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
