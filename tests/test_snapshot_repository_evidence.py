@@ -6,7 +6,10 @@ from datetime import datetime, timezone
 from urllib.parse import unquote
 from uuid import uuid4
 
-from nico.snapshot_repository_evidence import collect_snapshot_repository_evidence
+from nico.snapshot_repository_evidence import (
+    _public_git_profile,
+    collect_snapshot_repository_evidence,
+)
 
 
 class FakeSnapshotClient:
@@ -16,6 +19,7 @@ class FakeSnapshotClient:
         credential_used: bool = False,
         tree_truncated: bool = False,
         pull_error: str | None = None,
+        tree_error: str | None = None,
     ) -> None:
         self.calls: list[tuple[str, dict | None]] = []
         self.commit_sha = "a" * 40
@@ -33,6 +37,7 @@ class FakeSnapshotClient:
         )
         self.tree_truncated = tree_truncated
         self.pull_error = pull_error
+        self.tree_error = tree_error
         self.files = {
             "README.md": "# Snapshot project\n",
             "requirements.txt": "fastapi==0.115.0\n",
@@ -49,6 +54,8 @@ class FakeSnapshotClient:
         self.calls.append((url, params))
         suffix = url.split("/repos/BoneManTGRM/NICO", 1)[-1]
         if suffix.startswith("/git/trees/"):
+            if self.tree_error:
+                return None, self.tree_error
             return {
                 "sha": self.tree_sha,
                 "truncated": self.tree_truncated,
@@ -363,6 +370,140 @@ def test_rate_limited_optional_capability_is_explicit() -> None:
         for item in repository["provider_capability_states"]
     }
     assert states["change_requests"] == "rate_limited"
+
+
+def test_anonymous_required_source_uses_exact_git_when_api_tree_is_rate_limited(
+    monkeypatch,
+) -> None:
+    context = _context()
+    snapshot = _snapshot(context)
+    snapshot.update(
+        {
+            "provider": "github",
+            "provider_instance": "github.com",
+            "provider_access_observed": True,
+            "access_mode": "anonymous_public",
+            "credential_used": False,
+        }
+    )
+    fallback_profile = {
+        "files": {"README.md": "# Exact public snapshot\n", "app.py": "value = 1\n"},
+        "tree_paths": ["README.md", "app.py"],
+        "root_items": ["README.md", "app.py"],
+        "unavailable": [],
+        "tree_sha": snapshot["tree_sha"],
+        "tree_truncated": False,
+        "tree_collection_succeeded": True,
+        "public_git_fallback_used": True,
+    }
+    observed: list[tuple[str, str, str]] = []
+
+    def public_profile(repository: str, commit_sha: str, tree_sha: str):
+        observed.append((repository, commit_sha, tree_sha))
+        return fallback_profile, ""
+
+    monkeypatch.setattr(
+        "nico.snapshot_repository_evidence._public_git_profile",
+        public_profile,
+    )
+
+    repository, _ = collect_snapshot_repository_evidence(
+        context,
+        snapshot,
+        client=FakeSnapshotClient(
+            tree_error="GitHub returned 403: API rate limit exceeded"
+        ),
+    )
+
+    assert observed == [
+        (context["repository"], snapshot["commit_sha"], snapshot["tree_sha"])
+    ]
+    assert repository["status"] == "attached"
+    assert repository["required_source_evidence_complete"] is True
+    assert repository["provider_access_mode"] == "anonymous_public"
+    assert repository["provider_credential_used"] is False
+    assert (
+        repository["required_source_acquisition"]
+        == "credential_free_exact_sha_git"
+    )
+    assert repository["provider_source_fingerprint"].startswith("sha256:")
+    assert repository["exact_source_locator_count"] == 2
+    assert any(
+        "credential-free exact-SHA Git" in note
+        for note in repository["provider_collection_limitations"]
+    )
+
+
+def test_public_git_profile_rejects_untrusted_identity_before_execution(
+    monkeypatch,
+) -> None:
+    def prohibited(*_args, **_kwargs):
+        raise AssertionError("invalid identity must not reach Git execution")
+
+    monkeypatch.setattr(
+        "nico.snapshot_repository_evidence.subprocess.run",
+        prohibited,
+    )
+
+    profile, error = _public_git_profile(
+        "owner/repo;touch-pwned",
+        "a" * 40,
+        "b" * 40,
+    )
+    assert profile is None
+    assert error == "public_git_invalid_repository"
+
+    profile, error = _public_git_profile(
+        "owner/repo",
+        "--upload-pack=malicious",
+        "b" * 40,
+    )
+    assert profile is None
+    assert error == "public_git_invalid_commit_sha"
+
+    profile, error = _public_git_profile(
+        "owner/repo",
+        "a" * 40,
+        "not-a-tree",
+    )
+    assert profile is None
+    assert error == "public_git_invalid_tree_sha"
+
+
+def test_authenticated_required_source_never_uses_public_git_fallback(
+    monkeypatch,
+) -> None:
+    context = _context()
+    snapshot = _snapshot(context)
+    snapshot.update(
+        {
+            "provider": "github",
+            "provider_instance": "github.com",
+            "provider_access_observed": True,
+            "access_mode": "authenticated_read_only",
+            "credential_used": True,
+        }
+    )
+
+    def prohibited(*_args):
+        raise AssertionError("authenticated evidence must not use public Git fallback")
+
+    monkeypatch.setattr(
+        "nico.snapshot_repository_evidence._public_git_profile",
+        prohibited,
+    )
+    repository, _ = collect_snapshot_repository_evidence(
+        context,
+        snapshot,
+        client=FakeSnapshotClient(
+            credential_used=True,
+            tree_error="GitHub returned 403: permission denied",
+        ),
+    )
+
+    assert repository["status"] == "attached"
+    assert repository["required_source_evidence_complete"] is False
+    assert repository["provider_credential_used"] is True
 
 
 def test_mismatched_snapshot_identity_is_unavailable_without_api_calls():

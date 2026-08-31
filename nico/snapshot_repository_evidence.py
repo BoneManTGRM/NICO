@@ -3,10 +3,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import subprocess
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from nico import repository_snapshot as snapshot_capture
 from nico.full_assessment_ci_evidence import collect_ci_runtime_evidence
 from nico.full_assessment_complexity_evidence import collect_complexity_evidence
 from nico.hosted_assessment import (
@@ -224,6 +228,149 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
     }
 
 
+def _public_git_profile(
+    repository: str,
+    commit_sha: str,
+    expected_tree_sha: str,
+) -> tuple[dict[str, Any] | None, str]:
+    """Read bounded exact-revision source evidence without API quota or credentials."""
+
+    if not snapshot_capture._SAFE_REPOSITORY_RE.fullmatch(repository):
+        return None, "public_git_invalid_repository"
+    if not snapshot_capture._EXACT_SHA_RE.fullmatch(commit_sha):
+        return None, "public_git_invalid_commit_sha"
+    if expected_tree_sha and not snapshot_capture._SHA_RE.fullmatch(expected_tree_sha):
+        return None, "public_git_invalid_tree_sha"
+
+    repository_url = f"https://github.com/{repository}.git"
+    try:
+        with tempfile.TemporaryDirectory(prefix="nico-public-evidence-") as temporary:
+            workspace = Path(temporary)
+            git_dir = workspace / "repository.git"
+            git_dir.mkdir(mode=0o700)
+            environment = snapshot_capture._git_environment(workspace)
+
+            initialized = snapshot_capture._git_init_bare(
+                git_dir,
+                environment,
+                runner=subprocess.run,
+            )
+            if initialized.returncode != 0:
+                return None, "public_git_initialize_failed"
+            snapshot_capture._configure_public_origin(git_dir, repository_url)
+            fetched = snapshot_capture._git_fetch_exact_sha(
+                git_dir,
+                commit_sha,
+                environment,
+                runner=subprocess.run,
+            )
+            if fetched.returncode != 0:
+                return None, "public_git_exact_sha_fetch_failed"
+            from nico import scanner_worker as scanner_base
+
+            if scanner_base.directory_size(git_dir) > scanner_base.MAX_REPO_BYTES:
+                return None, "public_git_repository_size_limit_exceeded"
+
+            identity = subprocess.run(
+                ["git", "show", "-s", "--format=%H%x00%T", "FETCH_HEAD"],
+                cwd=str(git_dir),
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+                shell=False,
+                env=environment,
+            )
+            identity_parts = identity.stdout.rstrip("\n").split("\x00", 1)
+            if identity.returncode != 0 or len(identity_parts) != 2:
+                return None, "public_git_commit_description_failed"
+            actual_commit, actual_tree = (
+                identity_parts[0].strip().lower(),
+                identity_parts[1].strip().lower(),
+            )
+            if actual_commit != commit_sha.lower():
+                return None, "public_git_commit_mismatch"
+            if not snapshot_capture._SHA_RE.fullmatch(actual_tree):
+                return None, "public_git_tree_sha_invalid"
+            if expected_tree_sha and actual_tree != expected_tree_sha.lower():
+                return None, "public_git_tree_mismatch"
+
+            listing = subprocess.run(
+                ["git", "ls-tree", "-r", "-z", "-l", "FETCH_HEAD"],
+                cwd=str(git_dir),
+                capture_output=True,
+                timeout=30,
+                check=False,
+                shell=False,
+                env=environment,
+            )
+            if listing.returncode != 0:
+                return None, "public_git_tree_listing_failed"
+
+            sizes: dict[str, int] = {}
+            for raw_record in listing.stdout.split(b"\x00"):
+                if not raw_record or b"\t" not in raw_record:
+                    continue
+                metadata, raw_path = raw_record.split(b"\t", 1)
+                fields = metadata.split()
+                if len(fields) != 4 or fields[1] != b"blob":
+                    continue
+                try:
+                    path = raw_path.decode("utf-8", errors="strict")
+                    size = int(fields[3])
+                except (UnicodeDecodeError, ValueError):
+                    continue
+                if path and "\x00" not in path and size >= 0:
+                    sizes[path] = size
+
+            candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
+            candidates.extend(
+                path
+                for path in sorted(sizes)
+                if path not in candidates and should_fetch_path(path, sizes[path])
+            )
+            files: dict[str, str] = {}
+            unavailable: list[str] = []
+            for path in candidates[:MAX_TEXT_FILES]:
+                if sizes[path] > MAX_FILE_BYTES:
+                    continue
+                blob = subprocess.run(
+                    [
+                        "git",
+                        "--no-pager",
+                        "show",
+                        "--no-textconv",
+                        f"FETCH_HEAD:{path}",
+                    ],
+                    cwd=str(git_dir),
+                    capture_output=True,
+                    timeout=20,
+                    check=False,
+                    shell=False,
+                    env=environment,
+                )
+                if blob.returncode == 0 and len(blob.stdout) <= MAX_FILE_BYTES:
+                    files[path] = blob.stdout.decode("utf-8", errors="replace")
+                elif path in KNOWN_FILE_PATHS:
+                    unavailable.append(
+                        f"Exact public Git snapshot file {path} could not be read."
+                    )
+
+            paths = sorted(sizes)
+            return {
+                "files": files,
+                "tree_paths": paths,
+                "root_items": sorted({path.split("/", 1)[0] for path in paths}),
+                "unavailable": unavailable,
+                "tree_sha": actual_tree,
+                "tree_truncated": False,
+                "tree_collection_succeeded": bool(paths),
+                "public_git_fallback_used": True,
+            }, ""
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None, "public_git_execution_failed"
+
+
 def _workflows(client: Any, repository: str, snapshot: dict[str, Any], paths: list[str]) -> tuple[dict[str, str], list[str]]:
     commit_sha = str(snapshot.get("commit_sha") or "")
     workflow_paths = [path for path in paths if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml"))]
@@ -391,6 +538,37 @@ def collect_snapshot_repository_evidence(
     timeframe_days = max(30, min(int(context.get("timeframe_days") or DEFAULT_TIMEFRAME_DAYS), 365))
     since = captured_at - timedelta(days=timeframe_days)
     profile = _profile(github, repository, snapshot)
+    api_profile_notes = list(profile.get("unavailable") or [])
+    if (
+        profile.get("tree_collection_succeeded") is not True
+        and access_mode == "anonymous_public"
+        and credential_used is False
+    ):
+        public_profile, public_profile_error = _public_git_profile(
+            repository,
+            str(snapshot.get("commit_sha") or "").strip().lower(),
+            str(snapshot.get("tree_sha") or "").strip().lower(),
+        )
+        if public_profile is not None:
+            profile = public_profile
+            profile["unavailable"] = sorted(
+                {
+                    *api_profile_notes,
+                    *(profile.get("unavailable") or []),
+                    (
+                        "Required source evidence was acquired from credential-free "
+                        "exact-SHA Git because GitHub API tree collection was unavailable."
+                    ),
+                }
+            )
+        else:
+            profile["unavailable"] = sorted(
+                {
+                    *api_profile_notes,
+                    "Credential-free exact-SHA Git source fallback was unavailable "
+                    f"({public_profile_error}).",
+                }
+            )
     files = profile["files"]
     workflows, workflow_unavailable = _workflows(github, repository, snapshot, profile["tree_paths"])
     commits, commit_error = github.get_commits(repository, _iso(since))
@@ -593,6 +771,11 @@ def collect_snapshot_repository_evidence(
         },
         "provider_collection_limitations": sorted(
             {str(note) for note in notes if str(note).strip()}
+        ),
+        "required_source_acquisition": (
+            "credential_free_exact_sha_git"
+            if profile.get("public_git_fallback_used") is True
+            else "github_api_exact_revision"
         ),
         "provider_source_fingerprint": source_fingerprint,
         "exact_source_locators": exact_source_locators,
