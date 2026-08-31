@@ -1,0 +1,4 @@
+NICO controlled public-repository release
+Source release closure: 692c5992d07a8579a055cb50ae833015371b75a8
+Purpose: force a Vercel production build when the release changes only repository-level proof files.
+This marker is not imported by the application and carries no runtime configuration or secret.
