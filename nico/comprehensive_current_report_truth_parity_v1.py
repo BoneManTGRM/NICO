@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.12"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.13"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -28,6 +28,17 @@ _ES_PHRASES = {
     "Material confirmado findings": "Hallazgos materiales confirmados",
     "verificada material findings": "hallazgos materiales verificados",
     "Confirmed material findings": "Hallazgos materiales confirmados",
+    "deployments evidence is unavailable without read-only authentication": (
+        "La evidencia de despliegues no está disponible sin autenticación de solo lectura."
+    ),
+    "environments evidence is unavailable without read-only authentication": (
+        "La evidencia de entornos no está disponible sin autenticación de solo lectura."
+    ),
+    "Exact-revision provider repository, dependency, architecture, workflow, activity, and complexity evidence were attached through the canonical provider-neutral path.": (
+        "La evidencia del repositorio del proveedor, las dependencias, la arquitectura, los flujos de trabajo, "
+        "la actividad y la complejidad correspondiente a la revisión exacta se adjuntó mediante la ruta "
+        "canónica neutral al proveedor."
+    ),
     "Exact-commit executable source signals were analyzed without promoting comments, strings, detector definitions, examples, or tests.": (
         "Se analizaron las señales ejecutables del código fuente del commit exacto sin convertir comentarios, cadenas, "
         "definiciones de detectores, ejemplos ni pruebas en defectos."
