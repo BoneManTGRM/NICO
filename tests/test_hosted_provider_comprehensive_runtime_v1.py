@@ -485,6 +485,181 @@ def test_provider_access_truth_is_authored_for_report_without_internal_property_
     assert all("provider_access_evidence" not in line for line in summary["evidence"])
 
 
+@pytest.mark.parametrize(
+    "language,expected_lines",
+    (
+        (
+            "en",
+            (
+                "Provider: GitHub.",
+                "Access mode: Anonymous public.",
+                "Provider credential used: No.",
+                "Required source evidence complete: Yes.",
+                "Pagination complete: No.",
+                "Human review: Required.",
+                "Human approval: Pending explicit reviewer action.",
+                "Client delivery: Not authorized.",
+            ),
+        ),
+        (
+            "es-MX",
+            (
+                "Proveedor: GitHub.",
+                "Modo de acceso: Público anónimo.",
+                "Credencial del proveedor utilizada: No.",
+                "Evidencia fuente requerida completa: Sí.",
+                "Paginación completa: No.",
+                "Revisión humana: Obligatoria.",
+                "Aprobación humana: Pendiente de una acción explícita del revisor.",
+                "Entrega al cliente: No autorizada.",
+            ),
+        ),
+    ),
+)
+def test_frozen_github_access_truth_projects_into_bilingual_report(
+    language: str,
+    expected_lines: tuple[str, ...],
+) -> None:
+    from nico import hosted_provider_comprehensive_runtime_v1 as runtime
+    from nico.comprehensive_report_package import _stage_summary
+
+    commit_sha = "e" * 40
+    snapshot = {
+        "provider": "github",
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": commit_sha,
+        "snapshot_id": "snapshot-github",
+    }
+    repository_evidence = {
+        "repository_provider": "github",
+        "repository_provider_instance": "github.com",
+        "provider_access_observed": True,
+        "provider_access_binding_consistent": True,
+        "provider_access_mode": "anonymous_public",
+        "provider_credential_used": False,
+        "required_source_evidence_complete": True,
+        "provider_pagination_complete": False,
+        "provider_rate_limit_state": {"limited": False, "reason": ""},
+        "provider_collection_limitations": [
+            "Complete pagination proof was not retained."
+        ],
+        "provider_source_fingerprint": "sha256:" + "a" * 64,
+        "exact_source_locators": [
+            (
+                "https://github.com/BoneManTGRM/NICO/blob/"
+                f"{commit_sha}/nico/main.py"
+            )
+        ],
+        "exact_source_locator_count": 1,
+        "assessment_snapshot_id": "snapshot-github",
+        "snapshot_id": "snapshot-github",
+        "repository": "BoneManTGRM/NICO",
+        "snapshot_commit_sha": commit_sha,
+        "provider_capability_states": [
+            {"capability": "tree", "state": "supported", "reason": ""},
+            {
+                "capability": "ci_runs",
+                "state": "supported_empty",
+                "reason": "",
+            },
+            {
+                "capability": "source_links",
+                "state": "supported",
+                "reason": "",
+            },
+        ],
+    }
+
+    projected = runtime._github_access_report_snapshot(
+        snapshot,
+        repository_evidence,
+    )
+    assert projected is not None
+    lines = runtime._provider_access_report_evidence(
+        {"report_language": language},
+        projected,
+        repository_evidence,
+    )
+    summary = _stage_summary(
+        "repository_and_delivery_evidence",
+        {"status": "complete", "provider_access_evidence": lines},
+    )
+
+    for expected in expected_lines:
+        assert expected in summary["evidence"]
+    assert any(
+        "snapshot-github" in line
+        for line in summary["evidence"]
+    )
+    assert any(
+        ("Capability Source tree:" in line)
+        or ("Capacidad Árbol de fuentes:" in line)
+        for line in summary["evidence"]
+    )
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    (
+        "provider_access_observed",
+        "provider_access_binding_consistent",
+        "provider_access_mode",
+        "provider_credential_used",
+        "required_source_evidence_complete",
+        "provider_pagination_complete",
+        "provider_source_fingerprint",
+        "exact_source_locators",
+        "exact_source_locator_count",
+        "assessment_snapshot_id",
+        "provider_capability_states",
+    ),
+)
+def test_github_report_projection_rejects_missing_or_legacy_access_truth(
+    missing_field: str,
+) -> None:
+    from nico import hosted_provider_comprehensive_runtime_v1 as runtime
+
+    commit_sha = "e" * 40
+    snapshot = {
+        "provider": "github",
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": commit_sha,
+        "snapshot_id": "snapshot-github",
+    }
+    repository_evidence = {
+        "repository_provider": "github",
+        "repository_provider_instance": "github.com",
+        "provider_access_observed": True,
+        "provider_access_binding_consistent": True,
+        "provider_access_mode": "anonymous_public",
+        "provider_credential_used": False,
+        "required_source_evidence_complete": True,
+        "provider_pagination_complete": False,
+        "provider_rate_limit_state": {"limited": False},
+        "provider_collection_limitations": [],
+        "provider_source_fingerprint": "sha256:" + "a" * 64,
+        "exact_source_locators": [
+            (
+                "https://github.com/BoneManTGRM/NICO/blob/"
+                f"{commit_sha}/nico/main.py"
+            )
+        ],
+        "exact_source_locator_count": 1,
+        "assessment_snapshot_id": "snapshot-github",
+        "repository": "BoneManTGRM/NICO",
+        "snapshot_commit_sha": commit_sha,
+        "provider_capability_states": [
+            {"capability": "tree", "state": "supported", "reason": ""}
+        ],
+    }
+    repository_evidence.pop(missing_field)
+
+    assert runtime._github_access_report_snapshot(
+        snapshot,
+        repository_evidence,
+    ) is None
+
+
 def test_provider_access_truth_localizes_from_one_frozen_english_snapshot() -> None:
     from nico import hosted_provider_comprehensive_runtime_v1 as runtime
     from nico.comprehensive_spanish_canonical_report_v87 import _localize_tree
