@@ -153,6 +153,29 @@ assert blocked.waits == []
     assert completed.returncode == 0, completed.stderr
 
 
+def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None:
+    source = (
+        ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v3.py"
+    ).read_text(encoding="utf-8")
+
+    helper_start = source.index("def _verify_excluded_engagement_ui(")
+    helper_end = source.index(
+        "def _commercial_spanish_run_proof(",
+        helper_start,
+    )
+    helper = source[helper_start:helper_end]
+    commercial = source[helper_end:]
+
+    assert '"Justificación de exclusión"' in helper
+    assert 'wait_for(state="visible", timeout=30_000)' in helper
+    assert 'assert exclusion_rationale.input_value() == ""' in helper
+    assert '"expected": "unmounted_after_module_exclusion"' in helper
+    assert '"excluded_field_controls_unmounted": True' in helper
+    assert 'assert count == 0' in helper
+    assert 'get_attribute("data-engagement-state")' not in commercial
+    assert '"exclusion_ui": exclusion_ui' in commercial
+
+
 def test_production_workflow_uses_v3_and_exact_terminal_assertions() -> None:
     workflow = (
         ROOT / ".github" / "workflows" / "spanish-comprehensive-production-proof.yml"

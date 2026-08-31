@@ -800,6 +800,44 @@ def _verify_localized_spanish_terminal_artifacts(
     }
 
 
+def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
+    """Verify the rendered exclusion view after its field controls are unmounted."""
+
+    module_editor = page.locator(
+        '[aria-labelledby="strategic-evidence-stakeholder_context"]'
+    ).first
+    exclusion_rationale = module_editor.get_by_label(
+        "Justificación de exclusión",
+        exact=True,
+    ).first
+    exclusion_rationale.wait_for(state="visible", timeout=30_000)
+    assert exclusion_rationale.input_value() == ""
+
+    field_control_counts: dict[str, int] = {}
+    for field in EXCLUDED_ENGAGEMENT_FIELDS:
+        count = module_editor.locator(
+            f'[data-engagement-field="{field}"]'
+        ).count()
+        field_control_counts[field] = count
+        assert count == 0, {
+            "field": field,
+            "expected": "unmounted_after_module_exclusion",
+            "observed_control_count": count,
+        }
+
+    excluded_status = module_editor.get_by_text(
+        "Excluido con justificación",
+        exact=True,
+    ).first
+    assert excluded_status.is_visible()
+    return {
+        "exclusion_view_visible": True,
+        "excluded_field_controls_unmounted": True,
+        "excluded_field_control_counts": field_control_counts,
+        "exclusion_rationale_blank": True,
+    }
+
+
 def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
     """Run the real compact-mobile intake with distinctive commercial metadata."""
 
@@ -842,6 +880,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
 
     page.on("request", record_request)
     started_at = time.time()
+    exclusion_ui: dict[str, Any] = {}
     try:
         page.goto(
             f"{origin}{base.SPANISH_ROUTE}?tier=comprehensive&spanish_production_probe={time.time_ns()}#assessment",
@@ -868,14 +907,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
                 name="Excluir del alcance",
                 exact=True,
             ).click()
-            for field in EXCLUDED_ENGAGEMENT_FIELDS:
-                container = page.locator(
-                    f'[data-engagement-field="{field}"]'
-                ).first
-                assert container.get_attribute("data-engagement-state") == (
-                    "excluded_from_scope"
-                )
-                assert container.locator("textarea").first.input_value() == ""
+            exclusion_ui = _verify_excluded_engagement_ui(page)
         else:
             page.get_by_label(SPANISH_ACCESS_METHOD_LABEL).fill(PROOF_ACCESS_METHOD)
             page.get_by_label(SPANISH_PRIMARY_CONTACT_LABEL).fill(
@@ -985,6 +1017,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
                 "excluded" if exclusion_fixture else "supplied"
             ),
             "module_exclusion_verified": exclusion_fixture,
+            "exclusion_ui": exclusion_ui,
             "excluded_engagement_fields": (
                 list(EXCLUDED_ENGAGEMENT_FIELDS) if exclusion_fixture else []
             ),
