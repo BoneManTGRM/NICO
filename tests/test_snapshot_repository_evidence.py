@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from datetime import datetime, timezone
 from urllib.parse import unquote
 from uuid import uuid4
@@ -9,10 +10,29 @@ from nico.snapshot_repository_evidence import collect_snapshot_repository_eviden
 
 
 class FakeSnapshotClient:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        credential_used: bool = False,
+        tree_truncated: bool = False,
+        pull_error: str | None = None,
+    ) -> None:
         self.calls: list[tuple[str, dict | None]] = []
         self.commit_sha = "a" * 40
         self.tree_sha = "b" * 40
+        self.credential_used = credential_used
+        self.access_mode = (
+            "authenticated_read_only"
+            if credential_used
+            else "anonymous_public"
+        )
+        self.headers = (
+            {"Authorization": "Bearer sentinel-provider-secret"}
+            if credential_used
+            else {}
+        )
+        self.tree_truncated = tree_truncated
+        self.pull_error = pull_error
         self.files = {
             "README.md": "# Snapshot project\n",
             "requirements.txt": "fastapi==0.115.0\n",
@@ -30,10 +50,12 @@ class FakeSnapshotClient:
         suffix = url.split("/repos/BoneManTGRM/NICO", 1)[-1]
         if suffix.startswith("/git/trees/"):
             return {
+                "sha": self.tree_sha,
+                "truncated": self.tree_truncated,
                 "tree": [
                     {"type": "blob", "path": path, "size": len(content.encode())}
                     for path, content in self.files.items()
-                ]
+                ],
             }, None
         if suffix == "/contents":
             return [{"name": "README.md"}, {"name": "app.py"}, {"name": "tests"}, {"name": ".github"}], None
@@ -77,6 +99,8 @@ class FakeSnapshotClient:
         ], None
 
     def get_pulls(self, repository: str, since: datetime):
+        if self.pull_error:
+            return [], self.pull_error
         return [
             {"number": 10, "state": "closed", "merged_at": "2026-07-10T13:00:00Z", "updated_at": "2026-07-10T13:00:00Z", "title": "captured PR"},
             {"number": 11, "state": "open", "merged_at": None, "updated_at": "2026-07-12T13:00:00Z", "title": "future PR"},
@@ -134,10 +158,12 @@ def test_code_evidence_uses_exact_commit_ref_and_retains_snapshot_identity():
     context = _context()
     snapshot = _snapshot(context)
     client = FakeSnapshotClient()
+    snapshot_before = dict(snapshot)
 
     repository, complexity = collect_snapshot_repository_evidence(context, snapshot, client=client)
 
     assert repository["status"] == "attached"
+    assert snapshot == snapshot_before
     assert repository["run_id"] == context["run_id"]
     assert repository["snapshot_id"] == snapshot["snapshot_id"]
     assert repository["snapshot_commit_sha"] == snapshot["commit_sha"]
@@ -146,6 +172,40 @@ def test_code_evidence_uses_exact_commit_ref_and_retains_snapshot_identity():
     assert repository["dependency_evidence"]["snapshot_commit_sha"] == snapshot["commit_sha"]
     assert repository["workflow_evidence"]["workflow_configuration_snapshot_sha"] == snapshot["commit_sha"]
     assert repository["code_signal_evidence"]["snapshot_commit_sha"] == snapshot["commit_sha"]
+    assert repository["repository_provider"] == "github"
+    assert repository["repository_provider_instance"] == "github.com"
+    assert repository["provider_access_observed"] is True
+    assert repository["provider_access_binding_consistent"] is True
+    assert repository["provider_access_mode"] == "anonymous_public"
+    assert repository["provider_credential_used"] is False
+    assert repository["required_source_evidence_complete"] is True
+    assert repository["provider_pagination_complete"] is False
+    assert repository["provider_source_fingerprint"].startswith("sha256:")
+    assert len(repository["provider_source_fingerprint"]) == 71
+    assert repository["assessment_snapshot_id"] == snapshot["snapshot_id"]
+    assert repository["exact_source_locator_count"] == len(
+        repository["exact_source_locators"]
+    )
+    assert repository["exact_source_locator_count"] == 6
+    assert all(
+        locator.startswith(
+            f"https://github.com/BoneManTGRM/NICO/blob/{snapshot['commit_sha']}/"
+        )
+        and "?" not in locator
+        and "#" not in locator
+        for locator in repository["exact_source_locators"]
+    )
+    capability_states = {
+        item["capability"]: item["state"]
+        for item in repository["provider_capability_states"]
+    }
+    assert capability_states["repository"] == "supported"
+    assert capability_states["tree"] == "supported"
+    assert capability_states["source_links"] == "supported"
+    assert any(
+        "Link-header pagination proof was not retained" in note
+        for note in repository["provider_collection_limitations"]
+    )
     assert complexity["status"] == "attached"
     assert complexity["snapshot_commit_sha"] == snapshot["commit_sha"]
     assert complexity["run_id"] == context["run_id"]
@@ -206,6 +266,103 @@ def test_snapshot_repository_evidence_is_idempotent_without_refetching():
     assert second_repository["idempotent_reuse"] is True
     assert second_complexity["idempotent_reuse"] is True
     assert len(client.calls) == call_count
+
+
+def test_authenticated_access_truth_is_boolean_and_never_persists_secret() -> None:
+    context = _context()
+    snapshot = _snapshot(context)
+    snapshot.update(
+        {
+            "provider": "github",
+            "provider_instance": "github.com",
+            "provider_access_observed": True,
+            "access_mode": "authenticated_read_only",
+            "credential_used": True,
+        }
+    )
+    repository, _ = collect_snapshot_repository_evidence(
+        context,
+        snapshot,
+        client=FakeSnapshotClient(credential_used=True),
+    )
+
+    assert repository["provider_access_mode"] == "authenticated_read_only"
+    assert repository["provider_credential_used"] is True
+    serialized = json.dumps(repository, sort_keys=True)
+    assert "sentinel-provider-secret" not in serialized
+    assert "Authorization" not in serialized
+
+
+def test_snapshot_collection_access_drift_fails_closed_without_api_calls() -> None:
+    context = _context()
+    snapshot = _snapshot(context)
+    snapshot.update(
+        {
+            "provider": "github",
+            "provider_instance": "github.com",
+            "provider_access_observed": True,
+            "access_mode": "anonymous_public",
+            "credential_used": False,
+        }
+    )
+    client = FakeSnapshotClient(credential_used=True)
+
+    repository, complexity = collect_snapshot_repository_evidence(
+        context,
+        snapshot,
+        client=client,
+    )
+
+    assert repository["status"] == "unavailable"
+    assert complexity["status"] == "unavailable"
+    assert repository["provider_access_binding_consistent"] is False
+    assert "changed after the immutable snapshot" in (
+        repository["unavailable_data_notes"][0]
+    )
+    assert client.calls == []
+
+
+def test_truncated_source_tree_is_not_claimed_as_complete() -> None:
+    context = _context()
+    snapshot = _snapshot(context)
+    repository, _ = collect_snapshot_repository_evidence(
+        context,
+        snapshot,
+        client=FakeSnapshotClient(tree_truncated=True),
+    )
+
+    assert repository["status"] == "attached"
+    assert repository["required_source_evidence_complete"] is False
+    states = {
+        item["capability"]: item["state"]
+        for item in repository["provider_capability_states"]
+    }
+    assert states["tree"] == "supported_limited"
+    assert any(
+        "truncated" in note.casefold()
+        for note in repository["provider_collection_limitations"]
+    )
+
+
+def test_rate_limited_optional_capability_is_explicit() -> None:
+    context = _context()
+    snapshot = _snapshot(context)
+    repository, _ = collect_snapshot_repository_evidence(
+        context,
+        snapshot,
+        client=FakeSnapshotClient(
+            pull_error="GitHub returned 429: rate limit reached"
+        ),
+    )
+
+    assert repository["status"] == "attached"
+    assert repository["required_source_evidence_complete"] is True
+    assert repository["provider_rate_limit_state"]["limited"] is True
+    states = {
+        item["capability"]: item["state"]
+        for item in repository["provider_capability_states"]
+    }
+    assert states["change_requests"] == "rate_limited"
 
 
 def test_mismatched_snapshot_identity_is_unavailable_without_api_calls():
