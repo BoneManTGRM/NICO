@@ -63,12 +63,12 @@ def _id(prefix: str, run_id: str, repository: str, snapshot_id: str) -> str:
 
 def _safe_note(label: str, error: Any) -> str:
     lowered = str(error or "").lower()
+    if "429" in lowered or "rate" in lowered:
+        return f"{label} was unavailable because the GitHub API rate limit was reached."
     if "401" in lowered or "403" in lowered:
         return f"{label} was unavailable because the GitHub credential or installation lacks required read access."
     if "404" in lowered:
         return f"{label} was unavailable through the authorized GitHub API scope."
-    if "429" in lowered or "rate" in lowered:
-        return f"{label} was unavailable because the GitHub API rate limit was reached."
     return f"{label} was unavailable through the GitHub API."
 
 
@@ -624,6 +624,7 @@ def collect_snapshot_repository_evidence(
             commit_error,
             pull_error,
             run_error,
+            *notes,
             *(ci.get("unavailable_data_notes") or []),
         )
     )

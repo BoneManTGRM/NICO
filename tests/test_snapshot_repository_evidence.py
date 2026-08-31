@@ -422,6 +422,7 @@ def test_anonymous_required_source_uses_exact_git_when_api_tree_is_rate_limited(
     assert repository["required_source_evidence_complete"] is True
     assert repository["provider_access_mode"] == "anonymous_public"
     assert repository["provider_credential_used"] is False
+    assert repository["provider_rate_limit_state"]["limited"] is True
     assert (
         repository["required_source_acquisition"]
         == "credential_free_exact_sha_git"
