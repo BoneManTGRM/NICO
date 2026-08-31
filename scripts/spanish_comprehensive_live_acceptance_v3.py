@@ -45,6 +45,8 @@ LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS = 300.0
 LOCALIZED_PDF_READ_TIMEOUT_SECONDS = 300.0
 CANONICAL_JSON_CONNECT_TIMEOUT_SECONDS = 300.0
 CANONICAL_JSON_READ_TIMEOUT_SECONDS = 300.0
+ENGAGEMENT_VISIBILITY_TIMEOUT_SECONDS = 180.0
+ENGAGEMENT_VISIBILITY_RETRY_MILLISECONDS = 250
 
 PROOF_CLIENT_NAME = "Cody Jenkins"
 PROOF_PROJECT_NAME = "NICO Audit"
@@ -373,20 +375,51 @@ def _fetch_and_verify_durable_engagement(
     run_id: str,
     boundary: str,
 ) -> dict[str, Any]:
-    response = page.request.get(
-        f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
-        headers={
-            "Accept": "application/json",
-            base.recovery.BROWSER_PROJECTION_HEADER: base.recovery.BROWSER_PROJECTION_VALUE,
-            "Cache-Control": "no-store",
-        },
-        timeout=60_000,
+    url = f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}"
+    headers = {
+        "Accept": "application/json",
+        base.recovery.BROWSER_PROJECTION_HEADER: base.recovery.BROWSER_PROJECTION_VALUE,
+        "Cache-Control": "no-store",
+    }
+    deadline = time.monotonic() + ENGAGEMENT_VISIBILITY_TIMEOUT_SECONDS
+    attempts = 0
+    not_found_reads = 0
+    pending_reads = 0
+    payload: Any = None
+    last_status = 0
+    while time.monotonic() < deadline:
+        attempts += 1
+        response = page.request.get(url, headers=headers, timeout=60_000)
+        last_status = int(response.status)
+        if response.ok:
+            candidate = response.json()
+            assert isinstance(candidate, dict)
+            if candidate.get("intake_reserved") is not True:
+                payload = candidate
+                break
+            if (
+                candidate.get("operation") == "intake_pending"
+                and candidate.get("terminal") is not True
+            ):
+                pending_reads += 1
+            else:
+                raise AssertionError(
+                    f"Exact-run intake ended before engagement metadata became visible "
+                    f"at {boundary}: {candidate.get('failure_code') or 'unknown_failure'}"
+                )
+        elif response.status == 404:
+            not_found_reads += 1
+        else:
+            raise AssertionError(
+                f"Exact-run engagement metadata read at {boundary} returned HTTP "
+                f"{response.status}"
+            )
+        page.wait_for_timeout(ENGAGEMENT_VISIBILITY_RETRY_MILLISECONDS)
+    assert isinstance(payload, dict), (
+        f"Exact-run engagement metadata was not durably visible at {boundary} "
+        f"within {ENGAGEMENT_VISIBILITY_TIMEOUT_SECONDS:.0f}s "
+        f"(last HTTP {last_status}, attempts {attempts})"
     )
-    assert response.ok, (
-        f"Exact-run engagement metadata read at {boundary} returned HTTP {response.status}"
-    )
-    payload = response.json()
-    assert isinstance(payload, dict)
     assert str(payload.get("run_id") or "") == run_id
     top_level = _assert_engagement_metadata(
         payload.get("engagement_metadata"),
@@ -406,6 +439,9 @@ def _fetch_and_verify_durable_engagement(
     return {
         **top_level,
         "excluded_field_states_verified": _exclusion_fixture(),
+        "visibility_read_attempt_count": attempts,
+        "visibility_not_found_read_count": not_found_reads,
+        "visibility_pending_read_count": pending_reads,
     }
 
 
