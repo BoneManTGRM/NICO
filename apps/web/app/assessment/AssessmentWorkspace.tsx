@@ -394,8 +394,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     client,
     project,
     authorized,
-    humanEvidence,
-    engagementFieldStates,
+    humanEvidence, engagementFieldStates,
     phase,
     result,
     message,
@@ -409,10 +408,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     setClient,
     setProject,
     setAuthorized,
-    setHumanEvidence,
-    setEngagementFieldValue,
-    setEngagementFieldState,
-    setError,
+    setHumanEvidence, setEngagementFieldValue, setEngagementFieldState, setError,
     run, retry, startNew,
   } = controller;
   const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage} = useReportActionState(locale);
