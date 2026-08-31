@@ -68,6 +68,92 @@ def _safe_note(label: str, error: Any) -> str:
     return f"{label} was unavailable through the GitHub API."
 
 
+def _provider_access_observation(
+    client: Any,
+) -> tuple[bool, str, bool | None]:
+    credential_used = getattr(client, "credential_used", None)
+    access_mode = str(getattr(client, "access_mode", "") or "").strip()
+    valid = (
+        (access_mode == "anonymous_public" and credential_used is False)
+        or (
+            access_mode == "authenticated_read_only"
+            and credential_used is True
+        )
+    )
+    if not valid:
+        return False, "", None
+    return True, access_mode, credential_used
+
+
+def _capability(
+    capability: str,
+    state: str,
+    reason: str = "",
+) -> dict[str, str]:
+    return {
+        "capability": capability,
+        "state": state,
+        "reason": _short(reason, 240),
+    }
+
+
+def _collection_capability(
+    capability: str,
+    values: list[dict[str, Any]],
+    error: str | None,
+    *,
+    credential_used: bool,
+    label: str,
+) -> dict[str, str]:
+    if error:
+        lowered = str(error).casefold()
+        if "429" in lowered or "rate" in lowered:
+            state = "rate_limited"
+        elif any(code in lowered for code in ("401", "403", "404")):
+            state = (
+                "unavailable_permission"
+                if credential_used
+                else "unavailable_authentication"
+            )
+        else:
+            state = "collection_failed"
+        return _capability(capability, state, _safe_note(label, error))
+    if values:
+        return _capability(capability, "supported")
+    return _capability(capability, "supported_empty")
+
+
+def _exact_source_identity(
+    repository: str,
+    commit_sha: str,
+    tree_sha: str,
+    tree_paths: list[str],
+    retained_paths: list[str],
+) -> tuple[str, list[str]]:
+    if not (repository and commit_sha and tree_sha and tree_paths):
+        return "", []
+    material = json.dumps(
+        {
+            "provider": "github",
+            "repository": repository,
+            "commit_sha": commit_sha,
+            "tree_sha": tree_sha,
+            "tree_paths": sorted(set(tree_paths)),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    fingerprint = "sha256:" + hashlib.sha256(material).hexdigest()
+    locators = [
+        (
+            f"https://github.com/{quote(repository, safe='/')}/blob/"
+            f"{quote(commit_sha, safe='')}/{quote(path, safe='/')}"
+        )
+        for path in sorted(set(retained_paths))[:MAX_TEXT_FILES]
+    ]
+    return fingerprint, locators
+
+
 def _get_json(client: Any, repository: str, path: str, params: dict[str, Any] | None = None) -> tuple[Any | None, str | None]:
     return client.get_json(client.repo_url(repository, path), params)
 
@@ -115,7 +201,27 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
             files[path] = text
         elif path in KNOWN_FILE_PATHS:
             unavailable.append(_safe_note(f"Captured-commit file {path}", error))
-    return {"files": files, "tree_paths": list(sizes), "root_items": root_items, "unavailable": sorted(set(unavailable))}
+    return {
+        "files": files,
+        "tree_paths": list(sizes),
+        "root_items": root_items,
+        "unavailable": sorted(set(unavailable)),
+        "tree_sha": (
+            str(tree_value.get("sha") or "").strip().lower()
+            if isinstance(tree_value, dict)
+            else ""
+        ),
+        "tree_truncated": (
+            bool(tree_value.get("truncated"))
+            if isinstance(tree_value, dict)
+            else False
+        ),
+        "tree_collection_succeeded": (
+            tree_error is None
+            and isinstance(tree_value, dict)
+            and isinstance(tree_value.get("tree"), list)
+        ),
+    }
 
 
 def _workflows(client: Any, repository: str, snapshot: dict[str, Any], paths: list[str]) -> tuple[dict[str, str], list[str]]:
@@ -227,6 +333,60 @@ def collect_snapshot_repository_evidence(
         return unavailable, {**unavailable, "evidence_id": complexity_id, "source": "github_api_snapshot_bound_complexity"}
 
     github = client or GitHubAssessmentClient()
+    (
+        provider_access_observed,
+        access_mode,
+        credential_used,
+    ) = _provider_access_observation(github)
+    if not provider_access_observed:
+        unavailable = {
+            "status": "unavailable",
+            "evidence_id": evidence_id,
+            "run_id": run_id,
+            "repository": repository,
+            "customer_id": context.get("customer_id") or "default_customer",
+            "project_id": context.get("project_id") or "default_project",
+            "snapshot_id": snapshot_id,
+            "source": "github_api_read_only",
+            "unavailable_data_notes": [
+                "The GitHub collection client did not expose a valid safe access observation."
+            ],
+            "idempotent_reuse": False,
+            "human_review_required": True,
+        }
+        return unavailable, {
+            **unavailable,
+            "evidence_id": complexity_id,
+            "source": "github_api_snapshot_bound_complexity",
+        }
+
+    snapshot_access_observed = snapshot.get("provider_access_observed") is True
+    if snapshot_access_observed and (
+        snapshot.get("access_mode") != access_mode
+        or snapshot.get("credential_used") is not credential_used
+    ):
+        unavailable = {
+            "status": "unavailable",
+            "evidence_id": evidence_id,
+            "run_id": run_id,
+            "repository": repository,
+            "customer_id": context.get("customer_id") or "default_customer",
+            "project_id": context.get("project_id") or "default_project",
+            "snapshot_id": snapshot_id,
+            "source": "github_api_read_only",
+            "provider_access_binding_consistent": False,
+            "unavailable_data_notes": [
+                "The GitHub access mode changed after the immutable snapshot was captured."
+            ],
+            "idempotent_reuse": False,
+            "human_review_required": True,
+        }
+        return unavailable, {
+            **unavailable,
+            "evidence_id": complexity_id,
+            "source": "github_api_snapshot_bound_complexity",
+        }
+
     captured_at = _parse_iso(snapshot.get("captured_at")) or datetime.now(timezone.utc)
     timeframe_days = max(30, min(int(context.get("timeframe_days") or DEFAULT_TIMEFRAME_DAYS), 365))
     since = captured_at - timedelta(days=timeframe_days)
@@ -248,12 +408,199 @@ def collect_snapshot_repository_evidence(
             notes.append(_safe_note(label, error))
 
     snapshot_sha = str(snapshot.get("commit_sha") or "")
+    tree_sha = str(
+        profile.get("tree_sha")
+        or snapshot.get("tree_sha")
+        or ""
+    ).strip().lower()
+    source_fingerprint, exact_source_locators = _exact_source_identity(
+        repository,
+        snapshot_sha,
+        tree_sha,
+        paths,
+        list(files),
+    )
+    required_source_evidence_complete = bool(
+        snapshot_sha
+        and paths
+        and source_fingerprint
+        and exact_source_locators
+        and profile.get("tree_collection_succeeded") is True
+        and profile.get("tree_truncated") is not True
+    )
+    pagination_limitation = (
+        "GitHub operational collections are bounded to one provider page; "
+        "complete Link-header pagination proof was not retained."
+    )
+    if profile.get("tree_truncated") is True:
+        notes.append(
+            "The GitHub recursive source tree was truncated and was not treated "
+            "as complete required source evidence."
+        )
+    notes.append(pagination_limitation)
+
+    rate_limited = any(
+        "rate limit" in str(value or "").casefold()
+        or "429" in str(value or "").casefold()
+        for value in (
+            commit_error,
+            pull_error,
+            run_error,
+            *(ci.get("unavailable_data_notes") or []),
+        )
+    )
+    job_evidence = (
+        ci.get("job_evidence")
+        if isinstance(ci.get("job_evidence"), dict)
+        else {}
+    )
+    deployment_evidence = (
+        ci.get("deployment_evidence")
+        if isinstance(ci.get("deployment_evidence"), dict)
+        else {}
+    )
+    if not bounded_runs:
+        ci_job_capability = _capability("ci_jobs", "supported_empty")
+    elif job_evidence.get("status") == "complete":
+        ci_job_capability = _capability("ci_jobs", "supported")
+    elif job_evidence.get("status") == "partial":
+        ci_job_capability = _capability(
+            "ci_jobs",
+            "supported_limited",
+            "Some workflow-job evidence was unavailable.",
+        )
+    else:
+        ci_job_capability = _capability(
+            "ci_jobs",
+            "collection_failed",
+            "Workflow-job evidence could not be collected.",
+        )
+
+    deployment_status = str(deployment_evidence.get("status") or "")
+    if deployment_status == "complete":
+        deployment_capability = _capability("deployments", "supported")
+    elif deployment_status == "partial":
+        deployment_capability = _capability(
+            "deployments",
+            "supported_limited",
+            "Some deployment status evidence was unavailable.",
+        )
+    elif deployment_status == "not_observed":
+        deployment_capability = _capability("deployments", "supported_empty")
+    else:
+        deployment_capability = _capability(
+            "deployments",
+            "collection_failed",
+            "GitHub deployment evidence could not be collected.",
+        )
+
+    environments = list(deployment_evidence.get("environments") or [])
+    if deployment_status == "unavailable":
+        environment_capability = _capability(
+            "environments",
+            "collection_failed",
+            "GitHub environment evidence could not be collected.",
+        )
+    elif environments:
+        environment_capability = _capability("environments", "supported")
+    else:
+        environment_capability = _capability("environments", "supported_empty")
+
+    if profile.get("tree_collection_succeeded") is not True:
+        tree_capability = _capability(
+            "tree",
+            "collection_failed",
+            "The immutable recursive source tree could not be collected.",
+        )
+    elif profile.get("tree_truncated") is True:
+        tree_capability = _capability(
+            "tree",
+            "supported_limited",
+            "The provider returned a truncated recursive source tree.",
+        )
+    elif paths:
+        tree_capability = _capability("tree", "supported")
+    else:
+        tree_capability = _capability(
+            "tree",
+            "supported_empty",
+            "The immutable repository source tree was empty.",
+        )
+
+    if files:
+        blob_capability = _capability("blobs", "supported")
+    elif not paths and profile.get("tree_collection_succeeded") is True:
+        blob_capability = _capability("blobs", "supported_empty")
+    else:
+        blob_capability = _capability(
+            "blobs",
+            "collection_failed",
+            "No retained text source object was available for assessment.",
+        )
+
+    provider_capability_states = [
+        _capability("repository", "supported"),
+        _collection_capability(
+            "commits", bounded_commits, commit_error,
+            credential_used=bool(credential_used), label="Commit history",
+        ),
+        _capability(
+            "branches", "supported_limited",
+            "Only the immutable default-branch identity was retained.",
+        ),
+        tree_capability,
+        blob_capability,
+        _capability("tags", "not_assessed"),
+        _collection_capability(
+            "change_requests", bounded_pulls, pull_error,
+            credential_used=bool(credential_used), label="Pull-request history",
+        ),
+        _collection_capability(
+            "ci_runs", bounded_runs, run_error,
+            credential_used=bool(credential_used), label="Workflow-run history",
+        ),
+        ci_job_capability,
+        environment_capability,
+        deployment_capability,
+        _capability("work_items", "not_assessed"),
+        _capability("releases", "not_assessed"),
+        _capability(
+            "source_links",
+            "supported" if exact_source_locators else "collection_failed",
+            "" if exact_source_locators else "No exact-source locator was retained.",
+        ),
+    ]
+
     bundle = {
         "status": "attached", "evidence_id": evidence_id, "run_id": run_id, "repository": repository,
         "customer_id": context.get("customer_id") or "default_customer", "project_id": context.get("project_id") or "default_project",
         "source": "github_api_snapshot_bound_read_only", "authorization_scope": context.get("authorization_scope") or "repository assessment only",
+        "repository_provider": "github",
+        "repository_provider_instance": "github.com",
+        "provider_access_observed": True,
+        "provider_access_binding_consistent": True,
+        "provider_access_mode": access_mode,
+        "provider_credential_used": credential_used,
+        "required_source_evidence_complete": required_source_evidence_complete,
+        "provider_pagination_complete": False,
+        "provider_rate_limit_state": {
+            "limited": rate_limited,
+            "reason": (
+                "GitHub API rate limiting affected one or more evidence modules."
+                if rate_limited
+                else ""
+            ),
+        },
+        "provider_collection_limitations": sorted(
+            {str(note) for note in notes if str(note).strip()}
+        ),
+        "provider_source_fingerprint": source_fingerprint,
+        "exact_source_locators": exact_source_locators,
+        "exact_source_locator_count": len(exact_source_locators),
+        "assessment_snapshot_id": snapshot_id,
+        "provider_capability_states": provider_capability_states,
         "timeframe_days": timeframe_days, "snapshot_id": snapshot_id, "snapshot_commit_sha": snapshot_sha,
-        "snapshot_tree_sha": snapshot.get("tree_sha") or "", "snapshot_captured_at": snapshot.get("captured_at") or "",
+        "snapshot_tree_sha": tree_sha, "snapshot_captured_at": snapshot.get("captured_at") or "",
         "code_evidence_scope": "File, manifest, workflow-configuration, executable code-signal, and complexity evidence is read from the exact captured commit.",
         "operational_evidence_scope": "Commit, PR, workflow-run, job, and deployment history is time-window evidence observed through capture time and is not exact-commit code evidence unless explicitly matched by SHA.",
         "repository_metadata": {"full_name": repository, "default_branch": snapshot.get("default_branch") or "", "visibility": snapshot.get("repository_visibility") or "unknown", "pushed_at": snapshot.get("repository_pushed_at") or "", "commit_sha": snapshot_sha, "tree_sha": snapshot.get("tree_sha") or ""},
