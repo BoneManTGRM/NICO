@@ -9,10 +9,10 @@ from pypdf import PdfReader
 VERSION = "nico.comprehensive_pdf_layout_polish.v1"
 _MARKER = "__nico_comprehensive_pdf_layout_polish_v1__"
 
-_TOC_ROWS_PER_PAGE = 33
+_TOC_ROWS_PER_PAGE = 35
 _TOC_FIRST_ROW_Y = 690.0
-_TOC_ROW_PITCH = 15.1
-_TOC_FONT_SIZE = 7.7
+_TOC_ROW_PITCH = 14.0
+_TOC_FONT_SIZE = 7.5
 _TOC_MATRIX_TOP_Y = 192.0
 _TOC_MIN_CLEARANCE = 6.0
 
