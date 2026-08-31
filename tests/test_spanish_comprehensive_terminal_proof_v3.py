@@ -59,11 +59,11 @@ sys.meta_path[:] = [
     if "editable" not in type(finder).__module__.casefold()
 ]
 module = runpy.run_path({str(script)!r}, run_name="nico_visibility_retry_unit_probe")
-metadata = {
-    **module["_expected_engagement_metadata"](),
-    "repository_inference_prohibited": True,
-    "directly_scored": False,
-}
+metadata = dict(
+    module["_expected_engagement_metadata"](),
+    repository_inference_prohibited=True,
+    directly_scored=False,
+)
 
 class Response:
     def __init__(self, status, payload=None):
@@ -78,16 +78,22 @@ class Requests:
     def __init__(self):
         self.responses = [
             Response(404),
-            Response(200, {
-                "intake_reserved": True,
-                "operation": "intake_pending",
-                "terminal": False,
-            }),
-            Response(200, {
-                "run_id": "comprun_visibility",
-                "engagement_metadata": metadata,
-                "record": {"engagement_metadata": metadata},
-            }),
+            Response(
+                200,
+                dict(
+                    intake_reserved=True,
+                    operation="intake_pending",
+                    terminal=False,
+                ),
+            ),
+            Response(
+                200,
+                dict(
+                    run_id="comprun_visibility",
+                    engagement_metadata=metadata,
+                    record=dict(engagement_metadata=metadata),
+                ),
+            ),
         ]
         self.calls = []
 
