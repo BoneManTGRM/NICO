@@ -55,6 +55,12 @@ jobs:
             --database-url "$NICO_TEST_DATABASE_URL" \
             --output audit-results/postgres-restart-proof.json
 
+      - name: Run real Postgres public-intake reservation proof
+        run: |
+          python scripts/postgres_intake_reservation_proof.py \
+            --database-url "$NICO_TEST_DATABASE_URL" \
+            --output audit-results/postgres-intake-reservation-proof.json
+
       - name: Verify evidence is bounded and passing
         run: |
           python - <<'PY'
@@ -72,6 +78,18 @@ jobs:
           serialized = json.dumps(payload)
           assert "postgresql://" not in serialized
           assert "NICO_TEST_DATABASE_URL" not in serialized
+
+          reservation_path = Path("audit-results/postgres-intake-reservation-proof.json")
+          reservation = json.loads(reservation_path.read_text(encoding="utf-8"))
+          assert reservation["status"] == "passed"
+          assert reservation["proof"]["exactly_one_lease_owner"] is True
+          assert reservation["proof"]["active_heartbeat_prevented_reclaim"] is True
+          assert reservation["proof"]["terminal_payload_scrubbed"] is True
+          assert reservation["proof"]["human_approval"] is False
+          assert reservation["proof"]["client_delivery_allowed"] is False
+          reservation_serialized = json.dumps(reservation)
+          assert "postgresql://" not in reservation_serialized
+          assert "NICO_TEST_DATABASE_URL" not in reservation_serialized
           PY
 
       - name: Upload restart proof evidence
@@ -79,6 +97,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: postgres-restart-proof-${{ github.run_id }}-${{ github.run_attempt }}
-          path: audit-results/postgres-restart-proof.json
+          path: |
+            audit-results/postgres-restart-proof.json
+            audit-results/postgres-intake-reservation-proof.json
           if-no-files-found: error
           retention-days: 30

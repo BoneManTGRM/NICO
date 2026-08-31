@@ -30,8 +30,6 @@ import {
   reportLanguageForRequest,
 } from "./assessmentLocale";
 import StrategicEvidenceForm from "./StrategicEvidenceForm";
-import EngagementFieldStateControls from "./EngagementFieldStateControls";
-import {isEngagementFieldUnavailable} from "./engagementFieldState";
 import {isAmbiguousIntakeOutcome} from "./assessmentRunRequests";
 import {useAssessmentClientMode} from "./useAssessmentClientMode";
 import {useAssessmentRun} from "./useAssessmentRun";
@@ -745,33 +743,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder={copy.repoPlaceholder} disabled={running || hasExactRun} autoComplete="off" />
         </label>
         <div className={workspaceStyles.secondaryGrid}>
-          {([
-            ["client_name", copy.client, client, setClient],
-            ["project_name", copy.project, project, setProject],
-          ] as const).map(([field, label, value, onValue]) => {
-            const state = engagementFieldStates[field].state;
-            return <div
-              className={workspaceStyles.secondaryField}
-              data-engagement-field={field}
-              data-engagement-state={state}
-              key={field}
-            >
-              <label>{label}
-                <input
-                  value={value}
-                  onChange={(event) => onValue(event.target.value)}
-                  disabled={running || hasExactRun || isEngagementFieldUnavailable(state)}
-                  autoComplete="off"
-                />
-              </label>
-              <EngagementFieldStateControls
-                locale={locale}
-                state={state}
-                disabled={running || hasExactRun}
-                onChange={(next) => setEngagementFieldState(field, next)}
-              />
-            </div>;
-          })}
+          <label className={workspaceStyles.secondaryField} data-engagement-field="client_name" data-engagement-state={engagementFieldStates.client_name.state}>{copy.client}<input value={client} onChange={(event) => setClient(event.target.value)} disabled={running || hasExactRun} autoComplete="off" /></label>
+          <label className={workspaceStyles.secondaryField} data-engagement-field="project_name" data-engagement-state={engagementFieldStates.project_name.state}>{copy.project}<input value={project} onChange={(event) => setProject(event.target.value)} disabled={running || hasExactRun} autoComplete="off" /></label>
         </div>
 
         <StrategicEvidenceForm

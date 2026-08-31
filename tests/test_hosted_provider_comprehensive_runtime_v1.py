@@ -7,13 +7,17 @@ from types import SimpleNamespace
 import pytest
 
 from nico.hosted_provider_comprehensive_runtime_v1 import (
+    _access_mode,
     _clone_spec,
     _hosted_url,
+    assert_no_raw_provider_credentials,
     build_hosted_provider_client,
     canonical_repository_label,
     capture_hosted_provider_snapshot,
     checkout_hosted_provider_snapshot,
+    normalize_submitted_provider_repository,
 )
+from nico.provider_neutral_contract import ProviderAccessMode
 from nico.provider_platform_contract_v1 import ProviderKind
 
 
@@ -39,6 +43,11 @@ class FakeCollection:
         self.repository_id = "stable-provider-repository-id"
         self.revision = revision
         self.collected_at = "2026-08-23T11:00:00+00:00"
+        self.access_mode = "anonymous_public"
+        self.credential_used = False
+        self.pagination_complete = True
+        self.rate_limit_state = {}
+        self.collection_limitations = ()
         self.payload = {
             "revision": revision,
             "repository": {"id": self.repository_id, "name": "repo"},
@@ -81,6 +90,50 @@ def test_major_provider_labels_are_provider_safe_and_unambiguous() -> None:
         organization="Org",
         project="Project",
     ) == "dev.azure.com/Org/Project/_git/repo"
+
+
+def test_public_intake_provider_helpers_cover_anonymous_access_and_exact_hosts() -> None:
+    assert _access_mode("") is ProviderAccessMode.AUTO
+    assert _access_mode("anonymous_public") is ProviderAccessMode.ANONYMOUS_PUBLIC
+    assert _access_mode("authenticated_read_only") is ProviderAccessMode.AUTHENTICATED_READ_ONLY
+
+    assert normalize_submitted_provider_repository("Owner/Repo", "", organization="", project="") == (
+        ProviderKind.GITHUB,
+        "Owner/Repo",
+        "",
+        "",
+    )
+    assert normalize_submitted_provider_repository(
+        "https://gitlab.com/group/sub/repo.git",
+        "gitlab",
+        organization="",
+        project="",
+    ) == (ProviderKind.GITLAB, "group/sub/repo", "", "")
+    assert normalize_submitted_provider_repository(
+        "https://bitbucket.org/workspace/repo",
+        "bitbucket_cloud",
+        organization="",
+        project="",
+    ) == (ProviderKind.BITBUCKET_CLOUD, "workspace/repo", "", "")
+    assert normalize_submitted_provider_repository(
+        "https://dev.azure.com/Org/Project/_git/repo",
+        "azure_devops",
+        organization="",
+        project="",
+    ) == (ProviderKind.AZURE_DEVOPS, "repo", "Org", "Project")
+
+
+def test_public_intake_provider_helpers_fail_closed_for_secret_keys_and_host_mismatch() -> None:
+    with pytest.raises(ValueError, match="raw_provider_credentials_prohibited"):
+        assert_no_raw_provider_credentials({"token": "must-not-cross-public-boundary"})
+
+    with pytest.raises(ValueError, match="provider_repository_selection_mismatch"):
+        normalize_submitted_provider_repository(
+            "https://gitlab.com/group/repo",
+            "github",
+            organization="",
+            project="",
+        )
 
 
 @pytest.mark.parametrize(
@@ -141,14 +194,53 @@ def test_server_side_live_client_builders_cover_all_non_github_major_providers()
         "NICO_AZURE_DEVOPS_PROJECT": "Project",
     }
     clients = [
-        build_hosted_provider_client(ProviderKind.GITLAB, {}, environ=common),
-        build_hosted_provider_client(ProviderKind.BITBUCKET_CLOUD, {}, environ=common),
-        build_hosted_provider_client(ProviderKind.AZURE_DEVOPS, {}, environ=common),
+        build_hosted_provider_client(
+            ProviderKind.GITLAB,
+            {"provider_access_mode": "authenticated_read_only"},
+            environ=common,
+        ),
+        build_hosted_provider_client(
+            ProviderKind.BITBUCKET_CLOUD,
+            {"provider_access_mode": "authenticated_read_only"},
+            environ=common,
+        ),
+        build_hosted_provider_client(
+            ProviderKind.AZURE_DEVOPS,
+            {"provider_access_mode": "authenticated_read_only"},
+            environ=common,
+        ),
     ]
     try:
         assert [client.provider.value for client in clients] == ["gitlab", "bitbucket", "azure_devops"]
         assert all(client.credential.secret.reveal() for client in clients)
         assert all("secret" not in repr(client.credential.reference).casefold() for client in clients)
+    finally:
+        for client in clients:
+            client.close()
+
+
+def test_public_live_client_builders_do_not_resolve_configured_credentials() -> None:
+    environment = {
+        "NICO_GITLAB_TOKEN": "must-not-be-resolved",
+        "NICO_BITBUCKET_CLOUD_TOKEN": "must-not-be-resolved",
+        "NICO_AZURE_DEVOPS_TOKEN": "must-not-be-resolved",
+    }
+    contexts = (
+        (ProviderKind.GITLAB, {}),
+        (ProviderKind.BITBUCKET_CLOUD, {}),
+        (
+            ProviderKind.AZURE_DEVOPS,
+            {"provider_organization": "Org", "provider_project": "Project"},
+        ),
+    )
+    clients = [
+        build_hosted_provider_client(provider, context, environ=environment)
+        for provider, context in contexts
+    ]
+    try:
+        assert all(client.credential is None for client in clients)
+        assert all(client.credential_used is False for client in clients)
+        assert all(client.actual_access_mode.value == "anonymous_public" for client in clients)
     finally:
         for client in clients:
             client.close()

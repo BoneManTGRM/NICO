@@ -6,6 +6,7 @@ PROVIDER = ROOT / "apps/web/app/assessment/repositoryProvider.ts"
 BRIDGE = ROOT / "apps/web/app/assessment/AssessmentProviderParityBridge.tsx"
 PROXY = ROOT / "apps/web/app/api/nico/providers/operator/comprehensive-intake/route.ts"
 PAGE = ROOT / "apps/web/app/assessment/AssessmentPage.tsx"
+HOOK = ROOT / "apps/web/app/assessment/useAssessmentRun.ts"
 
 
 def _text(path: Path) -> str:
@@ -82,37 +83,37 @@ def test_azure_urls_require_canonical_git_shape():
     assert 'host.match(VISUAL_STUDIO_HOST)' in provider
 
 
-def test_provider_choice_survives_locale_but_operator_token_is_memory_only():
+def test_provider_choice_survives_locale_without_browser_credential_capture():
     provider = _text(PROVIDER)
     bridge = _text(BRIDGE)
     assert 'window.sessionStorage.getItem(REPOSITORY_PROVIDER_STORAGE_KEY)' in provider
     assert 'window.sessionStorage.setItem(REPOSITORY_PROVIDER_STORAGE_KEY, provider)' in provider
     assert "OPERATOR_ADMIN_TOKEN_STORAGE_KEY" not in provider
     assert "localStorage" not in provider
-    assert 'const operatorTokenRef = useRef("")' in bridge
-    assert 'operatorTokenRef.current = value' in bridge
-    assert 'operatorTokenRef.current.trim()' in bridge
+    assert "operatorToken" not in bridge
+    assert "X-NICO-Admin-Token" not in bridge
+    assert "password" not in bridge.casefold()
     assert "sessionStorage" not in bridge
 
 
-def test_github_keeps_existing_proven_intake_while_other_providers_use_operator_runtime():
+def test_all_public_providers_use_the_same_tokenless_public_intake():
     bridge = _text(BRIDGE)
-    assert 'PUBLIC_INTAKE_PATH = "/api/nico/assessment/comprehensive-intake"' in bridge
-    assert 'OPERATOR_INTAKE_PATH = "/api/nico/providers/operator/comprehensive-intake"' in bridge
-    assert 'if (selectedProvider === "github") return originalFetch(input, init);' in bridge
-    assert 'headers.set("X-NICO-Admin-Token", token)' in bridge
-    assert 'provider: normalized.provider' in bridge
-    assert 'nextBody.provider_organization = normalized.provider_organization' in bridge
-    assert 'nextBody.provider_project = normalized.provider_project' in bridge
+    hook = _text(HOOK)
+    assert '"/assessment/comprehensive-intake"' in hook
+    assert 'provider: normalizedRepository.provider' in hook
+    assert 'provider_access_mode: "auto"' in hook
+    assert 'body.provider_organization = normalizedRepository.provider_organization' in hook
+    assert 'body.provider_project = normalizedRepository.provider_project' in hook
+    assert "operator/comprehensive-intake" not in bridge + hook
+    assert "X-NICO-Admin-Token" not in bridge + hook
 
 
-def test_spanish_provider_bridge_has_no_user_facing_english_error_fallbacks():
+def test_spanish_public_provider_surface_has_localized_guidance_and_errors():
     bridge = _text(BRIDGE)
-    assert 'invalidIntakeMessage(locale)' in bridge
-    assert '"La solicitud de evaluación no contiene JSON válido."' in bridge
-    assert '"Ingresa un token de operador NICO válido para usar GitLab, Bitbucket o Azure DevOps."' in bridge
-    assert '"La URL o el identificador del repositorio no coincide con el proveedor seleccionado. Revisa el formato y vuelve a intentarlo."' in bridge
-    assert "Las credenciales del proveedor permanecen exclusivamente en el servidor y deben estar configuradas allí antes de iniciar la evaluación." in bridge
+    hook = _text(HOOK)
+    assert "Los repositorios públicos se evalúan con acceso anónimo de solo lectura." in bridge
+    assert "Si el código fuente requerido no es público, NICO solicitará acceso de solo lectura por separado." in bridge
+    assert '"La URL o el identificador del repositorio no coincide con el proveedor seleccionado. Revisa el formato y vuelve a intentarlo."' in hook
 
 
 def test_browser_code_never_contains_provider_credentials():

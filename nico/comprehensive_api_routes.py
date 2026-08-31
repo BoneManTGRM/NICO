@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 from collections.abc import Mapping
+import re
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -20,11 +24,14 @@ from nico.comprehensive_review_decision_v1 import review_artifact_identity
 from nico.exact_commit_binding import expected_commit_sha
 from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
+from nico.provider_live_clients import ProviderClientError
 
-VERSION = "nico.comprehensive_api_routes.v18"
+VERSION = "nico.comprehensive_api_routes.v19"
 _BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 _FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 _ACTIVE_FINAL_REPORT_STATUSES = {"active", "pending", "queued", "running"}
+_PUBLIC_INTAKE_RUN_ID_RE = re.compile(r"^comprun_[0-9a-f]{32}$")
+_PUBLIC_INTAKE_LEASE_SECONDS = 300.0
 
 COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-intake"),
@@ -103,8 +110,57 @@ def _translate_error(exc: Exception) -> HTTPException:
                 "client_delivery_allowed": False,
             },
         )
+    if isinstance(exc, (ComprehensiveRunConflict, ValueError)) and str(exc) in {
+        "public_intake_idempotency_conflict",
+        "public_intake_legacy_run_unbound",
+    }:
+        return HTTPException(
+            status_code=409,
+            detail={
+                "code": str(exc),
+                "message": "The reserved intake identity is already bound and cannot be changed or retroactively rebound.",
+                "retryable": False,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     if isinstance(exc, ComprehensiveRunConflict):
         return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, ValueError) and str(exc) == "public_intake_run_id_invalid":
+        return HTTPException(
+            status_code=422,
+            detail={
+                "code": "public_intake_run_id_invalid",
+                "message": "The reserved public intake identity is invalid.",
+                "retryable": False,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
+    if isinstance(exc, ProviderClientError):
+        definitions = {
+            "provider_read_only_authentication_required": (403, False),
+            "provider_repository_not_publicly_accessible": (403, False),
+            "provider_permission_denied": (403, False),
+            "provider_repository_not_found": (404, False),
+            "provider_anonymous_rate_limit_reached": (429, True),
+            "provider_rate_limited": (429, True),
+            "provider_service_unavailable": (503, True),
+            "provider_network_timeout": (504, True),
+            "provider_malformed_response": (502, False),
+            "provider_required_source_evidence_unavailable": (422, False),
+        }
+        status, retryable = definitions.get(exc.code, (502, bool(exc.retryable)))
+        return HTTPException(
+            status_code=status,
+            detail={
+                "code": exc.code,
+                "message": "Provider evidence acquisition failed safely; no incomplete assessment report was created.",
+                "retryable": retryable,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     if isinstance(exc, ValueError) and str(exc) == "stale_review_artifact_identity":
         return HTTPException(
             status_code=409,
@@ -144,6 +200,211 @@ def _required(value: Any, field: str) -> str:
     if not normalized:
         raise ValueError(f"{field}_required")
     return normalized
+
+
+def _bounded_required(value: Any, field: str, limit: int) -> str:
+    normalized = _required(value, field)
+    if len(normalized) > limit:
+        raise ValueError(f"{field}_too_long")
+    return normalized
+
+
+def public_intake_identity(payload: Mapping[str, Any]) -> tuple[str, str]:
+    """Return the one browser-reserved identity for a public intake."""
+
+    supplied = str(payload.get("run_id") or "").strip().lower()
+    if supplied and not _PUBLIC_INTAKE_RUN_ID_RE.fullmatch(supplied):
+        raise ValueError("public_intake_run_id_invalid")
+    run_id = supplied or f"comprun_{uuid4().hex}"
+    return run_id, f"ledger_comprehensive_{run_id.removeprefix('comprun_')}"
+
+
+def _public_intake_request_sha256(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        dict(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _matching_public_intake_response(
+    request: Request,
+    *,
+    payload: Mapping[str, Any],
+    expected_commit_sha_value: str,
+) -> dict[str, Any] | None:
+    """Validate the canonical row after its full request hash was bound."""
+
+    controller = _controller(request)
+    status_reader = getattr(controller, "status_read_only", None)
+    if not callable(status_reader):
+        return None
+    run_id = str(payload.get("run_id") or "")
+    try:
+        existing = status_reader(run_id)
+    except ComprehensiveRunNotFound:
+        return None
+    expected_identity = {
+        "repository": payload.get("repository"),
+        "customer_id": payload.get("customer_id"),
+        "project_id": payload.get("project_id"),
+        "assessment_depth": payload.get("assessment_depth"),
+        "report_language": payload.get("report_language"),
+    }
+    if any(
+        str(existing.get(field) or "") != str(value or "")
+        for field, value in expected_identity.items()
+    ):
+        raise ComprehensiveRunConflict("public_intake_idempotency_conflict")
+    if expected_commit_sha_value and str(existing.get("commit_sha") or "").lower() != str(
+        expected_commit_sha_value
+    ).lower():
+        raise ComprehensiveRunConflict("public_intake_idempotency_conflict")
+    expected_metadata = (
+        payload.get("engagement_metadata")
+        if isinstance(payload.get("engagement_metadata"), Mapping)
+        else {}
+    )
+    existing_metadata = (
+        existing.get("engagement_metadata")
+        if isinstance(existing.get("engagement_metadata"), Mapping)
+        else {}
+    )
+    if str(existing_metadata.get("engagement_metadata_sha256") or "") != str(
+        expected_metadata.get("engagement_metadata_sha256") or ""
+    ):
+        raise ComprehensiveRunConflict("public_intake_idempotency_conflict")
+    return _with_runtime_truth(
+        request,
+        {**existing, "operation": "intake_idempotent_reuse", "intake_idempotent_reuse": True},
+    )
+
+
+def _assert_no_unbound_existing_run(
+    request: Request,
+    *,
+    service: Any,
+    run_id: str,
+) -> None:
+    """Never retroactively bind a legacy/direct run to a new intake request."""
+
+    if service.load_public_intake(run_id) is not None:
+        return
+    status_reader = getattr(_controller(request), "status_read_only", None)
+    if not callable(status_reader):
+        return
+    try:
+        status_reader(run_id)
+    except ComprehensiveRunNotFound:
+        return
+    raise ComprehensiveRunConflict("public_intake_legacy_run_unbound")
+
+
+def _prepare_public_intake_reservation_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise TypeError("request_body_must_be_object")
+    if payload.get("authorized") is not True or payload.get("authorization_confirmed") is not True:
+        raise ValueError("explicit_authorization_required")
+
+    from nico.hosted_provider_comprehensive_runtime_v1 import (
+        _access_mode as hosted_access_mode,
+        assert_no_raw_provider_credentials,
+        canonical_repository_label,
+        normalize_submitted_provider_repository,
+    )
+    from nico.provider_neutral_contract import ProviderAccessMode
+    from nico.provider_platform_contract_v1 import ProviderKind
+    from nico.comprehensive_engagement_metadata_v1 import (
+        _literal,
+        build_comprehensive_engagement_metadata,
+    )
+    from nico.comprehensive_intake_display_metadata_v2 import (
+        _human_evidence_with_display_metadata,
+    )
+    from nico.strategic_human_evidence_v1 import normalize_strategic_human_evidence
+
+    assert_no_raw_provider_credentials(payload)
+    provider, provider_repository, organization, provider_project = (
+        normalize_submitted_provider_repository(
+            payload.get("repository"),
+            payload.get("provider"),
+            organization=payload.get("provider_organization"),
+            project=payload.get("provider_project"),
+        )
+    )
+    requested_access_mode = hosted_access_mode(
+        payload.get("provider_access_mode") or ProviderAccessMode.AUTO.value
+    )
+    if requested_access_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY:
+        raise ValueError("provider_authenticated_access_operator_only")
+    repository = (
+        normalize_repository(provider_repository)
+        if provider is ProviderKind.GITHUB
+        else canonical_repository_label(
+            provider,
+            provider_repository,
+            organization=organization,
+            project=provider_project,
+        )
+    )
+    client_name = _literal(payload.get("client_name"), 180)
+    project_name = _literal(payload.get("project_name"), 180)
+    raw_human_evidence = _human_evidence_with_display_metadata(
+        payload.get("human_evidence"),
+        client_name=client_name,
+        project_name=project_name,
+    )
+    human_evidence = normalize_strategic_human_evidence(raw_human_evidence)
+    engagement_metadata = build_comprehensive_engagement_metadata(
+        client_name=client_name,
+        project_name=project_name,
+        human_evidence=human_evidence,
+        field_states=payload.get("engagement_field_states"),
+    )
+    run_id, evidence_ledger_id = public_intake_identity(payload)
+    return {
+        "run_id": run_id,
+        "evidence_ledger_id": evidence_ledger_id,
+        "repository": repository,
+        "provider": provider.value,
+        "provider_repository": provider_repository,
+        "provider_organization": organization,
+        "provider_project": provider_project,
+        "customer_id": _bounded_required(
+            payload.get("customer_id") or "default_customer", "customer_id", 240
+        ),
+        "project_id": _bounded_required(
+            payload.get("project_id") or "default_project", "project_id", 240
+        ),
+        "client_name": client_name,
+        "project_name": project_name,
+        "assessment_depth": _bounded_required(
+            payload.get("assessment_depth") or "strategic", "assessment_depth", 80
+        ),
+        "report_language": _bounded_required(
+            payload.get("report_language") or "en", "report_language", 20
+        ),
+        "human_evidence": human_evidence,
+        "engagement_field_states": engagement_metadata["field_states"],
+        "engagement_metadata": engagement_metadata,
+        "authorized_by": _bounded_required(
+            payload.get("authorized_by") or "public_assessment_requester",
+            "authorized_by",
+            600,
+        ),
+        "authorization_scope": _bounded_required(
+            payload.get("authorization_scope")
+            or "authorized defensive repository assessment",
+            "authorization_scope",
+            4000,
+        ),
+        "expected_commit_sha": expected_commit_sha(payload),
+        "requested_access_mode": requested_access_mode.value,
+        "authorized": True,
+        "authorization_confirmed": True,
+    }
 
 
 def _authorize_review(token: str) -> None:
@@ -662,119 +923,276 @@ def _approved_delivery_response(record: dict[str, Any]) -> Response:
     )
 
 
-def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise TypeError("request_body_must_be_object")
-    if (
-        payload.get("authorized") is not True
-        or payload.get("authorization_confirmed") is not True
-    ):
-        raise ValueError("explicit_authorization_required")
+def _public_intake_failure_truth(exc: Exception) -> tuple[str, bool]:
+    if isinstance(exc, ProviderClientError):
+        return str(exc.code), bool(exc.retryable)
+    if isinstance(exc, ComprehensiveRunConflict):
+        return str(exc), False
+    if isinstance(exc, (TypeError, ValueError)):
+        return str(exc).split(":", 1)[0], False
+    return "public_intake_internal_failure", True
 
-    repository = normalize_repository(
-        _required(payload.get("repository"), "repository")
-    )
-    customer_id = _required(
-        payload.get("customer_id") or "default_customer",
-        "customer_id",
-    )
-    project_id = _required(
-        payload.get("project_id") or "default_project",
-        "project_id",
-    )
-    assessment_depth = _required(
-        payload.get("assessment_depth") or "strategic",
-        "assessment_depth",
-    )
-    report_language = _required(
-        payload.get("report_language") or "en",
-        "report_language",
-    )
 
-    # This is the canonical intake boundary, not a runtime monkey patch. Preserve the
-    # optional display names here so every production call path retains them before the
-    # controller/service canonicalizes the run. The detached report worker already reads
-    # the retained stakeholder evidence as its durable display-metadata fallback.
-    from nico.comprehensive_engagement_metadata_v1 import _literal
-
-    client_name = _literal(payload.get("client_name"), 180)
-    project_name = _literal(payload.get("project_name"), 180)
-    from nico.comprehensive_intake_display_metadata_v2 import (
-        _human_evidence_with_display_metadata,
+def _public_intake_reservation_projection(
+    request: Request,
+    reservation: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = (
+        reservation.get("payload")
+        if isinstance(reservation.get("payload"), Mapping)
+        else {}
     )
-
-    human_evidence = _human_evidence_with_display_metadata(
-        payload.get("human_evidence"),
-        client_name=client_name,
-        project_name=project_name,
-    )
-
-    requested_sha = expected_commit_sha(payload)
-    run_id = f"comprun_{uuid4().hex}"
-    evidence_ledger_id = f"ledger_comprehensive_{uuid4().hex}"
-    snapshot = capture_repository_snapshot(
-        {
-            "run_id": run_id,
-            "repository": repository,
-            "customer_id": customer_id,
-            "project_id": project_id,
-            "authorized": True,
-            "authorized_by": _required(
-                payload.get("authorized_by") or "public_assessment_requester",
-                "authorized_by",
-            ),
-            "authorization_scope": _required(
-                payload.get("authorization_scope")
-                or "authorized defensive repository assessment",
-                "authorization_scope",
-            ),
-            "expected_commit_sha": requested_sha,
-        }
-    )
-    if snapshot.get("status") != "attached" or not str(
-        snapshot.get("commit_sha") or ""
-    ).strip():
-        notes = [
-            str(item)
-            for item in snapshot.get("unavailable_data_notes") or []
-            if str(item).strip()
-        ]
-        reason = notes[0] if notes else "repository_snapshot_unavailable"
-        raise ValueError(f"repository_snapshot_unavailable:{reason}")
-    if (
-        requested_sha
-        and str(snapshot.get("commit_sha") or "").strip().lower()
-        != requested_sha
-    ):
-        raise ValueError("repository_snapshot_commit_mismatch")
-
-    response = _controller(request).start(
-        {
-            "repository": repository,
-            "commit_sha": snapshot["commit_sha"],
-            "run_id": run_id,
-            "evidence_ledger_id": evidence_ledger_id,
-            "customer_id": customer_id,
-            "project_id": project_id,
-            "client_name": client_name,
-            "project_name": project_name,
-            "assessment_depth": assessment_depth,
-            "report_language": report_language,
-            "human_evidence": human_evidence,
-            "authorized": True,
-            "authorization_confirmed": True,
-        }
-    )
+    status = str(reservation.get("status") or "")
+    failed = status != "acquiring"
+    failure_code = str(reservation.get("failure_code") or "")
+    if status == "accepted" and not failure_code:
+        failure_code = "public_intake_accepted_run_missing"
     return _with_runtime_truth(
         request,
         {
-            **response,
-            "operation": "intake_started",
-            "repository_snapshot": snapshot,
-            "client_name": client_name,
-            "project_name": project_name,
+            "artifact_schema": "nico.comprehensive_public_intake_reservation.v1",
+            "service_id": "comprehensive",
+            "operation": "intake_failed" if failed else "intake_pending",
+            "intake_reserved": True,
+            "run_id": str(reservation.get("run_id") or ""),
+            "repository": str(payload.get("repository") or ""),
+            "repository_provider": str(payload.get("provider") or ""),
+            "customer_id": str(payload.get("customer_id") or ""),
+            "project_id": str(payload.get("project_id") or ""),
+            "assessment_depth": str(payload.get("assessment_depth") or ""),
+            "report_language": str(payload.get("report_language") or ""),
+            "provider_access_mode": (
+                "pending" if not failed else str(payload.get("requested_access_mode") or "auto")
+            ),
+            "provider_credential_used": False,
+            "current_stage": "provider_source_acquisition",
+            "progress_percent": 0,
+            "status": "failed" if failed else "running",
+            "canonical_status": "intake_failed" if failed else "intake_pending",
+            "terminal": failed,
+            "failure_code": failure_code if failed else "",
+            "retryable": bool(reservation.get("failure_retryable")) if failed else True,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
         },
     )
+
+
+def _reserve_prepared_public_intake(
+    request: Request,
+    payload: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    controller = _controller(request)
+    service = getattr(controller, "_service", None)
+    request_hash = _public_intake_request_sha256(payload)
+    if service is None:
+        return {
+            "run_id": payload["run_id"],
+            "request_sha256": request_hash,
+            "status": "acquiring",
+            "lease_id": "contract_test_controller",
+            "payload": dict(payload),
+            "lease_owner": True,
+        }
+    _assert_no_unbound_existing_run(
+        request,
+        service=service,
+        run_id=str(payload.get("run_id") or ""),
+    )
+    return service.reserve_public_intake(
+        run_id=str(payload.get("run_id") or ""),
+        request_sha256=request_hash,
+        payload=payload,
+        lease_seconds=_PUBLIC_INTAKE_LEASE_SECONDS,
+    )
+
+
+def _accepted_public_intake_response(
+    request: Request,
+    reservation: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = dict(reservation.get("payload") or {})
+    existing = _matching_public_intake_response(
+        request,
+        payload=payload,
+        expected_commit_sha_value=str(reservation.get("accepted_commit_sha") or ""),
+    )
+    return existing or _public_intake_reservation_projection(request, reservation)
+
+
+def _execute_public_intake_reservation(
+    request: Request,
+    reservation: Mapping[str, Any],
+) -> dict[str, Any]:
+    from nico.hosted_provider_comprehensive_runtime_v1 import capture_hosted_provider_snapshot
+    from nico.provider_platform_contract_v1 import ProviderKind
+
+    payload = dict(reservation.get("payload") or {})
+    run_id = _required(reservation.get("run_id"), "run_id")
+    lease_id = _required(reservation.get("lease_id"), "public_intake_lease_id")
+    controller = _controller(request)
+    service = getattr(controller, "_service", None)
+
+    def heartbeat() -> None:
+        if service is None:
+            return
+        if not service.heartbeat_public_intake(
+            run_id=run_id,
+            lease_id=lease_id,
+            lease_until_epoch=time.time() + _PUBLIC_INTAKE_LEASE_SECONDS,
+        ):
+            raise ComprehensiveRunConflict("public_intake_reservation_lease_lost")
+
+    try:
+        heartbeat()
+        provider = ProviderKind(str(payload.get("provider") or ""))
+        context = {
+            "run_id": run_id,
+            "repository": str(payload.get("repository") or ""),
+            "customer_id": str(payload.get("customer_id") or ""),
+            "project_id": str(payload.get("project_id") or ""),
+            "authorized": True,
+            "authorized_by": str(payload.get("authorized_by") or ""),
+            "authorization_scope": str(payload.get("authorization_scope") or ""),
+            "expected_commit_sha": str(payload.get("expected_commit_sha") or ""),
+            "provider_repository": str(payload.get("provider_repository") or ""),
+            "provider_organization": str(payload.get("provider_organization") or ""),
+            "provider_project": str(payload.get("provider_project") or ""),
+            "provider_access_mode": str(payload.get("requested_access_mode") or "auto"),
+            "provider_credential_fallback_authorized": False,
+            "_provider_activity_callback": heartbeat,
+        }
+        snapshot = (
+            capture_repository_snapshot(context)
+            if provider is ProviderKind.GITHUB
+            else capture_hosted_provider_snapshot(context, provider)
+        )
+        heartbeat()
+        if snapshot.get("status") != "attached" or not str(snapshot.get("commit_sha") or "").strip():
+            provider_failure = str(snapshot.get("provider_access_failure_code") or "").strip()
+            if provider_failure:
+                raise ProviderClientError(provider_failure)
+            raise ValueError("provider_required_source_evidence_unavailable")
+        commit_sha = str(snapshot["commit_sha"]).strip().lower()
+        requested_sha = str(payload.get("expected_commit_sha") or "").lower()
+        if requested_sha and commit_sha != requested_sha:
+            raise ValueError("repository_snapshot_commit_mismatch")
+        heartbeat()
+        try:
+            response = controller.start(
+                {
+                    "repository": payload["repository"],
+                    "commit_sha": commit_sha,
+                    "run_id": run_id,
+                    "evidence_ledger_id": payload["evidence_ledger_id"],
+                    "customer_id": payload["customer_id"],
+                    "project_id": payload["project_id"],
+                    "client_name": payload.get("client_name"),
+                    "project_name": payload.get("project_name"),
+                    "assessment_depth": payload["assessment_depth"],
+                    "report_language": payload["report_language"],
+                    "human_evidence": payload.get("human_evidence"),
+                    "engagement_field_states": payload.get("engagement_field_states"),
+                    "repository_provider": provider.value,
+                    "provider_access_mode": snapshot.get("access_mode") or "anonymous_public",
+                    "provider_credential_used": snapshot.get("credential_used") is True,
+                    "authorized": True,
+                    "authorization_confirmed": True,
+                }
+            )
+        except ComprehensiveRunConflict:
+            response = _matching_public_intake_response(
+                request,
+                payload=payload,
+                expected_commit_sha_value=commit_sha,
+            )
+            if response is None:
+                raise
+        if service is not None and not service.complete_public_intake(
+            run_id=run_id,
+            lease_id=lease_id,
+            commit_sha=commit_sha,
+        ):
+            completed = service.load_public_intake(run_id)
+            if not completed or completed.get("status") != "accepted":
+                raise ComprehensiveRunConflict("public_intake_reservation_completion_conflict")
+        return _with_runtime_truth(
+            request,
+            {
+                **response,
+                "operation": "intake_started",
+                "repository_snapshot": snapshot,
+                "client_name": payload.get("client_name"),
+                "project_name": payload.get("project_name"),
+                "repository_provider": provider.value,
+                "provider_access_mode": snapshot.get("access_mode") or "anonymous_public",
+                "provider_credential_used": snapshot.get("credential_used") is True,
+            },
+        )
+    except Exception as exc:
+        failure_code, retryable = _public_intake_failure_truth(exc)
+        if service is not None:
+            service.fail_public_intake(
+                run_id=run_id,
+                lease_id=lease_id,
+                failure_code=failure_code,
+                retryable=retryable,
+            )
+        raise
+
+
+def _reserved_public_intake_status(request: Request, run_id: str) -> dict[str, Any]:
+    service = _service(_controller(request))
+    reservation = service.load_public_intake(run_id)
+    if reservation is None:
+        raise ComprehensiveRunNotFound(run_id)
+    if reservation.get("status") == "acquiring":
+        claimed = service.reserve_public_intake(
+            run_id=run_id,
+            request_sha256=str(reservation.get("request_sha256") or ""),
+            payload=dict(reservation.get("payload") or {}),
+            lease_seconds=_PUBLIC_INTAKE_LEASE_SECONDS,
+        )
+        if claimed.get("lease_owner") is True:
+            return _execute_public_intake_reservation(request, claimed)
+        reservation = claimed
+    if reservation.get("status") == "accepted":
+        return _accepted_public_intake_response(request, reservation)
+    return _public_intake_reservation_projection(request, reservation)
+
+
+def _reconcile_public_intake_after_run_recovery(
+    request: Request,
+    *,
+    run_id: str,
+    response: Mapping[str, Any],
+) -> None:
+    service = _service(_controller(request))
+    reservation = service.load_public_intake(run_id)
+    if not reservation or reservation.get("status") != "acquiring":
+        return
+    payload = dict(reservation.get("payload") or {})
+    if _matching_public_intake_response(
+        request,
+        payload=payload,
+        expected_commit_sha_value=str(response.get("commit_sha") or ""),
+    ) is None:
+        return
+    service.reconcile_public_intake_accepted(
+        run_id=run_id,
+        request_sha256=str(reservation.get("request_sha256") or ""),
+        commit_sha=str(response.get("commit_sha") or ""),
+    )
+
+
+def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    prepared = _prepare_public_intake_reservation_payload(payload)
+    reservation = _reserve_prepared_public_intake(request, prepared)
+    if reservation.get("lease_owner") is not True:
+        if reservation.get("status") == "accepted":
+            return _accepted_public_intake_response(request, reservation)
+        return _public_intake_reservation_projection(request, reservation)
+    return _execute_public_intake_reservation(request, reservation)
 
 
 def register_comprehensive_api_routes(
@@ -847,11 +1265,25 @@ def register_comprehensive_api_routes(
                     run_id,
                 )
             if response is None:
-                response = await run_in_threadpool(
-                    _status_projection,
-                    controller_value,
-                    run_id,
-                    browser_projection,
+                try:
+                    response = await run_in_threadpool(
+                        _status_projection,
+                        controller_value,
+                        run_id,
+                        browser_projection,
+                    )
+                except ComprehensiveRunNotFound:
+                    response = await run_in_threadpool(
+                        _reserved_public_intake_status,
+                        request,
+                        run_id,
+                    )
+            if response.get("intake_reserved") is not True:
+                await run_in_threadpool(
+                    _reconcile_public_intake_after_run_recovery,
+                    request,
+                    run_id=run_id,
+                    response=response,
                 )
             return _with_runtime_truth(request, response)
         except HTTPException:

@@ -15,6 +15,9 @@ export type NormalizedRepositorySelection = {
 };
 
 export const REPOSITORY_PROVIDER_STORAGE_KEY = "nico.comprehensive.repository-provider.v1";
+export const REPOSITORY_PROVIDER_CHANGE_EVENT = "nico:repository-provider-change";
+
+let memoryRepositoryProvider: RepositoryProvider = "github";
 
 export const REPOSITORY_PROVIDER_OPTIONS: readonly RepositoryProviderOption[] = [
   {
@@ -160,16 +163,29 @@ export function normalizeRepositorySelection(
 }
 
 export function readRepositoryProvider(): RepositoryProvider {
-  if (typeof window === "undefined") return "github";
-  const value = window.sessionStorage.getItem(REPOSITORY_PROVIDER_STORAGE_KEY);
-  return REPOSITORY_PROVIDER_OPTIONS.some((option) => option.value === value)
-    ? value as RepositoryProvider
-    : "github";
+  if (typeof window === "undefined") return memoryRepositoryProvider;
+  try {
+    const value = window.sessionStorage.getItem(REPOSITORY_PROVIDER_STORAGE_KEY);
+    if (REPOSITORY_PROVIDER_OPTIONS.some((option) => option.value === value)) {
+      memoryRepositoryProvider = value as RepositoryProvider;
+    }
+  } catch {
+    // WebKit may deny storage. Module memory remains valid across client routing.
+  }
+  return memoryRepositoryProvider;
 }
 
 export function writeRepositoryProvider(provider: RepositoryProvider): void {
+  memoryRepositoryProvider = provider;
   if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(REPOSITORY_PROVIDER_STORAGE_KEY, provider);
+  try {
+    window.sessionStorage.setItem(REPOSITORY_PROVIDER_STORAGE_KEY, provider);
+  } catch {
+    // The memory copy remains authoritative for this browser document.
+  }
+  window.dispatchEvent(new CustomEvent(REPOSITORY_PROVIDER_CHANGE_EVENT, {
+    detail: {provider},
+  }));
 }
 
 export function providerOption(provider: RepositoryProvider): RepositoryProviderOption {

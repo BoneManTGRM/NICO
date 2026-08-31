@@ -57,6 +57,11 @@ class FakeCollection:
         self.provider = provider
         self.revision = revision
         self.collected_at = "2026-08-23T20:30:00+00:00"
+        self.access_mode = "authenticated_read_only"
+        self.credential_used = True
+        self.pagination_complete = True
+        self.rate_limit_state = {}
+        self.collection_limitations = ()
         self.payload = {
             "revision": revision,
             "repository": {"id": f"{provider.value}-repo-id", "name": "repo"},

@@ -189,6 +189,40 @@ def test_candidate_arithmetic_mismatch_blocks_before_render() -> None:
         normalize_client_truth(canonical)
 
 
+def test_zero_candidate_category_is_materialized_without_blocking_publication() -> None:
+    canonical = _canonical()
+    register = canonical["assessment"]["canonical_scanner_finding_register"]
+    register["summary_by_category"].pop("secret")
+    register["totals"] = _summary(
+        raw=642,
+        review=642,
+        exact_source=583,
+        source_path=59,
+    )
+
+    result = normalize_client_truth(canonical)
+
+    secret = result["assessment"]["canonical_scanner_finding_register"][
+        "summary_by_category"
+    ]["secret"]
+    assert secret == _summary(raw=0, review=0)
+    section = next(
+        item for item in result["assessment"]["sections"]
+        if item["id"] == "secrets_review"
+    )
+    assert "Raw candidates: 0." in section["evidence"]
+
+
+def test_missing_summary_with_retained_category_findings_still_blocks() -> None:
+    canonical = _canonical()
+    register = canonical["assessment"]["canonical_scanner_finding_register"]
+    register["summary_by_category"].pop("secret")
+    register["findings"] = [{"candidate_id": "SECRET-1", "category": "secret"}]
+
+    with pytest.raises(ValueError, match="missing canonical scanner category summary: secret"):
+        normalize_client_truth(canonical)
+
+
 def test_executive_maturity_limit_count_and_stage_boundaries_reconcile() -> None:
     result = normalize_client_truth(_canonical())
     assessment = result["assessment"]

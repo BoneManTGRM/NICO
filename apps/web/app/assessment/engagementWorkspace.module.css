@@ -144,11 +144,6 @@
   font-weight: 560;
 }
 
-.secondaryField > label {
-  display: grid;
-  gap: 7px;
-}
-
 .repositoryField input,
 .secondaryField input {
   width: 100%;

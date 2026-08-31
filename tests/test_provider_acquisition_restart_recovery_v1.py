@@ -26,6 +26,11 @@ class Collection:
     def __init__(self, revision: str) -> None:
         self.revision = revision
         self.collected_at = "2026-08-23T23:00:00Z"
+        self.access_mode = "anonymous_public"
+        self.credential_used = False
+        self.pagination_complete = True
+        self.rate_limit_state = {}
+        self.collection_limitations = ()
         self.payload = {
             "revision": revision,
             "repository": {"id": "gitlab-repo-1", "name": "repo"},

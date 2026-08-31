@@ -69,10 +69,12 @@ class FakeCollector:
                 "collection_limitations": [],
                 "snapshot_manifest_sha256": "sha256:" + "1" * 64,
                 "scopes": ["read_api", "read_repository"],
+                "access_mode": "authenticated_read_only",
+                "credential_used": True,
                 "collected_at": f"2026-07-21T00:00:0{self.index}Z",
             },
-            pages_fetched=self.index,
-            requests_made=self.index + 1,
+            pages_fetched=1,
+            requests_made=2,
             collected_at=f"2026-07-21T00:00:0{self.index}Z",
         )
 
@@ -80,24 +82,64 @@ class FakeCollector:
         self.closed = True
 
 
+class FakeRequestAudit:
+    def safe_metadata(self) -> dict[str, object]:
+        return {
+            "request_count": 1,
+            "authorization_header_observed": True,
+            "cookie_header_observed": False,
+            "secret_query_observed": False,
+        }
+
+
+class FakeHandle:
+    def __init__(self, collector: FakeCollector) -> None:
+        self.collector = collector
+        self.credential = collector.credential
+        self.request_audit = FakeRequestAudit()
+
+    def close(self) -> None:
+        self.collector.close()
+
+
+@pytest.mark.parametrize(
+    "provider,host",
+    (
+        ("github", "api.github.com"),
+        ("gitlab", "gitlab.com"),
+        ("bitbucket_cloud", "api.bitbucket.org"),
+        ("azure_devops", "dev.azure.com"),
+    ),
+)
+def test_live_acceptance_builds_a_non_secret_host_policy(provider, host) -> None:
+    reference = provider_live_acceptance._credential_reference(provider)
+
+    assert reference.allowed_hosts == (host,)
+    assert reference.env_var
+    assert not hasattr(reference, "secret")
+
+
 def test_two_pass_acceptance_preserves_identity_without_exporting_secret(monkeypatch) -> None:
     collector = FakeCollector(["a" * 40, "a" * 40])
-    monkeypatch.setattr(provider_live_acceptance, "build_collector", lambda provider: collector)
+    monkeypatch.setattr(
+        provider_live_acceptance,
+        "build_collector",
+        lambda provider, access_mode: FakeHandle(collector),
+    )
 
     result = provider_live_acceptance.run_acceptance(
         provider="gitlab",
         repository="group/repo",
         revision="a" * 40,
+        access_mode="authenticated_read_only",
         passes=2,
     )
 
     assert result["status"] == "passed"
-    assert result["artifact_schema"] == "nico.provider_live_acceptance.v2"
+    assert result["artifact_schema"] == "nico.provider_live_acceptance.v3"
     assert result["provider_support_maturity"] == "REAL_PROVIDER_INTEGRATION_PROVEN"
-    assert result["live_production_claim"] is False
-    assert result["client_claim_allowed"] is False
-    assert result["controlled_pilot_proven"] is False
-    assert result["production_client_proven"] is False
+    assert result["public_anonymous_support_proven"] is False
+    assert result["private_provider_support_proven"] is False
     assert result["passes_completed"] == 2
     assert all(result["proof"].values())
     assert len({item["repository_id"] for item in result["runs"]}) == 1
@@ -106,6 +148,7 @@ def test_two_pass_acceptance_preserves_identity_without_exporting_secret(monkeyp
     assert all(item["exact_source_locator_count"] == 1 for item in result["runs"])
     assert "never-export-me" not in str(result)
     assert result["credential_metadata"]["secret_present"] is True
+    assert result["credential_metadata"]["credential_used"] is True
     assert result["human_review_required"] is True
     assert result["human_approval_proven"] is False
     assert result["client_delivery_allowed"] is False
@@ -114,12 +157,17 @@ def test_two_pass_acceptance_preserves_identity_without_exporting_secret(monkeyp
 
 def test_first_pass_pins_revision_for_second_pass(monkeypatch) -> None:
     collector = FakeCollector(["a" * 40, "b" * 40])
-    monkeypatch.setattr(provider_live_acceptance, "build_collector", lambda provider: collector)
+    monkeypatch.setattr(
+        provider_live_acceptance,
+        "build_collector",
+        lambda provider, access_mode: FakeHandle(collector),
+    )
 
     result = provider_live_acceptance.run_acceptance(
         provider="gitlab",
         repository="group/repo",
         revision="",
+        access_mode="authenticated_read_only",
         passes=2,
     )
     assert result["expected_revision"] == "a" * 40
@@ -128,16 +176,21 @@ def test_first_pass_pins_revision_for_second_pass(monkeypatch) -> None:
 
 def test_acceptance_rejects_one_pass(monkeypatch) -> None:
     collector = FakeCollector(["a" * 40])
-    monkeypatch.setattr(provider_live_acceptance, "build_collector", lambda provider: collector)
+    monkeypatch.setattr(
+        provider_live_acceptance,
+        "build_collector",
+        lambda provider, access_mode: FakeHandle(collector),
+    )
     with pytest.raises(provider_live_acceptance.LiveAcceptanceError, match="requires_two_passes"):
         provider_live_acceptance.run_acceptance(
             provider="gitlab",
-            repository="group/repo",
-            revision="a" * 40,
-            passes=1,
+                repository="group/repo",
+                revision="a" * 40,
+                access_mode="authenticated_read_only",
+                passes=1,
         )
 
 
 def test_unsupported_provider_fails_before_credentials() -> None:
     with pytest.raises(provider_live_acceptance.LiveAcceptanceError, match="unsupported"):
-        provider_live_acceptance.build_collector("unknown")
+        provider_live_acceptance.build_collector("unknown", "anonymous_public")

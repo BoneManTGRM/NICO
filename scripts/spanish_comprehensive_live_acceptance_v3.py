@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import sys
 import time
 from functools import wraps
@@ -766,8 +767,13 @@ def _verify_localized_spanish_terminal_artifacts(
 def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
     """Run the real compact-mobile intake with distinctive commercial metadata."""
 
+    exclusion_fixture = _exclusion_fixture()
     context = browser.new_context(
-        viewport={"width": 390, "height": 844},
+        viewport=(
+            {"width": 1440, "height": 1000}
+            if exclusion_fixture
+            else {"width": 390, "height": 844}
+        ),
         locale="es-MX",
         service_workers="block",
         extra_http_headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
@@ -812,19 +818,28 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
         page.get_by_label(base.SPANISH_REPO_LABEL).fill(args.repository)
         page.get_by_label(base.SPANISH_CLIENT_LABEL).fill(PROOF_CLIENT_NAME)
         page.get_by_label(base.SPANISH_PROJECT_LABEL).fill(PROOF_PROJECT_NAME)
-        if _exclusion_fixture():
+        if exclusion_fixture:
+            stakeholder_module = page.get_by_role(
+                "button",
+                name=re.compile(
+                    r"Contexto de interesados, encargo y autorizaci[oó]n",
+                    re.IGNORECASE,
+                ),
+            ).first
+            stakeholder_module.click()
+            page.get_by_role(
+                "button",
+                name="Excluir del alcance",
+                exact=True,
+            ).click()
             for field in EXCLUDED_ENGAGEMENT_FIELDS:
-                container = page.locator(f'[data-engagement-field="{field}"]').first
-                container.get_by_role(
-                    "button",
-                    name="Excluir del alcance",
-                    exact=True,
-                ).click()
+                container = page.locator(
+                    f'[data-engagement-field="{field}"]'
+                ).first
                 assert container.get_attribute("data-engagement-state") == (
                     "excluded_from_scope"
                 )
-                assert "Estado: Excluido del alcance" in container.inner_text()
-                assert container.locator("input").first.is_disabled()
+                assert container.locator("textarea").first.input_value() == ""
         else:
             page.get_by_label(SPANISH_ACCESS_METHOD_LABEL).fill(PROOF_ACCESS_METHOD)
             page.get_by_label(SPANISH_PRIMARY_CONTACT_LABEL).fill(
@@ -931,11 +946,11 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             "terminal": terminal,
             "exact_run_identity_preserved": True,
             "engagement_fixture": (
-                "excluded" if _exclusion_fixture() else "supplied"
+                "excluded" if exclusion_fixture else "supplied"
             ),
-            "explicit_exclusion_controls_verified": _exclusion_fixture(),
+            "module_exclusion_verified": exclusion_fixture,
             "excluded_engagement_fields": (
-                list(EXCLUDED_ENGAGEMENT_FIELDS) if _exclusion_fixture() else []
+                list(EXCLUDED_ENGAGEMENT_FIELDS) if exclusion_fixture else []
             ),
             "commercial_proof_client_name": PROOF_CLIENT_NAME,
             "commercial_proof_project_name": PROOF_PROJECT_NAME,
