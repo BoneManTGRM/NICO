@@ -37,12 +37,24 @@ class Capability(str, Enum):
 
 class CapabilityState(str, Enum):
     SUPPORTED = "supported"
+    SUPPORTED_EMPTY = "supported_empty"
     SUPPORTED_LIMITED = "supported_limited"
+    UNAVAILABLE_AUTHENTICATION = "unavailable_authentication"
     UNAVAILABLE_PERMISSION = "unavailable_permission"
     UNAVAILABLE_PROVIDER = "unavailable_provider"
+    UNAVAILABLE_CONFIGURATION = "unavailable_configuration"
+    RATE_LIMITED = "rate_limited"
+    COLLECTION_FAILED = "collection_failed"
     UNSUPPORTED = "unsupported"
     NOT_CONFIGURED = "not_configured"
+    NOT_APPLICABLE = "not_applicable"
     NOT_ASSESSED = "not_assessed"
+
+
+class ProviderAccessMode(str, Enum):
+    AUTO = "auto"
+    ANONYMOUS_PUBLIC = "anonymous_public"
+    AUTHENTICATED_READ_ONLY = "authenticated_read_only"
 
 
 @dataclass(frozen=True)
@@ -62,6 +74,8 @@ class ProviderAccess:
     capabilities: tuple[Capability, ...]
     partial_access: bool = False
     limitation_reason: str = ""
+    access_mode: str = "authenticated_read_only"
+    credential_used: bool = True
 
 
 @dataclass(frozen=True)
@@ -258,6 +272,8 @@ def provider_access_from_mapping(data: Mapping[str, Any]) -> ProviderAccess:
         capabilities=normalize_capabilities(data.get("capabilities", ())),
         partial_access=bool(data.get("partial_access", False)),
         limitation_reason=_text(data.get("limitation_reason")),
+        access_mode=_text(data.get("access_mode"), empty="authenticated_read_only"),
+        credential_used=bool(data.get("credential_used", True)),
     )
 
 
@@ -305,13 +321,22 @@ def validate_provider_envelope(envelope: ProviderEvidenceEnvelope) -> list[str]:
         if status.capability in seen_status:
             issues.append(f"provider_capability_state_duplicate:{status.capability.value}")
         seen_status.add(status.capability)
-        if status.state in {CapabilityState.SUPPORTED, CapabilityState.SUPPORTED_LIMITED}:
+        if status.state in {
+            CapabilityState.SUPPORTED,
+            CapabilityState.SUPPORTED_EMPTY,
+            CapabilityState.SUPPORTED_LIMITED,
+        }:
             if status.capability not in envelope.access.capabilities:
                 issues.append(f"provider_capability_state_access_mismatch:{status.capability.value}")
         elif status.state in {
             CapabilityState.UNAVAILABLE_PERMISSION,
+            CapabilityState.UNAVAILABLE_AUTHENTICATION,
             CapabilityState.UNAVAILABLE_PROVIDER,
+            CapabilityState.UNAVAILABLE_CONFIGURATION,
+            CapabilityState.RATE_LIMITED,
+            CapabilityState.COLLECTION_FAILED,
             CapabilityState.UNSUPPORTED,
+            CapabilityState.NOT_APPLICABLE,
         } and not status.reason:
             issues.append(f"provider_capability_state_reason_required:{status.capability.value}")
 
@@ -475,6 +500,7 @@ __all__ = [
     "PROVIDER_FIRST_CLASS_CAPABILITIES",
     "PROVIDER_MINIMUM_CAPABILITIES",
     "ProviderAccess",
+    "ProviderAccessMode",
     "ProviderCapabilityStatus",
     "ProviderEvidenceEnvelope",
     "ProviderIdentity",

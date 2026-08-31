@@ -11,10 +11,10 @@ def source(name: str) -> str:
     return (ASSESSMENT / name).read_text(encoding="utf-8")
 
 
-def test_all_five_fields_have_explicit_state_controls_in_desktop_and_mobile() -> None:
+def test_all_five_fields_preserve_state_without_per_field_action_buttons() -> None:
     workspace = source("AssessmentWorkspace.tsx")
     strategic = source("StrategicEvidenceForm.tsx")
-    controls = source("EngagementFieldStateControls.tsx")
+    state = source("engagementFieldState.ts")
 
     for field in (
         "client_name",
@@ -24,19 +24,19 @@ def test_all_five_fields_have_explicit_state_controls_in_desktop_and_mobile() ->
         "authorized_scope",
     ):
         assert field in workspace + strategic
-    assert "data-engagement-field" in workspace
-    assert "data-engagement-field" in strategic
-    assert "engagementFieldStates[field].state" in strategic
-    assert "isEngagementFieldUnavailable" in workspace
-    assert "isEngagementFieldUnavailable" in strategic
+    assert "EngagementFieldStateControls" not in workspace
+    assert "EngagementFieldStateControls" not in strategic
+    assert "onEngagementFieldValueChange" in strategic
+    assert "onEngagementFieldStateChange" in strategic
+    assert not (ASSESSMENT / "EngagementFieldStateControls.tsx").exists()
+    assert not (ASSESSMENT / "engagementFieldStateControls.module.css").exists()
     for english, spanish in (
-        ("Exclude from scope", "Excluir del alcance"),
         ("Excluded from scope", "Excluido del alcance"),
         ("Not supplied", "No proporcionado"),
         ("Not applicable", "No aplica"),
     ):
-        assert english in controls + source("engagementFieldState.ts")
-        assert spanish in controls + source("engagementFieldState.ts")
+        assert english in state
+        assert spanish in state
 
 
 def test_intake_and_recovery_carry_structured_states_without_starting_again() -> None:

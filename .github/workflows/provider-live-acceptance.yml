@@ -1,42 +1,262 @@
 name: Provider Live Acceptance
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/provider-live-acceptance.yml
+      - nico/provider_credentials.py
+      - nico/provider_live_clients.py
+      - nico/provider_neutral_contract.py
+      - nico/provider_payload_adapters.py
+      - nico/hosted_provider_comprehensive_runtime_v1.py
+      - scripts/provider_live_acceptance.py
+      - tests/test_provider_live_acceptance.py
+      - tests/test_provider_live_clients.py
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/provider-live-acceptance.yml
+      - nico/provider_credentials.py
+      - nico/provider_live_clients.py
+      - nico/provider_neutral_contract.py
+      - nico/provider_payload_adapters.py
+      - nico/hosted_provider_comprehensive_runtime_v1.py
+      - scripts/provider_live_acceptance.py
+      - tests/test_provider_live_acceptance.py
+      - tests/test_provider_live_clients.py
   workflow_dispatch:
     inputs:
       provider:
-        description: Provider to verify
+        description: Public provider to verify
         required: true
         type: choice
         options:
+          - github
           - gitlab
           - bitbucket_cloud
-          - bitbucket_data_center
           - azure_devops
       repository:
-        description: Native repository identifier (for example group/repo, workspace/repo, PROJ/repo, or Azure repository ID)
+        description: Native repository identifier
         required: true
         type: string
       revision:
-        description: Optional immutable revision; leave empty to pin the first observed revision
+        description: Optional immutable revision; empty pins the first observed revision
         required: false
         type: string
+      access_mode:
+        description: Provider access contract
+        required: true
+        default: anonymous_public
+        type: choice
+        options:
+          - anonymous_public
+          - authenticated_read_only
+      expected_outcome:
+        description: Expected source-acquisition outcome
+        required: true
+        default: success
+        type: choice
+        options:
+          - success
+          - authentication_required
+          - success_or_authentication_required
 
 permissions:
   contents: read
 
+concurrency:
+  group: provider-live-acceptance-${{ inputs.provider }}-${{ inputs.access_mode }}
+  cancel-in-progress: false
+
 jobs:
-  live-provider:
-    name: Two-pass real provider integration proof
+  anonymous-public-release:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    name: Anonymous public ${{ matrix.provider }} two-pass proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: github
+            repository: octocat/Hello-World
+            expected_outcome: success
+          - provider: gitlab
+            repository: gitlab-org/gitlab-test
+            expected_outcome: success
+          - provider: bitbucket_cloud
+            repository: atlassian_tutorial/helloworld
+            expected_outcome: success
+          - provider: azure_devops
+            repository: clearmeasurelabs/Onion-DevOps-Architecture/nico-tokenless-auth-required-fixture-does-not-exist
+            expected_outcome: authentication_required
+    steps:
+      - name: Check out exact pull-request commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install NICO
+        run: python -m pip install --disable-pip-version-check --no-cache-dir -e .
+
+      - name: Run isolated anonymous two-pass proof
+        id: acceptance
+        continue-on-error: true
+        env:
+          ACCEPTANCE_PROVIDER: ${{ matrix.provider }}
+          ACCEPTANCE_REPOSITORY: ${{ matrix.repository }}
+          ACCEPTANCE_OUTCOME: ${{ matrix.expected_outcome }}
+          ACCEPTANCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
+          unset NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN
+          unset NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          python scripts/provider_live_acceptance.py \
+            --provider "${ACCEPTANCE_PROVIDER}" \
+            --repository "${ACCEPTANCE_REPOSITORY}" \
+            --access-mode anonymous_public \
+            --expected-outcome "${ACCEPTANCE_OUTCOME}" \
+            --passes 2 \
+            --workflow-sha "${ACCEPTANCE_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --output audit-results/provider-live-acceptance.json
+
+      - name: Upload immutable anonymous evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-live-anonymous-${{ matrix.provider }}-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: audit-results/provider-live-acceptance.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Require safe anonymous evidence
+        if: always()
+        env:
+          ACCEPTANCE_STEP_OUTCOME: ${{ steps.acceptance.outcome }}
+          ACCEPTANCE_OUTCOME: ${{ matrix.expected_outcome }}
+          ACCEPTANCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
+          unset NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN
+          unset NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          test "${ACCEPTANCE_STEP_OUTCOME}" = success
+          python scripts/provider_live_acceptance.py \
+            --verify-artifact audit-results/provider-live-acceptance.json \
+            --access-mode anonymous_public \
+            --expected-outcome "${ACCEPTANCE_OUTCOME}" \
+            --workflow-sha "${ACCEPTANCE_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}"
+
+  anonymous-public:
+    if: inputs.access_mode == 'anonymous_public'
+    name: Anonymous public two-pass proof
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: provider-live-acceptance
     env:
       NICO_GITLAB_URL: ${{ vars.NICO_GITLAB_URL }}
+      NICO_BITBUCKET_CLOUD_URL: ${{ vars.NICO_BITBUCKET_CLOUD_URL }}
+      NICO_AZURE_DEVOPS_URL: ${{ vars.NICO_AZURE_DEVOPS_URL }}
+      NICO_AZURE_DEVOPS_ORGANIZATION: ${{ vars.NICO_AZURE_DEVOPS_ORGANIZATION }}
+      NICO_AZURE_DEVOPS_PROJECT: ${{ vars.NICO_AZURE_DEVOPS_PROJECT }}
+    steps:
+      - name: Check out exact workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install NICO
+        run: python -m pip install --disable-pip-version-check --no-cache-dir -e .
+
+      - name: Run isolated anonymous two-pass proof
+        id: acceptance
+        continue-on-error: true
+        env:
+          ACCEPTANCE_PROVIDER: ${{ inputs.provider }}
+          ACCEPTANCE_REPOSITORY: ${{ inputs.repository }}
+          ACCEPTANCE_REVISION: ${{ inputs.revision }}
+          ACCEPTANCE_OUTCOME: ${{ inputs.expected_outcome }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
+          unset NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN
+          unset NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          python scripts/provider_live_acceptance.py \
+            --provider "${ACCEPTANCE_PROVIDER}" \
+            --repository "${ACCEPTANCE_REPOSITORY}" \
+            --revision "${ACCEPTANCE_REVISION}" \
+            --access-mode anonymous_public \
+            --expected-outcome "${ACCEPTANCE_OUTCOME}" \
+            --passes 2 \
+            --workflow-sha "${GITHUB_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --output audit-results/provider-live-acceptance.json
+
+      - name: Upload immutable anonymous evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-live-anonymous-${{ inputs.provider }}-${{ github.sha }}-${{ github.run_id }}
+          path: audit-results/provider-live-acceptance.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Require safe anonymous evidence
+        if: always()
+        env:
+          ACCEPTANCE_STEP_OUTCOME: ${{ steps.acceptance.outcome }}
+          EXPECTED_OUTCOME: ${{ inputs.expected_outcome }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
+          unset NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN
+          unset NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          test "${ACCEPTANCE_STEP_OUTCOME}" = success
+          python scripts/provider_live_acceptance.py \
+            --verify-artifact audit-results/provider-live-acceptance.json \
+            --access-mode anonymous_public \
+            --expected-outcome "${EXPECTED_OUTCOME}" \
+            --workflow-sha "${GITHUB_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}"
+
+  authenticated-read-only:
+    if: inputs.access_mode == 'authenticated_read_only'
+    name: Optional authenticated read-only proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: provider-live-acceptance
+    env:
+      NICO_GITHUB_TOKEN: ${{ secrets.NICO_GITHUB_TOKEN }}
+      NICO_GITLAB_URL: ${{ vars.NICO_GITLAB_URL }}
       NICO_GITLAB_TOKEN: ${{ secrets.NICO_GITLAB_TOKEN }}
       NICO_BITBUCKET_CLOUD_URL: ${{ vars.NICO_BITBUCKET_CLOUD_URL }}
       NICO_BITBUCKET_CLOUD_TOKEN: ${{ secrets.NICO_BITBUCKET_CLOUD_TOKEN }}
-      NICO_BITBUCKET_DC_URL: ${{ vars.NICO_BITBUCKET_DC_URL }}
-      NICO_BITBUCKET_DC_TOKEN: ${{ secrets.NICO_BITBUCKET_DC_TOKEN }}
       NICO_AZURE_DEVOPS_URL: ${{ vars.NICO_AZURE_DEVOPS_URL }}
       NICO_AZURE_DEVOPS_ORGANIZATION: ${{ vars.NICO_AZURE_DEVOPS_ORGANIZATION }}
       NICO_AZURE_DEVOPS_PROJECT: ${{ vars.NICO_AZURE_DEVOPS_PROJECT }}
@@ -54,88 +274,51 @@ jobs:
           python-version: "3.13"
 
       - name: Install NICO
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-cache-dir -e .
+        run: python -m pip install --disable-pip-version-check --no-cache-dir -e .
 
-      - name: Validate read-only live integration contract
-        run: |
-          set -euo pipefail
-          python -m py_compile scripts/provider_live_acceptance.py
-          python - <<'PY'
-          from pathlib import Path
-          source = Path("scripts/provider_live_acceptance.py").read_text(encoding="utf-8")
-          assert 'passes < 2' in source
-          assert 'provider_acceptance_must_be_read_only' in source
-          assert 'provider_acceptance_revision_drift' in source
-          assert 'provider_acceptance_source_tree_missing' in source
-          assert 'provider_acceptance_exact_source_missing' in source
-          assert 'raw_credential_absent' in source
-          assert 'live_production_claim": False' in source
-          assert 'client_claim_allowed": False' in source
-          assert 'client_delivery_allowed": False' in source
-          PY
-
-      - name: Run two consecutive live provider passes
+      - name: Run optional authenticated proof
         id: acceptance
         continue-on-error: true
         env:
           ACCEPTANCE_PROVIDER: ${{ inputs.provider }}
           ACCEPTANCE_REPOSITORY: ${{ inputs.repository }}
           ACCEPTANCE_REVISION: ${{ inputs.revision }}
+          ACCEPTANCE_OUTCOME: ${{ inputs.expected_outcome }}
         run: |
           set -euo pipefail
           python scripts/provider_live_acceptance.py \
             --provider "${ACCEPTANCE_PROVIDER}" \
             --repository "${ACCEPTANCE_REPOSITORY}" \
             --revision "${ACCEPTANCE_REVISION}" \
+            --access-mode authenticated_read_only \
+            --expected-outcome "${ACCEPTANCE_OUTCOME}" \
             --passes 2 \
+            --workflow-sha "${GITHUB_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}" \
             --output audit-results/provider-live-acceptance.json
 
-      - name: Upload immutable provider evidence
+      - name: Upload immutable authenticated evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: provider-live-acceptance-${{ inputs.provider }}-${{ github.sha }}-${{ github.run_id }}
+          name: provider-live-authenticated-${{ inputs.provider }}-${{ github.sha }}-${{ github.run_id }}
           path: audit-results/provider-live-acceptance.json
           if-no-files-found: error
           retention-days: 90
 
-      - name: Require passing real-provider integration evidence
+      - name: Require safe authenticated evidence
         if: always()
         env:
-          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
+          ACCEPTANCE_STEP_OUTCOME: ${{ steps.acceptance.outcome }}
+          EXPECTED_OUTCOME: ${{ inputs.expected_outcome }}
         run: |
           set -euo pipefail
-          test "${ACCEPTANCE_OUTCOME}" = 'success'
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          payload = json.loads(Path("audit-results/provider-live-acceptance.json").read_text(encoding="utf-8"))
-          assert payload["artifact_schema"] == "nico.provider_live_acceptance.v2"
-          assert payload["status"] == "passed"
-          assert payload["provider_support_maturity"] == "REAL_PROVIDER_INTEGRATION_PROVEN"
-          assert payload["live_production_claim"] is False
-          assert payload["client_claim_allowed"] is False
-          assert payload["controlled_pilot_proven"] is False
-          assert payload["production_client_proven"] is False
-          assert payload["passes_required"] == 2
-          assert payload["passes_completed"] == 2
-          assert len(payload["runs"]) == 2
-          assert all(payload["proof"].values())
-          assert len({item["revision"] for item in payload["runs"]}) == 1
-          assert len({item["repository_id"] for item in payload["runs"]}) == 1
-          assert all(item["source_object_count"] > 0 for item in payload["runs"])
-          assert all(item["exact_source_locator_count"] > 0 for item in payload["runs"])
-          assert payload["human_review_required"] is True
-          assert payload["human_approval_proven"] is False
-          assert payload["client_delivery_allowed"] is False
-          metadata = payload["credential_metadata"]
-          assert set(metadata) == {
-              "provider", "env_var", "scheme", "key_id", "allowed_hosts",
-              "scopes", "version", "expires_at", "resolved_at", "secret_present",
-          }
-          assert metadata["secret_present"] is True
-          assert "value" not in metadata
-          PY
+          test "${ACCEPTANCE_STEP_OUTCOME}" = success
+          python scripts/provider_live_acceptance.py \
+            --verify-artifact audit-results/provider-live-acceptance.json \
+            --access-mode authenticated_read_only \
+            --expected-outcome "${EXPECTED_OUTCOME}" \
+            --workflow-sha "${GITHUB_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}"

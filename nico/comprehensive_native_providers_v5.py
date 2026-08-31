@@ -435,7 +435,6 @@ def build_canonical_scanner_finding_register(
             str(item.get("finding_id")),
         ),
     )
-    summary: dict[str, dict[str, int]] = {}
     totals = {
         "raw": 0,
         "material": 0,
@@ -446,6 +445,13 @@ def build_canonical_scanner_finding_register(
         "source_path": 0,
         "payload_without_source": 0,
         "count_only": 0,
+    }
+    # Applicable scanner categories are canonical even when they contain zero
+    # candidates.  Omitting a zero category makes downstream publication unable
+    # to distinguish an empty result from missing/corrupt scanner truth.
+    summary: dict[str, dict[str, int]] = {
+        category: dict.fromkeys(totals, 0)
+        for category in ("dependency", "secret", "static")
     }
     disposition_to_key = {
         "verified_material": "material",

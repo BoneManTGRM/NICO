@@ -109,6 +109,7 @@ _IGNORED_DETAIL_KEYS = {
     "html",
     "scanner_results",
     "stage_results",
+    "provider_access_evidence",
 }
 
 
@@ -280,6 +281,11 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
     evidence_lines = flatten(result.get("evidence"), maximum=80)
+    provider_access_lines = (
+        _dedupe(result.get("provider_access_evidence") or [], 80)
+        if stage_id == "repository_and_delivery_evidence"
+        else []
+    )
     structured_details = flatten(
         {
             key: value
@@ -301,7 +307,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
             result.get("summary") or result.get("message") or "Stage evidence was recorded.",
             1600,
         ),
-        "evidence": dedupe([*evidence_lines, *structured_details], 140),
+        "evidence": dedupe([*provider_access_lines, *evidence_lines, *structured_details], 140),
         "findings": findings,
         "unavailable": unavailable,
     }

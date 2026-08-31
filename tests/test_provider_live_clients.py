@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from nico.provider_credentials import EnvironmentCredentialResolver, build_reference
 from nico.provider_live_clients import (
     AzureDevOpsClient,
     BitbucketCloudClient,
     GitLabClient,
+    ProviderClientError,
     RetryPolicy,
 )
 from nico.provider_neutral_contract import ProviderKind
@@ -24,6 +26,17 @@ def _credential(provider: str, host: str, scheme: str = "bearer"):
     return EnvironmentCredentialResolver({"TOKEN": "secret"}).resolve(reference)
 
 
+def _reference(provider: str, host: str, scheme: str = "bearer"):
+    return build_reference(
+        provider=provider,
+        env_var="TOKEN",
+        scheme=scheme,
+        key_id=f"{provider}-anonymous-test",
+        allowed_hosts=(host,),
+        scopes=("read",),
+    )
+
+
 def test_gitlab_client_collects_exact_snapshot_and_adapts() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
@@ -33,6 +46,11 @@ def test_gitlab_client_collects_exact_snapshot_and_adapts() -> None:
             return httpx.Response(200, json=[{"id": "a" * 40}])
         if path.endswith("/repository/branches"):
             return httpx.Response(200, json=[{"name": "main"}])
+        if path.endswith("/repository/tree"):
+            return httpx.Response(
+                200,
+                json=[{"path": "src/app.py", "id": "f" * 40, "type": "blob"}],
+            )
         if path.endswith("/merge_requests"):
             return httpx.Response(
                 200,
@@ -107,6 +125,12 @@ def test_bitbucket_client_collects_cloud_payload() -> None:
             return httpx.Response(200, json={"values": []})
         if path.endswith("/pipelines/"):
             return httpx.Response(200, json={"values": []})
+        if f"/src/{'b' * 40}/" in path:
+            assert request.url.params.get("format") is None
+            return httpx.Response(
+                200,
+                json={"values": [{"path": "src/app.py", "type": "commit_file", "commit": {"hash": "b" * 40}}]},
+            )
         if path.endswith("/issues"):
             return httpx.Response(404, json={"error": "disabled"})
         return httpx.Response(
@@ -142,6 +166,11 @@ def test_azure_client_collects_exact_build_revision() -> None:
             return httpx.Response(200, json={"value": [{"name": "refs/heads/main"}]})
         if path.endswith("/pullrequests"):
             return httpx.Response(200, json={"value": []})
+        if path.endswith("/items"):
+            return httpx.Response(
+                200,
+                json={"value": [{"path": "/src/app.py", "objectId": "f" * 40, "gitObjectType": "blob"}]},
+            )
         if path.endswith("/_apis/build/builds"):
             return httpx.Response(
                 200,
@@ -183,6 +212,146 @@ def test_azure_client_collects_exact_build_revision() -> None:
     assert adapted.envelope.ci_runs[0].revision == "c" * 40
 
 
+def test_azure_anonymous_root_only_response_requires_read_only_authentication() -> None:
+    revision = "c" * 40
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        assert "authorization" not in request.headers
+        if path.endswith("/commits"):
+            return httpx.Response(200, json={"value": [{"commitId": revision}]})
+        if path.endswith("/items"):
+            return httpx.Response(
+                200,
+                json={"value": [{"path": "/", "objectId": "d" * 40, "gitObjectType": "tree"}]},
+            )
+        if path.endswith("/refs"):
+            return httpx.Response(200, json={"value": []})
+        return httpx.Response(
+            200,
+            json={"id": "azure-repo", "name": "repo", "project": {"name": "Project"}},
+        )
+
+    collector = AzureDevOpsClient(
+        organization="Org",
+        project="Project",
+        credential_reference=_reference("azure_devops", "dev.azure.com", "basic_token"),
+        access_mode="anonymous_public",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    with pytest.raises(ProviderClientError, match="provider_read_only_authentication_required"):
+        collector.collect("azure-repo")
+
+
+def test_azure_auto_retries_root_only_source_once_with_configured_read_only_credential() -> None:
+    revision = "c" * 40
+    item_authorization: list[bool] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/commits"):
+            return httpx.Response(200, json={"value": [{"commitId": revision}]})
+        if path.endswith("/items"):
+            authenticated = "authorization" in request.headers
+            item_authorization.append(authenticated)
+            if not authenticated:
+                return httpx.Response(
+                    200,
+                    json={"value": [{"path": "/", "objectId": "d" * 40, "gitObjectType": "tree"}]},
+                )
+            return httpx.Response(
+                200,
+                json={"value": [{"path": "/src/app.cs", "objectId": "e" * 40, "gitObjectType": "blob"}]},
+            )
+        if path.endswith("/refs") or path.endswith("/pullrequests"):
+            return httpx.Response(200, json={"value": []})
+        if path.endswith("/_apis/build/builds") or path.endswith("/_apis/distributedtask/environments"):
+            return httpx.Response(200, json={"value": []})
+        return httpx.Response(
+            200,
+            json={"id": "azure-repo", "name": "repo", "project": {"name": "Project"}},
+        )
+
+    collector = AzureDevOpsClient(
+        organization="Org",
+        project="Project",
+        credential=_credential("azure_devops", "dev.azure.com", "basic_token"),
+        access_mode="auto",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    collection = collector.collect("azure-repo")
+
+    assert item_authorization == [False, True]
+    assert collection.access_mode == "authenticated_read_only"
+    assert collection.credential_used is True
+    assert collection.adapt().warnings == ()
+
+
+@pytest.mark.parametrize("provider", ("gitlab", "bitbucket", "azure_devops"))
+def test_provider_metadata_with_no_commits_is_classified_as_empty_repository(
+    provider: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if provider == "gitlab":
+        collector = GitLabClient(
+            instance_url="https://gitlab.example.com",
+            credential_reference=_reference("gitlab", "gitlab.example.com", "private_token"),
+            access_mode="anonymous_public",
+            retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+        )
+        monkeypatch.setattr(
+            collector,
+            "_get",
+            lambda *args, **kwargs: (
+                {"id": 17, "path_with_namespace": "group/repo", "default_branch": "main"},
+                None,
+            ),
+        )
+        monkeypatch.setattr(collector, "_gitlab_pages", lambda *args, **kwargs: [])
+        repository_id = "group/repo"
+    elif provider == "bitbucket":
+        collector = BitbucketCloudClient(
+            credential_reference=_reference("bitbucket", "api.bitbucket.org"),
+            access_mode="anonymous_public",
+            retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+        )
+        monkeypatch.setattr(
+            collector,
+            "_get",
+            lambda *args, **kwargs: (
+                {"uuid": "repo-uuid", "slug": "repo", "workspace": {"slug": "workspace"}},
+                None,
+            ),
+        )
+        monkeypatch.setattr(collector, "_bitbucket_pages", lambda *args, **kwargs: [])
+        repository_id = "workspace/repo"
+    else:
+        collector = AzureDevOpsClient(
+            organization="Org",
+            project="Project",
+            credential_reference=_reference("azure_devops", "dev.azure.com", "basic_token"),
+            access_mode="anonymous_public",
+            retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+        )
+        monkeypatch.setattr(
+            collector,
+            "_get",
+            lambda *args, **kwargs: (
+                {"id": "azure-repo", "name": "repo", "project": {"name": "Project"}},
+                None,
+            ),
+        )
+        monkeypatch.setattr(collector, "_azure_pages", lambda *args, **kwargs: [])
+        repository_id = "azure-repo"
+
+    with pytest.raises(ProviderClientError, match="provider_repository_empty"):
+        collector.collect(repository_id)
+
+
 def test_rate_limit_retries_are_bounded() -> None:
     attempts = 0
     sleeps: list[float] = []
@@ -195,6 +364,11 @@ def test_rate_limit_retries_are_bounded() -> None:
         path = request.url.path
         if path.endswith("/repository/commits"):
             return httpx.Response(200, json=[{"id": "d" * 40}])
+        if path.endswith("/repository/tree"):
+            return httpx.Response(
+                200,
+                json=[{"path": "src/app.py", "id": "f" * 40, "type": "blob"}],
+            )
         if any(path.endswith(suffix) for suffix in ("/repository/branches", "/merge_requests", "/pipelines", "/issues", "/releases")):
             return httpx.Response(200, json=[])
         return httpx.Response(
@@ -212,3 +386,117 @@ def test_rate_limit_retries_are_bounded() -> None:
     collection = collector.collect("group/repo")
     assert collection.revision == "d" * 40
     assert sleeps == [0]
+
+
+def test_gitlab_anonymous_public_collection_sends_no_authorization_header() -> None:
+    seen_headers: list[httpx.Headers] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_headers.append(request.headers)
+        path = request.url.path
+        if path.endswith("/repository/commits"):
+            return httpx.Response(200, json=[{"id": "e" * 40}])
+        if path.endswith("/repository/tree"):
+            return httpx.Response(
+                200,
+                json=[{"path": "README.md", "id": "f" * 40, "type": "blob"}],
+            )
+        if path.endswith("/projects/group%2Frepo"):
+            return httpx.Response(
+                200,
+                json={
+                    "id": 17,
+                    "path": "repo",
+                    "path_with_namespace": "group/repo",
+                    "namespace": {"path": "group"},
+                    "default_branch": "main",
+                    "visibility": "public",
+                },
+            )
+        return httpx.Response(200, json=[])
+
+    collector = GitLabClient(
+        instance_url="https://gitlab.example.com",
+        credential_reference=_reference(
+            "gitlab", "gitlab.example.com", "private_token"
+        ),
+        access_mode="anonymous_public",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    collection = collector.collect("group/repo")
+
+    assert collection.access_mode == "anonymous_public"
+    assert collection.credential_used is False
+    assert seen_headers
+    assert all("authorization" not in headers for headers in seen_headers)
+    assert all("private-token" not in headers for headers in seen_headers)
+
+
+def test_anonymous_provider_session_cookie_is_never_replayed() -> None:
+    seen_headers: list[httpx.Headers] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_headers.append(request.headers)
+        assert "cookie" not in request.headers
+        path = request.url.path
+        if path.endswith("/projects/group%2Frepo"):
+            return httpx.Response(
+                200,
+                headers={"Set-Cookie": "provider-session=anonymous; Path=/"},
+                json={
+                    "id": 17,
+                    "path": "repo",
+                    "path_with_namespace": "group/repo",
+                    "namespace": {"path": "group"},
+                    "default_branch": "main",
+                    "visibility": "public",
+                },
+            )
+        if path.endswith("/repository/commits"):
+            return httpx.Response(200, json=[{"id": "e" * 40}])
+        if path.endswith("/repository/tree"):
+            return httpx.Response(
+                200,
+                json=[{"path": "README.md", "id": "f" * 40, "type": "blob"}],
+            )
+        return httpx.Response(200, json=[])
+
+    collector = GitLabClient(
+        instance_url="https://gitlab.example.com",
+        credential_reference=_reference(
+            "gitlab", "gitlab.example.com", "private_token"
+        ),
+        access_mode="anonymous_public",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    collection = collector.collect("group/repo")
+
+    assert collection.credential_used is False
+    assert len(seen_headers) > 1
+
+
+def test_anonymous_required_source_auth_challenge_is_not_retried() -> None:
+    requests = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(403, json={"message": "forbidden"})
+
+    collector = GitLabClient(
+        instance_url="https://gitlab.example.com",
+        credential_reference=_reference(
+            "gitlab", "gitlab.example.com", "private_token"
+        ),
+        access_mode="anonymous_public",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retry_policy=RetryPolicy(max_attempts=4, base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    with pytest.raises(Exception, match="provider_read_only_authentication_required"):
+        collector.collect("group/private")
+    assert requests == 1

@@ -74,12 +74,18 @@ def _source_fingerprint(
 def _capability_status(payload: Mapping[str, Any]) -> tuple[ProviderCapabilityStatus, ...]:
     priority = {
         CapabilityState.SUPPORTED: 0,
-        CapabilityState.SUPPORTED_LIMITED: 1,
-        CapabilityState.NOT_ASSESSED: 2,
-        CapabilityState.NOT_CONFIGURED: 3,
-        CapabilityState.UNAVAILABLE_PROVIDER: 4,
-        CapabilityState.UNAVAILABLE_PERMISSION: 5,
-        CapabilityState.UNSUPPORTED: 6,
+        CapabilityState.SUPPORTED_EMPTY: 1,
+        CapabilityState.SUPPORTED_LIMITED: 2,
+        CapabilityState.NOT_ASSESSED: 3,
+        CapabilityState.NOT_CONFIGURED: 4,
+        CapabilityState.NOT_APPLICABLE: 5,
+        CapabilityState.UNAVAILABLE_PROVIDER: 6,
+        CapabilityState.UNAVAILABLE_CONFIGURATION: 7,
+        CapabilityState.UNAVAILABLE_AUTHENTICATION: 8,
+        CapabilityState.UNAVAILABLE_PERMISSION: 9,
+        CapabilityState.RATE_LIMITED: 10,
+        CapabilityState.COLLECTION_FAILED: 11,
+        CapabilityState.UNSUPPORTED: 12,
     }
     selected: dict[Capability, ProviderCapabilityStatus] = {}
     for raw in _sequence(payload.get("capability_status")):
@@ -107,6 +113,8 @@ def _access(
     capabilities: Iterable[Capability],
     partial: bool = False,
     reason: str = "",
+    access_mode: str = "authenticated_read_only",
+    credential_used: bool = True,
 ) -> ProviderAccess:
     return ProviderAccess(
         read_only=True,
@@ -114,6 +122,8 @@ def _access(
         capabilities=tuple(dict.fromkeys(capabilities)),
         partial_access=partial,
         limitation_reason=_text(reason),
+        access_mode=_text(access_mode, empty="authenticated_read_only"),
+        credential_used=bool(credential_used),
     )
 
 
@@ -123,7 +133,11 @@ def _supported_capabilities(
 ) -> tuple[Capability, ...]:
     values = list(defaults)
     for status in statuses:
-        if status.state in {CapabilityState.SUPPORTED, CapabilityState.SUPPORTED_LIMITED}:
+        if status.state in {
+            CapabilityState.SUPPORTED,
+            CapabilityState.SUPPORTED_EMPTY,
+            CapabilityState.SUPPORTED_LIMITED,
+        }:
             values.append(status.capability)
     return tuple(dict.fromkeys(values))
 
@@ -343,6 +357,8 @@ def adapt_gitlab_payload(payload: Mapping[str, Any]) -> AdapterResult:
             capabilities=_supported_capabilities(statuses, defaults),
             partial=bool(limitations) or not bool(payload.get("pagination_complete", True)),
             reason="; ".join(limitations),
+            access_mode=_text(payload.get("access_mode"), empty="authenticated_read_only"),
+            credential_used=bool(payload.get("credential_used", True)),
         ),
         snapshot=snapshot,
         change_requests=changes,
@@ -514,6 +530,8 @@ def adapt_bitbucket_payload(payload: Mapping[str, Any]) -> AdapterResult:
             capabilities=_supported_capabilities(statuses, defaults),
             partial=bool(limitations) or not bool(payload.get("pagination_complete", True)),
             reason="; ".join(limitations),
+            access_mode=_text(payload.get("access_mode"), empty="authenticated_read_only"),
+            credential_used=bool(payload.get("credential_used", True)),
         ),
         snapshot=snapshot,
         change_requests=changes,
@@ -682,6 +700,8 @@ def adapt_azure_devops_payload(payload: Mapping[str, Any]) -> AdapterResult:
             capabilities=_supported_capabilities(statuses, defaults),
             partial=bool(limitations) or not bool(payload.get("pagination_complete", True)),
             reason="; ".join(limitations),
+            access_mode=_text(payload.get("access_mode"), empty="authenticated_read_only"),
+            credential_used=bool(payload.get("credential_used", True)),
         ),
         snapshot=snapshot,
         change_requests=changes,

@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Mapping
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Callable, Iterator, Protocol
+from uuid import uuid4
 
 from nico.comprehensive_run_record import (
     restore_comprehensive_run_record,
     validate_comprehensive_run_record,
 )
 
-VERSION = "nico.comprehensive_run_store.v5"
+VERSION = "nico.comprehensive_run_store.v6"
+MAX_PUBLIC_INTAKE_RESERVATION_BYTES = 128 * 1024
 _FINAL_REPORT_JOB_TERMINAL_STATUSES = (
     "complete",
     "blocked",
@@ -49,6 +52,50 @@ def _decode_run_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("persisted_payload_must_be_object")
     return payload
+
+
+def _public_intake_payload_json(payload: Mapping[str, Any]) -> str:
+    return json.dumps(
+        dict(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def _public_intake_payload_sha256(payload: Mapping[str, Any]) -> str:
+    encoded = _public_intake_payload_json(payload).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _terminal_public_intake_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain only non-sensitive UI identity after acquisition is terminal."""
+
+    safe_fields = (
+        "run_id",
+        "repository",
+        "provider",
+        "customer_id",
+        "project_id",
+        "assessment_depth",
+        "report_language",
+        "requested_access_mode",
+    )
+    terminal = {
+        field: payload.get(field)
+        for field in safe_fields
+        if payload.get(field) not in (None, "")
+    }
+    engagement = payload.get("engagement_metadata")
+    if isinstance(engagement, Mapping):
+        engagement_sha256 = str(
+            engagement.get("engagement_metadata_sha256") or ""
+        ).strip().casefold()
+        if engagement_sha256:
+            terminal["engagement_metadata"] = {
+                "engagement_metadata_sha256": engagement_sha256,
+            }
+    return terminal
 
 
 def _browser_projection_json(projection: Mapping[str, Any]) -> str:
@@ -256,13 +303,372 @@ class ComprehensiveRunStore:
             projection {payload_type} NOT NULL
         )
         """
+        intake_reservation_statement = f"""
+        CREATE TABLE IF NOT EXISTS nico_comprehensive_intake_reservations (
+            run_id TEXT PRIMARY KEY,
+            request_sha256 TEXT NOT NULL,
+            status TEXT NOT NULL,
+            lease_id TEXT NOT NULL,
+            lease_until_epoch {epoch_type} NOT NULL,
+            attempt_count INTEGER NOT NULL,
+            failure_code TEXT NOT NULL,
+            failure_retryable {boolean_type} NOT NULL,
+            accepted_commit_sha TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            payload {payload_type} NOT NULL
+        )
+        """
         with self._connection() as connection:
             cursor = connection.cursor()
             cursor.execute(run_statement)
             cursor.execute(final_report_job_statement)
             cursor.execute(review_history_statement)
             cursor.execute(browser_projection_statement)
+            cursor.execute(intake_reservation_statement)
             connection.commit()
+
+    @staticmethod
+    def _intake_reservation_row(
+        row: Any,
+        *,
+        lease_owner: bool = False,
+    ) -> dict[str, Any]:
+        payload = _decode_run_payload(row[10])
+        status = str(row[2])
+        if status == "acquiring" and _public_intake_payload_sha256(payload) != str(
+            row[1]
+        ).strip().casefold():
+            raise ValueError("public_intake_reservation_payload_hash_mismatch")
+        return {
+            "run_id": str(row[0]),
+            "request_sha256": str(row[1]),
+            "status": status,
+            "lease_id": str(row[3]),
+            "lease_until_epoch": float(row[4]),
+            "attempt_count": int(row[5]),
+            "failure_code": str(row[6]),
+            "failure_retryable": bool(row[7]),
+            "accepted_commit_sha": str(row[8]),
+            "updated_at": str(row[9]),
+            "payload": payload,
+            "lease_owner": lease_owner,
+        }
+
+    def reserve_public_intake(
+        self,
+        *,
+        run_id: str,
+        request_sha256: str,
+        payload: Mapping[str, Any],
+        now_epoch: float | None = None,
+        lease_seconds: float = 300.0,
+        updated_at: str,
+    ) -> dict[str, Any]:
+        """Atomically bind and lease one public intake before provider I/O."""
+
+        normalized_run_id = str(run_id or "").strip()
+        supplied_hash = str(request_sha256 or "").strip().casefold()
+        if not normalized_run_id or not supplied_hash:
+            raise ValueError("public_intake_reservation_identity_required")
+        if not isinstance(payload, Mapping):
+            raise TypeError("public_intake_reservation_payload_must_be_object")
+        lease_duration = float(lease_seconds)
+        if lease_duration <= 0:
+            raise ValueError("public_intake_reservation_lease_invalid")
+        serialized = _public_intake_payload_json(payload)
+        if len(serialized.encode("utf-8")) > MAX_PUBLIC_INTAKE_RESERVATION_BYTES:
+            raise ValueError("public_intake_reservation_payload_too_large")
+        normalized_hash = _public_intake_payload_sha256(payload)
+        if supplied_hash != normalized_hash:
+            raise ValueError("public_intake_reservation_payload_hash_mismatch")
+        now = float(time.time() if now_epoch is None else now_epoch)
+        lease_until = now + lease_duration
+        lease_id = uuid4().hex
+        p = self.placeholder
+        columns = (
+            "run_id, request_sha256, status, lease_id, lease_until_epoch, "
+            "attempt_count, failure_code, failure_retryable, "
+            "accepted_commit_sha, updated_at, payload"
+        )
+        select_statement = f"""
+            SELECT {columns}
+            FROM nico_comprehensive_intake_reservations
+            WHERE run_id = {p}
+        """
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                INSERT INTO nico_comprehensive_intake_reservations ({columns})
+                VALUES ({','.join([p] * 11)})
+                ON CONFLICT (run_id) DO NOTHING
+                """,
+                (
+                    normalized_run_id,
+                    normalized_hash,
+                    "acquiring",
+                    lease_id,
+                    lease_until,
+                    1,
+                    "",
+                    False,
+                    "",
+                    str(updated_at),
+                    serialized,
+                ),
+            )
+            if int(cursor.rowcount or 0) == 1:
+                cursor.execute(select_statement, (normalized_run_id,))
+                row = cursor.fetchone()
+                connection.commit()
+                if row is None:
+                    raise ComprehensiveRunConflict(
+                        f"public_intake_reservation_missing:{normalized_run_id}"
+                    )
+                return self._intake_reservation_row(row, lease_owner=True)
+
+            cursor.execute(select_statement, (normalized_run_id,))
+            existing = cursor.fetchone()
+            if existing is None:
+                raise ComprehensiveRunConflict(
+                    f"public_intake_reservation_missing:{normalized_run_id}"
+                )
+            if str(existing[1]).strip().casefold() != normalized_hash:
+                raise ComprehensiveRunConflict("public_intake_idempotency_conflict")
+            if str(existing[2]) != "acquiring" or float(existing[4]) > now:
+                connection.commit()
+                return self._intake_reservation_row(existing)
+
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_intake_reservations
+                SET lease_id = {p}, lease_until_epoch = {p},
+                    attempt_count = attempt_count + 1, updated_at = {p}
+                WHERE run_id = {p} AND request_sha256 = {p}
+                  AND status = {p} AND lease_until_epoch <= {p}
+                """,
+                (
+                    lease_id,
+                    lease_until,
+                    str(updated_at),
+                    normalized_run_id,
+                    normalized_hash,
+                    "acquiring",
+                    now,
+                ),
+            )
+            claimed = int(cursor.rowcount or 0) == 1
+            cursor.execute(select_statement, (normalized_run_id,))
+            row = cursor.fetchone()
+            connection.commit()
+        if row is None:
+            raise ComprehensiveRunConflict(
+                f"public_intake_reservation_missing:{normalized_run_id}"
+            )
+        return self._intake_reservation_row(row, lease_owner=claimed)
+
+    def load_public_intake(self, run_id: str) -> dict[str, Any] | None:
+        normalized = str(run_id or "").strip()
+        if not normalized:
+            return None
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT run_id, request_sha256, status, lease_id,
+                       lease_until_epoch, attempt_count, failure_code,
+                       failure_retryable, accepted_commit_sha, updated_at, payload
+                FROM nico_comprehensive_intake_reservations
+                WHERE run_id = {p}
+                """,
+                (normalized,),
+            )
+            row = cursor.fetchone()
+        return self._intake_reservation_row(row) if row is not None else None
+
+    def heartbeat_public_intake(
+        self,
+        *,
+        run_id: str,
+        lease_id: str,
+        lease_until_epoch: float,
+        updated_at: str,
+    ) -> bool:
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_intake_reservations
+                SET lease_until_epoch = {p}, updated_at = {p}
+                WHERE run_id = {p} AND lease_id = {p} AND status = {p}
+                """,
+                (
+                    float(lease_until_epoch),
+                    str(updated_at),
+                    str(run_id),
+                    str(lease_id),
+                    "acquiring",
+                ),
+            )
+            changed = int(cursor.rowcount or 0) == 1
+            connection.commit()
+        return changed
+
+    def complete_public_intake(
+        self,
+        *,
+        run_id: str,
+        lease_id: str,
+        commit_sha: str,
+        updated_at: str,
+    ) -> bool:
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT payload FROM nico_comprehensive_intake_reservations
+                WHERE run_id = {p} AND lease_id = {p} AND status = {p}
+                """,
+                (str(run_id), str(lease_id), "acquiring"),
+            )
+            existing = cursor.fetchone()
+            terminal_payload = _public_intake_payload_json(
+                _terminal_public_intake_payload(
+                    _decode_run_payload(existing[0]) if existing is not None else {}
+                )
+            )
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_intake_reservations
+                SET status = {p}, lease_id = {p}, lease_until_epoch = {p},
+                    accepted_commit_sha = {p}, failure_code = {p},
+                    failure_retryable = {p}, updated_at = {p}, payload = {p}
+                WHERE run_id = {p} AND lease_id = {p} AND status = {p}
+                """,
+                (
+                    "accepted",
+                    "",
+                    0.0,
+                    str(commit_sha or "").strip().casefold(),
+                    "",
+                    False,
+                    str(updated_at),
+                    terminal_payload,
+                    str(run_id),
+                    str(lease_id),
+                    "acquiring",
+                ),
+            )
+            changed = int(cursor.rowcount or 0) == 1
+            connection.commit()
+        return changed
+
+    def reconcile_public_intake_accepted(
+        self,
+        *,
+        run_id: str,
+        request_sha256: str,
+        commit_sha: str,
+        updated_at: str,
+    ) -> bool:
+        """Close the crash window after the canonical run was durably created."""
+
+        p = self.placeholder
+        normalized_hash = str(request_sha256 or "").strip().casefold()
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT payload FROM nico_comprehensive_intake_reservations
+                WHERE run_id = {p} AND request_sha256 = {p} AND status = {p}
+                """,
+                (str(run_id), normalized_hash, "acquiring"),
+            )
+            existing = cursor.fetchone()
+            if existing is None:
+                connection.commit()
+                return False
+            terminal_payload = _public_intake_payload_json(
+                _terminal_public_intake_payload(_decode_run_payload(existing[0]))
+            )
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_intake_reservations
+                SET status = {p}, lease_id = {p}, lease_until_epoch = {p},
+                    accepted_commit_sha = {p}, failure_code = {p},
+                    failure_retryable = {p}, updated_at = {p}, payload = {p}
+                WHERE run_id = {p} AND request_sha256 = {p} AND status = {p}
+                """,
+                (
+                    "accepted",
+                    "",
+                    0.0,
+                    str(commit_sha or "").strip().casefold(),
+                    "",
+                    False,
+                    str(updated_at),
+                    terminal_payload,
+                    str(run_id),
+                    normalized_hash,
+                    "acquiring",
+                ),
+            )
+            changed = int(cursor.rowcount or 0) == 1
+            connection.commit()
+        return changed
+
+    def fail_public_intake(
+        self,
+        *,
+        run_id: str,
+        lease_id: str,
+        failure_code: str,
+        retryable: bool,
+        updated_at: str,
+    ) -> bool:
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT payload FROM nico_comprehensive_intake_reservations
+                WHERE run_id = {p} AND lease_id = {p} AND status = {p}
+                """,
+                (str(run_id), str(lease_id), "acquiring"),
+            )
+            existing = cursor.fetchone()
+            terminal_payload = _public_intake_payload_json(
+                _terminal_public_intake_payload(
+                    _decode_run_payload(existing[0]) if existing is not None else {}
+                )
+            )
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_intake_reservations
+                SET status = {p}, lease_id = {p}, lease_until_epoch = {p},
+                    failure_code = {p}, failure_retryable = {p}, updated_at = {p},
+                    payload = {p}
+                WHERE run_id = {p} AND lease_id = {p} AND status = {p}
+                """,
+                (
+                    "failed",
+                    "",
+                    0.0,
+                    str(failure_code or "public_intake_failed"),
+                    bool(retryable),
+                    str(updated_at),
+                    terminal_payload,
+                    str(run_id),
+                    str(lease_id),
+                    "acquiring",
+                ),
+            )
+            changed = int(cursor.rowcount or 0) == 1
+            connection.commit()
+        return changed
 
     def create(self, record: dict[str, Any]) -> dict[str, Any]:
         canonical = self._validated_copy(record)

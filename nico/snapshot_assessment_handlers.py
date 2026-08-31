@@ -177,6 +177,16 @@ def _snapshot_scanner_handler(context: dict[str, Any], outputs: dict[str, Any]) 
             "authorization_scope": context["authorization_scope"],
             "snapshot_id": snapshot.get("snapshot_id") or "",
             "snapshot_commit_sha": snapshot.get("commit_sha") or "",
+            "provider_access_mode": (
+                snapshot.get("access_mode")
+                or snapshot.get("provider_access_mode")
+                or ""
+            ),
+            "provider_credential_used": (
+                snapshot.get("credential_used")
+                if isinstance(snapshot.get("credential_used"), bool)
+                else snapshot.get("provider_credential_used")
+            ),
             "tools": context.get("tools") or [],
         }
     )

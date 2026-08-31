@@ -4,7 +4,6 @@ import os
 import re
 from functools import wraps
 from typing import Any, Callable, Mapping
-from uuid import uuid4
 
 VERSION = "nico.runtime_deployment_commit_resolution.v4"
 _MARKER = "_nico_runtime_deployment_commit_resolution_v1"
@@ -125,33 +124,97 @@ def _install_durable_explicit_sha_intake() -> dict[str, Any]:
         if payload.get("authorized") is not True or payload.get("authorization_confirmed") is not True:
             return current(request, payload)
 
-        repository = routes.normalize_repository(routes._required(payload.get("repository"), "repository"))
-        customer_id = routes._required(payload.get("customer_id") or "default_customer", "customer_id")
-        project_id = routes._required(payload.get("project_id") or "default_project", "project_id")
-        assessment_depth = routes._required(payload.get("assessment_depth") or "strategic", "assessment_depth")
-        report_language = routes._required(payload.get("report_language") or "en", "report_language")
-        run_id = f"comprun_{uuid4().hex}"
-        evidence_ledger_id = f"ledger_comprehensive_{uuid4().hex}"
-        response = routes._controller(request).start({
-            "repository": repository,
-            "commit_sha": requested_sha,
-            "run_id": run_id,
-            "evidence_ledger_id": evidence_ledger_id,
-            "customer_id": customer_id,
-            "project_id": project_id,
-            "assessment_depth": assessment_depth,
-            "report_language": report_language,
-            "human_evidence": payload.get("human_evidence"),
-            "authorized": True,
-            "authorization_confirmed": True,
-        })
-        projected = routes._with_runtime_truth(request, response)
-        projected["explicit_commit_sha_bound"] = requested_sha
-        projected["repository_snapshot_verification"] = "required_next_stage"
-        projected["repository_processing_begun"] = False
-        projected["human_review_required"] = True
-        projected["client_delivery_allowed"] = False
-        return projected
+        prepared = routes._prepare_public_intake_reservation_payload(payload)
+        if prepared.get("provider") != "github":
+            return current(request, payload)
+        reservation = routes._reserve_prepared_public_intake(request, prepared)
+
+        def project(response: dict[str, Any]) -> dict[str, Any]:
+            projected = routes._with_runtime_truth(request, response)
+            projected["explicit_commit_sha_bound"] = requested_sha
+            projected["repository_snapshot_verification"] = "required_next_stage"
+            projected["repository_processing_begun"] = False
+            projected["client_name"] = prepared.get("client_name")
+            projected["project_name"] = prepared.get("project_name")
+            projected["repository_provider"] = "github"
+            projected["provider_access_mode"] = "anonymous_public"
+            projected["provider_credential_used"] = False
+            projected["human_review_required"] = True
+            projected["client_delivery_allowed"] = False
+            return projected
+
+        if reservation.get("lease_owner") is not True:
+            if reservation.get("status") == "accepted":
+                return project(routes._accepted_public_intake_response(request, reservation))
+            return routes._public_intake_reservation_projection(request, reservation)
+
+        controller = routes._controller(request)
+        service = getattr(controller, "_service", None)
+        run_id = str(prepared["run_id"])
+        lease_id = str(reservation.get("lease_id") or "")
+        canonical_started = False
+        try:
+            if service is not None and not service.heartbeat_public_intake(
+                run_id=run_id,
+                lease_id=lease_id,
+                lease_until_epoch=__import__("time").time() + routes._PUBLIC_INTAKE_LEASE_SECONDS,
+            ):
+                raise routes.ComprehensiveRunConflict("public_intake_reservation_lease_lost")
+            try:
+                response = controller.start(
+                    {
+                        "repository": prepared["repository"],
+                        "commit_sha": requested_sha,
+                        "run_id": run_id,
+                        "evidence_ledger_id": prepared["evidence_ledger_id"],
+                        "customer_id": prepared["customer_id"],
+                        "project_id": prepared["project_id"],
+                        "client_name": prepared.get("client_name"),
+                        "project_name": prepared.get("project_name"),
+                        "assessment_depth": prepared["assessment_depth"],
+                        "report_language": prepared["report_language"],
+                        "human_evidence": prepared.get("human_evidence"),
+                        "engagement_field_states": prepared.get("engagement_field_states"),
+                        "repository_provider": "github",
+                        "provider_access_mode": "anonymous_public",
+                        "provider_credential_used": False,
+                        "authorized": True,
+                        "authorization_confirmed": True,
+                    }
+                )
+                canonical_started = True
+            except routes.ComprehensiveRunConflict:
+                response = routes._matching_public_intake_response(
+                    request,
+                    payload=prepared,
+                    expected_commit_sha_value=requested_sha,
+                )
+                if response is None:
+                    raise
+                canonical_started = True
+            if service is not None and not service.complete_public_intake(
+                run_id=run_id,
+                lease_id=lease_id,
+                commit_sha=requested_sha,
+            ):
+                completed = service.load_public_intake(run_id)
+                if not completed or completed.get("status") != "accepted":
+                    raise routes.ComprehensiveRunConflict(
+                        "public_intake_reservation_completion_conflict"
+                    )
+            return project(response)
+        except Exception as exc:
+            # After the canonical row commits, leave the hash-bound reservation
+            # acquiring so exact GET recovery can reconcile it to accepted.
+            if service is not None and not canonical_started:
+                failure_code, retryable = routes._public_intake_failure_truth(exc)
+                service.fail_public_intake(
+                    run_id=run_id,
+                    lease_id=lease_id,
+                    failure_code=failure_code,
+                    retryable=retryable,
+                )
+            raise
 
     setattr(intake, _DURABLE_INTAKE_MARKER, True)
     setattr(intake, "_nico_previous", current)

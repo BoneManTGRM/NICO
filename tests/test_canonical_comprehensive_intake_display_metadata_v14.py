@@ -75,7 +75,7 @@ def test_canonical_intake_retains_exact_display_metadata_without_runtime_wrapper
 
     raw_human_evidence = controller.payload["human_evidence"]
     assert isinstance(raw_human_evidence, dict)
-    stakeholder = raw_human_evidence["stakeholder_context"]
+    stakeholder = raw_human_evidence["modules"]["stakeholder_context"]
     assert isinstance(stakeholder, dict)
     evidence = stakeholder["evidence"]
     assert isinstance(evidence, dict)

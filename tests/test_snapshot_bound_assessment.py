@@ -200,6 +200,69 @@ def test_snapshot_handlers_attach_repository_evidence_and_queue_same_commit(monk
     assert captured_payload["snapshot_commit_sha"] == snapshot["commit_sha"]
 
 
+def test_hosted_snapshot_scanner_binds_concrete_anonymous_access_truth(monkeypatch):
+    class NoopThread:
+        def __init__(self, *, target, args, daemon):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(snapshot_scanner.threading, "Thread", NoopThread)
+    job = snapshot_scanner.start_snapshot_scan(
+        {
+            "repository": "gitlab.com/group/repo",
+            "authorized": True,
+            "customer_id": "customer-hosted",
+            "project_id": "project-hosted",
+            "run_id": "run-hosted",
+            "authorized_by": "owner",
+            "authorization_scope": "repository assessment only",
+            "snapshot_id": "snapshot-hosted",
+            "snapshot_commit_sha": "a" * 40,
+            "provider_access_mode": "anonymous_public",
+            "provider_credential_used": False,
+            "tools": [],
+        }
+    )
+
+    assert job["status"] == "queued"
+    assert job["provider_access_mode"] == "anonymous_public"
+    assert job["provider_credential_used"] is False
+
+
+@pytest.mark.parametrize(
+    "provider_access_mode,provider_credential_used",
+    (("", False), ("auto", False), ("anonymous_public", True), ("authenticated_read_only", False)),
+)
+def test_hosted_snapshot_scanner_rejects_unbound_access_truth(
+    provider_access_mode: str,
+    provider_credential_used: bool,
+) -> None:
+    result = snapshot_scanner.start_snapshot_scan(
+        {
+            "repository": "gitlab.com/group/repo",
+            "authorized": True,
+            "customer_id": "customer-hosted",
+            "project_id": "project-hosted",
+            "run_id": "run-hosted",
+            "authorized_by": "owner",
+            "authorization_scope": "repository assessment only",
+            "snapshot_id": "snapshot-hosted",
+            "snapshot_commit_sha": "a" * 40,
+            "provider_access_mode": provider_access_mode,
+            "provider_credential_used": provider_credential_used,
+            "tools": [],
+        }
+    )
+    assert result == {
+        "status": "blocked",
+        "error": "Hosted provider scanner access truth is missing or inconsistent.",
+    }
+
+
 def test_snapshot_repository_handler_blocks_unavailable_collection(monkeypatch):
     context = _context()
     snapshot = {

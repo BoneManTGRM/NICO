@@ -229,13 +229,33 @@ def _validate_register(register: Mapping[str, Any]) -> None:
 
 def _sync_scanner_sections(canonical: dict[str, Any]) -> None:
     assessment = _dict(canonical.get("assessment"))
-    register = assessment.get("canonical_scanner_finding_register")
-    register = register if isinstance(register, Mapping) else {}
+    register = _dict(assessment.get("canonical_scanner_finding_register"))
     by_category = register.get("summary_by_category")
-    by_category = by_category if isinstance(by_category, Mapping) else {}
+    by_category = _dict(by_category)
     if not register or not by_category:
         canonical["assessment"] = assessment
         return
+    findings = _records(register.get("findings"))
+    zero_summary = {
+        "raw": 0,
+        "material": 0,
+        "review_required": 0,
+        "approved_or_nonblocking": 0,
+        "excluded_test_only": 0,
+        "exact_source": 0,
+        "source_path": 0,
+        "payload_without_source": 0,
+        "count_only": 0,
+    }
+    for category in _SECTION_CATEGORY.values():
+        if isinstance(by_category.get(category), Mapping):
+            continue
+        if any(_text(item.get("category"), 80) == category for item in findings):
+            raise ValueError(f"missing canonical scanner category summary: {category}")
+        by_category[category] = dict(zero_summary)
+    register["summary_by_category"] = by_category
+    assessment["canonical_scanner_finding_register"] = register
+    assessment["scanner_finding_summary"] = deepcopy(by_category)
     _validate_register(register)
     sections = _records(assessment.get("sections"))
     for section in sections:

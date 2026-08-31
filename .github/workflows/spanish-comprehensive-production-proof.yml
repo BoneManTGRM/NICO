@@ -537,7 +537,7 @@ jobs:
           assert exclusion["engagement_fixture"] == "excluded"
           assert exclusion["start_request_count"] == 1
           assert exclusion["duplicate_intake_absent"] is True
-          assert exclusion["explicit_exclusion_controls_verified"] is True
+          assert exclusion["module_exclusion_verified"] is True
           assert exclusion["excluded_engagement_fields"] == [
               "primary_technical_contact",
               "access_method",

@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Mapping
 from urllib.parse import urlparse
 
-from nico.provider_neutral_contract import ProviderKind, normalize_provider
+from nico.provider_neutral_contract import ProviderAccessMode, ProviderKind, normalize_provider
 
 
 class CredentialError(RuntimeError):
@@ -31,6 +31,8 @@ class SecretValue:
         normalized = str(value or "")
         if not normalized:
             raise CredentialError("provider_credential_empty")
+        if any(character.isspace() or not character.isprintable() for character in normalized):
+            raise CredentialError("provider_credential_malformed")
         self.__value = normalized
 
     def reveal(self) -> str:
@@ -136,6 +138,21 @@ class EnvironmentCredentialResolver:
             resolved_at=_utc_now(),
         )
 
+    def resolve_optional(self, reference: CredentialReference) -> ResolvedCredential | None:
+        """Resolve an optional credential without weakening reference validation."""
+
+        issues = validate_reference(reference)
+        if issues:
+            raise CredentialError(",".join(issues))
+        value = self._environment.get(reference.env_var, "")
+        if not value:
+            return None
+        return ResolvedCredential(
+            reference=reference,
+            secret=SecretValue(value),
+            resolved_at=_utc_now(),
+        )
+
 
 def assert_url_allowed(reference: CredentialReference, url: str) -> None:
     parsed = urlparse(str(url or ""))
@@ -147,7 +164,9 @@ def assert_url_allowed(reference: CredentialReference, url: str) -> None:
         raise CredentialError("provider_endpoint_host_not_allowed")
 
 
-def authorization_headers(credential: ResolvedCredential) -> dict[str, str]:
+def authorization_headers(credential: ResolvedCredential | None) -> dict[str, str]:
+    if credential is None:
+        return {}
     token = credential.secret.reveal()
     scheme = credential.reference.scheme
     if scheme is CredentialScheme.PRIVATE_TOKEN:
@@ -189,6 +208,7 @@ __all__ = [
     "CredentialScheme",
     "EnvironmentCredentialResolver",
     "ResolvedCredential",
+    "ProviderAccessMode",
     "SecretValue",
     "assert_url_allowed",
     "authorization_headers",

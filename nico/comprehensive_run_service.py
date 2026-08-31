@@ -239,6 +239,85 @@ class ComprehensiveRunService:
 
         self._store.bind_browser_projection_builder(builder)
 
+    def reserve_public_intake(
+        self,
+        *,
+        run_id: str,
+        request_sha256: str,
+        payload: Mapping[str, Any],
+        now_epoch: float | None = None,
+        lease_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+        return self._store.reserve_public_intake(
+            run_id=run_id,
+            request_sha256=request_sha256,
+            payload=payload,
+            now_epoch=now_epoch,
+            lease_seconds=lease_seconds,
+            updated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+
+    def load_public_intake(self, run_id: str) -> dict[str, Any] | None:
+        return self._store.load_public_intake(run_id)
+
+    def heartbeat_public_intake(
+        self,
+        *,
+        run_id: str,
+        lease_id: str,
+        lease_until_epoch: float,
+    ) -> bool:
+        return self._store.heartbeat_public_intake(
+            run_id=run_id,
+            lease_id=lease_id,
+            lease_until_epoch=lease_until_epoch,
+            updated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+
+    def complete_public_intake(
+        self,
+        *,
+        run_id: str,
+        lease_id: str,
+        commit_sha: str,
+    ) -> bool:
+        return self._store.complete_public_intake(
+            run_id=run_id,
+            lease_id=lease_id,
+            commit_sha=commit_sha,
+            updated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+
+    def reconcile_public_intake_accepted(
+        self,
+        *,
+        run_id: str,
+        request_sha256: str,
+        commit_sha: str,
+    ) -> bool:
+        return self._store.reconcile_public_intake_accepted(
+            run_id=run_id,
+            request_sha256=request_sha256,
+            commit_sha=commit_sha,
+            updated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+
+    def fail_public_intake(
+        self,
+        *,
+        run_id: str,
+        lease_id: str,
+        failure_code: str,
+        retryable: bool,
+    ) -> bool:
+        return self._store.fail_public_intake(
+            run_id=run_id,
+            lease_id=lease_id,
+            failure_code=failure_code,
+            retryable=retryable,
+            updated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+
     def load_browser_projection(self, run_id: str) -> dict[str, Any] | None:
         """Load transaction-bound browser status without materializing full evidence."""
 

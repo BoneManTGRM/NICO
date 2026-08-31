@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from threading import Event, Timer
 from time import monotonic
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
@@ -43,6 +44,9 @@ def test_long_comprehensive_intake_does_not_starve_event_loop() -> None:
             with patch(
                 "nico.comprehensive_api_routes.capture_repository_snapshot",
                 new=blocking_snapshot,
+            ), patch(
+                "nico.comprehensive_api_routes._controller",
+                return_value=SimpleNamespace(_service=None),
             ):
                 intake = asyncio.create_task(
                     client.post(

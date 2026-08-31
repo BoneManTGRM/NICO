@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from types import SimpleNamespace
 
 from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
@@ -126,6 +127,7 @@ def test_distinctive_metadata_is_in_initial_canonical_record(monkeypatch) -> Non
             return record
 
     controller = ComprehensiveApiController(RecordingService())
+    controller_without_public_intake_store = SimpleNamespace(start=controller.start)
     monkeypatch.setattr(
         routes,
         "capture_repository_snapshot",
@@ -137,7 +139,11 @@ def test_distinctive_metadata_is_in_initial_canonical_record(monkeypatch) -> Non
     )
     monkeypatch.setattr(routes, "expected_commit_sha", lambda payload: "")
     monkeypatch.setattr(routes, "normalize_repository", lambda value: str(value))
-    monkeypatch.setattr(routes, "_controller", lambda request: controller)
+    monkeypatch.setattr(
+        routes,
+        "_controller",
+        lambda request: controller_without_public_intake_store,
+    )
     monkeypatch.setattr(routes, "_with_runtime_truth", lambda request, response: response)
 
     routes._intake(

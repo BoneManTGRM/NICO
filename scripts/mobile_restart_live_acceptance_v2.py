@@ -116,10 +116,11 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
                 ? clientContext.querySelectorAll('input[type="text"], input:not([type])')
                 : [];
               const clientStateButtons = clientContext
-                ? clientContext.querySelectorAll('[data-engagement-field] button')
-                : [];
-              const clientFieldBlocks = clientContext
-                ? clientContext.querySelectorAll('[data-engagement-field]')
+                ? Array.from(clientContext.querySelectorAll('button')).filter(
+                    node => /exclude from scope|not applicable|clear selection/i.test(
+                      String(node.textContent || '')
+                    )
+                  )
                 : [];
               const clientLabels = clientContext
                 ? Array.from(clientContext.querySelectorAll('label span')).map(
@@ -138,7 +139,6 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
                 client_context_textarea_count: clientTextareas.length,
                 client_context_single_line_input_count: clientSingleLineInputs.length,
                 client_context_state_button_count: clientStateButtons.length,
-                client_context_field_count: clientFieldBlocks.length,
                 client_context_labels: clientLabels,
                 rich_editor_control_count: richControlCount,
                 rich_editor_node_count: richNodes.length,
@@ -150,12 +150,11 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
         )
         assert paint_boundary.get("editor_mounted") == "false", paint_boundary
         assert paint_boundary.get("client_context_present") is True, paint_boundary
-        assert int(paint_boundary.get("interactive_control_count") or 0) == 9, paint_boundary
-        assert int(paint_boundary.get("client_context_control_count") or 0) == 9, paint_boundary
+        assert int(paint_boundary.get("interactive_control_count") or 0) == 3, paint_boundary
+        assert int(paint_boundary.get("client_context_control_count") or 0) == 3, paint_boundary
         assert int(paint_boundary.get("client_context_textarea_count") or 0) == 0, paint_boundary
         assert int(paint_boundary.get("client_context_single_line_input_count") or 0) == 3, paint_boundary
-        assert int(paint_boundary.get("client_context_state_button_count") or 0) == 6, paint_boundary
-        assert int(paint_boundary.get("client_context_field_count") or 0) == 3, paint_boundary
+        assert int(paint_boundary.get("client_context_state_button_count") or 0) == 0, paint_boundary
         assert int(paint_boundary.get("rich_editor_control_count") or 0) == 0, paint_boundary
         assert int(paint_boundary.get("rich_editor_node_count") or 0) == 0, paint_boundary
         assert set(paint_boundary.get("client_context_labels") or []) == CLIENT_CONTEXT_FIELDS, paint_boundary
@@ -184,22 +183,16 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
         )
         assert int(document_metrics.get("scroll_height") or 0) < 6_000, document_metrics
         assert int(document_metrics.get("node_count") or 0) < 2_000, document_metrics
-        assert int(document_metrics.get("evidence_control_count") or 0) == 9, document_metrics
-        assert int(document_metrics.get("client_context_control_count") or 0) == 9, document_metrics
+        assert int(document_metrics.get("evidence_control_count") or 0) == 3, document_metrics
+        assert int(document_metrics.get("client_context_control_count") or 0) == 3, document_metrics
         assert int(document_metrics.get("evidence_rich_control_count") or 0) == 0, document_metrics
 
-        contact = page.locator(
-            '[data-engagement-field="primary_technical_contact"]'
-        ).first
-        contact_input = contact.locator('input[type="text"]').first
-        contact.get_by_role("button", name="Exclude from scope", exact=True).click()
-        assert contact.get_attribute("data-engagement-state") == "excluded_from_scope"
-        assert contact_input.is_disabled()
-        assert "State: Excluded from scope" in contact.inner_text()
-        contact.get_by_role("button", name="Clear selection", exact=True).click()
-        assert contact.get_attribute("data-engagement-state") == "not_supplied"
-        assert not contact_input.is_disabled()
-        assert "State: Not supplied" in contact.inner_text()
+        contact_input = page.get_by_label("Primary Technical Contact", exact=True).first
+        literal = "Cody — Repository owner / project lead"
+        contact_input.fill(literal)
+        assert contact_input.input_value() == literal
+        assert page.get_by_role("button", name="Exclude from scope", exact=True).count() == 0
+        assert page.get_by_role("button", name="Not applicable", exact=True).count() == 0
 
         page.screenshot(path=str(top_path), full_page=False, timeout=15_000, animations="disabled")
 
@@ -222,13 +215,12 @@ def _prove_intake_paint(browser: _IPhoneBrowser, args: Any) -> dict[str, Any]:
             "browser_engine": "webkit",
             "mobile_emulation": "iPhone 390x844 @3x touch",
             "optional_evidence_editor_unmounted": True,
-            "optional_evidence_controls_allocated": 9,
+            "optional_evidence_controls_allocated": 3,
             "rich_optional_evidence_controls_allocated": 0,
             "lightweight_client_context_controls_allocated": 3,
-            "lightweight_client_context_state_buttons_allocated": 6,
-            "exclude_from_scope_control_verified": True,
-            "excluded_state_visually_distinct_from_not_supplied": True,
-            "exclude_from_scope_clear_recovery_verified": True,
+            "lightweight_client_context_state_buttons_allocated": 0,
+            "per_field_state_controls_absent": True,
+            "included_human_literal_preserved": True,
             "authorization_reachable": True,
             "assessment_action_reachable": True,
             "ancestor_clipping_absent": True,

@@ -34,6 +34,15 @@ import {
   type EngagementFieldStates,
 } from "./engagementFieldState";
 import {
+  isIntakeReservationPending,
+  reserveComprehensiveRunId,
+} from "./assessmentRecoveryIdentity";
+import {
+  detectRepositoryProvider,
+  normalizeRepositorySelection,
+  readRepositoryProvider,
+} from "./repositoryProvider";
+import {
   MAX_POLL_ATTEMPTS,
   POLL_INTERVAL_MS,
   type Locale,
@@ -575,13 +584,19 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         }
 
         try {
+          const intakePending = isIntakeReservationPending(current);
+          const continuationPath = intakePending
+            ? `/assessment/comprehensive-run/${encodeURIComponent(runId)}`
+            : `/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue`;
           const continued = await requestWithRetry(
-            `/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue`,
-            {
-              method: "POST",
-              headers: {"Content-Type": "application/json"},
-              body: JSON.stringify({max_stages: 1}),
-            },
+            continuationPath,
+            intakePending
+              ? {method: "GET"}
+              : {
+                  method: "POST",
+                  headers: {"Content-Type": "application/json"},
+                  body: JSON.stringify({max_stages: 1}),
+                },
             copy,
           );
           current = preserveRunIdentity(continued, {
@@ -730,8 +745,35 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setStarted(null);
     setElapsed(0);
 
-    const body = {
-      repository,
+    const selectedProvider = detectRepositoryProvider(repository) || readRepositoryProvider();
+    let normalizedRepository;
+    try {
+      normalizedRepository = normalizeRepositorySelection(selectedProvider, repository);
+    } catch (caught) {
+      setError(
+        locale === "es-MX"
+          ? "La URL o el identificador del repositorio no coincide con el proveedor seleccionado. Revisa el formato y vuelve a intentarlo."
+          : "The repository URL or identifier does not match the selected provider. Check the format and try again.",
+      );
+      setIssue(null);
+      return;
+    }
+    const reservedRunId = reserveComprehensiveRunId();
+    const normalizedStates = normalizeEngagementFieldStates(
+      engagementFieldStates,
+      engagementValues(
+        client,
+        project,
+        humanEvidence.stakeholder_context?.evidence.primary_technical_contact?.[0] || "",
+        humanEvidence.stakeholder_context?.evidence.access_method?.[0] || "",
+        humanEvidence.stakeholder_context?.evidence.authorized_scope?.[0] || "",
+      ),
+    );
+    const body: Record<string, unknown> = {
+      run_id: reservedRunId,
+      repository: normalizedRepository.repository,
+      provider: normalizedRepository.provider,
+      provider_access_mode: "auto",
       customer_id: scope.customerId,
       project_id: scope.projectId,
       client_name: client,
@@ -744,17 +786,14 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       assessment_depth: "strategic",
       report_language: reportLanguageForRequest(locale),
       human_evidence: compactStrategicHumanEvidence(humanEvidence),
-      engagement_field_states: normalizeEngagementFieldStates(
-        engagementFieldStates,
-        engagementValues(
-          client,
-          project,
-          humanEvidence.stakeholder_context?.evidence.primary_technical_contact?.[0] || "",
-          humanEvidence.stakeholder_context?.evidence.access_method?.[0] || "",
-          humanEvidence.stakeholder_context?.evidence.authorized_scope?.[0] || "",
-        ),
-      ),
+      engagement_field_states: normalizedStates,
     };
+    if (normalizedRepository.provider_organization) {
+      body.provider_organization = normalizedRepository.provider_organization;
+    }
+    if (normalizedRepository.provider_project) {
+      body.provider_project = normalizedRepository.provider_project;
+    }
 
     let acceptedRun: Result | null = null;
     const startedAt = Date.now();
@@ -763,6 +802,23 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (token !== sequence.current) {
         return;
       }
+      const stakeholder = humanEvidence.stakeholder_context?.evidence || {};
+      writePersistedRun({
+        version: 1,
+        runId: reservedRunId,
+        repository: normalizedRepository.repository,
+        client,
+        project,
+        primaryTechnicalContact: stakeholder.primary_technical_contact?.[0] || "",
+        accessMethod: stakeholder.access_method?.[0] || "",
+        authorizedScope: stakeholder.authorized_scope?.[0] || "",
+        engagementFieldStates: normalizedStates,
+        customerId: scope.customerId,
+        projectId: scope.projectId,
+        startedAt,
+        locale,
+      });
+      setProtectedRunId(reservedRunId);
       setPhase("starting");
       setMessage(`${copy.phases.starting}: ${copy.service.label}`);
       setStarted(startedAt);
@@ -785,6 +841,20 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     } catch (caught) {
       if (token !== sequence.current) {
         return;
+      }
+      if (!acceptedRun) {
+        const recovered = await recoverRun(reservedRunId, {
+          repository: normalizedRepository.repository,
+          customerId: scope.customerId,
+          projectId: scope.projectId,
+        });
+        if (recovered) {
+          persistExactRun(recovered, scope, startedAt);
+          hydrateEngagementMetadata(recovered);
+          publishResult(recovered);
+          await continueRun(recovered, scope, token, startedAt);
+          return;
+        }
       }
       const runCreated = Boolean(acceptedRun?.run_id);
       applyIssue(caught, runCreated);

@@ -103,3 +103,21 @@ def test_missing_environment_secret_is_not_treated_as_ready() -> None:
 def test_secret_wrapper_rejects_empty_values() -> None:
     with pytest.raises(CredentialError, match="provider_credential_empty"):
         SecretValue("")
+
+
+@pytest.mark.parametrize("value", ("   ", "token\n", " token", "token\tvalue"))
+def test_secret_wrapper_rejects_whitespace_or_control_characters(value: str) -> None:
+    with pytest.raises(CredentialError, match="provider_credential_malformed"):
+        SecretValue(value)
+
+
+def test_optional_resolver_does_not_treat_malformed_secret_as_absent() -> None:
+    reference = build_reference(
+        provider="gitlab",
+        env_var="TOKEN",
+        scheme="private_token",
+        key_id="gitlab",
+        allowed_hosts=("gitlab.com",),
+    )
+    with pytest.raises(CredentialError, match="provider_credential_malformed"):
+        EnvironmentCredentialResolver({"TOKEN": "   "}).resolve_optional(reference)

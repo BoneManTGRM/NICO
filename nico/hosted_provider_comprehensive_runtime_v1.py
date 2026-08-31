@@ -32,8 +32,14 @@ from nico.hosted_assessment import (
     normalize_repository,
     should_fetch_path,
 )
-from nico.provider_credentials import EnvironmentCredentialResolver, build_reference
+from nico.provider_credentials import (
+    CredentialError,
+    EnvironmentCredentialResolver,
+    SecretValue,
+    build_reference,
+)
 from nico.provider_live_clients import AzureDevOpsClient, BitbucketCloudClient, GitLabClient, RetryPolicy
+from nico.provider_neutral_contract import ProviderAccessMode
 from nico.provider_neutral_contract import ProviderKind as NeutralProviderKind
 from nico.provider_platform_contract_v1 import ProviderKind
 from nico.provider_rollout_control_v1 import ProviderRolloutRegistry, STATE_KEY as ROLLOUT_STATE_KEY
@@ -46,6 +52,7 @@ OPERATOR_INTAKE_ROUTE = "/providers/operator/comprehensive-intake"
 _PATCH_MARKER = "_nico_hosted_provider_checkout_v1"
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40,64}$")
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+_VISUAL_STUDIO_HOST_RE = re.compile(r"^([a-z0-9-]+)\.visualstudio\.com$", re.I)
 
 _HOSTED = {
     ProviderKind.GITHUB,
@@ -92,6 +99,49 @@ def _provider(value: Any) -> ProviderKind:
     return selected
 
 
+def _access_mode(value: Any) -> ProviderAccessMode:
+    normalized = _text(value).casefold().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "": ProviderAccessMode.AUTO,
+        "auto": ProviderAccessMode.AUTO,
+        "anonymous_public": ProviderAccessMode.ANONYMOUS_PUBLIC,
+        "anonymous": ProviderAccessMode.ANONYMOUS_PUBLIC,
+        "public": ProviderAccessMode.ANONYMOUS_PUBLIC,
+        "authenticated_read_only": ProviderAccessMode.AUTHENTICATED_READ_ONLY,
+        "authenticated": ProviderAccessMode.AUTHENTICATED_READ_ONLY,
+        "read_only": ProviderAccessMode.AUTHENTICATED_READ_ONLY,
+    }
+    selected = aliases.get(normalized)
+    if selected is None:
+        raise ValueError("provider_access_mode_invalid")
+    return selected
+
+
+def assert_no_raw_provider_credentials(payload: Mapping[str, Any]) -> None:
+    forbidden = {
+        "token",
+        "access_token",
+        "private_token",
+        "password",
+        "secret",
+        "credential",
+        "credentials",
+        "authorization",
+        "api_key",
+    }
+    def visit(value: Any) -> None:
+        if isinstance(value, Mapping):
+            for key, nested in value.items():
+                if str(key).casefold() in forbidden:
+                    raise ValueError("raw_provider_credentials_prohibited")
+                visit(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                visit(nested)
+
+    visit(payload)
+
+
 def _safe_segment(value: Any, error: str = "provider_repository_invalid") -> str:
     normalized = str(value or "").strip()
     if (
@@ -119,6 +169,148 @@ def _safe_path(value: Any, *, minimum_parts: int = 2) -> str:
     if len(parts) < minimum_parts:
         raise ValueError("provider_repository_invalid")
     return "/".join(_safe_segment(part) for part in parts)
+
+
+def _strip_git_suffix(value: str) -> str:
+    return value[:-4] if value.lower().endswith(".git") else value
+
+
+def _absolute_repository_url(value: Any) -> Any:
+    raw = str(value or "").strip()
+    if not raw.lower().startswith("https://"):
+        return None
+    parsed = urlparse(raw)
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.port is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("provider_repository_invalid")
+    return parsed
+
+
+def _path_parts(parsed: Any) -> list[str]:
+    return [part.strip() for part in parsed.path.split("/") if part.strip()]
+
+
+def _normalize_shorthand_repository(
+    provider: ProviderKind,
+    repository: str,
+    *,
+    organization: str = "",
+    project: str = "",
+) -> tuple[ProviderKind, str, str, str]:
+    if provider is ProviderKind.GITHUB:
+        return provider, normalize_repository(repository), "", ""
+    if provider is ProviderKind.GITLAB:
+        parts = _safe_path(repository, minimum_parts=2).split("/")
+        parts[-1] = _strip_git_suffix(parts[-1])
+        return provider, "/".join(parts), "", ""
+    if provider is ProviderKind.BITBUCKET_CLOUD:
+        path = _safe_path(repository, minimum_parts=2).split("/")
+        if len(path) != 2:
+            raise ValueError("bitbucket_repository_coordinates_invalid")
+        path[-1] = _strip_git_suffix(path[-1])
+        return provider, "/".join(path), "", ""
+    if provider is ProviderKind.AZURE_DEVOPS:
+        repo = _text(repository)
+        org = _text(organization)
+        project_name = _text(project)
+        if "/" in repo:
+            parts = _safe_path(repo, minimum_parts=3).split("/")
+            if len(parts) != 3:
+                raise ValueError("azure_provider_coordinates_invalid")
+            org, project_name, repo = parts
+        else:
+            repo = _safe_path(repo, minimum_parts=1)
+            if "/" in repo:
+                raise ValueError("azure_repository_name_invalid")
+            org = _safe_segment(org, "azure_provider_coordinates_invalid")
+            project_name = _safe_segment(
+                project_name, "azure_provider_coordinates_invalid"
+            )
+        return provider, _strip_git_suffix(repo), org, project_name
+    raise ValueError("provider_not_supported")
+
+
+def normalize_submitted_provider_repository(
+    repository: Any,
+    provider: Any,
+    *,
+    organization: Any = "",
+    project: Any = "",
+) -> tuple[ProviderKind, str, str, str]:
+    raw_repository = _required(repository, "repository")
+    selected_provider = _provider(provider or "github")
+    parsed = _absolute_repository_url(raw_repository)
+    if parsed is None:
+        return _normalize_shorthand_repository(
+            selected_provider,
+            raw_repository,
+            organization=_text(organization),
+            project=_text(project),
+        )
+
+    host = (parsed.hostname or "").lower().rstrip(".")
+    detected_provider = (
+        ProviderKind.GITHUB
+        if host == "github.com"
+        else ProviderKind.GITLAB
+        if host == "gitlab.com"
+        else ProviderKind.BITBUCKET_CLOUD
+        if host == "bitbucket.org"
+        else ProviderKind.AZURE_DEVOPS
+        if host == "dev.azure.com" or _VISUAL_STUDIO_HOST_RE.fullmatch(host)
+        else None
+    )
+    if detected_provider is None:
+        raise ValueError("provider_repository_host_not_supported")
+    if selected_provider is not detected_provider:
+        raise ValueError("provider_repository_selection_mismatch")
+
+    parts = _path_parts(parsed)
+    if selected_provider is ProviderKind.GITHUB:
+        if host != "github.com" or len(parts) != 2:
+            raise ValueError("github_repository_url_invalid")
+        return _normalize_shorthand_repository(
+            selected_provider,
+            f"{parts[0]}/{_strip_git_suffix(parts[1])}",
+        )
+    if selected_provider is ProviderKind.GITLAB:
+        if host != "gitlab.com" or len(parts) < 2 or "-" in parts:
+            raise ValueError("gitlab_repository_url_invalid")
+        parts[-1] = _strip_git_suffix(parts[-1])
+        return _normalize_shorthand_repository(selected_provider, "/".join(parts))
+    if selected_provider is ProviderKind.BITBUCKET_CLOUD:
+        if host != "bitbucket.org" or len(parts) != 2:
+            raise ValueError("bitbucket_repository_url_invalid")
+        return _normalize_shorthand_repository(
+            selected_provider,
+            f"{parts[0]}/{_strip_git_suffix(parts[1])}",
+        )
+
+    if host == "dev.azure.com":
+        if len(parts) != 4 or parts[2].lower() != "_git":
+            raise ValueError("azure_repository_url_invalid")
+        return _normalize_shorthand_repository(
+            selected_provider,
+            _strip_git_suffix(parts[3]),
+            organization=parts[0],
+            project=parts[1],
+        )
+    visual_studio = _VISUAL_STUDIO_HOST_RE.fullmatch(host)
+    if not visual_studio or len(parts) != 3 or parts[1].lower() != "_git":
+        raise ValueError("azure_repository_url_invalid")
+    return _normalize_shorthand_repository(
+        selected_provider,
+        _strip_git_suffix(parts[2]),
+        organization=visual_studio.group(1),
+        project=parts[0],
+    )
 
 
 def canonical_repository_label(
@@ -184,6 +376,8 @@ def _credential(
     host: str,
     scopes: tuple[str, ...],
     environ: Mapping[str, str] | None = None,
+    required: bool = False,
+    resolve_optional: bool = True,
 ):
     reference = build_reference(
         provider=provider,
@@ -193,7 +387,15 @@ def _credential(
         allowed_hosts=(host,),
         scopes=scopes,
     )
-    return EnvironmentCredentialResolver(environ).resolve(reference)
+    resolver = EnvironmentCredentialResolver(environ)
+    credential = (
+        resolver.resolve(reference)
+        if required
+        else resolver.resolve_optional(reference)
+        if resolve_optional
+        else None
+    )
+    return reference, credential
 
 
 def build_hosted_provider_client(
@@ -203,55 +405,81 @@ def build_hosted_provider_client(
     environ: Mapping[str, str] | None = None,
 ):
     selected = os.environ if environ is None else environ
+    access_mode = _access_mode(context.get("provider_access_mode"))
+    optional_fallback_authorized = (
+        access_mode is ProviderAccessMode.AUTO
+        and context.get("provider_credential_fallback_authorized") is True
+    )
+    activity_callback = context.get("_provider_activity_callback")
+    if activity_callback is not None and not callable(activity_callback):
+        raise ValueError("provider_activity_callback_invalid")
     policy = RetryPolicy(max_attempts=4, base_delay_seconds=0.25, max_delay_seconds=5, timeout_seconds=45, max_pages=200)
     if provider is ProviderKind.GITLAB:
         instance = _hosted_url(str(selected.get("NICO_GITLAB_URL") or ""), host="gitlab.com", default="https://gitlab.com")
+        reference, credential = _credential(
+            NeutralProviderKind.GITLAB,
+            env_var="NICO_GITLAB_TOKEN",
+            scheme="private_token",
+            key_id="comprehensive-gitlab",
+            host="gitlab.com",
+            scopes=("read_api", "read_repository"),
+            environ=selected,
+            required=access_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY,
+            resolve_optional=optional_fallback_authorized,
+        )
         return GitLabClient(
             instance_url=instance,
-            credential=_credential(
-                NeutralProviderKind.GITLAB,
-                env_var="NICO_GITLAB_TOKEN",
-                scheme="private_token",
-                key_id="comprehensive-gitlab",
-                host="gitlab.com",
-                scopes=("read_api", "read_repository"),
-                environ=selected,
-            ),
+            credential=credential,
+            credential_reference=reference,
+            access_mode=access_mode,
             retry_policy=policy,
+            activity_callback=activity_callback,
         )
     if provider is ProviderKind.BITBUCKET_CLOUD:
         instance = _hosted_url(str(selected.get("NICO_BITBUCKET_CLOUD_URL") or ""), host="api.bitbucket.org", default="https://api.bitbucket.org")
+        reference, credential = _credential(
+            NeutralProviderKind.BITBUCKET,
+            env_var="NICO_BITBUCKET_CLOUD_TOKEN",
+            scheme="bearer",
+            key_id="comprehensive-bitbucket-cloud",
+            host="api.bitbucket.org",
+            scopes=("repository:read", "pullrequest:read", "pipeline:read"),
+            environ=selected,
+            required=access_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY,
+            resolve_optional=optional_fallback_authorized,
+        )
         return BitbucketCloudClient(
             instance_url=instance,
-            credential=_credential(
-                NeutralProviderKind.BITBUCKET,
-                env_var="NICO_BITBUCKET_CLOUD_TOKEN",
-                scheme="bearer",
-                key_id="comprehensive-bitbucket-cloud",
-                host="api.bitbucket.org",
-                scopes=("repository:read", "pullrequest:read", "pipeline:read"),
-                environ=selected,
-            ),
+            credential=credential,
+            credential_reference=reference,
+            access_mode=access_mode,
             retry_policy=policy,
+            activity_callback=activity_callback,
         )
     if provider is ProviderKind.AZURE_DEVOPS:
         instance = _hosted_url(str(selected.get("NICO_AZURE_DEVOPS_URL") or ""), host="dev.azure.com", default="https://dev.azure.com")
         organization = _required(context.get("provider_organization") or selected.get("NICO_AZURE_DEVOPS_ORGANIZATION"), "provider_organization")
         project = _required(context.get("provider_project") or selected.get("NICO_AZURE_DEVOPS_PROJECT"), "provider_project")
+        reference, credential = _credential(
+            NeutralProviderKind.AZURE_DEVOPS,
+            env_var="NICO_AZURE_DEVOPS_TOKEN",
+            scheme="basic_token",
+            key_id="comprehensive-azure-devops",
+            host="dev.azure.com",
+            scopes=("vso.code", "vso.build", "vso.work"),
+            environ=selected,
+            required=access_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY,
+            resolve_optional=optional_fallback_authorized,
+        )
         return AzureDevOpsClient(
             instance_url=instance,
             organization=organization,
             project=project,
-            credential=_credential(
-                NeutralProviderKind.AZURE_DEVOPS,
-                env_var="NICO_AZURE_DEVOPS_TOKEN",
-                scheme="basic_token",
-                key_id="comprehensive-azure-devops",
-                host="dev.azure.com",
-                scopes=("vso.code", "vso.build", "vso.work"),
-                environ=selected,
-            ),
+            credential=credential,
+            credential_reference=reference,
+            access_mode=access_mode,
             retry_policy=policy,
+            activity_callback=activity_callback,
         )
     raise ValueError("hosted_provider_client_not_required")
 
@@ -320,7 +548,7 @@ def capture_hosted_provider_snapshot(
             raise ValueError("provider_snapshot_revision_mismatch")
         collection_id = _collection_id(run_id, provider, repository)
         safe_payload = _json_safe(collection.payload)
-        if owned:
+        if owned and client.credential is not None:
             secret = client.credential.secret.reveal()
             if secret and secret in json.dumps(safe_payload, sort_keys=True, default=str):
                 raise ValueError("provider_credential_leaked_into_collection")
@@ -347,6 +575,8 @@ def capture_hosted_provider_snapshot(
                     "payload": safe_payload,
                     "warnings": [],
                     "read_only": True,
+                    "access_mode": collection.access_mode,
+                    "credential_used": collection.credential_used,
                     "human_review_required": True,
                     "client_delivery_allowed": False,
                 },
@@ -365,6 +595,15 @@ def capture_hosted_provider_snapshot(
             "provider_repository_id": _text(envelope.identity.repository_id),
             "provider_collection_id": collection_id,
             "provider_source_fingerprint": source_fingerprint,
+            "access_mode": collection.access_mode,
+            "credential_used": collection.credential_used,
+            "provider_access_mode": collection.access_mode,
+            "provider_credential_used": collection.credential_used,
+            "required_source_evidence_complete": True,
+            "provider_capability_states": list(safe_payload.get("capability_status") or []),
+            "pagination_complete": collection.pagination_complete,
+            "provider_rate_limit_state": dict(collection.rate_limit_state or {}),
+            "provider_collection_limitations": list(collection.collection_limitations),
             "customer_id": _text(context.get("customer_id")) or "default_customer",
             "project_id": _text(context.get("project_id")) or "default_project",
             "default_branch": _text(envelope.identity.default_branch),
@@ -377,7 +616,7 @@ def capture_hosted_provider_snapshot(
             "tree_identity_type": "provider_snapshot_manifest_sha256",
             "source": f"{provider.value}_api_read_only",
             "commit_capture_method": f"{provider.value}_api_exact_revision",
-            "repository_visibility": "authorized_provider_scope",
+            "repository_visibility": "public" if not collection.credential_used else "authorized_provider_scope",
             "provider_organization": organization,
             "provider_project": project,
             "captured_at": collection.collected_at,
@@ -497,6 +736,8 @@ def checkout_hosted_provider_snapshot(
     workspace: Path,
     env: Mapping[str, str],
     *,
+    access_mode: str | None = None,
+    credential_used: bool | None = None,
     environ: Mapping[str, str] | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[Path | None, str, list[str]]:
@@ -508,41 +749,78 @@ def checkout_hosted_provider_snapshot(
         return None, "", ["git is unavailable in this worker image; provider snapshot checkout was skipped."]
     if not _SHA_RE.fullmatch(str(commit_sha or "")):
         return None, "", ["A valid full provider snapshot revision is required before scanner execution."]
-    selected = os.environ if environ is None else environ
-    secret = str(selected.get(token_env) or "")
-    if not secret:
-        return None, "", [f"{provider.value} server-side credential is not configured for exact snapshot checkout."]
+    try:
+        selected_mode = _access_mode(access_mode)
+    except ValueError:
+        return None, "", ["provider_snapshot_access_binding_invalid"]
+    if (
+        selected_mode is ProviderAccessMode.AUTO
+        or not isinstance(credential_used, bool)
+        or credential_used is not (selected_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY)
+    ):
+        return None, "", ["provider_snapshot_access_binding_invalid"]
 
-    askpass = workspace / "nico-provider-git-askpass.sh"
-    askpass.write_text(
-        "#!/bin/sh\ncase \"$1\" in\n  *Username*) printf '%s\\n' \"$NICO_GIT_AUTH_USERNAME\" ;;\n  *) printf '%s\\n' \"$NICO_GIT_AUTH_PASSWORD\" ;;\nesac\n",
-        encoding="utf-8",
-    )
-    askpass.chmod(0o700)
     git_env = dict(env)
+    for key in (
+        token_env,
+        "GIT_ASKPASS",
+        "SSH_ASKPASS",
+        "NICO_GIT_AUTH_USERNAME",
+        "NICO_GIT_AUTH_PASSWORD",
+    ):
+        git_env.pop(key, None)
     git_env.update(
         {
             "GIT_TERMINAL_PROMPT": "0",
-            "GIT_ASKPASS": str(askpass),
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
-            "NICO_GIT_AUTH_USERNAME": username,
-            "NICO_GIT_AUTH_PASSWORD": secret,
         }
     )
+    if selected_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY:
+        selected = os.environ if environ is None else environ
+        try:
+            secret = SecretValue(str(selected.get(token_env) or "")).reveal()
+        except CredentialError:
+            return None, "", [f"{provider.value} read-only credential is not safely configured for exact snapshot checkout."]
+        askpass = workspace / "nico-provider-git-askpass.sh"
+        askpass.write_text(
+            "#!/bin/sh\ncase \"$1\" in\n  *Username*) printf '%s\\n' \"$NICO_GIT_AUTH_USERNAME\" ;;\n  *) printf '%s\\n' \"$NICO_GIT_AUTH_PASSWORD\" ;;\nesac\n",
+            encoding="utf-8",
+        )
+        askpass.chmod(0o700)
+        git_env.update(
+            {
+                "GIT_ASKPASS": str(askpass),
+                "NICO_GIT_AUTH_USERNAME": username,
+                "NICO_GIT_AUTH_PASSWORD": secret,
+            }
+        )
+
+    def git_command(*arguments: str) -> list[str]:
+        return [
+            "git",
+            "-c",
+            "credential.helper=",
+            "-c",
+            "http.extraHeader=",
+            "-c",
+            "http.followRedirects=false",
+            *arguments,
+        ]
+
     repo_path = workspace / "repo"
-    clone = _git_run(["git", "-c", "credential.helper=", "clone", "--filter=blob:none", "--no-checkout", clone_url, str(repo_path)], cwd=None, env=git_env, runner=runner)
+    clone = _git_run(git_command("clone", "--filter=blob:none", "--no-checkout", clone_url, str(repo_path)), cwd=None, env=git_env, runner=runner)
     if clone.returncode != 0:
         return None, "", [f"{provider.value} snapshot-bound git clone failed safely."]
-    fetch = _git_run(["git", "-c", "credential.helper=", "fetch", "--depth", "1", "origin", commit_sha], cwd=repo_path, env=git_env, runner=runner)
+    fetch = _git_run(git_command("fetch", "--depth", "1", "origin", commit_sha), cwd=repo_path, env=git_env, runner=runner)
     if fetch.returncode != 0:
         shutil.rmtree(repo_path, ignore_errors=True)
         return None, "", [f"{provider.value} exact snapshot revision could not be fetched."]
-    checkout = _git_run(["git", "checkout", "--detach", commit_sha], cwd=repo_path, env=git_env, runner=runner)
+    checkout = _git_run(git_command("checkout", "--detach", commit_sha), cwd=repo_path, env=git_env, runner=runner)
     if checkout.returncode != 0:
         shutil.rmtree(repo_path, ignore_errors=True)
         return None, "", [f"{provider.value} exact snapshot revision could not be checked out."]
-    resolved = _git_run(["git", "rev-parse", "HEAD"], cwd=repo_path, env=git_env, timeout=30, runner=runner)
+    resolved = _git_run(git_command("rev-parse", "HEAD"), cwd=repo_path, env=git_env, timeout=30, runner=runner)
     actual = (resolved.stdout or "").strip().casefold()
     if resolved.returncode != 0 or actual != commit_sha.casefold():
         shutil.rmtree(repo_path, ignore_errors=True)
@@ -633,6 +911,121 @@ def _persist_evidence(bundle: Mapping[str, Any], store: StorageAdapter, filename
     )
 
 
+def _provider_access_report_evidence(
+    context: Mapping[str, Any],
+    snapshot: Mapping[str, Any],
+    repository_evidence: Mapping[str, Any],
+) -> list[str]:
+    """Author safe, localized report lines from the frozen provider-access snapshot."""
+
+    spanish = _text(context.get("report_language")).casefold().replace("_", "-").startswith("es")
+    provider = {
+        "gitlab": "GitLab",
+        "bitbucket": "Bitbucket Cloud",
+        "azure_devops": "Azure DevOps",
+    }.get(_text(snapshot.get("provider")), _text(snapshot.get("provider")))
+    access_mode = {
+        "anonymous_public": "Público anónimo" if spanish else "Anonymous public",
+        "authenticated_read_only": "Autenticado de solo lectura" if spanish else "Authenticated read-only",
+    }.get(_text(snapshot.get("access_mode")), "No determinado" if spanish else "Undetermined")
+    yes = "Sí" if spanish else "Yes"
+    no = "No"
+    bool_text = lambda value: yes if value is True else no
+    capability_states = list(snapshot.get("provider_capability_states") or [])
+    rate_limited = any(
+        isinstance(item, Mapping) and _text(item.get("state")) == "rate_limited"
+        for item in capability_states
+    )
+    limitation_count = len(list(snapshot.get("provider_collection_limitations") or []))
+    exact_locator_count = int(repository_evidence.get("exact_source_locator_count") or 0)
+
+    if spanish:
+        lines = [
+            f"Proveedor: {provider}.",
+            f"Identidad del repositorio: {_text(snapshot.get('repository'))}.",
+            f"Revisión inmutable: {_text(snapshot.get('commit_sha'))}.",
+            f"Modo de acceso: {access_mode}.",
+            f"Credencial del proveedor utilizada: {bool_text(snapshot.get('credential_used'))}.",
+            f"Evidencia fuente requerida completa: {bool_text(snapshot.get('required_source_evidence_complete'))}.",
+            f"Paginación completa: {bool_text(snapshot.get('pagination_complete'))}.",
+            "Estado de límite de solicitudes: Se registró una limitación del proveedor."
+            if rate_limited
+            else "Estado de límite de solicitudes: Sin limitación activa registrada.",
+            f"Huella digital de la fuente: {_text(snapshot.get('provider_source_fingerprint'))}.",
+            f"Localizadores de fuente exacta: {exact_locator_count} presentes.",
+            f"Identidad de la instantánea de evaluación: {_text(snapshot.get('snapshot_id'))}.",
+            f"Limitaciones de recopilación registradas: {limitation_count}.",
+            "Revisión humana: Obligatoria.",
+            "Aprobación humana: Pendiente de una acción explícita del revisor.",
+            "Entrega al cliente: No autorizada.",
+        ]
+    else:
+        lines = [
+            f"Provider: {provider}.",
+            f"Repository identity: {_text(snapshot.get('repository'))}.",
+            f"Immutable revision: {_text(snapshot.get('commit_sha'))}.",
+            f"Access mode: {access_mode}.",
+            f"Provider credential used: {bool_text(snapshot.get('credential_used'))}.",
+            f"Required source evidence complete: {bool_text(snapshot.get('required_source_evidence_complete'))}.",
+            f"Pagination complete: {bool_text(snapshot.get('pagination_complete'))}.",
+            "Rate-limit status: A provider limitation was recorded."
+            if rate_limited
+            else "Rate-limit status: No active provider limit was recorded.",
+            f"Source fingerprint: {_text(snapshot.get('provider_source_fingerprint'))}.",
+            f"Exact-source locators: {exact_locator_count} present.",
+            f"Assessment snapshot identity: {_text(snapshot.get('snapshot_id'))}.",
+            f"Collection limitations recorded: {limitation_count}.",
+            "Human review: Required.",
+            "Human approval: Pending explicit reviewer action.",
+            "Client delivery: Not authorized.",
+        ]
+
+    capability_labels = {
+        "repository": ("Repository", "Repositorio"),
+        "commits": ("Commits", "Commits"),
+        "branches": ("Branches", "Ramas"),
+        "tree": ("Source tree", "Árbol de fuentes"),
+        "blobs": ("Source objects", "Objetos fuente"),
+        "tags": ("Tags", "Etiquetas"),
+        "change_requests": ("Change requests", "Solicitudes de cambio"),
+        "ci_runs": ("Pipeline runs", "Ejecuciones de canalización"),
+        "ci_jobs": ("Pipeline jobs", "Trabajos de canalización"),
+        "environments": ("Environments", "Entornos"),
+        "deployments": ("Deployments", "Despliegues"),
+        "work_items": ("Issues or work items", "Incidencias o elementos de trabajo"),
+        "releases": ("Releases", "Versiones"),
+        "source_links": ("Exact-source links", "Enlaces de fuente exacta"),
+    }
+    state_labels = {
+        "supported": ("Collected", "Recopilado"),
+        "supported_empty": ("Supported but empty", "Compatible, pero vacío"),
+        "supported_limited": ("Collected with explicit limits", "Recopilado con límites explícitos"),
+        "unavailable_authentication": ("Unavailable without read-only authentication", "No disponible sin autenticación de solo lectura"),
+        "unavailable_permission": ("Unavailable with the current permission", "No disponible con el permiso actual"),
+        "unavailable_provider": ("Unavailable due to provider limitation", "No disponible por una limitación del proveedor"),
+        "unavailable_configuration": ("Unavailable due to repository configuration", "No disponible por la configuración del repositorio"),
+        "rate_limited": ("Unavailable because the provider rate limit was reached", "No disponible porque se alcanzó el límite de solicitudes del proveedor"),
+        "collection_failed": ("Collection failed and was not treated as complete", "La recopilación falló y no se trató como completa"),
+        "not_applicable": ("Not applicable", "No aplicable"),
+        "not_assessed": ("Not assessed", "No evaluado"),
+        "unsupported": ("Unavailable due to provider limitation", "No disponible por una limitación del proveedor"),
+        "not_configured": ("Unavailable due to repository configuration", "No disponible por la configuración del repositorio"),
+    }
+    for item in capability_states:
+        if not isinstance(item, Mapping):
+            continue
+        capability = _text(item.get("capability"))
+        state = _text(item.get("state"))
+        label = capability_labels.get(capability, (capability.replace("_", " ").title(), capability.replace("_", " ").title()))[1 if spanish else 0]
+        state_label = state_labels.get(state, (state.replace("_", " ").title(), state.replace("_", " ").title()))[1 if spanish else 0]
+        lines.append(
+            f"Capacidad {label}: {state_label}."
+            if spanish
+            else f"Capability {label}: {state_label}."
+        )
+    return lines
+
+
 def collect_hosted_provider_repository_evidence(
     context: Mapping[str, Any],
     snapshot: Mapping[str, Any],
@@ -678,7 +1071,14 @@ def collect_hosted_provider_repository_evidence(
         root = Path(temporary)
         from nico import scanner_worker as scanner_base
 
-        repo_path, actual_sha, checkout_notes = checkout_hosted_provider_snapshot(repository, _text(snapshot.get("commit_sha")), root, scanner_base.clean_env(root))
+        repo_path, actual_sha, checkout_notes = checkout_hosted_provider_snapshot(
+            repository,
+            _text(snapshot.get("commit_sha")),
+            root,
+            scanner_base.clean_env(root),
+            access_mode=_text(snapshot.get("access_mode")),
+            credential_used=snapshot.get("credential_used"),
+        )
         notes.extend(checkout_notes)
         if repo_path is None or actual_sha != _text(snapshot.get("commit_sha")).casefold():
             unavailable = {
@@ -732,6 +1132,15 @@ def collect_hosted_provider_repository_evidence(
         "repository_provider": provider,
         "repository_provider_instance": snapshot.get("provider_instance") or "",
         "provider_repository_id": snapshot.get("provider_repository_id") or "",
+        "provider_access_mode": snapshot.get("access_mode") or "",
+        "provider_credential_used": snapshot.get("credential_used") is True,
+        "required_source_evidence_complete": snapshot.get("required_source_evidence_complete") is True,
+        "provider_pagination_complete": snapshot.get("pagination_complete") is True,
+        "provider_rate_limit_state": dict(snapshot.get("provider_rate_limit_state") or {}),
+        "provider_collection_limitations": list(snapshot.get("provider_collection_limitations") or []),
+        "provider_source_fingerprint": snapshot.get("provider_source_fingerprint") or "",
+        "exact_source_locator_count": len(envelope.exact_source_locators),
+        "assessment_snapshot_id": snapshot_id,
         "provider_capability_states": capability_states,
         "code_evidence_scope": "Repository files, manifests, CI configuration, source signals, and complexity are read from the exact immutable provider revision.",
         "operational_evidence_scope": "Change requests and provider-native CI/job/deployment records are separately retained provider evidence and do not mutate exact-revision code truth.",
@@ -871,9 +1280,7 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
         raise TypeError("request_body_must_be_object")
     if payload.get("authorized") is not True or payload.get("authorization_confirmed") is not True:
         raise ValueError("explicit_authorization_required")
-    forbidden = {"token", "access_token", "private_token", "password", "secret", "credential", "credentials", "authorization", "api_key"}
-    if any(str(key).casefold() in forbidden for key in payload):
-        raise ValueError("raw_provider_credentials_prohibited")
+    assert_no_raw_provider_credentials(payload)
 
     provider = _provider(payload.get("provider") or "github")
     provider_repository = _required(payload.get("repository"), "repository")
@@ -930,6 +1337,8 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
                 "customer_id": customer_id,
                 "project_id": project_id,
                 "expected_commit_sha": requested_sha,
+                "provider_access_mode": ProviderAccessMode.AUTHENTICATED_READ_ONLY.value,
+                "provider_credential_fallback_authorized": True,
             },
             provider,
         )
@@ -1001,6 +1410,11 @@ def install_hosted_provider_comprehensive_runtime(app: FastAPI) -> dict[str, Any
                     summary="Exact-revision provider repository, dependency, architecture, workflow, activity, and complexity evidence were attached through the canonical provider-neutral path.",
                     repository_evidence=repository_evidence,
                     complexity_evidence=complexity_evidence,
+                    provider_access_evidence=_provider_access_report_evidence(
+                        context,
+                        snapshot,
+                        repository_evidence,
+                    ),
                     evidence={
                         "repository_provider": snapshot.get("provider"),
                         "repository_evidence_id": repository_evidence.get("evidence_id"),
@@ -1026,7 +1440,18 @@ def install_hosted_provider_comprehensive_runtime(app: FastAPI) -> dict[str, Any
         def clone_repository_at_snapshot(repository: str, commit_sha: str, workspace: Path, env: dict[str, str]):
             if _clone_spec(repository) is None:
                 return original_clone(repository, commit_sha, workspace, env)
-            return checkout_hosted_provider_snapshot(repository, commit_sha, workspace, env)
+            credential_used = {
+                "true": True,
+                "false": False,
+            }.get(_text(env.get("NICO_PROVIDER_CREDENTIAL_USED")).casefold())
+            return checkout_hosted_provider_snapshot(
+                repository,
+                commit_sha,
+                workspace,
+                env,
+                access_mode=env.get("NICO_PROVIDER_ACCESS_MODE"),
+                credential_used=credential_used,
+            )
 
         setattr(clone_repository_at_snapshot, _PATCH_MARKER, True)
         setattr(clone_repository_at_snapshot, "_nico_previous", original_clone)
@@ -1082,10 +1507,13 @@ def install_hosted_provider_comprehensive_runtime(app: FastAPI) -> dict[str, Any
 __all__ = [
     "OPERATOR_INTAKE_ROUTE",
     "VERSION",
+    "_access_mode",
+    "assert_no_raw_provider_credentials",
     "build_hosted_provider_client",
     "canonical_repository_label",
     "capture_hosted_provider_snapshot",
     "checkout_hosted_provider_snapshot",
     "collect_hosted_provider_repository_evidence",
     "install_hosted_provider_comprehensive_runtime",
+    "normalize_submitted_provider_repository",
 ]

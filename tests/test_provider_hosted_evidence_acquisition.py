@@ -353,7 +353,11 @@ def test_rate_limit_headers_are_retained_without_credentials() -> None:
         if path.endswith("/repository/commits"):
             return httpx.Response(200, headers=headers, json=[{"id": revision}])
         if path.endswith("/repository/tree"):
-            return httpx.Response(200, headers=headers, json=[])
+            return httpx.Response(
+                200,
+                headers=headers,
+                json=[{"id": "f" * 40, "path": "src/app.py", "type": "blob"}],
+            )
         if any(path.endswith(suffix) for suffix in (
             "/repository/branches", "/repository/tags", "/merge_requests", "/pipelines",
             "/issues", "/environments", "/deployments", "/releases",
@@ -367,7 +371,16 @@ def test_rate_limit_headers_are_retained_without_credentials() -> None:
 
     collector = GitLabClient(
         instance_url="https://gitlab.example.com",
-        credential=credential("gitlab", "gitlab.example.com", "private_token"),
+        credential=None,
+        credential_reference=build_reference(
+            provider="gitlab",
+            env_var="TOKEN",
+            scheme="private_token",
+            key_id="gitlab-anonymous-rate-limit-test",
+            allowed_hosts=("gitlab.example.com",),
+            scopes=("read",),
+        ),
+        access_mode="anonymous_public",
         client=httpx.Client(transport=httpx.MockTransport(handler)),
         retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
     )

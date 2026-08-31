@@ -113,12 +113,12 @@ def test_webkit_gate_requires_zero_allocated_evidence_controls_and_failure_layou
     assert "rich_editor_node_count" in source
     assert "client_context_single_line_input_count" in source
     assert "client_context_state_button_count" in source
-    assert 'name="Exclude from scope", exact=True' in source
-    assert '"excluded_from_scope"' in source
-    assert '"not_supplied"' in source
-    assert '"optional_evidence_controls_allocated": 9' in source
-    assert '"lightweight_client_context_state_buttons_allocated": 6' in source
-    assert '"excluded_state_visually_distinct_from_not_supplied": True' in source
+    assert 'name="Exclude from scope", exact=True).count() == 0' in source
+    assert 'name="Not applicable", exact=True).count() == 0' in source
+    assert '"optional_evidence_controls_allocated": 3' in source
+    assert '"lightweight_client_context_state_buttons_allocated": 0' in source
+    assert '"per_field_state_controls_absent": True' in source
+    assert '"included_human_literal_preserved": True' in source
     assert "authorization_reachable" in source
     assert "assessment_action_reachable" in source
     assert "ancestor_clipping_absent" in source
