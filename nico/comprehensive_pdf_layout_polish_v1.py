@@ -563,8 +563,11 @@ def _render_polished_review_pdf(
         pagesize=letter,
         leftMargin=.48 * inch,
         rightMargin=.48 * inch,
-        topMargin=.34 * inch,
-        bottomMargin=.49 * inch,
+        // Two fixed-height review sections plus their spacer require 10.08 inches.
+        // These margins leave 10.133 inches inside ReportLab's padded frame while
+        // keeping the footer below the content frame.
+        topMargin=.30 * inch,
+        bottomMargin=.40 * inch,
         invariant=1,
         title="NICO Comprehensive Client Review",
         author="NICO",
