@@ -84,8 +84,10 @@ def test_final_spanish_worker_localizes_long_evidence_before_layout() -> None:
                     "complete for review; client acceptance remains human-only."
                 ),
                 "evidence": [
-                    "top_technical_priorities[0].reason: Snapshot-bound source footprint "
-                    "and measured complexity evidence were evaluated without score override."
+                    "top_technical_priorities[0].reason: Internal implementation detail "
+                    "that must not render in the client report.",
+                    "Snapshot-bound source footprint and measured complexity evidence "
+                    "were evaluated without score override.",
                 ],
             }
         ]
@@ -99,10 +101,12 @@ def test_final_spanish_worker_localizes_long_evidence_before_layout() -> None:
         assert text_bound_violations(pdf) == []
         assert "pip-audit: ejecución completada; commit exacto=sí" in normalized
         assert (
-            "top_technical_priorities[0].reason: Se evaluaron la huella del código fuente "
-            "vinculada a la instantánea y la evidencia de complejidad medida sin "
+            "Se evaluaron la huella del código fuente vinculada a la instantánea y la "
+            "evidencia de complejidad medida sin "
             "sobrescribir la puntuación."
         ) in normalized
+        assert "top_technical_priorities[0].reason" not in text
+        assert "Internal implementation detail" not in text
         assert "pip-audit: execution completed" not in text
         assert "Snapshot-bound source footprint" not in text
         assert result["human_review_required"] is True
