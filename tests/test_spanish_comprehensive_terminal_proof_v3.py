@@ -165,7 +165,14 @@ def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None
     )
     helper = source[helper_start:helper_end]
     commercial = source[helper_end:]
+    strategic_evidence = (
+        ROOT / "apps/web/app/assessment/strategicEvidence.ts"
+    ).read_text(encoding="utf-8")
 
+    assert (
+        'if (value.excluded && value.exclusion_rationale.trim()) return "excluded";'
+        in strategic_evidence
+    )
     assert '"Justificación de exclusión"' in helper
     assert 'wait_for(state="visible", timeout=30_000)' in helper
     assert 'assert exclusion_rationale.input_value() == ""' in helper
@@ -175,6 +182,9 @@ def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None
         in helper
     )
     assert '"exclusion_rationale_supplied": True' in helper
+    assert helper.index(
+        "exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)"
+    ) < helper.index('"Excluido con justificación"')
     assert '"expected": "unmounted_after_module_exclusion"' in helper
     assert '"excluded_field_controls_unmounted": True' in helper
     assert 'assert count == 0' in helper
