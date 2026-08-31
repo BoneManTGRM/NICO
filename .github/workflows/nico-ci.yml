@@ -177,9 +177,11 @@ jobs:
         import hashlib
         import json
         import os
+        import re
         import signal
         import subprocess
         import sys
+        import xml.etree.ElementTree as ET
 
         shard = int(os.environ["NICO_TEST_SHARD"])
         total = int(os.environ["NICO_TEST_SHARDS"])
@@ -218,6 +220,62 @@ jobs:
 
         failures: list[dict[str, object]] = []
         completed: list[dict[str, object]] = []
+
+        def redacted_failure(value: object) -> str:
+            rendered = " ".join(str(value or "").split())
+            patterns = (
+                r"(?i)(authorization|private-token|x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)(\\s*[:=]\\s*|\\s+)([^\\s,;]+)",
+                r"(?i)\\b(bearer|basic)\\s+[^\\s,;]+",
+            )
+            for pattern in patterns:
+                rendered = re.sub(
+                    pattern,
+                    lambda match: f"{match.group(1)} [REDACTED]",
+                    rendered,
+                )
+            return rendered[:2400]
+
+        def emit_junit_failures(path: Path) -> None:
+            try:
+                root = ET.parse(path).getroot()
+            except Exception as exc:
+                print(
+                    f"Unable to parse failing JUnit result {path}: "
+                    f"{redacted_failure(exc)}",
+                    flush=True,
+                )
+                return
+            emitted = False
+            for testcase in root.iter("testcase"):
+                for kind in ("failure", "error"):
+                    failure = testcase.find(kind)
+                    if failure is None:
+                        continue
+                    emitted = True
+                    identity = "::".join(
+                        part
+                        for part in (
+                            testcase.get("classname"),
+                            testcase.get("name"),
+                        )
+                        if part
+                    )
+                    detail = " | ".join(
+                        part
+                        for part in (
+                            failure.get("message"),
+                            failure.text,
+                        )
+                        if part
+                    )
+                    print(
+                        f"PYTEST {kind.upper()} {identity}: "
+                        f"{redacted_failure(detail)}",
+                        flush=True,
+                    )
+            if not emitted:
+                print(f"Failing JUnit result had no failure node: {path}", flush=True)
+
         with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
             for index, path in enumerate(selected, start=1):
                 identity = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:12]
@@ -271,6 +329,7 @@ jobs:
                 completed.append(record)
                 if returncode != 0:
                     failures.append(record)
+                    emit_junit_failures(junit_path)
                 print(
                     f"{marker} -> {'TIMEOUT' if timed_out else returncode}",
                     flush=True,
