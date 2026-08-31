@@ -34,6 +34,13 @@ def _controller(path: Path) -> ComprehensiveApiController:
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
+            for field in (
+                "repository_provider",
+                "provider_access_mode",
+                "provider_credential_used",
+            ):
+                if field in context:
+                    result[field] = context[field]
             if _capability == "final_report_generation":
                 identity = {
                     key: context[key]
@@ -133,6 +140,33 @@ def test_start_requires_explicit_authorization(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="explicit_authorization_required"):
         controller.start(payload)
+
+
+def test_anonymous_provider_access_binding_survives_durable_stage_context(
+    tmp_path: Path,
+) -> None:
+    controller = _controller(tmp_path / "provider-access.db")
+    payload = _payload()
+    payload.update(
+        {
+            "repository_provider": "github",
+            "provider_access_mode": "anonymous_public",
+            "provider_credential_used": False,
+        }
+    )
+
+    controller.start(payload)
+    stored = controller._service.load_read_only(payload["run_id"])  # type: ignore[attr-defined]
+    assert stored["repository_provider"] == "github"
+    assert stored["provider_access_mode"] == "anonymous_public"
+    assert stored["provider_credential_used"] is False
+
+    controller.continue_run(payload["run_id"], {"max_stages": 1})
+    continued = controller._service.load_read_only(payload["run_id"])  # type: ignore[attr-defined]
+    stage = continued["stage_results"]["authorization_and_scope"]
+    assert stage["repository_provider"] == "github"
+    assert stage["provider_access_mode"] == "anonymous_public"
+    assert stage["provider_credential_used"] is False
 
 
 def test_status_returns_exact_persisted_run(tmp_path: Path) -> None:

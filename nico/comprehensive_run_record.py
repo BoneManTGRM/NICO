@@ -97,6 +97,9 @@ def create_comprehensive_run_record(
     assessment_depth: str = "strategic",
     report_language: str = "en",
     human_evidence: Any = None,
+    repository_provider: str = "",
+    provider_access_mode: str = "",
+    provider_credential_used: bool | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     if not authorized:
@@ -131,6 +134,21 @@ def create_comprehensive_run_record(
         "client_delivery_allowed": False,
         "terminal": False,
     }
+    normalized_provider = str(repository_provider or "").strip()
+    normalized_access_mode = str(provider_access_mode or "").strip()
+    if normalized_provider:
+        record["repository_provider"] = normalized_provider
+    if normalized_access_mode:
+        if not (
+            normalized_access_mode == "anonymous_public"
+            and provider_credential_used is False
+        ) and not (
+            normalized_access_mode == "authenticated_read_only"
+            and provider_credential_used is True
+        ):
+            raise ValueError("provider_access_binding_invalid")
+        record["provider_access_mode"] = normalized_access_mode
+        record["provider_credential_used"] = provider_credential_used
     record["integrity_sha256"] = _record_hash(record)
     return record
 
