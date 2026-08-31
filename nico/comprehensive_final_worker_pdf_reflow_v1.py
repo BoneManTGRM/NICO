@@ -4,7 +4,7 @@ import re
 from functools import wraps
 from typing import Any
 
-VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.8"
+VERSION = "nico.comprehensive_final_worker_pdf_reflow.v1.9"
 _MARKER = "__nico_final_worker_pdf_reflow_v1__"
 _SEMANTIC_MARKER = "__nico_final_worker_semantic_navigation_v1__"
 _INSTALLED = False
@@ -38,12 +38,13 @@ def _bind_historical_spanish_semantic_aliases() -> bool:
 
 
 def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
-    """Bind safe compaction, localized metadata labels, and semantic navigation.
+    """Bind safe compaction, polished PDF layout, and semantic navigation.
 
     Display metadata persistence remains stable source behavior in the canonical intake,
     detached-worker identity projection, and report package builder. This worker-local
-    installer changes presentation only: es-MX metadata labels, sparse-page reflow, final
-    semantic TOC/bookmarks, and physical page labels.
+    installer changes presentation only: es-MX metadata labels, sparse-page reflow,
+    orphan-safe section placement, readable review-companion typography, final semantic
+    TOC/bookmarks, and physical page labels.
     """
 
     global _INSTALLED
@@ -58,6 +59,9 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
     )
+    from nico.comprehensive_pdf_layout_polish_v1 import (
+        install_comprehensive_pdf_layout_polish_v1,
+    )
     from nico.comprehensive_semantic_navigation_v1 import (
         semantic_renumber_and_outline,
     )
@@ -67,6 +71,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         re.I,
     )
 
+    layout_polish = install_comprehensive_pdf_layout_polish_v1()
     historical_aliases_bound = _bind_historical_spanish_semantic_aliases()
     metadata_localization = install_display_metadata_localization_v1()
     install_comprehensive_manifest_navigation_v1()
@@ -81,6 +86,17 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             "display_metadata_preservation_is_stable_source": True,
             "display_metadata_es_mx_labels_bound": (
                 metadata_localization.get("status") in {"installed", "already_installed"}
+            ),
+            "pdf_layout_polish_bound": layout_polish.get("bound") is True,
+            "toc_single_page_capacity_above_four_phase_matrix": (
+                layout_polish.get("toc_single_page_capacity_above_four_phase_matrix")
+                is True
+            ),
+            "sparse_section_orphans_prevented": (
+                layout_polish.get("sparse_section_keep_together") is True
+            ),
+            "review_companion_typography_polished": (
+                float(layout_polish.get("review_small_font_size") or 0) >= 6.8
             ),
             "historical_spanish_semantic_aliases_bound": historical_aliases_bound,
             "canonical_semantic_titles_unchanged": True,
@@ -114,6 +130,16 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
         "display_metadata_preservation_is_stable_source": True,
         "display_metadata_es_mx_labels_bound": (
             metadata_localization.get("status") in {"installed", "already_installed"}
+        ),
+        "pdf_layout_polish_bound": layout_polish.get("bound") is True,
+        "toc_single_page_capacity_above_four_phase_matrix": (
+            layout_polish.get("toc_single_page_capacity_above_four_phase_matrix") is True
+        ),
+        "sparse_section_orphans_prevented": (
+            layout_polish.get("sparse_section_keep_together") is True
+        ),
+        "review_companion_typography_polished": (
+            float(layout_polish.get("review_small_font_size") or 0) >= 6.8
         ),
         "historical_spanish_semantic_aliases_bound": historical_aliases_bound,
         "canonical_semantic_titles_unchanged": True,
