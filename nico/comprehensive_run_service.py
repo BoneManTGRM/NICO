@@ -199,6 +199,9 @@ class ComprehensiveRunService:
         report_language: str = "en",
         human_evidence: Any = None,
         engagement_metadata: Any = None,
+        repository_provider: str = "",
+        provider_access_mode: str = "",
+        provider_credential_used: bool | None = None,
     ) -> dict[str, Any]:
         record = create_comprehensive_run_record(
             run_id=run_id,
@@ -211,6 +214,9 @@ class ComprehensiveRunService:
             assessment_depth=assessment_depth,
             report_language=report_language,
             human_evidence=human_evidence,
+            repository_provider=repository_provider,
+            provider_access_mode=provider_access_mode,
+            provider_credential_used=provider_credential_used,
         )
         normalized_engagement = normalize_comprehensive_engagement_metadata(
             engagement_metadata
@@ -505,6 +511,13 @@ class ComprehensiveRunService:
                 "human_review_required": True,
                 "client_delivery_allowed": False,
             }
+            for field in (
+                "repository_provider",
+                "provider_access_mode",
+                "provider_credential_used",
+            ):
+                if field in record:
+                    context[field] = deepcopy(record[field])
             if stage_id == FINAL_REPORT_STAGE_ID:
                 return self._final_report_publication.advance(record, executor, context)
             if stage_id in BACKGROUND_STAGE_IDS:

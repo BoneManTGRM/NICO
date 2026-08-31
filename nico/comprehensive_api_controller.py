@@ -1016,6 +1016,17 @@ class ComprehensiveApiController:
             body.get("report_language") or "en",
             "report_language",
         )
+        repository_provider = str(body.get("repository_provider") or "").strip()
+        provider_access_mode = str(body.get("provider_access_mode") or "").strip()
+        provider_credential_used = body.get("provider_credential_used")
+        if provider_access_mode and not (
+            provider_access_mode == "anonymous_public"
+            and provider_credential_used is False
+        ) and not (
+            provider_access_mode == "authenticated_read_only"
+            and provider_credential_used is True
+        ):
+            raise ValueError("provider_access_binding_invalid")
         if (
             body.get("authorization_confirmed") is not True
             or body.get("authorized") is not True
@@ -1040,6 +1051,11 @@ class ComprehensiveApiController:
             report_language=report_language,
             human_evidence=body.get("human_evidence"),
             engagement_metadata=engagement_metadata,
+            repository_provider=repository_provider,
+            provider_access_mode=provider_access_mode,
+            provider_credential_used=(
+                provider_credential_used if provider_access_mode else None
+            ),
         )
         return self._response(record, operation="started")
 

@@ -167,12 +167,15 @@ def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
             "provider_access_mode": (
                 snapshot.get("access_mode")
                 or snapshot.get("provider_access_mode")
+                or context.get("provider_access_mode")
                 or ""
             ),
             "provider_credential_used": (
                 snapshot.get("credential_used")
                 if isinstance(snapshot.get("credential_used"), bool)
                 else snapshot.get("provider_credential_used")
+                if isinstance(snapshot.get("provider_credential_used"), bool)
+                else context.get("provider_credential_used")
             ),
             "tools": [],
         }
