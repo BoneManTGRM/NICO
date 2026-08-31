@@ -273,6 +273,25 @@ def _public_repository(repo_meta: dict[str, Any]) -> bool:
     return str(repo_meta.get("visibility") or "").strip().lower() == "public"
 
 
+def _client_access_observation(
+    client: Any,
+) -> tuple[bool, str, bool | None]:
+    """Return only safe access metadata observed by the request client."""
+
+    credential_used = getattr(client, "credential_used", None)
+    access_mode = str(getattr(client, "access_mode", "") or "").strip()
+    valid = (
+        (access_mode == "anonymous_public" and credential_used is False)
+        or (
+            access_mode == "authenticated_read_only"
+            and credential_used is True
+        )
+    )
+    if not valid:
+        return False, "", None
+    return True, access_mode, credential_used
+
+
 def _preverified_resolution(
     context: dict[str, Any],
     repository: str,
@@ -344,6 +363,11 @@ def resolve_repository_commit(
         }
 
     github = client or GitHubAssessmentClient()
+    (
+        provider_access_observed,
+        access_mode,
+        credential_used,
+    ) = _client_access_observation(github)
     repo_meta, repo_error = github.get_repo(repository)
     metadata_available = bool(isinstance(repo_meta, dict) and repo_meta and not repo_error)
     repo_meta = repo_meta if isinstance(repo_meta, dict) else {}
@@ -389,6 +413,13 @@ def resolve_repository_commit(
         return {
             "status": "unavailable",
             "repository": repository,
+            "provider": "github",
+            "provider_instance": "github.com",
+            "provider_access_observed": provider_access_observed,
+            "access_mode": access_mode if provider_access_observed else "",
+            "credential_used": (
+                credential_used if provider_access_observed else None
+            ),
             "default_branch": default_branch,
             "requested_ref": requested_ref,
             "expected_commit_sha": expected_sha,
@@ -417,6 +448,11 @@ def resolve_repository_commit(
     return {
         "status": "attached",
         "repository": repository,
+        "provider": "github",
+        "provider_instance": "github.com",
+        "provider_access_observed": provider_access_observed,
+        "access_mode": access_mode if provider_access_observed else "",
+        "credential_used": credential_used if provider_access_observed else None,
         "source": "github_api_read_only" if commit_capture_method == "github_api_commit" else "public_git_read_only",
         "commit_capture_method": commit_capture_method,
         "api_commit_lookup_attempts": api_attempts,
@@ -486,6 +522,35 @@ def capture_repository_snapshot(
     resolution = _preverified_resolution(context, repository, expected_sha)
     if resolution is None:
         resolution = resolve_repository_commit(context, client=client)
+    provider_access_observed = resolution.get("provider_access_observed") is True
+    access_mode = str(resolution.get("access_mode") or "").strip()
+    credential_used = resolution.get("credential_used")
+    if provider_access_observed and not (
+        (access_mode == "anonymous_public" and credential_used is False)
+        or (
+            access_mode == "authenticated_read_only"
+            and credential_used is True
+        )
+    ):
+        return {
+            "status": "unavailable",
+            "snapshot_id": snapshot_id,
+            "run_id": run_id,
+            "repository": repository,
+            "customer_id": customer_id,
+            "project_id": project_id,
+            "provider": "github",
+            "provider_instance": "github.com",
+            "provider_access_observed": False,
+            "access_mode": "",
+            "credential_used": None,
+            "snapshot_failure_code": "provider_access_binding_invalid",
+            "unavailable_data_notes": [
+                "The GitHub access observation was missing or internally inconsistent."
+            ],
+            "idempotent_reuse": False,
+            "human_review_required": True,
+        }
     if resolution.get("status") != "attached":
         return {
             "status": "unavailable",
@@ -494,6 +559,13 @@ def capture_repository_snapshot(
             "repository": repository,
             "customer_id": customer_id,
             "project_id": project_id,
+            "provider": "github",
+            "provider_instance": "github.com",
+            "provider_access_observed": provider_access_observed,
+            "access_mode": access_mode if provider_access_observed else "",
+            "credential_used": (
+                credential_used if provider_access_observed else None
+            ),
             "source": str(resolution.get("source") or "github_api_read_only"),
             "default_branch": str(resolution.get("default_branch") or ""),
             "requested_ref": str(resolution.get("requested_ref") or expected_sha),
@@ -510,6 +582,11 @@ def capture_repository_snapshot(
 
     snapshot = {
         **resolution,
+        "provider": "github",
+        "provider_instance": "github.com",
+        "provider_access_observed": provider_access_observed,
+        "access_mode": access_mode if provider_access_observed else "",
+        "credential_used": credential_used if provider_access_observed else None,
         "snapshot_id": snapshot_id,
         "run_id": run_id,
         "customer_id": customer_id,
@@ -550,6 +627,12 @@ def capture_repository_snapshot(
             "repository_metadata_available": snapshot.get("repository_metadata_available", False),
             "commit_sha": snapshot.get("commit_sha", ""),
             "tree_sha": snapshot.get("tree_sha", ""),
+            "provider_access_observed": snapshot.get(
+                "provider_access_observed",
+                False,
+            ),
+            "access_mode": snapshot.get("access_mode", ""),
+            "credential_used": snapshot.get("credential_used"),
         },
         customer_id=customer_id,
         project_id=project_id,

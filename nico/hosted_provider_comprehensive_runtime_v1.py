@@ -920,6 +920,7 @@ def _provider_access_report_evidence(
 
     spanish = _text(context.get("report_language")).casefold().replace("_", "-").startswith("es")
     provider = {
+        "github": "GitHub",
         "gitlab": "GitLab",
         "bitbucket": "Bitbucket Cloud",
         "azure_devops": "Azure DevOps",
@@ -1024,6 +1025,109 @@ def _provider_access_report_evidence(
             else f"Capability {label}: {state_label}."
         )
     return lines
+
+
+def _github_access_report_snapshot(
+    snapshot: Mapping[str, Any],
+    repository_evidence: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Validate and project only frozen, observed GitHub access truth."""
+
+    if repository_evidence.get("repository_provider") != "github":
+        return None
+    if repository_evidence.get("repository_provider_instance") != "github.com":
+        return None
+    if repository_evidence.get("provider_access_observed") is not True:
+        return None
+    if repository_evidence.get("provider_access_binding_consistent") is not True:
+        return None
+
+    access_mode = _text(repository_evidence.get("provider_access_mode"))
+    credential_used = repository_evidence.get("provider_credential_used")
+    if not (
+        (access_mode == "anonymous_public" and credential_used is False)
+        or (
+            access_mode == "authenticated_read_only"
+            and credential_used is True
+        )
+    ):
+        return None
+
+    required_complete = repository_evidence.get(
+        "required_source_evidence_complete"
+    )
+    pagination_complete = repository_evidence.get(
+        "provider_pagination_complete"
+    )
+    if required_complete is not True:
+        return None
+    if not isinstance(pagination_complete, bool):
+        return None
+
+    repository = _text(repository_evidence.get("repository"))
+    commit_sha = _text(repository_evidence.get("snapshot_commit_sha"))
+    snapshot_id = _text(repository_evidence.get("assessment_snapshot_id"))
+    if not repository or repository != _text(snapshot.get("repository")):
+        return None
+    if not commit_sha or commit_sha != _text(snapshot.get("commit_sha")):
+        return None
+    if not snapshot_id or snapshot_id != _text(snapshot.get("snapshot_id")):
+        return None
+
+    fingerprint = _text(
+        repository_evidence.get("provider_source_fingerprint")
+    )
+    locators = list(repository_evidence.get("exact_source_locators") or [])
+    locator_count = repository_evidence.get("exact_source_locator_count")
+    expected_prefix = f"https://github.com/{repository}/blob/{commit_sha}/"
+    if not fingerprint.startswith("sha256:") or len(fingerprint) != 71:
+        return None
+    if (
+        not isinstance(locator_count, int)
+        or locator_count <= 0
+        or locator_count != len(locators)
+        or any(
+            not isinstance(locator, str)
+            or not locator.startswith(expected_prefix)
+            or "?" in locator
+            or "#" in locator
+            for locator in locators
+        )
+    ):
+        return None
+
+    capabilities = list(
+        repository_evidence.get("provider_capability_states") or []
+    )
+    if not capabilities or any(
+        not isinstance(item, Mapping)
+        or not _text(item.get("capability"))
+        or not _text(item.get("state"))
+        for item in capabilities
+    ):
+        return None
+
+    rate_limit_state = repository_evidence.get("provider_rate_limit_state")
+    limitations = repository_evidence.get("provider_collection_limitations")
+    if not isinstance(rate_limit_state, Mapping):
+        return None
+    if not isinstance(limitations, list):
+        return None
+
+    return {
+        "provider": "github",
+        "repository": repository,
+        "commit_sha": commit_sha,
+        "access_mode": access_mode,
+        "credential_used": credential_used,
+        "required_source_evidence_complete": required_complete,
+        "pagination_complete": pagination_complete,
+        "provider_rate_limit_state": dict(rate_limit_state),
+        "provider_collection_limitations": list(limitations),
+        "provider_source_fingerprint": fingerprint,
+        "snapshot_id": snapshot_id,
+        "provider_capability_states": capabilities,
+    }
 
 
 def collect_hosted_provider_repository_evidence(
@@ -1427,7 +1531,52 @@ def install_hosted_provider_comprehensive_runtime(app: FastAPI) -> dict[str, Any
                     },
                     unavailable_data_notes=repository_evidence.get("unavailable_data_notes") or [],
                 )
-            return original_repository_provider(context)
+
+            original = original_repository_provider(context)
+            if _text(snapshot.get("provider")) not in {"", ProviderKind.GITHUB.value}:
+                return original
+            if original.get("status") != "complete":
+                return original
+            repository_evidence = (
+                original.get("repository_evidence")
+                if isinstance(original.get("repository_evidence"), Mapping)
+                else {}
+            )
+            access_snapshot = _github_access_report_snapshot(
+                snapshot,
+                repository_evidence,
+            )
+            if access_snapshot is None:
+                return native._result(
+                    context,
+                    "blocked",
+                    reason="github_provider_access_evidence_unavailable",
+                    repository_evidence=repository_evidence,
+                    complexity_evidence=original.get("complexity_evidence") or {},
+                    unavailable_data_notes=sorted(
+                        {
+                            *(
+                                repository_evidence.get(
+                                    "unavailable_data_notes"
+                                )
+                                or []
+                            ),
+                            (
+                                "Frozen GitHub provider-access truth was missing, "
+                                "incomplete, or inconsistent."
+                            ),
+                        }
+                    ),
+                )
+            enriched = dict(original)
+            enriched["provider_access_evidence"] = (
+                _provider_access_report_evidence(
+                    context,
+                    access_snapshot,
+                    repository_evidence,
+                )
+            )
+            return enriched
 
         setattr(repository_evidence_provider, "_nico_hosted_provider_parity_v1", True)
         providers["repository_evidence"] = repository_evidence_provider
