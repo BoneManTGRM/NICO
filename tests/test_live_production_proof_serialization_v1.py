@@ -43,7 +43,7 @@ def test_sole_fresh_producer_fails_closed_on_wrong_production_scope() -> None:
     ).read_text(encoding="utf-8")
 
     assert 'test "${NICO_PRODUCTION_FRONTEND_URL}" = "https://app.nicoaudit.com"' in spanish
-    assert 'test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "BoneManTGRM/NICO"' in spanish
+    assert 'test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "https://gitlab.com/gitlab-org/gitlab-test"' in spanish
     assert 'test "${GITHUB_REF}" = "refs/heads/main"' in spanish
     assert 'test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"' in spanish
 
