@@ -15,6 +15,7 @@ from scripts import provider_live_acceptance
 class FakeCollector:
     revisions: list[str]
     provider: ProviderKind = ProviderKind.GITLAB
+    page_counts: list[int] | None = None
     index: int = 0
     closed: bool = False
 
@@ -31,6 +32,11 @@ class FakeCollector:
 
     def collect(self, repository_id: str, *, revision: str = "") -> ProviderCollection:
         observed = self.revisions[min(self.index, len(self.revisions) - 1)]
+        pages_fetched = (
+            self.page_counts[min(self.index, len(self.page_counts) - 1)]
+            if self.page_counts
+            else 1
+        )
         self.index += 1
         exact = revision or observed
         return ProviderCollection(
@@ -74,7 +80,7 @@ class FakeCollector:
                 "credential_used": True,
                 "collected_at": f"2026-07-21T00:00:0{self.index}Z",
             },
-            pages_fetched=1,
+            pages_fetched=pages_fetched,
             requests_made=2,
             collected_at=f"2026-07-21T00:00:0{self.index}Z",
         )
@@ -185,6 +191,28 @@ def test_first_pass_pins_revision_for_second_pass(monkeypatch) -> None:
     assert {item["revision"] for item in result["runs"]} == {"a" * 40}
 
 
+def test_complete_optional_pagination_count_may_vary_between_stable_source_passes(
+    monkeypatch,
+) -> None:
+    collector = FakeCollector(["a" * 40, "a" * 40], page_counts=[8, 7])
+    monkeypatch.setattr(
+        provider_live_acceptance,
+        "build_collector",
+        lambda provider, access_mode: FakeHandle(collector),
+    )
+
+    result = provider_live_acceptance.run_acceptance(
+        provider="gitlab",
+        repository="group/repo",
+        revision="a" * 40,
+        access_mode="authenticated_read_only",
+        passes=2,
+    )
+
+    assert result["proof"]["pagination_complete"] is True
+    assert [item["pages_fetched"] for item in result["runs"]] == [8, 7]
+
+
 def test_acceptance_rejects_one_pass(monkeypatch) -> None:
     collector = FakeCollector(["a" * 40])
     monkeypatch.setattr(
@@ -224,7 +252,7 @@ def test_provider_changes_trigger_four_isolated_anonymous_public_proofs() -> Non
         assert fixture in workflow
     assert workflow.count("--passes 2") >= 3
     assert "github.event.pull_request.head.sha" in workflow
-    assert "expected_outcome: authentication_required" in workflow
+    assert workflow.count("expected_outcome: success") == 4
     assert "--workflow-sha \"${ACCEPTANCE_SHA}\"" in workflow
     assert "unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN" in workflow
     assert "unset NICO_GITLAB_TOKEN GITLAB_TOKEN" in workflow

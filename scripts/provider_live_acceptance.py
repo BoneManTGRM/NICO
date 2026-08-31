@@ -845,9 +845,11 @@ def run_acceptance(*, provider: str, repository: str, revision: str, access_mode
             ("source_fingerprint_stable", "source_fingerprint"),
             ("source_inventory_stable", "source_inventory_fingerprint"),
             ("exact_source_inventory_stable", "exact_source_inventory_fingerprint"),
-            ("pagination_stable", "pages_fetched"),
         ):
             proof[key] = len({item[run_key] for item in runs}) == 1
+        proof["pagination_complete"] = all(
+            item["pagination_complete"] is True for item in runs
+        )
         proof["required_source_complete"] = all(
             item["source_object_count"] > 0 and item["exact_source_locator_count"] > 0
             for item in runs)

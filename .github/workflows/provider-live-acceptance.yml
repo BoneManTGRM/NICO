@@ -91,7 +91,7 @@ jobs:
             expected_outcome: success
           - provider: azure_devops
             repository: clearmeasurelabs/Onion-DevOps-Architecture/Onion-DevOps-Architecture-vnext-security
-            expected_outcome: authentication_required
+            expected_outcome: success
     steps:
       - name: Check out exact pull-request commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
