@@ -136,7 +136,7 @@ jobs:
     environment: production-smoke
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
-      NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY || 'BoneManTGRM/NICO' }}
+      NICO_PRODUCTION_SMOKE_REPOSITORY: https://gitlab.com/gitlab-org/gitlab-test
       NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
       GITHUB_TOKEN: ${{ github.token }}
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}

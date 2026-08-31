@@ -153,6 +153,73 @@ assert blocked.waits == []
     assert completed.returncode == 0, completed.stderr
 
 
+def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None:
+    source = (
+        ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v3.py"
+    ).read_text(encoding="utf-8")
+
+    helper_start = source.index("def _verify_excluded_engagement_ui(")
+    helper_end = source.index(
+        "def _commercial_spanish_run_proof(",
+        helper_start,
+    )
+    helper = source[helper_start:helper_end]
+    commercial = source[helper_end:]
+    strategic_evidence = (
+        ROOT / "apps/web/app/assessment/strategicEvidence.ts"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'if (value.excluded && value.exclusion_rationale.trim()) return "excluded";'
+        in strategic_evidence
+    )
+    assert '"Justificación de exclusión"' in helper
+    assert 'wait_for(state="visible", timeout=30_000)' in helper
+    assert 'assert exclusion_rationale.input_value() == ""' in helper
+    assert 'exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)' in helper
+    assert (
+        "assert exclusion_rationale.input_value() == PROOF_EXCLUSION_RATIONALE"
+        in helper
+    )
+    assert '"exclusion_rationale_supplied": True' in helper
+    assert helper.index(
+        "exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)"
+    ) < helper.index('"Excluido con justificación"')
+    assert '"expected": "unmounted_after_module_exclusion"' in helper
+    assert '"excluded_field_controls_unmounted": True' in helper
+    assert 'assert count == 0' in helper
+    assert 'get_attribute("data-engagement-state")' not in commercial
+    assert '"exclusion_ui": exclusion_ui' in commercial
+
+
+def test_release_browser_matrix_reuses_one_public_gitlab_snapshot() -> None:
+    fixture = "https://gitlab.com/gitlab-org/gitlab-test"
+    workflows = [
+        ROOT / ".github/workflows/spanish-comprehensive-production-proof.yml",
+        ROOT / ".github/workflows/two-service-production-acceptance.yml",
+        ROOT / ".github/workflows/mobile-restart-production-proof.yml",
+        ROOT / ".github/workflows/ios-webkit-paint-proof.yml",
+    ]
+    sources = [path.read_text(encoding="utf-8") for path in workflows]
+
+    assert all(
+        f"NICO_PRODUCTION_SMOKE_REPOSITORY: {fixture}" in source
+        for source in sources
+    )
+    assert all("NICO_PRODUCTION_SMOKE_REPOSITORY" in source for source in sources)
+    assert (
+        f'test "${{NICO_PRODUCTION_SMOKE_REPOSITORY}}" = "{fixture}"'
+        in sources[0]
+    )
+    assert (
+        f'test "${{NICO_PRODUCTION_SMOKE_REPOSITORY}}" = "{fixture}"'
+        in sources[1]
+    )
+    assert "Spanish Comprehensive Production Proof" in sources[1]
+    assert "Spanish Comprehensive Production Proof" in sources[2]
+    assert "Spanish Comprehensive Production Proof" in sources[3]
+
+
 def test_production_workflow_uses_v3_and_exact_terminal_assertions() -> None:
     workflow = (
         ROOT / ".github" / "workflows" / "spanish-comprehensive-production-proof.yml"
