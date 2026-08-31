@@ -75,6 +75,9 @@ jobs:
           assert 'data-mobile-evidence-boundary="true"' in proof
           assert 'client_context_control_count' in proof
           assert 'client_context_single_line_input_count' in proof
+          assert 'client_context_state_button_count' in proof
+          assert 'Exclude from scope' in proof
+          assert 'excluded_state_visually_distinct_from_not_supplied' in proof
           assert 'rich_editor_control_count' in proof
           assert 'optional_evidence_editor_unmounted' in proof
           assert 'result["start_dispatch"] = "not_dispatched_existing_run"' in dispatch
@@ -397,16 +400,22 @@ jobs:
           assert payload["webkit_intake_paint_stability_verified"] is True
           intake = payload["webkit_intake_paint"]
           assert intake["optional_evidence_editor_unmounted"] is True
-          assert intake["optional_evidence_controls_allocated"] == 3
+          assert intake["optional_evidence_controls_allocated"] == 9
           assert intake["rich_optional_evidence_controls_allocated"] == 0
           assert intake["lightweight_client_context_controls_allocated"] == 3
+          assert intake["lightweight_client_context_state_buttons_allocated"] == 6
+          assert intake["exclude_from_scope_control_verified"] is True
+          assert intake["excluded_state_visually_distinct_from_not_supplied"] is True
+          assert intake["exclude_from_scope_clear_recovery_verified"] is True
           paint_boundary = intake["paint_boundary"]
           assert paint_boundary["editor_mounted"] == "false"
           assert paint_boundary["client_context_present"] is True
-          assert paint_boundary["interactive_control_count"] == 3
-          assert paint_boundary["client_context_control_count"] == 3
+          assert paint_boundary["interactive_control_count"] == 9
+          assert paint_boundary["client_context_control_count"] == 9
           assert paint_boundary["client_context_textarea_count"] == 0
           assert paint_boundary["client_context_single_line_input_count"] == 3
+          assert paint_boundary["client_context_state_button_count"] == 6
+          assert paint_boundary["client_context_field_count"] == 3
           assert paint_boundary["rich_editor_control_count"] == 0
           assert paint_boundary["rich_editor_node_count"] == 0
           assert set(paint_boundary["client_context_labels"]) == {

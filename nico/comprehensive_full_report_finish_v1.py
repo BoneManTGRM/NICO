@@ -20,6 +20,10 @@ _WHITE = "#ffffff"
 _HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
 _EXTENSIONS = (".csv", ".json", ".html", ".md", ".pdf")
 _NULLISH = {"", "none", "null", "not available", "unknown", "n/a", "na"}
+_INTERNAL_PROPERTY_LINE = re.compile(
+    r"^(?:(?:scope|capability|state|status|source)|"
+    r"[a-z][a-z0-9_.\[\]]*[_\.\[][a-z0-9_.\[\]]*)\s*:",
+)
 
 _WORKSHEET_TITLES = (
     "Functional QA",
@@ -315,8 +319,15 @@ def assert_no_raw_mapping_presentation(markdown: str, rendered_html: str, pdf: b
             line = raw_line.strip()
             if line.startswith(("- ", "* ")):
                 line = line[2:].strip()
+            line = line.lstrip("•").strip()
             if _mapping_tail(line)[1] is not None:
-                raise ValueError("client-facing artifact retained a raw mapping presentation")
+                raise ValueError(
+                    "client-facing artifact retained a raw mapping presentation"
+                )
+            if _INTERNAL_PROPERTY_LINE.match(line):
+                raise ValueError(
+                    "client-facing artifact retained an internal property presentation"
+                )
 
 
 def _assessment(canonical: Mapping[str, Any]) -> Mapping[str, Any]:

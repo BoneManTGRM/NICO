@@ -22,10 +22,12 @@ _PLACEHOLDER_IDENTITIES = {
     "unknown_project",
 }
 _PUNCTUATION_ONLY = re.compile(r"^[\s.\-–—_:;|/\\]+$")
-_INTERNAL_DOTTED_LINE = re.compile(
-    r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+){2,}(?::|\s*$)",
-    re.IGNORECASE,
+_INTERNAL_PROPERTY_LINE = re.compile(
+    r"^(?:(?:scope|capability|state|status|source)|"
+    r"[a-z][a-z0-9_.\[\]]*[_\.\[][a-z0-9_.\[\]]*)\s*:",
 )
+# Compatibility for the publication guard, which imports the historical name.
+_INTERNAL_DOTTED_LINE = _INTERNAL_PROPERTY_LINE
 _COMPLEXITY_FINDING = re.compile(r"\breduce complexity in\b", re.IGNORECASE)
 _AMBIGUOUS_SCANNER_LANGUAGE = (
     "remain incomplete or review-limited",
@@ -412,7 +414,7 @@ def sanitize_rendered_stage(stage: Mapping[str, Any]) -> dict[str, Any]:
     seen: set[str] = set()
     for raw in item.get("evidence") or []:
         value = _text(raw)
-        if not value or _INTERNAL_DOTTED_LINE.match(value):
+        if not value or _INTERNAL_PROPERTY_LINE.match(value):
             continue
         key = value.casefold()
         if key not in seen:
@@ -765,7 +767,7 @@ def assert_human_review_package_cleanup(
                 raise ValueError("client stage evidence retained a blank or punctuation-only value")
 
     toc = next((page for page in pages if "Table of Contents" in page), "")
-    if any(_INTERNAL_DOTTED_LINE.match(_text(line)) for line in toc.splitlines()):
+    if any(_INTERNAL_PROPERTY_LINE.match(_text(line)) for line in toc.splitlines()):
         raise ValueError("table of contents exposed an internal dotted canonical key")
     if _COMPLEXITY_FINDING.search(toc):
         raise ValueError("table of contents used an individual finding as a section title")
@@ -773,7 +775,7 @@ def assert_human_review_package_cleanup(
     for index, page in enumerate(pages, start=1):
         lines = _substantive_lines(page)
         if len(lines) <= 2 and any(
-            _INTERNAL_DOTTED_LINE.match(line) or _COMPLEXITY_FINDING.search(line)
+            _INTERNAL_PROPERTY_LINE.match(line) or _COMPLEXITY_FINDING.search(line)
             for line in lines
         ):
             raise ValueError(f"client PDF retained an accidental orphan detail page at page {index}")

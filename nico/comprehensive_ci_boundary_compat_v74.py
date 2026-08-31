@@ -395,7 +395,7 @@ def _format_value(key: str, value: Any, *, spanish: bool) -> str:
     if isinstance(value, bool):
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     if value is None:
-        return "No suministrado" if spanish else "Not supplied"
+        return "No proporcionado" if spanish else "Not supplied"
     if isinstance(value, float) and "rate" in key.casefold() and 0 <= value <= 1:
         return f"{value * 100:.1f}%"
     return _text(value)

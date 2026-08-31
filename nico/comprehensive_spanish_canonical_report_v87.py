@@ -217,7 +217,7 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Access method", "Método de acceso"),
     ("Authorized scope", "Alcance autorizado"),
     ("Not scored", "Sin puntuación"),
-    ("Not supplied", "No suministrado"),
+    ("Not supplied", "No proporcionado"),
     ("Product Engineering", "Ingeniería de producto"),
     ("Requires estimation", "Requiere estimación"),
     ("NICO Comprehensive Technical Assessment", "Evaluación Técnica Integral NICO"),
