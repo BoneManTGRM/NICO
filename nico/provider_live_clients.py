@@ -310,6 +310,10 @@ class BaseProviderClient:
             self.requests_made += 1
             self._activity_callback()
             try:
+                # Provider APIs are stateless evidence boundaries. Some public
+                # endpoints (notably Azure DevOps) set anonymous session cookies;
+                # never replay them as implicit authentication on later reads.
+                self._client.cookies.clear()
                 response = self._client.get(
                     url,
                     params=dict(params or {}),

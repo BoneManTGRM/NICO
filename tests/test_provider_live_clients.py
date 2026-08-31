@@ -292,6 +292,51 @@ def test_gitlab_anonymous_public_collection_sends_no_authorization_header() -> N
     assert all("private-token" not in headers for headers in seen_headers)
 
 
+def test_anonymous_provider_session_cookie_is_never_replayed() -> None:
+    seen_headers: list[httpx.Headers] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_headers.append(request.headers)
+        assert "cookie" not in request.headers
+        path = request.url.path
+        if path.endswith("/projects/group%2Frepo"):
+            return httpx.Response(
+                200,
+                headers={"Set-Cookie": "provider-session=anonymous; Path=/"},
+                json={
+                    "id": 17,
+                    "path": "repo",
+                    "path_with_namespace": "group/repo",
+                    "namespace": {"path": "group"},
+                    "default_branch": "main",
+                    "visibility": "public",
+                },
+            )
+        if path.endswith("/repository/commits"):
+            return httpx.Response(200, json=[{"id": "e" * 40}])
+        if path.endswith("/repository/tree"):
+            return httpx.Response(
+                200,
+                json=[{"path": "README.md", "id": "f" * 40, "type": "blob"}],
+            )
+        return httpx.Response(200, json=[])
+
+    collector = GitLabClient(
+        instance_url="https://gitlab.example.com",
+        credential_reference=_reference(
+            "gitlab", "gitlab.example.com", "private_token"
+        ),
+        access_mode="anonymous_public",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+    )
+
+    collection = collector.collect("group/repo")
+
+    assert collection.credential_used is False
+    assert len(seen_headers) > 1
+
+
 def test_anonymous_required_source_auth_challenge_is_not_retried() -> None:
     requests = 0
 
