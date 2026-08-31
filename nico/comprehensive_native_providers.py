@@ -75,6 +75,23 @@ def _snapshot(context: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _provider_access_binding(value: dict[str, Any]) -> tuple[str, bool] | None:
+    mode = _text(
+        value.get("provider_access_mode") or value.get("access_mode"),
+        80,
+    )
+    credential_used = (
+        value.get("provider_credential_used")
+        if isinstance(value.get("provider_credential_used"), bool)
+        else value.get("credential_used")
+    )
+    if mode == "anonymous_public" and credential_used is False:
+        return mode, False
+    if mode == "authenticated_read_only" and credential_used is True:
+        return mode, True
+    return None
+
+
 def _repo(context: dict[str, Any]) -> dict[str, Any]:
     value = _prior(context, "repository_and_delivery_evidence").get("repository_evidence")
     return value if isinstance(value, dict) else {}
@@ -132,6 +149,17 @@ def snapshot_provider(context: dict[str, Any]) -> dict[str, Any]:
         return _result(context, "blocked", reason="immutable_snapshot_unavailable", snapshot=snapshot, unavailable_data_notes=snapshot.get("unavailable_data_notes") or ["The immutable repository snapshot was unavailable."])
     if actual != expected:
         return _result(context, "blocked", reason="immutable_snapshot_identity_drift", expected_commit_sha=expected, observed_commit_sha=actual, snapshot=snapshot)
+    access_binding = _provider_access_binding(context)
+    if access_binding is not None and snapshot.get("provider_access_observed") is not True:
+        access_mode, credential_used = access_binding
+        snapshot = {
+            **snapshot,
+            "provider_access_observed": True,
+            "access_mode": access_mode,
+            "credential_used": credential_used,
+            "provider_access_mode": access_mode,
+            "provider_credential_used": credential_used,
+        }
     return _result(context, summary="The authorized repository was bound to one immutable commit before evidence collection.", snapshot=snapshot, evidence={"snapshot_id": snapshot.get("snapshot_id"), "commit_sha": actual, "tree_sha": snapshot.get("tree_sha"), "default_branch": snapshot.get("default_branch"), "captured_at": snapshot.get("captured_at")})
 
 
@@ -139,7 +167,22 @@ def repository_evidence_provider(context: dict[str, Any]) -> dict[str, Any]:
     snapshot = _snapshot(context)
     if snapshot.get("status") != "attached":
         return _result(context, "blocked", reason="attached_snapshot_required")
-    repository_evidence, complexity_evidence = collect_snapshot_repository_evidence({**context, "authorized_by": "comprehensive_native_provider", "authorization_scope": "authorized defensive repository assessment", "timeframe_days": 180}, snapshot)
+    collection_context = {
+        **context,
+        "authorized_by": "comprehensive_native_provider",
+        "authorization_scope": "authorized defensive repository assessment",
+        "timeframe_days": 180,
+    }
+    snapshot_binding = (
+        _provider_access_binding(snapshot)
+        if snapshot.get("provider_access_observed") is True
+        else None
+    )
+    if _provider_access_binding(collection_context) is None and snapshot_binding is not None:
+        access_mode, credential_used = snapshot_binding
+        collection_context["provider_access_mode"] = access_mode
+        collection_context["provider_credential_used"] = credential_used
+    repository_evidence, complexity_evidence = collect_snapshot_repository_evidence(collection_context, snapshot)
     if repository_evidence.get("status") != "attached":
         return _result(context, "blocked", reason="snapshot_repository_evidence_unavailable", repository_evidence=repository_evidence, complexity_evidence=complexity_evidence, unavailable_data_notes=repository_evidence.get("unavailable_data_notes") or [])
     files = repository_evidence.get("file_evidence") if isinstance(repository_evidence.get("file_evidence"), dict) else {}
