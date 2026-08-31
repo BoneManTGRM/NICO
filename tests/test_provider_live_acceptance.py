@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -194,3 +195,26 @@ def test_acceptance_rejects_one_pass(monkeypatch) -> None:
 def test_unsupported_provider_fails_before_credentials() -> None:
     with pytest.raises(provider_live_acceptance.LiveAcceptanceError, match="unsupported"):
         provider_live_acceptance.build_collector("unknown", "anonymous_public")
+
+
+def test_provider_changes_trigger_four_isolated_anonymous_public_proofs() -> None:
+    workflow = Path(".github/workflows/provider-live-acceptance.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "pull_request:" in workflow
+    assert "anonymous-public-pr:" in workflow
+    for fixture in (
+        "octocat/Hello-World",
+        "gitlab-org/gitlab-test",
+        "atlassian_tutorial/helloworld",
+        "clearmeasurelabs/Onion-DevOps-Architecture/Onion-DevOps-Architecture-vnext-security",
+    ):
+        assert fixture in workflow
+    assert workflow.count("--passes 2") >= 3
+    assert "github.event.pull_request.head.sha" in workflow
+    assert "--workflow-sha \"${ACCEPTANCE_SHA}\"" in workflow
+    assert "unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN" in workflow
+    assert "unset NICO_GITLAB_TOKEN GITLAB_TOKEN" in workflow
+    assert "unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN" in workflow
+    assert "unset NICO_AZURE_DEVOPS_TOKEN" in workflow

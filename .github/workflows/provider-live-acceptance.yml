@@ -1,6 +1,19 @@
 name: Provider Live Acceptance
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/provider-live-acceptance.yml
+      - nico/provider_credentials.py
+      - nico/provider_live_clients.py
+      - nico/provider_neutral_contract.py
+      - nico/provider_payload_adapters.py
+      - nico/hosted_provider_comprehensive_runtime_v1.py
+      - scripts/provider_live_acceptance.py
+      - tests/test_provider_live_acceptance.py
+      - tests/test_provider_live_clients.py
   workflow_dispatch:
     inputs:
       provider:
@@ -45,6 +58,91 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  anonymous-public-pr:
+    if: github.event_name == 'pull_request'
+    name: Anonymous public ${{ matrix.provider }} two-pass proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: github
+            repository: octocat/Hello-World
+          - provider: gitlab
+            repository: gitlab-org/gitlab-test
+          - provider: bitbucket_cloud
+            repository: atlassian_tutorial/helloworld
+          - provider: azure_devops
+            repository: clearmeasurelabs/Onion-DevOps-Architecture/Onion-DevOps-Architecture-vnext-security
+    steps:
+      - name: Check out exact pull-request commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install NICO
+        run: python -m pip install --disable-pip-version-check --no-cache-dir -e .
+
+      - name: Run isolated anonymous two-pass proof
+        id: acceptance
+        continue-on-error: true
+        env:
+          ACCEPTANCE_PROVIDER: ${{ matrix.provider }}
+          ACCEPTANCE_REPOSITORY: ${{ matrix.repository }}
+          ACCEPTANCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
+          unset NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN
+          unset NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          python scripts/provider_live_acceptance.py \
+            --provider "${ACCEPTANCE_PROVIDER}" \
+            --repository "${ACCEPTANCE_REPOSITORY}" \
+            --access-mode anonymous_public \
+            --expected-outcome success \
+            --passes 2 \
+            --workflow-sha "${ACCEPTANCE_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --output audit-results/provider-live-acceptance.json
+
+      - name: Upload immutable anonymous evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-live-anonymous-${{ matrix.provider }}-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}
+          path: audit-results/provider-live-acceptance.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Require safe anonymous evidence
+        if: always()
+        env:
+          ACCEPTANCE_STEP_OUTCOME: ${{ steps.acceptance.outcome }}
+          ACCEPTANCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
+          unset NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN
+          unset NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          test "${ACCEPTANCE_STEP_OUTCOME}" = success
+          python scripts/provider_live_acceptance.py \
+            --verify-artifact audit-results/provider-live-acceptance.json \
+            --access-mode anonymous_public \
+            --expected-outcome success \
+            --workflow-sha "${ACCEPTANCE_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}"
+
   anonymous-public:
     if: inputs.access_mode == 'anonymous_public'
     name: Anonymous public two-pass proof
