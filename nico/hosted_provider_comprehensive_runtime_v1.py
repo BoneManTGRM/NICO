@@ -1075,8 +1075,7 @@ def _github_access_report_snapshot(
         return None
 
     fingerprint = _text(
-        repository_evidence.get("provider_source_fingerprint"),
-        limit=160,
+        repository_evidence.get("provider_source_fingerprint")
     )
     locators = list(repository_evidence.get("exact_source_locators") or [])
     locator_count = repository_evidence.get("exact_source_locator_count")
