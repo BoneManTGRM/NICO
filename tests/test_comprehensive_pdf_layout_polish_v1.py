@@ -45,7 +45,7 @@ def _semantic_fixture(*, spanish: bool) -> bytes:
     from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
     sections = list(CANONICAL_TOC_SECTIONS)
-    assert len(sections) == 33
+    assert len(sections) == 35
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     pdf.drawString(
@@ -118,7 +118,7 @@ def test_layout_polish_binds_presentation_only_contracts() -> None:
     state = install_comprehensive_pdf_layout_polish_v1()
 
     assert state["bound"] is True
-    assert state["toc_rows_per_page"] == 33
+    assert state["toc_rows_per_page"] == 35
     assert state["toc_single_page_capacity_above_four_phase_matrix"] is True
     assert state["sparse_section_keep_together"] is True
     assert state["review_companion_pages"] == 4
@@ -134,7 +134,7 @@ def test_layout_polish_binds_presentation_only_contracts() -> None:
 
 
 @pytest.mark.parametrize("spanish", [False, True])
-def test_all_33_toc_entries_share_one_page_above_four_phase_matrix(spanish: bool) -> None:
+def test_all_35_toc_entries_share_one_page_above_four_phase_matrix(spanish: bool) -> None:
     from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
     from nico.comprehensive_pdf_layout_polish_v1 import (
         install_comprehensive_pdf_layout_polish_v1,
