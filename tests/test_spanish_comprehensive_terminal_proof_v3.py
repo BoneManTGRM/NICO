@@ -32,6 +32,121 @@ def test_v3_proof_binds_distinct_spanish_terminal_fields() -> None:
     assert "return telemetry.main(argv)" in source
 
 
+def test_durable_engagement_read_waits_for_intake_visibility(tmp_path: Path) -> None:
+    playwright = tmp_path / "stubs" / "playwright"
+    playwright.mkdir(parents=True)
+    (playwright / "__init__.py").write_text("", encoding="utf-8")
+    (playwright / "sync_api.py").write_text(
+        "class Browser: pass\n"
+        "class Page: pass\n"
+        "def sync_playwright(): raise AssertionError('unit probe must not start a browser')\n",
+        encoding="utf-8",
+    )
+    script = ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v3.py"
+    probe = f"""
+import runpy
+import sys
+from pathlib import Path
+
+repository_root = Path({str(ROOT)!r})
+sys.path[:] = [
+    {str(script.parent)!r},
+    *(entry for entry in sys.path if Path(entry or ".").resolve() != repository_root),
+]
+sys.meta_path[:] = [
+    finder
+    for finder in sys.meta_path
+    if "editable" not in type(finder).__module__.casefold()
+]
+module = runpy.run_path({str(script)!r}, run_name="nico_visibility_retry_unit_probe")
+metadata = {
+    **module["_expected_engagement_metadata"](),
+    "repository_inference_prohibited": True,
+    "directly_scored": False,
+}
+
+class Response:
+    def __init__(self, status, payload=None):
+        self.status = status
+        self.ok = 200 <= status < 300
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+class Requests:
+    def __init__(self):
+        self.responses = [
+            Response(404),
+            Response(200, {
+                "intake_reserved": True,
+                "operation": "intake_pending",
+                "terminal": False,
+            }),
+            Response(200, {
+                "run_id": "comprun_visibility",
+                "engagement_metadata": metadata,
+                "record": {"engagement_metadata": metadata},
+            }),
+        ]
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return self.responses.pop(0)
+
+class Page:
+    def __init__(self):
+        self.request = Requests()
+        self.waits = []
+
+    def wait_for_timeout(self, milliseconds):
+        self.waits.append(milliseconds)
+
+page = Page()
+result = module["_fetch_and_verify_durable_engagement"](
+    page,
+    frontend_origin="https://app.nicoaudit.com",
+    run_id="comprun_visibility",
+    boundary="unit_test",
+)
+assert result["visibility_read_attempt_count"] == 3
+assert result["visibility_not_found_read_count"] == 1
+assert result["visibility_pending_read_count"] == 1
+assert len(page.request.calls) == 3
+assert page.waits == [module["ENGAGEMENT_VISIBILITY_RETRY_MILLISECONDS"]] * 2
+
+blocked = Page()
+blocked.request.responses = [Response(403)]
+try:
+    module["_fetch_and_verify_durable_engagement"](
+        blocked,
+        frontend_origin="https://app.nicoaudit.com",
+        run_id="comprun_visibility",
+        boundary="unit_test_permanent_failure",
+    )
+except AssertionError as exc:
+    assert "returned HTTP 403" in str(exc)
+else:
+    raise AssertionError("permanent HTTP failure was retried or accepted")
+assert len(blocked.request.calls) == 1
+assert blocked.waits == []
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(tmp_path / "stubs")
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_production_workflow_uses_v3_and_exact_terminal_assertions() -> None:
     workflow = (
         ROOT / ".github" / "workflows" / "spanish-comprehensive-production-proof.yml"
