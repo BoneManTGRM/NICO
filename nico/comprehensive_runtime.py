@@ -11,6 +11,7 @@ from nico.comprehensive_api_controller import ComprehensiveApiController
 from nico.comprehensive_api_routes import register_comprehensive_api_routes
 from nico.comprehensive_background_stage_execution_v1 import BACKGROUND_STAGE_IDS
 from nico.comprehensive_capability_registry import execution_plan
+from nico.comprehensive_engagement_metadata_v1 import display_identity_projection
 from nico.comprehensive_final_report_activity_v1 import (
     ObservableComprehensiveApiController,
 )
@@ -93,6 +94,12 @@ class _DetachedProductionComprehensiveRunService(ComprehensiveRunService):
             for completed_stage in completed
             if completed_stage in retained_stage_results
         }
+        engagement_metadata = (
+            deepcopy(record.get("engagement_metadata"))
+            if isinstance(record.get("engagement_metadata"), Mapping)
+            else {}
+        )
+        display_identity = display_identity_projection(engagement_metadata)
         context = {
             "artifact_schema": VERSION,
             "service_id": "comprehensive",
@@ -105,12 +112,25 @@ class _DetachedProductionComprehensiveRunService(ComprehensiveRunService):
             "project_id": identity["project_id"],
             "assessment_depth": identity["assessment_depth"],
             "report_language": identity["report_language"],
+            "engagement_metadata": engagement_metadata,
+            **display_identity,
+            "access_method": str(engagement_metadata.get("access_method") or ""),
+            "authorized_scope": str(
+                engagement_metadata.get("authorized_scope") or ""
+            ),
             "human_evidence": deepcopy(record.get("human_evidence") or {}),
             "prior_stage_results": prior_stage_results,
             "recovery_history": deepcopy(record.get("recovery_history") or []),
             "human_review_required": True,
             "client_delivery_allowed": False,
         }
+        for field in (
+            "repository_provider",
+            "provider_access_mode",
+            "provider_credential_used",
+        ):
+            if field in record:
+                context[field] = deepcopy(record[field])
         return self._detached_stage_publication.advance(
             record,
             stage_id=stage_id,
