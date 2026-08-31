@@ -776,7 +776,6 @@ class BitbucketCloudClient(BaseProviderClient):
             suffix = f"/{quote(path, safe='/')}/" if path else "/"
             entries = self._bitbucket_pages(
                 f"{root}/src/{quote(revision, safe='')}{suffix}",
-                {"format": "meta"},
                 required=True,
             )
             for entry in entries:

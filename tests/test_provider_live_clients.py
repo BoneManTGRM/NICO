@@ -125,6 +125,7 @@ def test_bitbucket_client_collects_cloud_payload() -> None:
         if path.endswith("/pipelines/"):
             return httpx.Response(200, json={"values": []})
         if f"/src/{'b' * 40}/" in path:
+            assert request.url.params.get("format") is None
             return httpx.Response(
                 200,
                 json={"values": [{"path": "src/app.py", "type": "commit_file", "commit": {"hash": "b" * 40}}]},
