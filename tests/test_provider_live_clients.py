@@ -241,7 +241,7 @@ def test_azure_anonymous_root_only_response_requires_read_only_authentication() 
         retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
     )
 
-    with pytest.raises(ProviderClientError, match="provider_required_source_evidence_unavailable"):
+    with pytest.raises(ProviderClientError, match="provider_read_only_authentication_required"):
         collector.collect("azure-repo")
 
 
@@ -289,6 +289,67 @@ def test_azure_auto_retries_root_only_source_once_with_configured_read_only_cred
     assert collection.access_mode == "authenticated_read_only"
     assert collection.credential_used is True
     assert collection.adapt().warnings == ()
+
+
+@pytest.mark.parametrize("provider", ("gitlab", "bitbucket", "azure_devops"))
+def test_provider_metadata_with_no_commits_is_classified_as_empty_repository(
+    provider: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if provider == "gitlab":
+        collector = GitLabClient(
+            instance_url="https://gitlab.example.com",
+            credential_reference=_reference("gitlab", "gitlab.example.com", "private_token"),
+            access_mode="anonymous_public",
+            retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+        )
+        monkeypatch.setattr(
+            collector,
+            "_get",
+            lambda *args, **kwargs: (
+                {"id": 17, "path_with_namespace": "group/repo", "default_branch": "main"},
+                None,
+            ),
+        )
+        monkeypatch.setattr(collector, "_gitlab_pages", lambda *args, **kwargs: [])
+        repository_id = "group/repo"
+    elif provider == "bitbucket":
+        collector = BitbucketCloudClient(
+            credential_reference=_reference("bitbucket", "api.bitbucket.org"),
+            access_mode="anonymous_public",
+            retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+        )
+        monkeypatch.setattr(
+            collector,
+            "_get",
+            lambda *args, **kwargs: (
+                {"uuid": "repo-uuid", "slug": "repo", "workspace": {"slug": "workspace"}},
+                None,
+            ),
+        )
+        monkeypatch.setattr(collector, "_bitbucket_pages", lambda *args, **kwargs: [])
+        repository_id = "workspace/repo"
+    else:
+        collector = AzureDevOpsClient(
+            organization="Org",
+            project="Project",
+            credential_reference=_reference("azure_devops", "dev.azure.com", "basic_token"),
+            access_mode="anonymous_public",
+            retry_policy=RetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
+        )
+        monkeypatch.setattr(
+            collector,
+            "_get",
+            lambda *args, **kwargs: (
+                {"id": "azure-repo", "name": "repo", "project": {"name": "Project"}},
+                None,
+            ),
+        )
+        monkeypatch.setattr(collector, "_azure_pages", lambda *args, **kwargs: [])
+        repository_id = "azure-repo"
+
+    with pytest.raises(ProviderClientError, match="provider_repository_empty"):
+        collector.collect(repository_id)
 
 
 def test_rate_limit_retries_are_bounded() -> None:

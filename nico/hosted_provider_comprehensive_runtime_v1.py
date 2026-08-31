@@ -32,7 +32,12 @@ from nico.hosted_assessment import (
     normalize_repository,
     should_fetch_path,
 )
-from nico.provider_credentials import EnvironmentCredentialResolver, build_reference
+from nico.provider_credentials import (
+    CredentialError,
+    EnvironmentCredentialResolver,
+    SecretValue,
+    build_reference,
+)
 from nico.provider_live_clients import AzureDevOpsClient, BitbucketCloudClient, GitLabClient, RetryPolicy
 from nico.provider_neutral_contract import ProviderAccessMode
 from nico.provider_neutral_contract import ProviderKind as NeutralProviderKind
@@ -731,6 +736,8 @@ def checkout_hosted_provider_snapshot(
     workspace: Path,
     env: Mapping[str, str],
     *,
+    access_mode: str | None = None,
+    credential_used: bool | None = None,
     environ: Mapping[str, str] | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[Path | None, str, list[str]]:
@@ -742,41 +749,78 @@ def checkout_hosted_provider_snapshot(
         return None, "", ["git is unavailable in this worker image; provider snapshot checkout was skipped."]
     if not _SHA_RE.fullmatch(str(commit_sha or "")):
         return None, "", ["A valid full provider snapshot revision is required before scanner execution."]
-    selected = os.environ if environ is None else environ
-    secret = str(selected.get(token_env) or "")
-    if not secret:
-        return None, "", [f"{provider.value} server-side credential is not configured for exact snapshot checkout."]
+    try:
+        selected_mode = _access_mode(access_mode)
+    except ValueError:
+        return None, "", ["provider_snapshot_access_binding_invalid"]
+    if (
+        selected_mode is ProviderAccessMode.AUTO
+        or not isinstance(credential_used, bool)
+        or credential_used is not (selected_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY)
+    ):
+        return None, "", ["provider_snapshot_access_binding_invalid"]
 
-    askpass = workspace / "nico-provider-git-askpass.sh"
-    askpass.write_text(
-        "#!/bin/sh\ncase \"$1\" in\n  *Username*) printf '%s\\n' \"$NICO_GIT_AUTH_USERNAME\" ;;\n  *) printf '%s\\n' \"$NICO_GIT_AUTH_PASSWORD\" ;;\nesac\n",
-        encoding="utf-8",
-    )
-    askpass.chmod(0o700)
     git_env = dict(env)
+    for key in (
+        token_env,
+        "GIT_ASKPASS",
+        "SSH_ASKPASS",
+        "NICO_GIT_AUTH_USERNAME",
+        "NICO_GIT_AUTH_PASSWORD",
+    ):
+        git_env.pop(key, None)
     git_env.update(
         {
             "GIT_TERMINAL_PROMPT": "0",
-            "GIT_ASKPASS": str(askpass),
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
-            "NICO_GIT_AUTH_USERNAME": username,
-            "NICO_GIT_AUTH_PASSWORD": secret,
         }
     )
+    if selected_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY:
+        selected = os.environ if environ is None else environ
+        try:
+            secret = SecretValue(str(selected.get(token_env) or "")).reveal()
+        except CredentialError:
+            return None, "", [f"{provider.value} read-only credential is not safely configured for exact snapshot checkout."]
+        askpass = workspace / "nico-provider-git-askpass.sh"
+        askpass.write_text(
+            "#!/bin/sh\ncase \"$1\" in\n  *Username*) printf '%s\\n' \"$NICO_GIT_AUTH_USERNAME\" ;;\n  *) printf '%s\\n' \"$NICO_GIT_AUTH_PASSWORD\" ;;\nesac\n",
+            encoding="utf-8",
+        )
+        askpass.chmod(0o700)
+        git_env.update(
+            {
+                "GIT_ASKPASS": str(askpass),
+                "NICO_GIT_AUTH_USERNAME": username,
+                "NICO_GIT_AUTH_PASSWORD": secret,
+            }
+        )
+
+    def git_command(*arguments: str) -> list[str]:
+        return [
+            "git",
+            "-c",
+            "credential.helper=",
+            "-c",
+            "http.extraHeader=",
+            "-c",
+            "http.followRedirects=false",
+            *arguments,
+        ]
+
     repo_path = workspace / "repo"
-    clone = _git_run(["git", "-c", "credential.helper=", "clone", "--filter=blob:none", "--no-checkout", clone_url, str(repo_path)], cwd=None, env=git_env, runner=runner)
+    clone = _git_run(git_command("clone", "--filter=blob:none", "--no-checkout", clone_url, str(repo_path)), cwd=None, env=git_env, runner=runner)
     if clone.returncode != 0:
         return None, "", [f"{provider.value} snapshot-bound git clone failed safely."]
-    fetch = _git_run(["git", "-c", "credential.helper=", "fetch", "--depth", "1", "origin", commit_sha], cwd=repo_path, env=git_env, runner=runner)
+    fetch = _git_run(git_command("fetch", "--depth", "1", "origin", commit_sha), cwd=repo_path, env=git_env, runner=runner)
     if fetch.returncode != 0:
         shutil.rmtree(repo_path, ignore_errors=True)
         return None, "", [f"{provider.value} exact snapshot revision could not be fetched."]
-    checkout = _git_run(["git", "checkout", "--detach", commit_sha], cwd=repo_path, env=git_env, runner=runner)
+    checkout = _git_run(git_command("checkout", "--detach", commit_sha), cwd=repo_path, env=git_env, runner=runner)
     if checkout.returncode != 0:
         shutil.rmtree(repo_path, ignore_errors=True)
         return None, "", [f"{provider.value} exact snapshot revision could not be checked out."]
-    resolved = _git_run(["git", "rev-parse", "HEAD"], cwd=repo_path, env=git_env, timeout=30, runner=runner)
+    resolved = _git_run(git_command("rev-parse", "HEAD"), cwd=repo_path, env=git_env, timeout=30, runner=runner)
     actual = (resolved.stdout or "").strip().casefold()
     if resolved.returncode != 0 or actual != commit_sha.casefold():
         shutil.rmtree(repo_path, ignore_errors=True)
@@ -867,6 +911,121 @@ def _persist_evidence(bundle: Mapping[str, Any], store: StorageAdapter, filename
     )
 
 
+def _provider_access_report_evidence(
+    context: Mapping[str, Any],
+    snapshot: Mapping[str, Any],
+    repository_evidence: Mapping[str, Any],
+) -> list[str]:
+    """Author safe, localized report lines from the frozen provider-access snapshot."""
+
+    spanish = _text(context.get("report_language")).casefold().replace("_", "-").startswith("es")
+    provider = {
+        "gitlab": "GitLab",
+        "bitbucket": "Bitbucket Cloud",
+        "azure_devops": "Azure DevOps",
+    }.get(_text(snapshot.get("provider")), _text(snapshot.get("provider")))
+    access_mode = {
+        "anonymous_public": "Público anónimo" if spanish else "Anonymous public",
+        "authenticated_read_only": "Autenticado de solo lectura" if spanish else "Authenticated read-only",
+    }.get(_text(snapshot.get("access_mode")), "No determinado" if spanish else "Undetermined")
+    yes = "Sí" if spanish else "Yes"
+    no = "No"
+    bool_text = lambda value: yes if value is True else no
+    capability_states = list(snapshot.get("provider_capability_states") or [])
+    rate_limited = any(
+        isinstance(item, Mapping) and _text(item.get("state")) == "rate_limited"
+        for item in capability_states
+    )
+    limitation_count = len(list(snapshot.get("provider_collection_limitations") or []))
+    exact_locator_count = int(repository_evidence.get("exact_source_locator_count") or 0)
+
+    if spanish:
+        lines = [
+            f"Proveedor: {provider}.",
+            f"Identidad del repositorio: {_text(snapshot.get('repository'))}.",
+            f"Revisión inmutable: {_text(snapshot.get('commit_sha'))}.",
+            f"Modo de acceso: {access_mode}.",
+            f"Credencial del proveedor utilizada: {bool_text(snapshot.get('credential_used'))}.",
+            f"Evidencia fuente requerida completa: {bool_text(snapshot.get('required_source_evidence_complete'))}.",
+            f"Paginación completa: {bool_text(snapshot.get('pagination_complete'))}.",
+            "Estado de límite de solicitudes: Se registró una limitación del proveedor."
+            if rate_limited
+            else "Estado de límite de solicitudes: Sin limitación activa registrada.",
+            f"Huella digital de la fuente: {_text(snapshot.get('provider_source_fingerprint'))}.",
+            f"Localizadores de fuente exacta: {exact_locator_count} presentes.",
+            f"Identidad de la instantánea de evaluación: {_text(snapshot.get('snapshot_id'))}.",
+            f"Limitaciones de recopilación registradas: {limitation_count}.",
+            "Revisión humana: Obligatoria.",
+            "Aprobación humana: Pendiente de una acción explícita del revisor.",
+            "Entrega al cliente: No autorizada.",
+        ]
+    else:
+        lines = [
+            f"Provider: {provider}.",
+            f"Repository identity: {_text(snapshot.get('repository'))}.",
+            f"Immutable revision: {_text(snapshot.get('commit_sha'))}.",
+            f"Access mode: {access_mode}.",
+            f"Provider credential used: {bool_text(snapshot.get('credential_used'))}.",
+            f"Required source evidence complete: {bool_text(snapshot.get('required_source_evidence_complete'))}.",
+            f"Pagination complete: {bool_text(snapshot.get('pagination_complete'))}.",
+            "Rate-limit status: A provider limitation was recorded."
+            if rate_limited
+            else "Rate-limit status: No active provider limit was recorded.",
+            f"Source fingerprint: {_text(snapshot.get('provider_source_fingerprint'))}.",
+            f"Exact-source locators: {exact_locator_count} present.",
+            f"Assessment snapshot identity: {_text(snapshot.get('snapshot_id'))}.",
+            f"Collection limitations recorded: {limitation_count}.",
+            "Human review: Required.",
+            "Human approval: Pending explicit reviewer action.",
+            "Client delivery: Not authorized.",
+        ]
+
+    capability_labels = {
+        "repository": ("Repository", "Repositorio"),
+        "commits": ("Commits", "Commits"),
+        "branches": ("Branches", "Ramas"),
+        "tree": ("Source tree", "Árbol de fuentes"),
+        "blobs": ("Source objects", "Objetos fuente"),
+        "tags": ("Tags", "Etiquetas"),
+        "change_requests": ("Change requests", "Solicitudes de cambio"),
+        "ci_runs": ("Pipeline runs", "Ejecuciones de canalización"),
+        "ci_jobs": ("Pipeline jobs", "Trabajos de canalización"),
+        "environments": ("Environments", "Entornos"),
+        "deployments": ("Deployments", "Despliegues"),
+        "work_items": ("Issues or work items", "Incidencias o elementos de trabajo"),
+        "releases": ("Releases", "Versiones"),
+        "source_links": ("Exact-source links", "Enlaces de fuente exacta"),
+    }
+    state_labels = {
+        "supported": ("Collected", "Recopilado"),
+        "supported_empty": ("Supported but empty", "Compatible, pero vacío"),
+        "supported_limited": ("Collected with explicit limits", "Recopilado con límites explícitos"),
+        "unavailable_authentication": ("Unavailable without read-only authentication", "No disponible sin autenticación de solo lectura"),
+        "unavailable_permission": ("Unavailable with the current permission", "No disponible con el permiso actual"),
+        "unavailable_provider": ("Unavailable due to provider limitation", "No disponible por una limitación del proveedor"),
+        "unavailable_configuration": ("Unavailable due to repository configuration", "No disponible por la configuración del repositorio"),
+        "rate_limited": ("Unavailable because the provider rate limit was reached", "No disponible porque se alcanzó el límite de solicitudes del proveedor"),
+        "collection_failed": ("Collection failed and was not treated as complete", "La recopilación falló y no se trató como completa"),
+        "not_applicable": ("Not applicable", "No aplicable"),
+        "not_assessed": ("Not assessed", "No evaluado"),
+        "unsupported": ("Unavailable due to provider limitation", "No disponible por una limitación del proveedor"),
+        "not_configured": ("Unavailable due to repository configuration", "No disponible por la configuración del repositorio"),
+    }
+    for item in capability_states:
+        if not isinstance(item, Mapping):
+            continue
+        capability = _text(item.get("capability"))
+        state = _text(item.get("state"))
+        label = capability_labels.get(capability, (capability.replace("_", " ").title(), capability.replace("_", " ").title()))[1 if spanish else 0]
+        state_label = state_labels.get(state, (state.replace("_", " ").title(), state.replace("_", " ").title()))[1 if spanish else 0]
+        lines.append(
+            f"Capacidad {label}: {state_label}."
+            if spanish
+            else f"Capability {label}: {state_label}."
+        )
+    return lines
+
+
 def collect_hosted_provider_repository_evidence(
     context: Mapping[str, Any],
     snapshot: Mapping[str, Any],
@@ -912,7 +1071,14 @@ def collect_hosted_provider_repository_evidence(
         root = Path(temporary)
         from nico import scanner_worker as scanner_base
 
-        repo_path, actual_sha, checkout_notes = checkout_hosted_provider_snapshot(repository, _text(snapshot.get("commit_sha")), root, scanner_base.clean_env(root))
+        repo_path, actual_sha, checkout_notes = checkout_hosted_provider_snapshot(
+            repository,
+            _text(snapshot.get("commit_sha")),
+            root,
+            scanner_base.clean_env(root),
+            access_mode=_text(snapshot.get("access_mode")),
+            credential_used=snapshot.get("credential_used"),
+        )
         notes.extend(checkout_notes)
         if repo_path is None or actual_sha != _text(snapshot.get("commit_sha")).casefold():
             unavailable = {
@@ -966,6 +1132,15 @@ def collect_hosted_provider_repository_evidence(
         "repository_provider": provider,
         "repository_provider_instance": snapshot.get("provider_instance") or "",
         "provider_repository_id": snapshot.get("provider_repository_id") or "",
+        "provider_access_mode": snapshot.get("access_mode") or "",
+        "provider_credential_used": snapshot.get("credential_used") is True,
+        "required_source_evidence_complete": snapshot.get("required_source_evidence_complete") is True,
+        "provider_pagination_complete": snapshot.get("pagination_complete") is True,
+        "provider_rate_limit_state": dict(snapshot.get("provider_rate_limit_state") or {}),
+        "provider_collection_limitations": list(snapshot.get("provider_collection_limitations") or []),
+        "provider_source_fingerprint": snapshot.get("provider_source_fingerprint") or "",
+        "exact_source_locator_count": len(envelope.exact_source_locators),
+        "assessment_snapshot_id": snapshot_id,
         "provider_capability_states": capability_states,
         "code_evidence_scope": "Repository files, manifests, CI configuration, source signals, and complexity are read from the exact immutable provider revision.",
         "operational_evidence_scope": "Change requests and provider-native CI/job/deployment records are separately retained provider evidence and do not mutate exact-revision code truth.",
@@ -1235,6 +1410,11 @@ def install_hosted_provider_comprehensive_runtime(app: FastAPI) -> dict[str, Any
                     summary="Exact-revision provider repository, dependency, architecture, workflow, activity, and complexity evidence were attached through the canonical provider-neutral path.",
                     repository_evidence=repository_evidence,
                     complexity_evidence=complexity_evidence,
+                    provider_access_evidence=_provider_access_report_evidence(
+                        context,
+                        snapshot,
+                        repository_evidence,
+                    ),
                     evidence={
                         "repository_provider": snapshot.get("provider"),
                         "repository_evidence_id": repository_evidence.get("evidence_id"),
@@ -1260,7 +1440,18 @@ def install_hosted_provider_comprehensive_runtime(app: FastAPI) -> dict[str, Any
         def clone_repository_at_snapshot(repository: str, commit_sha: str, workspace: Path, env: dict[str, str]):
             if _clone_spec(repository) is None:
                 return original_clone(repository, commit_sha, workspace, env)
-            return checkout_hosted_provider_snapshot(repository, commit_sha, workspace, env)
+            credential_used = {
+                "true": True,
+                "false": False,
+            }.get(_text(env.get("NICO_PROVIDER_CREDENTIAL_USED")).casefold())
+            return checkout_hosted_provider_snapshot(
+                repository,
+                commit_sha,
+                workspace,
+                env,
+                access_mode=env.get("NICO_PROVIDER_ACCESS_MODE"),
+                credential_used=credential_used,
+            )
 
         setattr(clone_repository_at_snapshot, _PATCH_MARKER, True)
         setattr(clone_repository_at_snapshot, "_nico_previous", original_clone)

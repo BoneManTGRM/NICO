@@ -51,6 +51,7 @@ ANONYMOUS_PUBLIC = "anonymous_public"
 AUTHENTICATED_READ_ONLY = "authenticated_read_only"
 EXPECTED_SUCCESS = "success"
 EXPECTED_AUTHENTICATION_REQUIRED = "authentication_required"
+EXPECTED_SUCCESS_OR_AUTHENTICATION_REQUIRED = "success_or_authentication_required"
 
 OFFICIAL_ENDPOINTS = {
     "github": "https://api.github.com",
@@ -730,7 +731,11 @@ def run_acceptance(*, provider: str, repository: str, revision: str, access_mode
         raise LiveAcceptanceError("provider_acceptance_requires_two_passes")
     if access_mode == ANONYMOUS_PUBLIC:
         assert_anonymous_environment_clean()
-    if expected_outcome not in {EXPECTED_SUCCESS, EXPECTED_AUTHENTICATION_REQUIRED}:
+    if expected_outcome not in {
+        EXPECTED_SUCCESS,
+        EXPECTED_AUTHENTICATION_REQUIRED,
+        EXPECTED_SUCCESS_OR_AUTHENTICATION_REQUIRED,
+    }:
         raise LiveAcceptanceError("provider_acceptance_expected_outcome_invalid")
 
     provider = _text(provider).lower().replace("-", "_")
@@ -752,7 +757,10 @@ def run_acceptance(*, provider: str, repository: str, revision: str, access_mode
                 credential_metadata = current_metadata
             collection = handle.collector.collect(native_repository, revision=pinned_revision)
         except ProviderClientError as exc:
-            if expected_outcome != EXPECTED_AUTHENTICATION_REQUIRED:
+            if expected_outcome not in {
+                EXPECTED_AUTHENTICATION_REQUIRED,
+                EXPECTED_SUCCESS_OR_AUTHENTICATION_REQUIRED,
+            }:
                 raise
             code = _error_code(exc)
             if code == "provider_acceptance_unexpected_provider_failure":
@@ -764,7 +772,7 @@ def run_acceptance(*, provider: str, repository: str, revision: str, access_mode
         finally:
             handle.close()
 
-        if expected_outcome != EXPECTED_SUCCESS:
+        if expected_outcome == EXPECTED_AUTHENTICATION_REQUIRED:
             raise LiveAcceptanceError("provider_acceptance_expected_authentication_required_but_succeeded")
         if not pinned_revision:
             pinned_revision = collection.revision
@@ -818,8 +826,15 @@ def run_acceptance(*, provider: str, repository: str, revision: str, access_mode
 
     if credential_metadata is None:
         credential_metadata = _credential_metadata(provider, None)
-    if {item["outcome"] for item in runs} != {expected_outcome}:
+    observed_outcomes = {item["outcome"] for item in runs}
+    if expected_outcome == EXPECTED_SUCCESS_OR_AUTHENTICATION_REQUIRED:
+        if len(observed_outcomes) != 1 or not observed_outcomes.issubset(
+            {EXPECTED_SUCCESS, EXPECTED_AUTHENTICATION_REQUIRED}
+        ):
+            raise LiveAcceptanceError("provider_acceptance_outcome_drift")
+    elif observed_outcomes != {expected_outcome}:
         raise LiveAcceptanceError("provider_acceptance_outcome_drift")
+    observed_outcome = next(iter(observed_outcomes))
     resolved_access_mode = (
         _text(runs[0].get("access_mode"))
         if runs and runs[0]["outcome"] == EXPECTED_SUCCESS
@@ -838,7 +853,7 @@ def run_acceptance(*, provider: str, repository: str, revision: str, access_mode
         "raw_credential_absent": True, "human_review_required": True,
         "human_approval_false": True, "client_delivery_false": True,
     }
-    if expected_outcome == EXPECTED_SUCCESS:
+    if observed_outcome == EXPECTED_SUCCESS:
         for key, run_key in (
             ("repository_identity_stable", "repository_id"),
             ("immutable_revision_stable", "revision"),
@@ -877,12 +892,13 @@ def run_acceptance(*, provider: str, repository: str, revision: str, access_mode
     result = {
         "artifact_schema": ARTIFACT_SCHEMA, "status": "passed",
         "expected_outcome": expected_outcome,
+        "observed_outcome": observed_outcome,
         "provider_support_maturity": (
             ProviderSupportMaturity.REAL_PROVIDER_INTEGRATION_PROVEN.value
-            if expected_outcome == EXPECTED_SUCCESS
+            if observed_outcome == EXPECTED_SUCCESS
             else ProviderSupportMaturity.IMPLEMENTED_BUT_UNPROVEN.value),
         "public_anonymous_support_proven": (
-            access_mode == ANONYMOUS_PUBLIC and expected_outcome == EXPECTED_SUCCESS),
+            access_mode == ANONYMOUS_PUBLIC and observed_outcome == EXPECTED_SUCCESS),
         "private_provider_support_proven": False,
         "provider": provider, "repository": repository, "requested_access_mode": access_mode,
         "access_mode": resolved_access_mode, "credential_used": resolved_credential_used,
@@ -913,6 +929,14 @@ def verify_artifact(path: Path, *, access_mode: str, expected_outcome: str,
         raise LiveAcceptanceError("provider_acceptance_artifact_access_mode_mismatch")
     if payload.get("expected_outcome") != expected_outcome:
         raise LiveAcceptanceError("provider_acceptance_artifact_outcome_mismatch")
+    observed_outcome = payload.get("observed_outcome")
+    allowed_observed = (
+        {EXPECTED_SUCCESS, EXPECTED_AUTHENTICATION_REQUIRED}
+        if expected_outcome == EXPECTED_SUCCESS_OR_AUTHENTICATION_REQUIRED
+        else {expected_outcome}
+    )
+    if observed_outcome not in allowed_observed:
+        raise LiveAcceptanceError("provider_acceptance_artifact_observed_outcome_mismatch")
     identity = {"sha": _text(workflow_sha), "run_id": _text(workflow_run_id),
                 "run_attempt": _text(workflow_run_attempt)}
     if payload.get("workflow_identity") != identity or not all(identity.values()):
@@ -959,7 +983,8 @@ def main() -> int:
     parser.add_argument("--access-mode", choices=(AUTO, ANONYMOUS_PUBLIC, AUTHENTICATED_READ_ONLY),
                         default=ANONYMOUS_PUBLIC)
     parser.add_argument("--expected-outcome",
-                        choices=(EXPECTED_SUCCESS, EXPECTED_AUTHENTICATION_REQUIRED),
+                        choices=(EXPECTED_SUCCESS, EXPECTED_AUTHENTICATION_REQUIRED,
+                                 EXPECTED_SUCCESS_OR_AUTHENTICATION_REQUIRED),
                         default=EXPECTED_SUCCESS)
     parser.add_argument("--passes", type=int, default=2)
     parser.add_argument("--workflow-sha", default="")

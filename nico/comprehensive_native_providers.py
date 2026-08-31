@@ -153,7 +153,30 @@ def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
     if snapshot.get("status") != "attached":
         return _result(context, "blocked", reason="attached_snapshot_required")
     scan_id = _scan_id(context)
-    scan = get_scan(scan_id) if scan_id else start_snapshot_scan({"repository": context["repository"], "authorized": True, "customer_id": context["customer_id"], "project_id": context["project_id"], "run_id": context["run_id"], "authorized_by": "comprehensive_native_provider", "authorization_scope": "authorized defensive repository assessment", "snapshot_id": snapshot.get("snapshot_id"), "snapshot_commit_sha": snapshot.get("commit_sha"), "tools": []})
+    scan = get_scan(scan_id) if scan_id else start_snapshot_scan(
+        {
+            "repository": context["repository"],
+            "authorized": True,
+            "customer_id": context["customer_id"],
+            "project_id": context["project_id"],
+            "run_id": context["run_id"],
+            "authorized_by": "comprehensive_native_provider",
+            "authorization_scope": "authorized defensive repository assessment",
+            "snapshot_id": snapshot.get("snapshot_id"),
+            "snapshot_commit_sha": snapshot.get("commit_sha"),
+            "provider_access_mode": (
+                snapshot.get("access_mode")
+                or snapshot.get("provider_access_mode")
+                or ""
+            ),
+            "provider_credential_used": (
+                snapshot.get("credential_used")
+                if isinstance(snapshot.get("credential_used"), bool)
+                else snapshot.get("provider_credential_used")
+            ),
+            "tools": [],
+        }
+    )
     status = _text(scan.get("status"), 40).lower()
     if status in {"queued", "running"}:
         return _result(context, "running", summary="The modern scanner suite is executing against the exact immutable commit.", scan_id=scan.get("scan_id"), scanner={"scan_id": scan.get("scan_id"), "status": status, "current_stage": scan.get("current_stage"), "active_tool": scan.get("active_tool"), "progress_percent": scan.get("progress_percent"), "snapshot_commit_sha": scan.get("snapshot_commit_sha")}, evidence={"scan_id": scan.get("scan_id"), "active_tool": scan.get("active_tool"), "progress_percent": scan.get("progress_percent"), "snapshot_commit_sha": scan.get("snapshot_commit_sha")})

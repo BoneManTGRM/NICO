@@ -270,6 +270,12 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
     with tempfile.TemporaryDirectory(prefix="nico-snapshot-scan-") as workspace_name:
         workspace_root = Path(workspace_name)
         env = base.clean_env(workspace_root)
+        provider_access_mode = str(payload.get("provider_access_mode") or "")
+        if provider_access_mode:
+            env["NICO_PROVIDER_ACCESS_MODE"] = provider_access_mode
+            env["NICO_PROVIDER_CREDENTIAL_USED"] = (
+                "true" if payload.get("provider_credential_used") is True else "false"
+            )
         try:
             repo_path, actual_commit_sha, clone_notes = clone_repository_at_snapshot(
                 str(payload.get("repository") or ""),
@@ -403,10 +409,29 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "blocked", "error": "authorized_by is required."}
     if not str(payload.get("authorization_scope") or "").strip():
         return {"status": "blocked", "error": "authorization_scope is required."}
+    from nico.hosted_provider_comprehensive_runtime_v1 import _clone_spec
+
     try:
-        base.safe_repo_url(repository)
+        hosted_provider = _clone_spec(repository) is not None
     except ValueError as exc:
         return {"status": "blocked", "error": str(exc)}
+    if hosted_provider:
+        provider_access_mode = str(payload.get("provider_access_mode") or "")
+        provider_credential_used = payload.get("provider_credential_used")
+        if (
+            provider_access_mode not in {"anonymous_public", "authenticated_read_only"}
+            or not isinstance(provider_credential_used, bool)
+            or provider_credential_used is not (provider_access_mode == "authenticated_read_only")
+        ):
+            return {
+                "status": "blocked",
+                "error": "Hosted provider scanner access truth is missing or inconsistent.",
+            }
+    else:
+        try:
+            base.safe_repo_url(repository)
+        except ValueError as exc:
+            return {"status": "blocked", "error": str(exc)}
 
     specs = _requested_specs(payload)
     scan_id = f"scan_snapshot_{uuid4().hex[:16]}"
@@ -418,6 +443,12 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "repository": repository,
         "snapshot_id": snapshot_id,
         "snapshot_commit_sha": commit_sha,
+        "provider_access_mode": (
+            str(payload.get("provider_access_mode") or "") if hosted_provider else ""
+        ),
+        "provider_credential_used": (
+            payload.get("provider_credential_used") if hosted_provider else False
+        ),
         "actual_commit_sha": "",
         "snapshot_match": False,
         "status": "queued",

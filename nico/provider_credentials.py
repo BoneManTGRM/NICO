@@ -31,6 +31,8 @@ class SecretValue:
         normalized = str(value or "")
         if not normalized:
             raise CredentialError("provider_credential_empty")
+        if any(character.isspace() or not character.isprintable() for character in normalized):
+            raise CredentialError("provider_credential_malformed")
         self.__value = normalized
 
     def reveal(self) -> str:

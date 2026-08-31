@@ -629,6 +629,8 @@ class GitLabClient(BaseProviderClient):
             {"ref_name": revision or _text(project.get("default_branch") or "main")},
             required=True,
         )
+        if not commits:
+            raise ProviderClientError("provider_repository_empty")
         observed_revision = commits[0].get("id") if commits else ""
         exact_revision = _immutable_revision(revision, observed_revision)
         branches = self._optional_collection(
@@ -835,6 +837,8 @@ class BitbucketCloudClient(BaseProviderClient):
             commits = [dict(_mapping(commit_raw))]
         else:
             commits = self._bitbucket_pages(f"{root}/commits", required=True)
+        if not commits:
+            raise ProviderClientError("provider_repository_empty")
         observed_revision = commits[0].get("hash") if commits else ""
         exact_revision = _immutable_revision(revision, observed_revision)
         branches = self._optional_collection(
@@ -1030,6 +1034,8 @@ class AzureDevOpsClient(BaseProviderClient):
             {"$top": 100, "searchCriteria.itemVersion.version": revision} if revision else {"$top": 100},
             required=True,
         )
+        if not commits:
+            raise ProviderClientError("provider_repository_empty")
         observed_revision = commits[0].get("commitId") if commits else ""
         exact_revision = _immutable_revision(revision, observed_revision)
         branches = self._optional_collection(
@@ -1071,6 +1077,8 @@ class AzureDevOpsClient(BaseProviderClient):
             self._auth_fallback_attempted = True
             self._active_credential = self.credential
             source_tree = load_source_tree()
+        if not source_tree and self._active_credential is None:
+            raise ProviderClientError("provider_read_only_authentication_required")
         self._require_source_tree(source_tree)
         pull_requests = self._optional_collection(
             Capability.CHANGE_REQUESTS,

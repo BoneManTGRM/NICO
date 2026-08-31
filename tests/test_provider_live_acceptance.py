@@ -16,6 +16,8 @@ class FakeCollector:
     revisions: list[str]
     provider: ProviderKind = ProviderKind.GITLAB
     page_counts: list[int] | None = None
+    access_mode: str = "authenticated_read_only"
+    credential_used: bool = True
     index: int = 0
     closed: bool = False
 
@@ -28,7 +30,11 @@ class FakeCollector:
             allowed_hosts=("gitlab.example.com",),
             scopes=("read_api", "read_repository"),
         )
-        self.credential = EnvironmentCredentialResolver({"TOKEN": "never-export-me"}).resolve(reference)
+        self.credential = (
+            EnvironmentCredentialResolver({"TOKEN": "never-export-me"}).resolve(reference)
+            if self.credential_used
+            else None
+        )
 
     def collect(self, repository_id: str, *, revision: str = "") -> ProviderCollection:
         observed = self.revisions[min(self.index, len(self.revisions) - 1)]
@@ -76,13 +82,15 @@ class FakeCollector:
                 "collection_limitations": [],
                 "snapshot_manifest_sha256": "sha256:" + "1" * 64,
                 "scopes": ["read_api", "read_repository"],
-                "access_mode": "authenticated_read_only",
-                "credential_used": True,
+                "access_mode": self.access_mode,
+                "credential_used": self.credential_used,
                 "collected_at": f"2026-07-21T00:00:0{self.index}Z",
             },
             pages_fetched=pages_fetched,
             requests_made=2,
             collected_at=f"2026-07-21T00:00:0{self.index}Z",
+            access_mode=self.access_mode,
+            credential_used=self.credential_used,
         )
 
     def close(self) -> None:
@@ -90,10 +98,13 @@ class FakeCollector:
 
 
 class FakeRequestAudit:
+    def __init__(self, authorization_header_observed: bool = True) -> None:
+        self.authorization_header_observed = authorization_header_observed
+
     def safe_metadata(self) -> dict[str, object]:
         return {
             "request_count": 1,
-            "authorization_header_observed": True,
+            "authorization_header_observed": self.authorization_header_observed,
             "cookie_header_observed": False,
             "secret_query_observed": False,
         }
@@ -103,7 +114,7 @@ class FakeHandle:
     def __init__(self, collector: FakeCollector) -> None:
         self.collector = collector
         self.credential = collector.credential
-        self.request_audit = FakeRequestAudit()
+        self.request_audit = FakeRequestAudit(collector.credential_used)
 
     def close(self) -> None:
         self.collector.close()
@@ -213,6 +224,111 @@ def test_complete_optional_pagination_count_may_vary_between_stable_source_passe
     assert [item["pages_fetched"] for item in result["runs"]] == [8, 7]
 
 
+def test_flexible_public_outcome_accepts_real_anonymous_success(monkeypatch) -> None:
+    collector = FakeCollector(
+        ["a" * 40, "a" * 40],
+        access_mode="anonymous_public",
+        credential_used=False,
+    )
+    monkeypatch.setattr(
+        provider_live_acceptance,
+        "_build_azure_collector",
+        lambda repository, access_mode: (FakeHandle(collector), repository),
+    )
+
+    result = provider_live_acceptance.run_acceptance(
+        provider="azure_devops",
+        repository="Org/Project/Repo",
+        revision="a" * 40,
+        access_mode="anonymous_public",
+        expected_outcome="success_or_authentication_required",
+        passes=2,
+    )
+
+    assert result["observed_outcome"] == "success"
+    assert result["public_anonymous_support_proven"] is True
+    assert result["provider_support_maturity"] == "REAL_PROVIDER_INTEGRATION_PROVEN"
+
+
+def test_flexible_public_outcome_accepts_stable_authentication_required(monkeypatch) -> None:
+    class AuthenticationRequiredCollector:
+        credential = None
+
+        def collect(self, repository_id: str, *, revision: str = ""):
+            raise provider_live_acceptance.ProviderClientError(
+                "provider_read_only_authentication_required"
+            )
+
+        def close(self) -> None:
+            return None
+
+    collector = AuthenticationRequiredCollector()
+
+    class AuthenticationRequiredHandle:
+        credential = None
+        request_audit = FakeRequestAudit(False)
+
+        def __init__(self):
+            self.collector = collector
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        provider_live_acceptance,
+        "_build_azure_collector",
+        lambda repository, access_mode: (AuthenticationRequiredHandle(), repository),
+    )
+
+    result = provider_live_acceptance.run_acceptance(
+        provider="azure_devops",
+        repository="Org/Project/Repo",
+        revision="",
+        access_mode="anonymous_public",
+        expected_outcome="success_or_authentication_required",
+        passes=2,
+    )
+
+    assert result["observed_outcome"] == "authentication_required"
+    assert result["public_anonymous_support_proven"] is False
+    assert result["provider_support_maturity"] == "IMPLEMENTED_BUT_UNPROVEN"
+    assert result["proof"]["no_misleading_empty_report"] is True
+
+
+def test_flexible_public_outcome_rejects_success_authentication_drift(monkeypatch) -> None:
+    class DriftingCollector(FakeCollector):
+        def collect(self, repository_id: str, *, revision: str = "") -> ProviderCollection:
+            if self.index:
+                raise provider_live_acceptance.ProviderClientError(
+                    "provider_read_only_authentication_required"
+                )
+            return super().collect(repository_id, revision=revision)
+
+    collector = DriftingCollector(
+        ["a" * 40],
+        access_mode="anonymous_public",
+        credential_used=False,
+    )
+    monkeypatch.setattr(
+        provider_live_acceptance,
+        "_build_azure_collector",
+        lambda repository, access_mode: (FakeHandle(collector), repository),
+    )
+
+    with pytest.raises(
+        provider_live_acceptance.LiveAcceptanceError,
+        match="provider_acceptance_outcome_drift",
+    ):
+        provider_live_acceptance.run_acceptance(
+            provider="azure_devops",
+            repository="Org/Project/Repo",
+            revision="a" * 40,
+            access_mode="anonymous_public",
+            expected_outcome="success_or_authentication_required",
+            passes=2,
+        )
+
+
 def test_acceptance_rejects_one_pass(monkeypatch) -> None:
     collector = FakeCollector(["a" * 40])
     monkeypatch.setattr(
@@ -252,7 +368,8 @@ def test_provider_changes_trigger_four_isolated_anonymous_public_proofs() -> Non
         assert fixture in workflow
     assert workflow.count("--passes 2") >= 3
     assert "github.event.pull_request.head.sha" in workflow
-    assert workflow.count("expected_outcome: success") == 4
+    assert workflow.count("expected_outcome: success\n") == 3
+    assert "expected_outcome: success_or_authentication_required" in workflow
     assert "--workflow-sha \"${ACCEPTANCE_SHA}\"" in workflow
     assert "unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN" in workflow
     assert "unset NICO_GITLAB_TOKEN GITLAB_TOKEN" in workflow

@@ -148,6 +148,7 @@ def _translate_error(exc: Exception) -> HTTPException:
             "provider_service_unavailable": (503, True),
             "provider_network_timeout": (504, True),
             "provider_malformed_response": (502, False),
+            "provider_repository_empty": (422, False),
             "provider_required_source_evidence_unavailable": (422, False),
         }
         status, retryable = definitions.get(exc.code, (502, bool(exc.retryable)))

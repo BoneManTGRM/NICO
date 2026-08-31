@@ -1867,6 +1867,109 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    match = re.fullmatch(r"Provider: (?P<provider>GitLab|Bitbucket Cloud|Azure DevOps)\.", value)
+    if match is not None:
+        return f"Proveedor: {match.group('provider')}."
+
+    for pattern, label in (
+        (r"Repository identity: (?P<literal>[^\r\n]+)\.", "Identidad del repositorio"),
+        (r"Immutable revision: (?P<literal>[0-9a-fA-F]{40,64})\.", "Revisión inmutable"),
+        (r"Source fingerprint: (?P<literal>[^\s\r\n]+)\.", "Huella digital de la fuente"),
+        (r"Assessment snapshot identity: (?P<literal>[^\r\n]+)\.", "Identidad de la instantánea de evaluación"),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            return f"{label}: {match.group('literal')}."
+
+    match = re.fullmatch(
+        r"Access mode: (?P<mode>Anonymous public|Authenticated read-only|Undetermined)\.",
+        value,
+    )
+    if match is not None:
+        mode = {
+            "Anonymous public": "Público anónimo",
+            "Authenticated read-only": "Autenticado de solo lectura",
+            "Undetermined": "No determinado",
+        }[match.group("mode")]
+        return f"Modo de acceso: {mode}."
+
+    for pattern, label in (
+        (r"Provider credential used: (?P<value>Yes|No)\.", "Credencial del proveedor utilizada"),
+        (r"Required source evidence complete: (?P<value>Yes|No)\.", "Evidencia fuente requerida completa"),
+        (r"Pagination complete: (?P<value>Yes|No)\.", "Paginación completa"),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            translated = "Sí" if match.group("value") == "Yes" else "No"
+            return f"{label}: {translated}."
+
+    rate_status = {
+        "Rate-limit status: A provider limitation was recorded.": (
+            "Estado de límite de solicitudes: Se registró una limitación del proveedor."
+        ),
+        "Rate-limit status: No active provider limit was recorded.": (
+            "Estado de límite de solicitudes: Sin limitación activa registrada."
+        ),
+        "Human review: Required.": "Revisión humana: Obligatoria.",
+        "Human approval: Pending explicit reviewer action.": (
+            "Aprobación humana: Pendiente de una acción explícita del revisor."
+        ),
+        "Client delivery: Not authorized.": "Entrega al cliente: No autorizada.",
+    }.get(value)
+    if rate_status is not None:
+        return rate_status
+
+    match = re.fullmatch(r"Exact-source locators: (?P<count>\d+) present\.", value)
+    if match is not None:
+        return f"Localizadores de fuente exacta: {match.group('count')} presentes."
+
+    match = re.fullmatch(r"Collection limitations recorded: (?P<count>\d+)\.", value)
+    if match is not None:
+        return f"Limitaciones de recopilación registradas: {match.group('count')}."
+
+    match = re.fullmatch(
+        r"Capability (?P<capability>Repository|Commits|Branches|Source tree|Source objects|"
+        r"Tags|Change requests|Pipeline runs|Pipeline jobs|Environments|Deployments|"
+        r"Issues or work items|Releases|Exact-source links): "
+        r"(?P<state>Collected|Supported but empty|Collected with explicit limits|"
+        r"Unavailable without read-only authentication|Unavailable with the current permission|"
+        r"Unavailable due to provider limitation|Unavailable due to repository configuration|"
+        r"Unavailable because the provider rate limit was reached|"
+        r"Collection failed and was not treated as complete|Not applicable|Not assessed)\.",
+        value,
+    )
+    if match is not None:
+        capability = {
+            "Repository": "Repositorio",
+            "Commits": "Commits",
+            "Branches": "Ramas",
+            "Source tree": "Árbol de fuentes",
+            "Source objects": "Objetos fuente",
+            "Tags": "Etiquetas",
+            "Change requests": "Solicitudes de cambio",
+            "Pipeline runs": "Ejecuciones de canalización",
+            "Pipeline jobs": "Trabajos de canalización",
+            "Environments": "Entornos",
+            "Deployments": "Despliegues",
+            "Issues or work items": "Incidencias o elementos de trabajo",
+            "Releases": "Versiones",
+            "Exact-source links": "Enlaces de fuente exacta",
+        }[match.group("capability")]
+        state = {
+            "Collected": "Recopilado",
+            "Supported but empty": "Compatible, pero vacío",
+            "Collected with explicit limits": "Recopilado con límites explícitos",
+            "Unavailable without read-only authentication": "No disponible sin autenticación de solo lectura",
+            "Unavailable with the current permission": "No disponible con el permiso actual",
+            "Unavailable due to provider limitation": "No disponible por una limitación del proveedor",
+            "Unavailable due to repository configuration": "No disponible por la configuración del repositorio",
+            "Unavailable because the provider rate limit was reached": "No disponible porque se alcanzó el límite de solicitudes del proveedor",
+            "Collection failed and was not treated as complete": "La recopilación falló y no se trató como completa",
+            "Not applicable": "No aplicable",
+            "Not assessed": "No evaluado",
+        }[match.group("state")]
+        return f"Capacidad {capability}: {state}."
+
     match = re.fullmatch(
         r"Actionable hotspot (?P<path>[^\r\n]+?):(?P<line>\d+) · "
         r"(?P<name>[^\r\n]+?) · complexity (?P<complexity>\d+)\.",

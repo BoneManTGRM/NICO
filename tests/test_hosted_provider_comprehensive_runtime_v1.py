@@ -355,6 +355,8 @@ def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(monke
         revision,
         tmp_path,
         {"PATH": "/usr/bin"},
+        access_mode="authenticated_read_only",
+        credential_used=True,
         environ={"NICO_GITLAB_TOKEN": "super-secret-provider-token"},
         runner=runner,
     )
@@ -366,6 +368,160 @@ def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(monke
     askpass = (tmp_path / "nico-provider-git-askpass.sh").read_text(encoding="utf-8")
     assert "super-secret-provider-token" not in askpass
     assert "NICO_GIT_AUTH_PASSWORD" in askpass
+
+
+def test_exact_anonymous_checkout_uses_no_credential_or_auth_helper(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    revision = "e" * 40
+    commands: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+
+    @dataclass
+    class Result:
+        returncode: int = 0
+        stdout: str = ""
+        stderr: str = ""
+
+    def runner(command, **kwargs):
+        commands.append(list(command))
+        environments.append(dict(kwargs.get("env") or {}))
+        if command[-2:] == ["rev-parse", "HEAD"]:
+            return Result(stdout=revision + "\n")
+        return Result()
+
+    monkeypatch.setattr("nico.hosted_provider_comprehensive_runtime_v1.shutil.which", lambda _: "/usr/bin/git")
+    monkeypatch.setattr("nico.scanner_worker.directory_size", lambda _: 0)
+    repo_path, actual, notes = checkout_hosted_provider_snapshot(
+        "gitlab.com/group/repo",
+        revision,
+        tmp_path,
+        {"PATH": "/usr/bin"},
+        access_mode="anonymous_public",
+        credential_used=False,
+        environ={"NICO_GITLAB_TOKEN": "must-not-be-read-or-used"},
+        runner=runner,
+    )
+
+    assert repo_path == tmp_path / "repo"
+    assert actual == revision
+    assert notes == []
+    assert not (tmp_path / "nico-provider-git-askpass.sh").exists()
+    assert all("must-not-be-read-or-used" not in " ".join(command) for command in commands)
+    assert all("NICO_GIT_AUTH_PASSWORD" not in environment for environment in environments)
+    assert all("GIT_ASKPASS" not in environment for environment in environments)
+    assert all("http.followRedirects=false" in command for command in commands)
+    assert all("http.extraHeader=" in command for command in commands)
+
+
+@pytest.mark.parametrize(
+    "access_mode,credential_used",
+    (("auto", False), ("", False), ("anonymous_public", True), ("authenticated_read_only", False)),
+)
+def test_exact_hosted_checkout_rejects_unbound_or_inconsistent_access_truth(
+    tmp_path: Path,
+    access_mode: str,
+    credential_used: bool,
+) -> None:
+    repo_path, actual, notes = checkout_hosted_provider_snapshot(
+        "gitlab.com/group/repo",
+        "e" * 40,
+        tmp_path,
+        {"PATH": "/usr/bin"},
+        access_mode=access_mode,
+        credential_used=credential_used,
+        environ={"NICO_GITLAB_TOKEN": "unused"},
+    )
+    assert repo_path is None
+    assert actual == ""
+    assert notes == ["provider_snapshot_access_binding_invalid"]
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    (
+        ("en", ("Access mode: Anonymous public.", "Provider credential used: No.")),
+        ("es-MX", ("Modo de acceso: Público anónimo.", "Credencial del proveedor utilizada: No.")),
+    ),
+)
+def test_provider_access_truth_is_authored_for_report_without_internal_property_labels(
+    language: str,
+    expected: tuple[str, str],
+) -> None:
+    from nico import hosted_provider_comprehensive_runtime_v1 as runtime
+    from nico.comprehensive_report_package import _stage_summary
+
+    lines = runtime._provider_access_report_evidence(
+        {"report_language": language},
+        {
+            "provider": "gitlab",
+            "repository": "gitlab.com/group/repo",
+            "commit_sha": "e" * 40,
+            "access_mode": "anonymous_public",
+            "credential_used": False,
+            "required_source_evidence_complete": True,
+            "pagination_complete": True,
+            "provider_rate_limit_state": {},
+            "provider_collection_limitations": [],
+            "provider_source_fingerprint": "sha256:" + "a" * 64,
+            "snapshot_id": "snapshot-provider",
+            "provider_capability_states": [
+                {"capability": "tree", "state": "supported", "reason": ""},
+                {
+                    "capability": "ci_runs",
+                    "state": "unavailable_authentication",
+                    "reason": "provider authentication required",
+                },
+            ],
+        },
+        {"exact_source_locator_count": 1},
+    )
+    summary = _stage_summary(
+        "repository_and_delivery_evidence",
+        {"status": "complete", "provider_access_evidence": lines},
+    )
+
+    assert expected[0] in summary["evidence"]
+    assert expected[1] in summary["evidence"]
+    assert any("snapshot-provider" in line for line in summary["evidence"])
+    assert all("provider_access_evidence" not in line for line in summary["evidence"])
+
+
+def test_provider_access_truth_localizes_from_one_frozen_english_snapshot() -> None:
+    from nico import hosted_provider_comprehensive_runtime_v1 as runtime
+    from nico.comprehensive_spanish_canonical_report_v87 import _localize_tree
+
+    english = runtime._provider_access_report_evidence(
+        {"report_language": "en"},
+        {
+            "provider": "gitlab",
+            "repository": "gitlab.com/group/repo",
+            "commit_sha": "e" * 40,
+            "access_mode": "anonymous_public",
+            "credential_used": False,
+            "required_source_evidence_complete": True,
+            "pagination_complete": True,
+            "provider_rate_limit_state": {},
+            "provider_collection_limitations": [],
+            "provider_source_fingerprint": "sha256:" + "a" * 64,
+            "snapshot_id": "snapshot-provider",
+            "provider_capability_states": [
+                {"capability": "tree", "state": "supported", "reason": ""},
+                {
+                    "capability": "ci_runs",
+                    "state": "unavailable_authentication",
+                    "reason": "provider authentication required",
+                },
+            ],
+        },
+        {"exact_source_locator_count": 1},
+    )
+
+    localized = _localize_tree({"evidence": english})["evidence"]
+
+    assert "Proveedor: GitLab." in localized
+    assert "Modo de acceso: Público anónimo." in localized
+    assert "Capacidad Árbol de fuentes: Recopilado." in localized
+    assert "gitlab.com/group/repo" in "\n".join(localized)
+    assert "e" * 40 in "\n".join(localized)
 
 
 def test_production_bootstrap_binds_provider_parity_without_saas_surface() -> None:

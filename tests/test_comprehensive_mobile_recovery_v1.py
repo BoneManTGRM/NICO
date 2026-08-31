@@ -31,6 +31,10 @@ class _Service:
         assert run_id == self.record["identity"]["run_id"]
         return self.record
 
+    def load_public_intake(self, run_id: str) -> None:
+        assert run_id == self.record["identity"]["run_id"]
+        return None
+
 
 def _record(*, terminal: bool = True) -> dict:
     pdf = b"%PDF-1.4\n% NICO terminal report\n%%EOF\n"

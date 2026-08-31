@@ -37,6 +37,10 @@ class _Service:
         assert run_id == RUN_ID
         return self.record
 
+    def load_public_intake(self, run_id: str) -> None:
+        assert run_id == RUN_ID
+        return None
+
 
 def _report(*, language: str = "en") -> dict:
     pdf = b"%PDF-1.4\nintermediate decision-stage draft\n%%EOF\n"

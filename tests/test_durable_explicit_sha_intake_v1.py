@@ -14,10 +14,10 @@ def test_explicit_sha_intake_persists_run_before_repository_snapshot_io() -> Non
     assert "if not requested_sha:" in SOURCE
     assert "return current(request, payload)" in SOURCE
     assert '"commit_sha": requested_sha' in SOURCE
-    assert 'routes._controller(request).start({' in SOURCE
+    assert 'response = controller.start(' in SOURCE
     assert 'projected["repository_snapshot_verification"] = "required_next_stage"' in SOURCE
     assert 'projected["repository_processing_begun"] = False' in SOURCE
-    durable_start = SOURCE.index('response = routes._controller(request).start({')
+    durable_start = SOURCE.index('response = controller.start(')
     assert "capture_repository_snapshot(" not in SOURCE[durable_start:SOURCE.index("setattr(intake", durable_start)]
 
 
@@ -30,8 +30,8 @@ def test_required_snapshot_stage_still_verifies_exact_commit_before_evidence() -
 
 
 def test_default_branch_intake_keeps_existing_snapshot_first_behavior() -> None:
-    assert "requested_sha = expected_commit_sha(payload)" in ROUTES
-    assert "snapshot = capture_repository_snapshot(" in ROUTES
+    assert '"expected_commit_sha": expected_commit_sha(payload)' in ROUTES
+    assert "capture_repository_snapshot(context)" in ROUTES
     assert '"default_branch_intake_behavior_preserved": True' in SOURCE
     assert '"immutable_snapshot_stage_still_required": True' in SOURCE
     assert '"client_delivery_allowed": False' in SOURCE
