@@ -98,6 +98,48 @@ def _display_values(record: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
+def _display_state_values(
+    record: Mapping[str, Any],
+    *,
+    spanish: bool,
+) -> dict[str, str]:
+    """Render all five fields from one verified canonical state snapshot."""
+
+    engagement = (
+        record.get("engagement_metadata")
+        if isinstance(record.get("engagement_metadata"), Mapping)
+        else {}
+    )
+    from nico.comprehensive_engagement_metadata_v1 import (
+        render_engagement_field,
+        verify_comprehensive_engagement_metadata,
+    )
+
+    if verify_comprehensive_engagement_metadata(engagement):
+        locale = "es-MX" if spanish else "en"
+        return {
+            "customer_name": render_engagement_field(
+                engagement, "client_name", locale
+            ),
+            "project_name": render_engagement_field(
+                engagement, "project_name", locale
+            ),
+            "primary_technical_contact": render_engagement_field(
+                engagement, "primary_technical_contact", locale
+            ),
+            "access_method": render_engagement_field(
+                engagement, "access_method", locale
+            ),
+            "authorized_scope": render_engagement_field(
+                engagement, "authorized_scope", locale
+            ),
+        }
+
+    fallback = _display_values(record)
+    missing = "No proporcionado" if spanish else "Not supplied"
+    return {key: value or missing for key, value in fallback.items()}
+
+
 _CLIENT_SUMMARY_CANONICAL_PREFIXES = (
     "Client name:",
     "Project name:",
@@ -114,6 +156,8 @@ _CLIENT_SUMMARY_CANONICAL_PREFIXES = (
     "Run ID:",
     "Technical maturity:",
     "Evidence-adjusted maturity:",
+    "Client Evidence Completeness:",
+    "Runtime Acceptance:",
     "Scanner execution:",
     "Technical-triage status:",
     "Candidate state:",
@@ -126,6 +170,8 @@ _CLIENT_SUMMARY_CANONICAL_PREFIXES = (
     "ID de ejecución:",
     "Madurez técnica:",
     "Madurez ajustada por evidencia:",
+    "Integridad de la evidencia del cliente:",
+    "Aceptación en ejecución:",
     "Ejecución de analizadores:",
     "Estado del triaje técnico:",
     "Estado de candidatos:",
@@ -145,6 +191,85 @@ def _retained_client_summary_lines(values: Any) -> list[str]:
         if line not in output:
             output.append(line)
     return output
+
+
+def _engagement_completeness(
+    canonical: Mapping[str, Any],
+    *,
+    spanish: bool,
+) -> str:
+    engagement = (
+        canonical.get("engagement_metadata")
+        if isinstance(canonical.get("engagement_metadata"), Mapping)
+        else {}
+    )
+    from nico.comprehensive_engagement_metadata_v1 import (
+        engagement_field_states,
+        verify_comprehensive_engagement_metadata,
+    )
+
+    if not verify_comprehensive_engagement_metadata(engagement):
+        return "Limitada" if spanish else "Limited"
+    states = engagement_field_states(engagement)
+    supplied_or_disposed = sum(
+        str(record.get("state") or "") != "not_supplied"
+        for record in states.values()
+    )
+    if supplied_or_disposed == len(states):
+        return "Completa" if spanish else "Complete"
+    if supplied_or_disposed:
+        return "Parcial" if spanish else "Partial"
+    return "Limitada" if spanish else "Limited"
+
+
+def _runtime_acceptance(
+    canonical: Mapping[str, Any],
+    *,
+    spanish: bool,
+) -> str:
+    acceptance = canonical.get("production_acceptance")
+    if isinstance(acceptance, Mapping):
+        status = str(
+            acceptance.get("status")
+            or acceptance.get("runtime_acceptance_status")
+            or ""
+        ).strip().casefold().replace("-", "_")
+        if status in {"proven", "verified", "complete", "established"}:
+            return "Demostrada" if spanish else "Proven"
+        if status in {"excluded", "excluded_from_scope", "not_applicable"}:
+            return "Excluida" if spanish else "Excluded"
+
+    stage_sources = (
+        canonical.get("stage_summaries"),
+        (canonical.get("assessment") or {}).get("stage_summaries")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else None,
+    )
+    observed = False
+    excluded = False
+    for source in stage_sources:
+        if not isinstance(source, Sequence) or isinstance(
+            source,
+            (str, bytes, bytearray),
+        ):
+            continue
+        for raw in source:
+            if not isinstance(raw, Mapping):
+                continue
+            stage_id = str(raw.get("stage_id") or "").casefold()
+            if not stage_id.startswith("client_human_evidence_") or not any(
+                token in stage_id for token in ("functional_qa", "platform_parity")
+            ):
+                continue
+            status = str(raw.get("status") or "").casefold()
+            is_excluded = "excluded" in status
+            excluded = excluded or is_excluded
+            observed = observed or (not is_excluded and bool(raw.get("evidence")))
+    if observed:
+        return "Parcial" if spanish else "Partial"
+    if excluded:
+        return "Excluida" if spanish else "Excluded"
+    return "No establecida" if spanish else "Not established"
 
 
 def _client_summary_truth_evidence(
@@ -247,6 +372,8 @@ def _client_summary_truth_evidence(
             f"ID de ejecución: {identity.get('run_id') or 'no suministrado'}",
             f"Madurez técnica: {technical_text}",
             f"Madurez ajustada por evidencia: {adjusted_text}",
+            f"Integridad de la evidencia del cliente: {_engagement_completeness(canonical, spanish=True)}",
+            f"Aceptación en ejecución: {_runtime_acceptance(canonical, spanish=True)}",
             f"Ejecución de analizadores: solicitados={requested}; completados={completed}; incompletos={incomplete}",
             f"Estado del triaje técnico: {state(triage_status)}; completados={triage_completed}; pendientes={triage_pending}",
             f"Estado de candidatos: brutos={raw_candidates}; requieren revisión={review_required}; materiales confirmados={confirmed}",
@@ -261,6 +388,8 @@ def _client_summary_truth_evidence(
         f"Run ID: {identity.get('run_id') or 'not supplied'}",
         f"Technical maturity: {technical_text}",
         f"Evidence-adjusted maturity: {adjusted_text}",
+        f"Client Evidence Completeness: {_engagement_completeness(canonical, spanish=False)}",
+        f"Runtime Acceptance: {_runtime_acceptance(canonical, spanish=False)}",
         f"Scanner execution: requested={requested}; completed={completed}; incomplete={incomplete}",
         f"Technical-triage status: {triage_status}; completed={triage_completed}; pending={triage_pending}",
         f"Candidate state: raw={raw_candidates}; review required={review_required}; confirmed material={confirmed}",
@@ -425,7 +554,7 @@ def _install_required_report_sections() -> dict[str, bool]:
         stages = [deepcopy(dict(item)) for item in original(canonical)]
         spanish = renderer._is_spanish(canonical)
         assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
-        display = _display_values(canonical)
+        display = _display_state_values(canonical, spanish=spanish)
         technical, adjusted = renderer._score_pair(assessment)
         technical_text = f"{technical}/100" if technical is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
         adjusted_text = f"{adjusted}/100" if adjusted is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
@@ -472,8 +601,7 @@ def _install_required_report_sections() -> dict[str, bool]:
         for key in labels:
             value = _display_literal(display.get(key), limits[key])
             client_evidence.append(
-                f"{labels[key]}: "
-                f"{value or ('no suministrado' if spanish else 'not supplied')}"
+                f"{labels[key]}: {value}"
             )
         summary_evidence = [
             *client_evidence,

@@ -144,6 +144,7 @@ def _context_snapshot(context: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "report_language": _text(context.get("report_language"), 40) or "en",
         "display_values": display_values,
+        "engagement_metadata": engagement,
         "human_evidence": _verified_human_evidence(context.get("human_evidence")),
     }
 
@@ -258,17 +259,32 @@ def _engagement_lines(
         if isinstance(snapshot.get("display_values"), Mapping)
         else {}
     )
+    engagement = (
+        snapshot.get("engagement_metadata")
+        if isinstance(snapshot.get("engagement_metadata"), Mapping)
+        else {}
+    )
+    from nico.comprehensive_engagement_metadata_v1 import (
+        render_engagement_field,
+        verify_comprehensive_engagement_metadata,
+    )
+
     evidence: list[str] = []
     missing: list[str] = []
     for key, labels in _ENGAGEMENT_LABELS.items():
         label = labels[1 if spanish else 0]
-        value = values.get(key)
-        if _engagement_literal(value, 4000):
-            evidence.extend(_literal_lines(label, value, spanish=spanish))
-        else:
-            missing.append(
-                f"{label}: {'no proporcionado' if spanish else 'not supplied'}"
+        field = "client_name" if key == "customer_name" else key
+        if verify_comprehensive_engagement_metadata(engagement):
+            value = render_engagement_field(
+                engagement,
+                field,
+                "es-MX" if spanish else "en",
             )
+        else:
+            value = values.get(key) or (
+                "No proporcionado" if spanish else "Not supplied"
+            )
+        evidence.extend(_literal_lines(label, value, spanish=spanish))
     return evidence, missing
 
 

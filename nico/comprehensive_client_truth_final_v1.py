@@ -146,7 +146,7 @@ def _client_summary_evidence(
     """Rebind the five engagement rows to verified canonical literals."""
 
     from nico.comprehensive_report_review_integrity_v1 import (
-        _display_values,
+        _display_state_values,
         _retained_client_summary_lines,
     )
 
@@ -163,7 +163,7 @@ def _client_summary_evidence(
         or "en"
     ).casefold()
     spanish = language in {"es-mx", "es_mx"}
-    display = _display_values(canonical)
+    display = _display_state_values(canonical, spanish=spanish)
     labels = (
         (
             ("customer_name", "Nombre del cliente"),
@@ -181,10 +181,7 @@ def _client_summary_evidence(
             ("authorized_scope", "Authorized scope"),
         )
     )
-    not_supplied = "no suministrado" if spanish else "not supplied"
-    exact_rows = [
-        f"{label}: {display.get(key) or not_supplied}" for key, label in labels
-    ]
+    exact_rows = [f"{label}: {display.get(key)}" for key, label in labels]
     retained = _clean_client_literal_evidence(
         _retained_client_summary_lines(values)
     )

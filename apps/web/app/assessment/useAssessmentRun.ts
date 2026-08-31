@@ -19,8 +19,20 @@ import {
 } from "./assessmentRunRequests";
 import {
   compactStrategicHumanEvidence,
+  emptyStrategicEvidenceModule,
   type StrategicHumanEvidenceInput,
 } from "./strategicEvidence";
+import {
+  emptyEngagementFieldStates,
+  engagementValues,
+  isEngagementFieldUnavailable,
+  normalizeEngagementFieldStates,
+  withEngagementState,
+  withEngagementValue,
+  type EngagementFieldKey,
+  type EngagementFieldState,
+  type EngagementFieldStates,
+} from "./engagementFieldState";
 import {
   MAX_POLL_ATTEMPTS,
   POLL_INTERVAL_MS,
@@ -41,6 +53,7 @@ export type AssessmentRunController = {
   project: string;
   authorized: boolean;
   humanEvidence: StrategicHumanEvidenceInput;
+  engagementFieldStates: EngagementFieldStates;
   phase: Phase;
   result: Result | null;
   message: string;
@@ -55,6 +68,11 @@ export type AssessmentRunController = {
   setProject: (value: string) => void;
   setAuthorized: (value: boolean) => void;
   setHumanEvidence: (value: StrategicHumanEvidenceInput) => void;
+  setEngagementFieldValue: (field: EngagementFieldKey, value: string) => void;
+  setEngagementFieldState: (
+    field: EngagementFieldKey,
+    state: EngagementFieldState,
+  ) => void;
   setError: (value: string) => void;
   run: () => Promise<void>;
   retry: () => Promise<void>;
@@ -179,6 +197,8 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const [authorized, setAuthorized] = useState(false);
   const [humanEvidence, setHumanEvidence] =
     useState<StrategicHumanEvidenceInput>({});
+  const [engagementFieldStates, setEngagementFieldStates] =
+    useState<EngagementFieldStates>(emptyEngagementFieldStates);
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<Result | null>(null);
   const [message, setMessage] = useState("");
@@ -228,6 +248,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
           persisted.accessMethod,
           persisted.authorizedScope,
         ));
+        setEngagementFieldStates(persisted.engagementFieldStates);
         setAuthorized(true);
         void resumePersistedRun(persisted);
       }
@@ -285,6 +306,60 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     };
   }
 
+  function currentEngagementValue(field: EngagementFieldKey): string {
+    if (field === "client_name") return client;
+    if (field === "project_name") return project;
+    const stakeholder = humanEvidence.stakeholder_context?.evidence || {};
+    return String(stakeholder[field]?.[0] || "");
+  }
+
+  function setEngagementFieldValue(
+    field: EngagementFieldKey,
+    value: string,
+  ): void {
+    if (field === "client_name") setClient(value);
+    else if (field === "project_name") setProject(value);
+    else {
+      setHumanEvidence((previous) => {
+        const module = previous.stakeholder_context || emptyStrategicEvidenceModule();
+        const evidence = {...module.evidence};
+        if (value) evidence[field] = [value];
+        else delete evidence[field];
+        return {
+          ...previous,
+          stakeholder_context: {...module, evidence},
+        };
+      });
+    }
+    setEngagementFieldStates((previous) =>
+      withEngagementValue(previous, field, value),
+    );
+  }
+
+  function setEngagementFieldState(
+    field: EngagementFieldKey,
+    state: EngagementFieldState,
+  ): void {
+    const value = currentEngagementValue(field);
+    setEngagementFieldStates((previous) =>
+      withEngagementState(previous, field, state, value),
+    );
+    if (!isEngagementFieldUnavailable(state)) return;
+    if (field === "client_name") setClient("");
+    else if (field === "project_name") setProject("");
+    else {
+      setHumanEvidence((previous) => {
+        const module = previous.stakeholder_context || emptyStrategicEvidenceModule();
+        const evidence = {...module.evidence};
+        delete evidence[field];
+        return {
+          ...previous,
+          stakeholder_context: {...module, evidence},
+        };
+      });
+    }
+  }
+
   function persistedScope(value: PersistedRun): Scope {
     return {
       customerId: value.customerId || "default_customer",
@@ -321,6 +396,18 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       ?? fallback?.authorizedScope
       ?? stakeholder.authorized_scope?.[0]
       ?? "";
+    const states = engagement
+      ? normalizeEngagementFieldStates(
+          engagement.field_states,
+          engagementValues(
+            clientValue,
+            projectValue,
+            primaryTechnicalContact,
+            accessMethod,
+            authorizedScope,
+          ),
+        )
+      : fallback?.engagementFieldStates ?? engagementFieldStates;
     writePersistedRun({
       version: 1,
       runId,
@@ -330,6 +417,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       primaryTechnicalContact,
       accessMethod,
       authorizedScope,
+      engagementFieldStates: states,
       customerId: String(
         runResult.customer_id || scope.customerId || "default_customer",
       ),
@@ -355,6 +443,16 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       primaryTechnicalContact,
       accessMethod,
       authorizedScope,
+    ));
+    setEngagementFieldStates(normalizeEngagementFieldStates(
+      engagement.field_states,
+      engagementValues(
+        clientValue,
+        projectValue,
+        primaryTechnicalContact,
+        accessMethod,
+        authorizedScope,
+      ),
     ));
   }
 
@@ -646,6 +744,16 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       assessment_depth: "strategic",
       report_language: reportLanguageForRequest(locale),
       human_evidence: compactStrategicHumanEvidence(humanEvidence),
+      engagement_field_states: normalizeEngagementFieldStates(
+        engagementFieldStates,
+        engagementValues(
+          client,
+          project,
+          humanEvidence.stakeholder_context?.evidence.primary_technical_contact?.[0] || "",
+          humanEvidence.stakeholder_context?.evidence.access_method?.[0] || "",
+          humanEvidence.stakeholder_context?.evidence.authorized_scope?.[0] || "",
+        ),
+      ),
     };
 
     let acceptedRun: Result | null = null;
@@ -698,6 +806,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setProject("");
     setAuthorized(false);
     setHumanEvidence({});
+    setEngagementFieldStates(emptyEngagementFieldStates());
     setPhase("idle");
     publishResult(null);
     setMessage("");
@@ -733,6 +842,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         primaryTechnicalContact: stakeholder.primary_technical_contact?.[0] || "",
         accessMethod: stakeholder.access_method?.[0] || "",
         authorizedScope: stakeholder.authorized_scope?.[0] || "",
+        engagementFieldStates,
         customerId: scope.customerId,
         projectId: scope.projectId,
         startedAt: Date.now(),
@@ -748,6 +858,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     project,
     authorized,
     humanEvidence,
+    engagementFieldStates,
     phase,
     result,
     message,
@@ -758,10 +869,12 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     running,
     protectedRunId,
     setRepository,
-    setClient,
-    setProject,
+    setClient: (value) => setEngagementFieldValue("client_name", value),
+    setProject: (value) => setEngagementFieldValue("project_name", value),
     setAuthorized,
     setHumanEvidence,
+    setEngagementFieldValue,
+    setEngagementFieldState,
     setError,
     run,
     retry,

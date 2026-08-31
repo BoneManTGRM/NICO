@@ -52,6 +52,14 @@ export type EngagementMetadata = {
   primary_technical_contact?: string;
   access_method?: string;
   authorized_scope?: string;
+  field_states?: Record<string, {
+    state?: string;
+    value?: string | null;
+    source?: string;
+    excluded_by?: string;
+    excluded_at?: string;
+    reason?: string;
+  }>;
   engagement_metadata_sha256?: string;
 };
 export type RunRecord = {

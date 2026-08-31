@@ -84,7 +84,7 @@ def _report_language(context: Mapping[str, Any]) -> str:
 
 
 def _attach_engagement_identity(
-    identity: dict[str, str],
+    identity: dict[str, Any],
     context: Mapping[str, Any],
 ) -> None:
     """Project only verified client-supplied metadata into canonical identity.
@@ -203,6 +203,11 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    raw_engagement_metadata = context.get("engagement_metadata")
+    if verify_comprehensive_engagement_metadata(raw_engagement_metadata):
+        canonical["engagement_metadata"] = (
+            normalize_comprehensive_engagement_metadata(raw_engagement_metadata)
+        )
     canonical, assessment, decision_content_restoration = restore_decision_content(
         canonical,
         raw_stages=stages,

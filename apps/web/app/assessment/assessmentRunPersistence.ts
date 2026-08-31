@@ -1,4 +1,9 @@
 import type {Locale} from "./assessmentTypes";
+import {
+  engagementValues,
+  normalizeEngagementFieldStates,
+  type EngagementFieldStates,
+} from "./engagementFieldState";
 
 export type PersistedRun = {
   version: 1;
@@ -9,6 +14,7 @@ export type PersistedRun = {
   primaryTechnicalContact: string;
   accessMethod: string;
   authorizedScope: string;
+  engagementFieldStates: EngagementFieldStates;
   customerId: string;
   projectId: string;
   startedAt: number;
@@ -31,15 +37,30 @@ function normalizePersistedRun(value: unknown): PersistedRun | null {
     return null;
   }
   const startedAt = Number(record.startedAt);
+  const primaryTechnicalContact = String(record.primaryTechnicalContact || "");
+  const accessMethod = String(record.accessMethod || "");
+  const authorizedScope = String(record.authorizedScope || "");
+  const client = String(record.client || "");
+  const project = String(record.project || "");
   return {
     version: 1,
     runId,
     repository: String(record.repository || ""),
-    client: String(record.client || ""),
-    project: String(record.project || ""),
-    primaryTechnicalContact: String(record.primaryTechnicalContact || ""),
-    accessMethod: String(record.accessMethod || ""),
-    authorizedScope: String(record.authorizedScope || ""),
+    client,
+    project,
+    primaryTechnicalContact,
+    accessMethod,
+    authorizedScope,
+    engagementFieldStates: normalizeEngagementFieldStates(
+      record.engagementFieldStates,
+      engagementValues(
+        client,
+        project,
+        primaryTechnicalContact,
+        accessMethod,
+        authorizedScope,
+      ),
+    ),
     customerId: String(record.customerId || "default_customer"),
     projectId: String(record.projectId || "default_project"),
     startedAt:
@@ -113,6 +134,10 @@ export function readPersistedRun(): PersistedRun | null {
     primaryTechnicalContact: "",
     accessMethod: "",
     authorizedScope: "",
+    engagementFieldStates: normalizeEngagementFieldStates(
+      {},
+      engagementValues("", "", "", "", ""),
+    ),
     customerId: "default_customer",
     projectId: "default_project",
     startedAt: Date.now(),

@@ -26,6 +26,7 @@ def _strict_context_snapshot(context: Mapping[str, Any]) -> dict[str, Any]:
     engagement = v1._verified_engagement(context.get("engagement_metadata"))
     return {
         "report_language": v1._text(context.get("report_language"), 40) or "en",
+        "engagement_metadata": engagement,
         "display_values": {
             "customer_name": v1._engagement_literal(engagement.get("client_name"), 180),
             "project_name": v1._engagement_literal(engagement.get("project_name"), 180),
