@@ -20,8 +20,8 @@ _REVIEW_TITLE_FONT_SIZE = 12.0
 _REVIEW_HEADING_FONT_SIZE = 8.0
 _REVIEW_BODY_FONT_SIZE = 7.4
 _REVIEW_SMALL_FONT_SIZE = 6.8
-_REVIEW_SECTION_HEIGHT_IN = 4.76
-_REVIEW_COLUMNS_HEIGHT_IN = 2.10
+_REVIEW_SECTION_HEIGHT_IN = 5.01
+_REVIEW_COLUMNS_HEIGHT_IN = 2.18
 
 
 def _text(value: Any, limit: int = 1000) -> str:
@@ -275,7 +275,7 @@ def _render_polished_review_pdf(
         fontSize=_REVIEW_TITLE_FONT_SIZE,
         leading=14.2,
         textColor=colors.HexColor("#0f172a"),
-        spaceAfter=3.5,
+        spaceAfter=2.0,
     )
     heading = ParagraphStyle(
         "NICOReviewPolishedHeading",
@@ -284,8 +284,8 @@ def _render_polished_review_pdf(
         fontSize=_REVIEW_HEADING_FONT_SIZE,
         leading=9.4,
         textColor=colors.HexColor("#075985"),
-        spaceBefore=2.5,
-        spaceAfter=1.4,
+        spaceBefore=1.4,
+        spaceAfter=.8,
     )
     body = ParagraphStyle(
         "NICOReviewPolishedBody",
@@ -294,7 +294,7 @@ def _render_polished_review_pdf(
         fontSize=_REVIEW_BODY_FONT_SIZE,
         leading=8.8,
         textColor=colors.HexColor("#334155"),
-        spaceAfter=1.2,
+        spaceAfter=.7,
         allowWidows=0,
         allowOrphans=0,
     )
@@ -304,7 +304,7 @@ def _render_polished_review_pdf(
         fontSize=_REVIEW_SMALL_FONT_SIZE,
         leading=8.1,
         textColor=colors.HexColor("#475569"),
-        spaceAfter=.95,
+        spaceAfter=.5,
     )
     warning = ParagraphStyle(
         "NICOReviewPolishedWarning",
@@ -317,7 +317,7 @@ def _render_polished_review_pdf(
         borderColor=colors.HexColor("#f59e0b"),
         borderWidth=.45,
         borderPadding=2.2,
-        spaceAfter=2.5,
+        spaceAfter=1.4,
     )
     boundary = ParagraphStyle(
         "NICOReviewPolishedBoundary",
@@ -327,7 +327,7 @@ def _render_polished_review_pdf(
         borderColor=colors.HexColor("#cbd5e1"),
         borderWidth=.35,
         borderPadding=2.2,
-        spaceBefore=1.0,
+        spaceBefore=.5,
     )
 
     def paragraph(
@@ -380,19 +380,19 @@ def _render_polished_review_pdf(
     def section_block(section: Mapping[str, Any], section_number: int) -> KeepInFrame:
         evidence = _unique(
             section.get("evidence") or [],
-            limit=4,
+            limit=3,
             item_limit=900 if spanish else 430,
         )
-        findings = _unique(section.get("findings") or [], limit=3)
-        can_conclude = _unique(section.get("can_conclude") or [], limit=3)
+        findings = _unique(section.get("findings") or [], limit=2)
+        can_conclude = _unique(section.get("can_conclude") or [], limit=2)
         cannot_conclude = _unique(
             [
                 *(section.get("cannot_conclude") or []),
                 *(section.get("limitations") or []),
             ],
-            limit=4,
+            limit=3,
         )
-        required_input = _unique(section.get("required_input") or [], limit=3)
+        required_input = _unique(section.get("required_input") or [], limit=2)
         questions = _unique(section.get("questions") or [], limit=3)
 
         content: list[Any] = [
@@ -520,7 +520,7 @@ def _render_polished_review_pdf(
         )
         content.extend(
             [
-                Spacer(1, .02 * inch),
+                Spacer(1, .01 * inch),
                 columns,
                 paragraph("Registro de decisión" if spanish else "Decision record", heading),
                 paragraph(
@@ -554,7 +554,7 @@ def _render_polished_review_pdf(
     for index, section in enumerate(sections, start=1):
         story.append(section_block(section, index))
         if index % SECTIONS_PER_PAGE == 1 and index < SECTION_COUNT:
-            story.append(Spacer(1, .16 * inch))
+            story.append(Spacer(1, .06 * inch))
         elif index < SECTION_COUNT:
             story.append(PageBreak())
 
