@@ -1040,17 +1040,37 @@ class AzureDevOpsClient(BaseProviderClient):
             Capability.TAGS,
             lambda: self._azure_pages(f"{git_root}/refs", {"filter": "tags/"}),
         )
-        source_tree = self._azure_pages(
-            f"{git_root}/items",
-            {
-                "scopePath": "/",
-                "recursionLevel": "Full",
-                "includeContentMetadata": "true",
-                "versionDescriptor.version": exact_revision,
-                "versionDescriptor.versionType": "commit",
-            },
-            required=True,
-        )
+        source_params = {
+            "scopePath": "/",
+            "recursionLevel": "Full",
+            "includeContentMetadata": "true",
+            "versionDescriptor.version": exact_revision,
+            "versionDescriptor.versionType": "commit",
+        }
+
+        def load_source_tree() -> list[Mapping[str, Any]]:
+            values = self._azure_pages(
+                f"{git_root}/items",
+                source_params,
+                required=True,
+            )
+            # Azure can return HTTP 200 with only the repository root when an
+            # anonymous caller may see metadata but not enumerate source. The
+            # root is not a source inventory and must not produce an empty,
+            # misleading assessment.
+            return [item for item in values if _text(item.get("path")).strip("/")]
+
+        source_tree = load_source_tree()
+        if (
+            not source_tree
+            and self.requested_access_mode is ProviderAccessMode.AUTO
+            and self._active_credential is None
+            and self.credential is not None
+            and not self._auth_fallback_attempted
+        ):
+            self._auth_fallback_attempted = True
+            self._active_credential = self.credential
+            source_tree = load_source_tree()
         self._require_source_tree(source_tree)
         pull_requests = self._optional_collection(
             Capability.CHANGE_REQUESTS,

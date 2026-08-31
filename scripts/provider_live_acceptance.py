@@ -83,6 +83,7 @@ AUTHENTICATION_REQUIRED_CODES = frozenset(
         "provider_authentication_required",
         "provider_read_only_authentication_required",
         "provider_repository_not_publicly_accessible",
+        "provider_required_source_evidence_unavailable",
         "provider_required_source_unavailable",
         "read_only_authentication_required",
     }

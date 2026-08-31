@@ -120,6 +120,16 @@ def test_live_acceptance_builds_a_non_secret_host_policy(provider, host) -> None
     assert not hasattr(reference, "secret")
 
 
+def test_required_source_evidence_failure_is_an_authentication_required_outcome() -> None:
+    error = provider_live_acceptance.ProviderClientError(
+        "provider_required_source_evidence_unavailable"
+    )
+
+    assert provider_live_acceptance._error_code(error) == (
+        "provider_required_source_evidence_unavailable"
+    )
+
+
 def test_two_pass_acceptance_preserves_identity_without_exporting_secret(monkeypatch) -> None:
     collector = FakeCollector(["a" * 40, "a" * 40])
     monkeypatch.setattr(
@@ -203,7 +213,8 @@ def test_provider_changes_trigger_four_isolated_anonymous_public_proofs() -> Non
     )
 
     assert "pull_request:" in workflow
-    assert "anonymous-public-pr:" in workflow
+    assert "push:" in workflow
+    assert "anonymous-public-release:" in workflow
     for fixture in (
         "octocat/Hello-World",
         "gitlab-org/gitlab-test",
@@ -213,6 +224,7 @@ def test_provider_changes_trigger_four_isolated_anonymous_public_proofs() -> Non
         assert fixture in workflow
     assert workflow.count("--passes 2") >= 3
     assert "github.event.pull_request.head.sha" in workflow
+    assert "expected_outcome: authentication_required" in workflow
     assert "--workflow-sha \"${ACCEPTANCE_SHA}\"" in workflow
     assert "unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN" in workflow
     assert "unset NICO_GITLAB_TOKEN GITLAB_TOKEN" in workflow

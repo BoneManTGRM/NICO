@@ -1,6 +1,19 @@
 name: Provider Live Acceptance
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/provider-live-acceptance.yml
+      - nico/provider_credentials.py
+      - nico/provider_live_clients.py
+      - nico/provider_neutral_contract.py
+      - nico/provider_payload_adapters.py
+      - nico/hosted_provider_comprehensive_runtime_v1.py
+      - scripts/provider_live_acceptance.py
+      - tests/test_provider_live_acceptance.py
+      - tests/test_provider_live_clients.py
   pull_request:
     branches:
       - main
@@ -58,8 +71,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  anonymous-public-pr:
-    if: github.event_name == 'pull_request'
+  anonymous-public-release:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     name: Anonymous public ${{ matrix.provider }} two-pass proof
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -69,17 +82,21 @@ jobs:
         include:
           - provider: github
             repository: octocat/Hello-World
+            expected_outcome: success
           - provider: gitlab
             repository: gitlab-org/gitlab-test
+            expected_outcome: success
           - provider: bitbucket_cloud
             repository: atlassian_tutorial/helloworld
+            expected_outcome: success
           - provider: azure_devops
             repository: clearmeasurelabs/Onion-DevOps-Architecture/Onion-DevOps-Architecture-vnext-security
+            expected_outcome: authentication_required
     steps:
       - name: Check out exact pull-request commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
 
       - name: Set up Python
@@ -96,7 +113,8 @@ jobs:
         env:
           ACCEPTANCE_PROVIDER: ${{ matrix.provider }}
           ACCEPTANCE_REPOSITORY: ${{ matrix.repository }}
-          ACCEPTANCE_SHA: ${{ github.event.pull_request.head.sha }}
+          ACCEPTANCE_OUTCOME: ${{ matrix.expected_outcome }}
+          ACCEPTANCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
@@ -107,7 +125,7 @@ jobs:
             --provider "${ACCEPTANCE_PROVIDER}" \
             --repository "${ACCEPTANCE_REPOSITORY}" \
             --access-mode anonymous_public \
-            --expected-outcome success \
+            --expected-outcome "${ACCEPTANCE_OUTCOME}" \
             --passes 2 \
             --workflow-sha "${ACCEPTANCE_SHA}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
@@ -118,7 +136,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: provider-live-anonymous-${{ matrix.provider }}-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}
+          name: provider-live-anonymous-${{ matrix.provider }}-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
           path: audit-results/provider-live-acceptance.json
           if-no-files-found: error
           retention-days: 90
@@ -127,7 +145,8 @@ jobs:
         if: always()
         env:
           ACCEPTANCE_STEP_OUTCOME: ${{ steps.acceptance.outcome }}
-          ACCEPTANCE_SHA: ${{ github.event.pull_request.head.sha }}
+          ACCEPTANCE_OUTCOME: ${{ matrix.expected_outcome }}
+          ACCEPTANCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN
@@ -138,7 +157,7 @@ jobs:
           python scripts/provider_live_acceptance.py \
             --verify-artifact audit-results/provider-live-acceptance.json \
             --access-mode anonymous_public \
-            --expected-outcome success \
+            --expected-outcome "${ACCEPTANCE_OUTCOME}" \
             --workflow-sha "${ACCEPTANCE_SHA}" \
             --workflow-run-id "${GITHUB_RUN_ID}" \
             --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}"
