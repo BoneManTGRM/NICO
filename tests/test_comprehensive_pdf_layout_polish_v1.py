@@ -124,7 +124,7 @@ def test_layout_polish_binds_presentation_only_contracts() -> None:
     assert state["review_companion_pages"] == 4
     assert state["review_small_font_size"] >= 6.8
     assert state["canonical_truth_mutated"] is False
-    assert semantic._TOC_ROWS_PER_PAGE == 33
+    assert semantic._TOC_ROWS_PER_PAGE == 35
     assert getattr(semantic._toc_pdf, "__nico_comprehensive_pdf_layout_polish_v1__") is True
     assert getattr(reflow._render_group, "__nico_comprehensive_pdf_layout_polish_v1__") is True
     assert getattr(
