@@ -21,7 +21,7 @@ _HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
 _EXTENSIONS = (".csv", ".json", ".html", ".md", ".pdf")
 _NULLISH = {"", "none", "null", "not available", "unknown", "n/a", "na"}
 _INTERNAL_PROPERTY_LINE = re.compile(
-    r"^(?:(?:scope|capability|state|status|source)|"
+    r"^(?:(?:scope|capability|state|status|source|review)|"
     r"[a-z][a-z0-9_.\[\]]*[_\.\[][a-z0-9_.\[\]]*)\s*:",
 )
 

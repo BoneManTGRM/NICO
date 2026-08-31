@@ -76,6 +76,7 @@ def test_stage_sanitizer_removes_internal_property_paths_but_keeps_curated_truth
             "complexity_evidence.hotspots[0].cyclomatic_complexity: 120",
             "missing_evidence[0].approval_effect: scope_limitation",
             "missing_evidence[0].cannot_conclude: Contractual compliance.",
+            "review: 1000",
             "bandit: completed; exact commit=yes; artifact=retained.",
             "Technical maturity: 93/100",
             "Evidence-Adjusted: 93/100",

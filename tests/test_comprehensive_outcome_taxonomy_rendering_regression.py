@@ -103,6 +103,7 @@ def test_stage_projection_converts_taxonomy_before_final_publication_validation(
         "snapshot.api_commit_lookup_attempts: 1",
         "complexity_evidence.hotspots[0].cyclomatic_complexity: 120",
         "missing_evidence[0].approval_effect: scope_limitation",
+        "review: 1000",
     ],
 )
 def test_final_publication_rejects_internal_property_lines(raw_line: str) -> None:

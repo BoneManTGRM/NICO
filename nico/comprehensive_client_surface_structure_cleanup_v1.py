@@ -16,7 +16,7 @@ _DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
 _CLIENT_STAGE_FIELDS = ("evidence", "findings", "unavailable", "limitations")
 _CLIENT_SURFACE_ITEM_LIMIT = 100_000
 _INTERNAL_PROPERTY_LINE = re.compile(
-    r"^(?:(?:scope|capability|state|status|source)|"
+    r"^(?:(?:scope|capability|state|status|source|review)|"
     r"[a-z][a-z0-9_.\[\]]*[_\.\[][a-z0-9_.\[\]]*)\s*:",
 )
 _COMPLEXITY_FINDING = re.compile(r"\breduce complexity in\b", re.IGNORECASE)

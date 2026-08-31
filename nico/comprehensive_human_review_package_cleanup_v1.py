@@ -23,7 +23,7 @@ _PLACEHOLDER_IDENTITIES = {
 }
 _PUNCTUATION_ONLY = re.compile(r"^[\s.\-–—_:;|/\\]+$")
 _INTERNAL_PROPERTY_LINE = re.compile(
-    r"^(?:(?:scope|capability|state|status|source)|"
+    r"^(?:(?:scope|capability|state|status|source|review)|"
     r"[a-z][a-z0-9_.\[\]]*[_\.\[][a-z0-9_.\[\]]*)\s*:",
 )
 # Compatibility for the publication guard, which imports the historical name.
