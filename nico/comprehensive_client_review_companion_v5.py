@@ -472,6 +472,181 @@ def _base_section_details(section_id: str, *, spanish: bool) -> dict[str, Any]:
     return _spanish_review_detail(en[section_id])
 
 
+def _human_runtime_stage(
+    canonical: Mapping[str, Any],
+    module_id: str,
+) -> dict[str, Any]:
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    for source in (
+        canonical.get("stage_summaries"),
+        assessment.get("stage_summaries"),
+    ):
+        if not isinstance(source, list):
+            continue
+        for raw in source:
+            if not isinstance(raw, Mapping):
+                continue
+            stage_id = str(raw.get("stage_id") or "").casefold()
+            if stage_id.startswith(f"client_human_evidence_{module_id}"):
+                return deepcopy(dict(raw))
+    return {}
+
+
+def _acceptance_record(
+    canonical: Mapping[str, Any],
+    key: str,
+) -> Mapping[str, Any]:
+    acceptance = canonical.get("production_acceptance")
+    if not isinstance(acceptance, Mapping):
+        return {}
+    direct = acceptance.get(key)
+    return direct if isinstance(direct, Mapping) else {}
+
+
+def _verified(value: Any) -> bool:
+    return str(value or "").strip().casefold().replace("-", "_") in {
+        "verified",
+        "proven",
+        "complete",
+        "established",
+        "pass",
+        "passed",
+    }
+
+
+def _functional_runtime_truth(
+    canonical: Mapping[str, Any],
+    details: dict[str, Any],
+    evidence: list[str],
+    *,
+    spanish: bool,
+) -> tuple[dict[str, Any], list[str]]:
+    human_stage = _human_runtime_stage(canonical, "functional_qa")
+    if "excluded" in str(human_stage.get("status") or "").casefold():
+        return details, evidence
+    supplied = _values(human_stage.get("evidence"), limit=6)
+    if not supplied:
+        return details, evidence
+    joined = " ".join(supplied).casefold()
+    observation = "FAIL" if re.search(r"\bfail(?:ed|ure)?\b", joined) else (
+        "PASS" if re.search(r"\bpass(?:ed)?\b", joined) else (
+            "Proporcionada" if spanish else "Supplied"
+        )
+    )
+    acceptance = _acceptance_record(canonical, "functional_qa")
+    independent = _verified(
+        acceptance.get("independent_verification")
+        or acceptance.get("verification_status")
+    )
+    broader = _verified(
+        acceptance.get("broader_production_acceptance")
+        or acceptance.get("status")
+    )
+    if spanish:
+        truth = [
+            f"Evidencia de ejecución observada: {observation}",
+            "Verificación independiente: Verificada" if independent else "Verificación independiente: Pendiente",
+            "Aceptación de producción más amplia: Demostrada" if broader else "Aceptación de producción más amplia: Aún no establecida",
+        ]
+        details["status"] = (
+            "Evidencia de ejecución observada y verificada de forma independiente"
+            if independent
+            else "Evidencia de ejecución observada — verificación independiente pendiente"
+        )
+        details["summary"] = (
+            "La observación de ejecución aportada se conserva por separado de la verificación independiente y de la aceptación completa de producción."
+        )
+    else:
+        truth = [
+            f"Observed runtime evidence: {observation}",
+            "Independent verification: Verified" if independent else "Independent verification: Pending",
+            "Broader production acceptance: Proven" if broader else "Broader production acceptance: Not yet established",
+        ]
+        details["status"] = (
+            "Observed runtime evidence independently verified"
+            if independent
+            else "Observed runtime evidence — independent verification pending"
+        )
+        details["summary"] = (
+            "Supplied runtime observation is retained separately from independent verification and complete production acceptance."
+        )
+    return details, [*truth, *evidence]
+
+
+def _platform_runtime_truth(
+    canonical: Mapping[str, Any],
+    details: dict[str, Any],
+    evidence: list[str],
+    *,
+    spanish: bool,
+) -> tuple[dict[str, Any], list[str]]:
+    human_stage = _human_runtime_stage(canonical, "platform_parity")
+    if "excluded" in str(human_stage.get("status") or "").casefold():
+        return details, evidence
+    supplied = _values(human_stage.get("evidence"), limit=8)
+    if not supplied:
+        return details, evidence
+    joined = " ".join(supplied).casefold()
+    dimensions = (
+        ("desktop", "Desktop browser", "Navegador de escritorio", ("desktop", "safari", "macos")),
+        ("mobile", "Mobile browser", "Navegador móvil", ("mobile", "iphone", "webkit", "ios")),
+        ("english", "English", "Inglés", ("english", "locale=en", " en-us")),
+        ("es_mx", "es-MX", "es-MX", ("es-mx", "es_mx", "mexican spanish", "español")),
+    )
+    truth: list[str] = []
+    independently_verified = 0
+    for key, english_label, spanish_label, tokens in dimensions:
+        record = _acceptance_record(canonical, key)
+        verified = _verified(record.get("status") or record.get("verification_status"))
+        independently_verified += int(verified)
+        observed = any(token in joined for token in tokens)
+        label = spanish_label if spanish else english_label
+        if verified:
+            status = "Verificado" if spanish else "Verified"
+        elif observed:
+            status = (
+                "Observado — verificación independiente pendiente"
+                if spanish
+                else "Observed — independent verification pending"
+            )
+        else:
+            status = "No verificado" if spanish else "Not verified"
+        truth.append(f"{label}: {status}")
+    established = independently_verified == len(dimensions)
+    truth.append(
+        (
+            "Paridad entre plataformas: Establecida"
+            if established
+            else "Paridad entre plataformas: No establecida"
+        )
+        if spanish
+        else (
+            "Cross-platform parity: Established"
+            if established
+            else "Cross-platform parity: Not established"
+        )
+    )
+    details["status"] = (
+        "Paridad entre plataformas establecida"
+        if spanish and established
+        else "Observaciones de plataforma aportadas — paridad entre plataformas no establecida"
+        if spanish
+        else "Cross-platform parity established"
+        if established
+        else "Platform observations supplied — cross-platform parity not established"
+    )
+    details["summary"] = (
+        "Las observaciones de escritorio, móvil e idioma se presentan de forma independiente; la paridad solo se establece cuando las cuatro dimensiones se verifican."
+        if spanish
+        else "Desktop, mobile, and locale observations are presented independently; parity is established only when all four dimensions are verified."
+    )
+    return details, [*truth, *evidence]
+
+
 def substantive_review_sections(
     canonical: Mapping[str, Any],
     *,
@@ -488,6 +663,21 @@ def substantive_review_sections(
         evidence = _values(section.get("evidence"), limit=6)
         findings = _values(section.get("findings"), limit=5)
         limitations = _values(section.get("limitations"), limit=6)
+
+        if section["id"] == "functional_qa":
+            details, evidence = _functional_runtime_truth(
+                canonical,
+                details,
+                evidence,
+                spanish=spanish,
+            )
+        elif section["id"] == "platform_parity":
+            details, evidence = _platform_runtime_truth(
+                canonical,
+                details,
+                evidence,
+                spanish=spanish,
+            )
 
         if section["id"] == "risk_reduction_and_executive_briefing":
             findings = top_findings or findings

@@ -60,7 +60,7 @@ def _display_literal(value: Any, limit: int) -> str:
     return _literal(value, limit)
 
 
-def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
+def _report_identity(context: Mapping[str, Any]) -> dict[str, Any]:
     """Build final-report identity with durable display-metadata fallback.
 
     The final report runs behind a detached publication boundary. Canonical scope
@@ -71,7 +71,9 @@ def _report_identity(context: Mapping[str, Any]) -> dict[str, str]:
     """
 
     from nico import comprehensive_native_providers as providers
-    from nico.comprehensive_engagement_metadata_v1 import display_identity_projection
+    from nico.comprehensive_engagement_metadata_v1 import (
+        display_identity_projection,
+    )
 
     identity = providers._identity(dict(context))
     engagement_projection = display_identity_projection(context.get("engagement_metadata"))

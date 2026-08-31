@@ -512,9 +512,21 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
         return Paragraph(html.escape(_text(value, limit)), style)
 
     boundary = ES_BOUNDARY if spanish else EN_BOUNDARY
-    from nico.comprehensive_engagement_metadata_v1 import _literal
+    from nico.comprehensive_engagement_metadata_v1 import (
+        _literal,
+        render_engagement_field,
+        verify_comprehensive_engagement_metadata,
+    )
 
     def engagement_value(key: str, limit: int) -> str:
+        metadata = canonical.get("engagement_metadata")
+        if verify_comprehensive_engagement_metadata(metadata):
+            field = "client_name" if key == "customer_name" else key
+            return render_engagement_field(
+                metadata,
+                field,
+                "es-MX" if spanish else "en",
+            )
         value = _literal(identity.get(key), limit)
         return value or ("No proporcionado" if spanish else "Not supplied")
 

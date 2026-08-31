@@ -30,6 +30,8 @@ import {
   reportLanguageForRequest,
 } from "./assessmentLocale";
 import StrategicEvidenceForm from "./StrategicEvidenceForm";
+import EngagementFieldStateControls from "./EngagementFieldStateControls";
+import {isEngagementFieldUnavailable} from "./engagementFieldState";
 import {isAmbiguousIntakeOutcome} from "./assessmentRunRequests";
 import {useAssessmentClientMode} from "./useAssessmentClientMode";
 import {useAssessmentRun} from "./useAssessmentRun";
@@ -393,6 +395,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     project,
     authorized,
     humanEvidence,
+    engagementFieldStates,
     phase,
     result,
     message,
@@ -406,7 +409,10 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     setClient,
     setProject,
     setAuthorized,
-    setHumanEvidence, setError,
+    setHumanEvidence,
+    setEngagementFieldValue,
+    setEngagementFieldState,
+    setError,
     run, retry, startNew,
   } = controller;
   const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage} = useReportActionState(locale);
@@ -743,14 +749,42 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <input value={repository} onChange={(event) => setRepository(event.target.value)} placeholder={copy.repoPlaceholder} disabled={running || hasExactRun} autoComplete="off" />
         </label>
         <div className={workspaceStyles.secondaryGrid}>
-          <label className={workspaceStyles.secondaryField}>{copy.client}<input value={client} onChange={(event) => setClient(event.target.value)} disabled={running || hasExactRun} /></label>
-          <label className={workspaceStyles.secondaryField}>{copy.project}<input value={project} onChange={(event) => setProject(event.target.value)} disabled={running || hasExactRun} /></label>
+          {([
+            ["client_name", copy.client, client, setClient],
+            ["project_name", copy.project, project, setProject],
+          ] as const).map(([field, label, value, onValue]) => {
+            const state = engagementFieldStates[field].state;
+            return <div
+              className={workspaceStyles.secondaryField}
+              data-engagement-field={field}
+              data-engagement-state={state}
+              key={field}
+            >
+              <label>{label}
+                <input
+                  value={value}
+                  onChange={(event) => onValue(event.target.value)}
+                  disabled={running || hasExactRun || isEngagementFieldUnavailable(state)}
+                  autoComplete="off"
+                />
+              </label>
+              <EngagementFieldStateControls
+                locale={locale}
+                state={state}
+                disabled={running || hasExactRun}
+                onChange={(next) => setEngagementFieldState(field, next)}
+              />
+            </div>;
+          })}
         </div>
 
         <StrategicEvidenceForm
           locale={locale}
           value={humanEvidence}
           onChange={setHumanEvidence}
+          engagementFieldStates={engagementFieldStates}
+          onEngagementFieldValueChange={setEngagementFieldValue}
+          onEngagementFieldStateChange={setEngagementFieldState}
           disabled={running || hasExactRun}
         />
 

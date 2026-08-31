@@ -1026,6 +1026,7 @@ class ComprehensiveApiController:
             client_name=body.get("client_name"),
             project_name=body.get("project_name"),
             human_evidence=body.get("human_evidence"),
+            field_states=body.get("engagement_field_states"),
         )
         record = self._service.start(
             run_id=run_id,

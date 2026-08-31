@@ -19,12 +19,23 @@ const MOBILE_ENGAGEMENT_FIELDS = [
   "primary_technical_contact",
   "authorized_scope",
 ] as const;
+const ENGAGEMENT_FIELDS = [
+  "client_name",
+  "project_name",
+  ...MOBILE_ENGAGEMENT_FIELDS,
+] as const;
 
 type MobileEngagementField = (typeof MOBILE_ENGAGEMENT_FIELDS)[number];
+type EngagementField = (typeof ENGAGEMENT_FIELDS)[number];
+type DomEngagementState = {
+  state: string;
+  source: string;
+};
 type IntakeDomSnapshot = {
   clientName: string | null;
   projectName: string | null;
   mobileEvidence: Record<MobileEngagementField, string[]> | null;
+  engagementStates: Partial<Record<EngagementField, DomEngagementState>>;
 };
 
 function requestUrl(input: RequestInfo | URL): string {
@@ -92,6 +103,37 @@ function mobileEngagementSnapshot(): IntakeDomSnapshot["mobileEvidence"] {
   return output;
 }
 
+function engagementStateSnapshot(): IntakeDomSnapshot["engagementStates"] {
+  const output: IntakeDomSnapshot["engagementStates"] = {};
+  for (const field of ENGAGEMENT_FIELDS) {
+    const wrapper = document.querySelector(`[data-engagement-field="${field}"]`);
+    // Desktop renders only the currently selected rich-evidence module. Fields that
+    // are not mounted must retain the React request state instead of being rewritten
+    // as not supplied at the Safari native-control snapshot boundary.
+    if (!(wrapper instanceof HTMLElement)) continue;
+    const control = wrapper?.querySelector("input, textarea");
+    const value = control instanceof HTMLInputElement
+      || control instanceof HTMLTextAreaElement
+      ? control.value
+      : "";
+    const explicit = String(wrapper.dataset.engagementState || "");
+    const state = explicit === "excluded_from_scope" || explicit === "not_applicable"
+      ? explicit
+      : value.trim()
+        ? explicit === "supplied_verified" ? explicit : "supplied_unverified"
+        : "not_supplied";
+    output[field] = {
+      state,
+      source: state === "excluded_from_scope" || state === "not_applicable"
+        ? "user_action"
+        : value.trim()
+          ? "client_supplied_intake"
+          : "intake",
+    };
+  }
+  return output;
+}
+
 function captureIntakeDomSnapshot(): IntakeDomSnapshot {
   const clientInput = inputForLabels(CLIENT_LABELS);
   const projectInput = inputForLabels(PROJECT_LABELS);
@@ -99,6 +141,7 @@ function captureIntakeDomSnapshot(): IntakeDomSnapshot {
     clientName: clientInput ? clientInput.value : null,
     projectName: projectInput ? projectInput.value : null,
     mobileEvidence: mobileEngagementSnapshot(),
+    engagementStates: engagementStateSnapshot(),
   };
 }
 
@@ -141,6 +184,13 @@ export function rewriteComprehensiveIntakeBody(
     humanEvidence.stakeholder_context = stakeholder;
     payload.human_evidence = humanEvidence;
   }
+
+
+  const fieldStates = objectRecord(payload.engagement_field_states);
+  for (const [field, state] of Object.entries(snapshot.engagementStates)) {
+    fieldStates[field] = state;
+  }
+  payload.engagement_field_states = fieldStates;
 
   return JSON.stringify(payload);
 }

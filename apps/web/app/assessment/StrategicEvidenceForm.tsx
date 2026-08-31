@@ -3,6 +3,13 @@
 import {useEffect, useState} from "react";
 import styles from "./strategicEvidence.module.css";
 import type {Locale} from "./assessmentTypes";
+import EngagementFieldStateControls from "./EngagementFieldStateControls";
+import {
+  isEngagementFieldUnavailable,
+  type EngagementFieldKey,
+  type EngagementFieldState,
+  type EngagementFieldStates,
+} from "./engagementFieldState";
 import {
   STRATEGIC_EVIDENCE_DEFINITIONS,
   CLIENT_ENGAGEMENT_FIELDS,
@@ -155,11 +162,23 @@ export default function StrategicEvidenceForm({
   locale,
   value,
   onChange,
+  engagementFieldStates,
+  onEngagementFieldValueChange,
+  onEngagementFieldStateChange,
   disabled,
 }: {
   locale: Locale;
   value: StrategicHumanEvidenceInput;
   onChange: (value: StrategicHumanEvidenceInput) => void;
+  engagementFieldStates: EngagementFieldStates;
+  onEngagementFieldValueChange: (
+    field: EngagementFieldKey,
+    value: string,
+  ) => void;
+  onEngagementFieldStateChange: (
+    field: EngagementFieldKey,
+    state: EngagementFieldState,
+  ) => void;
   disabled?: boolean;
 }) {
   const copy = TEXT[locale] as typeof TEXT.en;
@@ -223,30 +242,44 @@ export default function StrategicEvidenceForm({
           </div>
         </header>
         <div className={styles.requiredEvidence}>
-          {MOBILE_CLIENT_ENGAGEMENT_FIELDS.map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
-            <span>{copy.field(field)}</span>
-            <input
+          {MOBILE_CLIENT_ENGAGEMENT_FIELDS.map((field) => {
+            const state = engagementFieldStates[field].state;
+            return <div
+              key={field}
+              data-engagement-field={field}
+              data-engagement-state={state}
+            >
+              <label className={styles.evidenceTextareaLabel}>
+                <span>{copy.field(field)}</span>
+                <input
               type="text"
-              value={(engagement.evidence[field] || [])[0] || ""}
-              disabled={disabled}
-              autoComplete="off"
-              style={{
-                width: "100%",
-                minHeight: 43,
-                padding: "9px 11px",
-                border: "1px solid rgba(71, 85, 105, 0.86)",
-                borderRadius: 10,
-                background: "rgba(2, 6, 23, 0.76)",
-                color: "#f8fafc",
-                font: "inherit",
-              }}
-              onChange={(event) => setEvidenceField(
-                "stakeholder_context",
-                field,
-                event.target.value ? [event.target.value] : [],
-              )}
-            />
-          </label>)}
+                  value={(engagement.evidence[field] || [])[0] || ""}
+                  disabled={disabled || isEngagementFieldUnavailable(state)}
+                  autoComplete="off"
+                  style={{
+                    width: "100%",
+                    minHeight: 43,
+                    padding: "9px 11px",
+                    border: "1px solid rgba(71, 85, 105, 0.86)",
+                    borderRadius: 10,
+                    background: "rgba(2, 6, 23, 0.76)",
+                    color: "#f8fafc",
+                    font: "inherit",
+                  }}
+                  onChange={(event) => onEngagementFieldValueChange(
+                    field,
+                    event.target.value,
+                  )}
+                />
+              </label>
+              <EngagementFieldStateControls
+                locale={locale}
+                state={state}
+                disabled={disabled}
+                onChange={(next) => onEngagementFieldStateChange(field, next)}
+              />
+            </div>;
+          })}
         </div>
       </div>
     </section>;
@@ -266,6 +299,11 @@ export default function StrategicEvidenceForm({
       ...emptyStrategicEvidenceModule(),
       excluded,
     });
+    if (activeDefinition.moduleId === "stakeholder_context" && excluded) {
+      for (const field of MOBILE_CLIENT_ENGAGEMENT_FIELDS) {
+        onEngagementFieldStateChange(field, "excluded_from_scope");
+      }
+    }
   }
 
   if (!activeDefinition) return null;
@@ -395,22 +433,57 @@ export default function StrategicEvidenceForm({
               )}
             />
           </label> : <div className={styles.requiredEvidence}>
-            {evidenceFields(activeDefinition).map((field) => <label key={field} className={styles.evidenceTextareaLabel}>
-              <span>{copy.field(field)}</span>
-              <small>{copy.onePerLine}</small>
-              <textarea
-                rows={4}
-                value={(activeModule.evidence[field] || []).join("\n")}
-                disabled={disabled}
-                onChange={(event) => setEvidenceField(
-                  activeDefinition.moduleId,
-                  field,
-                  CLIENT_ENGAGEMENT_FIELDS.has(field)
-                    ? event.target.value.trim() ? [event.target.value] : []
-                    : evidenceLines(event.target.value),
-                )}
-              />
-            </label>)}
+            {evidenceFields(activeDefinition).map((field) => {
+              const canonicalField = field as EngagementFieldKey;
+              const isEngagementField = CLIENT_ENGAGEMENT_FIELDS.has(field);
+              const state = isEngagementField
+                ? engagementFieldStates[canonicalField].state
+                : null;
+              return <div
+                key={field}
+                {...(isEngagementField
+                  ? {
+                      "data-engagement-field": canonicalField,
+                      "data-engagement-state": state,
+                    }
+                  : {})}
+              >
+                <label className={styles.evidenceTextareaLabel}>
+                  <span>{copy.field(field)}</span>
+                  <small>{copy.onePerLine}</small>
+                  <textarea
+                    rows={4}
+                    value={(activeModule.evidence[field] || []).join("\n")}
+                    disabled={disabled || Boolean(
+                      state && isEngagementFieldUnavailable(state),
+                    )}
+                    onChange={(event) => {
+                      if (isEngagementField) {
+                        onEngagementFieldValueChange(
+                          canonicalField,
+                          event.target.value,
+                        );
+                      } else {
+                        setEvidenceField(
+                          activeDefinition.moduleId,
+                          field,
+                          evidenceLines(event.target.value),
+                        );
+                      }
+                    }}
+                  />
+                </label>
+                {state ? <EngagementFieldStateControls
+                  locale={locale}
+                  state={state}
+                  disabled={disabled}
+                  onChange={(next) => onEngagementFieldStateChange(
+                    canonicalField,
+                    next,
+                  )}
+                /> : null}
+              </div>;
+            })}
           </div>}
 
           <footer className={styles.moduleActions}>
@@ -418,10 +491,18 @@ export default function StrategicEvidenceForm({
               type="button"
               className={styles.secondaryAction}
               disabled={disabled}
-              onClick={() => setModule(activeDefinition.moduleId, {
-                ...activeModule,
-                excluded: !activeModule.excluded,
-              })}
+              onClick={() => {
+                const excluded = !activeModule.excluded;
+                setModule(activeDefinition.moduleId, {...activeModule, excluded});
+                if (activeDefinition.moduleId === "stakeholder_context") {
+                  for (const field of MOBILE_CLIENT_ENGAGEMENT_FIELDS) {
+                    onEngagementFieldStateChange(
+                      field,
+                      excluded ? "excluded_from_scope" : "not_supplied",
+                    );
+                  }
+                }
+              }}
             >
               {activeModule.excluded ? copy.includeInstead : copy.excludeModule}
             </button>
@@ -429,7 +510,14 @@ export default function StrategicEvidenceForm({
               type="button"
               className={styles.ghostAction}
               disabled={disabled}
-              onClick={() => setModule(activeDefinition.moduleId, null)}
+              onClick={() => {
+                setModule(activeDefinition.moduleId, null);
+                if (activeDefinition.moduleId === "stakeholder_context") {
+                  for (const field of MOBILE_CLIENT_ENGAGEMENT_FIELDS) {
+                    onEngagementFieldStateChange(field, "not_supplied");
+                  }
+                }
+              }}
             >
               {copy.removeModule}
             </button>
