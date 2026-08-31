@@ -89,6 +89,30 @@ def _provider_access_observation(
     return True, access_mode, credential_used
 
 
+def _client_for_context(
+    context: dict[str, Any],
+    client: GitHubAssessmentClient | None,
+) -> GitHubAssessmentClient:
+    """Bind evidence acquisition to the access mode frozen at public intake."""
+
+    if client is not None:
+        return client
+    active = GitHubAssessmentClient()
+    if (
+        str(context.get("provider_access_mode") or "").strip()
+        == "anonymous_public"
+        and context.get("provider_credential_used") is False
+    ):
+        active.headers = {
+            key: value
+            for key, value in active.headers.items()
+            if str(key).casefold() != "authorization"
+        }
+        active.credential_used = False
+        active.access_mode = "anonymous_public"
+    return active
+
+
 def _capability(
     capability: str,
     state: str,
@@ -479,7 +503,7 @@ def collect_snapshot_repository_evidence(
         }
         return unavailable, {**unavailable, "evidence_id": complexity_id, "source": "github_api_snapshot_bound_complexity"}
 
-    github = client or GitHubAssessmentClient()
+    github = _client_for_context(context, client)
     (
         provider_access_observed,
         access_mode,
