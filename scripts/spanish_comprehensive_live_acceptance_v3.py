@@ -66,6 +66,10 @@ EXCLUDED_ENGAGEMENT_FIELDS = (
     "authorized_scope",
 )
 ENGAGEMENT_PROOF_FIXTURE_ENV = "NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE"
+PROOF_EXCLUSION_RATIONALE = (
+    "Exclusión deliberada para esta prueba sintética controlada de NICO — "
+    "sin información humana opcional."
+)
 
 _MARKER = "__nico_spanish_terminal_boundary_v3__"
 _ARTIFACT_MARKER = "__nico_spanish_localized_artifact_proof_v32__"
@@ -812,6 +816,8 @@ def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
     ).first
     exclusion_rationale.wait_for(state="visible", timeout=30_000)
     assert exclusion_rationale.input_value() == ""
+    exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)
+    assert exclusion_rationale.input_value() == PROOF_EXCLUSION_RATIONALE
 
     field_control_counts: dict[str, int] = {}
     for field in EXCLUDED_ENGAGEMENT_FIELDS:
@@ -829,12 +835,14 @@ def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
         "Excluido con justificación",
         exact=True,
     ).first
+    excluded_status.wait_for(state="visible", timeout=30_000)
     assert excluded_status.is_visible()
     return {
         "exclusion_view_visible": True,
         "excluded_field_controls_unmounted": True,
         "excluded_field_control_counts": field_control_counts,
-        "exclusion_rationale_blank": True,
+        "exclusion_rationale_supplied": True,
+        "exclusion_rationale": PROOF_EXCLUSION_RATIONALE,
     }
 
 
