@@ -98,13 +98,31 @@ def test_spanish_canary_has_time_to_publish_terminal_status_after_proof_timeout(
 
     # The proof step must terminate materially before the job-level watchdog so the
     # always/failure finalizers can upload evidence and replace the pending commit state.
-    assert "timeout-minutes: 180" in text
+    assert "timeout-minutes: 300" in text
     assert "timeout-minutes: 100" in text
     assert "--timeout-seconds 5400" in text
     assert "continue-on-error: true" in text
     assert "if: always()" in text
     assert "if: failure()" in text
     assert "sudo tee /etc/apt/apt-mirrors.txt" in text
+
+
+def test_spanish_canary_runs_supplied_and_explicit_exclusion_fixtures() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    terminal = TERMINAL_SCRIPT.read_text(encoding="utf-8")
+
+    assert workflow.count(
+        "python scripts/spanish_comprehensive_live_acceptance_v3.py"
+    ) == 2
+    assert "Run explicit exclusion-state Comprehensive proof" in workflow
+    assert "NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE: excluded" in workflow
+    assert "spanish-comprehensive-exclusion-live-proof.json" in workflow
+    assert 'exclusion["explicit_exclusion_controls_verified"] is True' in workflow
+    assert 'exclusion["excluded_engagement_fields_verified_in_canonical_truth"] is True' in workflow
+    assert 'exclusion["excluded_engagement_states_verified_in_both_pdfs"] is True' in workflow
+    assert 'ENGAGEMENT_PROOF_FIXTURE_ENV = "NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE"' in terminal
+    assert 'name="Excluir del alcance"' in terminal
+    assert '"excluded_from_scope"' in terminal
 
 
 def test_spanish_canary_cleans_interrupted_reserved_proof_runs() -> None:
