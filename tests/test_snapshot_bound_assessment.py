@@ -15,9 +15,20 @@ from nico.storage import STORE
 
 
 class FakeGitHubClient:
-    def __init__(self, sha: str = "a" * 40) -> None:
+    def __init__(
+        self,
+        sha: str = "a" * 40,
+        *,
+        credential_used: bool = False,
+    ) -> None:
         self.sha = sha
         self.commit_calls = 0
+        self.credential_used = credential_used
+        self.access_mode = (
+            "authenticated_read_only"
+            if credential_used
+            else "anonymous_public"
+        )
 
     def get_repo(self, repository: str):
         return {
@@ -101,10 +112,73 @@ def test_snapshot_capture_persists_exact_commit_and_is_idempotent():
     assert first["snapshot_id"] == repository_snapshot_id(context["run_id"], context["repository"])
     assert first["commit_sha"] == "a" * 40
     assert first["tree_sha"] == "b" * 40
+    assert first["provider"] == "github"
+    assert first["provider_instance"] == "github.com"
+    assert first["provider_access_observed"] is True
+    assert first["access_mode"] == "anonymous_public"
+    assert first["credential_used"] is False
     assert second["commit_sha"] == "a" * 40
     assert second["idempotent_reuse"] is True
     assert client.commit_calls == 1
     assert STORE.get("evidence_items", first["snapshot_id"])["evidence"]["commit_sha"] == "a" * 40
+
+
+@pytest.mark.parametrize(
+    "credential_used,expected_mode",
+    (
+        (False, "anonymous_public"),
+        (True, "authenticated_read_only"),
+    ),
+)
+def test_snapshot_capture_persists_observed_access_truth(
+    credential_used: bool,
+    expected_mode: str,
+) -> None:
+    context = _context()
+    result = capture_repository_snapshot(
+        context,
+        client=FakeGitHubClient(
+            "a" * 40,
+            credential_used=credential_used,
+        ),
+    )
+
+    assert result["provider_access_observed"] is True
+    assert result["access_mode"] == expected_mode
+    assert result["credential_used"] is credential_used
+    stored = STORE.get("evidence_items", result["snapshot_id"])["evidence"]
+    assert stored["access_mode"] == expected_mode
+    assert stored["credential_used"] is credential_used
+
+
+def test_preverified_deployment_identity_does_not_claim_access_observation() -> None:
+    context = _context()
+    commit_sha = "d" * 40
+    context["expected_commit_sha"] = commit_sha
+    context["exact_commit_resolution"] = {
+        "status": "attached",
+        "repository": context["repository"],
+        "source": "runtime_deployment_identity",
+        "default_branch": "main",
+        "requested_ref": commit_sha,
+        "expected_commit_sha": commit_sha,
+        "commit_binding_source": "explicit_request",
+        "exact_commit_verified": True,
+        "commit_sha": commit_sha,
+        "tree_sha": "e" * 40,
+    }
+    client = FakeGitHubClient(
+        commit_sha,
+        credential_used=True,
+    )
+
+    result = capture_repository_snapshot(context, client=client)
+
+    assert result["status"] == "attached"
+    assert result["provider_access_observed"] is False
+    assert result["access_mode"] == ""
+    assert result["credential_used"] is None
+    assert client.commit_calls == 0
 
 
 def test_snapshot_capture_does_not_claim_attachment_without_full_commit_sha():
