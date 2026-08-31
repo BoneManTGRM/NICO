@@ -12,7 +12,14 @@ from fastapi.testclient import TestClient
 
 from nico.comprehensive_capability_registry import execution_plan
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
-from nico.comprehensive_runtime import configure_comprehensive_runtime
+from nico.comprehensive_engagement_metadata_v1 import (
+    build_comprehensive_engagement_metadata,
+)
+from nico.comprehensive_runtime import (
+    _DetachedProductionComprehensiveRunService,
+    configure_comprehensive_runtime,
+)
+from nico.comprehensive_run_store import ComprehensiveRunStore
 
 
 def _executors() -> dict:
@@ -157,6 +164,80 @@ def test_runtime_mounts_durable_native_routes(tmp_path: Path) -> None:
     )
     assert restored_body["human_review_required"] is True
     assert restored_body["client_delivery_allowed"] is False
+
+
+def test_detached_production_stage_preserves_provider_and_engagement_context(
+    tmp_path: Path,
+) -> None:
+    store = ComprehensiveRunStore(
+        lambda: sqlite3.connect(tmp_path / "detached-context.db"),
+        dialect="sqlite",
+    )
+    store.ensure_schema()
+    service = _DetachedProductionComprehensiveRunService(store, _executors())
+    human_evidence = {
+        "stakeholder_context": {
+            "evidence": {
+                "primary_technical_contact": ["María-José Pérez — CTO / Ingeniería"],
+                "access_method": [
+                    "GitHub.com público por HTTPS/API — acceso de solo lectura"
+                ],
+                "authorized_scope": [
+                    "BoneManTGRM/NICO — repositorio completo; rama main; código, "
+                    "configuración y CI/CD."
+                ],
+            }
+        }
+    }
+    engagement_metadata = build_comprehensive_engagement_metadata(
+        client_name="Compañía Águila, S.A. de C.V.",
+        project_name="Proyecto Ñandú / Release 2.0",
+        human_evidence=human_evidence,
+    )
+    record = service.start(
+        run_id="comprun_detached_context",
+        repository="BoneManTGRM/NICO",
+        commit_sha="a" * 40,
+        evidence_ledger_id="ledger_detached_context",
+        customer_id="synthetic_customer",
+        project_id="synthetic_project",
+        authorized=True,
+        human_evidence=human_evidence,
+        engagement_metadata=engagement_metadata,
+        repository_provider="github",
+        provider_access_mode="anonymous_public",
+        provider_credential_used=False,
+    )
+    captured: dict = {}
+
+    class CapturePublication:
+        def advance(self, unchanged, *, stage_id, executor, context):
+            captured.update(context)
+            assert stage_id == "authorization_and_scope"
+            assert callable(executor)
+            return unchanged
+
+    service._detached_stage_publication = CapturePublication()  # type: ignore[assignment]
+
+    assert service._run_next_stage(record) == record
+    assert captured["repository_provider"] == "github"
+    assert captured["provider_access_mode"] == "anonymous_public"
+    assert captured["provider_credential_used"] is False
+    assert captured["customer_name"] == "Compañía Águila, S.A. de C.V."
+    assert captured["project_name"] == "Proyecto Ñandú / Release 2.0"
+    assert captured["primary_technical_contact"] == (
+        "María-José Pérez — CTO / Ingeniería"
+    )
+    assert captured["access_method"] == (
+        "GitHub.com público por HTTPS/API — acceso de solo lectura"
+    )
+    assert captured["authorized_scope"] == (
+        "BoneManTGRM/NICO — repositorio completo; rama main; código, configuración y "
+        "CI/CD."
+    )
+    assert captured["engagement_metadata"] == engagement_metadata
+    assert captured["human_review_required"] is True
+    assert captured["client_delivery_allowed"] is False
 
 
 def test_runtime_rejects_missing_capabilities(tmp_path: Path) -> None:
