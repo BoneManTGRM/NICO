@@ -15,9 +15,9 @@ _PREMIUM_ENTRYPOINT_MARKER = "__nico_premium_structured_entrypoint_cleanup_v1__"
 _DIAGNOSTIC_MARKER = "__nico_raw_mapping_surface_diagnostic_v1__"
 _CLIENT_STAGE_FIELDS = ("evidence", "findings", "unavailable", "limitations")
 _CLIENT_SURFACE_ITEM_LIMIT = 100_000
-_INTERNAL_DOTTED_LINE = re.compile(
-    r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+){2,}(?::|\s*$)",
-    re.IGNORECASE,
+_INTERNAL_PROPERTY_LINE = re.compile(
+    r"^(?:(?:scope|capability|state|status|source|review)|"
+    r"[a-z][a-z0-9_.\[\]]*[_\.\[][a-z0-9_.\[\]]*)\s*:",
 )
 _COMPLEXITY_FINDING = re.compile(r"\breduce complexity in\b", re.IGNORECASE)
 _OUTCOME_LABELS = {
@@ -145,7 +145,13 @@ def sanitize_client_rendered_stage(stage: Mapping[str, Any]) -> dict[str, Any]:
                 item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
             )
         if field == "evidence":
-            values = [value for value in values if not _INTERNAL_DOTTED_LINE.match(value)]
+            # The full nested evidence ledger remains in canonical JSON and CSV.
+            # Lower-case field paths are serialization details, not client copy;
+            # keep curated evidence sentences while excluding both simple keys and
+            # deep/list paths from Markdown, HTML, and PDF stage narratives.
+            values = [
+                value for value in values if not _INTERNAL_PROPERTY_LINE.match(value)
+            ]
         if field == "findings" and stage_id == "dependency_security_static_analysis":
             values = [value for value in values if not _COMPLEXITY_FINDING.search(value)]
         item[field] = values
@@ -344,9 +350,15 @@ def _install_raw_mapping_surface_diagnostic() -> bool:
                 line = raw_line.strip()
                 if line.startswith(("- ", "* ")):
                     line = line[2:].strip()
+                line = line.lstrip("•").strip()
                 if finish._mapping_tail(line)[1] is not None:
                     raise ValueError(
                         "client-facing artifact retained a raw mapping presentation "
+                        f"in {surface_name}: {_text(line, 500)}"
+                    )
+                if _INTERNAL_PROPERTY_LINE.match(line):
+                    raise ValueError(
+                        "client-facing artifact retained an internal property presentation "
                         f"in {surface_name}: {_text(line, 500)}"
                     )
 

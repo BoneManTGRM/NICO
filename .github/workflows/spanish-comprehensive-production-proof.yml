@@ -22,7 +22,7 @@ jobs:
   spanish-comprehensive:
     name: Prove fresh es-MX Comprehensive report publication
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
       NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY || 'BoneManTGRM/NICO' }}
@@ -251,6 +251,44 @@ jobs:
             --output "${RECOVERED_PROOF}"
           cp "${RECOVERED_PROOF}" audit-results/spanish-comprehensive-live-proof.json
 
+      - name: Run explicit exclusion-state Comprehensive proof
+        id: exclusion_proof
+        if: steps.spanish_proof.outcome == 'success' || steps.spanish_recovery.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 100
+        env:
+          NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE: excluded
+        run: |
+          set -uo pipefail
+          mkdir -p audit-results
+          EXCLUSION_PROOF_LOG="audit-results/spanish-comprehensive-exclusion-source-proof.log"
+          set +e
+          {
+            printf 'RELEASE_SHA: %s\n' "${RELEASE_SHA}"
+            printf 'SOURCE_RUN_ID: %s\n' "${SOURCE_RUN_ID}"
+            printf 'SOURCE_RUN_ATTEMPT: %s\n' "${SOURCE_RUN_ATTEMPT}"
+            xvfb-run -a python scripts/spanish_comprehensive_live_acceptance_v3.py \
+              --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
+              --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
+              --expected-sha "${RELEASE_SHA}" \
+              --source-workflow-run-id "${SOURCE_RUN_ID}" \
+              --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+              --timeout-seconds 5400 \
+              --output audit-results/spanish-comprehensive-exclusion-live-proof.json
+          } 2>&1 | tee "${EXCLUSION_PROOF_LOG}"
+          EXCLUSION_PIPE_STATUS=("${PIPESTATUS[@]}")
+          EXCLUSION_PROOF_EXIT="${EXCLUSION_PIPE_STATUS[0]}"
+          EXCLUSION_LOG_EXIT="${EXCLUSION_PIPE_STATUS[1]}"
+          set -e
+          printf 'Process completed with exit code %s\n' "${EXCLUSION_PROOF_EXIT}" \
+            | tee -a "${EXCLUSION_PROOF_LOG}"
+          printf '%s\n' "${EXCLUSION_PROOF_EXIT}" \
+            > audit-results/spanish-comprehensive-exclusion-source-proof.exit-code
+          if [ "${EXCLUSION_LOG_EXIT}" -ne 0 ]; then
+            exit "${EXCLUSION_LOG_EXIT}"
+          fi
+          exit "${EXCLUSION_PROOF_EXIT}"
+
       - name: Upload immutable Spanish proof
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -266,8 +304,15 @@ jobs:
             audit-results/spanish-comprehensive-failed-source-proof.json
             audit-results/spanish-comprehensive-existing-run-recovery-proof.json
             audit-results/spanish-comprehensive-existing-run-recovery-proof.png
+            audit-results/spanish-comprehensive-exclusion-live-proof.json
+            audit-results/spanish-comprehensive-exclusion-live-proof.progress.json
+            audit-results/spanish-comprehensive-exclusion-live-proof.png
+            audit-results/spanish-comprehensive-exclusion-source-proof.log
+            audit-results/spanish-comprehensive-exclusion-source-proof.exit-code
             audit-results/nico-comprehensive-en-automated-draft-pending-human-approval.pdf
             audit-results/nico-comprehensive-es-MX-automated-draft-pending-human-approval.pdf
+            audit-results/nico-comprehensive-en-excluded-context-automated-draft-pending-human-approval.pdf
+            audit-results/nico-comprehensive-es-MX-excluded-context-automated-draft-pending-human-approval.pdf
           if-no-files-found: warn
           retention-days: 90
 
@@ -277,6 +322,8 @@ jobs:
           set -euo pipefail
           SOURCE_PROOF_OUTCOME="${{ steps.spanish_proof.outcome }}"
           RECOVERY_OUTCOME="${{ steps.spanish_recovery.outcome }}"
+          EXCLUSION_PROOF_OUTCOME="${{ steps.exclusion_proof.outcome }}"
+          test "${EXCLUSION_PROOF_OUTCOME}" = "success"
           if [ "${SOURCE_PROOF_OUTCOME}" = "success" ]; then
             test "${RECOVERY_OUTCOME}" = "skipped"
             export NICO_SPANISH_PROOF_MODE="fresh"
@@ -473,6 +520,61 @@ jobs:
           assert payload["delivery_authorization_absent"] is True
           assert payload["approved_delivery_package_absent"] is True
           assert payload["accepted_edition_absent"] is True
+
+          exclusion_path = Path(
+              "audit-results/spanish-comprehensive-exclusion-live-proof.json"
+          )
+          exclusion = json.loads(exclusion_path.read_text(encoding="utf-8"))
+          assert Path(
+              "audit-results/spanish-comprehensive-exclusion-source-proof.exit-code"
+          ).read_text(encoding="utf-8").strip() == "0"
+          assert exclusion["artifact_schema"] == fresh_schema
+          assert exclusion["status"] == "passed"
+          assert exclusion["expected_sha"] == os.environ["RELEASE_SHA"]
+          assert exclusion["source_workflow_run_id"] == os.environ["SOURCE_RUN_ID"]
+          assert exclusion["source_workflow_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
+          assert exclusion["source_binding"] == f"{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']}"
+          assert exclusion["engagement_fixture"] == "excluded"
+          assert exclusion["start_request_count"] == 1
+          assert exclusion["duplicate_intake_absent"] is True
+          assert exclusion["explicit_exclusion_controls_verified"] is True
+          assert exclusion["excluded_engagement_fields"] == [
+              "primary_technical_contact",
+              "access_method",
+              "authorized_scope",
+          ]
+          assert exclusion["actual_browser_intake_exclusion_states_verified"] is True
+          assert exclusion["durable_engagement_metadata_at_intake"][
+              "excluded_field_states_verified"
+          ] is True
+          assert exclusion["commercial_proof_client_name"] == "Cody Jenkins"
+          assert exclusion["commercial_proof_project_name"] == "NICO Audit"
+          for key in (
+              "primary_technical_contact",
+              "access_method",
+              "authorized_scope",
+          ):
+              assert exclusion[f"commercial_proof_{key}"] == ""
+              assert exclusion[f"actual_browser_intake_{key}"] == ""
+          assert exclusion["excluded_engagement_fields_verified_in_canonical_truth"] is True
+          assert exclusion["excluded_engagement_states_verified_in_both_pdfs"] is True
+          assert exclusion["five_field_literals_verified_in_both_pdfs"] is False
+          assert exclusion["five_fields_consolidated_in_both_client_evidence_summaries"] is True
+          assert exclusion["same_run_bilingual_pdf_verified"] is True
+          assert exclusion["same_run_bilingual_assessment_rerun"] is False
+          assert exclusion["running_reload_recovery_verified"] is True
+          assert exclusion["running_background_foreground_recovery_verified"] is True
+          assert exclusion["terminal_state_unchanged_after_localized_reads"] is True
+          assert exclusion["human_review_required"] is True
+          assert exclusion["human_review_completed"] is False
+          assert exclusion["approval_status"] == "pending_human_approval"
+          assert exclusion["client_delivery_allowed"] is False
+          assert exclusion["delivery_status"] == "blocked"
+          for key in ("spanish_pdf_path", "english_pdf_path"):
+              artifact = Path(exclusion[key])
+              assert artifact.is_file()
+              assert "excluded-context" in artifact.name
+              assert "pending-human-approval" in artifact.name
           PY
 
       - name: Publish successful Spanish proof status

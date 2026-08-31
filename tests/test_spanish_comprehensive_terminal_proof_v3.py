@@ -43,6 +43,96 @@ def test_production_workflow_uses_v3_and_exact_terminal_assertions() -> None:
     assert 'payload["terminal"]["report"] == "Completa"' in workflow
 
 
+def test_v3_exclusion_fixture_keeps_values_empty_and_states_explicit(
+    tmp_path: Path,
+) -> None:
+    playwright = tmp_path / "stubs" / "playwright"
+    playwright.mkdir(parents=True)
+    (playwright / "__init__.py").write_text("", encoding="utf-8")
+    (playwright / "sync_api.py").write_text(
+        "class Browser: pass\n"
+        "class Page: pass\n"
+        "def sync_playwright(): raise AssertionError('unit probe must not start a browser')\n",
+        encoding="utf-8",
+    )
+    script = ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v3.py"
+    probe = f"""
+import os
+import runpy
+import sys
+from pathlib import Path
+
+repository_root = Path({str(ROOT)!r})
+sys.path[:] = [
+    {str(script.parent)!r},
+    *(
+        entry
+        for entry in sys.path
+        if Path(entry or ".").resolve() != repository_root
+    ),
+]
+sys.meta_path[:] = [
+    finder
+    for finder in sys.meta_path
+    if "editable" not in type(finder).__module__.casefold()
+]
+os.environ["NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE"] = "excluded"
+module = runpy.run_path({str(script)!r}, run_name="nico_exclusion_fixture_unit_probe")
+assert module["_expected_engagement_metadata"]() == {{
+    "client_name": "Cody Jenkins",
+    "project_name": "NICO Audit",
+    "primary_technical_contact": "",
+    "access_method": "",
+    "authorized_scope": "",
+}}
+assert module["_expected_client_summary_values"]("en") == (
+    "Cody Jenkins", "NICO Audit", "Excluded from scope",
+    "Excluded from scope", "Excluded from scope",
+)
+assert module["_expected_client_summary_values"]("es-MX") == (
+    "Cody Jenkins", "NICO Audit", "Excluido del alcance",
+    "Excluido del alcance", "Excluido del alcance",
+)
+fields = module["EXCLUDED_ENGAGEMENT_FIELDS"]
+valid = {{
+    "engagement_field_states": {{
+        field: {{
+            "state": "excluded_from_scope",
+            "value": None,
+            "source": "user_action",
+        }}
+        for field in fields
+    }}
+}}
+module["_assert_excluded_field_states"](valid, boundary="unit_test")
+invalid = {{
+    "engagement_field_states": {{
+        field: {{"state": "not_supplied", "value": None, "source": "intake"}}
+        for field in fields
+    }}
+}}
+try:
+    module["_assert_excluded_field_states"](invalid, boundary="unit_test")
+except AssertionError:
+    pass
+else:
+    raise AssertionError("not_supplied substitution was accepted")
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(tmp_path / "stubs")
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_v3_entrypoint_imports_nico_when_invoked_by_path(tmp_path: Path) -> None:
     playwright = tmp_path / "stubs" / "playwright"
     playwright.mkdir(parents=True)

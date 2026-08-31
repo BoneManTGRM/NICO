@@ -67,6 +67,34 @@ def test_stage_sanitizer_humanizes_every_client_facing_stage_field() -> None:
     assert stage == before
 
 
+def test_stage_sanitizer_removes_internal_property_paths_but_keeps_curated_truth() -> None:
+    stage = {
+        "stage_id": "risk_reduction_and_executive_briefing",
+        "evidence": [
+            "authorization_confirmed: True",
+            "snapshot.api_commit_lookup_attempts: 1",
+            "complexity_evidence.hotspots[0].cyclomatic_complexity: 120",
+            "missing_evidence[0].approval_effect: scope_limitation",
+            "missing_evidence[0].cannot_conclude: Contractual compliance.",
+            "review: 1000",
+            "bandit: completed; exact commit=yes; artifact=retained.",
+            "Technical maturity: 93/100",
+            "Evidence-Adjusted: 93/100",
+        ],
+        "findings": [],
+        "unavailable": [],
+    }
+
+    rendered = sanitize_client_rendered_stage(stage)
+
+    assert rendered["evidence"] == [
+        "bandit: completed; exact commit=yes; artifact=retained.",
+        "Technical maturity: 93/100",
+        "Evidence-Adjusted: 93/100",
+    ]
+    assert stage["evidence"][0] == "authorization_confirmed: True"
+
+
 def test_stage_projection_humanizes_client_fields_and_retains_structured_sources() -> None:
     roadmap = _roadmap()
     stage = {

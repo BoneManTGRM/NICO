@@ -153,6 +153,8 @@ def test_spanish_canonical_localization_preserves_machine_truth_and_translates_n
             )
         )
 
+    assert _translate_presentation("Not supplied") == "No proporcionado"
+
     with pytest.raises(ValueError, match="missing Spanish presentation translation for summary"):
         _localize_tree(
             {
@@ -1048,10 +1050,10 @@ SMALL_ENGLISH_GOLDEN = {
     "page_count": 21,
 }
 RICH_ENGLISH_GOLDEN = {
-    "markdown": ("cc43b0829649ee16904cdfc43ac1ac41d220bf9acd534eefdb0e7de07fcde238", 21527),
-    "html": ("849702f055d1609b4ab6ba540def9f9db5050b76dd02063024b61c7454c1f0f3", 25966),
-    "pdf_base64": ("0da1b6cab6adf73e3e47e10452c2bd09a03bb05b6ea20333f4f0a1b6ea1e30c0", 266268),
-    "pdf_sha256": "c5b8f8b7c2f5c76d5bad515203245c9f328c87cad96c01bad85ed29155b23d2b",
+    "markdown": ("e170d72b9672962c562d5a31b9da62cb4d612a376d55c91588a0324bf1d01906", 20572),
+    "html": ("ff966912bf11ddf474f5004d646c799e31fc5fb9f35a25b809954dccb41d1a26", 24753),
+    "pdf_base64": ("e863419a86760cf8577246fd6472d53e10cce77c1509698847f9ac65129b1476", 254176),
+    "pdf_sha256": "5ae3517d9f4810366fbfcf364ba94ef535caf24838c8b6c50c8bf5d36c302808",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
@@ -1365,7 +1367,7 @@ rich_spanish = render(rich_input("es-MX"))
 assert fingerprint(rich_english[0]) == RICH_ENGLISH_GOLDEN
 assert_structural_parity(rich_english, rich_spanish)
 assert len(rich_english[2]) == len(rich_spanish[2]) == 39
-assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 32
+assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 33
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_english[0]["markdown"])) == 88
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_spanish[0]["markdown"])) == 88
 

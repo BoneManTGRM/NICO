@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import sys
 import time
 from functools import wraps
@@ -56,10 +57,24 @@ PROOF_AUTHORIZED_SCOPE = (
 SPANISH_ACCESS_METHOD_LABEL = "Método de acceso"
 SPANISH_PRIMARY_CONTACT_LABEL = "Contacto técnico principal"
 SPANISH_AUTHORIZED_SCOPE_LABEL = "Alcance autorizado"
+EXCLUDED_ENGAGEMENT_FIELDS = (
+    "primary_technical_contact",
+    "access_method",
+    "authorized_scope",
+)
+ENGAGEMENT_PROOF_FIXTURE_ENV = "NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE"
 
 _MARKER = "__nico_spanish_terminal_boundary_v3__"
 _ARTIFACT_MARKER = "__nico_spanish_localized_artifact_proof_v32__"
 _RUN_MARKER = "__nico_spanish_commercial_proof_run_v32__"
+
+
+def _exclusion_fixture() -> bool:
+    fixture = str(os.getenv(ENGAGEMENT_PROOF_FIXTURE_ENV, "supplied") or "").strip()
+    assert fixture in {"supplied", "excluded"}, {
+        "unsupported_engagement_proof_fixture": fixture,
+    }
+    return fixture == "excluded"
 
 
 def _recursive_values(value: Any, key: str) -> list[str]:
@@ -80,13 +95,69 @@ def _recursive_values(value: Any, key: str) -> list[str]:
 
 
 def _expected_engagement_metadata() -> dict[str, str]:
-    return {
+    expected = {
         "client_name": PROOF_CLIENT_NAME,
         "project_name": PROOF_PROJECT_NAME,
         "primary_technical_contact": PROOF_PRIMARY_TECHNICAL_CONTACT,
         "access_method": PROOF_ACCESS_METHOD,
         "authorized_scope": PROOF_AUTHORIZED_SCOPE,
     }
+    if _exclusion_fixture():
+        for field in EXCLUDED_ENGAGEMENT_FIELDS:
+            expected[field] = ""
+    return expected
+
+
+def _expected_client_summary_values(report_language: str) -> tuple[str, ...]:
+    expected = _expected_engagement_metadata()
+    if not _exclusion_fixture():
+        return tuple(expected.values())
+    excluded_label = (
+        "Excluido del alcance" if report_language == "es-MX" else "Excluded from scope"
+    )
+    return (
+        expected["client_name"],
+        expected["project_name"],
+        excluded_label,
+        excluded_label,
+        excluded_label,
+    )
+
+
+def _recursive_field_state_records(value: Any, field: str) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        direct = value.get(field)
+        if isinstance(direct, dict) and (
+            "state" in direct or "canonical_state" in direct
+        ):
+            found.append(direct)
+        for nested in value.values():
+            found.extend(_recursive_field_state_records(nested, field))
+    elif isinstance(value, list):
+        for nested in value:
+            found.extend(_recursive_field_state_records(nested, field))
+    return found
+
+
+def _assert_excluded_field_states(value: Any, *, boundary: str) -> None:
+    if not _exclusion_fixture():
+        return
+    for field in EXCLUDED_ENGAGEMENT_FIELDS:
+        records = _recursive_field_state_records(value, field)
+        assert records, {"boundary": boundary, "missing_field_state": field}
+        assert any(
+            str(record.get("state") or record.get("canonical_state") or "")
+            == "excluded_from_scope"
+            and record.get("value") in (None, "")
+            and str(record.get("source") or "") == "user_action"
+            for record in records
+        ), {
+            "boundary": boundary,
+            "field": field,
+            "expected_state": "excluded_from_scope",
+            "observed_records": records[:20],
+        }
 
 
 def _assert_engagement_metadata(value: Any, *, boundary: str) -> dict[str, str]:
@@ -263,26 +334,33 @@ def _verify_actual_browser_intake(requests: list[dict[str, str]]) -> dict[str, A
         "primary_technical_contact": [PROOF_PRIMARY_TECHNICAL_CONTACT],
         "authorized_scope": [PROOF_AUTHORIZED_SCOPE],
     }
-    for key, wanted in expected_arrays.items():
-        assert evidence.get(key) == wanted, {
-            "browser_intake_key": key,
-            "expected": wanted,
-            "observed": evidence.get(key),
-        }
+    if _exclusion_fixture():
+        for key in EXCLUDED_ENGAGEMENT_FIELDS:
+            assert evidence.get(key) in (None, []), {
+                "browser_intake_key": key,
+                "expected": "excluded value omitted",
+                "observed": evidence.get(key),
+            }
+        _assert_excluded_field_states(payload, boundary="browser_intake_request")
+    else:
+        for key, wanted in expected_arrays.items():
+            assert evidence.get(key) == wanted, {
+                "browser_intake_key": key,
+                "expected": wanted,
+                "observed": evidence.get(key),
+            }
+    expected = _expected_engagement_metadata()
     return {
         "actual_browser_intake_metadata_verified": True,
         "actual_browser_intake_shape_verified": True,
+        "actual_browser_intake_exclusion_states_verified": _exclusion_fixture(),
         "actual_browser_intake_client_name": str(payload.get("client_name") or ""),
         "actual_browser_intake_project_name": str(payload.get("project_name") or ""),
-        "actual_browser_intake_primary_technical_contact": str(
-            evidence.get("primary_technical_contact", [""])[0]
-        ),
-        "actual_browser_intake_access_method": str(
-            evidence.get("access_method", [""])[0]
-        ),
-        "actual_browser_intake_authorized_scope": str(
-            evidence.get("authorized_scope", [""])[0]
-        ),
+        "actual_browser_intake_primary_technical_contact": expected[
+            "primary_technical_contact"
+        ],
+        "actual_browser_intake_access_method": expected["access_method"],
+        "actual_browser_intake_authorized_scope": expected["authorized_scope"],
         "actual_browser_intake_report_language": str(payload.get("report_language") or ""),
     }
 
@@ -293,7 +371,7 @@ def _fetch_and_verify_durable_engagement(
     frontend_origin: str,
     run_id: str,
     boundary: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     response = page.request.get(
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
         headers={
@@ -318,12 +396,16 @@ def _fetch_and_verify_durable_engagement(
         record.get("engagement_metadata"),
         boundary=f"{boundary}:record",
     )
+    _assert_excluded_field_states(payload, boundary=f"{boundary}:projected_status")
     assert top_level == record_value, {
         "boundary": boundary,
         "top_level_engagement_metadata": top_level,
         "record_engagement_metadata": record_value,
     }
-    return top_level
+    return {
+        **top_level,
+        "excluded_field_states_verified": _exclusion_fixture(),
+    }
 
 
 def _fetch_localized_pdf(
@@ -389,19 +471,15 @@ def _fetch_localized_pdf(
     }
     rendered = base._pdf_text(pdf_bytes)
     rendered_compact = " ".join(rendered.split())
-    for expected in (
-        PROOF_CLIENT_NAME,
-        PROOF_PROJECT_NAME,
-        PROOF_PRIMARY_TECHNICAL_CONTACT,
-        PROOF_ACCESS_METHOD,
-        PROOF_AUTHORIZED_SCOPE,
-    ):
+    for expected in _expected_engagement_metadata().values():
+        if not expected:
+            continue
         assert expected in rendered_compact, {
             "report_language": report_language,
             "missing_commercial_metadata": expected,
         }
 
-    summary_values = tuple(_expected_engagement_metadata().values())
+    summary_values = _expected_client_summary_values(report_language)
     summary_verified = client_evidence_summary_has_five_fields(
         rendered_compact,
         report_language=report_language,
@@ -419,8 +497,9 @@ def _fetch_localized_pdf(
         assert not forbidden, f"Spanish PDF retained forbidden English/failure markers: {forbidden}"
 
     locale_filename = "es-MX" if report_language == "es-MX" else "en"
+    fixture_filename = "-excluded-context" if _exclusion_fixture() else ""
     artifact_path = Path("audit-results") / (
-        f"nico-comprehensive-{locale_filename}-"
+        f"nico-comprehensive-{locale_filename}{fixture_filename}-"
         "automated-draft-pending-human-approval.pdf"
     )
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -436,7 +515,8 @@ def _fetch_localized_pdf(
         "signature_verified": True,
         "run_identity_verified": True,
         "commercial_metadata_verified": True,
-        "all_five_engagement_literals_verified": True,
+        "all_five_engagement_literals_verified": not _exclusion_fixture(),
+        "excluded_engagement_states_verified": _exclusion_fixture(),
         "client_evidence_summary_five_fields_consolidated": True,
         "assessment_rerun": False,
         "canonical_truth_sha256": canonical_truth_sha256,
@@ -535,6 +615,7 @@ def _verify_localized_spanish_terminal_artifacts(
         boundary="terminal_status:record",
     )
     assert terminal_top == terminal_record
+    _assert_excluded_field_states(payload, boundary="terminal_status")
 
     (
         canonical,
@@ -549,17 +630,20 @@ def _verify_localized_spanish_terminal_artifacts(
     assert str(identity.get("customer_name") or identity.get("client_name") or "") == PROOF_CLIENT_NAME
     assert str(identity.get("project_name") or "") == PROOF_PROJECT_NAME
 
-    for key, expected in (
-        ("access_method", PROOF_ACCESS_METHOD),
-        ("primary_technical_contact", PROOF_PRIMARY_TECHNICAL_CONTACT),
-        ("authorized_scope", PROOF_AUTHORIZED_SCOPE),
-    ):
-        values = _recursive_values(canonical, key)
-        assert expected in values, {
-            "missing_human_context_key": key,
-            "expected": expected,
-            "observed": values[:20],
-        }
+    if _exclusion_fixture():
+        _assert_excluded_field_states(canonical, boundary="canonical_report_json")
+    else:
+        for key, expected in (
+            ("access_method", PROOF_ACCESS_METHOD),
+            ("primary_technical_contact", PROOF_PRIMARY_TECHNICAL_CONTACT),
+            ("authorized_scope", PROOF_AUTHORIZED_SCOPE),
+        ):
+            values = _recursive_values(canonical, key)
+            assert expected in values, {
+                "missing_human_context_key": key,
+                "expected": expected,
+                "observed": values[:20],
+            }
 
     spanish_pdf = _fetch_localized_pdf(
         frontend_origin=frontend_origin,
@@ -579,6 +663,10 @@ def _verify_localized_spanish_terminal_artifacts(
         frontend_origin=frontend_origin,
         run_id=run_id,
     )
+    _assert_excluded_field_states(
+        canonical_after_payload,
+        boundary="canonical_report_json_after_localized_reads",
+    )
     status_after = page.request.get(
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
         headers={
@@ -594,6 +682,10 @@ def _verify_localized_spanish_terminal_artifacts(
     )
     status_after_payload = status_after.json()
     assert isinstance(status_after_payload, dict)
+    _assert_excluded_field_states(
+        status_after_payload,
+        boundary="terminal_status_after_localized_reads",
+    )
     pending_human_review_after = _assert_pending_human_review_state(
         status_after_payload,
         boundary="terminal_status_after_localized_reads",
@@ -631,9 +723,10 @@ def _verify_localized_spanish_terminal_artifacts(
         "commercial_display_metadata_verified": True,
         "client_name_verified": True,
         "project_name_verified": True,
-        "primary_technical_contact_verified": True,
-        "access_method_verified_in_canonical_truth": True,
-        "authorized_scope_verified_in_canonical_truth": True,
+        "primary_technical_contact_verified": not _exclusion_fixture(),
+        "access_method_verified_in_canonical_truth": not _exclusion_fixture(),
+        "authorized_scope_verified_in_canonical_truth": not _exclusion_fixture(),
+        "excluded_engagement_fields_verified_in_canonical_truth": _exclusion_fixture(),
         "durable_engagement_metadata_verified_at_terminal": True,
         "spanish_pdf_page_count": spanish_pdf["page_count"],
         "english_pdf_page_count": english_pdf["page_count"],
@@ -644,6 +737,10 @@ def _verify_localized_spanish_terminal_artifacts(
         "localized_pdf_artifacts_pending_human_approval": True,
         "five_field_literals_verified_in_both_pdfs": all(
             item["all_five_engagement_literals_verified"]
+            for item in (spanish_pdf, english_pdf)
+        ),
+        "excluded_engagement_states_verified_in_both_pdfs": all(
+            item["excluded_engagement_states_verified"]
             for item in (spanish_pdf, english_pdf)
         ),
         "five_fields_consolidated_in_both_client_evidence_summaries": all(
@@ -715,9 +812,27 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
         page.get_by_label(base.SPANISH_REPO_LABEL).fill(args.repository)
         page.get_by_label(base.SPANISH_CLIENT_LABEL).fill(PROOF_CLIENT_NAME)
         page.get_by_label(base.SPANISH_PROJECT_LABEL).fill(PROOF_PROJECT_NAME)
-        page.get_by_label(SPANISH_ACCESS_METHOD_LABEL).fill(PROOF_ACCESS_METHOD)
-        page.get_by_label(SPANISH_PRIMARY_CONTACT_LABEL).fill(PROOF_PRIMARY_TECHNICAL_CONTACT)
-        page.get_by_label(SPANISH_AUTHORIZED_SCOPE_LABEL).fill(PROOF_AUTHORIZED_SCOPE)
+        if _exclusion_fixture():
+            for field in EXCLUDED_ENGAGEMENT_FIELDS:
+                container = page.locator(f'[data-engagement-field="{field}"]').first
+                container.get_by_role(
+                    "button",
+                    name="Excluir del alcance",
+                    exact=True,
+                ).click()
+                assert container.get_attribute("data-engagement-state") == (
+                    "excluded_from_scope"
+                )
+                assert "Estado: Excluido del alcance" in container.inner_text()
+                assert container.locator("input").first.is_disabled()
+        else:
+            page.get_by_label(SPANISH_ACCESS_METHOD_LABEL).fill(PROOF_ACCESS_METHOD)
+            page.get_by_label(SPANISH_PRIMARY_CONTACT_LABEL).fill(
+                PROOF_PRIMARY_TECHNICAL_CONTACT
+            )
+            page.get_by_label(SPANISH_AUTHORIZED_SCOPE_LABEL).fill(
+                PROOF_AUTHORIZED_SCOPE
+            )
         page.locator(base.recovery.AUTHORIZATION_SELECTOR).check()
         page.locator(base.recovery.ACTION_SELECTOR).click()
 
@@ -815,11 +930,24 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             "durable_engagement_metadata_at_intake": initial_engagement,
             "terminal": terminal,
             "exact_run_identity_preserved": True,
+            "engagement_fixture": (
+                "excluded" if _exclusion_fixture() else "supplied"
+            ),
+            "explicit_exclusion_controls_verified": _exclusion_fixture(),
+            "excluded_engagement_fields": (
+                list(EXCLUDED_ENGAGEMENT_FIELDS) if _exclusion_fixture() else []
+            ),
             "commercial_proof_client_name": PROOF_CLIENT_NAME,
             "commercial_proof_project_name": PROOF_PROJECT_NAME,
-            "commercial_proof_primary_technical_contact": PROOF_PRIMARY_TECHNICAL_CONTACT,
-            "commercial_proof_access_method": PROOF_ACCESS_METHOD,
-            "commercial_proof_authorized_scope": PROOF_AUTHORIZED_SCOPE,
+            "commercial_proof_primary_technical_contact": (
+                _expected_engagement_metadata()["primary_technical_contact"]
+            ),
+            "commercial_proof_access_method": (
+                _expected_engagement_metadata()["access_method"]
+            ),
+            "commercial_proof_authorized_scope": (
+                _expected_engagement_metadata()["authorized_scope"]
+            ),
             "started_at_epoch": started_at,
             "finished_at_epoch": time.time(),
             **artifacts,
