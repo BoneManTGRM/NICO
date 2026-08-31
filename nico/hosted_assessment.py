@@ -105,6 +105,12 @@ def normalize_repository(value: str) -> str:
 class GitHubAssessmentClient:
     def __init__(self) -> None:
         token = os.getenv("NICO_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
+        self.credential_used: bool = bool(token)
+        self.access_mode: str = (
+            "authenticated_read_only"
+            if self.credential_used
+            else "anonymous_public"
+        )
         self.headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": "NICO-hosted-assessment",
