@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 300
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
-      NICO_PRODUCTION_SMOKE_REPOSITORY: ${{ vars.NICO_PRODUCTION_SMOKE_REPOSITORY || 'BoneManTGRM/NICO' }}
+      NICO_PRODUCTION_SMOKE_REPOSITORY: https://gitlab.com/gitlab-org/gitlab-test
       NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
       GITHUB_TOKEN: ${{ github.token }}
       RELEASE_SHA: ${{ github.sha }}
@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           test "${NICO_PRODUCTION_FRONTEND_URL}" = "https://app.nicoaudit.com"
-          test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "BoneManTGRM/NICO"
+          test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "https://gitlab.com/gitlab-org/gitlab-test"
           test -n "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}"
           test "${GITHUB_REF}" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"

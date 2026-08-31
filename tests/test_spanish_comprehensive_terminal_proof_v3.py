@@ -192,6 +192,34 @@ def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None
     assert '"exclusion_ui": exclusion_ui' in commercial
 
 
+def test_release_browser_matrix_reuses_one_public_gitlab_snapshot() -> None:
+    fixture = "https://gitlab.com/gitlab-org/gitlab-test"
+    workflows = [
+        ROOT / ".github/workflows/spanish-comprehensive-production-proof.yml",
+        ROOT / ".github/workflows/two-service-production-acceptance.yml",
+        ROOT / ".github/workflows/mobile-restart-production-proof.yml",
+        ROOT / ".github/workflows/ios-webkit-paint-proof.yml",
+    ]
+    sources = [path.read_text(encoding="utf-8") for path in workflows]
+
+    assert all(
+        f"NICO_PRODUCTION_SMOKE_REPOSITORY: {fixture}" in source
+        for source in sources
+    )
+    assert all("NICO_PRODUCTION_SMOKE_REPOSITORY" in source for source in sources)
+    assert (
+        f'test "${{NICO_PRODUCTION_SMOKE_REPOSITORY}}" = "{fixture}"'
+        in sources[0]
+    )
+    assert (
+        f'test "${{NICO_PRODUCTION_SMOKE_REPOSITORY}}" = "{fixture}"'
+        in sources[1]
+    )
+    assert "Spanish Comprehensive Production Proof" in sources[1]
+    assert "Spanish Comprehensive Production Proof" in sources[2]
+    assert "Spanish Comprehensive Production Proof" in sources[3]
+
+
 def test_production_workflow_uses_v3_and_exact_terminal_assertions() -> None:
     workflow = (
         ROOT / ".github" / "workflows" / "spanish-comprehensive-production-proof.yml"
