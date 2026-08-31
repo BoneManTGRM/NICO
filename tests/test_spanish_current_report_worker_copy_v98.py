@@ -5,6 +5,9 @@ from nico.comprehensive_spanish_current_copy_worker_v98 import (
     install_comprehensive_spanish_current_copy_worker_v98,
     localize_current_report_copy_v98,
 )
+from nico.comprehensive_spanish_publication_preflight_v93 import (
+    inspect_spanish_canonical_publication_preflight,
+)
 
 
 WORKER_BOOTSTRAP = Path("nico/api/final_report_worker_bootstrap.py").read_text(
@@ -20,6 +23,49 @@ def test_v98_localizes_every_current_report_leak_contract() -> None:
         localized = localize_current_report_copy_v98(source)
         assert source not in localized or source == target
         assert target in localized
+
+
+def test_v98_closes_live_gitlab_anonymous_capability_preflight() -> None:
+    install_comprehensive_spanish_current_copy_worker_v98()
+
+    deployment = "deployments evidence is unavailable without read-only authentication"
+    environment = "environments evidence is unavailable without read-only authentication"
+    provider_summary = (
+        "Exact-revision provider repository, dependency, architecture, workflow, activity, "
+        "and complexity evidence were attached through the canonical provider-neutral path."
+    )
+    canonical_report = {
+        "report_language": "es-MX",
+        "identity": {"report_language": "es-MX"},
+        "assessment": {
+            "unavailable_data_notes": [deployment, environment],
+        },
+        "stage_summaries": [
+            {
+                "unavailable": [deployment, environment],
+                "summary": provider_summary,
+            }
+        ],
+    }
+    before = repr(canonical_report)
+
+    manifest = inspect_spanish_canonical_publication_preflight(canonical_report)
+
+    assert manifest["status"] == "complete"
+    assert manifest["failure_count"] == 0
+    assert manifest["checked_presentation_values"] == 5
+    assert repr(canonical_report) == before
+
+    assert localize_current_report_copy_v98(deployment) == (
+        "La evidencia de despliegues no está disponible sin autenticación de solo lectura."
+    )
+    assert localize_current_report_copy_v98(environment) == (
+        "La evidencia de entornos no está disponible sin autenticación de solo lectura."
+    )
+    localized_summary = localize_current_report_copy_v98(provider_summary)
+    assert "Exact-revision provider repository" not in localized_summary
+    assert "revisión exacta" in localized_summary
+    assert "ruta canónica neutral al proveedor" in localized_summary
 
 
 def test_v98_localizes_dynamic_current_report_fragments_without_touching_unknown_copy() -> None:
