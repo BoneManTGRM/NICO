@@ -91,8 +91,8 @@ jobs:
             repository: atlassian_tutorial/helloworld
             expected_outcome: success
           - provider: azure_devops
-            repository: clearmeasurelabs/Onion-DevOps-Architecture/Onion-DevOps-Architecture-vnext-security
-            expected_outcome: success_or_authentication_required
+            repository: clearmeasurelabs/Onion-DevOps-Architecture/nico-tokenless-auth-required-fixture-does-not-exist
+            expected_outcome: authentication_required
     steps:
       - name: Check out exact pull-request commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

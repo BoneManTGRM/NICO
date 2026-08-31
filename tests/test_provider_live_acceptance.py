@@ -351,7 +351,7 @@ def test_unsupported_provider_fails_before_credentials() -> None:
         provider_live_acceptance.build_collector("unknown", "anonymous_public")
 
 
-def test_provider_changes_trigger_four_isolated_anonymous_public_proofs() -> None:
+def test_provider_changes_trigger_three_public_proofs_and_azure_access_boundary() -> None:
     workflow = Path(".github/workflows/provider-live-acceptance.yml").read_text(
         encoding="utf-8"
     )
@@ -363,13 +363,13 @@ def test_provider_changes_trigger_four_isolated_anonymous_public_proofs() -> Non
         "octocat/Hello-World",
         "gitlab-org/gitlab-test",
         "atlassian_tutorial/helloworld",
-        "clearmeasurelabs/Onion-DevOps-Architecture/Onion-DevOps-Architecture-vnext-security",
+        "clearmeasurelabs/Onion-DevOps-Architecture/nico-tokenless-auth-required-fixture-does-not-exist",
     ):
         assert fixture in workflow
     assert workflow.count("--passes 2") >= 3
     assert "github.event.pull_request.head.sha" in workflow
     assert workflow.count("expected_outcome: success\n") == 3
-    assert "expected_outcome: success_or_authentication_required" in workflow
+    assert "expected_outcome: authentication_required" in workflow
     assert "--workflow-sha \"${ACCEPTANCE_SHA}\"" in workflow
     assert "unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN" in workflow
     assert "unset NICO_GITLAB_TOKEN GITLAB_TOKEN" in workflow
