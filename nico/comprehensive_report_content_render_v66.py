@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 
-VERSION = "nico.comprehensive-report-content-render.v67"
+VERSION = "nico.comprehensive-report-content-render.v68"
 _SCANNER_MARKER = "_nico_comprehensive_scanner_content_v66"
 _FINDING_MARKER = "_nico_comprehensive_finding_content_v66"
 _STAGE_MARKER = "_nico_comprehensive_stage_content_v66"
@@ -73,14 +73,14 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
         for item in canonical.get("review_candidate_register") or []
         if isinstance(item, Mapping)
     ]
-    if not any((review_total, raw_total, material_total, register)):
-        return None
-
     evidence = [
         f"Raw scanner candidates: {raw_total}.",
         f"Confirmed material findings: {material_total}.",
         f"Review-required candidates: {review_total}.",
-        "Score effect: assurance-only until triaged.",
+        (
+            "Score effect: assurance-only while authorized human disposition remains "
+            "pending; NICO technical-triage status is reported separately."
+        ),
         "Candidate counts are not presented as confirmed defect volume.",
     ]
     by_category = summary.get("by_category") if isinstance(summary.get("by_category"), Mapping) else {}

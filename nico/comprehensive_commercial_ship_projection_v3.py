@@ -15,7 +15,7 @@ from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.7"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.8"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -34,6 +34,12 @@ _VISIBLE_MANIFEST_TYPES = frozenset(
         "html_report",
     }
 )
+_LEGACY_GITHUB_TEXT_SAMPLE = (
+    "No eligible source files were present in the authorized GitHub text-file sample."
+)
+_PROVIDER_NEUTRAL_TEXT_SAMPLE = (
+    "No eligible source files were present in the authorized repository text-file sample."
+)
 
 # Correct the helper before any stage projection is evaluated.
 v1._is_deployment_metric = _deployment_metric_order_independent
@@ -49,7 +55,60 @@ pdf_reflow._HEADER = re.compile(
 def project_canonical_for_client_presentation(
     canonical: Mapping[str, Any],
 ) -> dict[str, Any]:
-    return v1.project_canonical_for_client_presentation(canonical)
+    projected = v1.project_canonical_for_client_presentation(canonical)
+
+    def neutralize(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return {str(key): neutralize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [neutralize(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(neutralize(item) for item in value)
+        if value == _LEGACY_GITHUB_TEXT_SAMPLE:
+            return _PROVIDER_NEUTRAL_TEXT_SAMPLE
+        return value
+
+    projected = neutralize(projected)
+    summary = projected.get("review_candidate_summary")
+    stages = projected.get("stage_summaries")
+    if isinstance(summary, Mapping) and isinstance(stages, list):
+        stage_ids = {
+            str(stage.get("stage_id") or "")
+            for stage in stages
+            if isinstance(stage, Mapping)
+        }
+        if "review_required_candidate_register" not in stage_ids:
+            from nico import v2_premium_report_renderer as renderer
+            from nico.comprehensive_report_content_render_v66 import _candidate_stage
+
+            candidate = _candidate_stage(projected, renderer)
+            if candidate:
+                insert_at = next(
+                    (
+                        index
+                        for index, stage in enumerate(stages)
+                        if isinstance(stage, Mapping)
+                        and str(stage.get("stage_id") or "")
+                        in {"ci_cd_operational_readiness", "client_evidence_summary"}
+                    ),
+                    len(stages),
+                )
+                stages.insert(insert_at, candidate)
+    return projected
+
+
+def _contains_exact_presentation_literal(value: Any, literal: str) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            _contains_exact_presentation_literal(item, literal)
+            for item in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(
+            _contains_exact_presentation_literal(item, literal)
+            for item in value
+        )
+    return value == literal
 
 
 def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]:
@@ -184,6 +243,48 @@ def _source_pdf_requires_integrity_reprojection(
     )
     canonical = reports.get("json")
     canonical = canonical if isinstance(canonical, Mapping) else {}
+    visible_surfaces = "\n".join(
+        (
+            "\n".join(page_texts),
+            str(reports.get("markdown") or ""),
+            str(reports.get("html") or ""),
+        )
+    )
+    legacy_provider_copy = (
+        _LEGACY_GITHUB_TEXT_SAMPLE in visible_surfaces
+        or _contains_exact_presentation_literal(
+            canonical,
+            _LEGACY_GITHUB_TEXT_SAMPLE,
+        )
+    )
+    canonical_stage_ids = {
+        str(stage.get("stage_id") or "")
+        for stage in canonical.get("stage_summaries") or []
+        if isinstance(stage, Mapping)
+    }
+    candidate_summary = canonical.get("review_candidate_summary")
+    candidate_summary = (
+        candidate_summary if isinstance(candidate_summary, Mapping) else {}
+    )
+
+    def zero_count(key: str) -> bool:
+        try:
+            return int(candidate_summary.get(key) or 0) == 0
+        except (TypeError, ValueError):
+            return False
+
+    zero_candidate_register_missing = (
+        bool(candidate_summary)
+        and "review_required_candidate_register" not in canonical_stage_ids
+        and all(
+            zero_count(key)
+            for key in (
+                "raw_total",
+                "verified_material_total",
+                "review_required_total",
+            )
+        )
+    )
     scanner_applicability_mismatch = False
     if canonical:
         from nico.comprehensive_authoritative_scanner_truth_v62 import (
@@ -226,6 +327,8 @@ def _source_pdf_requires_integrity_reprojection(
         footer_only_spill
         or manifest_integrity_mismatch
         or scanner_applicability_mismatch
+        or legacy_provider_copy
+        or zero_candidate_register_missing
     )
 
 
@@ -243,6 +346,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             "localized_sparse_stage_reflow_supported": True,
             "final_pdf_layout_bound_before_render": True,
             "pending_legacy_manifest_integrity_reprojection": True,
+            "zero_candidate_register_projection_bound": True,
             "canonical_truth_mutated": False,
             "assessment_rerun": False,
             "human_review_required": True,
@@ -259,11 +363,19 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
     from nico.comprehensive_manifest_navigation_v1 import (
         install_comprehensive_manifest_navigation_v1,
     )
+    from nico.comprehensive_report_content_render_v66 import (
+        install_comprehensive_report_content_render_v66,
+    )
 
     # Ensure the existing mature client composer/navigation layers own the final package,
     # then wrap only their presentation seams.
     install_final_six_client_report_cleanup_v1()
     install_comprehensive_manifest_navigation_v1()
+    report_content = install_comprehensive_report_content_render_v66()
+    if report_content.get("ci_operational_context_bound") is not True:
+        raise RuntimeError(
+            "Commercial ship projection could not bind the canonical candidate register"
+        )
 
     current_stage = final_six.sanitize_client_report_stage
     if not getattr(current_stage, _STAGE_MARKER, False):
@@ -328,12 +440,13 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             # too late and leaves the legacy 5.35-point worksheet typography in the
             # client PDF.
             _bind_final_pdf_layout()
-            artifacts = current_render_target(canonical, report_language)
+            projected = project_canonical_for_client_presentation(canonical)
+            artifacts = current_render_target(projected, report_language)
             localized_json = artifacts.get("json")
             navigation_truth = (
                 localized_json
                 if isinstance(localized_json, Mapping)
-                else project_canonical_for_client_presentation(canonical)
+                else projected
             )
             # ``rebuild_client_artifacts`` already completed both bounded compaction
             # passes. Repeating compaction here can collapse a legitimate localized
@@ -426,6 +539,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         "sparse_stage_reflow_before_final_navigation": True,
         "localized_sparse_stage_reflow_supported": True,
         "pending_legacy_manifest_integrity_reprojection": True,
+        "zero_candidate_register_projection_bound": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_compaction": True,
         "final_assembled_source_pdf_preserved": True,
         "cross_locale_projection_from_same_canonical_snapshot": True,
