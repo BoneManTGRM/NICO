@@ -5,7 +5,7 @@ import io
 import re
 from typing import Any
 
-VERSION = "nico.comprehensive_pdf_reflow.v1.1"
+VERSION = "nico.comprehensive_pdf_reflow.v1.2"
 
 _HEADER = re.compile(r"^NICO\s+Comprehensive\b.*AUTOMATED\s+DRAFT", re.I)
 _DOCUMENT_PAGE = re.compile(r"^Document\s+page\s+\d+\s+of\s+\d+$", re.I)
@@ -268,6 +268,11 @@ def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     texts = [_page_text(page) for page in reader.pages]
+    footer_only_pages = {
+        index
+        for index, text in enumerate(texts)
+        if _has_standard_header(text) and not _content_lines(text)
+    }
     replacements: dict[int, tuple[int, bytes]] = {}
 
     for start, end in _groups(texts):
@@ -280,7 +285,7 @@ def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]
             continue
         replacements[start] = (end, replacement)
 
-    if not replacements:
+    if not replacements and not footer_only_pages:
         return pdf_bytes, {
             "artifact_schema": VERSION,
             "status": "unchanged",
@@ -288,6 +293,7 @@ def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]
             "final_pages": len(reader.pages),
             "compacted_groups": 0,
             "pages_removed": 0,
+            "footer_only_pages_removed": 0,
             "truth_preserved": True,
             "canonical_truth_mutated": False,
         }
@@ -295,6 +301,9 @@ def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]
     writer = PdfWriter()
     index = 0
     while index < len(reader.pages):
+        if index in footer_only_pages:
+            index += 1
+            continue
         replacement = replacements.get(index)
         if replacement is None:
             writer.add_page(reader.pages[index])
@@ -316,6 +325,7 @@ def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]
         "final_pages": final_pages,
         "compacted_groups": len(replacements),
         "pages_removed": len(reader.pages) - final_pages,
+        "footer_only_pages_removed": len(footer_only_pages),
         "truth_preserved": True,
         "canonical_truth_mutated": False,
     }
