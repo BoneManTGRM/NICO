@@ -179,6 +179,17 @@ def test_github_pagination_limitation_has_exact_spanish_contract() -> None:
         "estaba disponible."
     )
 
+    assert strict_spanish_presentation_v1(
+        "Required source evidence was acquired from credential-free exact-SHA Git "
+        "to preserve the anonymous public access binding without consuming GitHub "
+        "API object-read quota.",
+        "unavailable",
+    ) == (
+        "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin "
+        "credenciales para conservar la vinculación de acceso público anónimo sin "
+        "consumir la cuota de lectura de objetos de la API de GitHub."
+    )
+
 
 def test_gitlab_scanner_unavailability_has_exact_spanish_contract() -> None:
     install_comprehensive_current_report_truth_parity_v1()
