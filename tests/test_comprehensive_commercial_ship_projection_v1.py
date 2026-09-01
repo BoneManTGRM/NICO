@@ -271,6 +271,57 @@ def test_missing_repository_section_is_recovered_from_same_canonical_stage() -> 
     assert unchanged == recovered
 
 
+def test_recovered_spanish_repository_section_localizes_release_status_and_limits() -> None:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(48, 744, "NICO Comprehensive | BORRADOR AUTOMATIZADO")
+    pdf.showPage()
+    pdf.drawString(48, 744, "Conciliación de evidencia y puntuación")
+    pdf.save()
+    canonical = {
+        "identity": {
+            "run_id": "comprun_provider_recovery_es",
+            "report_language": "es-MX",
+        },
+        "stage_summaries": [
+            {
+                "stage_id": "repository_and_delivery_evidence",
+                "title": "Evidencia del repositorio y de entrega",
+                "status": "processing complete · evidence limited",
+                "summary": "Evidencia exacta conservada.",
+                "evidence": [
+                    "Provider: Azure DevOps.",
+                    "Access mode: Anonymous public.",
+                    "Provider credential used: No.",
+                ],
+                "unavailable": [
+                    "ci_runs evidence collection failed",
+                    "environments evidence collection failed",
+                ],
+            }
+        ],
+    }
+
+    recovered, changed = _ensure_repository_delivery_section(
+        buffer.getvalue(), canonical
+    )
+    text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(recovered)).pages
+    )
+
+    assert changed is True
+    assert "PROCESAMIENTO COMPLETADO · EVIDENCIA LIMITADA" in text
+    assert "Evidencia exacta conservada." in text
+    assert "Proveedor: Azure DevOps." in text
+    assert "La recopilación de evidencia de ejecuciones de CI falló." in text
+    assert "La recopilación de evidencia de entornos falló." in text
+    assert "PROCESSING COMPLETE" not in text
+    assert "EVIDENCE LIMITED" not in text
+    assert "Provider: Azure DevOps." not in text
+    assert "evidence collection failed" not in text
+
+
 def test_same_run_route_binds_final_layout_before_actual_render_target() -> None:
     source = (
         Path(__file__).resolve().parents[1]
