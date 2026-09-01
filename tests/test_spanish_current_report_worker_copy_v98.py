@@ -89,6 +89,29 @@ def test_v98_localizes_dynamic_current_report_fragments_without_touching_unknown
     assert localize_current_report_copy_v98(unknown) == unknown
 
 
+def test_v98_localizes_bounded_workflow_job_evidence_without_value_drift() -> None:
+    source = (
+        "Workflow jobs: 9 successful of 9 observed (100%); bounded observed job "
+        "sample; count basis=retained rate and denominator."
+    )
+
+    localized = localize_current_report_copy_v98(source)
+
+    assert localized == (
+        "Trabajos de flujo de trabajo: 9 exitosos de 9 observados (100%); "
+        "muestra acotada de trabajos observados; base del conteo=tasa y "
+        "denominador conservados."
+    )
+    assert "Workflow jobs" not in localized
+    assert "bounded observed job sample" not in localized
+    assert "retained rate and denominator" not in localized
+
+    install_comprehensive_spanish_current_copy_worker_v98()
+    from nico import comprehensive_spanish_canonical_report_v87 as canonical
+
+    assert canonical._translate_presentation_field(source, "evidence") == localized
+
+
 def test_v98_binds_the_real_spanish_translation_surfaces() -> None:
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
     from nico import comprehensive_spanish_presentation_parity_v1 as presentation
