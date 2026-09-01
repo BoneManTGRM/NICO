@@ -563,10 +563,18 @@ def collect_snapshot_repository_evidence(
     since = captured_at - timedelta(days=timeframe_days)
     profile = _profile(github, repository, snapshot)
     api_profile_notes = list(profile.get("unavailable") or [])
+    explicit_anonymous_binding = (
+        str(context.get("provider_access_mode") or "").strip()
+        == "anonymous_public"
+        and context.get("provider_credential_used") is False
+    )
     if (
-        profile.get("tree_collection_succeeded") is not True
-        and access_mode == "anonymous_public"
+        access_mode == "anonymous_public"
         and credential_used is False
+        and (
+            explicit_anonymous_binding
+            or profile.get("tree_collection_succeeded") is not True
+        )
     ):
         public_profile, public_profile_error = _public_git_profile(
             repository,
@@ -585,7 +593,7 @@ def collect_snapshot_repository_evidence(
                     ),
                 }
             )
-        else:
+        elif profile.get("tree_collection_succeeded") is not True:
             profile["unavailable"] = sorted(
                 {
                     *api_profile_notes,
