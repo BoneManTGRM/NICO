@@ -100,6 +100,7 @@ def test_unified_retains_exact_source_bound_english_pdf_for_phase1_binder(
             {
                 "run_id": "comprun_exact_source_pdf",
                 "expected_sha": "a" * 40,
+                "assessed_commit_sha": "b" * 40,
                 "repository": "BoneManTGRM/NICO",
                 "same_run_bilingual_pdf_verified": True,
                 "same_run_bilingual_assessment_rerun": False,
@@ -126,6 +127,7 @@ def test_unified_retains_exact_source_bound_english_pdf_for_phase1_binder(
     assert retained_path.name == "pass-2-comprehensive.pdf"
     assert retained_path.read_bytes() == pdf_bytes
     assert retained["sha256"] == pdf_sha256
+    assert retained["commit_sha"] == "b" * 40
     assert retained["size_bytes"] == len(pdf_bytes)
     assert retained["human_review_required"] is True
     assert retained["client_delivery_allowed"] is False

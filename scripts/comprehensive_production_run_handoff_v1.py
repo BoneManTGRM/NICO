@@ -144,6 +144,7 @@ def load_source_proof(
         source_workflow_run_id,
         source_workflow_run_attempt,
     )
+    assessed_commit_sha = _text(payload.get("assessed_commit_sha")).lower()
     canonical_truth_sha256 = _text(payload.get("canonical_truth_sha256")).lower()
     checks = {
         "source_proof_schema_invalid": source_schema
@@ -181,8 +182,11 @@ def load_source_proof(
         and payload.get("localized_report_mutation_request_count") == 0,
         "source_proof_terminal_run_mismatch": _text(terminal.get("run_id"))
         == _text(payload.get("run_id")),
+        "source_proof_assessed_commit_invalid": bool(
+            _GIT_SHA.fullmatch(assessed_commit_sha)
+        ),
         "source_proof_terminal_commit_mismatch": _text(terminal.get("commit_sha"))
-        == expected_sha,
+        == assessed_commit_sha,
         "source_proof_terminal_state_invalid": _text(terminal.get("phase"))
         in TERMINAL_PHASES,
         "source_proof_terminal_authority_boundary_invalid": (
@@ -338,7 +342,7 @@ def load_source_proof(
                 "recovered_source_initial_commit_mismatch": _text(
                     initial.get("commit_sha")
                 )
-                == expected_sha,
+                == assessed_commit_sha,
                 "recovered_source_initial_ledger_mismatch": _text(
                     initial.get("evidence_ledger_id")
                 )
@@ -371,7 +375,7 @@ def load_source_proof(
                 "recovered_source_terminal_commit_mismatch": _text(
                     canonical_terminal.get("commit_sha")
                 )
-                == expected_sha,
+                == assessed_commit_sha,
                 "recovered_source_terminal_ledger_mismatch": _text(
                     canonical_terminal.get("evidence_ledger_id")
                 )
@@ -436,6 +440,7 @@ def load_source_proof(
         "source_workflow_run_attempt": _text(source_workflow_run_attempt),
         "source_binding": marker.removeprefix("source:"),
         "release_sha": expected_sha,
+        "assessed_commit_sha": assessed_commit_sha,
         "proof_tool_sha": (
             _text(payload.get("proof_tool_sha")).lower()
             if source_schema == RECOVERED_SOURCE_SCHEMA
@@ -444,7 +449,7 @@ def load_source_proof(
         "repository": repository,
         "run_id": _text(payload.get("run_id")),
         "terminal_phase": _text(terminal.get("phase")),
-        "terminal_commit_sha": _text(terminal.get("commit_sha")),
+        "terminal_commit_sha": assessed_commit_sha,
         "canonical_truth_sha256": canonical_truth_sha256,
         "producer_start_request_count": 1,
         "same_run_bilingual_pdf_verified": True,
@@ -480,6 +485,9 @@ def retain_unified_english_pdf(
         raise ValueError("source_pdf_run_id_mismatch")
     if _text(payload.get("expected_sha")) != expected_sha:
         raise ValueError("source_pdf_release_sha_mismatch")
+    assessed_commit_sha = _text(payload.get("assessed_commit_sha")).lower()
+    if not _GIT_SHA.fullmatch(assessed_commit_sha):
+        raise ValueError("source_pdf_assessed_commit_invalid")
     if _text(payload.get("repository")).casefold() != repository.casefold():
         raise ValueError("source_pdf_repository_mismatch")
     if payload.get("same_run_bilingual_pdf_verified") is not True:
@@ -524,7 +532,7 @@ def retain_unified_english_pdf(
         "artifact_type": "comprehensive_pdf",
         "run_id": run_id,
         "repository": repository,
-        "commit_sha": expected_sha,
+        "commit_sha": assessed_commit_sha,
         "sha256": proof_sha256,
         "size_bytes": len(pdf_bytes),
         "source_filename": filename,

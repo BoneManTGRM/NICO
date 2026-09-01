@@ -411,7 +411,7 @@ jobs:
               assert payload["ui_review_pdf_network_path"].endswith("/localized-report/en/pdf")
               assert payload["ui_review_pdf_localized_draft_identity_verified"] is True
           assert payload["ui_review_pdf_proof_version"] == "nico.mobile-pdf-download-action-proof.v1"
-          assert payload["terminal_before_reload"]["commit_sha"] == payload["expected_sha"]
+          assert payload["terminal_before_reload"]["commit_sha"] == payload["assessed_commit_sha"]
           assert "Awaiting" not in payload["terminal_before_reload"]["score"]
           assert payload["terminal_after_reload"]["pdf_enabled"] == "true"
           PY
