@@ -923,6 +923,7 @@ def _provider_access_report_evidence(
         "github": "GitHub",
         "gitlab": "GitLab",
         "bitbucket": "Bitbucket Cloud",
+        "bitbucket_cloud": "Bitbucket Cloud",
         "azure_devops": "Azure DevOps",
     }.get(_text(snapshot.get("provider")), _text(snapshot.get("provider")))
     access_mode = {
