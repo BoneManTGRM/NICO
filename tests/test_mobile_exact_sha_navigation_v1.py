@@ -56,7 +56,8 @@ def test_mobile_and_webkit_wrappers_install_exact_sha_binding() -> None:
     mobile = Path("scripts/mobile_restart_live_acceptance_v5.py").read_text(encoding="utf-8")
     webkit = Path("scripts/mobile_restart_live_acceptance_v6.py").read_text(encoding="utf-8")
     for source in (mobile, webkit):
-        assert "install_exact_sha_navigation(single_dispatch, args.expected_sha)" in source
+        assert 'handoff = recovery.load_source_proof(' in source
+        assert 'install_exact_sha_navigation(single_dispatch, handoff["assessed_commit_sha"])' in source
         assert "args = recovery.parse_args(argv)" in source
 
 

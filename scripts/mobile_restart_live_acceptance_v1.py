@@ -1248,6 +1248,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
         expected_proof_tool_sha=args.expected_proof_tool_sha,
     )
     run_id = str(handoff["run_id"])
+    assessed_commit_sha = str(handoff["assessed_commit_sha"])
     origin = args.frontend_url.rstrip("/")
     requests: list[dict[str, Any]] = []
     prohibited_attempts: list[dict[str, Any]] = []
@@ -1315,7 +1316,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
         assessment_path = "/es/assessment" if args.ui_locale == "es-MX" else "/assessment"
         return (
             f"{origin}{assessment_path}?tier=comprehensive"
-            f"&run_id={run_id}&expected_commit_sha={args.expected_sha}"
+            f"&run_id={run_id}&expected_commit_sha={assessed_commit_sha}"
             f"&{probe}={time.time_ns()}#assessment"
         )
 
@@ -1335,7 +1336,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
         )
         initial = _wait_for_same_run_ui(first_page, run_id, 120.0)
         terminal_before_reload = _wait_for_terminal_ui_ready(
-            first_page, run_id, args.expected_sha, 240.0
+            first_page, run_id, assessed_commit_sha, 240.0
         )
         first_locale_surface = _mobile_locale_surface(
             first_page, args.ui_locale, run_id
@@ -1347,7 +1348,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             expect_active_storage=False,
         )
         terminal_after_reload = _wait_for_terminal_ui_ready(
-            first_page, run_id, args.expected_sha, 120.0
+            first_page, run_id, assessed_commit_sha, 120.0
         )
         initial_visibility = _prove_visibility_hidden_visible(
             first_page,
@@ -1355,7 +1356,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             timeout_ms=args.navigation_timeout_ms,
         )
         terminal_after_foreground = _wait_for_terminal_ui_ready(
-            first_page, run_id, args.expected_sha, 120.0
+            first_page, run_id, assessed_commit_sha, 120.0
         )
 
         first_context.close()
@@ -1374,7 +1375,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             state="visible", timeout=args.navigation_timeout_ms
         )
         terminal_after_context_reopen = _wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 240.0
+            page, run_id, assessed_commit_sha, 240.0
         )
         reopened_locale_surface = _mobile_locale_surface(
             page, args.ui_locale, run_id
@@ -1386,7 +1387,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
         observation = _observe_terminal_stability(
             page,
             run_id=run_id,
-            expected_sha=args.expected_sha,
+            expected_sha=assessed_commit_sha,
             expected_canonical_digest=handoff["canonical_truth_sha256"],
             seconds=args.observation_seconds,
             requests=requests,
@@ -1398,7 +1399,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             timeout_ms=args.navigation_timeout_ms,
         )
         terminal_after_second_foreground = _wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 120.0
+            page, run_id, assessed_commit_sha, 120.0
         )
 
         raw_page = getattr(page, "_page", page)
@@ -1412,7 +1413,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             state="visible", timeout=args.navigation_timeout_ms
         )
         terminal_after_navigation = _wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 120.0
+            page, run_id, assessed_commit_sha, 120.0
         )
         navigation_locale_surface = _mobile_locale_surface(
             page, args.ui_locale, run_id
@@ -1421,7 +1422,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             page,
             source_locale=args.ui_locale,
             run_id=run_id,
-            expected_sha=args.expected_sha,
+            expected_sha=assessed_commit_sha,
             timeout_ms=args.navigation_timeout_ms,
         )
 
@@ -1439,7 +1440,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             state="visible", timeout=args.navigation_timeout_ms
         )
         terminal_after_review_navigation = _wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 120.0
+            page, run_id, assessed_commit_sha, 120.0
         )
         after_review_locale_surface = _mobile_locale_surface(
             page, args.ui_locale, run_id
@@ -1449,7 +1450,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             page,
             frontend_origin=origin,
             run_id=run_id,
-            expected_sha=args.expected_sha,
+            expected_sha=assessed_commit_sha,
             expected_digest=handoff["canonical_truth_sha256"],
         )
         artifacts = _verify_manifest_and_pdf(page, origin, run_id)
@@ -1484,6 +1485,7 @@ def run_existing_proof(browser: Browser, args: argparse.Namespace) -> dict[str, 
             "frontend_url": args.frontend_url.rstrip("/"),
             "repository": args.repository,
             "expected_sha": args.expected_sha,
+            "assessed_commit_sha": assessed_commit_sha,
             "run_id": run_id,
             "viewport": {"width": 390, "height": 844},
             "ui_locale": args.ui_locale,

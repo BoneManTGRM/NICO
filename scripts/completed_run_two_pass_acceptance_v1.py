@@ -357,6 +357,7 @@ def _run_pass(
     verified_canonical_truth: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_id = str(handoff["run_id"])
+    assessed_commit_sha = str(handoff["assessed_commit_sha"])
     context = browser.new_context(
         viewport={"width": 1440, "height": 1000},
         locale="es-MX" if locale == "es-MX" else "en-US",
@@ -411,7 +412,7 @@ def _run_pass(
     path = "/es/assessment" if locale == "es-MX" else "/assessment"
     url = (
         f"{args.frontend_url.rstrip('/')}{path}?tier=comprehensive&run_id={run_id}"
-        f"&expected_commit_sha={args.expected_sha}"
+        f"&expected_commit_sha={assessed_commit_sha}"
         f"&terminal_pass={pass_number}#assessment"
     )
     try:
@@ -420,13 +421,13 @@ def _run_pass(
             state="visible", timeout=args.navigation_timeout_ms
         )
         initial = recovery._wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 240.0
+            page, run_id, assessed_commit_sha, 240.0
         )
         initial_locale_surface = _locale_surface(page, locale)
         observation = _observe_terminal(
             page,
             run_id=run_id,
-            expected_sha=args.expected_sha,
+            expected_sha=assessed_commit_sha,
             expected_canonical_digest=handoff["canonical_truth_sha256"],
             seconds=args.observation_seconds,
             requests=requests,
@@ -439,7 +440,7 @@ def _run_pass(
             state="visible", timeout=args.navigation_timeout_ms
         )
         after_refresh = recovery._wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 120.0
+            page, run_id, assessed_commit_sha, 120.0
         )
 
         page.goto(
@@ -452,13 +453,13 @@ def _run_pass(
             state="visible", timeout=args.navigation_timeout_ms
         )
         after_navigation = recovery._wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 120.0
+            page, run_id, assessed_commit_sha, 120.0
         )
 
         locale_round_trip = _prove_locale_round_trip(
             page,
             run_id=run_id,
-            expected_sha=args.expected_sha,
+            expected_sha=assessed_commit_sha,
             source_locale=locale,
             timeout_ms=args.navigation_timeout_ms,
         )
@@ -476,7 +477,7 @@ def _run_pass(
             state="visible", timeout=args.navigation_timeout_ms
         )
         after_review_navigation = recovery._wait_for_terminal_ui_ready(
-            page, run_id, args.expected_sha, 120.0
+            page, run_id, assessed_commit_sha, 120.0
         )
 
         if verified_canonical_truth is None:
@@ -484,7 +485,7 @@ def _run_pass(
                 page,
                 frontend_origin=args.frontend_url.rstrip("/"),
                 run_id=run_id,
-                expected_sha=args.expected_sha,
+                expected_sha=assessed_commit_sha,
                 expected_digest=handoff["canonical_truth_sha256"],
             )
             canonical_truth_reused_from_pass = None
@@ -492,7 +493,7 @@ def _run_pass(
             canonical_truth = _reuse_verified_canonical_truth(
                 verified_canonical_truth,
                 run_id=run_id,
-                expected_sha=args.expected_sha,
+                expected_sha=assessed_commit_sha,
                 expected_digest=handoff["canonical_truth_sha256"],
             )
             canonical_truth_reused_from_pass = 1
@@ -529,7 +530,7 @@ def _run_pass(
             "pass_number": pass_number,
             "locale": locale,
             "run_id": run_id,
-            "commit_sha": args.expected_sha,
+            "commit_sha": assessed_commit_sha,
             "initial_terminal": initial,
             "initial_locale_surface": initial_locale_surface,
             "observation": observation,
@@ -626,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     identity = canonical.get("identity") if isinstance(canonical, dict) else {}
     assert identity.get("run_id") == handoff["run_id"]
-    assert identity.get("commit_sha") == args.expected_sha
+    assert identity.get("commit_sha") == handoff["assessed_commit_sha"]
     canonical_digest = require_matching_canonical_truth_digest(
         canonical_digest,
         handoff["canonical_truth_sha256"],
@@ -659,6 +660,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": "passed",
         "live_production_claim": True,
         "expected_deployed_sha": args.expected_sha,
+        "assessed_commit_sha": handoff["assessed_commit_sha"],
         "repository": args.repository,
         "source_proof_sha256": handoff["source_proof_sha256"],
         "source_workflow_run_id": handoff["source_workflow_run_id"],

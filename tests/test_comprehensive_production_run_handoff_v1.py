@@ -18,6 +18,7 @@ from scripts.comprehensive_production_run_handoff_v1 import (
 
 
 SHA = "a" * 40
+ASSESSED_SHA = "d" * 40
 PROOF_TOOL_SHA = "b" * 40
 REPOSITORY = "BoneManTGRM/NICO"
 SOURCE_RUN_ID = "123456"
@@ -42,6 +43,7 @@ def _proof() -> dict:
         "artifact_schema": "nico.spanish_comprehensive_live_acceptance.v3.2",
         "status": "passed",
         "expected_sha": SHA,
+        "assessed_commit_sha": ASSESSED_SHA,
         "repository": REPOSITORY,
         "source_workflow_run_id": SOURCE_RUN_ID,
         "source_workflow_run_attempt": SOURCE_RUN_ATTEMPT,
@@ -68,7 +70,7 @@ def _proof() -> dict:
         "accepted_edition_absent": True,
         "terminal": {
             "run_id": "comprun_handoff_exact",
-            "commit_sha": SHA,
+            "commit_sha": ASSESSED_SHA,
             "phase": "Se requiere revisión experta",
         },
     }
@@ -81,6 +83,7 @@ def _recovered_proof() -> dict:
         "artifact_schema": RECOVERED_SOURCE_SCHEMA,
         "status": "passed",
         "expected_sha": SHA,
+        "assessed_commit_sha": ASSESSED_SHA,
         "proof_tool_sha": PROOF_TOOL_SHA,
         "repository": REPOSITORY,
         "source_workflow_run_id": SOURCE_RUN_ID,
@@ -141,7 +144,7 @@ def _recovered_proof() -> dict:
         "initial_canonical_state": {
             "run_id": run_id,
             "repository": REPOSITORY,
-            "commit_sha": SHA,
+            "commit_sha": ASSESSED_SHA,
             "evidence_ledger_id": evidence_ledger_id,
             "report_language": "es-MX",
             "terminal": False,
@@ -158,7 +161,7 @@ def _recovered_proof() -> dict:
         "terminal_canonical_state": {
             "run_id": run_id,
             "repository": REPOSITORY,
-            "commit_sha": SHA,
+            "commit_sha": ASSESSED_SHA,
             "evidence_ledger_id": evidence_ledger_id,
             "terminal": True,
             "status": "review_required",
@@ -174,7 +177,7 @@ def _recovered_proof() -> dict:
         },
         "terminal": {
             "run_id": run_id,
-            "commit_sha": SHA,
+            "commit_sha": ASSESSED_SHA,
             "phase": "Se requiere revisión experta",
         },
     }
@@ -201,6 +204,8 @@ def test_valid_source_proof_binds_exact_run_sha_and_workflow(tmp_path: Path) -> 
     assert result["status"] == "validated"
     assert result["run_id"] == "comprun_handoff_exact"
     assert result["release_sha"] == SHA
+    assert result["assessed_commit_sha"] == ASSESSED_SHA
+    assert result["terminal_commit_sha"] == ASSESSED_SHA
     assert result["source_workflow_run_id"] == SOURCE_RUN_ID
     assert result["source_workflow_run_attempt"] == SOURCE_RUN_ATTEMPT
     assert result["source_binding"] == f"{SOURCE_RUN_ID}:{SOURCE_RUN_ATTEMPT}"
@@ -349,12 +354,16 @@ def test_existing_run_recovery_handoff_fails_closed(
             "source_proof_canonical_truth_digest_invalid",
         ),
         (
+            lambda value: value.update({"assessed_commit_sha": "not-a-git-sha"}),
+            "source_proof_assessed_commit_invalid",
+        ),
+        (
             lambda value: value.update(
                 {"canonical_truth_digest_computed_from_json": False}
             ),
             "source_proof_canonical_truth_bytes_unproven",
         ),
-        (lambda value: value["terminal"].update({"commit_sha": "b" * 40}), "source_proof_terminal_commit_mismatch"),
+        (lambda value: value["terminal"].update({"commit_sha": SHA}), "source_proof_terminal_commit_mismatch"),
         (lambda value: value["terminal"].update({"phase": "running"}), "source_proof_terminal_state_invalid"),
         (lambda value: value.update({"start_request_count": 2}), "source_proof_intake_count_invalid"),
         (lambda value: value.update({"same_run_bilingual_assessment_rerun": True}), "source_proof_bilingual_rerun_detected"),
@@ -522,6 +531,35 @@ def test_all_consumers_abort_intake_and_continuation_mutations() -> None:
         assert 'route.abort("blockedbyclient")' in source
         assert "continuation_post_count" in source
         assert "start_request_count" in source
+
+
+def test_release_and_assessed_snapshot_identities_remain_distinct_downstream() -> None:
+    handoff = Path("scripts/comprehensive_production_run_handoff_v1.py").read_text(
+        encoding="utf-8"
+    )
+    mobile = Path("scripts/mobile_restart_live_acceptance_v1.py").read_text(
+        encoding="utf-8"
+    )
+    desktop = Path("scripts/completed_run_two_pass_acceptance_v1.py").read_text(
+        encoding="utf-8"
+    )
+    mobile_workflow = Path(
+        ".github/workflows/mobile-restart-production-proof.yml"
+    ).read_text(encoding="utf-8")
+    unified_workflow = Path(
+        ".github/workflows/two-service-production-acceptance.yml"
+    ).read_text(encoding="utf-8")
+
+    assert 'payload.get("expected_sha")' in handoff
+    assert 'payload.get("assessed_commit_sha")' in handoff
+    assert '== assessed_commit_sha' in handoff
+    assert 'assessed_commit_sha = str(handoff["assessed_commit_sha"])' in mobile
+    assert 'expected_commit_sha={assessed_commit_sha}' in mobile
+    assert 'assessed_commit_sha = str(handoff["assessed_commit_sha"])' in desktop
+    assert 'expected_commit_sha={assessed_commit_sha}' in desktop
+    assert 'payload["assessed_commit_sha"]' in mobile_workflow
+    assert '--expected-sha "${ASSESSED_COMMIT_SHA}"' in unified_workflow
+    assert 'payload["assessed_commit_sha"]' in unified_workflow
 
 
 def test_workflow_consumers_bind_recovered_proof_to_checked_out_tool_sha() -> None:
