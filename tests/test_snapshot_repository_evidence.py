@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from nico.snapshot_repository_evidence import (
     _public_git_profile,
+    _workflows,
     collect_snapshot_repository_evidence,
 )
 
@@ -130,6 +131,24 @@ class FakeSnapshotClient:
                 "conclusion": "failure",
             },
         ], None
+
+
+def test_workflows_reuse_exact_snapshot_files_before_api_reads() -> None:
+    path = ".github/workflows/ci.yml"
+    retained = {path: "permissions: read-all\njobs:\n  test:\n    steps:\n      - run: pytest\n"}
+    client = FakeSnapshotClient(tree_error="GitHub returned 403: API rate limit exceeded")
+
+    workflows, unavailable = _workflows(
+        client,
+        "BoneManTGRM/NICO",
+        {"commit_sha": client.commit_sha},
+        [path],
+        retained,
+    )
+
+    assert workflows == retained
+    assert unavailable == []
+    assert client.calls == []
 
 
 def _context() -> dict:
