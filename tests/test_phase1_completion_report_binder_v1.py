@@ -33,11 +33,13 @@ def report_text(sha: str) -> str:
     """
 
 
-def evidence(sha: str):
+def evidence(release_sha: str, assessed_sha: str | None = None):
+    assessed_sha = assessed_sha or release_sha
     acceptance = {
         "artifact_schema": "nico.unified_live_acceptance.v1",
         "status": "passed",
-        "expected_deployed_sha": sha,
+        "expected_deployed_sha": release_sha,
+        "assessed_commit_sha": assessed_sha,
         "passes_required": 2,
         "passes_completed": 2,
         "proof": {"exact_sha_bound": True, "two_passes": True},
@@ -45,7 +47,7 @@ def evidence(sha: str):
     audit = {
         "artifact_schema": "nico.phase1-structured-artifact-audit.v1",
         "status": "passed",
-        "commit_sha": sha,
+        "commit_sha": assessed_sha,
         "candidate_count": 629,
         "candidate_register_sha256_expected": "a" * 64,
         "candidate_register_sha256_observed": "a" * 64,
@@ -58,8 +60,8 @@ def evidence(sha: str):
     release = {
         "artifact_schema": "nico.frontend_production_release_identity.v1",
         "status": "passed",
-        "expected_sha": sha,
-        "final_release_observation": {"release_sha": sha},
+        "expected_sha": release_sha,
+        "final_release_observation": {"release_sha": release_sha},
     }
     required = [
         "Vercel",
@@ -70,7 +72,7 @@ def evidence(sha: str):
     ]
     status = {
         "artifact_schema": "nico.phase1-current-head-status.v1",
-        "commit_sha": sha,
+        "commit_sha": release_sha,
         "required_contexts": required,
         "contexts": {
             name: {"state": "success", "description": f"{name} passed"}
@@ -125,10 +127,10 @@ def test_report_contract_requires_an_explicit_authorized_human_approval_boundary
 def test_external_evidence_closes_item_nine_fail_closed() -> None:
     sha = "2" * 40
     acceptance, audit, release, status = evidence(sha)
-    validate_external(acceptance, audit, release, status, sha)
+    validate_external(acceptance, audit, release, status, sha, sha)
     status["contexts"]["NICO iOS WebKit Paint Proof"]["state"] = "pending"
     try:
-        validate_external(acceptance, audit, release, status, sha)
+        validate_external(acceptance, audit, release, status, sha, sha)
     except ValueError as exc:
         assert "not successful" in str(exc)
     else:
@@ -142,7 +144,7 @@ def test_external_evidence_accepts_current_completed_run_two_pass_schema() -> No
         "nico.completed-run-two-pass-production-acceptance.v1"
     )
 
-    validate_external(acceptance, audit, release, status, sha)
+    validate_external(acceptance, audit, release, status, sha, sha)
 
 
 def test_external_evidence_rejects_unknown_unified_acceptance_schema() -> None:
@@ -151,11 +153,41 @@ def test_external_evidence_rejects_unknown_unified_acceptance_schema() -> None:
     acceptance["artifact_schema"] = "nico.unknown-production-acceptance.v1"
 
     try:
-        validate_external(acceptance, audit, release, status, sha)
+        validate_external(acceptance, audit, release, status, sha, sha)
     except ValueError as exc:
         assert "Unified Production Acceptance did not pass" in str(exc)
     else:
         raise AssertionError("An unknown Unified acceptance schema must fail closed")
+
+
+def test_external_evidence_preserves_distinct_release_and_assessed_commits() -> None:
+    release_sha = "7" * 40
+    assessed_sha = "8" * 40
+    acceptance, audit, release, status = evidence(release_sha, assessed_sha)
+
+    validate_external(
+        acceptance,
+        audit,
+        release,
+        status,
+        release_sha,
+        assessed_sha,
+    )
+
+    audit["commit_sha"] = release_sha
+    try:
+        validate_external(
+            acceptance,
+            audit,
+            release,
+            status,
+            release_sha,
+            assessed_sha,
+        )
+    except ValueError as exc:
+        assert "expected assessed commit" in str(exc)
+    else:
+        raise AssertionError("The assessed repository identity must fail closed")
 
 
 def test_workflow_creates_one_post_acceptance_comprehensive_report_with_phase2_truth() -> None:
@@ -173,6 +205,9 @@ def test_workflow_creates_one_post_acceptance_comprehensive_report_with_phase2_t
     assert '"spanish_source_binding": source_marker.removeprefix("source:")' in source
     assert "scripts/phase1_completion_report_binder_v1.py" in source
     assert "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf" in source
+    assert 'manifest["release_sha"]' in source
+    assert 'manifest["assessed_commit_sha"]' in source
+    assert 'manifest["source_report_commit_sha"]' in source
     assert 'manifest["phase1_definition_of_done"][8]["status"] == "passed"' in source
     assert 'phase2 = manifest["phase2_completion"]' in source
     assert 'phase2["software_status"] == "complete"' in source
@@ -232,7 +267,8 @@ def test_binder_script_isolated_from_application_runtime_dependencies(tmp_path: 
 
 
 def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_application_startup(tmp_path: Path) -> None:
-    sha = "3" * 40
+    release_sha = "3" * 40
+    assessed_sha = "9" * 40
     source_pdf = tmp_path / "source.pdf"
     output_pdf = tmp_path / "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf"
     output_manifest = tmp_path / "NICO-COMPREHENSIVE-PHASE-1-COMPLETE.manifest.json"
@@ -241,8 +277,8 @@ def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_a
     release_path = tmp_path / "release.json"
     status_path = tmp_path / "status.json"
 
-    _write_source_pdf(source_pdf, sha)
-    acceptance, audit, release, status = evidence(sha)
+    _write_source_pdf(source_pdf, assessed_sha)
+    acceptance, audit, release, status = evidence(release_sha, assessed_sha)
     _write_json(acceptance_path, acceptance)
     _write_json(audit_path, audit)
     _write_json(release_path, release)
@@ -257,7 +293,7 @@ def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_a
             "--audit-json", str(audit_path),
             "--release-json", str(release_path),
             "--status-json", str(status_path),
-            "--expected-sha", sha,
+            "--expected-sha", release_sha,
             "--workflow-run-id", "1001",
             "--mobile-run-id", "1002",
             "--ios-run-id", "1003",
@@ -278,7 +314,11 @@ def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_a
     assert output_pdf.is_file()
     manifest = json.loads(output_manifest.read_text(encoding="utf-8"))
     assert manifest["status"] == "passed"
-    assert manifest["commit_sha"] == sha
+    assert manifest["commit_sha"] == release_sha
+    assert manifest["release_sha"] == release_sha
+    assert manifest["assessed_commit_sha"] == assessed_sha
+    assert manifest["source_report_commit_sha"] == assessed_sha
+    assert manifest["structured_audit"]["commit_sha"] == assessed_sha
     assert len(manifest["phase1_definition_of_done"]) == 9
     assert manifest["phase1_definition_of_done"][8]["status"] == "passed"
     phase2 = manifest["phase2_completion"]

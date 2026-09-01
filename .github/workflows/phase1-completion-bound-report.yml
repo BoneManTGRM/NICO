@@ -283,6 +283,9 @@ jobs:
           assert manifest["additional_report_product_created"] is False
           assert manifest["source_report_preserved"] is True
           assert manifest["commit_sha"] == "${{ github.event.workflow_run.head_sha }}"
+          assert manifest["release_sha"] == "${{ github.event.workflow_run.head_sha }}"
+          assert manifest["assessed_commit_sha"] == manifest["source_report_commit_sha"]
+          assert manifest["assessed_commit_sha"] == manifest["structured_audit"]["commit_sha"]
           assert len(manifest["phase1_definition_of_done"]) == 9
           assert all(item["status"] == "passed" for item in manifest["phase1_definition_of_done"])
           assert manifest["phase1_definition_of_done"][8]["status"] == "passed"
