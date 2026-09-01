@@ -854,7 +854,7 @@ def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
           );
           return String(label?.querySelector('textarea')?.value || '') === expectedValue;
         }""",
-        {
+        arg={
             "rootSelector": (
                 '[aria-labelledby="strategic-evidence-stakeholder_context"]'
             ),
