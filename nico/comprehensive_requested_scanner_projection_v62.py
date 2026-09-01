@@ -5,8 +5,8 @@ from typing import Any, Mapping
 
 from nico import comprehensive_canonical_projection_truth_v55 as projection
 
-VERSION = "nico.comprehensive_requested_scanner_projection.v62"
-_MARKER = "_nico_comprehensive_requested_scanner_projection_v62"
+VERSION = "nico.comprehensive_requested_scanner_projection.v63"
+_MARKER = "_nico_comprehensive_requested_scanner_projection_v63"
 _ORIGINAL = projection._scanner_population
 
 
@@ -62,6 +62,9 @@ def requested_scanner_population(
     requested = _requested(canonical)
     if not requested:
         return _ORIGINAL(canonical)
+    authoritative_applicability = (
+        projection._authoritative_scanner_applicability(canonical)
+    )
 
     by_name = {
         _name(item.get("scanner_name") or item.get("tool")): deepcopy(dict(item))
@@ -99,8 +102,18 @@ def requested_scanner_population(
     applicable = [
         item
         for item in selected
-        if _text(item.get("status") or item.get("state")).casefold()
-        not in {"not_applicable"}
+        if item.get("applicable") is not False
+        and _text(item.get("status") or item.get("state"))
+        .casefold()
+        .replace("-", "_")
+        not in {"not_applicable", "not_required", "inapplicable"}
+        and (
+            authoritative_applicability is None
+            or _name(item.get("scanner_name"))
+            not in authoritative_applicability[0]
+            or _name(item.get("scanner_name"))
+            in authoritative_applicability[1]
+        )
     ]
     completed = [item for item in applicable if item.get("completed") is True]
     incomplete = [item for item in applicable if item.get("completed") is not True]

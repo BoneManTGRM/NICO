@@ -73,3 +73,63 @@ def test_requested_projection_installer_binds_v55_population_boundary() -> None:
     assert result["status"] in {"installed", "already_installed"}
     assert result["bound"] is True
     assert projection._scanner_population is requested_scanner_population
+
+
+def _applicability_contract() -> dict[str, object]:
+    return {
+        "requested_exact_run_scanners": ["bandit", "eslint", "typescript"],
+        "applicable_exact_run_scanners": ["bandit"],
+        "not_applicable_exact_run_scanners": ["eslint", "typescript"],
+        "authoritative_scanner_record_count": 3,
+        "applicable_scanner_record_count": 1,
+        "not_applicable_scanner_record_count": 2,
+        "coverage_numerator": 1,
+        "coverage_denominator": 1,
+        "technology_inapplicable_scanners_excluded_from_coverage_denominator": True,
+        "not_applicable_scanners_receive_completion_credit": False,
+    }
+
+
+def test_late_requested_projection_honors_authoritative_applicability_contract() -> None:
+    canonical = {
+        "scanner_execution_records": [
+            _record("bandit", completed=True),
+            _record("eslint", completed=False, status="unavailable"),
+            _record("typescript", completed=False, status="unavailable"),
+        ],
+        "live_scanner_evidence": {
+            "tools_requested": ["bandit", "eslint", "typescript"],
+        },
+        "client_readiness_contract": _applicability_contract(),
+    }
+
+    records, completed, incomplete, coverage = requested_scanner_population(canonical)
+
+    assert [item["scanner_name"] for item in records] == [
+        "bandit",
+        "eslint",
+        "typescript",
+    ]
+    assert [item["scanner_name"] for item in completed] == ["bandit"]
+    assert incomplete == []
+    assert coverage == 100
+
+
+def test_applicability_contract_never_hides_failed_applicable_scanner() -> None:
+    canonical = {
+        "scanner_execution_records": [
+            _record("bandit", completed=False, status="failed"),
+            _record("eslint", completed=False, status="unavailable"),
+            _record("typescript", completed=False, status="unavailable"),
+        ],
+        "live_scanner_evidence": {
+            "tools_requested": ["bandit", "eslint", "typescript"],
+        },
+        "client_readiness_contract": _applicability_contract(),
+    }
+
+    _records, completed, incomplete, coverage = requested_scanner_population(canonical)
+
+    assert completed == []
+    assert [item["scanner_name"] for item in incomplete] == ["bandit"]
+    assert coverage == 0

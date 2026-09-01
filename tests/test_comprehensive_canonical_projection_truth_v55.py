@@ -250,6 +250,109 @@ def test_failed_applicable_scanner_still_fails_closed_with_not_applicable_peers(
     assert checks["incomplete_scanner_names"] == ["bandit"]
 
 
+def _late_projection_applicability_contract() -> dict[str, object]:
+    requested = [
+        "pip-audit",
+        "npm-audit",
+        "osv-scanner",
+        "bandit",
+        "semgrep",
+        "eslint",
+        "typescript",
+        "gitleaks",
+        "trufflehog",
+    ]
+    not_applicable = ["npm-audit", "eslint", "typescript"]
+    applicable = [name for name in requested if name not in not_applicable]
+    return {
+        "requested_exact_run_scanners": requested,
+        "applicable_exact_run_scanners": applicable,
+        "not_applicable_exact_run_scanners": not_applicable,
+        "authoritative_scanner_record_count": 9,
+        "applicable_scanner_record_count": 6,
+        "not_applicable_scanner_record_count": 3,
+        "coverage_numerator": 6,
+        "coverage_denominator": 6,
+        "technology_inapplicable_scanners_excluded_from_coverage_denominator": True,
+        "not_applicable_scanners_receive_completion_credit": False,
+    }
+
+
+def test_late_expanded_projection_uses_self_consistent_authoritative_applicability() -> None:
+    fixture = _production_regression_fixture()
+    contract = _late_projection_applicability_contract()
+    applicable = set(contract["applicable_exact_run_scanners"])
+    fixture["scanner_execution_records"] = [
+        _scanner(name, completed=name in applicable)
+        for name in contract["requested_exact_run_scanners"]
+    ]
+    for record in fixture["scanner_execution_records"]:
+        if record["scanner_name"] not in applicable:
+            record["status"] = "unavailable"
+            record.pop("applicable", None)
+    fixture["assessment"]["scanner_execution_records"] = deepcopy(
+        fixture["scanner_execution_records"]
+    )
+    fixture.pop("not_applicable_scanner_records", None)
+    fixture["assessment"].pop("not_applicable_scanner_records", None)
+    fixture["client_readiness_contract"] = contract
+
+    normalized = normalize_final_projection(fixture)
+    checks = final_projection_checks(normalized)
+
+    assert checks["expected_analyzer_execution_coverage"] == 100
+    assert checks["incomplete_scanner_names"] == []
+    assert checks["analyzer_coverage_values_consistent"] is True
+
+
+def test_inconsistent_applicability_contract_is_ignored_fail_closed() -> None:
+    fixture = _production_regression_fixture()
+    contract = _late_projection_applicability_contract()
+    contract["applicable_scanner_record_count"] = 7
+    applicable = set(contract["applicable_exact_run_scanners"])
+    fixture["scanner_execution_records"] = [
+        _scanner(name, completed=name in applicable)
+        for name in contract["requested_exact_run_scanners"]
+    ]
+    fixture["assessment"]["scanner_execution_records"] = deepcopy(
+        fixture["scanner_execution_records"]
+    )
+    fixture["client_readiness_contract"] = contract
+
+    normalized = normalize_final_projection(fixture)
+    checks = final_projection_checks(normalized)
+
+    assert checks["expected_analyzer_execution_coverage"] == 67
+    assert set(checks["incomplete_scanner_names"]) == {
+        "eslint",
+        "npm-audit",
+        "typescript",
+    }
+
+
+def test_valid_applicability_contract_does_not_hide_failed_applicable_scanner() -> None:
+    fixture = _production_regression_fixture()
+    contract = _late_projection_applicability_contract()
+    applicable = set(contract["applicable_exact_run_scanners"])
+    fixture["scanner_execution_records"] = [
+        _scanner(
+            name,
+            completed=name in applicable and name != "bandit",
+        )
+        for name in contract["requested_exact_run_scanners"]
+    ]
+    fixture["assessment"]["scanner_execution_records"] = deepcopy(
+        fixture["scanner_execution_records"]
+    )
+    fixture["client_readiness_contract"] = contract
+
+    normalized = normalize_final_projection(fixture)
+    checks = final_projection_checks(normalized)
+
+    assert checks["expected_analyzer_execution_coverage"] == 83
+    assert checks["incomplete_scanner_names"] == ["bandit"]
+
+
 def test_final_validator_uses_one_canonical_register_not_mirrored_tree_counts() -> None:
     canonical = normalize_final_projection(_production_regression_fixture())
 

@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_blocked_run_recovery.v9"
+VERSION = "nico.comprehensive_blocked_run_recovery.v10"
 _DECISION_REPORT_STAGE = "decision_report_generation"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
