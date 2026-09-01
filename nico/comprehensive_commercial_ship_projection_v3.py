@@ -15,7 +15,7 @@ from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.4"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.5"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -119,7 +119,7 @@ def _source_pdf_requires_integrity_reprojection(
     status: Mapping[str, Any],
     report_language: str,
 ) -> bool:
-    """Repair only pending frozen drafts that suppress already-known artifact hashes."""
+    """Repair pending frozen drafts with stale visible navigation or scanner truth."""
 
     if str(report_language or "") not in {"en", "es-MX"}:
         return False
@@ -146,10 +146,13 @@ def _source_pdf_requires_integrity_reprojection(
         for item in artifacts
         if str(item.get("artifact_type") or "") in _VISIBLE_MANIFEST_TYPES
     }
-    if set(visible_digests) != _VISIBLE_MANIFEST_TYPES:
-        return False
-    if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in visible_digests.values()):
-        return False
+    manifest_digests_valid = (
+        set(visible_digests) == _VISIBLE_MANIFEST_TYPES
+        and all(
+            re.fullmatch(r"[0-9a-f]{64}", value)
+            for value in visible_digests.values()
+        )
+    )
 
     try:
         pdf_bytes = base64.b64decode(str(reports.get("pdf_base64") or ""), validate=True)
@@ -168,8 +171,50 @@ def _source_pdf_requires_integrity_reprojection(
         and not pdf_reflow._content_lines(text)
         for text in page_texts
     )
-    return footer_only_spill or any(
+    canonical = reports.get("json")
+    canonical = canonical if isinstance(canonical, Mapping) else {}
+    scanner_applicability_mismatch = False
+    if canonical:
+        from nico.comprehensive_authoritative_scanner_truth_v62 import (
+            reconcile_authoritative_scanner_truth,
+        )
+
+        reconciled = reconcile_authoritative_scanner_truth(canonical)
+        contract = reconciled.get("client_readiness_contract")
+        contract = contract if isinstance(contract, Mapping) else {}
+        try:
+            expected = (
+                int(contract["coverage_numerator"]),
+                int(contract["coverage_denominator"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            expected = None
+        if expected is not None:
+            visible_surfaces = "\n".join(
+                (
+                    "\n".join(page_texts),
+                    str(reports.get("markdown") or ""),
+                    re.sub(r"<[^>]+>", " ", str(reports.get("html") or "")),
+                )
+            )
+            claims = [
+                (int(match.group(1)), int(match.group(2)))
+                for pattern in (
+                    r"(\d+)\s+of\s+(\d+)\s+applicable\s+scanner\s+executions\s+completed",
+                    r"(\d+)\s+de\s+(\d+)\s+ejecuciones\s+de\s+analizadores\s+aplicables\s+completadas",
+                )
+                for match in re.finditer(pattern, visible_surfaces, flags=re.IGNORECASE)
+            ]
+            scanner_applicability_mismatch = any(
+                claim != expected for claim in claims
+            )
+    manifest_integrity_mismatch = manifest_digests_valid and any(
         digest not in visible_text for digest in visible_digests.values()
+    )
+    return (
+        footer_only_spill
+        or manifest_integrity_mismatch
+        or scanner_applicability_mismatch
     )
 
 

@@ -424,6 +424,74 @@ def test_pending_frozen_source_with_footer_only_spill_is_reprojected() -> None:
     assert _source_pdf_requires_integrity_reprojection(status, "en") is True
 
 
+def test_pending_frozen_source_with_stale_scanner_denominator_is_reprojected() -> None:
+    node_failures = {
+        "npm-audit": "No package-lock.json with an adjacent package.json was found.",
+        "eslint": "No supported JavaScript or TypeScript source files were found in apps/web/app.",
+        "typescript": "Project dependencies were not prepared.",
+    }
+    tools = (
+        "pip-audit",
+        "npm-audit",
+        "osv-scanner",
+        "bandit",
+        "semgrep",
+        "eslint",
+        "typescript",
+        "gitleaks",
+        "trufflehog",
+    )
+    records = [
+        {
+            "scanner_name": name,
+            "status": (
+                "unavailable"
+                if name == "typescript"
+                else "failed" if name in node_failures else "completed"
+            ),
+            "state": (
+                "unavailable"
+                if name == "typescript"
+                else "failed" if name in node_failures else "completed"
+            ),
+            "completed": name not in node_failures,
+            "verified": name not in node_failures,
+            "exact_commit_match": True,
+            "artifact_hash": "" if name in node_failures else "a" * 64,
+            "failure_reason": node_failures.get(name, ""),
+            "findings": [],
+        }
+        for name in tools
+    ]
+    canonical = {
+        "identity": {"commit_sha": "a" * 40},
+        "repository_evidence": {
+            "file_evidence": {"sampled_paths": ["requirements.txt", "app.py"]}
+        },
+        "assessment": {"technical_score": 76},
+        "requested_scanner_records": deepcopy(records),
+        "scanner_execution_records": deepcopy(records),
+    }
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(54, 720, "6 of 9 applicable scanner executions completed")
+    pdf.save()
+    status = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "reports": {
+            "json": canonical,
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
+            "markdown": "6 of 9 applicable scanner executions completed",
+            "html": "<p>6 of 9 applicable scanner executions completed</p>",
+        },
+    }
+
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is True
+
+
 def _pdf_with_sparse_limitation_pair() -> bytes:
     buffer = io.BytesIO()
     document = canvas.Canvas(buffer, pagesize=letter, invariant=1)

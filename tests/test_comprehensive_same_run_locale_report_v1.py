@@ -673,6 +673,61 @@ def test_pending_source_can_regenerate_without_reusing_frozen_artifacts(
     assert result["client_delivery_allowed"] is False
 
 
+def test_legacy_scanner_applicability_repair_preserves_assessment_truth_parity() -> None:
+    canonical = _canonical("en")
+    canonical["assessment"]["technical_score"] = 76
+    canonical["repository_evidence"] = {
+        "file_evidence": {
+            "sampled_paths": ["requirements.txt", "app.py", "src/service.py"]
+        }
+    }
+    node_failures = {
+        "npm-audit": "No package-lock.json with an adjacent package.json was found.",
+        "eslint": "No supported JavaScript or TypeScript source files were found in apps/web/app.",
+        "typescript": "Project dependencies were not prepared.",
+    }
+    tools = (
+        "pip-audit",
+        "npm-audit",
+        "osv-scanner",
+        "bandit",
+        "semgrep",
+        "eslint",
+        "typescript",
+        "gitleaks",
+        "trufflehog",
+    )
+    records = [
+        {
+            "scanner_name": name,
+            "status": "failed" if name in node_failures else "completed",
+            "state": "failed" if name in node_failures else "completed",
+            "completed": name not in node_failures,
+            "verified": name not in node_failures,
+            "exact_commit_match": True,
+            "artifact_hash": "" if name in node_failures else "a" * 64,
+            "failure_reason": node_failures.get(name, ""),
+            "findings": [],
+        }
+        for name in tools
+    ]
+    canonical["requested_scanner_records"] = deepcopy(records)
+    canonical["scanner_execution_records"] = deepcopy(records)
+
+    from nico.comprehensive_authoritative_scanner_truth_v62 import (
+        reconcile_authoritative_scanner_truth,
+    )
+
+    reconciled = reconcile_authoritative_scanner_truth(canonical)
+
+    assert subject._assessment_truth_projection(
+        canonical
+    ) == subject._assessment_truth_projection(reconciled)
+    assert canonical["assessment"]["technical_score"] == 76
+    assert len(canonical["scanner_execution_records"]) == 9
+    assert len(reconciled["scanner_execution_records"]) == 6
+
+
 def test_regeneration_marker_cannot_replace_approved_source_artifact(monkeypatch) -> None:
     status = _approved_status(client_delivery_allowed=True)
     status["_nico_force_pending_draft_artifact_regeneration"] = True

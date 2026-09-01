@@ -398,9 +398,26 @@ def _assessment_truth_projection(canonical: Mapping[str, Any]) -> dict[str, Any]
         if isinstance(canonical.get("engagement_metadata"), Mapping)
         else {}
     )
-    scanners = canonical.get("scanner_execution_records")
+    # Scanner applicability is a deterministic projection of the retained exact-run
+    # evidence. Historical pending drafts can retain a pre-applicability scanner list
+    # (for example, Node-only tools recorded as failed for a Python-only repository),
+    # while the current renderer correctly projects those records as not applicable.
+    # Compare both sides through the same bounded projection so this derived repair does
+    # not look like an immutable assessment mutation. Scores, findings, candidates, and
+    # exact-run identity below continue to come from the untouched canonical object.
+    from nico.comprehensive_authoritative_scanner_truth_v62 import (
+        reconcile_authoritative_scanner_truth,
+    )
+
+    scanner_canonical = reconcile_authoritative_scanner_truth(canonical)
+    scanner_assessment = (
+        scanner_canonical.get("assessment")
+        if isinstance(scanner_canonical.get("assessment"), Mapping)
+        else {}
+    )
+    scanners = scanner_canonical.get("scanner_execution_records")
     if not isinstance(scanners, list):
-        scanners = assessment.get("scanner_execution_records") or []
+        scanners = scanner_assessment.get("scanner_execution_records") or []
     return {
         "identity": tuple(
             str(identity.get(field) or "")
