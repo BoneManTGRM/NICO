@@ -158,6 +158,98 @@ def test_genuine_incomplete_scanner_remains_visible_and_reduces_coverage() -> No
     )
 
 
+def test_explicitly_inapplicable_scanners_do_not_reduce_execution_coverage() -> None:
+    fixture = _production_regression_fixture()
+    not_applicable = [
+        {
+            "scanner_name": name,
+            "status": "not_applicable",
+            "completed": False,
+            "applicable": False,
+            "reason": "Repository technology does not require this analyzer.",
+        }
+        for name in ("npm-audit", "eslint", "typescript")
+    ]
+    applicable = [
+        _scanner(name)
+        for name in (
+            "bandit",
+            "pip-audit",
+            "osv-scanner",
+            "semgrep",
+            "trufflehog",
+            "gitleaks",
+        )
+    ]
+    expanded_records = deepcopy(applicable + not_applicable)
+    fixture["scanner_execution_records"] = deepcopy(expanded_records)
+    fixture["not_applicable_scanner_records"] = deepcopy(not_applicable)
+    fixture["assessment"]["scanner_execution_records"] = deepcopy(
+        expanded_records
+    )
+    fixture["assessment"]["not_applicable_scanner_records"] = deepcopy(
+        not_applicable
+    )
+
+    normalized = normalize_final_projection(fixture)
+    checks = final_projection_checks(normalized)
+
+    assert checks["expected_analyzer_execution_coverage"] == 100
+    assert checks["completed_scanner_names"] == sorted(
+        item["scanner_name"] for item in applicable
+    )
+    assert checks["incomplete_scanner_names"] == []
+    assert checks["analyzer_coverage_values_consistent"] is True
+    assert (
+        normalized["assessment"]["score_contract"][
+            "analyzer_execution_coverage"
+        ]
+        == 100
+    )
+
+
+def test_not_applicable_register_is_authoritative_when_retained_record_is_expanded() -> None:
+    fixture = _production_regression_fixture()
+    expanded = _scanner("npm-audit", completed=False)
+    expanded["status"] = "unavailable"
+    expanded["applicable"] = True
+    fixture["scanner_execution_records"].append(deepcopy(expanded))
+    fixture["assessment"]["scanner_execution_records"].append(deepcopy(expanded))
+    fixture["not_applicable_scanner_records"] = [
+        {"scanner_name": "npm-audit", "status": "not_applicable", "applicable": False}
+    ]
+
+    normalized = normalize_final_projection(fixture)
+    checks = final_projection_checks(normalized)
+
+    assert checks["expected_analyzer_execution_coverage"] == 100
+    assert checks["incomplete_scanner_names"] == []
+
+
+def test_failed_applicable_scanner_still_fails_closed_with_not_applicable_peers() -> None:
+    fixture = _production_regression_fixture()
+    failed = _scanner("bandit", completed=False)
+    fixture["scanner_execution_records"] = [
+        failed,
+        _scanner("pip-audit"),
+        {
+            "scanner_name": "npm-audit",
+            "status": "not_applicable",
+            "completed": False,
+            "applicable": False,
+        },
+    ]
+    fixture["assessment"]["scanner_execution_records"] = deepcopy(
+        fixture["scanner_execution_records"]
+    )
+
+    normalized = normalize_final_projection(fixture)
+    checks = final_projection_checks(normalized)
+
+    assert checks["expected_analyzer_execution_coverage"] == 50
+    assert checks["incomplete_scanner_names"] == ["bandit"]
+
+
 def test_final_validator_uses_one_canonical_register_not_mirrored_tree_counts() -> None:
     canonical = normalize_final_projection(_production_regression_fixture())
 

@@ -5,7 +5,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable, Iterable, Mapping
 
-VERSION = "nico.comprehensive_canonical_projection_truth.v55"
+VERSION = "nico.comprehensive_canonical_projection_truth.v56"
 _NORMALIZER_MARKER = "_nico_comprehensive_canonical_projection_truth_v55"
 _VALIDATOR_MARKER = "_nico_comprehensive_final_artifact_projection_truth_v55"
 
@@ -88,6 +88,20 @@ def _scanner_population(
         if isinstance(item, Mapping)
     ]
 
+    not_applicable_names: set[str] = set()
+    for container in (canonical, assessment):
+        excluded = container.get("not_applicable_scanner_records")
+        if not isinstance(excluded, list):
+            continue
+        for item in excluded:
+            if not isinstance(item, Mapping):
+                continue
+            name = _scanner_name(
+                item.get("scanner_name") or item.get("scanner") or item.get("tool")
+            )
+            if name:
+                not_applicable_names.add(name)
+
     by_name: dict[str, dict[str, Any]] = {}
     for item in records:
         name = _scanner_name(
@@ -115,7 +129,10 @@ def _scanner_population(
     applicable = [
         item
         for item in ordered
-        if _text(item.get("status")).casefold() not in {"not_applicable"}
+        if item.get("applicable") is not False
+        and _text(item.get("status")).casefold().replace("-", "_")
+        not in {"not_applicable", "not_required", "inapplicable"}
+        and _scanner_name(item.get("scanner_name")) not in not_applicable_names
     ]
     completed = [item for item in applicable if item.get("completed") is True]
     incomplete = [item for item in applicable if item.get("completed") is not True]
