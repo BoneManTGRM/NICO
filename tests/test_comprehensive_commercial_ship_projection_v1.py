@@ -11,6 +11,7 @@ from reportlab.pdfgen import canvas
 
 from nico.comprehensive_commercial_ship_projection_v3 import (
     _bind_final_pdf_layout,
+    _ensure_repository_delivery_section,
     _finalize_artifact_navigation,
     _source_pdf_requires_integrity_reprojection,
     compact_sparse_limitation_pages,
@@ -204,6 +205,70 @@ def test_final_navigation_is_rebuilt_after_shared_page_compaction() -> None:
     assert finalized["pagination_compaction"][
         "final_navigation_rebuilt_after_compaction"
     ] is True
+
+
+def test_missing_repository_section_is_recovered_from_same_canonical_stage() -> None:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(48, 744, "NICO Comprehensive | AUTOMATED DRAFT")
+    pdf.showPage()
+    pdf.drawString(48, 744, "Evidence Reconciliation and Scoring")
+    pdf.drawString(48, 710, "Canonical scoring truth remains unchanged.")
+    pdf.save()
+    canonical = {
+        "identity": {
+            "run_id": "comprun_provider_recovery",
+            "report_language": "en",
+        },
+        "stage_summaries": [
+            {
+                "stage_id": "repository_and_delivery_evidence",
+                "title": "Repository and Delivery Evidence",
+                "status": "complete",
+                "summary": "Frozen public-provider access truth.",
+                "evidence": [
+                    "Provider: Azure DevOps.",
+                    "Repository identity: dev.azure.com/example/project/_git/repo.",
+                    f"Immutable revision: {'a' * 40}.",
+                    "Access mode: Anonymous public.",
+                    "Provider credential used: No.",
+                    f"Source fingerprint: sha256:{'b' * 64}.",
+                    "Exact-source locators: 42 present.",
+                    "Pagination complete: Yes.",
+                    "Human review: Required.",
+                    "Human approval: Pending explicit reviewer action.",
+                    "Client delivery: Not authorized.",
+                ],
+                "unavailable": [
+                    "Pipeline runs require provider-specific authentication for some repositories."
+                ],
+            }
+        ],
+    }
+
+    recovered, changed = _ensure_repository_delivery_section(
+        buffer.getvalue(), canonical
+    )
+    reader = PdfReader(io.BytesIO(recovered))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    assert changed is True
+    assert text.count("Repository and Delivery Evidence") == 1
+    assert "Provider: Azure DevOps." in text
+    assert "Access mode: Anonymous public." in text
+    assert "Provider credential used: No." in text
+    assert "Exact-source locators: 42 present." in text
+    assert "Human approval: Pending explicit reviewer action." in text
+    assert "Client delivery: Not authorized." in text
+    assert text.index("Repository and Delivery Evidence") < text.index(
+        "Evidence Reconciliation and Scoring"
+    )
+
+    unchanged, changed_again = _ensure_repository_delivery_section(
+        recovered, canonical
+    )
+    assert changed_again is False
+    assert unchanged == recovered
 
 
 def test_same_run_route_binds_final_layout_before_actual_render_target() -> None:
@@ -633,6 +698,32 @@ def test_pending_zero_candidate_source_without_register_is_reprojected() -> None
                     "review_required_total": 0,
                 },
             },
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
+        },
+    }
+
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is True
+
+
+def test_pending_frozen_source_with_incomplete_canonical_toc_is_reprojected() -> None:
+    from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.setFont("Helvetica", 7)
+    pdf.drawString(54, 740, "Table of Contents")
+    y = 720
+    for section in CANONICAL_TOC_SECTIONS[:-1]:
+        pdf.drawString(54, y, section["title_en"])
+        y -= 14
+    pdf.save()
+    status = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "reports": {
+            "json": {"stage_summaries": []},
             "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
         },
     }

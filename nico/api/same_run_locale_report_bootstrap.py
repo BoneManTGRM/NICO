@@ -96,6 +96,14 @@ if COMMERCIAL_SHIP_PROJECTION.get("zero_candidate_register_projection_bound") is
     raise RuntimeError(
         "Commercial ship projection must retain an explicit zero-candidate register"
     )
+if COMMERCIAL_SHIP_PROJECTION.get("canonical_toc_integrity_reprojection") is not True:
+    raise RuntimeError(
+        "Pending frozen Comprehensive drafts must recover incomplete canonical navigation"
+    )
+if COMMERCIAL_SHIP_PROJECTION.get("repository_delivery_section_recovery") is not True:
+    raise RuntimeError(
+        "Localized Comprehensive reports must retain provider-access evidence"
+    )
 if COMMERCIAL_SHIP_PROJECTION.get("canonical_truth_mutated") is not False:
     raise RuntimeError("Commercial ship presentation projection must not mutate canonical truth")
 if COMMERCIAL_SHIP_PROJECTION.get("assessment_rerun") is not False:
