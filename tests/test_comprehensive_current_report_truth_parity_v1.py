@@ -179,6 +179,34 @@ def test_github_pagination_limitation_has_exact_spanish_contract() -> None:
         "estaba disponible."
     )
 
+
+def test_gitlab_scanner_unavailability_has_exact_spanish_contract() -> None:
+    install_comprehensive_current_report_truth_parity_v1()
+
+    samples = {
+        "pip-audit: requirements.txt was not found.": (
+            "pip-audit: no se encontró requirements.txt."
+        ),
+        "npm-audit: No package-lock.json with an adjacent package.json was found.": (
+            "npm-audit: no se encontró package-lock.json junto a un package.json."
+        ),
+        "osv-scanner: scanner JSON output could not be parsed: line 1 column 1; "
+        "scanner JSON output could not be parsed: line 1 column 1": (
+            "osv-scanner: no fue posible analizar la salida JSON del analizador: línea 1, columna 1; "
+            "no fue posible analizar la salida JSON del analizador: línea 1, columna 1"
+        ),
+        "eslint: No supported JavaScript or TypeScript source files were found in apps/web/app.": (
+            "eslint: no se encontraron archivos de código fuente JavaScript o TypeScript compatibles en apps/web/app."
+        ),
+        "typescript: typescript did not retain a complete exact-SHA scanner record.": (
+            "typescript: TypeScript no conservó un registro completo del analizador para el SHA exacto."
+        ),
+    }
+
+    for source, expected in samples.items():
+        assert strict_spanish_presentation_v1(source, "unavailable") == expected
+
+
 def test_spanish_final_surface_gate_allows_exact_user_and_technical_fragments() -> None:
     canonical = _canonical(language="es-MX")
     literal = (
