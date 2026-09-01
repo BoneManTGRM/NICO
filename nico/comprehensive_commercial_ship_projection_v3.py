@@ -196,7 +196,51 @@ def _render_repository_delivery_supplement(
         )
 
         def localized(value: Any, key: str) -> str:
-            return str(_translate_presentation_field(str(value or ""), key))
+            raw = str(value or "")
+            translated = str(_translate_presentation_field(raw, key))
+            normalized = " ".join(translated.replace("_", " ").split()).casefold()
+            if key == "status":
+                status_terms = {
+                    "complete": "completado",
+                    "processing complete": "procesamiento completado",
+                    "evidence limited": "evidencia limitada",
+                    "review required": "revisión requerida",
+                    "unavailable": "no disponible",
+                }
+                components = [
+                    " ".join(item.split()).casefold()
+                    for item in re.split(r"\s*[·|]\s*", normalized)
+                    if item.strip()
+                ]
+                if components and all(item in status_terms for item in components):
+                    return " · ".join(status_terms[item] for item in components)
+            if key == "summary":
+                translated = re.sub(
+                    r"^Evidence limited\s*[—-]\s*",
+                    "Evidencia limitada — ",
+                    translated,
+                    flags=re.IGNORECASE,
+                )
+            if key == "evidence" and raw.strip().casefold().startswith("provider:"):
+                return re.sub(
+                    r"^\s*Provider\s*:",
+                    "Proveedor:",
+                    raw,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            if key in {"unavailable", "limitations"}:
+                limitation = {
+                    "ci_runs evidence collection failed": (
+                        "La recopilación de evidencia de ejecuciones de CI falló."
+                    ),
+                    "environments evidence collection failed": (
+                        "La recopilación de evidencia de entornos falló."
+                    ),
+                }.get(raw.strip().casefold())
+                if limitation is not None:
+                    return limitation
+            return translated
 
     else:
 
