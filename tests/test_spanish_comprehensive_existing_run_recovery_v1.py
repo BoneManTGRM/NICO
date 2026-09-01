@@ -334,7 +334,7 @@ def test_terminal_observation_uses_only_exact_get_reconciliation(
         page,
         origin="https://app.nicoaudit.com",
         run_id=RUN_ID,
-        expected_sha=SHA,
+        expected_commit_sha=SHA,
         repository=REPOSITORY,
         expected_evidence_ledger_id="ledger-1",
         initial_payload=initial_view,
