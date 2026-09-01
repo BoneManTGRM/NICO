@@ -52,6 +52,8 @@ def test_intake_updates_each_module_from_latest_parent_state() -> None:
     assert "setModule(moduleId, (current) =>" in source
     assert "{...current, observed_at}" in source
     assert "{...current, source_reference}" in source
+    assert "onInput={(event) =>" in source
+    assert "const observed_at = event.currentTarget.value" in source
     assert "Dispatch<SetStateAction<StrategicHumanEvidenceInput>>" in source
     assert "Dispatch<SetStateAction<StrategicHumanEvidenceInput>>" in controller
 
