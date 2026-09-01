@@ -42,6 +42,20 @@ def test_intake_is_bilingual_fail_closed_and_uses_one_focused_editor() -> None:
     assert "<details className={styles.strategicEvidence}>" not in source
 
 
+def test_intake_updates_each_module_from_latest_parent_state() -> None:
+    source = FORM.read_text(encoding="utf-8")
+    controller = CONTROLLER.read_text(encoding="utf-8")
+
+    assert "onChange((currentValue) =>" in source
+    assert "next(currentModule)" in source
+    assert "const updated = {...currentValue}" in source
+    assert "setModule(moduleId, (current) =>" in source
+    assert "{...current, observed_at}" in source
+    assert "{...current, source_reference}" in source
+    assert "Dispatch<SetStateAction<StrategicHumanEvidenceInput>>" in source
+    assert "Dispatch<SetStateAction<StrategicHumanEvidenceInput>>" in controller
+
+
 def test_intake_has_compact_mobile_controls() -> None:
     source = STYLES.read_text(encoding="utf-8")
 

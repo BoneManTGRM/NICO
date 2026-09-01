@@ -1,6 +1,12 @@
 "use client";
 
-import {useEffect, useRef, useState} from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {copyFor} from "./assessmentCopy";
 import {reportLanguageForRequest} from "./assessmentLocale";
 import {AssessmentApiError, scopeId, terminal, wait} from "./assessmentModel";
@@ -76,7 +82,7 @@ export type AssessmentRunController = {
   setClient: (value: string) => void;
   setProject: (value: string) => void;
   setAuthorized: (value: boolean) => void;
-  setHumanEvidence: (value: StrategicHumanEvidenceInput) => void;
+  setHumanEvidence: Dispatch<SetStateAction<StrategicHumanEvidenceInput>>;
   setEngagementFieldValue: (field: EngagementFieldKey, value: string) => void;
   setEngagementFieldState: (
     field: EngagementFieldKey,
