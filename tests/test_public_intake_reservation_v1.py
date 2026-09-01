@@ -107,6 +107,20 @@ def _snapshot(context: dict) -> dict:
     }
 
 
+def test_public_auto_access_is_normalized_to_anonymous_without_credentials() -> None:
+    prepared = routes._prepare_public_intake_reservation_payload(_payload())
+
+    assert prepared["requested_access_mode"] == "anonymous_public"
+
+
+def test_public_authenticated_access_remains_operator_only() -> None:
+    payload = _payload()
+    payload["provider_access_mode"] = "authenticated_read_only"
+
+    with pytest.raises(ValueError, match="provider_authenticated_access_operator_only"):
+        routes._prepare_public_intake_reservation_payload(payload)
+
+
 def test_concurrent_same_intake_performs_provider_acquisition_exactly_once(
     tmp_path: Path,
     monkeypatch,
