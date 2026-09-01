@@ -225,6 +225,7 @@ def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None
     assert 'assert exclusion_rationale.input_value() == ""' in helper
     assert 'exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)' in helper
     assert "page.wait_for_function(" in helper
+    assert "arg={" in helper
     assert 'root.querySelectorAll(\'label\')' in helper
     assert '"expectedValue": PROOF_EXCLUSION_RATIONALE' in helper
     assert "label?.querySelector('textarea')?.value" in helper
