@@ -435,6 +435,57 @@ def test_anonymous_required_source_uses_exact_git_when_api_tree_is_rate_limited(
     )
 
 
+def test_explicit_anonymous_collection_prefers_exact_git_before_api_quota_is_exhausted(
+    monkeypatch,
+) -> None:
+    context = _context()
+    context.update(
+        {
+            "provider_access_mode": "anonymous_public",
+            "provider_credential_used": False,
+        }
+    )
+    snapshot = _snapshot(context)
+    client = FakeSnapshotClient()
+    fallback_profile = {
+        "files": {"README.md": "# Exact public snapshot\n", "app.py": "value = 1\n"},
+        "tree_paths": ["README.md", "app.py"],
+        "root_items": ["README.md", "app.py"],
+        "unavailable": [],
+        "tree_sha": snapshot["tree_sha"],
+        "tree_truncated": False,
+        "tree_collection_succeeded": True,
+        "public_git_fallback_used": True,
+    }
+    observed: list[tuple[str, str, str]] = []
+
+    def public_profile(repository: str, commit_sha: str, tree_sha: str):
+        observed.append((repository, commit_sha, tree_sha))
+        return fallback_profile, ""
+
+    monkeypatch.setattr(
+        "nico.snapshot_repository_evidence._public_git_profile",
+        public_profile,
+    )
+
+    repository, _ = collect_snapshot_repository_evidence(
+        context,
+        snapshot,
+        client=client,
+    )
+
+    assert observed == [
+        (context["repository"], snapshot["commit_sha"], snapshot["tree_sha"])
+    ]
+    assert repository["required_source_evidence_complete"] is True
+    assert repository["required_source_acquisition"] == "credential_free_exact_sha_git"
+    assert repository["exact_source_locator_count"] == 2
+    assert any(
+        "credential-free exact-SHA Git" in note
+        for note in repository["provider_collection_limitations"]
+    )
+
+
 def test_explicit_anonymous_collection_ignores_configured_runtime_credential(
     monkeypatch,
 ) -> None:
