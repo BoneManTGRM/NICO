@@ -224,10 +224,10 @@ def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None
     assert 'wait_for(state="visible", timeout=30_000)' in helper
     assert 'assert exclusion_rationale.input_value() == ""' in helper
     assert 'exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)' in helper
-    assert (
-        "assert exclusion_rationale.input_value() == PROOF_EXCLUSION_RATIONALE"
-        in helper
-    )
+    assert "page.wait_for_function(" in helper
+    assert 'root.querySelectorAll(\'label\')' in helper
+    assert '"expectedValue": PROOF_EXCLUSION_RATIONALE' in helper
+    assert "label?.querySelector('textarea')?.value" in helper
     assert '"exclusion_rationale_supplied": True' in helper
     assert helper.index(
         "exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)"
