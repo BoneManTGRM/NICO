@@ -90,8 +90,12 @@ class Requests:
                 200,
                 dict(
                     run_id="comprun_visibility",
+                    commit_sha="a" * 40,
                     engagement_metadata=metadata,
-                    record=dict(engagement_metadata=metadata),
+                    record=dict(
+                        identity=dict(commit_sha="a" * 40),
+                        engagement_metadata=metadata,
+                    ),
                 ),
             ),
         ]
@@ -119,8 +123,36 @@ result = module["_fetch_and_verify_durable_engagement"](
 assert result["visibility_read_attempt_count"] == 3
 assert result["visibility_not_found_read_count"] == 1
 assert result["visibility_pending_read_count"] == 1
+assert result["snapshot_commit_sha"] == "a" * 40
 assert len(page.request.calls) == 3
 assert page.waits == [module["ENGAGEMENT_VISIBILITY_RETRY_MILLISECONDS"]] * 2
+
+drift = Page()
+drift.request.responses = [
+    Response(
+        200,
+        dict(
+            run_id="comprun_visibility",
+            commit_sha="a" * 40,
+            engagement_metadata=metadata,
+            record=dict(
+                identity=dict(commit_sha="b" * 40),
+                engagement_metadata=metadata,
+            ),
+        ),
+    )
+]
+try:
+    module["_fetch_and_verify_durable_engagement"](
+        drift,
+        frontend_origin="https://app.nicoaudit.com",
+        run_id="comprun_visibility",
+        boundary="unit_test_snapshot_drift",
+    )
+except AssertionError as exc:
+    assert "record_snapshot_commit_sha" in str(exc)
+else:
+    raise AssertionError("cross-projection snapshot drift was accepted")
 
 blocked = Page()
 blocked.request.responses = [Response(403)]
@@ -151,6 +183,21 @@ assert blocked.waits == []
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+def test_release_sha_and_assessed_snapshot_sha_remain_distinct() -> None:
+    source_path = ROOT / "scripts" / "spanish_comprehensive_live_acceptance_v3.py"
+    source = source_path.read_text(encoding="utf-8")
+    recovery = (
+        ROOT / "scripts" / "spanish_comprehensive_existing_run_recovery_v1.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'initial_engagement["snapshot_commit_sha"]' in source
+    assert 'expected_commit_sha=initial_engagement["snapshot_commit_sha"]' in source
+    assert 'snapshot_commit_sha = initial_view["commit_sha"]' in recovery
+    assert '"expected_sha": release_sha' in recovery
+    assert '"assessed_commit_sha": snapshot_commit_sha' in recovery
+    assert "expected_commit_sha=snapshot_commit_sha" in recovery
 
 
 def test_exclusion_probe_verifies_rendered_view_after_field_unmounting() -> None:

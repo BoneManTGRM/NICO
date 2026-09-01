@@ -47,6 +47,7 @@ CANONICAL_JSON_CONNECT_TIMEOUT_SECONDS = 300.0
 CANONICAL_JSON_READ_TIMEOUT_SECONDS = 300.0
 ENGAGEMENT_VISIBILITY_TIMEOUT_SECONDS = 180.0
 ENGAGEMENT_VISIBILITY_RETRY_MILLISECONDS = 250
+GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 PROOF_CLIENT_NAME = "Cody Jenkins"
 PROOF_PROJECT_NAME = "NICO Audit"
@@ -430,6 +431,22 @@ def _fetch_and_verify_durable_engagement(
         boundary=f"{boundary}:top_level",
     )
     record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    snapshot_commit_sha = str(payload.get("commit_sha") or "").strip().lower()
+    assert GIT_SHA_PATTERN.fullmatch(snapshot_commit_sha), {
+        "boundary": boundary,
+        "invalid_snapshot_commit_sha": snapshot_commit_sha,
+    }
+    record_identity = (
+        record.get("identity") if isinstance(record.get("identity"), dict) else {}
+    )
+    record_commit_sha = str(
+        record_identity.get("commit_sha") or record.get("commit_sha") or ""
+    ).strip().lower()
+    assert record_commit_sha == snapshot_commit_sha, {
+        "boundary": boundary,
+        "top_level_snapshot_commit_sha": snapshot_commit_sha,
+        "record_snapshot_commit_sha": record_commit_sha,
+    }
     record_value = _assert_engagement_metadata(
         record.get("engagement_metadata"),
         boundary=f"{boundary}:record",
@@ -442,6 +459,7 @@ def _fetch_and_verify_durable_engagement(
     }
     return {
         **top_level,
+        "snapshot_commit_sha": snapshot_commit_sha,
         "excluded_field_states_verified": _exclusion_fixture(),
         "visibility_read_attempt_count": attempts,
         "visibility_not_found_read_count": not_found_reads,
@@ -614,6 +632,7 @@ def _verify_localized_spanish_terminal_artifacts(
     *,
     frontend_origin: str,
     run_id: str,
+    expected_commit_sha: str,
 ) -> dict[str, Any]:
     """Verify one exact run across canonical truth and both client PDF locales."""
 
@@ -632,6 +651,7 @@ def _verify_localized_spanish_terminal_artifacts(
     payload = status.json()
     reports = payload.get("reports") if isinstance(payload.get("reports"), dict) else {}
     assert payload.get("run_id") == run_id
+    assert str(payload.get("commit_sha") or "").lower() == expected_commit_sha
     assert payload.get("terminal") is True
     pending_human_review = _assert_pending_human_review_state(
         payload,
@@ -668,6 +688,7 @@ def _verify_localized_spanish_terminal_artifacts(
     )
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
     assert str(identity.get("run_id") or "") == run_id
+    assert str(identity.get("commit_sha") or "").lower() == expected_commit_sha
     assert str(identity.get("customer_name") or identity.get("client_name") or "") == PROOF_CLIENT_NAME
     assert str(identity.get("project_name") or "") == PROOF_PROJECT_NAME
 
@@ -723,6 +744,7 @@ def _verify_localized_spanish_terminal_artifacts(
     )
     status_after_payload = status_after.json()
     assert isinstance(status_after_payload, dict)
+    assert str(status_after_payload.get("commit_sha") or "").lower() == expected_commit_sha
     _assert_excluded_field_states(
         status_after_payload,
         boundary="terminal_status_after_localized_reads",
@@ -789,6 +811,8 @@ def _verify_localized_spanish_terminal_artifacts(
             for item in (spanish_pdf, english_pdf)
         ),
         "same_run_bilingual_pdf_verified": True,
+        "assessed_commit_sha": expected_commit_sha,
+        "assessed_commit_identity_verified": True,
         "same_run_bilingual_assessment_rerun": False,
         "canonical_truth_sha256": canonical_truth_sha256,
         "canonical_truth_unchanged_after_localized_rendering": True,
@@ -966,7 +990,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
         terminal = base.recovery._wait_for_terminal_ui_ready(
             page,
             run_id,
-            args.expected_sha,
+            initial_engagement["snapshot_commit_sha"],
             240.0,
         )
         assert terminal.get("phase") == SPANISH_TERMINAL_PHASE, terminal
@@ -978,6 +1002,7 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
             page,
             frontend_origin=origin,
             run_id=run_id,
+            expected_commit_sha=initial_engagement["snapshot_commit_sha"],
         )
         screenshot_path = args.output.with_suffix(".png")
         screenshot_error = ""
