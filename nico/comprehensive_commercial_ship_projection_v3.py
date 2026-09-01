@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import io
 import re
 from functools import wraps
@@ -15,7 +16,7 @@ from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.8"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.9"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -149,6 +150,289 @@ def _bind_final_pdf_layout() -> dict[str, Any]:
     return layout
 
 
+def _repository_delivery_stage(
+    canonical: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Return the retained provider-access stage without changing canonical truth."""
+
+    assessment = (
+        canonical.get("assessment")
+        if isinstance(canonical.get("assessment"), Mapping)
+        else {}
+    )
+    candidates = canonical.get("stage_summaries")
+    if not isinstance(candidates, list):
+        candidates = assessment.get("stage_summaries")
+    for stage in candidates or []:
+        if not isinstance(stage, Mapping):
+            continue
+        stage_id = str(stage.get("stage_id") or "").strip()
+        title = " ".join(str(stage.get("title") or "").split()).casefold()
+        if stage_id == "repository_and_delivery_evidence" or title in {
+            "repository and delivery evidence",
+            "evidencia del repositorio y de entrega",
+        }:
+            return stage
+    return None
+
+
+def _render_repository_delivery_supplement(
+    canonical: Mapping[str, Any],
+    stage: Mapping[str, Any],
+    *,
+    spanish: bool,
+) -> bytes:
+    """Render the complete retained provider contract when compact assembly omitted it."""
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+    if spanish:
+        from nico.comprehensive_spanish_canonical_report_v87 import (
+            _translate_presentation_field,
+        )
+
+        def localized(value: Any, key: str) -> str:
+            return str(_translate_presentation_field(str(value or ""), key))
+
+    else:
+
+        def localized(value: Any, key: str) -> str:
+            del key
+            return str(value or "")
+
+    title = (
+        "Evidencia del repositorio y de entrega"
+        if spanish
+        else "Repository and Delivery Evidence"
+    )
+    boundary = (
+        "BORRADOR AUTOMATIZADO | APROBACIÓN HUMANA PENDIENTE | ENTREGA AL CLIENTE BLOQUEADA"
+        if spanish
+        else "AUTOMATED DRAFT | PENDING HUMAN APPROVAL | CLIENT DELIVERY BLOCKED"
+    )
+    status = localized(stage.get("status") or "complete", "status").upper()
+    summary = localized(stage.get("summary") or "", "summary")
+    evidence = [
+        localized(item, "evidence")
+        for item in stage.get("evidence") or []
+        if str(item or "").strip()
+    ]
+    limitations = [
+        localized(item, "unavailable")
+        for field in ("unavailable", "limitations")
+        for item in stage.get(field) or []
+        if str(item or "").strip()
+    ]
+
+    buffer = io.BytesIO()
+    styles = getSampleStyleSheet()
+    heading = ParagraphStyle(
+        "NICOProviderEvidenceHeading",
+        parent=styles["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=17,
+        leading=20,
+        textColor=colors.HexColor("#0f172a"),
+        spaceAfter=7,
+        keepWithNext=True,
+    )
+    subheading = ParagraphStyle(
+        "NICOProviderEvidenceSubheading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=12,
+        textColor=colors.HexColor("#075985"),
+        spaceBefore=5,
+        spaceAfter=3,
+        keepWithNext=True,
+    )
+    body = ParagraphStyle(
+        "NICOProviderEvidenceBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=7.2,
+        leading=8.8,
+        textColor=colors.HexColor("#334155"),
+        spaceAfter=2,
+    )
+    bullet = ParagraphStyle(
+        "NICOProviderEvidenceBullet",
+        parent=body,
+        leftIndent=10,
+        firstLineIndent=-7,
+    )
+    warning = ParagraphStyle(
+        "NICOProviderEvidenceBoundary",
+        parent=body,
+        fontName="Helvetica-Bold",
+        textColor=colors.HexColor("#92400e"),
+        backColor=colors.HexColor("#fef3c7"),
+        borderColor=colors.HexColor("#f59e0b"),
+        borderWidth=0.6,
+        borderPadding=5,
+        spaceAfter=5,
+    )
+
+    def paragraph(value: Any, style: ParagraphStyle) -> Paragraph:
+        return Paragraph(html.escape(str(value or "")), style)
+
+    def footer(canvas: Any, document: Any) -> None:
+        identity = (
+            canonical.get("identity")
+            if isinstance(canonical.get("identity"), Mapping)
+            else {}
+        )
+        canvas.saveState()
+        canvas.setFont("Helvetica", 6.8)
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.drawString(
+            0.45 * inch,
+            0.30 * inch,
+            (
+                "NICO | evidencia de acceso del proveedor | borrador automatizado"
+                if spanish
+                else "NICO | provider-access evidence | automated draft"
+            ),
+        )
+        canvas.drawRightString(
+            8.05 * inch,
+            0.30 * inch,
+            f"{str(identity.get('run_id') or '')} · {document.page}",
+        )
+        canvas.restoreState()
+
+    story: list[Any] = [
+        paragraph(title, heading),
+        paragraph(boundary, warning),
+        paragraph(f"{status} · {summary}" if summary else status, body),
+        paragraph("Evidencia conservada" if spanish else "Retained Evidence", subheading),
+    ]
+    story.extend(paragraph(f"- {item}", bullet) for item in evidence)
+    if limitations:
+        story.extend(
+            (
+                Spacer(1, 0.04 * inch),
+                paragraph(
+                    "Limitaciones de evidencia" if spanish else "Evidence Limitations",
+                    subheading,
+                ),
+            )
+        )
+        story.extend(paragraph(f"- {item}", bullet) for item in limitations)
+
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=0.45 * inch,
+        rightMargin=0.45 * inch,
+        topMargin=0.42 * inch,
+        bottomMargin=0.48 * inch,
+        invariant=1,
+        title="NICO Repository and Delivery Evidence",
+        author="NICO",
+    )
+    document.build(story, onFirstPage=footer, onLaterPages=footer)
+    rendered = buffer.getvalue()
+
+    extracted = " ".join(
+        " ".join((page.extract_text() or "").split())
+        for page in PdfReader(io.BytesIO(rendered)).pages
+    ).casefold()
+    required = [title, summary, *evidence, *limitations]
+    missing = [
+        item
+        for item in required
+        if item and " ".join(str(item).split()).casefold() not in extracted
+    ]
+    if missing:
+        raise ValueError(
+            "repository delivery evidence recovery omitted retained presentation text"
+        )
+    return rendered
+
+
+def _ensure_repository_delivery_section(
+    pdf_bytes: bytes,
+    canonical: Mapping[str, Any],
+) -> tuple[bytes, bool]:
+    """Recover one missing provider section from the same immutable canonical run."""
+
+    from pypdf import PdfWriter
+    from nico import comprehensive_semantic_navigation_v1 as semantic
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    source_pages = semantic._remove_existing_toc(reader)
+    source_buffer = io.BytesIO()
+    source_writer = PdfWriter()
+    for page in source_pages:
+        source_writer.add_page(page)
+    source_writer.write(source_buffer)
+    source_reader = PdfReader(io.BytesIO(source_buffer.getvalue()))
+    records, spanish = semantic.semantic_entry_records(source_reader)
+    if any(
+        str(record.get("section_id") or "") == "repository_delivery_evidence"
+        for record in records
+    ):
+        return pdf_bytes, False
+
+    stage = _repository_delivery_stage(canonical)
+    if stage is None:
+        return pdf_bytes, False
+    supplement = PdfReader(
+        io.BytesIO(
+            _render_repository_delivery_supplement(
+                canonical,
+                stage,
+                spanish=spanish,
+            )
+        )
+    )
+    record_by_id = {
+        str(record.get("section_id") or ""): int(record["source_page_index"])
+        for record in records
+    }
+    insert_at = next(
+        (
+            record_by_id[section_id]
+            for section_id in (
+                "evidence_reconciliation_scoring",
+                "executive_risk_register_decision_briefing",
+                "authorization_scope",
+                "human_review_acceptance_gate",
+            )
+            if section_id in record_by_id
+        ),
+        len(source_reader.pages),
+    )
+
+    writer = PdfWriter()
+    for index, page in enumerate(source_reader.pages):
+        if index == insert_at:
+            for supplement_page in supplement.pages:
+                writer.add_page(supplement_page)
+        writer.add_page(page)
+    if insert_at >= len(source_reader.pages):
+        for supplement_page in supplement.pages:
+            writer.add_page(supplement_page)
+    output = io.BytesIO()
+    writer.write(output)
+    recovered = output.getvalue()
+    recovered_records, _ = semantic.semantic_entry_records(
+        PdfReader(io.BytesIO(recovered))
+    )
+    if not any(
+        str(record.get("section_id") or "") == "repository_delivery_evidence"
+        for record in recovered_records
+    ):
+        raise ValueError("repository delivery evidence recovery was not navigable")
+    return recovered, True
+
+
 def _finalize_artifact_navigation(
     artifacts: Mapping[str, Any],
     canonical: Mapping[str, Any],
@@ -171,7 +455,11 @@ def _finalize_artifact_navigation(
     # this process before rebuilding navigation, then restore the four-phase matrix and
     # bookmarks that lived on the removed stale TOC page.
     _bind_final_pdf_layout()
-    navigated = semantic_renumber_and_outline(pdf_bytes)
+    recovered, repository_section_recovered = _ensure_repository_delivery_section(
+        pdf_bytes,
+        canonical,
+    )
+    navigated = semantic_renumber_and_outline(recovered)
     finalized = apply_four_phase_pdf(navigated, canonical)
     final_pages = len(PdfReader(io.BytesIO(finalized)).pages)
     output["pdf_base64"] = base64.b64encode(finalized).decode("ascii")
@@ -180,6 +468,9 @@ def _finalize_artifact_navigation(
     output["pdf_page_count_scope"] = "client_facing_same_run_projection"
     pagination = dict(output.get("pagination_compaction") or {})
     pagination["final_navigation_rebuilt_after_compaction"] = True
+    pagination["repository_delivery_section_recovered"] = (
+        repository_section_recovered
+    )
     pagination["final_pages"] = final_pages
     output["pagination_compaction"] = pagination
     return output
@@ -323,12 +614,40 @@ def _source_pdf_requires_integrity_reprojection(
     manifest_integrity_mismatch = manifest_digests_valid and any(
         digest not in visible_text for digest in visible_digests.values()
     )
+    from nico.comprehensive_report_semantic_manifest_v1 import (
+        CANONICAL_TOC_SECTIONS,
+    )
+
+    toc_pages = [
+        text
+        for text in page_texts
+        if any(
+            marker in text
+            for marker in ("Table of Contents", "Tabla de contenido", "Índice")
+        )
+    ]
+    expected_titles = [
+        str(
+            section[
+                "title_es"
+                if str(report_language or "").casefold() in {"es-mx", "es_mx"}
+                else "title_en"
+            ]
+        )
+        for section in CANONICAL_TOC_SECTIONS
+    ]
+    normalized_toc = " ".join(" ".join(toc_pages).split()).casefold()
+    canonical_toc_incomplete = not toc_pages or any(
+        " ".join(title.split()).casefold() not in normalized_toc
+        for title in expected_titles
+    )
     return (
         footer_only_spill
         or manifest_integrity_mismatch
         or scanner_applicability_mismatch
         or legacy_provider_copy
         or zero_candidate_register_missing
+        or canonical_toc_incomplete
     )
 
 
@@ -346,6 +665,8 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             "localized_sparse_stage_reflow_supported": True,
             "final_pdf_layout_bound_before_render": True,
             "pending_legacy_manifest_integrity_reprojection": True,
+            "canonical_toc_integrity_reprojection": True,
+            "repository_delivery_section_recovery": True,
             "zero_candidate_register_projection_bound": True,
             "canonical_truth_mutated": False,
             "assessment_rerun": False,
@@ -539,6 +860,8 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         "sparse_stage_reflow_before_final_navigation": True,
         "localized_sparse_stage_reflow_supported": True,
         "pending_legacy_manifest_integrity_reprojection": True,
+        "canonical_toc_integrity_reprojection": True,
+        "repository_delivery_section_recovery": True,
         "zero_candidate_register_projection_bound": True,
         "toc_page_labels_and_bookmarks_rebuilt_after_compaction": True,
         "final_assembled_source_pdf_preserved": True,
@@ -557,6 +880,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
 
 __all__ = [
     "VERSION",
+    "_ensure_repository_delivery_section",
     "compact_sparse_limitation_pages",
     "install_comprehensive_commercial_ship_projection_v3",
     "project_canonical_for_client_presentation",
