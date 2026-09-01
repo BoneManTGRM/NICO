@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,3 +59,13 @@ def test_composite_assurance_state_has_deliberate_es_mx_label() -> None:
     assert 'value.includes("human_review_required")' in status
     assert "Fuerte provisional — Revisión humana obligatoria" in status
     assert "Provisional Strong — Human Review Required" in status
+
+
+def test_material_finding_priority_constraint_is_fully_localized() -> None:
+    translated = _translate_presentation(
+        "4 verified material finding(s) require disposition."
+    )
+
+    assert translated == "4 hallazgos materiales verificados requieren disposición."
+    assert "finding(s)" not in translated
+    assert "require disposition" not in translated
