@@ -209,6 +209,35 @@ def test_scorecard_control_cells_do_not_steal_semantic_navigation_targets() -> N
     assert by_id["dependency_library_ecosystem"]["source_page_index"] == 2
 
 
+def test_shared_risk_surface_retains_both_canonical_navigation_identities() -> None:
+    from nico.comprehensive_semantic_navigation_v1 import semantic_entry_records
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(48, 744, "NICO Comprehensive | AUTOMATED DRAFT")
+    pdf.showPage()
+    pdf.drawString(48, 744, "Risk Reduction and Executive Briefing")
+    pdf.drawString(48, 720, "Core executive risk evidence remains review-gated.")
+    pdf.showPage()
+    pdf.drawString(48, 744, "6. Risk Reduction and Executive Briefing")
+    pdf.drawString(48, 720, "AUTOMATED DRAFT | HUMAN DECISION PENDING")
+    pdf.showPage()
+    pdf.save()
+
+    records, spanish = semantic_entry_records(
+        PdfReader(io.BytesIO(buffer.getvalue()))
+    )
+    by_id = {record["section_id"]: record for record in records}
+
+    assert spanish is False
+    assert by_id["executive_risk_register_decision_briefing"][
+        "source_page_index"
+    ] == 1
+    assert by_id["risk_reduction_executive_briefing"][
+        "source_page_index"
+    ] == 2
+
+
 def test_spanish_scorecard_cells_and_wrapped_final_heading_keep_real_toc_targets() -> None:
     from nico.comprehensive_semantic_navigation_v1 import (
         semantic_entry_records,
@@ -261,12 +290,16 @@ def test_spanish_scorecard_cells_and_wrapped_final_heading_keep_real_toc_targets
     assert toc_lines[toc_lines.index(approval_title) + 1] == "5"
 
 
-def test_spanish_semantic_toc_paginates_above_the_four_phase_matrix() -> None:
+def test_spanish_semantic_toc_keeps_35_rows_above_the_four_phase_matrix() -> None:
     from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
+    from nico.comprehensive_pdf_layout_polish_v1 import (
+        install_comprehensive_pdf_layout_polish_v1,
+    )
     from nico.comprehensive_semantic_navigation_v1 import (
         semantic_renumber_and_outline,
     )
 
+    install_comprehensive_pdf_layout_polish_v1()
     navigated = semantic_renumber_and_outline(_semantic_fixture(spanish=True))
     rendered = apply_four_phase_pdf(
         navigated,
@@ -285,9 +318,9 @@ def test_spanish_semantic_toc_paginates_above_the_four_phase_matrix() -> None:
         if "Tabla de contenido" in (page.extract_text() or "")
     ]
 
-    assert len(toc_pages) == 2
+    assert len(toc_pages) == 1
     assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in toc_pages[0]
     assert (
         "Registro de revisión humana y aprobación de artefactos exactos"
-        in toc_pages[1]
+        in toc_pages[0]
     )

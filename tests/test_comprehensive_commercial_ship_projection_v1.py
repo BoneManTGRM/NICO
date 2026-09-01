@@ -10,6 +10,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico.comprehensive_commercial_ship_projection_v3 import (
+    _finalize_artifact_navigation,
     _source_pdf_requires_integrity_reprojection,
     compact_sparse_limitation_pages,
     project_canonical_for_client_presentation,
@@ -107,6 +108,146 @@ def test_projection_changes_only_client_presentation_truth() -> None:
     assert "unresolved=4" in rendered
     assert "Non-success deployments: 6" not in rendered
     assert "Non-success deployment classification: 2" not in rendered
+
+
+def test_final_navigation_is_rebuilt_after_shared_page_compaction() -> None:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(48, 744, "NICO Comprehensive | AUTOMATED DRAFT")
+    pdf.showPage()
+    pdf.drawString(48, 744, "Table of Contents")
+    pdf.drawString(48, 710, "Code Audit")
+    pdf.showPage()
+    pdf.drawString(48, 744, "Code Audit")
+    pdf.drawString(48, 710, "Dependency / Library Ecosystem")
+    pdf.drawString(48, 676, "Secrets Exposure Review")
+    pdf.showPage()
+    pdf.save()
+    source = buffer.getvalue()
+
+    finalized = _finalize_artifact_navigation(
+        {"pdf_base64": base64.b64encode(source).decode("ascii")},
+        {},
+    )
+    rendered = base64.b64decode(finalized["pdf_base64"])
+    reader = PdfReader(io.BytesIO(rendered))
+    toc = reader.pages[1].extract_text() or ""
+
+    assert toc.count("Table of Contents") == 1
+    assert "Code Audit" in toc
+    assert "Dependency / Library Ecosystem" in toc
+    assert "Secrets Exposure Review" in toc
+    assert "FOUR-PHASE ASSESSMENT PROGRAM" in toc
+    assert finalized["pagination_compaction"][
+        "final_navigation_rebuilt_after_compaction"
+    ] is True
+
+
+def test_same_run_route_binds_final_navigation_at_actual_render_target() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "nico"
+        / "comprehensive_commercial_ship_projection_v3.py"
+    ).read_text(encoding="utf-8")
+
+    assert "current_render_target = locale_report._render_target" in source
+    assert "locale_report._render_target = localized_render_target" in source
+    assert "return _finalize_artifact_navigation(artifacts, navigation_truth)" in source
+
+
+def test_final_navigation_replaces_spanish_indice_and_keeps_35_rows_on_one_page() -> None:
+    from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(48, 744, "NICO Comprehensive | BORRADOR AUTOMATIZADO")
+    pdf.showPage()
+    pdf.drawString(48, 744, "Índice")
+    pdf.drawString(48, 710, "Evaluación Técnica Integral")
+    pdf.showPage()
+    chunks: list[list[dict]] = []
+    current: list[dict] = []
+    for section in CANONICAL_TOC_SECTIONS:
+        if section["section_id"] == "canonical_technical_scorecard":
+            if current:
+                chunks.append(current)
+                current = []
+            chunks.append([section])
+            continue
+        current.append(section)
+        if len(current) == 6:
+            chunks.append(current)
+            current = []
+    if current:
+        chunks.append(current)
+
+    for chunk in chunks:
+        y = 744
+        pdf.drawString(48, y, "NICO Comprehensive | BORRADOR AUTOMATIZADO")
+        y -= 28
+        for section in chunk:
+            pdf.drawString(48, y, section["title_es"])
+            y -= 38
+        pdf.showPage()
+    pdf.save()
+
+    finalized = _finalize_artifact_navigation(
+        {"pdf_base64": base64.b64encode(buffer.getvalue()).decode("ascii")},
+        {"identity": {"report_language": "es-MX"}},
+    )
+    reader = PdfReader(io.BytesIO(base64.b64decode(finalized["pdf_base64"])))
+    toc = reader.pages[1].extract_text() or ""
+    next_page = reader.pages[2].extract_text() or ""
+
+    assert len(CANONICAL_TOC_SECTIONS) == 35
+    assert "Tabla de contenido" in toc
+    assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in toc
+    assert not any(
+        line.strip() == "Índice"
+        for page in reader.pages
+        for line in (page.extract_text() or "").splitlines()
+    )
+    assert "Tabla de contenido" not in next_page
+    for section in CANONICAL_TOC_SECTIONS:
+        assert section["title_es"] in toc
+
+
+def test_provider_access_truth_is_not_limited_to_generic_ten_line_preview() -> None:
+    from nico.comprehensive_report_package import _pdf
+
+    snapshot = "assessment_snapshot_id: snapshot_provider_preview_contract"
+    evidence = [f"provider access evidence line {index}" for index in range(29)]
+    evidence[20] = snapshot
+    encoded, error, _page_count = _pdf(
+        {
+            "run_id": "comprun_provider_preview_contract",
+            "repository": "example/public-repository",
+            "commit_sha": "a" * 40,
+            "evidence_ledger_id": "ledger_provider_preview_contract",
+        },
+        {},
+        [
+            {
+                "stage_id": "repository_and_delivery_evidence",
+                "title": "Repository and Delivery Evidence",
+                "status": "complete",
+                "summary": "Frozen public-provider access truth.",
+                "evidence": evidence,
+                "findings": [],
+                "unavailable": [],
+            }
+        ],
+        "2026-09-01T00:00:00Z",
+    )
+
+    assert error is None
+    assert encoded
+    text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(base64.b64decode(encoded))).pages
+    )
+    # Once in the client-facing decision body and once in the full evidence appendix.
+    assert text.count(snapshot) == 2
 
 
 def test_deployment_projection_does_not_guess_failure_split() -> None:
@@ -289,6 +430,74 @@ def test_pending_frozen_source_with_footer_only_spill_is_reprojected() -> None:
                     for kind, digest in digests.items()
                 ]
             },
+        },
+    }
+
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is True
+
+
+def test_pending_frozen_source_with_stale_scanner_denominator_is_reprojected() -> None:
+    node_failures = {
+        "npm-audit": "No package-lock.json with an adjacent package.json was found.",
+        "eslint": "No supported JavaScript or TypeScript source files were found in apps/web/app.",
+        "typescript": "Project dependencies were not prepared.",
+    }
+    tools = (
+        "pip-audit",
+        "npm-audit",
+        "osv-scanner",
+        "bandit",
+        "semgrep",
+        "eslint",
+        "typescript",
+        "gitleaks",
+        "trufflehog",
+    )
+    records = [
+        {
+            "scanner_name": name,
+            "status": (
+                "unavailable"
+                if name == "typescript"
+                else "failed" if name in node_failures else "completed"
+            ),
+            "state": (
+                "unavailable"
+                if name == "typescript"
+                else "failed" if name in node_failures else "completed"
+            ),
+            "completed": name not in node_failures,
+            "verified": name not in node_failures,
+            "exact_commit_match": True,
+            "artifact_hash": "" if name in node_failures else "a" * 64,
+            "failure_reason": node_failures.get(name, ""),
+            "findings": [],
+        }
+        for name in tools
+    ]
+    canonical = {
+        "identity": {"commit_sha": "a" * 40},
+        "repository_evidence": {
+            "file_evidence": {"sampled_paths": ["requirements.txt", "app.py"]}
+        },
+        "assessment": {"technical_score": 76},
+        "requested_scanner_records": deepcopy(records),
+        "scanner_execution_records": deepcopy(records),
+    }
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(54, 720, "6 of 9 applicable scanner executions completed")
+    pdf.save()
+    status = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "reports": {
+            "json": canonical,
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
+            "markdown": "6 of 9 applicable scanner executions completed",
+            "html": "<p>6 of 9 applicable scanner executions completed</p>",
         },
     }
 

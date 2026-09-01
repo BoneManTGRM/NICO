@@ -96,3 +96,28 @@ def test_current_spanish_client_headings_prevent_internal_page_drop() -> None:
         assert _drop_internal_page(
             f"{heading}\nartifact_schema\nsnapshot."
         ) is False
+
+
+def test_spanish_compact_decision_page_with_immutable_snapshot_is_retained() -> None:
+    assert _drop_internal_page(
+        "\n".join(
+            (
+                "Dependencias, seguridad y análisis estático · COMPLETO",
+                "Evidencia conservada para la revisión humana.",
+                "Conciliación y puntuación de evidencia · COMPLETO",
+                "Instantánea inmutable del repositorio · COMPLETO",
+            )
+        )
+    ) is False
+
+
+def test_spanish_internal_immutable_snapshot_appendix_stage_is_dropped() -> None:
+    assert _drop_internal_page(
+        "\n".join(
+            (
+                "Instantánea inmutable del repositorio",
+                "ID de etapa: immutable_repository_snapshot · Estado: COMPLETO",
+                "Evidencia conservada",
+            )
+        )
+    ) is True

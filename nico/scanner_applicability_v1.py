@@ -152,7 +152,14 @@ def _explicitly_not_applicable(
     has_node_project = bool(signals.get("node_manifest") or signals.get("node_source"))
 
     if scanner == "npm-audit":
-        missing_lock = "package-lock.json not found" in lowered or "no javascript lockfile" in lowered
+        missing_lock = any(
+            marker in lowered
+            for marker in (
+                "package-lock.json not found",
+                "no javascript lockfile",
+                "no package-lock.json with an adjacent package.json was found",
+            )
+        )
         if missing_lock and not has_node_project:
             return True, (
                 "No supported JavaScript package manifest, lockfile, or source tree exists at the assessed commit; "
@@ -168,6 +175,7 @@ def _explicitly_not_applicable(
                 "no eslint configuration or lint script",
                 "eslint configuration or lint script was found",
                 "eslint was not installed by the exact package-lock",
+                "no supported javascript or typescript source files were found",
                 "project dependencies were not prepared",
             )
         )
@@ -214,7 +222,19 @@ def _normalize_record(
     )
     inferred, inferred_reason = _explicitly_not_applicable(scanner, reason, signals)
     if already_not_applicable or (
-        state in {"unavailable", "missing", "not_installed", "not_available"} and inferred
+        state
+        in {
+            "unavailable",
+            "missing",
+            "not_installed",
+            "not_available",
+            # Older frozen reports projected explicit technology-mismatch
+            # unavailability into ``failed`` before retaining the exact reason.
+            # The repository-signal guard above keeps real Node-project failures
+            # applicable and fail-closed.
+            "failed",
+        }
+        and inferred
     ):
         record.update(
             {

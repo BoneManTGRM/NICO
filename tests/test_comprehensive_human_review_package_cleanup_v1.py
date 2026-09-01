@@ -149,6 +149,44 @@ def test_scanner_execution_and_candidate_disposition_are_separate() -> None:
     assert "retained finding count" not in combined.casefold()
 
 
+def test_scanner_stage_surfaces_explicit_not_applicable_tools_without_credit() -> None:
+    canonical = {
+        "scanner_execution_records": [
+            {
+                "scanner_name": "pip-audit",
+                "state": "completed",
+                "completed": True,
+                "exact_commit_match": True,
+                "artifact_hash": "a" * 64,
+                "findings": [],
+            }
+        ],
+        "not_applicable_scanner_records": [
+            {
+                "scanner_name": "npm-audit",
+                "state": "not_applicable",
+                "completed": False,
+                "applicable": False,
+                "applicability_reason": (
+                    "No JavaScript package manifest exists at the assessed commit."
+                ),
+            }
+        ],
+        "review_candidate_summary": {
+            "raw_total": 0,
+            "review_required_total": 0,
+            "verified_material_total": 0,
+        },
+    }
+
+    stage = build_scanner_execution_stage(canonical, _Renderer)
+    combined = "\n".join(stage["evidence"])
+
+    assert "1 of 1 applicable scanner executions completed" in stage["summary"]
+    assert "npm-audit: not applicable" in combined
+    assert "No JavaScript package manifest exists" in combined
+
+
 def test_operational_populations_render_separately_without_blank_values() -> None:
     canonical = {
         "ci_operational_context": {

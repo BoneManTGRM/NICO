@@ -267,3 +267,89 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     assert result["report_finality"] == "automated_draft"
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
+
+
+def test_python_only_live_manifest_renders_six_of_six_applicable_scanners() -> None:
+    package = _package()
+    canonical = package["json"]
+    canonical["repository_evidence"] = {
+        "file_evidence": {"sampled_paths": ["requirements.txt", "app.py", "src/service.py"]},
+        "dependency_evidence": {"manifest_paths": ["requirements.txt"]},
+    }
+    canonical["canonical_findings"][0].update(
+        {
+            "title": "service function has concentrated branching and elevated change risk",
+            "location": "src/service.py:27",
+        }
+    )
+    canonical["complexity_evidence"]["hotspots"][0].update(
+        {
+            "path": "src/service.py",
+            "line": 27,
+            "name": "process_request",
+            "source_excerpt": "def process_request(payload): return payload",
+        }
+    )
+    reasons = {
+        "npm-audit": "No package-lock.json with an adjacent package.json was found.",
+        "eslint": "No supported JavaScript or TypeScript source files were found in apps/web/app.",
+        "typescript": "Project dependencies were not prepared.",
+    }
+    tools = [
+        "pip-audit",
+        "npm-audit",
+        "osv-scanner",
+        "bandit",
+        "semgrep",
+        "eslint",
+        "typescript",
+        "gitleaks",
+        "trufflehog",
+    ]
+    records = []
+    for scanner in tools:
+        completed = scanner not in reasons
+        records.append(
+            {
+                "scanner_name": scanner,
+                "state": "completed" if completed else "failed",
+                "status": "completed" if completed else "failed",
+                "completed": completed,
+                "verified": completed,
+                "verified_complete": completed,
+                "exact_commit_match": True,
+                "artifact_hash": scanner.replace("-", "") * 8 if completed else "",
+                "failure_reason": reasons.get(scanner, ""),
+                "findings": [],
+            }
+        )
+    canonical["scanner_execution_records"] = records
+    canonical["live_scanner_evidence"] = {
+        "tools_requested": tools,
+        "tools_run": [scanner for scanner in tools if scanner not in reasons],
+        "failed_tools": [],
+        "unavailable_tools": list(reasons),
+        "timed_out_tools": [],
+    }
+
+    result = finalize_client_report_package(package)
+    finalized = result["json"]
+    extracted = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(base64.b64decode(result["pdf_base64"]))).pages
+    )
+
+    assert finalized["analyzer_execution_coverage"] == 100
+    assert finalized["completed_applicable_analyzers"] == 6
+    assert finalized["incomplete_applicable_analyzers"] == 0
+    assert len(finalized["scanner_execution_records"]) == 6
+    assert len(finalized["not_applicable_scanner_records"]) == 3
+    assert "6 of 6 applicable scanner executions completed" in extracted
+    assert "6 of 9 applicable scanner executions completed" not in extracted
+    assert "Incomplete applicable analyzers: npm-audit" not in extracted
+    assert {
+        item["scanner_name"]
+        for item in finalized["not_applicable_scanner_records"]
+    } == set(reasons)
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False

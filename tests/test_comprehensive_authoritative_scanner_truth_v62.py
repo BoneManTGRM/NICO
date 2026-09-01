@@ -122,6 +122,87 @@ def test_live_manifest_and_exact_records_produce_honest_full_coverage() -> None:
     assert contract["maturity_label"] == "Exceptional"
 
 
+def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator() -> None:
+    records = [_record(name) for name in TOOLS[:]]
+    reasons = {
+        "npm-audit": "No package-lock.json with an adjacent package.json was found.",
+        "eslint": "No supported JavaScript or TypeScript source files were found in apps/web/app.",
+        "typescript": "Project dependencies were not prepared.",
+    }
+    for record in records:
+        name = record["scanner_name"]
+        if name in reasons:
+            record.update(
+                {
+                    "status": "unavailable",
+                    "state": "unavailable",
+                    "completed": False,
+                    "verified": False,
+                    "verified_for_this_report": False,
+                    "failure_reason": reasons[name],
+                }
+            )
+
+    canonical = {
+        "identity": {"commit_sha": "a" * 40},
+        "repository_evidence": {
+            "file_evidence": {
+                "sampled_paths": ["requirements.txt", "app.py", "src/service.py"]
+            },
+            "dependency_evidence": {"manifest_paths": ["requirements.txt"]},
+        },
+        "assessment": {
+            "technical_score": 76,
+            "sections": [
+                {
+                    "id": "dependency_library_ecosystem",
+                    "unavailable": [
+                        "Incomplete applicable analyzers: npm-audit."
+                    ],
+                },
+                {
+                    "id": "static_analysis",
+                    "unavailable": [
+                        "Incomplete applicable analyzers: eslint, typescript."
+                    ],
+                },
+            ],
+        },
+        "requested_scanner_records": records,
+        "scanner_execution_records": [
+            record for record in records if record["scanner_name"] not in reasons
+        ],
+        "live_scanner_evidence": {
+            "tools_requested": TOOLS,
+            "tools_run": [name for name in TOOLS if name not in reasons],
+            "failed_tools": [],
+            "unavailable_tools": list(reasons),
+            "timed_out_tools": [],
+        },
+    }
+
+    result = reconcile_authoritative_scanner_truth(canonical)
+    contract = result["client_readiness_contract"]
+
+    assert result["analyzer_execution_coverage"] == 100
+    assert result["completed_applicable_analyzers"] == 6
+    assert result["incomplete_applicable_analyzers"] == 0
+    assert len(result["requested_scanner_records"]) == 9
+    assert len(result["scanner_execution_records"]) == 6
+    assert {
+        item["scanner_name"] for item in result["not_applicable_scanner_records"]
+    } == set(reasons)
+    assert contract["coverage_numerator"] == 6
+    assert contract["coverage_denominator"] == 6
+    assert contract["incomplete_analyzers"] == []
+    assert contract["not_applicable_exact_run_scanners"] == list(reasons)
+    assert contract["not_applicable_scanners_receive_completion_credit"] is False
+    assert all(
+        not section.get("unavailable")
+        for section in result["assessment"]["sections"]
+    )
+
+
 def test_report_runtime_reconciles_after_authoritative_projection_without_redesign() -> None:
     source = (
         ROOT / "nico" / "comprehensive_client_report_render_v60.py"
