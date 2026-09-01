@@ -58,9 +58,9 @@ _CANONICAL_PARITY_EXACT = {
         "La recopilación del commit capturado alcanzó su tiempo de ejecución "
         "acotado; los archivos restantes no están disponibles para esta ejecución."
     ),
-    "No eligible source files were present in the authorized GitHub text-file sample.": (
+    "No eligible source files were present in the authorized repository text-file sample.": (
         "No había archivos de código fuente elegibles en la muestra autorizada de "
-        "archivos de texto de GitHub."
+        "archivos de texto del repositorio."
     ),
     "OSV lookup skipped because no exact dependency versions were available from the inspected manifests.": (
         "Se omitió la consulta a OSV porque no había versiones exactas de "
