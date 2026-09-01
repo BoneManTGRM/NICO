@@ -86,10 +86,12 @@ def _require_score_separation(compact: str) -> None:
     raise ValueError("Source Comprehensive report is missing no score gaming")
 
 
-def extract_report(text: str, expected_sha: str) -> dict[str, Any]:
+def extract_report(text: str, expected_assessed_sha: str) -> dict[str, Any]:
     compact = " ".join(text.split())
-    if expected_sha not in compact:
-        raise ValueError("Source Comprehensive report is not bound to the expected commit")
+    if expected_assessed_sha not in compact:
+        raise ValueError(
+            "Source Comprehensive report is not bound to the expected assessed commit"
+        )
     required = {
         "technical/human separation": "Technical triage remains proposal-only",
         "blocked delivery": "client delivery remains blocked",
@@ -131,15 +133,20 @@ def validate_external(
     audit: dict[str, Any],
     release: dict[str, Any],
     status: dict[str, Any],
-    expected_sha: str,
+    expected_release_sha: str,
+    expected_assessed_sha: str,
 ) -> None:
     if (
         acceptance.get("artifact_schema") not in _UNIFIED_ACCEPTANCE_SCHEMAS
         or acceptance.get("status") != "passed"
     ):
         raise ValueError("Unified Production Acceptance did not pass")
-    if acceptance.get("expected_deployed_sha") != expected_sha:
+    if acceptance.get("expected_deployed_sha") != expected_release_sha:
         raise ValueError("Unified Production Acceptance is bound to a different SHA")
+    if acceptance.get("assessed_commit_sha") != expected_assessed_sha:
+        raise ValueError(
+            "Unified Production Acceptance is bound to a different assessed commit"
+        )
     if acceptance.get("passes_required") != 2 or acceptance.get("passes_completed") != 2:
         raise ValueError("Two consecutive deployed Comprehensive passes were not completed")
     proof = acceptance.get("proof")
@@ -148,8 +155,13 @@ def validate_external(
 
     if audit.get("artifact_schema") != "nico.phase1-structured-artifact-audit.v1" or audit.get("status") != "passed":
         raise ValueError("Phase 1 structured candidate-artifact audit did not pass")
-    if audit.get("commit_sha") != expected_sha or audit.get("errors") not in ([], None):
-        raise ValueError("Phase 1 structured audit is not clean for the expected SHA")
+    if (
+        audit.get("commit_sha") != expected_assessed_sha
+        or audit.get("errors") not in ([], None)
+    ):
+        raise ValueError(
+            "Phase 1 structured audit is not clean for the expected assessed commit"
+        )
     if audit.get("candidate_register_sha256_expected") != audit.get("candidate_register_sha256_observed"):
         raise ValueError("Candidate-register digest parity failed")
     if audit.get("cluster_integrity_error_count") != 0 or audit.get("score_effect") != "none":
@@ -160,10 +172,16 @@ def validate_external(
     if release.get("artifact_schema") != "nico.frontend_production_release_identity.v1" or release.get("status") != "passed":
         raise ValueError("Exact frontend release identity did not pass")
     final_release = release.get("final_release_observation") or {}
-    if release.get("expected_sha") != expected_sha or final_release.get("release_sha") != expected_sha:
+    if (
+        release.get("expected_sha") != expected_release_sha
+        or final_release.get("release_sha") != expected_release_sha
+    ):
         raise ValueError("Frontend release identity is bound to a different SHA")
 
-    if status.get("artifact_schema") != "nico.phase1-current-head-status.v1" or status.get("commit_sha") != expected_sha:
+    if (
+        status.get("artifact_schema") != "nico.phase1-current-head-status.v1"
+        or status.get("commit_sha") != expected_release_sha
+    ):
         raise ValueError("Current-head status snapshot is invalid")
     contexts = status.get("contexts") if isinstance(status.get("contexts"), dict) else {}
     for name in status.get("required_contexts") or []:

@@ -73,6 +73,153 @@ def _status(*, source_language: str = "en") -> dict:
     }
 
 
+def _provider_stage(evidence: list[str]) -> dict:
+    return {
+        "stage_id": "repository_and_delivery_evidence",
+        "status": "complete",
+        "title": "Repository and Delivery Evidence",
+        "summary": "Exact-revision provider evidence was attached.",
+        "evidence": evidence,
+        "findings": [],
+        "unavailable": [],
+    }
+
+
+def test_localized_draft_translates_provider_access_evidence_in_both_stage_projections() -> None:
+    canonical = _canonical("es-MX")
+    spanish = [
+        "Proveedor: GitLab.",
+        "Identidad del repositorio: gitlab.com/gitlab-org/gitlab-test.",
+        "Revisión inmutable: " + "d" * 40 + ".",
+        "Modo de acceso: Público anónimo.",
+        "Credencial del proveedor utilizada: No.",
+        "Evidencia fuente requerida completa: Sí.",
+        "Paginación completa: Sí.",
+        "Estado de límite de solicitudes: Sin limitación activa registrada.",
+        "Localizadores de fuente exacta: 40 presentes.",
+        "Revisión humana: Obligatoria.",
+        "Aprobación humana: Pendiente de una acción explícita del revisor.",
+        "Entrega al cliente: No autorizada.",
+        "Capacidad Ramas: Recopilado.",
+        "Capacidad Entornos: No disponible sin autenticación de solo lectura.",
+    ]
+    canonical["stage_summaries"] = [_provider_stage(spanish)]
+    canonical["assessment"]["stage_summaries"] = [
+        _provider_stage(deepcopy(spanish))
+    ]
+
+    localized = subject._localized_draft_view(canonical, "en")
+
+    expected = [
+        "Provider: GitLab.",
+        "Repository identity: gitlab.com/gitlab-org/gitlab-test.",
+        "Immutable revision: " + "d" * 40 + ".",
+        "Access mode: Anonymous public.",
+        "Provider credential used: No.",
+        "Required source evidence complete: Yes.",
+        "Pagination complete: Yes.",
+        "Rate-limit status: No active provider limit was recorded.",
+        "Exact-source locators: 40 present.",
+        "Human review: Required.",
+        "Human approval: Pending explicit reviewer action.",
+        "Client delivery: Not authorized.",
+        "Capability Branches: Collected.",
+        "Capability Environments: Unavailable without read-only authentication.",
+    ]
+    assert localized["stage_summaries"][0]["evidence"] == expected
+    assert localized["assessment"]["stage_summaries"][0]["evidence"] == expected
+    assert canonical["stage_summaries"][0]["evidence"] == spanish
+
+
+def test_localized_draft_translates_provider_access_evidence_back_to_spanish() -> None:
+    canonical = _canonical("en")
+    english = [
+        "Access mode: Authenticated read-only.",
+        "Provider credential used: Yes.",
+        "Capability Issues or work items: Supported but empty.",
+        "Client delivery: Not authorized.",
+    ]
+    canonical["stage_summaries"] = [_provider_stage(english)]
+
+    localized = subject._localized_draft_view(canonical, "es-MX")
+
+    assert localized["stage_summaries"][0]["evidence"] == [
+        "Modo de acceso: Autenticado de solo lectura.",
+        "Credencial del proveedor utilizada: Sí.",
+        "Capacidad Incidencias o elementos de trabajo: Compatible, pero vacío.",
+        "Entrega al cliente: No autorizada.",
+    ]
+
+
+def test_provider_runtime_access_evidence_round_trips_between_locales() -> None:
+    from nico.hosted_provider_comprehensive_runtime_v1 import (
+        _provider_access_report_evidence,
+    )
+
+    capabilities = [
+        "repository",
+        "commits",
+        "branches",
+        "tree",
+        "blobs",
+        "tags",
+        "change_requests",
+        "ci_runs",
+        "ci_jobs",
+        "environments",
+        "deployments",
+        "work_items",
+        "releases",
+        "source_links",
+    ]
+    states = [
+        "supported",
+        "supported_empty",
+        "supported_limited",
+        "unavailable_authentication",
+        "unavailable_permission",
+        "unavailable_provider",
+        "unavailable_configuration",
+        "rate_limited",
+        "collection_failed",
+        "not_applicable",
+        "not_assessed",
+        "unsupported",
+        "not_configured",
+        "supported",
+    ]
+    snapshot = {
+        "provider": "gitlab",
+        "repository": "gitlab.com/gitlab-org/gitlab-test",
+        "commit_sha": "d" * 40,
+        "access_mode": "anonymous_public",
+        "credential_used": False,
+        "required_source_evidence_complete": True,
+        "pagination_complete": True,
+        "provider_source_fingerprint": "sha256:" + "f" * 64,
+        "snapshot_id": "snapshot_provider_locale",
+        "provider_collection_limitations": ["environments", "deployments"],
+        "provider_capability_states": [
+            {"capability": capability, "state": state}
+            for capability, state in zip(capabilities, states, strict=True)
+        ],
+    }
+    repository_evidence = {"exact_source_locator_count": 40}
+    english = _provider_access_report_evidence(
+        {"report_language": "en"}, snapshot, repository_evidence
+    )
+    spanish = _provider_access_report_evidence(
+        {"report_language": "es-MX"}, snapshot, repository_evidence
+    )
+
+    assert [
+        subject._localized_provider_access_line(line, "en") for line in spanish
+    ] == english
+    assert [
+        subject._localized_provider_access_line(line, "es-MX") for line in english
+    ] == spanish
+
+
 def _approved_status(
     *,
     source_language: str = "en",

@@ -297,6 +297,183 @@ def _localized_artifact_lifecycle(
     }
 
 
+_PROVIDER_ACCESS_STATIC_PAIRS: tuple[tuple[str, str], ...] = (
+    (
+        "Rate-limit status: A provider limitation was recorded.",
+        "Estado de límite de solicitudes: Se registró una limitación del proveedor.",
+    ),
+    (
+        "Rate-limit status: No active provider limit was recorded.",
+        "Estado de límite de solicitudes: Sin limitación activa registrada.",
+    ),
+    ("Human review: Required.", "Revisión humana: Obligatoria."),
+    (
+        "Human approval: Pending explicit reviewer action.",
+        "Aprobación humana: Pendiente de una acción explícita del revisor.",
+    ),
+    ("Client delivery: Not authorized.", "Entrega al cliente: No autorizada."),
+)
+
+_PROVIDER_ACCESS_PREFIX_PAIRS: tuple[tuple[str, str], ...] = (
+    ("Provider", "Proveedor"),
+    ("Repository identity", "Identidad del repositorio"),
+    ("Immutable revision", "Revisión inmutable"),
+    ("Access mode", "Modo de acceso"),
+    ("Provider credential used", "Credencial del proveedor utilizada"),
+    (
+        "Required source evidence complete",
+        "Evidencia fuente requerida completa",
+    ),
+    ("Pagination complete", "Paginación completa"),
+    ("Source fingerprint", "Huella digital de la fuente"),
+    ("Exact-source locators", "Localizadores de fuente exacta"),
+    ("Assessment snapshot identity", "Identidad de la instantánea de evaluación"),
+    ("Collection limitations recorded", "Limitaciones de recopilación registradas"),
+)
+
+_PROVIDER_ACCESS_VALUE_PAIRS: tuple[tuple[str, str], ...] = (
+    ("Anonymous public", "Público anónimo"),
+    ("Authenticated read-only", "Autenticado de solo lectura"),
+    ("Undetermined", "No determinado"),
+    ("Yes", "Sí"),
+)
+
+_PROVIDER_CAPABILITY_PAIRS: tuple[tuple[str, str], ...] = (
+    ("Repository", "Repositorio"),
+    ("Commits", "Commits"),
+    ("Branches", "Ramas"),
+    ("Source tree", "Árbol de fuentes"),
+    ("Source objects", "Objetos fuente"),
+    ("Tags", "Etiquetas"),
+    ("Change requests", "Solicitudes de cambio"),
+    ("Pipeline runs", "Ejecuciones de canalización"),
+    ("Pipeline jobs", "Trabajos de canalización"),
+    ("Environments", "Entornos"),
+    ("Deployments", "Despliegues"),
+    ("Issues or work items", "Incidencias o elementos de trabajo"),
+    ("Releases", "Versiones"),
+    ("Exact-source links", "Enlaces de fuente exacta"),
+)
+
+_PROVIDER_CAPABILITY_STATE_PAIRS: tuple[tuple[str, str], ...] = (
+    ("Collected", "Recopilado"),
+    ("Supported but empty", "Compatible, pero vacío"),
+    ("Collected with explicit limits", "Recopilado con límites explícitos"),
+    (
+        "Unavailable without read-only authentication",
+        "No disponible sin autenticación de solo lectura",
+    ),
+    (
+        "Unavailable with the current permission",
+        "No disponible con el permiso actual",
+    ),
+    (
+        "Unavailable due to provider limitation",
+        "No disponible por una limitación del proveedor",
+    ),
+    (
+        "Unavailable due to repository configuration",
+        "No disponible por la configuración del repositorio",
+    ),
+    (
+        "Unavailable because the provider rate limit was reached",
+        "No disponible porque se alcanzó el límite de solicitudes del proveedor",
+    ),
+    (
+        "Collection failed and was not treated as complete",
+        "La recopilación falló y no se trató como completa",
+    ),
+    ("Not applicable", "No aplicable"),
+    ("Not assessed", "No evaluado"),
+)
+
+
+def _provider_translation_map(
+    pairs: tuple[tuple[str, str], ...], *, english: bool
+) -> dict[str, str]:
+    return {
+        spanish if english else source_english: source_english if english else spanish
+        for source_english, spanish in pairs
+    }
+
+
+def _localized_provider_access_line(value: Any, report_language: str) -> str:
+    """Translate the bounded provider-access evidence authored by the runtime."""
+
+    line = str(value or "")
+    english = report_language == "en"
+    for english_text, spanish_text in _PROVIDER_ACCESS_STATIC_PAIRS:
+        source, target = (
+            (spanish_text, english_text) if english else (english_text, spanish_text)
+        )
+        if line == source:
+            return target
+
+    source_capability_prefix = "Capacidad " if english else "Capability "
+    if line.startswith(source_capability_prefix):
+        match = re.fullmatch(r"[^ ]+ (.+): (.+)\.", line)
+        if not match:
+            raise ValueError("provider_access_capability_evidence_invalid")
+        labels = _provider_translation_map(
+            _PROVIDER_CAPABILITY_PAIRS, english=english
+        )
+        states = _provider_translation_map(
+            _PROVIDER_CAPABILITY_STATE_PAIRS, english=english
+        )
+        label, state = match.groups()
+        if label not in labels or state not in states:
+            raise ValueError("provider_access_capability_translation_missing")
+        target_prefix = "Capability" if english else "Capacidad"
+        return f"{target_prefix} {labels[label]}: {states[state]}."
+
+    for english_prefix, spanish_prefix in _PROVIDER_ACCESS_PREFIX_PAIRS:
+        source_prefix, target_prefix = (
+            (spanish_prefix, english_prefix)
+            if english
+            else (english_prefix, spanish_prefix)
+        )
+        marker = source_prefix + ": "
+        if not line.startswith(marker) or not line.endswith("."):
+            continue
+        translated_value = line[len(marker) : -1]
+        values = _provider_translation_map(
+            _PROVIDER_ACCESS_VALUE_PAIRS, english=english
+        )
+        translated_value = values.get(translated_value, translated_value)
+        if english_prefix == "Exact-source locators":
+            if english:
+                translated_value = re.sub(r" presentes$", " present", translated_value)
+            else:
+                translated_value = re.sub(r" present$", " presentes", translated_value)
+        return f"{target_prefix}: {translated_value}."
+    return line
+
+
+def _localize_provider_access_evidence(
+    canonical: dict[str, Any], report_language: str
+) -> None:
+    """Localize the provider stage in both canonical stage projections."""
+
+    containers: list[Any] = [canonical.get("stage_summaries")]
+    assessment = canonical.get("assessment")
+    if isinstance(assessment, Mapping):
+        containers.append(assessment.get("stage_summaries"))
+    for stages in containers:
+        if not isinstance(stages, list):
+            continue
+        for stage in stages:
+            if not isinstance(stage, dict):
+                continue
+            if stage.get("stage_id") != "repository_and_delivery_evidence":
+                continue
+            evidence = stage.get("evidence")
+            if isinstance(evidence, list):
+                stage["evidence"] = [
+                    _localized_provider_access_line(item, report_language)
+                    for item in evidence
+                ]
+
+
 def _localized_draft_view(
     canonical: Mapping[str, Any],
     report_language: str,
@@ -319,6 +496,7 @@ def _localized_draft_view(
         container["locale"] = report_language
     view["identity"] = identity
     view["assessment"] = assessment
+    _localize_provider_access_evidence(view, report_language)
 
     # These objects bind one exact byte set. A localized regeneration is a new draft.
     for field in (

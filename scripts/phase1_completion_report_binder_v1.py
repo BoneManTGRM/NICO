@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import re
 import sys
 import types
 from datetime import datetime, timezone
@@ -101,13 +102,26 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
-    text, source_pages = pdf_text(source)
-    report = extract_report(text, args.expected_sha)
     acceptance = load_json(Path(args.acceptance_json))
     audit = load_json(Path(args.audit_json))
     release = load_json(Path(args.release_json))
     status = load_json(Path(args.status_json))
-    validate_external(acceptance, audit, release, status, args.expected_sha)
+    assessed_commit_sha = str(acceptance.get("assessed_commit_sha") or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", assessed_commit_sha):
+        raise ValueError(
+            "Unified Production Acceptance assessed_commit_sha is required"
+        )
+
+    text, source_pages = pdf_text(source)
+    report = extract_report(text, assessed_commit_sha)
+    validate_external(
+        acceptance,
+        audit,
+        release,
+        status,
+        args.expected_sha,
+        assessed_commit_sha,
+    )
 
     appendix = output.with_suffix(".appendix.tmp.pdf")
     build_appendix(
@@ -155,6 +169,9 @@ def main() -> int:
         "source_report_preserved": True,
         "repository": acceptance.get("authorized_repository") or audit.get("repository"),
         "commit_sha": args.expected_sha,
+        "release_sha": args.expected_sha,
+        "assessed_commit_sha": assessed_commit_sha,
+        "source_report_commit_sha": assessed_commit_sha,
         "source_report_page_count": source_pages,
         "source_report_sha256": sha256(source),
         "final_report_page_count": final_pages,
@@ -179,6 +196,7 @@ def main() -> int:
             "completed_at": args.acceptance_completed_at,
         },
         "structured_audit": {
+            "commit_sha": audit.get("commit_sha"),
             "candidate_count": audit.get("candidate_count"),
             "candidate_register_sha256": audit.get("candidate_register_sha256_observed"),
             "cluster_integrity_error_count": audit.get("cluster_integrity_error_count"),
