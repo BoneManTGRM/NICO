@@ -68,6 +68,17 @@ _CANONICAL_PARITY_EXACT = {
         "No había archivos de código fuente elegibles en la muestra autorizada de "
         "archivos de texto del repositorio."
     ),
+    "Scanner candidates are separated from confirmed material findings. They remain human-review work and affect assurance only until disposition.": (
+        "Los candidatos de analizadores se mantienen separados de los hallazgos "
+        "materiales confirmados. Siguen siendo trabajo sujeto a revisión humana y "
+        "afectan únicamente al aseguramiento hasta su disposición."
+    ),
+    "Review-Required Candidate Register": "Registro de candidatos que requieren revisión",
+    "Score effect: assurance-only until triaged.": (
+        "Efecto en la puntuación: solo aseguramiento mientras la disposición humana "
+        "autorizada siga pendiente; el estado del triaje técnico de NICO se informa "
+        "por separado."
+    ),
     "OSV lookup skipped because no exact dependency versions were available from the inspected manifests.": (
         "Se omitió la consulta a OSV porque no había versiones exactas de "
         "dependencias disponibles en los manifiestos inspeccionados."
@@ -2174,6 +2185,29 @@ def _structured_presentation_es(value: str) -> str | None:
                 if int(match.group("count")) == 1
                 else "candidatos agrupados de análisis estático requieren validación"
             )
+        )
+
+    match = re.fullmatch(
+        r"(?P<category>Dependency|Secret|Static): raw=(?P<raw>\d+); "
+        r"confirmed_material=(?P<confirmed>\d+); "
+        r"review_required=(?P<review>\d+); "
+        r"excluded_test_only=(?P<excluded>\d+); "
+        r"approved_or_nonblocking=(?P<nonblocking>\d+)\.",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is not None:
+        category = {
+            "dependency": "Dependencias",
+            "secret": "Secretos",
+            "static": "Análisis estático",
+        }[match.group("category").casefold()]
+        return (
+            f"{category}: brutos={match.group('raw')}; "
+            f"materiales confirmados={match.group('confirmed')}; "
+            f"requieren revisión={match.group('review')}; "
+            f"excluidos por ser solo de pruebas={match.group('excluded')}; "
+            f"aprobados o no bloqueantes={match.group('nonblocking')}."
         )
 
     match = re.fullmatch(

@@ -1325,8 +1325,8 @@ def test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation() 
         and "Preparación operativa y salud histórica de CI/CD"
         in (page.extract_text() or "")
     ]
-    assert source_ci_body_pages == [11]
-    assert localized_ci_body_pages == [11]
+    assert len(source_ci_body_pages) == 1
+    assert localized_ci_body_pages == source_ci_body_pages
     for authored_english in (
         "NICO | Comprehensive client review | automated draft",
         "Review page ",

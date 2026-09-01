@@ -92,6 +92,10 @@ if COMMERCIAL_SHIP_PROJECTION.get("final_assembled_source_pdf_preserved") is not
     raise RuntimeError("Commercial ship projection must preserve the final assembled source PDF")
 if COMMERCIAL_SHIP_PROJECTION.get("toc_page_labels_and_bookmarks_rebuilt_after_compaction") is not True:
     raise RuntimeError("Pagination compaction must run before final TOC/page-label/bookmark generation")
+if COMMERCIAL_SHIP_PROJECTION.get("zero_candidate_register_projection_bound") is not True:
+    raise RuntimeError(
+        "Commercial ship projection must retain an explicit zero-candidate register"
+    )
 if COMMERCIAL_SHIP_PROJECTION.get("canonical_truth_mutated") is not False:
     raise RuntimeError("Commercial ship presentation projection must not mutate canonical truth")
 if COMMERCIAL_SHIP_PROJECTION.get("assessment_rerun") is not False:

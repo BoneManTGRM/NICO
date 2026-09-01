@@ -111,6 +111,68 @@ def test_projection_changes_only_client_presentation_truth() -> None:
     assert "Non-success deployment classification: 2" not in rendered
 
 
+def test_projection_neutralizes_only_the_frozen_legacy_github_sample_label() -> None:
+    legacy = (
+        "No eligible source files were present in the authorized GitHub text-file sample."
+    )
+    neutral = (
+        "No eligible source files were present in the authorized repository text-file sample."
+    )
+    canonical = {
+        "stage_summaries": [{"stage_id": "code_audit", "unavailable": [legacy]}],
+        "assessment": {
+            "stage_summaries": [
+                {"stage_id": "architecture", "unavailable": [legacy]}
+            ]
+        },
+        "identity": {"provider": "gitlab", "repository": "gitlab.com/example/repo"},
+    }
+    before = deepcopy(canonical)
+
+    projected = project_canonical_for_client_presentation(canonical)
+
+    assert canonical == before
+    assert projected["stage_summaries"][0]["unavailable"] == [neutral]
+    assert projected["assessment"]["stage_summaries"][0]["unavailable"] == [neutral]
+    assert projected["identity"] == canonical["identity"]
+
+
+def test_projection_adds_explicit_zero_candidate_register_without_mutating_source() -> None:
+    canonical = {
+        "review_candidate_summary": {
+            "raw_total": 0,
+            "verified_material_total": 0,
+            "review_required_total": 0,
+        },
+        "review_candidate_register": [],
+        "stage_summaries": [
+            {"stage_id": "stakeholder_and_business_alignment"},
+            {"stage_id": "ci_cd_operational_readiness"},
+            {"stage_id": "client_evidence_summary"},
+        ],
+    }
+    before = deepcopy(canonical)
+
+    projected = project_canonical_for_client_presentation(canonical)
+    stage_ids = [stage["stage_id"] for stage in projected["stage_summaries"]]
+    candidate = next(
+        stage
+        for stage in projected["stage_summaries"]
+        if stage["stage_id"] == "review_required_candidate_register"
+    )
+
+    assert canonical == before
+    assert stage_ids == [
+        "stakeholder_and_business_alignment",
+        "review_required_candidate_register",
+        "ci_cd_operational_readiness",
+        "client_evidence_summary",
+    ]
+    assert candidate["status"] == "complete"
+    assert candidate["findings"] == []
+    assert "Raw scanner candidates: 0." in candidate["evidence"]
+
+
 def test_final_navigation_is_rebuilt_after_shared_page_compaction() -> None:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
@@ -153,14 +215,21 @@ def test_same_run_route_binds_final_layout_before_actual_render_target() -> None
 
     assert "current_render_target = locale_report._render_target" in source
     assert "locale_report._render_target = localized_render_target" in source
-    assert "return _finalize_artifact_navigation(artifacts, navigation_truth)" in source
+    content_bind = source.index("install_comprehensive_report_content_render_v66()")
     render_wrapper = source.index("def localized_render_target(")
+    assert content_bind < render_wrapper
+    assert "return _finalize_artifact_navigation(artifacts, navigation_truth)" in source
     bind_layout = source.index("_bind_final_pdf_layout()", render_wrapper)
     render_artifacts = source.index(
-        "artifacts = current_render_target(canonical, report_language)",
+        "artifacts = current_render_target(projected, report_language)",
         render_wrapper,
     )
     assert bind_layout < render_artifacts
+    projection = source.index(
+        "projected = project_canonical_for_client_presentation(canonical)",
+        render_wrapper,
+    )
+    assert projection < render_artifacts
 
     layout = _bind_final_pdf_layout()
     assert layout["toc_rows_per_page"] == 35
@@ -511,6 +580,60 @@ def test_pending_frozen_source_with_stale_scanner_denominator_is_reprojected() -
             "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
             "markdown": "6 of 9 applicable scanner executions completed",
             "html": "<p>6 of 9 applicable scanner executions completed</p>",
+        },
+    }
+
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is True
+
+
+def test_pending_frozen_public_provider_copy_is_reprojected_to_neutral_copy() -> None:
+    legacy = (
+        "No eligible source files were present in the authorized GitHub text-file sample."
+    )
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(54, 720, legacy)
+    pdf.save()
+    status = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "reports": {
+            "json": {
+                "stage_summaries": [
+                    {"stage_id": "code_audit", "unavailable": [legacy]}
+                ]
+            },
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
+            "markdown": legacy,
+            "html": f"<p>{legacy}</p>",
+        },
+    }
+
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is True
+
+
+def test_pending_zero_candidate_source_without_register_is_reprojected() -> None:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    pdf.drawString(54, 720, "Canonical Technical Scorecard")
+    pdf.save()
+    status = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "reports": {
+            "json": {
+                "stage_summaries": [{"stage_id": "canonical_scorecard"}],
+                "review_candidate_summary": {
+                    "raw_total": 0,
+                    "verified_material_total": 0,
+                    "review_required_total": 0,
+                },
+            },
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
         },
     }
 

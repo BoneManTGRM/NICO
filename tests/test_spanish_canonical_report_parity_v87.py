@@ -578,6 +578,10 @@ def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
                 "complexity metrics."
             ),
             "No eligible source files were present in the authorized repository text-file sample.",
+            (
+                "Scanner candidates are separated from confirmed material findings. "
+                "They remain human-review work and affect assurance only until disposition."
+            ),
             "Workflow jobs for run 42 were returned without a jobs list.",
             "GitHub deployment evidence was returned without a deployment list.",
             (
@@ -648,6 +652,7 @@ def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
         "OSV returned ",
         "could not be parsed",
         "No workflow files were present",
+        "Scanner candidates are separated",
     ):
         assert english not in rendered
     assert "PyPI:verified-package@1.2.3" in rendered

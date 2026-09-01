@@ -46,6 +46,34 @@ def test_compact_scanner_counts_do_not_render_as_zero_findings() -> None:
     assert candidate["status"] == "review_required"
 
 
+def test_zero_candidate_population_keeps_explicit_canonical_register_section() -> None:
+    from nico import v2_premium_report_renderer as renderer
+
+    install_comprehensive_report_content_render_v66()
+    stages = renderer._scanner_stages(
+        {
+            "scanner_execution_records": [],
+            "review_candidate_summary": {
+                "raw_total": 0,
+                "verified_material_total": 0,
+                "review_required_total": 0,
+            },
+            "review_candidate_register": [],
+        }
+    )
+
+    candidate = next(
+        item
+        for item in stages
+        if item["stage_id"] == "review_required_candidate_register"
+    )
+    assert candidate["status"] == "complete"
+    assert candidate["findings"] == []
+    assert "Raw scanner candidates: 0." in candidate["evidence"]
+    assert "Confirmed material findings: 0." in candidate["evidence"]
+    assert "Review-required candidates: 0." in candidate["evidence"]
+
+
 def test_rich_finding_cards_restore_verification_rollback_and_exit_criteria() -> None:
     from nico import v2_premium_report_renderer as renderer
 
