@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from nico import comprehensive_client_readiness_v59 as v59
+from nico.scanner_applicability_v1 import normalize_scanner_applicability_canonical
 
 VERSION = "nico.comprehensive_authoritative_scanner_truth.v62"
 _REQUIRED_TOOLS = (
@@ -56,6 +57,25 @@ def _live_evidence(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
     return {}
 
 
+def _requested_records(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Retain the full requested population after applicability normalization."""
+
+    assessment = _mapping(canonical.get("assessment"))
+    for candidate in (
+        canonical.get("requested_scanner_records"),
+        assessment.get("requested_scanner_records"),
+    ):
+        if isinstance(candidate, list):
+            records = [
+                deepcopy(dict(item))
+                for item in candidate
+                if isinstance(item, Mapping)
+            ]
+            if records:
+                return records
+    return v59._direct_scanner_records(canonical)
+
+
 def _requested_tools(
     canonical: Mapping[str, Any],
     records: list[dict[str, Any]],
@@ -99,7 +119,7 @@ def _failure_reason(name: str, live: Mapping[str, Any]) -> str:
 def _authoritative_truth(
     canonical: Mapping[str, Any],
 ) -> tuple[dict[str, dict[str, Any]], list[str]]:
-    records = v59._direct_scanner_records(canonical)
+    records = _requested_records(canonical)
     truth: dict[str, dict[str, Any]] = {}
     for record in records:
         state = v59._scanner_state(record)
@@ -148,7 +168,7 @@ def _canonical_records(
     truth: Mapping[str, Mapping[str, Any]],
     requested_tools: list[str],
 ) -> list[dict[str, Any]]:
-    existing = v59._direct_scanner_records(output)
+    existing = _requested_records(output)
     records: dict[str, dict[str, Any]] = {}
     for raw in existing:
         name = v59._tool(raw)
@@ -157,11 +177,25 @@ def _canonical_records(
         item = deepcopy(raw)
         state = truth.get(name)
         if state is not None:
+            raw_status = str(
+                item.get("status")
+                or item.get("state")
+                or item.get("execution_status")
+                or ""
+            ).casefold().replace("-", "_")
+            projected_status = state.get("status")
+            if state.get("completed") is not True and raw_status in {
+                "unavailable",
+                "missing",
+                "not_installed",
+                "not_available",
+            }:
+                projected_status = raw_status
             item.update(
                 {
                     "scanner_name": name,
-                    "status": state.get("status"),
-                    "state": state.get("status"),
+                    "status": projected_status,
+                    "state": projected_status,
                     "completed": state.get("completed") is True,
                     "verified": state.get("verified") is True,
                     "verified_complete": state.get("verified") is True,
@@ -205,18 +239,53 @@ def _canonical_records(
 def reconcile_authoritative_scanner_truth(
     canonical: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Reconcile all report aliases from exact-run records plus the live run manifest."""
+    """Reconcile exact-run records without counting technology-inapplicable tools."""
 
     output = deepcopy(dict(canonical))
-    truth, requested_tools = _authoritative_truth(output)
-    requested = len(requested_tools) or len(truth)
-    requested_set = set(requested_tools or truth)
+    raw_truth, requested_tools = _authoritative_truth(output)
+    raw_records = _canonical_records(output, raw_truth, requested_tools)
+    output["requested_scanner_records"] = deepcopy(raw_records)
+    output["scanner_execution_records"] = deepcopy(raw_records)
+    assessment = deepcopy(dict(_mapping(output.get("assessment"))))
+    assessment["requested_scanner_records"] = deepcopy(raw_records)
+    assessment["scanner_execution_records"] = deepcopy(raw_records)
+    output["assessment"] = assessment
+    output = normalize_scanner_applicability_canonical(output)
+
+    requested_records = [
+        deepcopy(dict(item))
+        for item in output.get("requested_scanner_records") or []
+        if isinstance(item, Mapping)
+    ]
+    applicable_records = [
+        deepcopy(dict(item))
+        for item in output.get("scanner_execution_records") or []
+        if isinstance(item, Mapping)
+    ]
+    not_applicable_records = [
+        deepcopy(dict(item))
+        for item in output.get("not_applicable_scanner_records") or []
+        if isinstance(item, Mapping)
+    ]
+    truth: dict[str, dict[str, Any]] = {}
+    for record in requested_records:
+        state = v59._scanner_state(record)
+        if state is not None:
+            truth[state["scanner_name"]] = state
+
+    applicable_tools = [
+        name
+        for record in applicable_records
+        if (name := v59._tool(record))
+    ]
+    applicable_set = set(applicable_tools)
+    requested = len(applicable_tools)
     completed = {
         name
         for name, state in truth.items()
-        if state.get("completed") is True and name in requested_set
+        if state.get("completed") is True and name in applicable_set
     }
-    incomplete = requested_set - completed
+    incomplete = applicable_set - completed
 
     assessment = _mapping(output.get("assessment"))
     technical = assessment.get("technical_score") or output.get("technical_score")
@@ -234,10 +303,25 @@ def reconcile_authoritative_scanner_truth(
         symbols=v59._symbols(output),
         technical_score=technical_score,
     )
-    records = _canonical_records(output, truth, requested_tools)
-    output["scanner_execution_records"] = records
+    output["requested_scanner_records"] = deepcopy(requested_records)
+    output["scanner_execution_records"] = deepcopy(applicable_records)
+    output["not_applicable_scanner_records"] = deepcopy(not_applicable_records)
     assessment_output = deepcopy(dict(_mapping(output.get("assessment"))))
-    assessment_output["scanner_execution_records"] = deepcopy(records)
+    assessment_output["requested_scanner_records"] = deepcopy(requested_records)
+    assessment_output["scanner_execution_records"] = deepcopy(applicable_records)
+    assessment_output["completed_scanner_records"] = [
+        deepcopy(record)
+        for record in applicable_records
+        if record.get("completed") is True
+    ]
+    assessment_output["incomplete_scanner_records"] = [
+        deepcopy(record)
+        for record in applicable_records
+        if record.get("completed") is not True
+    ]
+    assessment_output["not_applicable_scanner_records"] = deepcopy(
+        not_applicable_records
+    )
     output["assessment"] = assessment_output
 
     coverage = round(100 * len(completed) / requested) if requested else 0
@@ -255,11 +339,19 @@ def reconcile_authoritative_scanner_truth(
             "coverage_numerator": len(completed),
             "coverage_denominator": requested,
             "requested_exact_run_scanners": list(requested_tools),
+            "applicable_exact_run_scanners": list(applicable_tools),
+            "not_applicable_exact_run_scanners": [
+                v59._tool(record) for record in not_applicable_records
+            ],
             "completed_exact_commit_scanners": sorted(completed),
             "incomplete_analyzers": sorted(incomplete),
-            "authoritative_scanner_record_count": len(records),
+            "authoritative_scanner_record_count": len(requested_records),
+            "applicable_scanner_record_count": len(applicable_records),
+            "not_applicable_scanner_record_count": len(not_applicable_records),
             "authoritative_source": "direct_exact_run_records_plus_live_scanner_manifest",
             "missing_requested_scanners_retained_as_incomplete_records": True,
+            "technology_inapplicable_scanners_excluded_from_coverage_denominator": True,
+            "not_applicable_scanners_receive_completion_credit": False,
             "recursive_stale_projection_counts_ignored": True,
             "maturity_label": v59._maturity_label(technical_score),
             "technical_maturity_is_not_operational_readiness": True,

@@ -71,6 +71,45 @@ def test_python_only_repository_marks_node_analyzers_not_applicable() -> None:
     assert summary["not_applicable_receives_completion_credit"] is False
 
 
+def test_python_only_repository_accepts_exact_pipeline_unavailability_messages() -> None:
+    canonical = {
+        "identity": {"commit_sha": SHA},
+        "repository_evidence": {
+            "file_evidence": {"sampled_paths": ["requirements.txt", "src/main.py"]},
+            "dependency_evidence": {"manifest_paths": ["requirements.txt"]},
+        },
+        "scanner_execution_records": [
+            _record(
+                "npm-audit",
+                "unavailable",
+                "No package-lock.json with an adjacent package.json was found.",
+            ),
+            _record(
+                "eslint",
+                "unavailable",
+                "No supported JavaScript or TypeScript source files were found in apps/web/app.",
+            ),
+            _record(
+                "typescript",
+                "unavailable",
+                "Project dependencies were not prepared.",
+            ),
+        ],
+        "assessment": {},
+    }
+
+    result = normalize_scanner_applicability_canonical(canonical)
+
+    assert result["scanner_execution_records"] == []
+    assert {
+        item["scanner_name"] for item in result["not_applicable_scanner_records"]
+    } == {"npm-audit", "eslint", "typescript"}
+    assert all(
+        item["completed"] is False
+        for item in result["not_applicable_scanner_records"]
+    )
+
+
 def test_node_repository_does_not_hide_missing_applicable_analyzers() -> None:
     canonical = {
         "identity": {"commit_sha": SHA},
