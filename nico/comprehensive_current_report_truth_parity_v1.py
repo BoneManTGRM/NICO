@@ -21,6 +21,10 @@ _ES_EXACT = {
     "Code audit": "Auditoría de código",
     "Code Audit": "Auditoría de código",
     "Cybersecurity specialist": "Especialista en ciberseguridad",
+    "GitHub operational collections are bounded to one provider page; complete Link-header pagination proof was not retained.": (
+        "Las recopilaciones operativas de GitHub están limitadas a una página del proveedor; "
+        "no se conservó evidencia completa de paginación mediante el encabezado Link."
+    ),
 }
 
 _ES_PHRASES = {
