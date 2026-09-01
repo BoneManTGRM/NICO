@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useState} from "react";
+import {useEffect, useState, type Dispatch, type SetStateAction} from "react";
 import styles from "./strategicEvidence.module.css";
 import type {Locale} from "./assessmentTypes";
 import {
@@ -167,7 +167,7 @@ export default function StrategicEvidenceForm({
 }: {
   locale: Locale;
   value: StrategicHumanEvidenceInput;
-  onChange: (value: StrategicHumanEvidenceInput) => void;
+  onChange: Dispatch<SetStateAction<StrategicHumanEvidenceInput>>;
   engagementFieldStates: EngagementFieldStates;
   onEngagementFieldValueChange: (
     field: EngagementFieldKey,
@@ -188,23 +188,29 @@ export default function StrategicEvidenceForm({
 
   function setModule(
     moduleId: string,
-    next: StrategicHumanEvidenceInput[string] | null,
+    next: StrategicHumanEvidenceInput[string] | null | (
+      (current: StrategicHumanEvidenceInput[string]) =>
+        StrategicHumanEvidenceInput[string] | null
+    ),
   ): void {
-    const updated = {...value};
-    if (next) updated[moduleId] = next;
-    else delete updated[moduleId];
-    onChange(updated);
+    onChange((currentValue) => {
+      const currentModule = currentValue[moduleId] || emptyStrategicEvidenceModule();
+      const resolved = typeof next === "function" ? next(currentModule) : next;
+      const updated = {...currentValue};
+      if (resolved) updated[moduleId] = resolved;
+      else delete updated[moduleId];
+      return updated;
+    });
   }
 
   function setEvidenceField(moduleId: string, field: string, items: string[]): void {
-    const module = value[moduleId] || emptyStrategicEvidenceModule();
-    setModule(moduleId, {
-      ...module,
+    setModule(moduleId, (current) => ({
+      ...current,
       evidence: {
-        ...module.evidence,
+        ...current.evidence,
         [field]: items,
       },
-    });
+    }));
   }
 
   // The intake editor is never needed while an exact run is active. Removing it from
@@ -379,10 +385,10 @@ export default function StrategicEvidenceForm({
               <input
                 value={activeModule.reviewer}
                 disabled={disabled}
-                onChange={(event) => setModule(
-                  activeDefinition.moduleId,
-                  {...activeModule, reviewer: event.target.value},
-                )}
+                onChange={(event) => {
+                  const reviewer = event.target.value;
+                  setModule(activeDefinition.moduleId, (current) => ({...current, reviewer}));
+                }}
               />
             </label>
             <label>{copy.observed}
@@ -390,10 +396,10 @@ export default function StrategicEvidenceForm({
                 type="datetime-local"
                 value={activeModule.observed_at}
                 disabled={disabled}
-                onChange={(event) => setModule(
-                  activeDefinition.moduleId,
-                  {...activeModule, observed_at: event.target.value},
-                )}
+                onChange={(event) => {
+                  const observed_at = event.target.value;
+                  setModule(activeDefinition.moduleId, (current) => ({...current, observed_at}));
+                }}
               />
             </label>
             <label>{copy.source}
@@ -401,10 +407,10 @@ export default function StrategicEvidenceForm({
                 value={activeModule.source_reference}
                 disabled={disabled}
                 placeholder="evidence://..."
-                onChange={(event) => setModule(
-                  activeDefinition.moduleId,
-                  {...activeModule, source_reference: event.target.value},
-                )}
+                onChange={(event) => {
+                  const source_reference = event.target.value;
+                  setModule(activeDefinition.moduleId, (current) => ({...current, source_reference}));
+                }}
               />
             </label>
           </div>
@@ -415,10 +421,10 @@ export default function StrategicEvidenceForm({
               rows={4}
               value={activeModule.exclusion_rationale}
               disabled={disabled}
-              onChange={(event) => setModule(
-                activeDefinition.moduleId,
-                {...activeModule, exclusion_rationale: event.target.value},
-              )}
+              onChange={(event) => {
+                const exclusion_rationale = event.target.value;
+                setModule(activeDefinition.moduleId, (current) => ({...current, exclusion_rationale}));
+              }}
             />
           </label> : <div className={styles.requiredEvidence}>
             {evidenceFields(activeDefinition).map((field) => {
@@ -467,7 +473,7 @@ export default function StrategicEvidenceForm({
               disabled={disabled}
               onClick={() => {
                 const excluded = !activeModule.excluded;
-                setModule(activeDefinition.moduleId, {...activeModule, excluded});
+                setModule(activeDefinition.moduleId, (current) => ({...current, excluded}));
                 if (activeDefinition.moduleId === "stakeholder_context") {
                   for (const field of MOBILE_CLIENT_ENGAGEMENT_FIELDS) {
                     onEngagementFieldStateChange(
