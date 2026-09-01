@@ -26,6 +26,14 @@ export function toneKey(status?: string): "green" | "yellow" | "red" | "gray" {
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
   if (
+    (value.includes("provisional_strong") &&
+      value.includes("human_review_required")) ||
+    (value.includes("fuerte_provisional") &&
+      value.includes("revisión_humana"))
+  ) {
+    return "yellow";
+  }
+  if (
     [
       "green",
       "complete",
@@ -156,6 +164,9 @@ export function formatStatus(status: unknown, copy: Copy): string {
     return copy.heroEyebrow.startsWith("EVALUACIÓN")
       ? "Fuerte provisional — Revisión humana obligatoria"
       : "Provisional Strong — Human Review Required";
+  }
+  if (value.includes("fuerte_provisional") && value.includes("revisión_humana")) {
+    return "Fuerte provisional — Revisión humana obligatoria";
   }
   if (["complete", "completed", "attached", "green"].includes(value)) {
     return copy.phases.complete;

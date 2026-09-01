@@ -3,6 +3,7 @@ import type {Copy, Locale} from "./assessmentTypes";
 const EN_STAGE_LABELS = {
   request_accepted: "Engagement accepted",
   scanner_worker: "Evidence scanner suite",
+  provider_source_acquisition: "Provider source acquisition",
   authorization_and_scope: "Authorization and scope",
   immutable_repository_snapshot: "Exact repository snapshot",
   repository_and_delivery_evidence: "Repository and delivery evidence",
@@ -31,6 +32,7 @@ const EN_STAGE_LABELS = {
 const ES_STAGE_LABELS: Record<keyof typeof EN_STAGE_LABELS, string> = {
   request_accepted: "Encargo aceptado",
   scanner_worker: "Conjunto de analizadores de evidencia",
+  provider_source_acquisition: "Adquisición de fuentes del proveedor",
   authorization_and_scope: "Autorización y alcance",
   immutable_repository_snapshot: "Instantánea exacta del repositorio",
   repository_and_delivery_evidence: "Evidencia del repositorio y de entrega",

@@ -52,6 +52,17 @@ def test_stage_display_localizes_known_copy_and_fails_safe_for_new_authored_pros
     assert "data-status-id={String(item.status" in workspace
 
 
+def test_public_provider_acquisition_and_localized_assurance_are_known_ui_states() -> None:
+    copy = source("apps/web/app/assessment/assessmentCopy.ts")
+    status = source("apps/web/app/assessment/assessmentStatus.ts")
+
+    assert 'provider_source_acquisition: "Provider source acquisition"' in copy
+    assert 'provider_source_acquisition: "Adquisición de fuentes del proveedor"' in copy
+    assert 'value.includes("fuerte_provisional")' in status
+    assert 'value.includes("revisión_humana")' in status
+    assert 'return "Fuerte provisional — Revisión humana obligatoria"' in status
+
+
 def test_failure_surface_never_renders_unbounded_backend_prose_in_es_mx() -> None:
     panel = source("apps/web/app/AssessmentFailureEvidencePanel.tsx")
 
