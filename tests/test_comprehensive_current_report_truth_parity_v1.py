@@ -169,6 +169,16 @@ def test_github_pagination_limitation_has_exact_spanish_contract() -> None:
         "encabezado Link."
     )
 
+    assert strict_spanish_presentation_v1(
+        "Required source evidence was acquired from credential-free exact-SHA Git "
+        "because GitHub API tree collection was unavailable.",
+        "unavailable",
+    ) == (
+        "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin "
+        "credenciales porque la recopilación del árbol mediante la API de GitHub no "
+        "estaba disponible."
+    )
+
 def test_spanish_final_surface_gate_allows_exact_user_and_technical_fragments() -> None:
     canonical = _canonical(language="es-MX")
     literal = (
