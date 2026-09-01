@@ -152,6 +152,11 @@ export function formatStatus(status: unknown, copy: Copy): string {
   if (value.includes("review_limited") && value.includes("not_scored")) {
     return copy.reviewLimitedNotScored;
   }
+  if (value.includes("provisional_strong") && value.includes("human_review_required")) {
+    return copy.heroEyebrow.startsWith("EVALUACIÓN")
+      ? "Fuerte provisional — Revisión humana obligatoria"
+      : "Provisional Strong — Human Review Required";
+  }
   if (["complete", "completed", "attached", "green"].includes(value)) {
     return copy.phases.complete;
   }
