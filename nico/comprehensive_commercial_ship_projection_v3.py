@@ -15,13 +15,14 @@ from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.5"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.6"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
 _RESPONSE_MARKER = "__nico_commercial_ship_pdf_response_v3__"
 _FROZEN_SOURCE_MARKER = "__nico_commercial_ship_frozen_source_v3__"
 _REPORT_MARKER = "__nico_commercial_ship_report_v3__"
+_RENDER_TARGET_MARKER = "__nico_commercial_ship_render_target_v3__"
 _INSTALLED = False
 _VISIBLE_MANIFEST_TYPES = frozenset(
     {
@@ -299,6 +300,33 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         setattr(localized_artifacts, "_nico_previous", current)
         setattr(locale_report, attribute, localized_artifacts)
 
+    # The current same-run route assembles both locales through ``_render_target``;
+    # the older locale helpers above remain compatibility seams. Bind the actual route
+    # boundary as well so final compaction cannot reintroduce a stale partial TOC.
+    current_render_target = locale_report._render_target
+    if not getattr(current_render_target, _RENDER_TARGET_MARKER, False):
+
+        @wraps(current_render_target)
+        def localized_render_target(
+            canonical: Mapping[str, Any],
+            report_language: str,
+        ) -> dict[str, Any]:
+            artifacts = current_render_target(canonical, report_language)
+            localized_json = artifacts.get("json")
+            navigation_truth = (
+                localized_json
+                if isinstance(localized_json, Mapping)
+                else project_canonical_for_client_presentation(canonical)
+            )
+            # ``rebuild_client_artifacts`` already completed both bounded compaction
+            # passes. Repeating compaction here can collapse a legitimate localized
+            # stage page; this boundary owns navigation only.
+            return _finalize_artifact_navigation(artifacts, navigation_truth)
+
+        setattr(localized_render_target, _RENDER_TARGET_MARKER, True)
+        setattr(localized_render_target, "_nico_previous", current_render_target)
+        locale_report._render_target = localized_render_target
+
     current_dynamic = getattr(spanish_report, "_localize_dynamic_sentence", None)
     if current_dynamic is not None and not getattr(current_dynamic, _LOCALE_MARKER, False):
         v1._ORIGINAL_SPANISH_DYNAMIC_TRANSLATOR = current_dynamic
@@ -384,6 +412,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         "toc_page_labels_and_bookmarks_rebuilt_after_compaction": True,
         "final_assembled_source_pdf_preserved": True,
         "cross_locale_projection_from_same_canonical_snapshot": True,
+        "same_run_render_target_final_navigation_bound": True,
         "exact_run_repository_commit_locale_headers": True,
         "canonical_truth_mutated": False,
         "assessment_rerun": False,

@@ -238,6 +238,11 @@ def build_scanner_execution_stage(
         for item in canonical.get("scanner_execution_records") or []
         if isinstance(item, Mapping)
     ]
+    not_applicable = [
+        item
+        for item in canonical.get("not_applicable_scanner_records") or []
+        if isinstance(item, Mapping)
+    ]
     completed = [item for item in records if item.get("completed") is True]
     incomplete = [item for item in records if item.get("completed") is not True]
     totals = _candidate_totals(canonical)
@@ -258,6 +263,13 @@ def build_scanner_execution_stage(
             f"confirmed material finding count={_scanner_material_count(item)}; "
             f"raw finding payload embedded={'yes' if item.get('findings') else 'no'}."
         )
+    for item in not_applicable:
+        name = _text(item.get("scanner_name") or item.get("tool") or "unnamed scanner")
+        reason = _text(
+            item.get("applicability_reason")
+            or "The assessed repository snapshot contains no compatible project evidence."
+        )
+        evidence.append(f"{name}: not applicable; {reason}")
     limitations = [
         f"{_text(item.get('scanner_name') or item.get('tool') or 'unnamed scanner')}: "
         f"{_text(item.get('failure_reason') or item.get('reason') or 'scanner execution evidence incomplete')}"

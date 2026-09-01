@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any, Mapping
 
 from nico import comprehensive_client_readiness_v59 as v59
@@ -17,6 +18,11 @@ _REQUIRED_TOOLS = (
     "typescript",
     "gitleaks",
     "trufflehog",
+)
+
+_INCOMPLETE_ANALYZER_LIMITATION = re.compile(
+    r"^Incomplete applicable analyzers:\s*(?P<names>[^.]+)\.?$",
+    re.IGNORECASE,
 )
 
 
@@ -236,6 +242,59 @@ def _canonical_records(
     ]
 
 
+def _reconcile_unavailable_scanner_limitations(
+    value: Any,
+    *,
+    not_applicable: set[str],
+    field: str = "",
+) -> Any:
+    """Remove only structured limitations disproven by applicability evidence."""
+
+    if isinstance(value, Mapping):
+        return {
+            str(key): _reconcile_unavailable_scanner_limitations(
+                item,
+                not_applicable=not_applicable,
+                field=str(key),
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        output: list[Any] = []
+        for item in value:
+            reconciled = _reconcile_unavailable_scanner_limitations(
+                item,
+                not_applicable=not_applicable,
+                field=field,
+            )
+            if reconciled is not None:
+                output.append(reconciled)
+        return output
+    if not isinstance(value, str) or field not in {
+        "unavailable",
+        "limitations",
+        "unavailable_data_notes",
+    }:
+        return value
+
+    match = _INCOMPLETE_ANALYZER_LIMITATION.fullmatch(value.strip())
+    if match:
+        names = [
+            name.strip()
+            for name in match.group("names").split(",")
+            if name.strip()
+        ]
+        remaining = [name for name in names if name.casefold() not in not_applicable]
+        if not remaining:
+            return None
+        return f"Incomplete applicable analyzers: {', '.join(remaining)}."
+
+    normalized = value.strip().casefold()
+    if any(normalized.startswith(f"{name}:") for name in not_applicable):
+        return None
+    return value
+
+
 def reconcile_authoritative_scanner_truth(
     canonical: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -306,6 +365,16 @@ def reconcile_authoritative_scanner_truth(
     output["requested_scanner_records"] = deepcopy(requested_records)
     output["scanner_execution_records"] = deepcopy(applicable_records)
     output["not_applicable_scanner_records"] = deepcopy(not_applicable_records)
+    not_applicable_names = {
+        name.casefold()
+        for record in not_applicable_records
+        if (name := v59._tool(record))
+    }
+    if not_applicable_names:
+        output = _reconcile_unavailable_scanner_limitations(
+            output,
+            not_applicable=not_applicable_names,
+        )
     assessment_output = deepcopy(dict(_mapping(output.get("assessment"))))
     assessment_output["requested_scanner_records"] = deepcopy(requested_records)
     assessment_output["scanner_execution_records"] = deepcopy(applicable_records)

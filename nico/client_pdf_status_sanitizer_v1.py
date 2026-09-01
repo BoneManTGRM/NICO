@@ -7,7 +7,7 @@ from typing import Any
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
-VERSION = "nico.client-pdf-status-sanitizer.v6.3"
+VERSION = "nico.client-pdf-status-sanitizer.v6.4"
 
 _EN_BOUNDARY = "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 _ES_BOUNDARY = "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
@@ -96,6 +96,7 @@ def _drop_internal_page(text: str) -> bool:
     if (
         "instantanea inmutable del repositorio" in normalized
         and "evidencia conservada" in normalized
+        and "id de etapa: immutable_repository_snapshot" in normalized
     ):
         return True
     if "evidence appendix" in normalized or "apendice de evidencia" in normalized:

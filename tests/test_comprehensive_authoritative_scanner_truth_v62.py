@@ -151,7 +151,23 @@ def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator()
             },
             "dependency_evidence": {"manifest_paths": ["requirements.txt"]},
         },
-        "assessment": {"technical_score": 76},
+        "assessment": {
+            "technical_score": 76,
+            "sections": [
+                {
+                    "id": "dependency_library_ecosystem",
+                    "unavailable": [
+                        "Incomplete applicable analyzers: npm-audit."
+                    ],
+                },
+                {
+                    "id": "static_analysis",
+                    "unavailable": [
+                        "Incomplete applicable analyzers: eslint, typescript."
+                    ],
+                },
+            ],
+        },
         "requested_scanner_records": records,
         "scanner_execution_records": [
             record for record in records if record["scanner_name"] not in reasons
@@ -181,6 +197,10 @@ def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator()
     assert contract["incomplete_analyzers"] == []
     assert contract["not_applicable_exact_run_scanners"] == list(reasons)
     assert contract["not_applicable_scanners_receive_completion_credit"] is False
+    assert all(
+        not section.get("unavailable")
+        for section in result["assessment"]["sections"]
+    )
 
 
 def test_report_runtime_reconciles_after_authoritative_projection_without_redesign() -> None:

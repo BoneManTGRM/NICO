@@ -346,5 +346,10 @@ def test_python_only_live_manifest_renders_six_of_six_applicable_scanners() -> N
     assert len(finalized["not_applicable_scanner_records"]) == 3
     assert "6 of 6 applicable scanner executions completed" in extracted
     assert "6 of 9 applicable scanner executions completed" not in extracted
+    assert "Incomplete applicable analyzers: npm-audit" not in extracted
+    assert {
+        item["scanner_name"]
+        for item in finalized["not_applicable_scanner_records"]
+    } == set(reasons)
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False

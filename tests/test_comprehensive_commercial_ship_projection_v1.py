@@ -143,6 +143,18 @@ def test_final_navigation_is_rebuilt_after_shared_page_compaction() -> None:
     ] is True
 
 
+def test_same_run_route_binds_final_navigation_at_actual_render_target() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "nico"
+        / "comprehensive_commercial_ship_projection_v3.py"
+    ).read_text(encoding="utf-8")
+
+    assert "current_render_target = locale_report._render_target" in source
+    assert "locale_report._render_target = localized_render_target" in source
+    assert "return _finalize_artifact_navigation(artifacts, navigation_truth)" in source
+
+
 def test_final_navigation_replaces_spanish_indice_and_keeps_35_rows_on_one_page() -> None:
     from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
