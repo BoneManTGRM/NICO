@@ -386,7 +386,7 @@ def _duplicate_evidence(files: dict[str, str]) -> dict[str, Any]:
 
 
 def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
-    """Measure bounded source complexity from the authorized GitHub text-file sample."""
+    """Measure bounded source complexity from the authorized repository sample."""
 
     source_files = {path: text for path, text in files.items() if _is_source_path(path)}
     analyses: list[dict[str, Any]] = []
@@ -447,12 +447,12 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
     if parse_notes:
         unavailable.append(f"{len(parse_notes)} Python source file(s) could not be parsed and were excluded from complexity metrics.")
     if not source_files:
-        unavailable.append("No eligible source files were present in the authorized GitHub text-file sample.")
+        unavailable.append("No eligible source files were present in the authorized repository text-file sample.")
 
     return {
         "status": status,
         "analyzer_version": "nico-bounded-complexity-v1",
-        "scope": "Authorized GitHub text-file sample; test, build, distribution, dependency, and minified paths are excluded.",
+        "scope": "Authorized repository text-file sample; test, build, distribution, dependency, and minified paths are excluded.",
         "files_considered": len(source_files),
         "files_analyzed": len(analyses),
         "python_files_analyzed": python_files,
