@@ -29,6 +29,11 @@ _ES_EXACT = {
         "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin credenciales "
         "porque la recopilación del árbol mediante la API de GitHub no estaba disponible."
     ),
+    "Required source evidence was acquired from credential-free exact-SHA Git to preserve the anonymous public access binding without consuming GitHub API object-read quota.": (
+        "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin credenciales "
+        "para conservar la vinculación de acceso público anónimo sin consumir la cuota de lectura "
+        "de objetos de la API de GitHub."
+    ),
     "pip-audit: requirements.txt was not found.": (
         "pip-audit: no se encontró requirements.txt."
     ),
