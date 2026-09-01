@@ -1011,9 +1011,23 @@ def _pdf(
                 p(f"{stage['title']} · {localized(stage['status'].upper())}", h2),
                 p(stage["summary"], body),
             ]
-            preview = stage["evidence"][:10]
+            # Public-provider access truth is a compact, client-critical contract:
+            # provider/repository/revision, access mode, credential use, pagination,
+            # source fingerprint, snapshot identity, approval boundaries, and explicit
+            # capability states must remain visible in the PDF rather than being cut by
+            # the generic ten-line stage preview.
+            preview_limit = (
+                30
+                if stage_id == "repository_and_delivery_evidence"
+                else 10
+            )
+            preview = stage["evidence"][:preview_limit]
             block.extend(
-                bullets(preview, limit=10, client_literal=client_literal_stage)
+                bullets(
+                    preview,
+                    limit=preview_limit,
+                    client_literal=client_literal_stage,
+                )
             )
             if stage["findings"]:
                 block.extend([p(localized("Findings"), h3), *bullets(stage["findings"], limit=12)])

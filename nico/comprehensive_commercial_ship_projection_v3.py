@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import re
 from functools import wraps
@@ -14,7 +15,7 @@ from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.3"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.4"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -71,6 +72,47 @@ def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, 
         "limitation_compaction": limitation_manifest,
         "sparse_stage_reflow": reflow_manifest,
     }
+
+
+def _finalize_artifact_navigation(
+    artifacts: Mapping[str, Any],
+    canonical: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Rebuild navigation and the four-phase surface after final compaction."""
+
+    output = dict(artifacts)
+    encoded = output.get("pdf_base64")
+    if not isinstance(encoded, str) or not encoded:
+        return output
+    try:
+        pdf_bytes = base64.b64decode(encoded, validate=True)
+    except Exception as exc:
+        raise ValueError("localized report contained an invalid PDF payload") from exc
+    from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
+    from nico.comprehensive_pdf_layout_polish_v1 import (
+        install_comprehensive_pdf_layout_polish_v1,
+    )
+    from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
+
+    # The locale endpoint runs in the web process, while the original PDF was produced
+    # by the isolated final-report worker. Explicitly bind the same 35-row geometry in
+    # this process before rebuilding navigation, then restore the four-phase matrix and
+    # bookmarks that lived on the removed stale TOC page.
+    layout = install_comprehensive_pdf_layout_polish_v1()
+    if layout.get("toc_rows_per_page") != 35:
+        raise ValueError("localized report 35-row TOC layout was not installed")
+    navigated = semantic_renumber_and_outline(pdf_bytes)
+    finalized = apply_four_phase_pdf(navigated, canonical)
+    final_pages = len(PdfReader(io.BytesIO(finalized)).pages)
+    output["pdf_base64"] = base64.b64encode(finalized).decode("ascii")
+    output["pdf_sha256"] = hashlib.sha256(finalized).hexdigest()
+    output["pdf_page_count"] = final_pages
+    output["pdf_page_count_scope"] = "client_facing_same_run_projection"
+    pagination = dict(output.get("pagination_compaction") or {})
+    pagination["final_navigation_rebuilt_after_compaction"] = True
+    pagination["final_pages"] = final_pages
+    output["pagination_compaction"] = pagination
+    return output
 
 
 def _source_pdf_requires_integrity_reprojection(
@@ -205,7 +247,8 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         ) -> dict[str, Any]:
             projected = project_canonical_for_client_presentation(canonical)
             artifacts = _current(projected)
-            return v1._compact_artifacts(artifacts)
+            compacted = v1._compact_artifacts(artifacts)
+            return _finalize_artifact_navigation(compacted, projected)
 
         setattr(localized_artifacts, _LOCALE_MARKER, True)
         setattr(localized_artifacts, "_nico_previous", current)

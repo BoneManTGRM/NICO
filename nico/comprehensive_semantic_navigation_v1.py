@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
-VERSION = "nico.comprehensive_semantic_navigation.v1.5"
+VERSION = "nico.comprehensive_semantic_navigation.v1.6"
 # The first generated TOC page later receives the four-phase assessment matrix at
 # y=46..192.  With the established 15.8-point row pitch, row 33 starts inside that
 # reserved surface.  Paginate after 32 rows so every navigation entry remains visible.
@@ -254,6 +254,40 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
                 }
             )
 
+    # The core decision report historically names the executive risk surface
+    # ``Executive Risk Register and Decision Briefing`` while the paired human-review
+    # worksheet uses the newer ``Risk Reduction and Executive Briefing`` title. The
+    # worksheet title normalizer intentionally leaves one physical risk surface shared
+    # by both canonical navigation identities. Bind the legacy/core identity to the
+    # earliest core occurrence and keep the higher-quality review occurrence for the
+    # worksheet identity; no evidence or duplicate body section is synthesized.
+    legacy_risk_id = "executive_risk_register_decision_briefing"
+    review_risk_id = "risk_reduction_executive_briefing"
+    if not occurrences.get(legacy_risk_id) and occurrences.get(review_risk_id):
+        earliest = min(
+            occurrences[review_risk_id],
+            key=lambda item: (
+                int(item["source_page_index"]),
+                int(item["source_line_index"]),
+            ),
+        )
+        section = next(
+            item
+            for item in _canonical_sections()
+            if _text(item.get("section_id"), 120) == legacy_risk_id
+        )
+        alias_record = dict(earliest)
+        alias_record.update(
+            {
+                "section_id": legacy_risk_id,
+                "title": _text(
+                    section.get("title_es") if spanish else section.get("title_en"),
+                    240,
+                ),
+            }
+        )
+        occurrences[legacy_risk_id] = [alias_record]
+
     chosen: list[dict[str, Any]] = []
     manifest_order = {
         _text(section.get("section_id"), 120): index
@@ -431,7 +465,11 @@ def _remove_existing_toc(reader: Any) -> list[Any]:
     body_start = 1
     while body_start < len(pages):
         text = (pages[body_start].extract_text() or "").casefold()
-        if "table of contents" not in text and "tabla de contenido" not in text:
+        if (
+            "table of contents" not in text
+            and "tabla de contenido" not in text
+            and "índice" not in text
+        ):
             break
         body_start += 1
     if body_start > 1:
