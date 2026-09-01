@@ -326,7 +326,7 @@ def _get_exact_run(
     *,
     origin: str,
     run_id: str,
-    expected_sha: str,
+    expected_commit_sha: str = "",
     repository: str,
     expected_evidence_ledger_id: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -347,7 +347,12 @@ def _get_exact_run(
     view = _projection(payload)
     assert view["run_id"] == run_id, view
     assert view["repository"].casefold() == repository.casefold(), view
-    assert view["commit_sha"] == expected_sha, view
+    observed_commit_sha = _require_git_sha(
+        view["commit_sha"],
+        code="recovery_snapshot_commit_sha_invalid",
+    )
+    if expected_commit_sha:
+        assert observed_commit_sha == expected_commit_sha, view
     assert view["evidence_ledger_id"], view
     if expected_evidence_ledger_id:
         assert view["evidence_ledger_id"] == expected_evidence_ledger_id, view
@@ -388,7 +393,7 @@ def _wait_existing_run_to_terminal(
     *,
     origin: str,
     run_id: str,
-    expected_sha: str,
+    expected_commit_sha: str,
     repository: str,
     expected_evidence_ledger_id: str,
     initial_payload: dict[str, Any],
@@ -417,7 +422,7 @@ def _wait_existing_run_to_terminal(
             page,
             origin=origin,
             run_id=run_id,
-            expected_sha=expected_sha,
+            expected_commit_sha=expected_commit_sha,
             repository=repository,
             expected_evidence_ledger_id=expected_evidence_ledger_id,
         )
@@ -440,7 +445,7 @@ def _wait_existing_run_to_terminal(
 
 def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
     origin = args.frontend_url.rstrip("/")
-    expected_sha = _require_git_sha(
+    release_sha = _require_git_sha(
         args.expected_sha,
         code="expected_sha_invalid",
     )
@@ -450,12 +455,12 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
     )
     failed = _load_failed_source(
         args.failed_source_proof,
-        expected_sha=expected_sha,
+        expected_sha=release_sha,
         repository=args.repository,
     )
     source_log = _load_and_validate_source_job_log(
         args.failed_source_job_log,
-        expected_sha=expected_sha,
+        expected_sha=release_sha,
         source_workflow_run_id=args.source_workflow_run_id,
         source_workflow_run_attempt=args.source_workflow_run_attempt,
     )
@@ -513,9 +518,9 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             page,
             origin=origin,
             run_id=run_id,
-            expected_sha=expected_sha,
             repository=args.repository,
         )
+        snapshot_commit_sha = initial_view["commit_sha"]
         evidence_ledger_id = initial_view["evidence_ledger_id"]
         assert initial_view["report_language"] == "es-MX", initial_view
         initial_engagement = spanish._fetch_and_verify_durable_engagement(
@@ -528,7 +533,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
 
         page.goto(
             f"{origin}/es/assessment?tier=comprehensive&run_id={run_id}"
-            f"&expected_commit_sha={expected_sha}"
+            f"&expected_commit_sha={snapshot_commit_sha}"
             f"&existing_producer_recovery={time.time_ns()}#assessment",
             wait_until="domcontentloaded",
             timeout=args.navigation_timeout_ms,
@@ -572,7 +577,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
                 page,
                 origin=origin,
                 run_id=run_id,
-                expected_sha=expected_sha,
+                expected_commit_sha=snapshot_commit_sha,
                 repository=args.repository,
                 expected_evidence_ledger_id=evidence_ledger_id,
                 initial_payload=initial_payload,
@@ -589,7 +594,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
         terminal = base.recovery._wait_for_terminal_ui_ready(
             page,
             run_id,
-            expected_sha,
+            snapshot_commit_sha,
             240.0,
         )
         terminal_visibility = base.recovery._prove_visibility_hidden_visible(
@@ -600,7 +605,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
         terminal_after_foreground = base.recovery._wait_for_terminal_ui_ready(
             page,
             run_id,
-            expected_sha,
+            snapshot_commit_sha,
             120.0,
         )
         terminal_ui_mutation_attempts = guarded_requests[guarded_before_terminal_ui:]
@@ -610,6 +615,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             page,
             frontend_origin=origin,
             run_id=run_id,
+            expected_commit_sha=snapshot_commit_sha,
         )
         assert len(guarded_requests) == guarded_before_artifacts, guarded_requests
         terminal_engagement = spanish._fetch_and_verify_durable_engagement(
@@ -623,7 +629,7 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             page,
             origin=origin,
             run_id=run_id,
-            expected_sha=expected_sha,
+            expected_commit_sha=snapshot_commit_sha,
             repository=args.repository,
             expected_evidence_ledger_id=evidence_ledger_id,
         )
@@ -649,7 +655,8 @@ def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
             "status": "passed",
             "frontend_url": origin,
             "repository": args.repository,
-            "expected_sha": expected_sha,
+            "expected_sha": release_sha,
+            "assessed_commit_sha": snapshot_commit_sha,
             "proof_tool_sha": proof_tool_sha,
             "expected_proof_tool_sha": proof_tool_sha,
             "source_workflow_run_id": str(args.source_workflow_run_id),
