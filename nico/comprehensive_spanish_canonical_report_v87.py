@@ -25,6 +25,12 @@ _CANONICAL_PARITY_EXACT = {
     "Comprehensive": "Integral",
     "DRAFT": "BORRADOR AUTOMATIZADO",
     "Page": "Página",
+    "PROCESSING COMPLETE · EVIDENCE LIMITED": (
+        "PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
+    ),
+    "PROCESSING COMPLETE · AUTHORITATIVE REQUIREMENTS NOT SUPPLIED": (
+        "PROCESAMIENTO COMPLETO · REQUISITOS AUTORITATIVOS NO PROPORCIONADOS"
+    ),
     "Functional QA": "QA funcional",
     "Platform Parity": "Paridad de plataformas",
     "Stakeholder and Business Alignment": "Alineación comercial y de partes interesadas",
@@ -1867,7 +1873,10 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
-    match = re.fullmatch(r"Provider: (?P<provider>GitLab|Bitbucket Cloud|Azure DevOps)\.", value)
+    match = re.fullmatch(
+        r"Provider: (?P<provider>GitHub|GitLab|Bitbucket Cloud|Azure DevOps)\.",
+        value,
+    )
     if match is not None:
         return f"Proveedor: {match.group('provider')}."
 
