@@ -557,7 +557,7 @@ def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
                 "1 Python source file(s) could not be parsed and were excluded from "
                 "complexity metrics."
             ),
-            "No eligible source files were present in the authorized GitHub text-file sample.",
+            "No eligible source files were present in the authorized repository text-file sample.",
             "Workflow jobs for run 42 were returned without a jobs list.",
             "GitHub deployment evidence was returned without a deployment list.",
             (
