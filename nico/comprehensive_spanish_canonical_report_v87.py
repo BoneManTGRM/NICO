@@ -25,6 +25,12 @@ _CANONICAL_PARITY_EXACT = {
     "Comprehensive": "Integral",
     "DRAFT": "BORRADOR AUTOMATIZADO",
     "Page": "Página",
+    "PROCESSING COMPLETE · EVIDENCE LIMITED": (
+        "PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
+    ),
+    "PROCESSING COMPLETE · AUTHORITATIVE REQUIREMENTS NOT SUPPLIED": (
+        "PROCESAMIENTO COMPLETO · REQUISITOS AUTORITATIVOS NO PROPORCIONADOS"
+    ),
     "Functional QA": "QA funcional",
     "Platform Parity": "Paridad de plataformas",
     "Stakeholder and Business Alignment": "Alineación comercial y de partes interesadas",
@@ -1867,7 +1873,10 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
-    match = re.fullmatch(r"Provider: (?P<provider>GitLab|Bitbucket Cloud|Azure DevOps)\.", value)
+    match = re.fullmatch(
+        r"Provider: (?P<provider>GitHub|GitLab|Bitbucket Cloud|Azure DevOps)\.",
+        value,
+    )
     if match is not None:
         return f"Proveedor: {match.group('provider')}."
 
@@ -2899,6 +2908,20 @@ def _translate_presentation(value: Any) -> str:
     text = text.replace("artifact=retained", "artefacto=conservado")
     text = text.replace("artifact=missing", "artefacto=faltante")
     text = text.replace("retained finding count=", "conteo de hallazgos conservados=")
+    # These labels also occur inside generated bullets and stage-detail lines,
+    # where the exact-value translations above do not see the whole string.
+    text = text.replace("PROCESSING COMPLETE", "PROCESAMIENTO COMPLETO")
+    text = text.replace("PROCESSING COMPLETO", "PROCESAMIENTO COMPLETO")
+    text = text.replace("EVIDENCE LIMITED", "EVIDENCIA LIMITADA")
+    text = text.replace(
+        "AUTHORITATIVE REQUIREMENTS NOT SUPPLIED",
+        "REQUISITOS AUTORITATIVOS NO PROPORCIONADOS",
+    )
+    text = re.sub(
+        r"\bProvider: (GitHub|GitLab|Bitbucket Cloud|Azure DevOps)\.",
+        r"Proveedor: \1.",
+        text,
+    )
     text = re.sub(
         r"\s*·\s*Incomplete applicable analyzers:\s*(\d+)",
         "",

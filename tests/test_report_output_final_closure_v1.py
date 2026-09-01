@@ -116,3 +116,36 @@ def test_sparse_report_reflow_compacts_literal_hyphen_bullets_without_dropping_t
         "- HISTORY-EVIDENCE-DELTA",
     ):
         assert marker in rendered
+
+
+def test_report_reflow_removes_footer_only_spill_pages() -> None:
+    from nico.comprehensive_pdf_reflow_v1 import compact_sparse_stage_pages
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    header = "NICO Comprehensive · comprun_footer_fixture · AUTOMATED DRAFT"
+    pdf.drawString(42, 760, header)
+    pdf.drawString(42, 720, "Repository and Delivery Evidence")
+    pdf.drawString(42, 690, "Exact-SHA repository evidence retained.")
+    pdf.drawString(42, 36, "Document page 1 of 3")
+    pdf.showPage()
+    pdf.drawString(42, 760, header)
+    pdf.drawString(42, 36, "Document page 2 of 3")
+    pdf.showPage()
+    pdf.drawString(42, 760, header)
+    pdf.drawString(42, 720, "Human Review and Acceptance Gate")
+    pdf.drawString(42, 690, "Human approval remains pending.")
+    pdf.drawString(42, 36, "Document page 3 of 3")
+    pdf.save()
+
+    compacted, manifest = compact_sparse_stage_pages(buffer.getvalue())
+    reader = PdfReader(io.BytesIO(compacted))
+    rendered = "\n".join(str(page.extract_text() or "") for page in reader.pages)
+
+    assert len(reader.pages) == 2
+    assert manifest["status"] == "compacted"
+    assert manifest["pages_removed"] == 1
+    assert manifest["footer_only_pages_removed"] == 1
+    assert manifest["truth_preserved"] is True
+    assert "Repository and Delivery Evidence" in rendered
+    assert "Human Review and Acceptance Gate" in rendered

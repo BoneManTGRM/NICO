@@ -14,7 +14,7 @@ from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.2"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.3"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -113,13 +113,22 @@ def _source_pdf_requires_integrity_reprojection(
         pdf_bytes = base64.b64decode(str(reports.get("pdf_base64") or ""), validate=True)
         if not pdf_bytes.startswith(b"%PDF"):
             return False
+        pages = PdfReader(io.BytesIO(pdf_bytes)).pages
+        page_texts = [str(page.extract_text() or "") for page in pages]
         visible_text = "".join(
-            "".join((page.extract_text() or "").split())
-            for page in PdfReader(io.BytesIO(pdf_bytes)).pages
+            "".join(text.split())
+            for text in page_texts
         )
     except Exception:
         return False
-    return any(digest not in visible_text for digest in visible_digests.values())
+    footer_only_spill = any(
+        pdf_reflow._has_standard_header(text)
+        and not pdf_reflow._content_lines(text)
+        for text in page_texts
+    )
+    return footer_only_spill or any(
+        digest not in visible_text for digest in visible_digests.values()
+    )
 
 
 def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:

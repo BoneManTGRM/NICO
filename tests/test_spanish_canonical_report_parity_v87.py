@@ -96,6 +96,26 @@ def test_spanish_decision_summary_is_localized_before_pdf_layout() -> None:
     assert "Ninguna etapa automatizada" not in limited_summary
 
 
+def test_spanish_public_provider_stage_badge_is_fully_localized() -> None:
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation,
+    )
+
+    assert _translate_presentation("Provider: GitHub.") == "Proveedor: GitHub."
+    assert _translate_presentation(
+        "PROCESSING COMPLETE · EVIDENCE LIMITED"
+    ) == "PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
+    assert _translate_presentation(
+        "PROCESSING COMPLETE · AUTHORITATIVE REQUIREMENTS NOT SUPPLIED"
+    ) == (
+        "PROCESAMIENTO COMPLETO · REQUISITOS AUTORITATIVOS NO PROPORCIONADOS"
+    )
+    assert _translate_presentation("- Provider: GitHub.") == "- Proveedor: GitHub."
+    assert _translate_presentation(
+        "Estado: PROCESSING COMPLETE · EVIDENCE LIMITED"
+    ) == "Estado: PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
+
+
 def test_spanish_canonical_localization_preserves_machine_truth_and_translates_native_copy() -> None:
     import pytest
 
