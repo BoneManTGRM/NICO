@@ -29,6 +29,9 @@ class FakeGitHubClient:
             if credential_used
             else "anonymous_public"
         )
+        self.headers = {"Accept": "application/vnd.github+json"}
+        if credential_used:
+            self.headers["Authorization"] = "Bearer configured-runtime-token"
 
     def get_repo(self, repository: str):
         return {
@@ -149,6 +152,19 @@ def test_snapshot_capture_persists_observed_access_truth(
     stored = STORE.get("evidence_items", result["snapshot_id"])["evidence"]
     assert stored["access_mode"] == expected_mode
     assert stored["credential_used"] is credential_used
+
+
+def test_explicit_anonymous_snapshot_strips_ambient_authorization() -> None:
+    context = _context()
+    context["provider_access_mode"] = "anonymous_public"
+    client = FakeGitHubClient("a" * 40, credential_used=True)
+
+    result = capture_repository_snapshot(context, client=client)
+
+    assert result["provider_access_observed"] is True
+    assert result["access_mode"] == "anonymous_public"
+    assert result["credential_used"] is False
+    assert all(key.casefold() != "authorization" for key in client.headers)
 
 
 def test_preverified_deployment_identity_does_not_claim_access_observation() -> None:
