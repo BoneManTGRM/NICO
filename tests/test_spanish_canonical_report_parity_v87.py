@@ -110,6 +110,10 @@ def test_spanish_public_provider_stage_badge_is_fully_localized() -> None:
     ) == (
         "PROCESAMIENTO COMPLETO · REQUISITOS AUTORITATIVOS NO PROPORCIONADOS"
     )
+    assert _translate_presentation("- Provider: GitHub.") == "- Proveedor: GitHub."
+    assert _translate_presentation(
+        "Estado: PROCESSING COMPLETE · EVIDENCE LIMITED"
+    ) == "Estado: PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
 
 
 def test_spanish_canonical_localization_preserves_machine_truth_and_translates_native_copy() -> None:
