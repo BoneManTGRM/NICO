@@ -358,6 +358,7 @@ def test_provider_changes_trigger_three_public_proofs_and_azure_access_boundary(
 
     assert "pull_request:" in workflow
     assert "push:" in workflow
+    assert workflow.count("- nico/snapshot_repository_evidence.py") == 2
     assert "anonymous-public-release:" in workflow
     for fixture in (
         "octocat/Hello-World",
