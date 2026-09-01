@@ -396,8 +396,8 @@ export default function StrategicEvidenceForm({
                 type="datetime-local"
                 value={activeModule.observed_at}
                 disabled={disabled}
-                onChange={(event) => {
-                  const observed_at = event.target.value;
+                onInput={(event) => {
+                  const observed_at = event.currentTarget.value;
                   setModule(activeDefinition.moduleId, (current) => ({...current, observed_at}));
                 }}
               />
