@@ -340,6 +340,8 @@ def _prepare_public_intake_reservation_payload(payload: Mapping[str, Any]) -> di
     )
     if requested_access_mode is ProviderAccessMode.AUTHENTICATED_READ_ONLY:
         raise ValueError("provider_authenticated_access_operator_only")
+    if requested_access_mode is ProviderAccessMode.AUTO:
+        requested_access_mode = ProviderAccessMode.ANONYMOUS_PUBLIC
     repository = (
         normalize_repository(provider_repository)
         if provider is ProviderKind.GITHUB
