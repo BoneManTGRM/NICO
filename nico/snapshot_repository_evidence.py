@@ -395,12 +395,22 @@ def _public_git_profile(
         return None, "public_git_execution_failed"
 
 
-def _workflows(client: Any, repository: str, snapshot: dict[str, Any], paths: list[str]) -> tuple[dict[str, str], list[str]]:
+def _workflows(
+    client: Any,
+    repository: str,
+    snapshot: dict[str, Any],
+    paths: list[str],
+    retained_files: dict[str, str] | None = None,
+) -> tuple[dict[str, str], list[str]]:
     commit_sha = str(snapshot.get("commit_sha") or "")
     workflow_paths = [path for path in paths if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml"))]
+    retained = retained_files or {}
     values: dict[str, str] = {}
     unavailable: list[str] = []
     for path in workflow_paths:
+        if path in retained:
+            values[path] = retained[path]
+            continue
         text, error = _text_file(client, repository, path, commit_sha)
         if text is None:
             unavailable.append(_safe_note(f"Captured-commit workflow {path}", error))
@@ -619,7 +629,13 @@ def collect_snapshot_repository_evidence(
             }
         )
     files = profile["files"]
-    workflows, workflow_unavailable = _workflows(github, repository, snapshot, profile["tree_paths"])
+    workflows, workflow_unavailable = _workflows(
+        github,
+        repository,
+        snapshot,
+        profile["tree_paths"],
+        files,
+    )
     commits, commit_error = github.get_commits(repository, _iso(since))
     pulls, pull_error = github.get_pulls(repository, since)
     runs, run_error = github.get_workflow_runs(repository, _iso(since))
