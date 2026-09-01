@@ -66,11 +66,31 @@ def _synthetic_payload(module: Any) -> dict[str, Any]:
         "homogeneous_verdict": True,
     }
     register = {
+        "status": "complete",
+        "exact_commit_sha": commit_sha,
         "candidate_record_count": 1,
+        "candidate_record_count_matches_raw": True,
         "count_parity_verified": True,
         "mutually_exclusive_dispositions_verified": True,
+        "raw_payload_retention_complete": True,
+        "every_raw_candidate_has_stable_identity": True,
+        "source_evidence_quality_preserved": True,
+        "candidate_evidence_quality_totals_match_source": True,
+        "totals": {"raw": 1},
+        "disposition_sum": 1,
+        "disposition_sum_matches_raw": True,
+        "discrepancies": [],
+        "impossible_disposition_tools": [],
+        "source_summary_reconciliation": {
+            "bandit": {
+                "source": {"raw": 1},
+                "reconciled": {"raw": 1},
+                "disposition_sum": 1,
+            }
+        },
         "findings": [record],
         "technical_triage": {
+            "status": "complete",
             "human_disposition_created": False,
             "human_approval_status": "pending",
             "client_delivery_allowed": False,
@@ -81,6 +101,10 @@ def _synthetic_payload(module: Any) -> dict[str, Any]:
             "candidates_requiring_individual_human_attention": 1,
             "candidates_eligible_for_grouped_review": 0,
             "quality_control_sample_pool": 0,
+            "total_candidates": 1,
+            "technical_triage_completed": 1,
+            "technical_triage_pending": 0,
+            "technical_triage_coverage_pct": 100.0,
         },
         "candidate_retained_triage_revalidation": {
             "artifact_schema": "nico.candidate-retained-triage-revalidation.v1",
@@ -142,6 +166,40 @@ def _synthetic_payload(module: Any) -> dict[str, Any]:
     }
 
 
+def _refresh_manifest(module: Any, payload: dict[str, Any]) -> None:
+    register = payload["assessment"]["canonical_scanner_finding_register"]
+    register_bytes = module._canonical_bytes(register)
+    entry = payload["artifact_manifest"]["artifacts"][0]
+    entry["sha256"] = module.hashlib.sha256(register_bytes).hexdigest()
+    entry["size_bytes"] = len(register_bytes)
+
+
+def _make_zero_candidate_payload(module: Any) -> dict[str, Any]:
+    payload = _synthetic_payload(module)
+    register = payload["assessment"]["canonical_scanner_finding_register"]
+    register["candidate_record_count"] = 0
+    register["totals"]["raw"] = 0
+    register["disposition_sum"] = 0
+    register["findings"] = []
+    register["source_summary_reconciliation"]["bandit"] = {
+        "source": {"raw": 0},
+        "reconciled": {"raw": 0},
+        "disposition_sum": 0,
+    }
+    triage = register["technical_triage"]
+    triage.update(
+        {
+            "needs_review_count": 0,
+            "human_review_work_units": 0,
+            "candidates_requiring_individual_human_attention": 0,
+            "total_candidates": 0,
+            "technical_triage_completed": 0,
+        }
+    )
+    _refresh_manifest(module, payload)
+    return payload
+
+
 def test_production_assessment_proofs_serialize_without_pending_cancellation() -> None:
     ios = IOS_WORKFLOW.read_text(encoding="utf-8")
     mobile = MOBILE_WORKFLOW.read_text(encoding="utf-8")
@@ -190,6 +248,7 @@ def test_two_service_acceptance_requires_structured_phase1_audit() -> None:
     assert "audit-results/phase1-structured-artifact-audit.json" in source
     assert 'test "${{ steps.phase1_audit.outcome }}" = "success"' in source
     assert 'audit["candidate_register_sha256_expected"] == audit["candidate_register_sha256_observed"]' in source
+    assert 'audit["candidate_count"] > 0 or audit["zero_candidate_register_verified"] is True' in source
     assert 'audit["client_delivery_allowed"] is False' in source
 
 
@@ -211,3 +270,24 @@ def test_structured_artifact_audit_rejects_automated_human_disposition() -> None
     result = module.audit(payload, expected_sha="a" * 40)
     assert result["status"] == "failed"
     assert any("automation_created_human_disposition" in item for item in result["errors"])
+
+
+def test_structured_artifact_audit_accepts_verified_zero_candidate_register() -> None:
+    module = _load_audit_module()
+    payload = _make_zero_candidate_payload(module)
+    result = module.audit(payload, expected_sha="a" * 40)
+    assert result["status"] == "passed"
+    assert result["candidate_count"] == 0
+    assert result["zero_candidate_register_verified"] is True
+    assert result["errors"] == []
+
+
+def test_structured_artifact_audit_rejects_unverified_zero_candidate_register() -> None:
+    module = _load_audit_module()
+    payload = _make_zero_candidate_payload(module)
+    payload["assessment"]["canonical_scanner_finding_register"]["raw_payload_retention_complete"] = False
+    _refresh_manifest(module, payload)
+    result = module.audit(payload, expected_sha="a" * 40)
+    assert result["status"] == "failed"
+    assert result["zero_candidate_register_verified"] is False
+    assert "zero_candidate_register.raw_payload_retention_incomplete" in result["errors"]

@@ -70,7 +70,6 @@ def audit(payload: dict[str, Any], *, expected_sha: str = "") -> dict[str, Any]:
     _require(bool(repository), "identity.repository_missing", errors)
     if expected_sha:
         _require(commit_sha == expected_sha, "identity.commit_sha_mismatch", errors)
-    _require(len(records) > 0, "candidate_register.empty", errors)
     _require(all(ids), "candidate.candidate_id_missing", errors)
     _require(len(ids) == len(id_set), "candidate.candidate_id_duplicate", errors)
     _require(register.get("candidate_record_count") == len(records), "candidate_register.count_mismatch", errors)
@@ -80,6 +79,98 @@ def audit(payload: dict[str, Any], *, expected_sha: str = "") -> dict[str, Any]:
         "candidate_register.dispositions_not_mutually_exclusive",
         errors,
     )
+
+    zero_candidate_register_verified = False
+    if not records:
+        zero_candidate_errors: list[str] = []
+        totals = register.get("totals") if isinstance(register.get("totals"), dict) else {}
+        source_reconciliation = (
+            register.get("source_summary_reconciliation")
+            if isinstance(register.get("source_summary_reconciliation"), dict)
+            else {}
+        )
+        _require(
+            register.get("status") == "complete",
+            "zero_candidate_register.status_not_complete",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("exact_commit_sha") == commit_sha,
+            "zero_candidate_register.commit_mismatch",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("candidate_record_count_matches_raw") is True,
+            "zero_candidate_register.raw_count_not_verified",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("raw_payload_retention_complete") is True,
+            "zero_candidate_register.raw_payload_retention_incomplete",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("every_raw_candidate_has_stable_identity") is True,
+            "zero_candidate_register.raw_identity_not_verified",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("source_evidence_quality_preserved") is True,
+            "zero_candidate_register.source_evidence_not_preserved",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("candidate_evidence_quality_totals_match_source") is True,
+            "zero_candidate_register.evidence_totals_not_verified",
+            zero_candidate_errors,
+        )
+        _require(totals.get("raw") == 0, "zero_candidate_register.raw_total_nonzero", zero_candidate_errors)
+        _require(
+            register.get("disposition_sum") == 0,
+            "zero_candidate_register.disposition_sum_nonzero",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("disposition_sum_matches_raw") is True,
+            "zero_candidate_register.disposition_sum_not_verified",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("discrepancies") == [],
+            "zero_candidate_register.discrepancies_present",
+            zero_candidate_errors,
+        )
+        _require(
+            register.get("impossible_disposition_tools") == [],
+            "zero_candidate_register.impossible_dispositions_present",
+            zero_candidate_errors,
+        )
+        _require(
+            bool(source_reconciliation),
+            "zero_candidate_register.source_reconciliation_missing",
+            zero_candidate_errors,
+        )
+        for tool, reconciliation in source_reconciliation.items():
+            item = reconciliation if isinstance(reconciliation, dict) else {}
+            source = item.get("source") if isinstance(item.get("source"), dict) else {}
+            reconciled = item.get("reconciled") if isinstance(item.get("reconciled"), dict) else {}
+            _require(
+                source.get("raw") == 0,
+                f"zero_candidate_register.{tool}.source_raw_nonzero",
+                zero_candidate_errors,
+            )
+            _require(
+                reconciled.get("raw") == 0,
+                f"zero_candidate_register.{tool}.reconciled_raw_nonzero",
+                zero_candidate_errors,
+            )
+            _require(
+                item.get("disposition_sum") == 0,
+                f"zero_candidate_register.{tool}.disposition_sum_nonzero",
+                zero_candidate_errors,
+            )
+        errors.extend(zero_candidate_errors)
+        zero_candidate_register_verified = not zero_candidate_errors
 
     universal = (
         "candidate_id",
@@ -382,6 +473,7 @@ def audit(payload: dict[str, Any], *, expected_sha: str = "") -> dict[str, Any]:
         "candidate_register_sha256_observed": observed_digest,
         "candidate_register_size_bytes": len(register_bytes),
         "candidate_count": len(records),
+        "zero_candidate_register_verified": zero_candidate_register_verified,
         "category_counts": dict(sorted(category_counts.items())),
         "verdict_counts": dict(sorted(verdict_counts.items())),
         "lineage_counts": dict(sorted(lineage_counts.items())),

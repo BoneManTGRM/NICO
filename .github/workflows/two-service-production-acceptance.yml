@@ -500,7 +500,7 @@ jobs:
           assert audit["artifact_schema"] == "nico.phase1-structured-artifact-audit.v1"
           assert audit["status"] == "passed"
           assert audit["commit_sha"] == payload["assessed_commit_sha"]
-          assert audit["candidate_count"] > 0
+          assert audit["candidate_count"] > 0 or audit["zero_candidate_register_verified"] is True
           assert audit["candidate_register_sha256_expected"] == audit["candidate_register_sha256_observed"]
           assert audit["human_review_required"] is True
           assert audit["client_delivery_allowed"] is False
