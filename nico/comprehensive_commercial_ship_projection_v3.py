@@ -15,7 +15,7 @@ from nico.comprehensive_commercial_ship_projection_v2 import (
     _deployment_metric_order_independent,
 )
 
-VERSION = "nico.comprehensive_commercial_ship_projection.v3.6"
+VERSION = "nico.comprehensive_commercial_ship_projection.v3.7"
 _STAGE_MARKER = "__nico_commercial_ship_stage_projection_v3__"
 _NAV_MARKER = "__nico_commercial_ship_navigation_projection_v3__"
 _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
@@ -75,6 +75,21 @@ def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, 
     }
 
 
+def _bind_final_pdf_layout() -> dict[str, Any]:
+    """Bind the approved PDF geometry before any client artifact is rendered."""
+
+    from nico.comprehensive_pdf_layout_polish_v1 import (
+        install_comprehensive_pdf_layout_polish_v1,
+    )
+
+    layout = install_comprehensive_pdf_layout_polish_v1()
+    if layout.get("toc_rows_per_page") != 35:
+        raise ValueError("localized report 35-row TOC layout was not installed")
+    if float(layout.get("review_small_font_size") or 0) < 6.75:
+        raise ValueError("localized report readable review typography was not installed")
+    return layout
+
+
 def _finalize_artifact_navigation(
     artifacts: Mapping[str, Any],
     canonical: Mapping[str, Any],
@@ -90,18 +105,13 @@ def _finalize_artifact_navigation(
     except Exception as exc:
         raise ValueError("localized report contained an invalid PDF payload") from exc
     from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
-    from nico.comprehensive_pdf_layout_polish_v1 import (
-        install_comprehensive_pdf_layout_polish_v1,
-    )
     from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
 
     # The locale endpoint runs in the web process, while the original PDF was produced
     # by the isolated final-report worker. Explicitly bind the same 35-row geometry in
     # this process before rebuilding navigation, then restore the four-phase matrix and
     # bookmarks that lived on the removed stale TOC page.
-    layout = install_comprehensive_pdf_layout_polish_v1()
-    if layout.get("toc_rows_per_page") != 35:
-        raise ValueError("localized report 35-row TOC layout was not installed")
+    _bind_final_pdf_layout()
     navigated = semantic_renumber_and_outline(pdf_bytes)
     finalized = apply_four_phase_pdf(navigated, canonical)
     final_pages = len(PdfReader(io.BytesIO(finalized)).pages)
@@ -231,6 +241,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             "final_assembled_source_pdf_preserved": True,
             "sparse_stage_reflow_before_final_navigation": True,
             "localized_sparse_stage_reflow_supported": True,
+            "final_pdf_layout_bound_before_render": True,
             "pending_legacy_manifest_integrity_reprojection": True,
             "canonical_truth_mutated": False,
             "assessment_rerun": False,
@@ -292,6 +303,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             _current: Any = current,
         ) -> dict[str, Any]:
             projected = project_canonical_for_client_presentation(canonical)
+            _bind_final_pdf_layout()
             artifacts = _current(projected)
             compacted = v1._compact_artifacts(artifacts)
             return _finalize_artifact_navigation(compacted, projected)
@@ -311,6 +323,11 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             canonical: Mapping[str, Any],
             report_language: str,
         ) -> dict[str, Any]:
+            # Review companion pages are embedded by ``current_render_target``. Bind
+            # the approved renderer first; installing it during navigation cleanup is
+            # too late and leaves the legacy 5.35-point worksheet typography in the
+            # client PDF.
+            _bind_final_pdf_layout()
             artifacts = current_render_target(canonical, report_language)
             localized_json = artifacts.get("json")
             navigation_truth = (
@@ -413,6 +430,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         "final_assembled_source_pdf_preserved": True,
         "cross_locale_projection_from_same_canonical_snapshot": True,
         "same_run_render_target_final_navigation_bound": True,
+        "final_pdf_layout_bound_before_render": True,
         "exact_run_repository_commit_locale_headers": True,
         "canonical_truth_mutated": False,
         "assessment_rerun": False,

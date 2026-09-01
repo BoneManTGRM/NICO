@@ -10,6 +10,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico.comprehensive_commercial_ship_projection_v3 import (
+    _bind_final_pdf_layout,
     _finalize_artifact_navigation,
     _source_pdf_requires_integrity_reprojection,
     compact_sparse_limitation_pages,
@@ -143,7 +144,7 @@ def test_final_navigation_is_rebuilt_after_shared_page_compaction() -> None:
     ] is True
 
 
-def test_same_run_route_binds_final_navigation_at_actual_render_target() -> None:
+def test_same_run_route_binds_final_layout_before_actual_render_target() -> None:
     source = (
         Path(__file__).resolve().parents[1]
         / "nico"
@@ -153,6 +154,18 @@ def test_same_run_route_binds_final_navigation_at_actual_render_target() -> None
     assert "current_render_target = locale_report._render_target" in source
     assert "locale_report._render_target = localized_render_target" in source
     assert "return _finalize_artifact_navigation(artifacts, navigation_truth)" in source
+    render_wrapper = source.index("def localized_render_target(")
+    bind_layout = source.index("_bind_final_pdf_layout()", render_wrapper)
+    render_artifacts = source.index(
+        "artifacts = current_render_target(canonical, report_language)",
+        render_wrapper,
+    )
+    assert bind_layout < render_artifacts
+
+    layout = _bind_final_pdf_layout()
+    assert layout["toc_rows_per_page"] == 35
+    assert layout["review_companion_pages"] == 4
+    assert layout["review_small_font_size"] >= 6.75
 
 
 def test_final_navigation_replaces_spanish_indice_and_keeps_35_rows_on_one_page() -> None:
