@@ -583,14 +583,21 @@ def collect_snapshot_repository_evidence(
         )
         if public_profile is not None:
             profile = public_profile
+            acquisition_note = (
+                "Required source evidence was acquired from credential-free "
+                "exact-SHA Git to preserve the anonymous public access binding "
+                "without consuming GitHub API object-read quota."
+                if explicit_anonymous_binding
+                else (
+                    "Required source evidence was acquired from credential-free "
+                    "exact-SHA Git because GitHub API tree collection was unavailable."
+                )
+            )
             profile["unavailable"] = sorted(
                 {
                     *api_profile_notes,
                     *(profile.get("unavailable") or []),
-                    (
-                        "Required source evidence was acquired from credential-free "
-                        "exact-SHA Git because GitHub API tree collection was unavailable."
-                    ),
+                    acquisition_note,
                 }
             )
         elif profile.get("tree_collection_succeeded") is not True:
