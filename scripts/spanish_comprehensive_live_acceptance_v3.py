@@ -841,7 +841,28 @@ def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
     exclusion_rationale.wait_for(state="visible", timeout=30_000)
     assert exclusion_rationale.input_value() == ""
     exclusion_rationale.fill(PROOF_EXCLUSION_RATIONALE)
-    assert exclusion_rationale.input_value() == PROOF_EXCLUSION_RATIONALE
+    # Filling the rationale updates human evidence and three engagement-field
+    # states. React may replace the active module subtree while those functional
+    # updates settle, so prove the value through a re-render-safe DOM query rather
+    # than resolving the pre-update locator immediately.
+    page.wait_for_function(
+        """({rootSelector, labelText, expectedValue}) => {
+          const root = document.querySelector(rootSelector);
+          if (!root) return false;
+          const label = Array.from(root.querySelectorAll('label')).find(item =>
+            String(item.querySelector('span')?.textContent || '').trim() === labelText
+          );
+          return String(label?.querySelector('textarea')?.value || '') === expectedValue;
+        }""",
+        {
+            "rootSelector": (
+                '[aria-labelledby="strategic-evidence-stakeholder_context"]'
+            ),
+            "labelText": "Justificación de exclusión",
+            "expectedValue": PROOF_EXCLUSION_RATIONALE,
+        },
+        timeout=30_000,
+    )
 
     field_control_counts: dict[str, int] = {}
     for field in EXCLUDED_ENGAGEMENT_FIELDS:
