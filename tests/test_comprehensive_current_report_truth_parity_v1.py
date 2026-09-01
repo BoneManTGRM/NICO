@@ -181,13 +181,13 @@ def test_github_pagination_limitation_has_exact_spanish_contract() -> None:
 
     assert strict_spanish_presentation_v1(
         "Required source evidence was acquired from credential-free exact-SHA Git "
-        "to preserve the anonymous public access binding without consuming GitHub "
+        "to preserve the anonymous public access binding without depending on GitHub "
         "API object-read quota.",
         "unavailable",
     ) == (
         "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin "
         "credenciales para conservar la vinculación de acceso público anónimo sin "
-        "consumir la cuota de lectura de objetos de la API de GitHub."
+        "depender de la cuota de lectura de objetos de la API de GitHub."
     )
 
 
