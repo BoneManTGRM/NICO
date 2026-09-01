@@ -251,6 +251,50 @@ def test_pending_frozen_source_with_suppressed_known_hashes_is_reprojected() -> 
     assert _source_pdf_requires_integrity_reprojection(status, "en") is False
 
 
+def test_pending_frozen_source_with_footer_only_spill_is_reprojected() -> None:
+    artifact_types = (
+        "findings_csv",
+        "evidence_csv",
+        "candidate_register_json",
+        "remediation_backlog_json",
+        "markdown_report",
+        "html_report",
+    )
+    digests = {
+        kind: f"{index + 1}" * 64
+        for index, kind in enumerate(artifact_types)
+    }
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    header = "NICO Comprehensive · comprun_footer_fixture · AUTOMATED DRAFT"
+    pdf.drawString(54, 760, header)
+    pdf.drawString(54, 720, "Client Artifact Manifest")
+    for index, digest in enumerate(digests.values()):
+        pdf.drawString(54, 690 - index * 18, digest)
+    pdf.drawString(54, 36, "Document page 1 of 2")
+    pdf.showPage()
+    pdf.drawString(54, 760, header)
+    pdf.drawString(54, 36, "Document page 2 of 2")
+    pdf.save()
+    status = {
+        "human_review_required": True,
+        "human_review_completed": False,
+        "approval_status": "pending_human_approval",
+        "client_delivery_allowed": False,
+        "reports": {
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode(),
+            "artifact_manifest": {
+                "artifacts": [
+                    {"artifact_type": kind, "sha256": digest}
+                    for kind, digest in digests.items()
+                ]
+            },
+        },
+    }
+
+    assert _source_pdf_requires_integrity_reprojection(status, "en") is True
+
+
 def _pdf_with_sparse_limitation_pair() -> bytes:
     buffer = io.BytesIO()
     document = canvas.Canvas(buffer, pagesize=letter, invariant=1)
