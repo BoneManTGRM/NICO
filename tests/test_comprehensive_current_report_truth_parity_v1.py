@@ -9,6 +9,7 @@ from nico.comprehensive_current_report_truth_parity_v1 import (
     assert_spanish_client_copy_is_localized,
     install_comprehensive_current_report_truth_parity_v1,
     normalize_ci_presentation_lines,
+    strict_spanish_presentation_v1,
 )
 from nico.comprehensive_four_phase_model_v1 import (
     build_four_phase_program,
@@ -154,6 +155,19 @@ def test_spanish_final_surface_gate_rejects_reintroduced_english_copy() -> None:
             deployment_leak,
         )
 
+
+def test_github_pagination_limitation_has_exact_spanish_contract() -> None:
+    install_comprehensive_current_report_truth_parity_v1()
+
+    assert strict_spanish_presentation_v1(
+        "GitHub operational collections are bounded to one provider page; "
+        "complete Link-header pagination proof was not retained.",
+        "unavailable",
+    ) == (
+        "Las recopilaciones operativas de GitHub están limitadas a una página del "
+        "proveedor; no se conservó evidencia completa de paginación mediante el "
+        "encabezado Link."
+    )
 
 def test_spanish_final_surface_gate_allows_exact_user_and_technical_fragments() -> None:
     canonical = _canonical(language="es-MX")
