@@ -312,8 +312,8 @@ def test_python_only_live_manifest_renders_six_of_six_applicable_scanners() -> N
         records.append(
             {
                 "scanner_name": scanner,
-                "state": "completed" if completed else "unavailable",
-                "status": "completed" if completed else "unavailable",
+                "state": "completed" if completed else "failed",
+                "status": "completed" if completed else "failed",
                 "completed": completed,
                 "verified": completed,
                 "verified_complete": completed,

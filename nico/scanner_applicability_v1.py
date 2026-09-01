@@ -222,7 +222,19 @@ def _normalize_record(
     )
     inferred, inferred_reason = _explicitly_not_applicable(scanner, reason, signals)
     if already_not_applicable or (
-        state in {"unavailable", "missing", "not_installed", "not_available"} and inferred
+        state
+        in {
+            "unavailable",
+            "missing",
+            "not_installed",
+            "not_available",
+            # Older frozen reports projected explicit technology-mismatch
+            # unavailability into ``failed`` before retaining the exact reason.
+            # The repository-signal guard above keeps real Node-project failures
+            # applicable and fail-closed.
+            "failed",
+        }
+        and inferred
     ):
         record.update(
             {
