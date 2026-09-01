@@ -561,46 +561,45 @@ def collect_snapshot_repository_evidence(
     captured_at = _parse_iso(snapshot.get("captured_at")) or datetime.now(timezone.utc)
     timeframe_days = max(30, min(int(context.get("timeframe_days") or DEFAULT_TIMEFRAME_DAYS), 365))
     since = captured_at - timedelta(days=timeframe_days)
-    profile = _profile(github, repository, snapshot)
-    api_profile_notes = list(profile.get("unavailable") or [])
     explicit_anonymous_binding = (
         str(context.get("provider_access_mode") or "").strip()
         == "anonymous_public"
         and context.get("provider_credential_used") is False
     )
-    if (
-        access_mode == "anonymous_public"
-        and credential_used is False
-        and (
-            explicit_anonymous_binding
-            or profile.get("tree_collection_succeeded") is not True
-        )
-    ):
+    public_profile = None
+    public_profile_error = ""
+    if explicit_anonymous_binding:
         public_profile, public_profile_error = _public_git_profile(
             repository,
             str(snapshot.get("commit_sha") or "").strip().lower(),
             str(snapshot.get("tree_sha") or "").strip().lower(),
         )
+    profile = public_profile or _profile(github, repository, snapshot)
+    api_profile_notes = list(profile.get("unavailable") or [])
+    if (
+        access_mode == "anonymous_public"
+        and credential_used is False
+        and profile.get("tree_collection_succeeded") is not True
+    ):
+        if not explicit_anonymous_binding:
+            public_profile, public_profile_error = _public_git_profile(
+                repository,
+                str(snapshot.get("commit_sha") or "").strip().lower(),
+                str(snapshot.get("tree_sha") or "").strip().lower(),
+            )
         if public_profile is not None:
             profile = public_profile
-            acquisition_note = (
-                "Required source evidence was acquired from credential-free "
-                "exact-SHA Git to preserve the anonymous public access binding "
-                "without consuming GitHub API object-read quota."
-                if explicit_anonymous_binding
-                else (
-                    "Required source evidence was acquired from credential-free "
-                    "exact-SHA Git because GitHub API tree collection was unavailable."
-                )
-            )
             profile["unavailable"] = sorted(
                 {
                     *api_profile_notes,
                     *(profile.get("unavailable") or []),
-                    acquisition_note,
+                    (
+                        "Required source evidence was acquired from credential-free "
+                        "exact-SHA Git because GitHub API tree collection was unavailable."
+                    ),
                 }
             )
-        elif profile.get("tree_collection_succeeded") is not True:
+        else:
             profile["unavailable"] = sorted(
                 {
                     *api_profile_notes,
@@ -608,6 +607,17 @@ def collect_snapshot_repository_evidence(
                     f"({public_profile_error}).",
                 }
             )
+    elif public_profile is not None:
+        profile["unavailable"] = sorted(
+            {
+                *(profile.get("unavailable") or []),
+                (
+                    "Required source evidence was acquired from credential-free "
+                    "exact-SHA Git to preserve the anonymous public access binding "
+                    "without depending on GitHub API object-read quota."
+                ),
+            }
+        )
     files = profile["files"]
     workflows, workflow_unavailable = _workflows(github, repository, snapshot, profile["tree_paths"])
     commits, commit_error = github.get_commits(repository, _iso(since))
