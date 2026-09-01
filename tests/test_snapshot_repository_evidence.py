@@ -477,6 +477,10 @@ def test_explicit_anonymous_collection_prefers_exact_git_before_api_quota_is_exh
     assert observed == [
         (context["repository"], snapshot["commit_sha"], snapshot["tree_sha"])
     ]
+    assert all(
+        "/git/trees/" not in url and "/contents" not in url
+        for url, _params in client.calls
+    )
     assert repository["required_source_evidence_complete"] is True
     assert repository["required_source_acquisition"] == "credential_free_exact_sha_git"
     assert repository["exact_source_locator_count"] == 2
