@@ -686,7 +686,7 @@ def calibrated_collect_complexity_evidence(files: dict[str, str]) -> dict[str, A
             "JavaScript and TypeScript complexity uses bounded function-level lexical extraction rather than a full language parser; dynamic syntax and parser-level semantics remain lower-confidence than Python AST metrics."
         )
     result["unavailable_data_notes"] = list(dict.fromkeys(notes))
-    result["scope"] = "Authorized GitHub text-file sample with Python AST and bounded JavaScript/TypeScript function-level extraction; tests, build, distribution, dependency, and minified paths are excluded."
+    result["scope"] = "Authorized repository text-file sample with Python AST and bounded JavaScript/TypeScript function-level extraction; tests, build, distribution, dependency, and minified paths are excluded."
     return result
 
 
