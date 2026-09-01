@@ -485,6 +485,37 @@ def test_provider_access_truth_is_authored_for_report_without_internal_property_
     assert all("provider_access_evidence" not in line for line in summary["evidence"])
 
 
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+def test_bitbucket_cloud_internal_provider_value_has_client_facing_label(
+    language: str,
+) -> None:
+    from nico import hosted_provider_comprehensive_runtime_v1 as runtime
+
+    lines = runtime._provider_access_report_evidence(
+        {"report_language": language},
+        {
+            "provider": "bitbucket_cloud",
+            "repository": "bitbucket.org/workspace/repository",
+            "commit_sha": "e" * 40,
+            "access_mode": "anonymous_public",
+            "credential_used": False,
+            "required_source_evidence_complete": True,
+            "pagination_complete": True,
+            "provider_rate_limit_state": {},
+            "provider_collection_limitations": [],
+            "provider_source_fingerprint": "sha256:" + "a" * 64,
+            "snapshot_id": "snapshot-provider",
+            "provider_capability_states": [
+                {"capability": "tree", "state": "supported", "reason": ""}
+            ],
+        },
+        {"exact_source_locator_count": 1},
+    )
+
+    assert lines[0] in {"Provider: Bitbucket Cloud.", "Proveedor: Bitbucket Cloud."}
+    assert "bitbucket_cloud" not in "\n".join(lines)
+
+
 @pytest.mark.parametrize(
     "language,expected_lines",
     (
