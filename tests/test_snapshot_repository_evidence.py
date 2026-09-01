@@ -481,7 +481,7 @@ def test_explicit_anonymous_collection_prefers_exact_git_before_api_quota_is_exh
     assert repository["required_source_acquisition"] == "credential_free_exact_sha_git"
     assert repository["exact_source_locator_count"] == 2
     assert any(
-        "credential-free exact-SHA Git" in note
+        "preserve the anonymous public access binding" in note
         for note in repository["provider_collection_limitations"]
     )
 
