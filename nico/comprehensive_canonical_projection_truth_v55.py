@@ -5,7 +5,7 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable, Iterable, Mapping
 
-VERSION = "nico.comprehensive_canonical_projection_truth.v56"
+VERSION = "nico.comprehensive_canonical_projection_truth.v57"
 _NORMALIZER_MARKER = "_nico_comprehensive_canonical_projection_truth_v55"
 _VALIDATOR_MARKER = "_nico_comprehensive_final_artifact_projection_truth_v55"
 
@@ -71,6 +71,78 @@ def _scanner_name(value: Any) -> str:
     }.get(normalized, normalized)
 
 
+def _authoritative_scanner_applicability(
+    canonical: Mapping[str, Any],
+) -> tuple[set[str], set[str]] | None:
+    """Read the bounded exact-run applicability contract when it is self-consistent.
+
+    Late client-safe projections may retain the complete requested scanner record list
+    while dropping per-record applicability flags. The authoritative exact-run contract
+    remains the denominator source in that shape. Any incomplete or contradictory
+    contract is ignored so unknown scanners continue to fail closed as applicable.
+    """
+
+    contract = canonical.get("client_readiness_contract")
+    if not isinstance(contract, Mapping):
+        return None
+    if (
+        contract.get(
+            "technology_inapplicable_scanners_excluded_from_coverage_denominator"
+        )
+        is not True
+        or contract.get("not_applicable_scanners_receive_completion_credit")
+        is not False
+    ):
+        return None
+
+    requested_values = contract.get("requested_exact_run_scanners")
+    applicable_values = contract.get("applicable_exact_run_scanners")
+    not_applicable_values = contract.get("not_applicable_exact_run_scanners")
+    if not all(
+        isinstance(values, list)
+        for values in (
+            requested_values,
+            applicable_values,
+            not_applicable_values,
+        )
+    ):
+        return None
+
+    requested = {_scanner_name(value) for value in requested_values}
+    applicable = {_scanner_name(value) for value in applicable_values}
+    not_applicable = {
+        _scanner_name(value) for value in not_applicable_values
+    }
+    if (
+        "" in requested
+        or "" in applicable
+        or "" in not_applicable
+        or not requested
+        or applicable.intersection(not_applicable)
+        or requested != applicable.union(not_applicable)
+        or len(requested) != len(requested_values)
+        or len(applicable) != len(applicable_values)
+        or len(not_applicable) != len(not_applicable_values)
+    ):
+        return None
+
+    expected_counts = (
+        ("authoritative_scanner_record_count", len(requested)),
+        ("applicable_scanner_record_count", len(applicable)),
+        ("not_applicable_scanner_record_count", len(not_applicable)),
+        ("coverage_denominator", len(applicable)),
+    )
+    for key, expected in expected_counts:
+        value = contract.get(key)
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value != expected
+        ):
+            return None
+    return requested, applicable
+
+
 def _scanner_population(
     canonical: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], int]:
@@ -87,6 +159,7 @@ def _scanner_population(
         for item in source or []
         if isinstance(item, Mapping)
     ]
+    authoritative_applicability = _authoritative_scanner_applicability(canonical)
 
     not_applicable_names: set[str] = set()
     for container in (canonical, assessment):
@@ -133,6 +206,13 @@ def _scanner_population(
         and _text(item.get("status")).casefold().replace("-", "_")
         not in {"not_applicable", "not_required", "inapplicable"}
         and _scanner_name(item.get("scanner_name")) not in not_applicable_names
+        and (
+            authoritative_applicability is None
+            or _scanner_name(item.get("scanner_name"))
+            not in authoritative_applicability[0]
+            or _scanner_name(item.get("scanner_name"))
+            in authoritative_applicability[1]
+        )
     ]
     completed = [item for item in applicable if item.get("completed") is True]
     incomplete = [item for item in applicable if item.get("completed") is not True]
