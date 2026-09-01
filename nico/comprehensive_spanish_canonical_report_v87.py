@@ -2784,7 +2784,7 @@ def _translate_presentation(value: Any) -> str:
         text,
     )
     text = re.sub(
-        r"(\d+) verified material finding\(s\) require disposition\.",
+        r"(\d+) (?:verified|verificada) material finding\(s\) require disposition\.",
         lambda match: (
             f"{match.group(1)} "
             f"{'hallazgo material verificado requiere' if int(match.group(1)) == 1 else 'hallazgos materiales verificados requieren'} disposición."
