@@ -25,6 +25,10 @@ _ES_EXACT = {
         "Las recopilaciones operativas de GitHub están limitadas a una página del proveedor; "
         "no se conservó evidencia completa de paginación mediante el encabezado Link."
     ),
+    "Required source evidence was acquired from credential-free exact-SHA Git because GitHub API tree collection was unavailable.": (
+        "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin credenciales "
+        "porque la recopilación del árbol mediante la API de GitHub no estaba disponible."
+    ),
 }
 
 _ES_PHRASES = {
