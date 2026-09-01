@@ -115,6 +115,13 @@ const EXACT_SPANISH = new Map<string, string>([
   ["control", "Control"],
   ["primary constraint", "Restricción principal"],
   ["score-derived contribution", "Contribución derivada de la puntuación"],
+  ["exact-commit executable source signals were analyzed without promoting comments, strings, detector definitions, examples, or tests.", "Se analizaron señales ejecutables del código fuente del commit exacto sin promover comentarios, cadenas, definiciones de detectores, ejemplos ni pruebas."],
+  ["authoritative manifests and contextual dependency evidence were reconciled by package, installed version, advisory, fixed version, path, scope, and reachability.", "Los manifiestos autoritativos y la evidencia contextual de dependencias se conciliaron por paquete, versión instalada, aviso, versión corregida, ruta, alcance y alcanzabilidad."],
+  ["history-aware secret evidence was separated into verified material findings, review-required candidates, explicit example placeholders, and non-production observations.", "La evidencia de secretos con historial se separó en hallazgos materiales verificados, candidatos que requieren revisión, marcadores de ejemplo explícitos y observaciones no productivas."],
+  ["bandit, semgrep, eslint, and typescript evidence were evaluated independently against the exact immutable commit.", "La evidencia de Bandit, Semgrep, ESLint y TypeScript se evaluó de forma independiente frente al commit inmutable exacto."],
+  ["ci/cd configuration maturity is exact-sha technical evidence. observed workflow outcomes are reported separately as mutable operational health.", "La madurez de la configuración de CI/CD es evidencia técnica del SHA exacto. Los resultados observados de los flujos de trabajo se informan por separado como salud operativa mutable."],
+  ["snapshot-bound source footprint and measured complexity evidence were evaluated without score override.", "La huella del código fuente vinculada a la instantánea y la evidencia de complejidad medida se evaluaron sin sustituir la puntuación."],
+  ["sustainable delivery capacity is derived from immutable architecture maintainability and workflow automation; mutable activity volume is unscored context.", "La capacidad de entrega sostenible se deriva de la mantenibilidad de la arquitectura inmutable y de la automatización de flujos de trabajo; el volumen de actividad mutable permanece como contexto sin puntuación."],
   ["the authorized repository was bound to one immutable commit before evidence collection.", "El repositorio autorizado quedó vinculado a un solo commit inmutable antes de recopilar la evidencia."],
   ["exact-commit repository, dependency, architecture, workflow, activity, and complexity evidence were attached.", "Se adjuntó la evidencia del repositorio, dependencias, arquitectura, flujos de trabajo, actividad y complejidad correspondiente al commit exacto."],
   ["the modern scanner suite is executing against the exact immutable commit.", "El conjunto moderno de analizadores se está ejecutando sobre el commit inmutable exacto."],
@@ -253,13 +260,24 @@ function compact(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+const NATIVE_COMPREHENSIVE_EXECUTIVE = /^NICO completed a native Comprehensive Technical Assessment for (.+?) at immutable commit ([0-9a-f]{40})\. The evidence-bound maturity signal is (.+?) \(([0-9]{1,3})\/100\)\. ([0-9]+) client-review section\(s\) disclose unavailable, limited, or stakeholder-dependent evidence\. Every automated stage represented in this package completed without a terminal execution failure\. The package is a review-gated automated draft: automated evidence and recommendations are not client approval or delivery authorization\.$/i;
+
+function localizedNativeComprehensiveExecutive(source: string): string | null {
+  const match = compact(source).match(NATIVE_COMPREHENSIVE_EXECUTIVE);
+  if (!match) return null;
+  const [, repository, commitSha, maturity, score, limitedSections] = match;
+  const localizedMaturity = EXACT_SPANISH.get(compact(maturity).toLowerCase()) || maturity;
+  return `NICO completó una Evaluación Técnica Integral nativa para ${repository} en el commit inmutable ${commitSha}. La señal de madurez vinculada a evidencia es ${localizedMaturity} (${score}/100). ${limitedSections} sección(es) para revisión del cliente declaran evidencia no disponible, limitada o dependiente de las partes interesadas. Todas las etapas automatizadas representadas en este paquete terminaron sin un fallo terminal de ejecución. El paquete es un borrador automatizado sujeto a revisión: la evidencia y las recomendaciones automatizadas no constituyen aprobación del cliente ni autorización de entrega.`;
+}
+
 export function localizeExactSpanishText(value: string | null | undefined): string | null {
   const source = String(value || "");
   if (!source.trim()) return null;
   const leading = source.match(/^\s*/)?.[0] || "";
   const trailing = source.match(/\s*$/)?.[0] || "";
   const exact = EXACT_SPANISH.get(compact(source).toLowerCase());
-  return exact ? `${leading}${exact}${trailing}` : null;
+  const localized = exact || localizedNativeComprehensiveExecutive(source);
+  return localized ? `${leading}${localized}${trailing}` : null;
 }
 
 export function localizeSpanishText(value: string | null | undefined): string {
