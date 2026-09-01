@@ -90,7 +90,9 @@ _OUTCOME_CLASSIFICATION_RE = re.compile(
 )
 _WORKFLOW_JOBS_WITH_RATE_RE = re.compile(
     r"Workflow jobs: (?P<successful>\d+) successful of (?P<observed>\d+) observed "
-    r"\((?P<rate>\d+(?:\.\d+)?%)\)\."
+    r"\((?P<rate>\d+(?:\.\d+)?%)\)"
+    r"(?P<bounded>; bounded observed job sample; count basis="
+    r"(?P<basis>retained job counts|retained rate and denominator))?\."
 )
 _WORKFLOW_JOBS_WITHOUT_RATE_RE = re.compile(
     r"Workflow jobs: (?P<observed>\d+) observed; successful count and success rate "
@@ -328,11 +330,22 @@ def _translate_structured_current_report_copy(text: str) -> str:
         return translated + "."
 
     def workflow_jobs_with_rate(match: re.Match[str]) -> str:
-        return (
+        localized = (
             "Trabajos de flujo de trabajo: "
             f"{match.group('successful')} exitosos de {match.group('observed')} "
-            f"observados ({match.group('rate')})."
+            f"observados ({match.group('rate')})"
         )
+        basis = match.group("basis")
+        if basis is not None:
+            localized_basis = {
+                "retained job counts": "conteos de trabajos conservados",
+                "retained rate and denominator": "tasa y denominador conservados",
+            }[basis]
+            localized += (
+                "; muestra acotada de trabajos observados; "
+                f"base del conteo={localized_basis}"
+            )
+        return localized + "."
 
     def workflow_jobs_without_rate(match: re.Match[str]) -> str:
         return (
