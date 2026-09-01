@@ -111,3 +111,16 @@ def test_no_eligible_source_files_returns_unavailable_evidence() -> None:
     assert result["files_analyzed"] == 0
     assert result["functions_measured"] == 0
     assert any("No eligible first-party source files" in note for note in result["unavailable_data_notes"])
+
+
+def test_complexity_scope_is_provider_neutral() -> None:
+    install_typescript_ast_complexity_v1()
+    base_collector = getattr(
+        complexity.collect_complexity_evidence,
+        "__wrapped__",
+        complexity.collect_complexity_evidence,
+    )
+    result = base_collector({"nico/example.py": "def example():\n    return 1\n"})
+
+    assert "Authorized repository text-file sample" in result["scope"]
+    assert "GitHub text-file sample" not in result["scope"]
