@@ -292,6 +292,24 @@ def _client_access_observation(
     return True, access_mode, credential_used
 
 
+def _client_for_access_binding(
+    context: dict[str, Any],
+    client: GitHubAssessmentClient | None,
+) -> GitHubAssessmentClient:
+    """Prevent a public anonymous snapshot from inheriting ambient credentials."""
+
+    active = client or GitHubAssessmentClient()
+    if str(context.get("provider_access_mode") or "").strip() == "anonymous_public":
+        active.headers = {
+            key: value
+            for key, value in active.headers.items()
+            if str(key).casefold() != "authorization"
+        }
+        active.credential_used = False
+        active.access_mode = "anonymous_public"
+    return active
+
+
 def _preverified_resolution(
     context: dict[str, Any],
     repository: str,
@@ -362,7 +380,7 @@ def resolve_repository_commit(
             "unavailable_data_notes": ["A normalized owner/repository target is required for immutable commit resolution."],
         }
 
-    github = client or GitHubAssessmentClient()
+    github = _client_for_access_binding(context, client)
     (
         provider_access_observed,
         access_mode,

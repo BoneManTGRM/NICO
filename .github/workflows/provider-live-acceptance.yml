@@ -11,6 +11,8 @@ on:
       - nico/provider_neutral_contract.py
       - nico/provider_payload_adapters.py
       - nico/hosted_provider_comprehensive_runtime_v1.py
+      - nico/comprehensive_api_routes.py
+      - nico/repository_snapshot.py
       - scripts/provider_live_acceptance.py
       - tests/test_provider_live_acceptance.py
       - tests/test_provider_live_clients.py
@@ -24,6 +26,8 @@ on:
       - nico/provider_neutral_contract.py
       - nico/provider_payload_adapters.py
       - nico/hosted_provider_comprehensive_runtime_v1.py
+      - nico/comprehensive_api_routes.py
+      - nico/repository_snapshot.py
       - scripts/provider_live_acceptance.py
       - tests/test_provider_live_acceptance.py
       - tests/test_provider_live_clients.py
