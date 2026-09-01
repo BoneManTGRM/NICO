@@ -29,6 +29,27 @@ _ES_EXACT = {
         "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin credenciales "
         "porque la recopilación del árbol mediante la API de GitHub no estaba disponible."
     ),
+    "Required source evidence was acquired from credential-free exact-SHA Git to preserve the anonymous public access binding without depending on GitHub API object-read quota.": (
+        "La evidencia fuente requerida se adquirió mediante Git del SHA exacto sin credenciales "
+        "para conservar la vinculación de acceso público anónimo sin depender de la cuota de lectura "
+        "de objetos de la API de GitHub."
+    ),
+    "pip-audit: requirements.txt was not found.": (
+        "pip-audit: no se encontró requirements.txt."
+    ),
+    "npm-audit: No package-lock.json with an adjacent package.json was found.": (
+        "npm-audit: no se encontró package-lock.json junto a un package.json."
+    ),
+    "osv-scanner: scanner JSON output could not be parsed: line 1 column 1; scanner JSON output could not be parsed: line 1 column 1": (
+        "osv-scanner: no fue posible analizar la salida JSON del analizador: línea 1, columna 1; "
+        "no fue posible analizar la salida JSON del analizador: línea 1, columna 1"
+    ),
+    "eslint: No supported JavaScript or TypeScript source files were found in apps/web/app.": (
+        "eslint: no se encontraron archivos de código fuente JavaScript o TypeScript compatibles en apps/web/app."
+    ),
+    "typescript: typescript did not retain a complete exact-SHA scanner record.": (
+        "typescript: TypeScript no conservó un registro completo del analizador para el SHA exacto."
+    ),
 }
 
 _ES_PHRASES = {
