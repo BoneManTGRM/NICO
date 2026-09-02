@@ -275,7 +275,14 @@ def build_premium_delivery_package(report_package: Mapping[str, Any]) -> dict[st
         entries["03_evidence_appendix.pdf"] = appendix_pdf
     entries["04_findings_register.csv"] = str(package.get("findings_csv") or "").encode("utf-8")
     entries["05_findings_register.json"] = _json_bytes(findings)
-    backlog_csv = package.get("jira_csv") or package.get("linear_csv") or ""
+    # A clean assessment can legitimately have no remediation items. Preserve the
+    # required delivery artifact as a valid empty CSV instead of treating zero rows as
+    # a missing backlog and blocking an otherwise approved package.
+    backlog_csv = (
+        package.get("jira_csv")
+        or package.get("linear_csv")
+        or "summary,description\n"
+    )
     entries["06_remediation_backlog.csv"] = str(backlog_csv).encode("utf-8")
     entries["07_risk_register.csv"] = _csv_bytes(
         risk_rows,

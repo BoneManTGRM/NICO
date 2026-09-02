@@ -13,9 +13,6 @@ import nico.comprehensive_run_service as service_module
 from nico.comprehensive_approved_delivery_v3 import (
     attach_approved_delivery_package as attach_approved_delivery_package_v3,
 )
-from nico.comprehensive_approved_delivery_v1 import (
-    require_new_report_after_evidence_request,
-)
 from nico.comprehensive_review_report_truth_v1 import synchronize_review_truth
 from nico.comprehensive_review_work_record_v1 import apply_review_work_ledger
 from nico.comprehensive_review_work_safe_v1 import (
@@ -23,9 +20,6 @@ from nico.comprehensive_review_work_safe_v1 import (
     assert_ready_for_approval,
     canonical_candidate_register,
     review_work_projection,
-)
-from nico.comprehensive_review_decision_v1 import (
-    assert_expected_review_artifact_identity,
 )
 
 VERSION = "nico.comprehensive_review_work_runtime.v3"
@@ -119,11 +113,6 @@ def _install_service_methods() -> None:
                 readiness_projection = assert_ready_for_approval(
                     _review_action_record(record)
                 )
-        assert_expected_review_artifact_identity(
-            record,
-            expected_artifact_identity,
-        )
-
         timestamp = _decision_timestamp(decided_at)
         decision_record = record
         if canonical_phase2:
@@ -146,19 +135,14 @@ def _install_service_methods() -> None:
                 from nico.comprehensive_run_record import _record_hash
 
                 decision_record["integrity_sha256"] = _record_hash(decision_record)
-        manifest = service_module.build_reviewed_edition(
+        updated = service_module._build_reviewed_run(
             decision_record,
             reviewer=reviewer,
             reviewer_role=reviewer_role,
-            decision=normalized_decision,
+            decision=decision,
             decision_reason=decision_reason,
             decided_at=timestamp,
-        )
-        if normalized_decision == "approved":
-            require_new_report_after_evidence_request(decision_record, manifest)
-        updated = service_module.apply_comprehensive_review_decision(
-            decision_record,
-            manifest=manifest,
+            expected_artifact_identity=expected_artifact_identity,
         )
         return self._store.save(updated, expected_revision=previous_revision)
 

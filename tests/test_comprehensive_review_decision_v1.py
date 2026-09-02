@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import base64
+import io
+import zipfile
 from copy import deepcopy
 from datetime import UTC, datetime
 
 import pytest
+from pypdf import PdfReader
 
 from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
@@ -23,8 +27,8 @@ from tests.test_v2_premium_report_renderer import _package
 
 
 def _exact_report(record: dict, *, regenerated: bool = False) -> dict:
-    source = _package("en")
     identity = record["identity"]
+    source = _package(identity["report_language"])
     source["json"]["identity"].update(
         {
             "repository": identity["repository"],
@@ -45,9 +49,9 @@ def _exact_report(record: dict, *, regenerated: bool = False) -> dict:
     return rebuild_client_artifacts(source)
 
 
-def _review_ready_record() -> dict:
+def _review_ready_record(*, report_language: str = "en") -> dict:
     record = create_comprehensive_run_record(
-        run_id="comprun_review_1",
+        run_id=f"comprun_review_{report_language}",
         repository="owner/repo",
         commit_sha="a" * 40,
         evidence_ledger_id="ledger-review-1",
@@ -55,7 +59,23 @@ def _review_ready_record() -> dict:
         project_id="project-1",
         authorized=True,
         assessment_depth="strategic",
-        report_language="en",
+        report_language=report_language,
+        human_evidence={
+            "modules": {
+                "stakeholder_context": {
+                    "evidence": {
+                        "engagement_mode": ["client"],
+                        "client_identity": ["Test Client"],
+                        "project_identity": ["Approved report finalization"],
+                        "repository_identity": ["owner/repo"],
+                        "primary_technical_contact": ["security@example.test"],
+                        "access_method": ["GitHub App read-only access"],
+                        "authorized_scope": ["Entire repository at immutable commit"],
+                        "authorization_confirmation": ["confirmed"],
+                    }
+                }
+            }
+        },
         now=datetime(2026, 7, 26, 1, 0, tzinfo=UTC),
     )
     package = _exact_report(record)
@@ -191,6 +211,110 @@ def test_service_persists_human_approval_with_delivery_blocked() -> None:
     assert "approved_delivery_package" not in store.record
     assert "delivery_authorization" not in store.record
     assert store.record["accepted_edition"]["delivery_status"] == "pending_authorization"
+
+
+def _pdf_text(encoded: str) -> str:
+    payload = base64.b64decode(encoded, validate=True)
+    return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(payload)).pages)
+
+
+def test_approved_delivery_uses_a_final_pdf_without_stale_blocked_language() -> None:
+    record = _review_ready_record()
+    source_pdf_sha256 = record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]["pdf_sha256"]
+    store = _MemoryStore(record)
+    service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
+
+    approved = service.review(
+        record["identity"]["run_id"],
+        reviewer="Authorized Test Reviewer",
+        reviewer_role="Security reviewer",
+        decision="approved",
+        decision_reason="Exact review package approved for finalization testing.",
+        decided_at="2026-07-26T01:15:00+00:00",
+        expected_artifact_identity=review_artifact_identity(record),
+    )
+    approved_report = approved["stage_results"][
+        "final_comprehensive_report_generation"
+    ]["report_package"]
+    approved_text = _pdf_text(approved_report["pdf_base64"]).upper()
+
+    assert approved_report["pdf_sha256"] != source_pdf_sha256
+    assert "APPROVED FINAL" in approved_text
+    assert "AUTOMATED DRAFT" not in approved_text
+    assert "PENDING HUMAN APPROVAL" not in approved_text
+    assert "CLIENT DELIVERY BLOCKED" not in approved_text
+    assert "CLIENT DELIVERY: BLOCKED" not in approved_text
+    assert "BLOCKED - AUTHORIZED HUMAN APPROVAL" not in approved_text
+    assert approved_report["pdf_filename"].endswith("-APPROVED-FINAL.pdf")
+    assert "APPROVED-APPROVED" not in approved_report["pdf_filename"]
+    assert validate_comprehensive_run_record(approved)["status"] == "valid"
+    assert approved["review_source_artifact_identity"]["artifact_digests"]["pdf"][
+        "sha256"
+    ] == source_pdf_sha256
+
+    with pytest.raises(ValueError, match="stale_review_artifact_identity"):
+        service.authorize_delivery(
+            record["identity"]["run_id"],
+            authorizer="Authorized Test Reviewer",
+            authorizer_role="Security reviewer",
+            authorization_reason="Stale source PDF must not authorize delivery.",
+            authorized_at="2026-07-26T01:19:00+00:00",
+            expected_artifact_identity=review_artifact_identity(record),
+        )
+
+    authorized = service.authorize_delivery(
+        record["identity"]["run_id"],
+        authorizer="Authorized Test Reviewer",
+        authorizer_role="Security reviewer",
+        authorization_reason="Authorize delivery of the exact approved PDF.",
+        authorized_at="2026-07-26T01:20:00+00:00",
+        expected_artifact_identity=review_artifact_identity(approved),
+    )
+    delivery = authorized["approved_delivery_package"]
+    archive = base64.b64decode(delivery["zip_base64"], validate=True)
+    with zipfile.ZipFile(io.BytesIO(archive), "r") as bundle:
+        delivered_pdf = bundle.read("01_nico_comprehensive_report.pdf")
+
+    assert delivered_pdf == base64.b64decode(
+        approved_report["pdf_base64"], validate=True
+    )
+    delivered_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(delivered_pdf)).pages
+    ).upper()
+    assert "APPROVED FINAL" in delivered_text
+    assert "AUTOMATED DRAFT" not in delivered_text
+    assert "PENDING HUMAN APPROVAL" not in delivered_text
+    assert "CLIENT DELIVERY BLOCKED" not in delivered_text
+    assert authorized["client_delivery_allowed"] is True
+
+
+def test_spanish_approval_finalizes_lifecycle_markers_without_changing_analysis() -> None:
+    record = _review_ready_record(report_language="es-MX")
+    store = _MemoryStore(record)
+    service = ComprehensiveRunService(store, {})  # type: ignore[arg-type]
+
+    approved = service.review(
+        record["identity"]["run_id"],
+        reviewer="Revisora Autorizada",
+        reviewer_role="Cybersecurity specialist",
+        decision="approved",
+        decision_reason="Se revisó el paquete exacto para probar la finalización.",
+        decided_at="2026-07-26T01:15:00+00:00",
+        expected_artifact_identity=review_artifact_identity(record),
+    )
+    approved_report = approved["stage_results"][
+        "final_comprehensive_report_generation"
+    ]["report_package"]
+    approved_text = _pdf_text(approved_report["pdf_base64"]).upper()
+
+    assert "FINAL APROBADO" in approved_text
+    assert "BORRADOR AUTOMATIZADO" not in approved_text
+    assert "APROBACIÓN HUMANA PENDIENTE" not in approved_text
+    assert "ENTREGA AL CLIENTE BLOQUEADA" not in approved_text
+    assert approved_report["analysis_regenerated_during_approval"] is False
 
 
 def test_service_blocks_approval_of_unchanged_report_after_more_evidence_request() -> None:

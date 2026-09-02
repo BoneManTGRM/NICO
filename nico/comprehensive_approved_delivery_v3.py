@@ -201,7 +201,15 @@ def attach_approved_delivery_package(
         updated.pop("approved_delivery_package", None)
         return updated
     require_new_report_after_evidence_request(updated, manifest)
-    delivery = build_approved_delivery_package(updated, manifest)
+    if not isinstance(updated.get("delivery_authorization"), Mapping):
+        raise ValueError("approved_delivery_requires_delivery_authorization")
+    # Approval remains immutable and explicitly non-deliverable. The later delivery
+    # action creates a packaging-only projection rather than rewriting that accepted
+    # edition to pretend the two human decisions were one transition.
+    delivery_projection = deepcopy(dict(manifest))
+    delivery_projection["delivery_status"] = "approved_for_delivery"
+    delivery_projection["client_delivery_allowed"] = True
+    delivery = build_approved_delivery_package(updated, delivery_projection)
     updated["approved_delivery_package"] = delivery
     context = deepcopy(updated.get("review_context")) if isinstance(updated.get("review_context"), Mapping) else {}
     context.update(
