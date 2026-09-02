@@ -12,10 +12,24 @@ from typing import Any, Iterable
 
 
 SECRET_PATTERNS = [
-    re.compile(r"(?i)(api[_-]?key|secret|token|password|jwt|private[_-]?key)\s*[:=]\s*['\"]?([A-Za-z0-9_\-./+=]{8,})"),
-    re.compile(r"(sk-[A-Za-z0-9]{16,})"),
-    re.compile(r"(ghp_[A-Za-z0-9]{16,})"),
+    re.compile(
+        r"(?i)(?P<label>api[_-]?key|secret|token|password|jwt|private[_-]?key)"
+        r"\s*[:=]\s*(?P<quote>['\"])(?P<secret>[A-Za-z0-9_\-./+=]{8,})(?P=quote)"
+    ),
+    re.compile(r"(?P<secret>sk-[A-Za-z0-9]{16,})"),
+    re.compile(r"(?P<secret>ghp_[A-Za-z0-9]{16,})"),
 ]
+
+MASK_SECRET_PATTERNS = [
+    re.compile(
+        r"(?i)(?P<label>api[_-]?key|secret|token|password|jwt|private[_-]?key)"
+        r"\s*[:=]\s*['\"]?(?P<secret>[A-Za-z0-9_\-./+=]{8,})"
+    ),
+    re.compile(r"(?P<secret>sk-[A-Za-z0-9]{16,})"),
+    re.compile(r"(?P<secret>ghp_[A-Za-z0-9]{16,})"),
+]
+
+ENV_REFERENCE_RE = re.compile(r"^[A-Z][A-Z0-9_]{7,}$")
 
 OPTIONAL_TOOLS = {
     "gitleaks": "secret scanning",
@@ -61,16 +75,37 @@ def mask(value: str) -> str:
 
 def mask_text(text: str) -> str:
     out = text
-    for pattern in SECRET_PATTERNS:
+    for pattern in MASK_SECRET_PATTERNS:
         out = pattern.sub(
             lambda match: (
-                match.group(1) + '="' + mask(match.group(2)) + '"'
-                if match.lastindex and match.lastindex >= 2
-                else mask(match.group(0))
+                str(match.groupdict().get("label")) + '="' + mask(str(match.group("secret"))) + '"'
+                if match.groupdict().get("label")
+                else mask(str(match.group("secret")))
             ),
             out,
         )
     return out
+
+
+def _is_test_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    name = normalized.rsplit("/", 1)[-1]
+    return normalized.startswith("tests/") or "/tests/" in normalized or ".test." in name or ".spec." in name
+
+
+def _is_non_secret_reference(path: str, match: re.Match[str], raw: str) -> bool:
+    """Reject generic literals that are clearly identifiers or test fixtures.
+
+    Provider-shaped credentials (for example ``ghp_`` and ``sk-``) use patterns
+    without a ``label`` group and remain reportable even when they occur in a
+    test file.
+    """
+
+    if not match.groupdict().get("label"):
+        return False
+    if ENV_REFERENCE_RE.fullmatch(raw):
+        return True
+    return _is_test_path(path)
 
 
 def scanner_availability() -> list[dict[str, Any]]:
@@ -136,7 +171,9 @@ def scan_text(path: str, text: str) -> list[dict[str, Any]]:
         for pattern in SECRET_PATTERNS:
             match = pattern.search(line)
             if match:
-                raw = match.group(2) if match.lastindex and match.lastindex >= 2 else match.group(0)
+                raw = str(match.group("secret"))
+                if _is_non_secret_reference(path, match, raw):
+                    continue
                 fake = "FAKE_TEST_ONLY" in raw.upper()
                 findings.append(
                     normalized_finding(

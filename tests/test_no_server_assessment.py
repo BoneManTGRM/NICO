@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+import nico.no_server_assessment as no_server
+
 from nico.no_server_assessment import (
     AuthorizationError,
     run_local_assessment,
@@ -42,6 +44,58 @@ def test_local_assessment_generates_report(tmp_path, monkeypatch):
     assert result["target_type"] == "local"
     assert "Code Audit" in result["maturity_semaphore"]
     assert result["evidence_log"]
+
+
+def test_no_server_analysis_recognizes_node_ci_and_skips_python_only_tool(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    workflow = project / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("steps:\n  - run: npm run verify\n", encoding="utf-8")
+    (project / "package.json").write_text('{"scripts":{"verify":"node --test"}}\n', encoding="utf-8")
+    (project / "package-lock.json").write_text("{}\n", encoding="utf-8")
+    files = no_server.collect_text_files(project)
+    monkeypatch.setattr(
+        no_server,
+        "scanner_availability",
+        lambda: [
+            {"tool": "osv-scanner", "purpose": "dependency scanning", "available": False},
+            {"tool": "pip-audit", "purpose": "python dependency scanning", "available": False},
+            {"tool": "npm", "purpose": "npm audit availability", "available": True},
+        ],
+    )
+
+    cicd = no_server.analyze_cicd(project, files)
+    dependencies = no_server.analyze_dependencies(project, files, [])
+
+    assert "Test/lint/build signal in workflow text: True." in cicd["evidence"]
+    assert not any("no obvious test/lint/build command" in item for item in cicd["findings"])
+    assert not any("pip-audit" in item for item in dependencies["unavailable_data"])
+
+
+def test_github_assessment_temp_project_is_inside_default_allowed_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    observed: dict[str, Path] = {}
+
+    def fake_download(_repo: str, destination: Path) -> Path:
+        root = destination / "repo" / "project"
+        root.mkdir(parents=True)
+        observed["destination"] = destination
+        return root
+
+    def fake_scan(target: str, *, kind: str):
+        observed["target"] = Path(target)
+        assert kind == "no_server_github"
+        return {"scan": {"findings": [], "files_scanned": []}, "repairs": []}
+
+    monkeypatch.setattr(no_server, "download_github_repo", fake_download)
+    monkeypatch.setattr(no_server, "run_scan", fake_scan)
+    monkeypatch.setattr(no_server, "build_report", lambda *_args: {"status": "completed"})
+
+    result = no_server.run_github_assessment("BoneManTGRM/SARA", authorized=True)
+
+    assert result == {"status": "completed"}
+    assert observed["destination"].parent == tmp_path
+    assert observed["target"].is_relative_to(tmp_path)
 
 
 def test_safe_zip_extraction_blocks_traversal_and_symlink(tmp_path: Path) -> None:
