@@ -228,6 +228,58 @@ def test_node_only_run_rebuilds_phase14_without_inapplicable_or_contract_blocker
             "file_evidence": {"sampled_paths": ["package.json", "src/index.ts"]},
             "dependency_evidence": {"manifest_paths": ["package.json"]},
         },
+        "summary": (
+            "Evidence-Adjusted readiness is 85/100 versus technical maturity 89/100."
+        ),
+        "assessment": {
+            "technical_score": 89,
+            "evidence_adjusted_score": 85,
+            "canonical_evidence_adjusted_score": 85,
+            "score_formula": "89 - 0 - 4 = 85",
+            "maturity_signal": {
+                "technical_score": 89,
+                "evidence_adjusted_score": 85,
+                "evidence_readiness_score": 85,
+            },
+            "score_contract": {
+                "technical_score": 89,
+                "missing_raw_payload_penalty": 0,
+                "incomplete_analyzer_penalty": 4,
+                "evidence_completeness_penalty": 4,
+                "assurance_penalty": 4,
+                "evidence_adjusted_score": 85,
+                "score_formula": "89 - 0 - 0 - 4 - 0 = 85",
+            },
+            "evidence_coverage": {
+                "percent": 89,
+                "applicable_analyzers": 9,
+                "completed_verified_analyzers": 8,
+                "incomplete_analyzers": ["pip-audit"],
+                "missing_raw_payload_penalty": 0,
+                "incomplete_analyzer_penalty": 4,
+                "evidence_completeness_penalty": 4,
+            },
+            "scanner_execution_summary": {
+                "record_count": 9,
+                "completed_count": 8,
+                "verified_count": 8,
+                "incomplete_count": 1,
+            },
+            "sections": [
+                {
+                    "id": "dependency_library_ecosystem",
+                    "evidence": [
+                        "Applicable analyzers: pip-audit, npm-audit, osv-scanner."
+                    ],
+                }
+            ],
+        },
+        "v2_scanner_reconciliation": {
+            "version": "nico.v2.scanner-reconciliation.v3",
+            "record_count": 9,
+            "completed_count": 8,
+            "incomplete_count": 1,
+        },
         "requested_scanner_records": records,
         "scanner_execution_records": records,
         "live_scanner_evidence": {
@@ -256,6 +308,28 @@ def test_node_only_run_rebuilds_phase14_without_inapplicable_or_contract_blocker
     assert set(result["evidence_health_summary"]["completed_scanners"]) == set(TOOLS) - {
         "pip-audit"
     }
+    assessment = result["assessment"]
+    assert assessment["scanner_execution_summary"]["record_count"] == 9
+    assert assessment["scanner_execution_summary"]["applicable_record_count"] == 8
+    assert assessment["scanner_execution_summary"]["not_applicable_count"] == 1
+    assert assessment["scanner_execution_summary"]["completed_count"] == 8
+    assert assessment["scanner_execution_summary"]["incomplete_count"] == 0
+    assert assessment["evidence_coverage"]["percent"] == 100
+    assert assessment["evidence_coverage"]["applicable_analyzers"] == 8
+    assert assessment["evidence_coverage"]["completed_verified_analyzers"] == 8
+    assert assessment["evidence_coverage"]["incomplete_analyzer_penalty"] == 0
+    assert assessment["evidence_adjusted_score"] == 89
+    assert assessment["canonical_evidence_adjusted_score"] == 89
+    assert assessment["maturity_signal"]["evidence_readiness_score"] == 89
+    assert assessment["score_formula"] == "89 - 0 - 0 = 89"
+    assert assessment["sections"][0]["evidence"] == [
+        "Applicable analyzers: npm-audit, osv-scanner."
+    ]
+    assert "85/100" not in result["summary"]
+    assert "89/100" in result["summary"]
+    assert result["v2_scanner_reconciliation"]["completed_count"] == 8
+    assert result["v2_scanner_reconciliation"]["incomplete_count"] == 0
+    assert result["v2_scanner_reconciliation"]["not_applicable_count"] == 1
 
 
 def test_report_runtime_reconciles_after_authoritative_projection_without_redesign() -> None:
