@@ -15,13 +15,16 @@ from nico.storage import STORE, StorageAdapter, utc_now
 SCANNER_RECOVERY_SCHEMA = "nico.scanner_recovery.v1"
 SCANNER_RECOVERY_ROUTE = ("GET", "/operations/recovery")
 SCANNER_RESUME_ROUTE = ("POST", "/operations/recovery/scanner/{scan_id}/resume")
+SCANNER_CLOSE_ROUTE = ("POST", "/operations/recovery/scanner/{scan_id}/close")
 REQUIRED_SCANNER_RECOVERY_ROUTES = {
     SCANNER_RECOVERY_ROUTE,
     SCANNER_RESUME_ROUTE,
+    SCANNER_CLOSE_ROUTE,
 }
 REQUIRED_SCANNER_RECOVERY_ROUTE_NAMES = {
     "GET /operations/recovery",
     "POST /operations/recovery/scanner/{scan_id}/resume",
+    "POST /operations/recovery/scanner/{scan_id}/close",
 }
 ACTIVE_SCANNER_STATUSES = {"queued", "running"}
 RECOVERY_REQUIRED_STATUS = "recovery_required"
@@ -29,6 +32,12 @@ TERMINAL_SCANNER_STATUSES = {"complete", "failed", "error", "blocked", "cancelle
 DEFAULT_STALE_SECONDS = 600
 MAX_RECONCILE_RECORDS = 1000
 MAX_INVENTORY_LIMIT = 500
+SCANNER_CLOSE_REASON_CODES = {
+    "superseded_by_terminal_assessment",
+    "authorization_expired",
+    "duplicate_or_test_run",
+    "no_longer_required",
+}
 
 _MEMORY_TRANSITION_LOCK = threading.Lock()
 _STARTUP_RESULT: dict[str, Any] | None = None
@@ -36,6 +45,11 @@ _STARTUP_RESULT: dict[str, Any] | None = None
 
 class ScannerResumeRequest(BaseModel):
     actor: str = Field(default="operator", min_length=1, max_length=120)
+
+
+class ScannerCloseRequest(BaseModel):
+    actor: str = Field(min_length=1, max_length=120)
+    reason_code: str = Field(min_length=1, max_length=80)
 
 
 def _store(store: StorageAdapter | None = None) -> StorageAdapter:
@@ -147,6 +161,46 @@ def _normalize_postgres_row(adapter: Any, row: dict[str, Any]) -> dict[str, Any]
         }
     )
     return payload
+
+
+def _bounded_scanner_records(
+    active: StorageAdapter,
+    *,
+    statuses: set[str],
+    limit: int = MAX_RECONCILE_RECORDS,
+) -> list[dict[str, Any]]:
+    """Load bounded lifecycle/operator metadata without large scanner outputs."""
+
+    adapter = getattr(active, "adapter", active)
+    query = getattr(adapter, "_query", None)
+    if callable(query):
+        rows = query(
+            """
+            SELECT
+                scan_id,
+                customer_id,
+                project_id,
+                status,
+                created_at,
+                updated_at,
+                payload ->> 'run_id' AS run_id,
+                payload ->> 'repository' AS repository,
+                payload -> 'tools_requested' AS tools_requested,
+                payload -> 'recovery' AS recovery,
+                payload ->> 'completed_at' AS completed_at
+            FROM scanner_runs
+            WHERE status = ANY(%s)
+            ORDER BY updated_at DESC
+            LIMIT %s
+            """,
+            (sorted(statuses), max(1, min(int(limit), MAX_RECONCILE_RECORDS))),
+        )
+        return [dict(row) for row in rows if isinstance(row, dict)]
+    return [
+        record
+        for record in active.list("scanner_runs")[:MAX_RECONCILE_RECORDS]
+        if isinstance(record, dict) and str(record.get("status") or "") in statuses
+    ][:limit]
 
 
 def _postgres_atomic_transition(
@@ -272,7 +326,7 @@ def reconcile_interrupted_scanner_runs(
             "client_delivery_allowed": False,
         }
 
-    records = active.list("scanner_runs")[:MAX_RECONCILE_RECORDS]
+    records = _bounded_scanner_records(active, statuses=ACTIVE_SCANNER_STATUSES)
     reconciled: list[str] = []
     fresh_active = 0
     transition_conflicts = 0
@@ -314,10 +368,8 @@ def reconcile_interrupted_scanner_runs(
         else:
             transition_conflicts += 1
 
-    recovery_required = sum(
-        1
-        for record in active.list("scanner_runs")[:MAX_RECONCILE_RECORDS]
-        if isinstance(record, dict) and str(record.get("status") or "") == RECOVERY_REQUIRED_STATUS
+    recovery_required = len(
+        _bounded_scanner_records(active, statuses={RECOVERY_REQUIRED_STATUS})
     )
     return {
         "artifact_schema": SCANNER_RECOVERY_SCHEMA,
@@ -351,7 +403,10 @@ def scanner_recovery_inventory(
         if refresh
         else dict(_STARTUP_RESULT or {})
     )
-    records = active.list("scanner_runs")[:MAX_RECONCILE_RECORDS]
+    records = _bounded_scanner_records(
+        active,
+        statuses=ACTIVE_SCANNER_STATUSES | {RECOVERY_REQUIRED_STATUS},
+    )
     recovery_items = [
         _safe_scan_summary(record)
         for record in records
@@ -382,7 +437,7 @@ def scanner_recovery_inventory(
         "active": active_items[:bounded_limit],
         "limit": bounded_limit,
         "reconciliation": reconciliation,
-        "operator_action": "Review each interrupted scanner record, then resume only the intended run through the authenticated same-ID resume endpoint.",
+        "operator_action": "Review each interrupted scanner record, then resume authorized work or close reviewed stale work while retaining its evidence.",
         "automatic_resume": False,
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -583,6 +638,137 @@ def resume_interrupted_scanner_run(
     }
 
 
+def close_interrupted_scanner_run(
+    scan_id: str,
+    *,
+    actor: str,
+    reason_code: str,
+    store: StorageAdapter | None = None,
+) -> dict[str, Any]:
+    """Close one reviewed recovery item without deleting its retained evidence."""
+
+    active = _store(store)
+    normalized_scan_id = str(scan_id or "").strip()
+    normalized_actor = " ".join(str(actor or "").split())[:120]
+    normalized_reason = str(reason_code or "").strip().lower()
+    if not normalized_scan_id.startswith("scan_"):
+        return {
+            "status": "not_found",
+            "code": "scanner_run_not_found",
+            "scan_id": normalized_scan_id,
+        }
+    if not normalized_actor:
+        return {
+            "status": "blocked",
+            "code": "scanner_close_actor_required",
+            "scan_id": normalized_scan_id,
+        }
+    if normalized_reason not in SCANNER_CLOSE_REASON_CODES:
+        return {
+            "status": "blocked",
+            "code": "scanner_close_reason_invalid",
+            "scan_id": normalized_scan_id,
+            "allowed_reason_codes": sorted(SCANNER_CLOSE_REASON_CODES),
+        }
+    current = active.get("scanner_runs", normalized_scan_id)
+    if not isinstance(current, dict):
+        return {
+            "status": "not_found",
+            "code": "scanner_run_not_found",
+            "scan_id": normalized_scan_id,
+        }
+    current_status = str(current.get("status") or "unknown")
+    current_recovery = current.get("recovery") if isinstance(current.get("recovery"), dict) else {}
+    if current_status == "cancelled" and current_recovery.get("state") == "closed_by_operator":
+        return {
+            "status": "cancelled",
+            "idempotent_reuse": True,
+            "scan": _safe_scan_summary(current),
+            "automatic_resume": False,
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+    if current_status != RECOVERY_REQUIRED_STATUS:
+        return {
+            "status": "blocked",
+            "code": "scanner_close_state_invalid",
+            "scan": _safe_scan_summary(current),
+            "automatic_resume": False,
+            "client_delivery_allowed": False,
+        }
+
+    now_text = utc_now()
+    closed = atomic_scanner_transition(
+        normalized_scan_id,
+        {RECOVERY_REQUIRED_STATUS},
+        "cancelled",
+        {
+            "updated_at": now_text,
+            "recovery": {
+                **current_recovery,
+                "artifact_schema": SCANNER_RECOVERY_SCHEMA,
+                "state": "closed_by_operator",
+                "previous_status": RECOVERY_REQUIRED_STATUS,
+                "closed_at": now_text,
+                "closed_by": normalized_actor,
+                "close_reason_code": normalized_reason,
+                "resume_allowed": False,
+                "automatic_resume": False,
+            },
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        },
+        store=active,
+    )
+    if not closed:
+        latest = active.get("scanner_runs", normalized_scan_id) or current
+        latest_recovery = latest.get("recovery") if isinstance(latest.get("recovery"), dict) else {}
+        if str(latest.get("status") or "") == "cancelled" and latest_recovery.get("state") == "closed_by_operator":
+            return {
+                "status": "cancelled",
+                "idempotent_reuse": True,
+                "scan": _safe_scan_summary(latest),
+                "automatic_resume": False,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            }
+        return {
+            "status": "blocked",
+            "code": "scanner_close_claim_failed",
+            "scan": _safe_scan_summary(latest),
+            "automatic_resume": False,
+            "client_delivery_allowed": False,
+        }
+    try:
+        active.audit(
+            "scanner.recovery_closed",
+            {
+                "scan_id": normalized_scan_id,
+                "actor": normalized_actor,
+                "reason_code": normalized_reason,
+            },
+            customer_id=str(closed.get("customer_id") or "default_customer"),
+            project_id=str(closed.get("project_id") or "default_project"),
+        )
+    except Exception:
+        pass
+    return {
+        "status": "cancelled",
+        "idempotent_reuse": False,
+        "scan": _safe_scan_summary(closed),
+        "close": {
+            "same_scan_id": True,
+            "closed_at": now_text,
+            "closed_by": normalized_actor,
+            "reason_code": normalized_reason,
+            "evidence_retained": True,
+        },
+        "automatic_resume": False,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+
+
 def _require_operator(token: str) -> None:
     allowed, status = require_admin_write(token)
     if allowed:
@@ -645,6 +831,39 @@ def scanner_recovery_resume_response(
     return result
 
 
+def scanner_recovery_close_response(
+    scan_id: str,
+    req: ScannerCloseRequest,
+    x_nico_admin_token: str = Header(default=""),
+) -> dict[str, Any]:
+    _require_operator(x_nico_admin_token)
+    result = close_interrupted_scanner_run(
+        scan_id,
+        actor=req.actor,
+        reason_code=req.reason_code,
+    )
+    if result.get("status") == "not_found":
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "status": "not_found",
+                "code": result.get("code") or "scanner_run_not_found",
+                "message": "Scanner run not found.",
+            },
+        )
+    if result.get("status") == "blocked":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "blocked",
+                "code": result.get("code") or "scanner_close_blocked",
+                "message": "Scanner recovery close was blocked by lifecycle validation.",
+                "allowed_reason_codes": result.get("allowed_reason_codes"),
+            },
+        )
+    return result
+
+
 def _route_pairs(target: FastAPI) -> set[tuple[str, str]]:
     pairs: set[tuple[str, str]] = set()
     for route in target.routes:
@@ -666,6 +885,11 @@ def install_scanner_recovery(target: FastAPI) -> dict[str, Any]:
             "/operations/recovery/scanner/{scan_id}/resume",
             tags=["operations"],
         )(scanner_recovery_resume_response)
+    if SCANNER_CLOSE_ROUTE not in existing:
+        target.post(
+            "/operations/recovery/scanner/{scan_id}/close",
+            tags=["operations"],
+        )(scanner_recovery_close_response)
     target.openapi_schema = None
 
     from nico.operations_readiness import REQUIRED_OPERATION_ROUTES
@@ -690,12 +914,15 @@ __all__ = [
     "SCANNER_RECOVERY_SCHEMA",
     "SCANNER_RECOVERY_ROUTE",
     "SCANNER_RESUME_ROUTE",
+    "SCANNER_CLOSE_ROUTE",
     "REQUIRED_SCANNER_RECOVERY_ROUTES",
     "REQUIRED_SCANNER_RECOVERY_ROUTE_NAMES",
     "ACTIVE_SCANNER_STATUSES",
     "RECOVERY_REQUIRED_STATUS",
     "TERMINAL_SCANNER_STATUSES",
     "ScannerResumeRequest",
+    "ScannerCloseRequest",
+    "SCANNER_CLOSE_REASON_CODES",
     "configured_stale_seconds",
     "scanner_age_seconds",
     "scanner_is_stale",
@@ -703,7 +930,9 @@ __all__ = [
     "reconcile_interrupted_scanner_runs",
     "scanner_recovery_inventory",
     "resume_interrupted_scanner_run",
+    "close_interrupted_scanner_run",
     "scanner_recovery_inventory_response",
     "scanner_recovery_resume_response",
+    "scanner_recovery_close_response",
     "install_scanner_recovery",
 ]

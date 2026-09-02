@@ -126,6 +126,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
   payload JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS scanner_runs_recovery_status_updated_idx
+  ON scanner_runs (status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS assessment_runs_recovery_status_created_idx
+  ON assessment_runs (workflow, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS audit_log_action_scope_created_idx
+  ON audit_log (action, customer_id, project_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS audit_log_action_created_idx
+  ON audit_log (action, created_at DESC);
 """
 
 JSONB_TABLE_MAP = {

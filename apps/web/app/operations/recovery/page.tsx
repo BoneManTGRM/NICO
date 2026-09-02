@@ -124,7 +124,7 @@ export default function RecoveryPage() {
         targetRunId={targetRunId}
         returnPath={returnPath}
       /> : <AssessmentRecoveryPanel apiUrl={API_URL} adminToken={adminToken} refreshKey={refreshKey} targetRunId={targetRunId} />}
-      {!comprehensiveTarget ? <ScannerRecoveryPanel apiUrl={API_URL} adminToken={adminToken} refreshKey={refreshKey} targetScanId={targetScanId} /> : null}
+      {!comprehensiveTarget ? <ScannerRecoveryPanel apiUrl={API_URL} adminToken={adminToken} refreshKey={refreshKey} targetScanId={targetScanId} locale={locale} /> : null}
     </main>
   );
 }
