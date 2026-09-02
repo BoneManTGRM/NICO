@@ -17,7 +17,7 @@ from nico.scanner_evidence_pipeline_v1 import (
     _semgrep_config,
     materialize_raw_artifacts,
 )
-from nico.scanner_tool_runners import ProjectCommandPreparation, ScannerToolSpec
+from nico.scanner_tool_runners import ProjectCommandPreparation, ScannerToolSpec, resolve_node_project_dir
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -255,6 +255,7 @@ def test_root_node_project_routes_eslint_and_typescript_to_entire_project(monkey
         preparation,
     )
 
+    assert resolve_node_project_dir(project) == project
     assert _javascript_source_targets(project) == (".",)
     assert eslint["status"] == "completed"
     assert typescript["status"] == "completed"

@@ -77,6 +77,19 @@ def test_extracted_engine_masks_raw_secret_material() -> None:
     assert findings[0]["masked_evidence"] != f"token='{raw}'"
 
 
+def test_generic_secret_scanner_rejects_references_and_test_fixtures() -> None:
+    assert engine.scan_text("src/server.ts", "const token = header.slice(7);\n") == []
+    assert engine.scan_text("src/config.ts", 'const apiKey="CLOUDFLARE_API_TOKEN";\n') == []
+    assert engine.scan_text("tests/config.test.ts", 'const apiKey="test-secret-value";\n') == []
+
+    provider_secret = "ghp_" + "1234567890abcdefghijklmnop"
+    findings = engine.scan_text("tests/config.test.ts", f'const token="{provider_secret}";\n')
+
+    assert len(findings) == 1
+    assert findings[0]["category"] == "secret_exposure"
+    assert provider_secret not in str(findings)
+
+
 def test_scan_repo_is_confined_to_allowed_root_and_skips_unsafe_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
