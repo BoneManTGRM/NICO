@@ -1070,22 +1070,22 @@ SMALL_ENGLISH_GOLDEN = {
     "html": ("43d3a5097c673763501cc06bfa22921cbb963b59d77f4bb8cd92e0773c440343", 22724),
     # The authoritative separately rendered CI/CD boundary replaces the base
     # copy, so one semantic section now produces one physical body page.
-    "pdf_base64": ("d7c30f75b79736a27010c8fe4fbcf671e24f45da9993afc5f144c9373e8651bb", 175236),
-    "pdf_sha256": "ca994f0bc62a1cf90b2636dd7c6c8d210b6f7ccbdd6cc46edfd197d025d5e786",
+    "pdf_base64": ("ec0abd0f0750baf86dab0a3a91a4e54749a66bd6d59b2d4753f3ca7365655456", 175580),
+    "pdf_sha256": "f06d0923e103e66d0897a3d9b55f99aa6cb93f79bef712d097df529b15247816",
     "page_count": 21,
 }
 RICH_ENGLISH_GOLDEN = {
     "markdown": ("e170d72b9672962c562d5a31b9da62cb4d612a376d55c91588a0324bf1d01906", 20572),
     "html": ("ff966912bf11ddf474f5004d646c799e31fc5fb9f35a25b809954dccb41d1a26", 24753),
-    "pdf_base64": ("dd9d2b72af3cb9928860314492c83751725774777bdf425716d989175123c144", 255468),
-    "pdf_sha256": "3dc2a811be125f2049edc2da79189265987334a7d786123eb139cf9022808c6a",
+    "pdf_base64": ("d93db50f19a05cf06123d22a54c80288b9d8627399c1cfdf03a6b12a7c698e29", 255812),
+    "pdf_sha256": "c73d1ca18d1e98898f4fcb2ff339b3dc13db53e3af2e6c82f843e40c1aa05c45",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
     "markdown": ("51a2018ab77f58a5393987170771796db6ae6cfa6dbbf2a57d2ee672de15c7b7", 19585),
     "html": ("e09e9867f511b055a1e80b25902b3891f04279f0e5f2c656029e7d634fb050bc", 23784),
-    "pdf_base64": ("8837202c18185febc536b3536557fc093273d4c082aaee8de2f767117b40df67", 171784),
-    "pdf_sha256": "8dc89085f940e9dc8ca6cfebea4dc5c326dfabbb27e883e1cb1f26b5111ebe13",
+    "pdf_base64": ("7cc9cd8595eab2acffc013b4aef3880340de4d81cfe2e42ce023d674a6d37119", 172128),
+    "pdf_sha256": "1aea44491964ae2a75ea0908cf47945cb85231b12b3bf8f9f95a2ebd36c0655a",
     "page_count": 20,
 }
 

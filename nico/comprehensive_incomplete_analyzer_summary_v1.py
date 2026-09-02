@@ -265,12 +265,19 @@ def _overlay_pdf_summary(
     overlay.save()
 
     overlay_page = PdfReader(io.BytesIO(overlay_buffer.getvalue())).pages[0]
-    first = reader.pages[0]
-    first.merge_page(overlay_page)
+    first_text = " ".join((reader.pages[0].extract_text() or "").casefold().split())
+    branded_cover = any(
+        marker in first_text
+        for marker in (
+            "evidence-bound technical review package",
+            "paquete de revisión técnica basado en evidencia",
+        )
+    )
+    target_index = 1 if len(reader.pages) > 1 and branded_cover else 0
+    reader.pages[target_index].merge_page(overlay_page)
 
     writer = PdfWriter()
-    writer.add_page(first)
-    for page in reader.pages[1:]:
+    for page in reader.pages:
         writer.add_page(page)
     output = io.BytesIO()
     writer.write(output)

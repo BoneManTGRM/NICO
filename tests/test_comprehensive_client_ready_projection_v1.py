@@ -123,6 +123,28 @@ def test_unapproved_package_uses_automated_draft_truth() -> None:
     assert projected["assessment"]["client_delivery_status"] == "blocked"
 
 
+def test_url_only_intake_separates_authorization_confirmation_from_written_scope() -> None:
+    register = _register(0)
+    canonical = _canonical(register)
+    canonical["human_evidence"] = {
+        "modules": {
+            "engagement_context": {
+                "evidence": {"authorization_confirmation": ["confirmed"]},
+            },
+        },
+    }
+
+    pdf = render_evidence_review_gate_pdf(canonical, register, spanish=False)
+    extracted = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+
+    assert "Authorization confirmation" in extracted
+    assert "Confirmed by requester for assessment of the submitted repository" in extracted
+    assert "Authorized scope" in extracted
+    assert "Not supplied" in extracted
+
+
 def test_review_candidate_sections_are_provisional_not_unqualified_strong() -> None:
     projected = project_client_ready_truth(_canonical(_register(3)))
     sections = projected["assessment"]["sections"]

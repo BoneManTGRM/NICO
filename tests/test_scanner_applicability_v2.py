@@ -170,6 +170,26 @@ def test_node_repository_does_not_hide_missing_applicable_analyzers() -> None:
     assert all(item["applicable"] is True for item in result["scanner_execution_records"])
 
 
+def test_node_only_repository_marks_pip_audit_not_applicable() -> None:
+    canonical = {
+        "identity": {"commit_sha": SHA},
+        "repository_evidence": {
+            "file_evidence": {"sampled_paths": ["package.json", "src/index.ts"]},
+            "dependency_evidence": {"manifest_paths": ["package.json"]},
+        },
+        "scanner_execution_records": [
+            _record("pip-audit", "unavailable", "requirements.txt not found for pip-audit."),
+        ],
+        "assessment": {},
+    }
+
+    result = normalize_scanner_applicability_canonical(canonical)
+
+    assert result["scanner_execution_records"] == []
+    assert result["not_applicable_scanner_records"][0]["scanner_name"] == "pip-audit"
+    assert result["assessment"]["scanner_applicability_summary"]["incomplete_applicable_scanners"] == 0
+
+
 def test_scanner_error_wording_does_not_create_false_repository_signal() -> None:
     canonical = {
         "identity": {"commit_sha": SHA},

@@ -150,6 +150,22 @@ def _explicitly_not_applicable(
 ) -> tuple[bool, str]:
     lowered = reason.casefold()
     has_node_project = bool(signals.get("node_manifest") or signals.get("node_source"))
+    has_python_project = bool(signals.get("python_manifest") or signals.get("python_source"))
+
+    if scanner == "pip-audit":
+        missing_python_manifest = any(
+            marker in lowered
+            for marker in (
+                "requirements.txt not found",
+                "no supported python dependency manifest",
+                "python dependency manifest is missing",
+            )
+        )
+        if missing_python_manifest and not has_python_project:
+            return True, (
+                "No supported Python dependency manifest or source tree exists at the assessed commit; "
+                "pip-audit is not applicable to this repository snapshot."
+            )
 
     if scanner == "npm-audit":
         missing_lock = any(
