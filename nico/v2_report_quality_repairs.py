@@ -443,7 +443,13 @@ def _replace_pdf_text(pdf: bytes, *, spanish: bool) -> tuple[bytes, int]:
         if changed:
             page.replace_contents(stream)
 
-    if writer.pages:
+    extracted = "\n".join(page.extract_text() or "" for page in writer.pages)
+    expected_status = (
+        "INFORME FINAL · APROBACIÓN HUMANA PENDIENTE · ENTREGA BLOQUEADA"
+        if spanish
+        else "FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
+    )
+    if writer.pages and expected_status.casefold() not in extracted.casefold():
         overlay = PdfReader(io.BytesIO(_final_status_overlay(spanish=spanish)))
         writer.pages[0].merge_page(overlay.pages[0], over=True)
 

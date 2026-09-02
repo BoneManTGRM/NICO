@@ -11,10 +11,11 @@ from nico.scanner_evidence_pipeline_v1 import (
     _raw_blob,
     _run_bandit,
     _run_osv,
+    _run_typescript,
     _semgrep_config,
     materialize_raw_artifacts,
 )
-from nico.scanner_tool_runners import ScannerToolSpec
+from nico.scanner_tool_runners import ProjectCommandPreparation, ScannerToolSpec, resolve_node_project_dir
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -204,6 +205,48 @@ def test_eslint_profile_uses_explicit_module_root(monkeypatch, tmp_path: Path) -
     assert reason == ""
     assert config is not None
     assert str(entry.resolve()) in config.read_text(encoding="utf-8")
+
+
+def test_node_project_resolution_supports_root_and_prefers_monorepo_web(tmp_path: Path) -> None:
+    root = tmp_path / "repository"
+    root.mkdir()
+    (root / "package.json").write_text("{}\n", encoding="utf-8")
+
+    assert resolve_node_project_dir(root) == root
+
+    web = root / "apps" / "web"
+    web.mkdir(parents=True)
+    (web / "package.json").write_text("{}\n", encoding="utf-8")
+
+    assert resolve_node_project_dir(root) == web
+
+
+def test_typescript_runner_uses_root_project_when_apps_web_is_absent(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    (workspace.repo_dir / "package.json").write_text("{}\n", encoding="utf-8")
+    (workspace.repo_dir / "tsconfig.json").write_text("{}\n", encoding="utf-8")
+    binary = workspace.repo_dir / "node_modules" / ".bin" / "tsc"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    preparation = ProjectCommandPreparation("completed", workspace.repo_dir, True)
+    calls: list[tuple[tuple[str, ...], Path]] = []
+
+    def runner(args, *, cwd, limits, stdout_path, extra_env):
+        del limits, extra_env
+        calls.append((tuple(args), cwd))
+        stdout_path.write_text("", encoding="utf-8")
+        return WorkerCommandResult(args=tuple(args), returncode=0, stdout="", stderr="")
+
+    result = _run_typescript(
+        ScannerToolSpec("typescript", ("tsc",), "static", timeout_seconds=30),
+        workspace,
+        runner,
+        preparation,
+    )
+
+    assert result["status"] == "completed"
+    assert calls[0][1] == workspace.repo_dir
+    assert calls[0][0][-1] == str(workspace.repo_dir / "tsconfig.json")
 
 
 def test_semgrep_profile_is_local_deterministic_and_metrics_independent(tmp_path: Path) -> None:

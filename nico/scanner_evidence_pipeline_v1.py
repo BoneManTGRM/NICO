@@ -21,6 +21,7 @@ from nico.scanner_tool_runners import (
     prepare_project_commands,
     redact_payload,
     redact_text,
+    resolve_node_project_dir,
 )
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
 
@@ -508,11 +509,15 @@ def _run_semgrep(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Call
     return _tool_payload(spec, result, findings=findings, capture_complete=capture_complete, reason=reason or ("Semgrep reported execution errors." if not capture_complete else ""), raw_blob=blob, execution_source="nico_standard_semgrep_profile", workspace=workspace, valid_returncodes={0, 1}, extra={"scanner_error_count": len(errors), "generated_config_sha256": _sha256(config.read_bytes()), "configured_rule_count": 6})
 
 
-def _supported_web_files(web_dir: Path) -> bool:
-    app = web_dir / "app"
-    if not app.exists():
-        return False
-    return any(path.is_file() and path.suffix in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"} for path in app.rglob("*"))
+def _supported_web_files(project_dir: Path) -> bool:
+    supported = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"}
+    ignored = GENERATED_DIRS | {".turbo", ".cache"}
+    for path in project_dir.rglob("*"):
+        if any(part in ignored for part in path.relative_to(project_dir).parts):
+            continue
+        if path.is_file() and path.suffix in supported:
+            return True
+    return False
 
 
 def _node_module_path(name: str, web_dir: Path) -> Path | None:
@@ -572,20 +577,20 @@ def _eslint_config(workspace: WorkerWorkspace, web_dir: Path) -> tuple[Path | No
 
 
 def _run_eslint(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
-    web_dir = workspace.repo_dir / "apps" / "web"
-    if not _supported_web_files(web_dir):
-        return _unavailable(spec, "No supported JavaScript or TypeScript source files were found in apps/web/app.", source="canonical_eslint")
-    binary = shutil.which("eslint") or str(web_dir / "node_modules" / ".bin" / "eslint")
+    project_dir = preparation.project_dir if preparation else resolve_node_project_dir(workspace.repo_dir)
+    if not _supported_web_files(project_dir):
+        return _unavailable(spec, "No supported JavaScript or TypeScript source files were found in the resolved Node project.", source="canonical_eslint")
+    binary = shutil.which("eslint") or str(project_dir / "node_modules" / ".bin" / "eslint")
     if not Path(binary).exists() and shutil.which(binary) is None:
         return _unavailable(spec, "eslint is not installed in the worker image.", source="canonical_eslint")
-    config, config_reason = _eslint_config(workspace, web_dir)
+    config, config_reason = _eslint_config(workspace, project_dir)
     if config is None:
         return _unavailable(spec, config_reason, source="canonical_eslint")
     raw = workspace.root / "scanner-raw" / "eslint.json"
-    command = (binary, "app", "--ext", ".js,.jsx,.mjs,.cjs,.ts,.tsx", "--format", "json", "--config", str(config), "--no-config-lookup", "--no-error-on-unmatched-pattern")
-    env = _node_env(workspace, web_dir)
+    command = (binary, ".", "--ext", ".js,.jsx,.mjs,.cjs,.ts,.tsx", "--format", "json", "--config", str(config), "--no-config-lookup", "--no-error-on-unmatched-pattern")
+    env = _node_env(workspace, project_dir)
     env["NODE_OPTIONS"] = os.getenv("NICO_NODE_OPTIONS", "--max-old-space-size=2048")
-    result = _run(runner, command, cwd=web_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 16_000_000)), stdout_path=raw, extra_env=env)
+    result = _run(runner, command, cwd=project_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 16_000_000)), stdout_path=raw, extra_env=env)
     payload, reason = _read_json(raw)
     findings: list[Any] = []
     if isinstance(payload, list):
@@ -615,18 +620,18 @@ def _typescript_findings(text: str) -> list[dict[str, Any]]:
 
 
 def _run_typescript(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
-    web_dir = workspace.repo_dir / "apps" / "web"
-    tsconfig = web_dir / "tsconfig.json"
-    binary = web_dir / "node_modules" / ".bin" / "tsc"
+    project_dir = preparation.project_dir if preparation else resolve_node_project_dir(workspace.repo_dir)
+    tsconfig = project_dir / "tsconfig.json"
+    binary = project_dir / "node_modules" / ".bin" / "tsc"
     if preparation is None or not preparation.node_modules_ready:
         return _unavailable(spec, preparation.reason if preparation else "Project dependencies were not prepared.", source="canonical_typescript")
     if not tsconfig.exists() or not binary.exists():
-        return _unavailable(spec, "apps/web/tsconfig.json or the exact local TypeScript compiler is missing.", source="canonical_typescript")
+        return _unavailable(spec, "tsconfig.json or the exact local TypeScript compiler is missing in the resolved Node project.", source="canonical_typescript")
     raw = workspace.root / "scanner-raw" / "typescript.txt"
-    env = _node_env(workspace, web_dir)
+    env = _node_env(workspace, project_dir)
     env["NODE_OPTIONS"] = os.getenv("NICO_NODE_OPTIONS", "--max-old-space-size=2048")
     command = (str(binary), "--noEmit", "--pretty", "false", "--incremental", "false", "-p", str(tsconfig))
-    result = _run(runner, command, cwd=web_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 8_000_000)), stdout_path=raw, extra_env=env)
+    result = _run(runner, command, cwd=project_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 8_000_000)), stdout_path=raw, extra_env=env)
     text = _read_text(raw)
     findings = _typescript_findings(text)
     capture_complete = result.returncode == 0 or bool(findings)

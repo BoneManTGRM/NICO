@@ -243,9 +243,18 @@ def _ensure_pdf_coverage_alias(
     if not reader.pages:
         raise ValueError("coverage synchronization requires at least one PDF page")
 
-    first = reader.pages[0]
-    width = float(first.mediabox.width)
-    height = float(first.mediabox.height)
+    first_text = " ".join((reader.pages[0].extract_text() or "").casefold().split())
+    branded_cover = any(
+        marker in first_text
+        for marker in (
+            "evidence-bound technical review package",
+            "paquete de revisión técnica basado en evidencia",
+        )
+    )
+    target_index = 1 if len(reader.pages) > 1 and branded_cover else 0
+    target = reader.pages[target_index]
+    width = float(target.mediabox.width)
+    height = float(target.mediabox.height)
     overlay_buffer = io.BytesIO()
     overlay = canvas.Canvas(
         overlay_buffer,
@@ -257,10 +266,9 @@ def _ensure_pdf_coverage_alias(
     overlay.drawString(42, 35, f"{_CANONICAL_COVERAGE_ALIAS}: {expected}")
     overlay.save()
 
-    first.merge_page(PdfReader(io.BytesIO(overlay_buffer.getvalue())).pages[0])
+    target.merge_page(PdfReader(io.BytesIO(overlay_buffer.getvalue())).pages[0])
     writer = PdfWriter()
-    writer.add_page(first)
-    for page in reader.pages[1:]:
+    for page in reader.pages:
         writer.add_page(page)
     output = io.BytesIO()
     writer.write(output)
