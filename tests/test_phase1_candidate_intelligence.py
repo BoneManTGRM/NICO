@@ -490,4 +490,4 @@ def test_repeated_analysis_and_one_thousand_candidate_batch_are_deterministic() 
     assert metrics["technical_triage_completed"] == 1000
     assert metrics["technical_triage_coverage_pct"] == 100.0
     assert metrics["candidates_requiring_individual_human_attention"] == 0
-    assert metrics["algorithm_version"] == "nico.deterministic-contextual-triage.v1"
+    assert metrics["algorithm_version"] == "nico.deterministic-contextual-triage.v2"

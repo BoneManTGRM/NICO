@@ -19,6 +19,9 @@ _HUMAN_ROUTES = frozenset({"CRITICAL_ATTENTION", "HUMAN_TECHNICAL_REVIEW"})
 _ALLOWED_GROUP_CATEGORIES = frozenset({"dependency", "static"})
 _UNGROUPABLE_EVIDENCE_QUALITY = frozenset({"count_only", "payload_without_source"})
 _HIGH_RISK_SEVERITIES = frozenset({"critical", "high"})
+_CURRENT_EVIDENCE_QC_RATIONALES = frozenset(
+    {"assert_nonproduction_validation_harness"}
+)
 
 
 def _text(value: Any, limit: int = 2000) -> str:
@@ -327,6 +330,12 @@ def _refined_metrics(
     existing: Mapping[str, Any],
 ) -> dict[str, Any]:
     metrics = deepcopy(dict(existing))
+    total_candidates = sum(_count(item) for item in records)
+    automated_not_actionable = sum(
+        _count(item)
+        for item in records
+        if _norm(item.get("technical_triage_verdict")) == "not_actionable"
+    )
     human_before = sum(
         _count(item)
         for item in records
@@ -367,14 +376,27 @@ def _refined_metrics(
         and _norm(item.get("technical_triage_verdict")) == "not_actionable"
         and _norm(item.get("technical_triage_confidence")) == "high"
         and not _proof_gaps(item)
-        and item.get("evidence_changed") is not True
+        and (
+            item.get("evidence_changed") is not True
+            or (
+                _norm(item.get("technical_triage_source"))
+                == "fresh_deterministic_contextual_analysis"
+                and _norm(
+                    item.get("technical_triage_rationale_code")
+                    or item.get("rationale_code")
+                )
+                in _CURRENT_EVIDENCE_QC_RATIONALES
+            )
+        )
         and not _explicit_conflict(item)
     ]
     quality_control_pool = sum(_count(item) for item in quality_control_records)
     work_units = individual_records + grouped_human_clusters
     reduction = max(0, human_before - work_units)
+    end_to_end_reduction = max(0, total_candidates - work_units)
     metrics.update(
         {
+            "automated_not_actionable_candidate_count": automated_not_actionable,
             "cluster_count": len(clusters),
             "candidates_requiring_individual_human_attention": individual,
             "candidates_eligible_for_grouped_review": grouped_candidates,
@@ -386,6 +408,16 @@ def _refined_metrics(
             "review_workload_reduction_count": reduction,
             "review_workload_reduction_pct": (
                 round(reduction * 100 / human_before, 2) if human_before else 0.0
+            ),
+            "grouping_workload_reduction_count": reduction,
+            "grouping_workload_reduction_pct": (
+                round(reduction * 100 / human_before, 2) if human_before else 0.0
+            ),
+            "end_to_end_review_workload_reduction_count": end_to_end_reduction,
+            "end_to_end_review_workload_reduction_pct": (
+                round(end_to_end_reduction * 100 / total_candidates, 2)
+                if total_candidates
+                else 0.0
             ),
             "quality_control_sample_pool": quality_control_pool,
             "quality_control_sample_record_count": len(quality_control_records),

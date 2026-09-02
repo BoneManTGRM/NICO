@@ -360,6 +360,10 @@ def test_historical_shape_reduces_human_work_without_creating_approval() -> None
     assert metrics["candidates_requiring_individual_human_attention"] == 1
     assert metrics["grouped_review_cluster_count"] == 1
     assert metrics["human_review_work_units"] == 2
+    assert metrics["automated_not_actionable_candidate_count"] == 606
+    assert metrics["human_attention_candidate_count_before_grouping"] == 24
+    assert metrics["end_to_end_review_workload_reduction_count"] == 628
+    assert metrics["end_to_end_review_workload_reduction_pct"] == 99.68
     assert metrics["quality_control_sample_pool"] == 606
     assert metrics["quality_control_sample_record_count"] == 606
     boundaries = result["technical_triage"]["workload_refinement"]
@@ -367,6 +371,31 @@ def test_historical_shape_reduces_human_work_without_creating_approval() -> None
     assert boundaries["human_approval_created"] is False
     assert boundaries["client_delivery_allowed"] is False
     assert boundaries["score_effect"] == "none"
+
+
+def test_current_exact_source_harness_triage_is_quality_control_eligible_after_change() -> None:
+    candidate = _candidate(
+        "CURRENT-B101",
+        path="scripts/mobile_restart_live_acceptance_v1.py",
+        rule="B101",
+        severity="low",
+        verdict="not_actionable",
+        confidence="high",
+        proof_gaps=[],
+        route="QUALITY_CONTROL_ELIGIBLE",
+        evidence_changed=True,
+    )
+    candidate["technical_triage_source"] = "fresh_deterministic_contextual_analysis"
+    candidate["technical_triage_rationale_code"] = (
+        "assert_nonproduction_validation_harness"
+    )
+
+    result = refine_candidate_review_workload(_register([candidate]))
+    metrics = result["technical_triage"]["workload_metrics"]
+
+    assert metrics["human_review_work_units"] == 0
+    assert metrics["quality_control_sample_pool"] == 1
+    assert metrics["quality_control_sample_record_count"] == 1
 
 
 def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pending() -> None:
@@ -380,6 +409,10 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
         "grouped_review_cluster_count": 3,
         "human_review_work_units": 10,
         "quality_control_sample_pool": 606,
+        "automated_not_actionable_candidate_count": 606,
+        "human_attention_candidate_count_before_grouping": 24,
+        "end_to_end_review_workload_reduction_count": 620,
+        "end_to_end_review_workload_reduction_pct": 98.41,
     }
     canonical = {
         "identity": {
@@ -424,6 +457,9 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
     assert "human dispositions remain pending" in text.lower()
     assert "human review work units" in text.lower()
     assert "grouped human-review clusters" in text.lower()
+    assert "canonical pending dispositions are not the active operator queue" in text.lower()
+    assert "raw-to-work-unit reduction" in text.lower()
+    assert "620 (98.41%)" in text
     assert "until triaged" not in text.lower()
     assert (
         "Only an authorized human reviewer may approve the exact immutable artifacts."

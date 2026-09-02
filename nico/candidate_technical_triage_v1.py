@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 VERSION = "nico.candidate-technical-triage.v2"
-ALGORITHM_VERSION = "nico.deterministic-contextual-triage.v1"
+ALGORITHM_VERSION = "nico.deterministic-contextual-triage.v2"
 _TRIAGE_DIR = Path(__file__).resolve().parents[1] / "evidence" / "candidate-triage"
 _TRIAGE_PART_GLOB = "technical-triage-9c876ba4.part-*.b64"
 _PART_RE = re.compile(r"^technical-triage-9c876ba4\.part-(\d{2})\.b64$")
@@ -27,6 +27,7 @@ _ROUTING_CLASSES = frozenset({
 })
 _VOLATILE_EVIDENCE_KEYS = frozenset({"timestamp", "generated_at", "observed_at", "duration_ms", "run_id"})
 _TEST_PARTS = frozenset({"test", "tests", "fixture", "fixtures", "example", "examples", "sample", "samples", "mock", "mocks"})
+_VALIDATION_HARNESS_TOKENS = frozenset({"acceptance", "proof"})
 
 
 def _default_triage_parts() -> list[Path]:
@@ -224,12 +225,29 @@ def _line(record: Mapping[str, Any]) -> int | None:
     return number if number > 0 else None
 
 
+def _is_nonproduction_validation_harness_path(path: str) -> bool:
+    parts = [part.casefold() for part in re.split(r"[\\/]+", path) if part]
+    if "scripts" not in parts or not parts:
+        return False
+    filename_tokens = {
+        token
+        for token in re.split(r"[^a-z0-9]+", parts[-1])
+        if token
+    }
+    return bool(filename_tokens & _VALIDATION_HARNESS_TOKENS)
+
+
 def _scope(record: Mapping[str, Any]) -> str:
     raw = _norm(_from_maps(record, "scope", "dependency_scope", "environment", "usage_scope", "target_scope"))
-    path_parts = {part.casefold() for part in re.split(r"[\\/]+", _path(record)) if part}
+    path = _path(record)
+    path_parts = {part.casefold() for part in re.split(r"[\\/]+", path) if part}
     if raw in {"prod", "production", "runtime"}:
         return "production"
-    if raw in {"test", "tests", "testing"} or path_parts & {"test", "tests", "fixture", "fixtures", "mock", "mocks"}:
+    if (
+        raw in {"test", "tests", "testing"}
+        or path_parts & {"test", "tests", "fixture", "fixtures", "mock", "mocks"}
+        or _is_nonproduction_validation_harness_path(path)
+    ):
         return "test"
     if raw in {"dev", "development", "devdependency", "development_only"}:
         return "development"
@@ -546,6 +564,8 @@ def _fresh_triage(record: Mapping[str, Any]) -> dict[str, Any]:
             rationale = "Credential authenticity or its production boundary cannot be defensibly resolved from retained evidence."
             next_step = "Verify the credential safely, inspect repository history, and establish fixture or production boundaries."
     elif category == "static":
+        scanner = _norm(record.get("scanner") or record.get("tool"))
+        rule = _norm(record.get("rule_id") or record.get("rule"))
         executable = _domain_bool(
             _from_maps(record, "executable_code", "is_executable", "source_executable"),
             true_values={"executable", "executable_code", "code"},
@@ -562,6 +582,9 @@ def _fresh_triage(record: Mapping[str, Any]) -> dict[str, Any]:
             false_values={"unmitigated", "unprotected", "unguarded", "no_mitigation"},
         )
         used.extend([
+            f"scanner={scanner}",
+            f"rule={rule}",
+            f"source={_path(record)}",
             f"executable={executable}",
             f"scope={scope}",
             f"reachable={reachability}",
@@ -570,7 +593,19 @@ def _fresh_triage(record: Mapping[str, Any]) -> dict[str, Any]:
             f"environment_relevant={environment_relevant}",
             f"boundary_crossed={boundary_crossed}",
         ])
-        if executable is False and (comment_or_string is True or scope in {"test", "example"}):
+        if (
+            scanner == "bandit"
+            and rule == "b101"
+            and evidence_quality == "exact_source"
+            and _line(record) is not None
+            and severity in {"low", "info"}
+            and scope == "test"
+            and _is_nonproduction_validation_harness_path(_path(record))
+        ):
+            verdict, confidence, code = "not_actionable", "high", "assert_nonproduction_validation_harness"
+            rationale = "Bandit B101 identifies an assert used inside a specifically named non-production acceptance or proof harness, where the assertion is validation control flow rather than a shipped security boundary."
+            next_step = "Retain the exact path, line, and rule evidence for quality-control sampling."
+        elif executable is False and (comment_or_string is True or scope in {"test", "example"}):
             verdict, confidence, code = "not_actionable", "high", "static_nonexecutable_noise"
             rationale = "The rule hit is confined to non-executable text or a non-production example/test boundary."
             next_step = "Retain source-context evidence for quality-control sampling."
