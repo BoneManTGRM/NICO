@@ -53,15 +53,15 @@ const COPY = {
     reviewerPlaceholder: "Full name or accountable identity",
     reviewerRole: "Reviewer role",
     reviewerRolePlaceholder: "Select an authorized reviewer role",
-    operatorToken: "Operator admin token",
-    secureToken: "Secure token",
+    operatorToken: "Operator password",
+    secureToken: "Enter your NICO operator password",
     opening: "Opening review…",
     refresh: "Refresh review",
     open: "Open review",
     exactIdentity: "Confirm exact report identity",
     exactRunId: "Exact Comprehensive run ID",
-    security: "The reviewer identity and role are persisted in the approval certificate. The operator token stays only in this open page. No secret is stored in the URL or browser storage.",
-    enterReviewer: "Enter the exact Comprehensive run ID, operator token, authorized reviewer, and reviewer role.",
+    security: "Use the private operator password configured for NICO in Railway. It stays only in this open page and is never stored in the URL or browser storage.",
+    enterReviewer: "Enter the exact Comprehensive run ID, operator password, authorized reviewer, and reviewer role.",
     loaded: "The immutable Comprehensive review package is loaded. Confirm it below when ready.",
     loadFailed: "Unable to load final review.",
     finalDecision: "FINAL DECISION",
@@ -139,15 +139,15 @@ const COPY = {
     reviewerPlaceholder: "Nombre completo o identidad responsable",
     reviewerRole: "Función del revisor",
     reviewerRolePlaceholder: "Selecciona una función de revisor autorizada",
-    operatorToken: "Token de administrador del operador",
-    secureToken: "Token seguro",
+    operatorToken: "Contraseña del operador",
+    secureToken: "Ingresa tu contraseña de operador de NICO",
     opening: "Abriendo revisión…",
     refresh: "Actualizar revisión",
     open: "Abrir revisión",
     exactIdentity: "Confirmar identidad exacta del informe",
     exactRunId: "ID exacto de ejecución Comprehensive",
-    security: "La identidad y función del revisor se conservan en el certificado de aprobación. El token del operador permanece únicamente en esta página abierta. Ningún secreto se guarda en la URL ni en el almacenamiento del navegador.",
-    enterReviewer: "Ingresa el ID exacto de Comprehensive, el token del operador, el revisor autorizado y su función.",
+    security: "Usa la contraseña privada del operador configurada para NICO en Railway. Permanece únicamente en esta página abierta y nunca se guarda en la URL ni en el almacenamiento del navegador.",
+    enterReviewer: "Ingresa el ID exacto de Comprehensive, la contraseña del operador, el revisor autorizado y su función.",
     loaded: "El paquete inmutable de revisión Comprehensive está cargado. Confírmalo abajo cuando estés listo.",
     loadFailed: "No fue posible cargar la revisión final.",
     finalDecision: "DECISIÓN FINAL",
@@ -308,6 +308,12 @@ async function responseError(response: Response, fallback: string, locale: Local
   const detail = typeof payload.detail === "string"
     ? payload.detail
     : payload.detail?.message || payload.detail?.code || payload.detail?.reason;
+  const code = typeof payload.detail === "string" ? payload.detail : payload.detail?.code;
+  if (response.status === 403 && code === "strategic_review_admin_authentication_required") {
+    return new Error(locale === "es-MX"
+      ? "La contraseña del operador es incorrecta."
+      : "The operator password is incorrect.");
+  }
   if (locale === "es-MX") return new Error(`${fallback} (${response.status}).`);
   return new Error(detail || payload.message || payload.error || `${fallback} (${response.status}).`);
 }
@@ -661,7 +667,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
           <option value="">{copy.reviewerRolePlaceholder}</option>
           {AUTHORIZED_REVIEWER_ROLES.map((role) => <option value={role.value} key={role.value}>{locale === "es-MX" ? role.es : role.en}</option>)}
         </select></label>
-        <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder={copy.secureToken} autoComplete="off" spellCheck={false} /></label>
+        <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder={copy.secureToken} autoComplete="current-password" spellCheck={false} /></label>
         <button className={styles.primary} type="submit" disabled={loading || !ready}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
         <details className={styles.advanced}><summary>{copy.exactIdentity}</summary><div className={styles.advancedGrid}>
           <label>{copy.assessment}<input value={copy.comprehensive} readOnly aria-readonly="true" /></label>

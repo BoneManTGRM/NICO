@@ -28,6 +28,12 @@ def test_final_review_uses_protected_exact_run_comprehensive_endpoints() -> None
 
     assert '"X-NICO-Admin-Token": adminToken.trim()' in workspace
     assert 'type="password"' in workspace
+    assert 'operatorToken: "Operator password"' in workspace
+    assert 'operatorToken: "Contraseña del operador"' in workspace
+    assert 'autoComplete="current-password"' in workspace
+    assert 'autoComplete="off"' not in workspace.split(
+        "{copy.operatorToken}", 1
+    )[1].split("</label>", 1)[0]
     assert "/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}" in workspace
     assert "/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/review" in workspace
     assert "/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/approved-delivery-package" in workspace
@@ -36,6 +42,14 @@ def test_final_review_uses_protected_exact_run_comprehensive_endpoints() -> None
     assert 'reviewer: reviewer.trim()' in workspace
     assert 'reviewer_role: reviewerRole.trim()' in workspace
     assert 'decision_reason: reason' in workspace
+
+
+def test_final_review_translates_protected_auth_failure_to_password_language() -> None:
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+
+    assert 'code === "strategic_review_admin_authentication_required"' in workspace
+    assert '"The operator password is incorrect."' in workspace
+    assert '"La contraseña del operador es incorrecta."' in workspace
 
 
 def test_final_review_preserves_exact_run_when_opening_exception_review_queue() -> None:
