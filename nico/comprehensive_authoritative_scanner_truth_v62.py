@@ -616,7 +616,7 @@ def reconcile_authoritative_scanner_truth(
     # Scoring is produced before repository applicability is finalized. A tool that
     # is later proven inapplicable must not survive as a numeric evidence penalty or
     # a stale 8/9 coverage claim anywhere in the canonical projection.
-    if technical_score is not None:
+    if technical_score is not None and not_applicable_records:
         assessment_for_penalty = _mapping(output.get("assessment"))
         score_contract = _mapping(assessment_for_penalty.get("score_contract"))
         evidence_coverage = _mapping(assessment_for_penalty.get("evidence_coverage"))
