@@ -112,6 +112,17 @@ def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() 
     assert "authorization_confirmed: true" in source
     assert "expected_artifact_identity: reviewArtifactIdentity" in source
     assert "disabled={loading || approvalCompleted}" in source
+    assert (
+        "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize "
+        "client delivery of that exact edition and its certified package."
+    ) in source
+    assert "setResult(reviewed);" in source
+    assert source.index("setResult(reviewed);") < source.index(
+        "await downloadApprovedPdf(reviewed);"
+    )
+    assert "const approvedPdfDigest = await downloadApprovedPdf(reviewed);" in source
+    assert "setDownloadedArtifactDigest(approvedPdfDigest);" in source
+    assert "downloadedArtifactDigest !== currentReviewPdfDigest" in source
     assert 'if (locale === "es-MX") return new Error(`${fallback} (${response.status}).`);' in source
 
 

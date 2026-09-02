@@ -35,6 +35,7 @@ from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_pending_artifact_metadata_repair_v1 import (
     repair_pending_findings_csv_alias,
 )
+from nico.comprehensive_approved_report_v1 import build_approved_report_package
 from nico.comprehensive_pre_render_scanner_truth_v65 import (
     install_pre_render_authoritative_scanner_truth,
 )
@@ -42,7 +43,10 @@ from nico.comprehensive_report_flatten_bound_v1 import install_bounded_report_fl
 from nico.comprehensive_review_decision_v1 import (
     assert_expected_review_artifact_identity,
     build_reviewed_edition,
+    report_package_from_record,
+    review_artifact_identity,
 )
+from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_run_record import (
     _record_hash,
     apply_comprehensive_review_decision,
@@ -137,6 +141,109 @@ def _require_exact_final_report_integrity(record: Mapping[str, Any]) -> None:
         raise ValueError("comprehensive_report_artifact_integrity_invalid")
 
 
+def _build_reviewed_run(
+    record: dict[str, Any],
+    *,
+    reviewer: str,
+    reviewer_role: str,
+    decision: str,
+    decision_reason: str,
+    decided_at: str,
+    expected_artifact_identity: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Apply one review decision, including approved-report finalization.
+
+    Runtime review-work guards call this same boundary after they have projected their
+    candidate ledger into ``record``. Keeping the artifact transition here prevents an
+    installed guard from silently falling back to the legacy draft-preserving path.
+    """
+
+    _require_exact_final_report_integrity(record)
+    source_artifact_identity = assert_expected_review_artifact_identity(
+        record,
+        expected_artifact_identity,
+    )
+    normalized_decision = str(decision or "").strip().casefold()
+    decision_record = record
+    if normalized_decision == "approved":
+        source_manifest = build_reviewed_edition(
+            record,
+            reviewer=reviewer,
+            reviewer_role=reviewer_role,
+            decision=decision,
+            decision_reason=decision_reason,
+            decided_at=decided_at,
+        )
+        require_new_report_after_evidence_request(record, source_manifest)
+        approved_package = build_approved_report_package(
+            report_package_from_record(record),
+            reviewer=reviewer,
+            reviewer_role=reviewer_role,
+            decision_reason=decision_reason,
+            decided_at=decided_at,
+        )
+        decision_record = deepcopy(record)
+        decision_record["review_source_artifact_identity"] = deepcopy(
+            source_artifact_identity
+        )
+        final_stage = decision_record.get("stage_results", {}).get(
+            FINAL_REPORT_STAGE_ID
+        )
+        if not isinstance(final_stage, dict):
+            raise ValueError("comprehensive_final_report_stage_required")
+        final_stage["report_package"] = approved_package
+        final_stage["assessment"] = deepcopy(
+            approved_package.get("json", {}).get("assessment", {})
+        )
+        decision_record["integrity_sha256"] = _record_hash(decision_record)
+
+    manifest = build_reviewed_edition(
+        decision_record,
+        reviewer=reviewer,
+        reviewer_role=reviewer_role,
+        decision=decision,
+        decision_reason=decision_reason,
+        decided_at=decided_at,
+    )
+    if normalized_decision == "approved":
+        source_identity_sha256 = canonical_sha256(source_artifact_identity)
+        manifest["source_review_artifact_identity"] = deepcopy(
+            source_artifact_identity
+        )
+        manifest["source_review_artifact_identity_sha256"] = source_identity_sha256
+        review = deepcopy(dict(manifest.get("review") or {}))
+        review["source_review_artifact_identity_sha256"] = source_identity_sha256
+        review.pop("approval_certificate_sha256", None)
+        review["approval_certificate_sha256"] = canonical_sha256(review)
+        manifest["review"] = review
+        manifest.pop("accepted_edition_manifest_sha256", None)
+        manifest["accepted_edition_manifest_sha256"] = canonical_sha256(manifest)
+
+    updated = apply_comprehensive_review_decision(
+        decision_record,
+        manifest=manifest,
+    )
+    if normalized_decision == "approved":
+        context = deepcopy(dict(updated.get("review_context") or {}))
+        context.update(
+            {
+                "source_review_artifact_identity": deepcopy(
+                    source_artifact_identity
+                ),
+                "source_review_artifact_identity_sha256": canonical_sha256(
+                    source_artifact_identity
+                ),
+                "approved_report_artifact_identity": review_artifact_identity(updated),
+                "report_regenerated_during_review": False,
+                "technical_analysis_regenerated_during_review": False,
+                "lifecycle_markers_finalized_during_review": True,
+            }
+        )
+        updated["review_context"] = context
+        updated["integrity_sha256"] = _record_hash(updated)
+    return updated
+
+
 def _prior_stage_results_for_stage(
     stage_id: str,
     retained_stage_results: dict[str, Any],
@@ -216,9 +323,10 @@ class ComprehensiveRunService:
     """Restart-safe orchestration over the canonical Comprehensive run record.
 
     Each completed stage and each explicit human review decision is persisted through
-    the same optimistic-concurrency store. Approval binds the exact existing artifacts;
-    it never reruns report generation or changes the assessed commit. An approved
-    delivery archive is generated only after the accepted-edition manifest validates.
+    the same optimistic-concurrency store. Approval binds the exact reviewed source,
+    finalizes only its lifecycle markers, and adds a review certificate without rerunning
+    technical analysis or changing the assessed commit. The resulting approved PDF is
+    then the exact artifact bound by the separate delivery authorization.
 
     Long-running scanner stages execute behind a durable polling boundary. Final report
     publication keeps its stricter atomic package validation, but generation now runs
@@ -449,24 +557,18 @@ class ComprehensiveRunService:
     ) -> dict[str, Any]:
         record = self._store.load(run_id)
         previous_revision = int(record["revision"])
-        _require_exact_final_report_integrity(record)
-        assert_expected_review_artifact_identity(
-            record,
-            expected_artifact_identity,
-        )
-        manifest = build_reviewed_edition(
+        timestamp = str(
+            decided_at
+            or datetime.now(UTC).replace(microsecond=0).isoformat()
+        ).strip()
+        updated = _build_reviewed_run(
             record,
             reviewer=reviewer,
             reviewer_role=reviewer_role,
             decision=decision,
             decision_reason=decision_reason,
-            decided_at=decided_at,
-        )
-        if str(decision or "").strip().casefold() == "approved":
-            require_new_report_after_evidence_request(record, manifest)
-        updated = apply_comprehensive_review_decision(
-            record,
-            manifest=manifest,
+            decided_at=timestamp,
+            expected_artifact_identity=expected_artifact_identity,
         )
         return self._store.save(updated, expected_revision=previous_revision)
 

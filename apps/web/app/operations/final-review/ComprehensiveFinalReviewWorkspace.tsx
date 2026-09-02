@@ -66,7 +66,7 @@ const COPY = {
     loadFailed: "Unable to load final review.",
     finalDecision: "FINAL DECISION",
     approveHeading: "Approve the exact accepted edition",
-    approveLead: "Download and review the immutable PDF first. A separate controlled action then binds your approval to those exact bytes.",
+    approveLead: "Download and review the immutable draft first. Approval creates the final PDF without changing its technical analysis. Review that downloaded final PDF before the separate delivery authorization.",
     review: "Review",
     delivery: "Client-ready",
     authorized: "Authorized",
@@ -88,13 +88,13 @@ const COPY = {
     readyDelivery: "This exact immutable edition and its certified delivery package are approved and client-ready.",
     blockedDelivery: "Client-ready release remains blocked until a valid internal approval certificate matches the current artifact set.",
     pendingAuthorization: "Human approval is recorded for this exact edition. Client delivery remains blocked until its delivery authorization package and certificate are valid.",
-    authorizationConfirm: "I explicitly authorize client delivery of this exact approved edition and its certified package.",
+    authorizationConfirm: "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize client delivery of that exact edition and its certified package.",
     authorizeDelivery: "Authorize client delivery",
     authorizingDelivery: "Recording delivery authorization…",
     authorizationNotice: "Client delivery authorization recorded for the exact accepted edition.",
     authorizationFailed: "Unable to authorize client delivery.",
     confirmAuthorizationFirst: "Confirm the separate client-delivery authorization action.",
-    defaultAuthorizationReason: "Authorized reviewer explicitly authorized client delivery of the exact accepted edition and its immutable certified package.",
+    defaultAuthorizationReason: "Authorized reviewer reviewed the downloaded APPROVED FINAL PDF and explicitly authorized client delivery of that exact edition and its immutable certified package.",
     otherDecision: "Need a different decision?",
     otherDecisionLead: "Use these only when the package cannot be approved. A clear decision reason is required.",
     requestEvidence: "Request more evidence",
@@ -108,7 +108,7 @@ const COPY = {
     technicalRecord: "Technical review record",
     confirmFirst: "Confirm that you reviewed the exact report and its disclosed limitations.",
     decisionNoteRequired: "Add a clear review note before requesting more evidence or rejecting delivery.",
-    approvedNotice: "Human approval recorded and the accepted report downloaded. Client delivery remains blocked pending the separate authorization action.",
+    approvedNotice: "Human approval recorded and the APPROVED FINAL PDF downloaded. Review that exact PDF, then complete the separate delivery authorization.",
     reviewDownloadNotice: "The exact pre-approval PDF was downloaded for review. Approval remains pending.",
     evidenceNotice: "More evidence requested. Delivery remains blocked. Start a new assessment with the requested evidence; this unchanged report cannot later be approved.",
     rejectedNotice: "Report rejected. Delivery remains blocked.",
@@ -174,13 +174,13 @@ const COPY = {
     readyDelivery: "Esta edición inmutable exacta y su paquete de entrega certificado están aprobados para entrega controlada al cliente.",
     blockedDelivery: "La entrega permanece bloqueada hasta que un certificado válido coincida con el conjunto actual de artefactos.",
     pendingAuthorization: "La aprobación humana está registrada para esta edición exacta. La entrega al cliente permanece bloqueada hasta que sean válidos el paquete y el certificado de autorización de entrega.",
-    authorizationConfirm: "Autorizo explícitamente la entrega al cliente de esta edición exacta aprobada y su paquete certificado.",
+    authorizationConfirm: "Revisé el PDF FINAL APROBADO descargado y autorizo explícitamente la entrega al cliente de esa edición exacta y su paquete certificado.",
     authorizeDelivery: "Autorizar entrega al cliente",
     authorizingDelivery: "Registrando autorización de entrega…",
     authorizationNotice: "Se registró la autorización de entrega al cliente para la edición aceptada exacta.",
     authorizationFailed: "No fue posible autorizar la entrega al cliente.",
     confirmAuthorizationFirst: "Confirma la acción separada de autorización de entrega al cliente.",
-    defaultAuthorizationReason: "El revisor autorizado autorizó explícitamente la entrega al cliente de la edición aceptada exacta y su paquete certificado inmutable.",
+    defaultAuthorizationReason: "El revisor autorizado revisó el PDF FINAL APROBADO descargado y autorizó explícitamente la entrega al cliente de esa edición exacta y su paquete certificado inmutable.",
     otherDecision: "¿Necesitas una decisión diferente?",
     otherDecisionLead: "Usa estas opciones únicamente cuando el paquete no pueda aprobarse. Se requiere una razón clara.",
     requestEvidence: "Solicitar más evidencia",
@@ -194,7 +194,7 @@ const COPY = {
     technicalRecord: "Registro técnico de revisión",
     confirmFirst: "Confirma que revisaste el informe exacto y sus limitaciones declaradas.",
     decisionNoteRequired: "Agrega una nota clara antes de solicitar más evidencia o rechazar la entrega.",
-    approvedNotice: "Se registró la aprobación humana y se descargó el informe aceptado. La entrega al cliente permanece bloqueada hasta la acción de autorización separada.",
+    approvedNotice: "Se registró la aprobación humana y se descargó el PDF FINAL APROBADO. Revisa ese PDF exacto y luego completa la autorización de entrega separada.",
     reviewDownloadNotice: "Se descargó el PDF exacto previo a la aprobación para revisión. La aprobación sigue pendiente.",
     evidenceNotice: "Se solicitó más evidencia. La entrega permanece bloqueada. Inicia una nueva evaluación con la evidencia solicitada; este informe sin cambios no podrá aprobarse después.",
     rejectedNotice: "Informe rechazado. La entrega permanece bloqueada.",
@@ -550,7 +550,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
       const reviewed = await submitDecision("approved");
       setResult(reviewed);
       setDeliveryConfirmed(false);
-      await downloadApprovedPdf(reviewed);
+      setDownloadedArtifactDigest("");
+      const approvedPdfDigest = await downloadApprovedPdf(reviewed);
+      setDownloadedArtifactDigest(approvedPdfDigest);
       setNotice(copy.approvedNotice);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.approvalFailed);
@@ -578,7 +580,14 @@ export default function ComprehensiveFinalReviewWorkspace() {
   }
 
   async function authorizeClientDelivery(): Promise<void> {
-    if (!ready || !approvalCompleted || deliveryAllowed || !deliveryConfirmed) {
+    if (
+      !ready
+      || !approvalCompleted
+      || deliveryAllowed
+      || !deliveryConfirmed
+      || !currentReviewPdfDigest
+      || downloadedArtifactDigest !== currentReviewPdfDigest
+    ) {
       setError(copy.confirmAuthorizationFirst);
       return;
     }
@@ -612,7 +621,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
     try {
       setError("");
       if (!result) throw new Error(copy.pdfMissing);
-      await downloadApprovedPdf(result);
+      const approvedPdfDigest = await downloadApprovedPdf(result);
+      setDownloadedArtifactDigest(approvedPdfDigest);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.pdfMissing);
     }
@@ -681,7 +691,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
         <div className={styles.downloadActions}>{!approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadReviewPdf}>{copy.downloadReview}</button> : null}<button className={styles.approve} type="button" disabled={!confirmed || loading || approvalCompleted} onClick={approveAndDownload}>{approvalCompleted ? copy.alreadyApproved : loading ? copy.recording : copy.approveDownload}</button>{approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadAgain}>{copy.downloadAgain}</button> : null}{deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}</div>
-        {approvalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
+        {approvalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
         {approvalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
         <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery}</div>
         <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
