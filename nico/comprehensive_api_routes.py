@@ -29,7 +29,7 @@ from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 from nico.provider_live_clients import ProviderClientError
 
-VERSION = "nico.comprehensive_api_routes.v20"
+VERSION = "nico.comprehensive_api_routes.v21"
 _BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 _FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 _ACTIVE_FINAL_REPORT_STATUSES = {"active", "pending", "queued", "running"}
@@ -113,6 +113,16 @@ def _browser_continuation_has_work(payload: Any) -> bool:
     if value < 0:
         raise ValueError("max_stages_must_be_non_negative")
     return value > 0
+
+
+def _browser_projection_can_dispatch_continuation(current: Mapping[str, Any]) -> bool:
+    if current.get("terminal") is not True:
+        return True
+    return bool(
+        current.get("status") == "blocked"
+        and current.get("human_review_completed") is not True
+        and current.get("client_delivery_allowed") is not True
+    )
 
 
 def _translate_error(exc: Exception) -> HTTPException:
@@ -1337,7 +1347,9 @@ def register_comprehensive_api_routes(
                     controller_value,
                     run_id,
                 )
-                if current is not None and current.get("terminal") is not True:
+                if current is not None and _browser_projection_can_dispatch_continuation(
+                    current
+                ):
                     dispatch = dispatch_browser_continuation(
                         controller_value,
                         run_id=run_id,

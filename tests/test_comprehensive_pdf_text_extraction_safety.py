@@ -4,8 +4,13 @@ import io
 
 from pypdf import PdfReader
 
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
 from nico.comprehensive_decision_grade_pdf_v5 import _supplement_pdf
 from nico.comprehensive_premium_pdf_v6 import _build_pdf
+from nico.v2_automated_draft_quality_compat_v1 import (
+    _contains_legacy_bare_draft,
+    _validate_review_pdf,
+)
 
 
 def _pdf_text(pdf_bytes: bytes) -> str:
@@ -73,6 +78,67 @@ def test_comprehensive_report_lists_do_not_extract_as_control_characters() -> No
     assert "- Source files: 10." in text
     assert "- Workflow files: 2." in text
     assert "- Stage evidence item." in text
+
+
+def _boundary_pdf(
+    report_language: str,
+) -> tuple[bytes, str, dict[str, str], dict[str, object]]:
+    identity = {
+        "repository": "BoneManTGRM/NICO",
+        "commit_sha": "b" * 40,
+        "run_id": "comprun_approved_draft_boundary",
+        "evidence_ledger_id": "ledger_approved_draft_boundary",
+        "report_language": report_language,
+    }
+    assessment = {
+        "maturity_signal": {
+            "score": 93,
+            "presented_score": 93,
+            "score_band_label": "STRONG",
+        },
+        "sections": [],
+        "findings_register": [],
+        "executive_risk_register": [],
+        "scoring_weights": [],
+    }
+    pdf = _build_pdf(
+        identity,
+        assessment,
+        [],
+        roadmap=[],
+        staffing=[],
+        limitations={"individual_limitation_records": 0},
+        generated_at="2026-09-02T00:00:00Z",
+    )
+    return pdf, _pdf_text(pdf), identity, assessment
+
+
+def test_comprehensive_report_uses_approved_automated_draft_boundary() -> None:
+    pdf, text, identity, assessment = _boundary_pdf("en")
+
+    assert EN_BOUNDARY in text
+    assert _contains_legacy_bare_draft(text) is False
+    assert identity["run_id"] in text
+    assert identity["commit_sha"] in text
+    _validate_review_pdf(
+        pdf,
+        {"identity": identity, "assessment": assessment},
+        expected_sections=[],
+        spanish=False,
+    )
+
+
+def test_comprehensive_report_localizes_approved_draft_boundary_to_spanish() -> None:
+    pdf, text, identity, assessment = _boundary_pdf("es-MX")
+
+    assert ES_BOUNDARY in text
+    assert _contains_legacy_bare_draft(text) is False
+    _validate_review_pdf(
+        pdf,
+        {"identity": identity, "assessment": assessment},
+        expected_sections=[],
+        spanish=True,
+    )
 
 
 def test_comprehensive_supplement_lists_do_not_extract_as_control_characters() -> None:
