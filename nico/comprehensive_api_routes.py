@@ -18,6 +18,9 @@ from nico.comprehensive_api_controller import (
     _canonical_final_report_outputs,
     _client_delivery_integrity_bound,
 )
+from nico.comprehensive_browser_continuation_dispatch_v1 import (
+    dispatch_browser_continuation,
+)
 from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunNotFound
 from nico.comprehensive_review_decision_v1 import review_artifact_identity
@@ -26,7 +29,7 @@ from nico.hosted_assessment import normalize_repository
 from nico.repository_snapshot import capture_repository_snapshot
 from nico.provider_live_clients import ProviderClientError
 
-VERSION = "nico.comprehensive_api_routes.v19"
+VERSION = "nico.comprehensive_api_routes.v20"
 _BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 _FINAL_REPORT_STAGE_ID = "final_comprehensive_report_generation"
 _ACTIVE_FINAL_REPORT_STATUSES = {"active", "pending", "queued", "running"}
@@ -90,6 +93,26 @@ def _browser_projection_requested(request: Request) -> bool:
         str(request.headers.get("x-nico-browser-projection") or "").strip().lower()
         == _BROWSER_PROJECTION_VALUE
     )
+
+
+def _detached_browser_continuation_enabled(request: Request) -> bool:
+    runtime = dict(getattr(request.app.state, "comprehensive_runtime", {}) or {})
+    return bool(
+        runtime.get("detached_stage_execution") is True
+        and runtime.get("continuation_transport_owns_provider_lifetime") is False
+    )
+
+
+def _browser_continuation_has_work(payload: Any) -> bool:
+    if not isinstance(payload, Mapping):
+        return False
+    bounded = payload.get("max_stages")
+    if bounded is None:
+        return True
+    value = int(bounded)
+    if value < 0:
+        raise ValueError("max_stages_must_be_non_negative")
+    return value > 0
 
 
 def _translate_error(exc: Exception) -> HTTPException:
@@ -1304,6 +1327,26 @@ def register_comprehensive_api_routes(
             payload = await request.json() if raw else {}
             controller_value = _controller(request)
             browser_projection = _browser_projection_requested(request)
+            if (
+                browser_projection
+                and _detached_browser_continuation_enabled(request)
+                and _browser_continuation_has_work(payload)
+            ):
+                current = await run_in_threadpool(
+                    _load_durable_browser_projection,
+                    controller_value,
+                    run_id,
+                )
+                if current is not None and current.get("terminal") is not True:
+                    dispatch = dispatch_browser_continuation(
+                        controller_value,
+                        run_id=run_id,
+                        payload=payload,
+                    )
+                    response = dict(current)
+                    response["operation"] = "continuation_dispatched"
+                    response["continuation_dispatch"] = dispatch
+                    return _with_runtime_truth(request, response)
             continued = await run_in_threadpool(
                 _continue_projection,
                 controller_value,
