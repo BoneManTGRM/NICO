@@ -116,6 +116,36 @@ def test_spanish_public_provider_stage_badge_is_fully_localized() -> None:
     ) == "Estado: PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
 
 
+def test_spanish_not_applicable_scanner_evidence_is_fully_localized() -> None:
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _translate_presentation_field,
+    )
+
+    translated = _translate_presentation_field(
+        "pip-audit: not applicable; No supported Python dependency manifest or "
+        "source tree exists at the assessed commit; pip-audit is not applicable "
+        "to this repository snapshot.",
+        "evidence",
+    )
+
+    assert translated == (
+        "pip-audit: no aplicable; No existe un manifiesto de dependencias de Python "
+        "compatible ni un árbol de código fuente Python en el commit evaluado; "
+        "pip-audit no es aplicable a esta instantánea del repositorio."
+    )
+
+    scoring = _translate_presentation_field(
+        "Canonical scoring is reconciled to retained evidence without recomputing "
+        "or inflating either score; evidence limitations remain explicit. Candidate "
+        "volume and reviewer workload are operational review metrics and have no "
+        "numeric technical-maturity or Evidence-Adjusted score effect.",
+        "summary",
+    )
+    assert "La puntuación canónica" in scoring
+    assert "puntuación ajustada por evidencia" in scoring
+    assert "Canonical scoring" not in scoring
+
+
 def test_spanish_canonical_localization_preserves_machine_truth_and_translates_native_copy() -> None:
     import pytest
 
@@ -1066,26 +1096,26 @@ from nico.comprehensive_spanish_client_surface_localization_v86 import (
 install_comprehensive_spanish_client_surface_localization_v86()
 
 SMALL_ENGLISH_GOLDEN = {
-    "markdown": ("2ca2efd359843c7a2c311a1036a6892fcc35c6c3f6e392d20238e89a66f5c6c0", 18849),
-    "html": ("43d3a5097c673763501cc06bfa22921cbb963b59d77f4bb8cd92e0773c440343", 22724),
+    "markdown": ("77b5e975fc4e601a6b52ce4967f813ea583f163815d42f059bd9cef23de72fcb", 18849),
+    "html": ("b9118209bc5879e8044a2da692b2f2d2195c4da37d8ed88188a89ce0d32a8a77", 22724),
     # The authoritative separately rendered CI/CD boundary replaces the base
     # copy, so one semantic section now produces one physical body page.
-    "pdf_base64": ("c02ad5283d642304ea06affc9250fe807d8eddcea2527cfcb58bc970ff996ae2", 175580),
-    "pdf_sha256": "32b355ce79f5933251c42e0a90ec93ac2402f169a5135726cee1c986d00019c9",
+    "pdf_base64": ("d813a6fda82a937e9d7a558cb1811322244f5068d780a74eb799557639946991", 175616),
+    "pdf_sha256": "4672b9dc36e1e249f96806aa86a2942b1982584c8bfdf8216cc2f7acaab08c70",
     "page_count": 21,
 }
 RICH_ENGLISH_GOLDEN = {
     "markdown": ("e170d72b9672962c562d5a31b9da62cb4d612a376d55c91588a0324bf1d01906", 20572),
     "html": ("ff966912bf11ddf474f5004d646c799e31fc5fb9f35a25b809954dccb41d1a26", 24753),
-    "pdf_base64": ("a9e82e92d8c9161bbc1000c230d0bf331c6737f9befa89deeb2c28d856516c2a", 255812),
-    "pdf_sha256": "330c9a5b6896822fe428d0f5294c71a5962aacdfc10748662b8138f7183a1ea1",
+    "pdf_base64": ("f1e4e8967ef334223431b6e9871cb7d83b2bb7a0a0630f7b9de7d208b976cd3b", 255924),
+    "pdf_sha256": "21297d29085236a10e0de4524fb3f18eb85299cc9bb5b89ba9f5facb3d86b948",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
     "markdown": ("51a2018ab77f58a5393987170771796db6ae6cfa6dbbf2a57d2ee672de15c7b7", 19585),
     "html": ("e09e9867f511b055a1e80b25902b3891f04279f0e5f2c656029e7d634fb050bc", 23784),
-    "pdf_base64": ("3f004793d121652903dc293679327a4388e08be0c5364fd51b8e50d03141af78", 172128),
-    "pdf_sha256": "cc4e6ca541251bce72b88a49760b3a06fb4179ce2de97c6e97fdc49134b3e884",
+    "pdf_base64": ("9934cb2ad4003fe5e82530187597d201c2aa68dfecf9113cc072f6e1acf0b451", 172164),
+    "pdf_sha256": "31ca310698005d4d0be277729d76e10a2d7d00e7c014806f7144d3a03166ef73",
     "page_count": 20,
 }
 
