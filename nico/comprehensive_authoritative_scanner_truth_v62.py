@@ -25,7 +25,20 @@ _INCOMPLETE_ANALYZER_LIMITATION = re.compile(
     r"^Incomplete applicable analyzers:\s*(?P<names>[^.]+)\.?$",
     re.IGNORECASE,
 )
+_APPLICABLE_ANALYZER_LINE = re.compile(
+    r"^(?P<label>Applicable analyzers:\s*)(?P<names>[^.]+)\.?$",
+    re.IGNORECASE,
+)
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+_EVIDENCE_ADJUSTED_TEXT = re.compile(
+    r"(?P<prefix>Evidence-Adjusted(?: readiness)?(?: is|:)\s*)\d+/100",
+    re.IGNORECASE,
+)
+_EVIDENCE_SCORE_KEYS = {
+    "evidence_adjusted_score",
+    "canonical_evidence_adjusted_score",
+    "evidence_readiness_score",
+}
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -342,7 +355,22 @@ def _reconcile_unavailable_scanner_limitations(
             if reconciled is not None:
                 output.append(reconciled)
         return output
-    if not isinstance(value, str) or field not in {
+    if not isinstance(value, str):
+        return value
+
+    applicable_match = _APPLICABLE_ANALYZER_LINE.fullmatch(value.strip())
+    if applicable_match:
+        names = [
+            name.strip()
+            for name in applicable_match.group("names").split(",")
+            if name.strip()
+        ]
+        remaining = [name for name in names if name.casefold() not in not_applicable]
+        if not remaining:
+            return None
+        return f"{applicable_match.group('label')}{', '.join(remaining)}."
+
+    if field not in {
         "unavailable",
         "limitations",
         "unavailable_data_notes",
@@ -365,6 +393,72 @@ def _reconcile_unavailable_scanner_limitations(
     if any(normalized.startswith(f"{name}:") for name in not_applicable):
         return None
     return value
+
+
+def _nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _synchronize_evidence_score_aliases(
+    value: Any,
+    *,
+    technical_score: int,
+    payload_penalty: int,
+    execution_penalty: int,
+) -> Any:
+    """Repair derived score aliases after applicability changes the denominator."""
+
+    evidence_penalty = payload_penalty + execution_penalty
+    evidence_adjusted = max(0, technical_score - evidence_penalty)
+    if isinstance(value, list):
+        return [
+            _synchronize_evidence_score_aliases(
+                item,
+                technical_score=technical_score,
+                payload_penalty=payload_penalty,
+                execution_penalty=execution_penalty,
+            )
+            for item in value
+        ]
+    if isinstance(value, str):
+        return _EVIDENCE_ADJUSTED_TEXT.sub(
+            lambda match: f"{match.group('prefix')}{evidence_adjusted}/100",
+            value,
+        )
+    if not isinstance(value, Mapping):
+        return value
+
+    output = {
+        str(key): _synchronize_evidence_score_aliases(
+            item,
+            technical_score=technical_score,
+            payload_penalty=payload_penalty,
+            execution_penalty=execution_penalty,
+        )
+        for key, item in value.items()
+    }
+    for key in _EVIDENCE_SCORE_KEYS:
+        if key in output:
+            output[key] = evidence_adjusted
+    if "incomplete_analyzer_penalty" in output:
+        output["incomplete_analyzer_penalty"] = execution_penalty
+    if "evidence_completeness_penalty" in output:
+        output["evidence_completeness_penalty"] = evidence_penalty
+    if "assurance_penalty" in output:
+        output["assurance_penalty"] = evidence_penalty
+    if "evidence_penalty_points" in output:
+        output["evidence_penalty_points"] = evidence_penalty
+    if "score_formula" in output:
+        output["score_formula"] = (
+            f"{technical_score} - {payload_penalty} - {execution_penalty} = "
+            f"{evidence_adjusted}"
+        )
+    return output
 
 
 def reconcile_authoritative_scanner_truth(
@@ -498,6 +592,19 @@ def reconcile_authoritative_scanner_truth(
     assessment_output["not_applicable_scanner_records"] = deepcopy(
         not_applicable_records
     )
+    assessment_output["scanner_execution_summary"] = {
+        **deepcopy(dict(_mapping(assessment_output.get("scanner_execution_summary")))),
+        "record_count": len(requested_records),
+        "applicable_record_count": len(applicable_records),
+        "not_applicable_count": len(not_applicable_records),
+        "completed_count": len(completed),
+        "verified_count": sum(
+            record.get("verified_complete") is True
+            or record.get("verified_for_this_report") is True
+            for record in applicable_records
+        ),
+        "incomplete_count": len(incomplete),
+    }
     output["assessment"] = assessment_output
 
     coverage = round(100 * len(completed) / requested) if requested else 0
@@ -505,6 +612,53 @@ def reconcile_authoritative_scanner_truth(
     output["scanner_execution_coverage"] = coverage
     output["completed_applicable_analyzers"] = len(completed)
     output["incomplete_applicable_analyzers"] = len(incomplete)
+
+    # Scoring is produced before repository applicability is finalized. A tool that
+    # is later proven inapplicable must not survive as a numeric evidence penalty or
+    # a stale 8/9 coverage claim anywhere in the canonical projection.
+    if technical_score is not None and not_applicable_records:
+        assessment_for_penalty = _mapping(output.get("assessment"))
+        score_contract = _mapping(assessment_for_penalty.get("score_contract"))
+        evidence_coverage = _mapping(assessment_for_penalty.get("evidence_coverage"))
+        payload_penalty = max(
+            _nonnegative_int(score_contract.get("missing_raw_payload_penalty")),
+            _nonnegative_int(evidence_coverage.get("missing_raw_payload_penalty")),
+        )
+        execution_penalty = min(12, len(incomplete) * 4)
+        output = _synchronize_evidence_score_aliases(
+            output,
+            technical_score=technical_score,
+            payload_penalty=payload_penalty,
+            execution_penalty=execution_penalty,
+        )
+        assessment_output = deepcopy(dict(_mapping(output.get("assessment"))))
+        coverage_output = deepcopy(
+            dict(_mapping(assessment_output.get("evidence_coverage")))
+        )
+        coverage_output.update(
+            {
+                "percent": coverage,
+                "applicable_analyzers": requested,
+                "completed_verified_analyzers": len(completed),
+                "incomplete_analyzers": sorted(incomplete),
+            }
+        )
+        assessment_output["evidence_coverage"] = coverage_output
+        output["assessment"] = assessment_output
+
+    reconciliation = deepcopy(dict(_mapping(output.get("v2_scanner_reconciliation"))))
+    if reconciliation:
+        reconciliation.update(
+            {
+                "record_count": len(requested_records),
+                "applicable_record_count": len(applicable_records),
+                "not_applicable_count": len(not_applicable_records),
+                "completed_count": len(completed),
+                "incomplete_count": len(incomplete),
+                "technology_inapplicable_scanners_excluded": True,
+            }
+        )
+        output["v2_scanner_reconciliation"] = reconciliation
 
     contract = deepcopy(dict(output.get("client_readiness_contract") or {}))
     contract.update(

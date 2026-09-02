@@ -2178,6 +2178,34 @@ def _structured_presentation_es(value: str) -> str | None:
         )
 
     match = re.fullmatch(
+        r"(?P<scanner>[A-Za-z0-9_.+-]+): not applicable; No supported Python "
+        r"dependency manifest or source tree exists at the assessed commit; "
+        r"(?P=scanner) is not applicable to this repository snapshot\.",
+        value,
+    )
+    if match is not None:
+        scanner = match.group("scanner")
+        return (
+            f"{scanner}: no aplicable; No existe un manifiesto de dependencias de "
+            "Python compatible ni un árbol de código fuente Python en el commit "
+            f"evaluado; {scanner} no es aplicable a esta instantánea del repositorio."
+        )
+
+    if value == (
+        "Canonical scoring is reconciled to retained evidence without recomputing "
+        "or inflating either score; evidence limitations remain explicit. Candidate "
+        "volume and reviewer workload are operational review metrics and have no "
+        "numeric technical-maturity or Evidence-Adjusted score effect."
+    ):
+        return (
+            "La puntuación canónica se concilia con la evidencia conservada sin "
+            "recalcular ni inflar ninguna puntuación; las limitaciones de evidencia "
+            "permanecen explícitas. El volumen de candidatos y la carga de trabajo "
+            "de revisión son métricas operativas de revisión y no afectan "
+            "numéricamente la madurez técnica ni la puntuación ajustada por evidencia."
+        )
+
+    match = re.fullmatch(
         r"(?P<count>\d+) grouped static-analysis candidates require validation",
         value,
     )
