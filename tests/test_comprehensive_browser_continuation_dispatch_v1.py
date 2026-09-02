@@ -8,7 +8,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nico.comprehensive_api_controller import ComprehensiveApiController
-from nico.comprehensive_api_routes import register_comprehensive_api_routes
+from nico.comprehensive_api_routes import (
+    _browser_projection_can_dispatch_continuation,
+    register_comprehensive_api_routes,
+)
 from nico.comprehensive_browser_continuation_dispatch_v1 import (
     active_browser_continuations_for_tests,
     dispatch_browser_continuation,
@@ -163,7 +166,7 @@ def test_postgres_lock_contention_does_not_run_duplicate_publication() -> None:
 
 
 class _ProductionProjectionService:
-    def __init__(self) -> None:
+    def __init__(self, *, status: str = "running", terminal: bool = False) -> None:
         self.entered = threading.Event()
         self.release = threading.Event()
         self.resume_calls = 0
@@ -179,14 +182,14 @@ class _ProductionProjectionService:
                 "assessment_depth": "strategic",
                 "report_language": "en",
             },
-            "status": "running",
+            "status": status,
             "current_stage": "functional_qa",
             "completed_stages": [],
             "stage_results": {},
             "blockers": [],
             "progress_percent": 34.78,
             "revision": 30,
-            "terminal": False,
+            "terminal": terminal,
             "human_review_required": True,
             "human_review_completed": False,
             "client_delivery_allowed": False,
@@ -245,3 +248,51 @@ def test_production_browser_route_returns_durable_projection_before_resume_finis
     _wait_until_idle("comprun_dispatch_route")
     assert service.resume_calls == 1
     reset_browser_continuation_dispatch_for_tests()
+
+
+def test_production_browser_route_dispatches_terminal_blocked_recovery() -> None:
+    reset_browser_continuation_dispatch_for_tests()
+    service = _ProductionProjectionService(status="blocked", terminal=True)
+    controller = ComprehensiveApiController(service)  # type: ignore[arg-type]
+    app = FastAPI()
+    app.state.comprehensive_runtime = {
+        "configured": True,
+        "persistence_adapter": "postgres",
+        "detached_stage_execution": True,
+        "continuation_transport_owns_provider_lifetime": False,
+    }
+    register_comprehensive_api_routes(app, controller=controller)
+
+    response = TestClient(app).post(
+        "/assessment/comprehensive-run/comprun_dispatch_route/continue",
+        headers={"x-nico-browser-projection": "terminal-manifest-v1"},
+        json={"max_stages": 1},
+    )
+
+    assert response.status_code == 200
+    assert service.entered.wait(1)
+    assert response.json()["operation"] == "continuation_dispatched"
+    assert response.json()["status"] == "blocked"
+    service.release.set()
+    _wait_until_idle("comprun_dispatch_route")
+    assert service.resume_calls == 1
+    reset_browser_continuation_dispatch_for_tests()
+
+
+def test_terminal_review_decisions_are_not_detached_recovery_candidates() -> None:
+    assert _browser_projection_can_dispatch_continuation(
+        {
+            "status": "review_required",
+            "terminal": True,
+            "human_review_completed": False,
+            "client_delivery_allowed": False,
+        }
+    ) is False
+    assert _browser_projection_can_dispatch_continuation(
+        {
+            "status": "approved",
+            "terminal": True,
+            "human_review_completed": True,
+            "client_delivery_allowed": True,
+        }
+    ) is False

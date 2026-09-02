@@ -155,7 +155,7 @@ class _PdfStoryBuilder:
             if stage.get("unavailable"):
                 story.extend([p("Unavailable or limited evidence", c["h3"]), *bullets(stage.get("unavailable") or [], 5)])
             story.append(HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#cbd5e1"), spaceBefore=4, spaceAfter=5))
-        story.extend([PageBreak(), p("Human Review and Acceptance Gate", c["h1"]), p("The automated assessment is complete only as a draft until the readiness and human-approval conditions are satisfied.", c["body"]), *bullets(["Verify exact repository, run, commit, evidence-ledger, customer, and project identities.", "Triage every material, review-required, failed, timed-out, and unavailable analyzer result.", "Confirm JSON, CSV, Markdown, HTML, and PDF show the same technical score, Evidence-Adjusted score, assurance, limitation accounting, and delivery status.", "Disposition every P1 against its binary acceptance criteria and residual-risk statement.", "Validate business context, assumptions, roadmap, staffing, effort, and any financial scenario inputs.", "Approve or reject the exact immutable report package before delivery."], 10), p(f"{c['assessment'].get('delivery_status') or 'HUMAN REVIEW REQUIRED'} · CLIENT-READY RELEASE REQUIRES INTERNAL EXACT-PACKAGE APPROVAL", c["warning"])])
+        story.extend([PageBreak(), p("Human Review and Acceptance Gate", c["h1"]), p("The automated draft assessment is complete and pending human approval until the readiness and human-approval conditions are satisfied.", c["body"]), *bullets(["Verify exact repository, run, commit, evidence-ledger, customer, and project identities.", "Triage every material, review-required, failed, timed-out, and unavailable analyzer result.", "Confirm JSON, CSV, Markdown, HTML, and PDF show the same technical score, Evidence-Adjusted score, assurance, limitation accounting, and delivery status.", "Disposition every P1 against its binary acceptance criteria and residual-risk statement.", "Validate business context, assumptions, roadmap, staffing, effort, and any financial scenario inputs.", "Approve or reject the exact immutable report package before delivery."], 10), p(f"{c['assessment'].get('delivery_status') or 'HUMAN REVIEW REQUIRED'} · CLIENT-READY RELEASE REQUIRES INTERNAL EXACT-PACKAGE APPROVAL", c["warning"])])
         return story
 
     def build(self) -> list[Any]:
@@ -179,6 +179,8 @@ def _build_pdf(
     generated_at: str,
     final_page_count: int | None = None,
 ) -> bytes:
+    from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
+
     from reportlab.graphics.shapes import Drawing, Rect, String
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
@@ -244,8 +246,28 @@ def _build_pdf(
             commands.extend([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("TOPPADDING", (0, 0), (-1, 0), 6), ("BOTTOMPADDING", (0, 0), (-1, 0), 6)])
         result.setStyle(TableStyle(commands))
         return result
+    language = _text(
+        identity.get("report_language")
+        or identity.get("language")
+        or identity.get("locale"),
+        16,
+    ).casefold()
+    approval_boundary = ES_BOUNDARY if language.startswith("es") else EN_BOUNDARY
+
     def footer(canvas: Any, doc: Any) -> None:
-        canvas.saveState(); canvas.setFont("Helvetica", 7); canvas.setFillColor(colors.HexColor("#64748b")); canvas.drawString(.55 * inch, .36 * inch, f"NICO Comprehensive · {_text(identity.get('run_id'), 32)} · {_text(identity.get('commit_sha'), 12)} · DRAFT"); canvas.drawRightString(7.95 * inch, .36 * inch, f"Page {doc.page}"); canvas.restoreState()
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.setFont("Helvetica-Bold", 5.2)
+        canvas.drawCentredString(4.25 * inch, .43 * inch, approval_boundary)
+        canvas.setFont("Helvetica", 6.2)
+        canvas.drawString(
+            .55 * inch,
+            .25 * inch,
+            f"NICO Comprehensive · {_text(identity.get('run_id'), 32)} · "
+            f"{_text(identity.get('commit_sha'), 12)}",
+        )
+        canvas.drawRightString(7.95 * inch, .25 * inch, f"Page {doc.page}")
+        canvas.restoreState()
     def score_chart(section_values: list[dict[str, Any]]) -> Drawing:
         drawing = Drawing(500, max(60, 26 * len(section_values) + 15))
         for index, section in enumerate(section_values):
