@@ -19,6 +19,7 @@ REQUIRED_OPERATION_ROUTES = {
     "GET /operations/storage-schema",
     "GET /operations/recovery",
     "POST /operations/recovery/scanner/{scan_id}/resume",
+    "POST /operations/recovery/scanner/{scan_id}/close",
     "POST /assessment/github",
     "POST /assessment/mid-run",
     "POST /assessment/full-run",
