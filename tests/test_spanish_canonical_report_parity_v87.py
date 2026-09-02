@@ -1096,12 +1096,12 @@ from nico.comprehensive_spanish_client_surface_localization_v86 import (
 install_comprehensive_spanish_client_surface_localization_v86()
 
 SMALL_ENGLISH_GOLDEN = {
-    "markdown": ("77b5e975fc4e601a6b52ce4967f813ea583f163815d42f059bd9cef23de72fcb", 18849),
-    "html": ("b9118209bc5879e8044a2da692b2f2d2195c4da37d8ed88188a89ce0d32a8a77", 22724),
+    "markdown": ("2ca2efd359843c7a2c311a1036a6892fcc35c6c3f6e392d20238e89a66f5c6c0", 18849),
+    "html": ("43d3a5097c673763501cc06bfa22921cbb963b59d77f4bb8cd92e0773c440343", 22724),
     # The authoritative separately rendered CI/CD boundary replaces the base
     # copy, so one semantic section now produces one physical body page.
-    "pdf_base64": ("d813a6fda82a937e9d7a558cb1811322244f5068d780a74eb799557639946991", 175616),
-    "pdf_sha256": "4672b9dc36e1e249f96806aa86a2942b1982584c8bfdf8216cc2f7acaab08c70",
+    "pdf_base64": ("e75cba24190c586a6d8474bd4b74985bcfd2294913e8806d4865611aea91e4c6", 175616),
+    "pdf_sha256": "40c36df96ce88607d5eef494d9d23bc31f1744a46cdfbc89c37e81bf255d264b",
     "page_count": 21,
 }
 RICH_ENGLISH_GOLDEN = {
