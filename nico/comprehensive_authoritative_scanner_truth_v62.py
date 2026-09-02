@@ -64,6 +64,16 @@ def _phase14_records(
         if not scanner:
             continue
         status = str(record.get("status") or record.get("state") or "unknown")
+        normalized_status = status.casefold().replace("-", "_").replace(" ", "_")
+        if normalized_status in {
+            "completed_clean",
+            "completed_with_findings",
+            "passed",
+            "pass",
+            "ok",
+            "complete",
+        }:
+            status = "completed"
         item = {
             "scanner": scanner,
             "status": status,
@@ -451,6 +461,27 @@ def reconcile_authoritative_scanner_truth(
             records=phase14_records,
             required_scanners=applicable_tools,
         )
+        evidence_health = deepcopy(dict(output.get("evidence_health_summary") or {}))
+        phase14 = _mapping(evidence_health.get("phase14_analyzer_evidence"))
+        analyzer_summaries = [
+            deepcopy(dict(item))
+            for item in phase14.get("analyzers") or []
+            if isinstance(item, Mapping)
+        ]
+        execution_incomplete = [
+            item
+            for item in analyzer_summaries
+            if item.get("required") is True
+            and item.get("status") not in {"completed", "success"}
+        ]
+        evidence_health["completed_scanners"] = [
+            item.get("scanner")
+            for item in analyzer_summaries
+            if item.get("status") in {"completed", "success"}
+        ]
+        evidence_health["incomplete_analyzers"] = deepcopy(execution_incomplete)
+        evidence_health["incomplete_scanner_records"] = deepcopy(execution_incomplete)
+        output["evidence_health_summary"] = evidence_health
     assessment_output = deepcopy(dict(_mapping(output.get("assessment"))))
     assessment_output["requested_scanner_records"] = deepcopy(requested_records)
     assessment_output["scanner_execution_records"] = deepcopy(applicable_records)
