@@ -86,6 +86,15 @@ def render_phase1_evidence_review_gate_pdf(
     total_reduction_pct = metrics.get(
         "end_to_end_review_workload_reduction_pct", 0
     )
+    has_end_to_end_queue_metrics = any(
+        key in metrics
+        for key in (
+            "automated_not_actionable_candidate_count",
+            "human_attention_candidate_count_before_grouping",
+            "end_to_end_review_workload_reduction_count",
+            "end_to_end_review_workload_reduction_pct",
+        )
+    )
     stable = _integer(metrics.get("stable_carry_forward_count"))
     fresh = _integer(triage.get("fresh_technical_triage_completed"))
     qc_pool = _integer(metrics.get("quality_control_sample_pool"))
@@ -195,7 +204,11 @@ def render_phase1_evidence_review_gate_pdf(
             "category": "Categoría",
             "raw": "Bruto",
             "confirmed": "Confirmado",
-            "review_required": "Disposición canónica pendiente",
+            "review_required": (
+                "Disposición canónica pendiente"
+                if has_end_to_end_queue_metrics
+                else "Requiere revisión"
+            ),
             "state": "Estado",
             "candidate_state": "Estado canónico de candidatos",
             "client_boundary": "Límite del paquete del cliente",
@@ -230,7 +243,11 @@ def render_phase1_evidence_review_gate_pdf(
             "category": "Category",
             "raw": "Raw",
             "confirmed": "Confirmed",
-            "review_required": "Canonical disposition pending",
+            "review_required": (
+                "Canonical disposition pending"
+                if has_end_to_end_queue_metrics
+                else "Review required"
+            ),
             "state": "State",
             "candidate_state": "Canonical candidate state",
             "client_boundary": "Client package boundary",
@@ -275,19 +292,29 @@ def render_phase1_evidence_review_gate_pdf(
                 [labels["reviewer_workload"], labels["value"]],
                 [labels["stable"], stable],
                 [labels["fresh"], fresh],
-                [labels["automated_not_actionable"], automated_not_actionable],
-                [labels["human_attention"], human_attention],
+                *(
+                    [
+                        [labels["automated_not_actionable"], automated_not_actionable],
+                        [labels["human_attention"], human_attention],
+                    ]
+                    if has_end_to_end_queue_metrics
+                    else []
+                ),
                 [labels["individual"], individual],
                 [labels["grouped_candidates"], grouped_candidates],
                 [labels["grouped_clusters"], grouped_clusters],
                 [labels["work_units"], work_units],
-                [labels["total_reduction"], f"{total_reduction} ({total_reduction_pct}%)"],
+                *(
+                    [[labels["total_reduction"], f"{total_reduction} ({total_reduction_pct}%)"]]
+                    if has_end_to_end_queue_metrics
+                    else []
+                ),
                 [labels["qc_pool"], qc_pool],
             ],
             [5.75 * inch, 1.65 * inch],
         ),
     ]
-    if categories:
+    if categories and has_end_to_end_queue_metrics:
         story.append(
             p(
                 "Las disposiciones canónicas pendientes no son la cola activa del operador. La carga activa es la tabla de revisión por excepción anterior; los recuentos canónicos permanecen sin cambios hasta que una persona autorizada registre las disposiciones."
@@ -296,6 +323,7 @@ def render_phase1_evidence_review_gate_pdf(
                 small,
             )
         )
+    if categories:
         rows = [[labels["category"], labels["raw"], labels["confirmed"], labels["review_required"], labels["state"]]]
         spanish_categories = {
             "dependency": "Dependencias",

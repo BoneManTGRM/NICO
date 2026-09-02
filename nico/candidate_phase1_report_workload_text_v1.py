@@ -41,6 +41,15 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     metrics = triage.get("workload_metrics") if isinstance(triage.get("workload_metrics"), Mapping) else {}
     if not metrics:
         return ""
+    has_end_to_end_queue_metrics = any(
+        key in metrics
+        for key in (
+            "automated_not_actionable_candidate_count",
+            "human_attention_candidate_count_before_grouping",
+            "end_to_end_review_workload_reduction_count",
+            "end_to_end_review_workload_reduction_pct",
+        )
+    )
     if spanish:
         lines = [
             "## Triage técnico automatizado y carga de revisión",
@@ -48,13 +57,25 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             f"- Cobertura: {_integer(metrics.get('technical_triage_completed'))}/{_integer(metrics.get('total_candidates'))} ({metrics.get('technical_triage_coverage_pct', 0)}%).",
             f"- Análisis estable conservado: {_integer(metrics.get('stable_carry_forward_count'))}.",
             f"- Nuevo triaje técnico: {_integer(triage.get('fresh_technical_triage_completed'))}.",
-            f"- Automatizados como no accionables / control de calidad: {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
-            f"- Candidatos dirigidos a atención humana: {_integer(metrics.get('human_attention_candidate_count_before_grouping'))}.",
+            *(
+                [
+                    f"- Automatizados como no accionables / control de calidad: {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
+                    f"- Candidatos dirigidos a atención humana: {_integer(metrics.get('human_attention_candidate_count_before_grouping'))}.",
+                ]
+                if has_end_to_end_queue_metrics
+                else []
+            ),
             f"- Atención humana individual: {_integer(metrics.get('candidates_requiring_individual_human_attention'))}.",
             f"- Grupos de revisión humana: {_integer(metrics.get('grouped_review_cluster_count'))}, cubriendo {_integer(metrics.get('grouped_human_review_candidate_count'))} candidatos.",
             f"- Unidades de trabajo humano: {_integer(metrics.get('human_review_work_units'))}.",
-            f"- Reducción de bruto a unidades de trabajo: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
-            "- Las disposiciones canónicas pendientes no son la cola activa del operador.",
+            *(
+                [
+                    f"- Reducción de bruto a unidades de trabajo: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
+                    "- Las disposiciones canónicas pendientes no son la cola activa del operador.",
+                ]
+                if has_end_to_end_queue_metrics
+                else []
+            ),
             "- La disposición y aprobación humanas siguen pendientes.",
         ]
     else:
@@ -64,13 +85,25 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             f"- Technical-triage coverage: {_integer(metrics.get('technical_triage_completed'))}/{_integer(metrics.get('total_candidates'))} ({metrics.get('technical_triage_coverage_pct', 0)}%).",
             f"- Stable carry-forward: {_integer(metrics.get('stable_carry_forward_count'))}.",
             f"- Fresh technical triage: {_integer(triage.get('fresh_technical_triage_completed'))}.",
-            f"- Automated non-actionable / QC candidates: {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
-            f"- Candidates routed to human attention: {_integer(metrics.get('human_attention_candidate_count_before_grouping'))}.",
+            *(
+                [
+                    f"- Automated non-actionable / QC candidates: {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
+                    f"- Candidates routed to human attention: {_integer(metrics.get('human_attention_candidate_count_before_grouping'))}.",
+                ]
+                if has_end_to_end_queue_metrics
+                else []
+            ),
             f"- Individual human attention: {_integer(metrics.get('candidates_requiring_individual_human_attention'))}.",
             f"- Grouped human-review clusters: {_integer(metrics.get('grouped_review_cluster_count'))}, covering {_integer(metrics.get('grouped_human_review_candidate_count'))} candidates.",
             f"- Human review work units: {_integer(metrics.get('human_review_work_units'))}.",
-            f"- Raw-to-work-unit reduction: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
-            "- Canonical pending dispositions are not the active operator queue.",
+            *(
+                [
+                    f"- Raw-to-work-unit reduction: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
+                    "- Canonical pending dispositions are not the active operator queue.",
+                ]
+                if has_end_to_end_queue_metrics
+                else []
+            ),
             "- Human disposition and approval remain pending.",
         ]
     return "\n".join(lines)
