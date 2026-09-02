@@ -777,6 +777,10 @@ def _pdf(
     def localized(value: str) -> str:
         return localize_presentation(value) if localize_presentation else value
 
+    approval_boundary = localized(
+        "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
+    )
+
     def bullets(
         values: Iterable[str],
         *,
@@ -798,7 +802,10 @@ def _pdf(
         canvas.drawString(
             0.55 * inch,
             0.38 * inch,
-            f"NICO Comprehensive · {_text(identity.get('run_id'), 60)} · {localized('DRAFT')}",
+            (
+                f"NICO Comprehensive · {_text(identity.get('run_id'), 60)} · "
+                f"{approval_boundary}"
+            ),
         )
         canvas.drawRightString(7.95 * inch, 0.38 * inch, f"{localized('Page')} {doc.page}")
         canvas.restoreState()
@@ -834,7 +841,7 @@ def _pdf(
         p(f"{localized('Run ID')}: {_text(identity.get('run_id'))}", subtitle),
         p(f"{localized('Generated')}: {generated_at}", subtitle),
         Spacer(1, 0.45 * inch),
-        p(localized("DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED"), warning),
+        p(approval_boundary, warning),
         PageBreak(),
         p(localized("Executive Decision Brief"), h1),
         p(localized(_decision_summary(identity, assessment, stages)), body),
@@ -1063,7 +1070,13 @@ def _pdf(
     story += [
         PageBreak(),
         p(localized("Human Review and Acceptance Gate"), h1),
-        p(localized("The automated assessment is complete only as a draft. The following decisions remain human responsibilities:"), body),
+        p(
+            localized(
+                "The automated assessment is complete and pending human approval. "
+                "The following decisions remain human responsibilities:"
+            ),
+            body,
+        ),
         *bullets(
             [
                 localized("Verify the exact repository, run, commit, evidence ledger, customer, and project identities."),
@@ -1073,7 +1086,7 @@ def _pdf(
                 localized("Approve or reject the immutable report package before creating any delivery access."),
             ]
         ),
-        p(localized("DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED"), warning),
+        p(approval_boundary, warning),
     ]
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
