@@ -797,8 +797,13 @@ def _pdf(
 
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
-        canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#64748b"))
+        # The Spanish boundary is longer than the English copy.  At the former
+        # seven-point size the exact production run identity plus that boundary
+        # exceeded a letter page and clipped the delivery-state word.  A bounded
+        # footer size preserves the established one-line semantic contract while
+        # keeping both locale variants clear of the page-number column.
+        canvas.setFont("Helvetica", 5.8)
         canvas.drawString(
             0.55 * inch,
             0.38 * inch,

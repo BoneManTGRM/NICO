@@ -8,13 +8,16 @@ from nico.scanner_evidence_pipeline_v1 import (
     REQUIRED_EVIDENCE_TOOLS,
     _deterministic_fingerprint,
     _eslint_config,
+    _javascript_source_targets,
     _raw_blob,
     _run_bandit,
+    _run_eslint,
     _run_osv,
+    _run_typescript,
     _semgrep_config,
     materialize_raw_artifacts,
 )
-from nico.scanner_tool_runners import ScannerToolSpec
+from nico.scanner_tool_runners import ProjectCommandPreparation, ScannerToolSpec, resolve_node_project_dir
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -204,6 +207,62 @@ def test_eslint_profile_uses_explicit_module_root(monkeypatch, tmp_path: Path) -
     assert reason == ""
     assert config is not None
     assert str(entry.resolve()) in config.read_text(encoding="utf-8")
+
+
+def test_root_node_project_routes_eslint_and_typescript_to_entire_project(monkeypatch, tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    project = workspace.repo_dir
+    (project / "src").mkdir()
+    (project / "src" / "server.ts").write_text(
+        "export const ready = true;\n", encoding="utf-8"
+    )
+    (project / "tsconfig.json").write_text("{}", encoding="utf-8")
+    bin_dir = project / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    for name in ("eslint", "tsc"):
+        binary = bin_dir / name
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        binary.chmod(0o755)
+    parser = tmp_path / "parser.js"
+    parser.write_text("module.exports = {};\n", encoding="utf-8")
+    monkeypatch.setenv("NICO_ESLINT_PARSER_ENTRY", str(parser))
+    monkeypatch.setattr(
+        "nico.scanner_evidence_pipeline_v1.shutil.which", lambda name: None
+    )
+    preparation = ProjectCommandPreparation("completed", project, True)
+    calls: list[tuple[tuple[str, ...], Path]] = []
+
+    def runner(args, *, cwd, limits, stdout_path, extra_env):
+        del limits, extra_env
+        calls.append((tuple(args), cwd))
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        stdout_path.write_text("[]" if "eslint" in Path(args[0]).name else "", encoding="utf-8")
+        return WorkerCommandResult(
+            args=tuple(args), returncode=0, stdout="", stderr="",
+            stdout_path=str(stdout_path), stdout_bytes=2 if "eslint" in Path(args[0]).name else 0,
+        )
+
+    eslint = _run_eslint(
+        ScannerToolSpec("eslint", ("eslint",), "static"),
+        workspace,
+        runner,
+        preparation,
+    )
+    typescript = _run_typescript(
+        ScannerToolSpec("typescript", ("tsc",), "static"),
+        workspace,
+        runner,
+        preparation,
+    )
+
+    assert resolve_node_project_dir(project) == project
+    assert _javascript_source_targets(project) == (".",)
+    assert eslint["status"] == "completed"
+    assert typescript["status"] == "completed"
+    assert calls[0][1] == project
+    assert calls[0][0][1] == "."
+    assert calls[1][1] == project
+    assert calls[1][0][-1] == str(project / "tsconfig.json")
 
 
 def test_semgrep_profile_is_local_deterministic_and_metrics_independent(tmp_path: Path) -> None:

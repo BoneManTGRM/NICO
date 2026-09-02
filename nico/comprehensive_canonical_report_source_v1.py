@@ -130,6 +130,19 @@ def _attach_engagement_identity(
         identity["engagement_metadata_sha256"] = metadata_sha
 
 
+def _authorization_confirmed(stages: Mapping[str, Any]) -> bool:
+    """Carry only the explicit authorization-stage decision into report truth."""
+
+    stage = stages.get("authorization_and_scope")
+    if not isinstance(stage, Mapping) or _text(stage.get("status"), 40).casefold() != "complete":
+        return False
+    evidence = stage.get("evidence") if isinstance(stage.get("evidence"), Mapping) else {}
+    return bool(
+        stage.get("authorization_confirmed") is True
+        or evidence.get("authorization_confirmed") is True
+    )
+
+
 def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     """Build the exact canonical report model without rendering legacy artifacts.
 
@@ -175,6 +188,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         }
 
     stages, maturity_truth = synchronize_maturity_label_truth(raw_stages)
+    authorization_confirmed = _authorization_confirmed(stages)
     ordered = [
         _stage_summary(str(stage_id), result)
         for stage_id, result in stages.items()
@@ -192,6 +206,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
 
     canonical = {
         "service_id": _SERVICE_ID,
+        "authorization_confirmed": authorization_confirmed,
         "identity": identity,
         "report_language": report_language,
         "locale": report_language,

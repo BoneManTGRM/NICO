@@ -47,6 +47,12 @@ class ProjectCommandPreparation:
     timed_out: bool = False
     output_truncated: bool = False
 
+    @property
+    def project_dir(self) -> Path:
+        """Layout-neutral alias retained alongside the legacy ``web_dir`` field."""
+
+        return self.web_dir
+
 
 TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
     ScannerToolSpec("pip-audit", ("pip-audit", "-r", "requirements.txt", "-f", "json"), "dependency", timeout_seconds=240, max_output_chars=500_000),
@@ -408,8 +414,8 @@ def _package_script(web_dir: Path, name: str) -> str:
 
 
 def _node_env(workspace: WorkerWorkspace, cwd: Path) -> dict[str, str]:
-    web_modules = workspace.repo_dir / "apps" / "web" / "node_modules"
-    node_path = str(web_modules)
+    project_modules = cwd / "node_modules"
+    node_path = str(project_modules)
     current = os.getenv("NODE_PATH", "")
     return {
         "HOME": str(workspace.root / "home"),
@@ -422,18 +428,61 @@ def _node_env(workspace: WorkerWorkspace, cwd: Path) -> dict[str, str]:
     }
 
 
+def _node_project_dir(repo_dir: Path) -> Path:
+    """Select the deterministic Node project represented by an exact lockfile.
+
+    Root-level projects are common in assessed repositories. NICO's own frontend is
+    nested under ``apps/web``, so that location remains the second preference.
+    Other lockfile-backed projects are selected deterministically by depth and path.
+    """
+
+    preferred = (repo_dir, repo_dir / "apps" / "web")
+    paired: list[Path] = []
+    excluded = {".git", "node_modules", ".next", "dist", "build", "coverage"}
+    for current, directories, files in os.walk(repo_dir):
+        directories[:] = sorted(name for name in directories if name not in excluded)
+        if "package-lock.json" not in files or "package.json" not in files:
+            continue
+        paired.append(Path(current))
+    unique = set(paired)
+    for candidate in preferred:
+        if candidate in unique:
+            return candidate
+    if paired:
+        return min(
+            unique,
+            key=lambda path: (len(path.relative_to(repo_dir).parts), str(path.relative_to(repo_dir))),
+        )
+    for candidate in preferred:
+        if (candidate / "package.json").is_file():
+            return candidate
+    return repo_dir
+
+
+def _project_label(project_dir: Path, repo_dir: Path) -> str:
+    relative = project_dir.relative_to(repo_dir)
+    return "." if not relative.parts else relative.as_posix()
+
+
+def resolve_node_project_dir(repo_dir: Path) -> Path:
+    """Public layout-neutral alias for deterministic Node project selection."""
+
+    return _node_project_dir(repo_dir)
+
+
 def prepare_project_commands(
     workspace: WorkerWorkspace,
     *,
     runner: Callable[..., WorkerCommandResult] = run_command,
 ) -> ProjectCommandPreparation:
-    web_dir = workspace.repo_dir / "apps" / "web"
+    web_dir = _node_project_dir(workspace.repo_dir)
+    project_label = _project_label(web_dir, workspace.repo_dir)
     package_json = web_dir / "package.json"
     lockfile = web_dir / "package-lock.json"
     if not package_json.exists():
-        return ProjectCommandPreparation("unavailable", web_dir, False, "apps/web/package.json not found.")
+        return ProjectCommandPreparation("unavailable", web_dir, False, "package.json not found in a supported Node project.")
     if not lockfile.exists():
-        return ProjectCommandPreparation("unavailable", web_dir, False, "apps/web/package-lock.json is required for deterministic project-tool preparation.")
+        return ProjectCommandPreparation("unavailable", web_dir, False, f"{project_label}/package-lock.json is required for deterministic project-tool preparation.")
     npm = shutil.which("npm")
     if not npm:
         return ProjectCommandPreparation("unavailable", web_dir, False, "npm is not installed in the worker image.")
@@ -472,7 +521,8 @@ def _resolve_command_and_cwd(
     preparation: ProjectCommandPreparation | None,
 ) -> tuple[tuple[str, ...] | None, Path, str | None]:
     repo_dir = workspace.repo_dir
-    web_dir = repo_dir / "apps" / "web"
+    web_dir = preparation.web_dir if preparation is not None else _node_project_dir(repo_dir)
+    project_label = _project_label(web_dir, repo_dir)
     if spec.name == "pip-audit" and not (repo_dir / "requirements.txt").exists():
         return None, repo_dir, "requirements.txt not found for pip-audit."
     if spec.name == "npm-audit":
@@ -492,11 +542,11 @@ def _resolve_command_and_cwd(
             return None, web_dir, f"{bin_name} was not installed by the exact package-lock dependency preparation."
         if spec.name == "eslint":
             if not _has_eslint_config(web_dir) and not _package_script(web_dir, "lint"):
-                return None, web_dir, "No ESLint configuration or lint script was found in apps/web."
+                return None, web_dir, f"No ESLint configuration or lint script was found in {project_label}."
             return (str(binary), ".", "--format", "json"), web_dir, None
         tsconfig = web_dir / "tsconfig.json"
         if not tsconfig.exists():
-            return None, web_dir, "apps/web/tsconfig.json not found for TypeScript evidence."
+            return None, web_dir, f"{project_label}/tsconfig.json not found for TypeScript evidence."
         return (str(binary), "--noEmit", "--pretty", "false", "--incremental", "false", "-p", str(tsconfig)), web_dir, None
     if spec.name == "trufflehog":
         command = tuple(part.replace("{repo_dir}", str(repo_dir)) for part in spec.command)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
@@ -28,7 +29,7 @@ def _record(name: str, *, completed: bool = True, source: str = "json") -> dict:
         "verified": completed,
         "verified_for_this_report": completed,
         "exact_commit_match": True,
-        "artifact_hash": name.replace("-", "") * 4,
+        "artifact_hash": hashlib.sha256(name.encode("utf-8")).hexdigest(),
         "finding_count": 0,
         "execution_source": source,
         "failure_reason": "" if completed else "scanner execution failed",
@@ -201,6 +202,134 @@ def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator()
         not section.get("unavailable")
         for section in result["assessment"]["sections"]
     )
+
+
+def test_node_only_run_rebuilds_phase14_without_inapplicable_or_contract_blockers() -> None:
+    records = [_record(name) for name in TOOLS]
+    bandit_record = next(item for item in records if item["scanner_name"] == "bandit")
+    bandit_record["status"] = "completed_with_findings"
+    bandit_record["state"] = "completed_with_findings"
+    bandit_record["exit_code"] = 1
+    pip_record = next(item for item in records if item["scanner_name"] == "pip-audit")
+    pip_record.update(
+        {
+            "state": "unavailable",
+            "status": "unavailable",
+            "completed": False,
+            "verified": False,
+            "verified_complete": False,
+            "verified_for_this_report": False,
+            "failure_reason": "requirements.txt was not found.",
+        }
+    )
+    canonical = {
+        "identity": {"commit_sha": "a" * 40},
+        "repository_evidence": {
+            "file_evidence": {"sampled_paths": ["package.json", "src/index.ts"]},
+            "dependency_evidence": {"manifest_paths": ["package.json"]},
+        },
+        "summary": (
+            "Evidence-Adjusted readiness is 85/100 versus technical maturity 89/100."
+        ),
+        "assessment": {
+            "technical_score": 89,
+            "evidence_adjusted_score": 85,
+            "canonical_evidence_adjusted_score": 85,
+            "score_formula": "89 - 0 - 4 = 85",
+            "maturity_signal": {
+                "technical_score": 89,
+                "evidence_adjusted_score": 85,
+                "evidence_readiness_score": 85,
+            },
+            "score_contract": {
+                "technical_score": 89,
+                "missing_raw_payload_penalty": 0,
+                "incomplete_analyzer_penalty": 4,
+                "evidence_completeness_penalty": 4,
+                "assurance_penalty": 4,
+                "evidence_adjusted_score": 85,
+                "score_formula": "89 - 0 - 0 - 4 - 0 = 85",
+            },
+            "evidence_coverage": {
+                "percent": 89,
+                "applicable_analyzers": 9,
+                "completed_verified_analyzers": 8,
+                "incomplete_analyzers": ["pip-audit"],
+                "missing_raw_payload_penalty": 0,
+                "incomplete_analyzer_penalty": 4,
+                "evidence_completeness_penalty": 4,
+            },
+            "scanner_execution_summary": {
+                "record_count": 9,
+                "completed_count": 8,
+                "verified_count": 8,
+                "incomplete_count": 1,
+            },
+            "sections": [
+                {
+                    "id": "dependency_library_ecosystem",
+                    "evidence": [
+                        "Applicable analyzers: pip-audit, npm-audit, osv-scanner."
+                    ],
+                }
+            ],
+        },
+        "v2_scanner_reconciliation": {
+            "version": "nico.v2.scanner-reconciliation.v3",
+            "record_count": 9,
+            "completed_count": 8,
+            "incomplete_count": 1,
+        },
+        "requested_scanner_records": records,
+        "scanner_execution_records": records,
+        "live_scanner_evidence": {
+            "tools_requested": TOOLS,
+            "tools_run": [name for name in TOOLS if name != "pip-audit"],
+            "failed_tools": [],
+            "unavailable_tools": ["pip-audit"],
+            "timed_out_tools": [],
+        },
+    }
+
+    result = reconcile_authoritative_scanner_truth(canonical)
+    phase14 = result["evidence_health_summary"]["phase14_analyzer_evidence"]
+    pip_summary = next(
+        item for item in phase14["analyzers"] if item["scanner"] == "pip-audit"
+    )
+
+    assert pip_summary["status"] == "not_applicable"
+    assert pip_summary["required"] is False
+    assert phase14["rejected_records"] == []
+    assert not any(item["scanner"] == "pip-audit" for item in phase14["blockers"])
+    assert not any(item["scanner"] == "evidence-contract" for item in phase14["blockers"])
+    assert set(phase14["required_scanners"]) == set(TOOLS) - {"pip-audit"}
+    assert result["evidence_health_summary"]["incomplete_analyzers"] == []
+    assert result["evidence_health_summary"]["incomplete_scanner_records"] == []
+    assert set(result["evidence_health_summary"]["completed_scanners"]) == set(TOOLS) - {
+        "pip-audit"
+    }
+    assessment = result["assessment"]
+    assert assessment["scanner_execution_summary"]["record_count"] == 9
+    assert assessment["scanner_execution_summary"]["applicable_record_count"] == 8
+    assert assessment["scanner_execution_summary"]["not_applicable_count"] == 1
+    assert assessment["scanner_execution_summary"]["completed_count"] == 8
+    assert assessment["scanner_execution_summary"]["incomplete_count"] == 0
+    assert assessment["evidence_coverage"]["percent"] == 100
+    assert assessment["evidence_coverage"]["applicable_analyzers"] == 8
+    assert assessment["evidence_coverage"]["completed_verified_analyzers"] == 8
+    assert assessment["evidence_coverage"]["incomplete_analyzer_penalty"] == 0
+    assert assessment["evidence_adjusted_score"] == 89
+    assert assessment["canonical_evidence_adjusted_score"] == 89
+    assert assessment["maturity_signal"]["evidence_readiness_score"] == 89
+    assert assessment["score_formula"] == "89 - 0 - 0 = 89"
+    assert assessment["sections"][0]["evidence"] == [
+        "Applicable analyzers: npm-audit, osv-scanner."
+    ]
+    assert "85/100" not in result["summary"]
+    assert "89/100" in result["summary"]
+    assert result["v2_scanner_reconciliation"]["completed_count"] == 8
+    assert result["v2_scanner_reconciliation"]["incomplete_count"] == 0
+    assert result["v2_scanner_reconciliation"]["not_applicable_count"] == 1
 
 
 def test_report_runtime_reconciles_after_authoritative_projection_without_redesign() -> None:
