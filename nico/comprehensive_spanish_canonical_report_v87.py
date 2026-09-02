@@ -24,6 +24,10 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 _CANONICAL_PARITY_EXACT = {
     "Comprehensive": "Integral",
     "DRAFT": "BORRADOR AUTOMATIZADO",
+    "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED": (
+        "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · "
+        "ENTREGA AL CLIENTE BLOQUEADA"
+    ),
     "Page": "Página",
     "PROCESSING COMPLETE · EVIDENCE LIMITED": (
         "PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
@@ -431,8 +435,8 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "Se mantiene separado intencionalmente del cuerpo orientado a decisiones.",
     ),
     (
-        "The automated assessment is complete only as a draft. The following decisions remain human responsibilities:",
-        "La evaluación automatizada está completa únicamente como borrador. Las siguientes decisiones siguen siendo responsabilidad humana:",
+        "The automated assessment is complete and pending human approval. The following decisions remain human responsibilities:",
+        "La evaluación automatizada está completa y pendiente de aprobación humana. Las siguientes decisiones siguen siendo responsabilidad humana:",
     ),
     (
         "Verify the exact repository, run, commit, evidence ledger, customer, and project identities.",

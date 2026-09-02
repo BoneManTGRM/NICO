@@ -144,15 +144,16 @@ def test_stale_detached_report_failure_rewinds_same_exact_run_once(
     assert rewind_blocked_run_for_final_artifact_recovery(recovered) == recovered
 
 
-def test_previous_recovery_generation_does_not_permanently_lock_durable_run() -> None:
+def test_previous_v10_recovery_generation_does_not_permanently_lock_durable_run() -> None:
     blocked = _detached_blocked_record("decision_report_generation")
-    blocked_with_v7_attempt = _attach_recovery_history(
+    blocked_with_v10_attempt = _attach_recovery_history(
         blocked,
-        artifact_schema="nico.comprehensive_blocked_run_recovery.v7",
-        budget_scope="source_failed_stage",
+        artifact_schema="nico.comprehensive_blocked_run_recovery.v10",
+        budget_scope=RECOVERY_BUDGET_SCOPE,
+        recovery_generation="nico.comprehensive_blocked_run_recovery.v10",
     )
 
-    recovered = rewind_blocked_run_for_final_artifact_recovery(blocked_with_v7_attempt)
+    recovered = rewind_blocked_run_for_final_artifact_recovery(blocked_with_v10_attempt)
 
     assert recovered["status"] == "running"
     assert recovered["terminal"] is False
