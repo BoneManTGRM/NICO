@@ -93,3 +93,21 @@ def test_old_failed_record_without_completed_evidence_stays_failed():
     [record] = normalize_production_scanner_records([failed], expected_sha=SHA)
     assert record["status"] == "failed"
     assert record["capture_complete"] is False
+
+
+def test_production_integration_is_idempotent_for_analyzer_evidence():
+    first = integrate_production_truth(
+        {
+            "commit_sha": SHA,
+            "evidence_health_summary": {"scanner_records": [_bandit()]},
+        }
+    )
+    second = integrate_production_truth(first)
+
+    assert second["analyzer_evidence_report"] == first["analyzer_evidence_report"]
+    assert (
+        second["evidence_health_summary"]["phase14_analyzer_evidence"]["rejected_records"]
+        == []
+    )
+    assert second["phase15_production_integration"]["analyzer_contract_applied"] is True
+    assert second["phase15_production_integration"]["bandit_record_ingested"] is True
