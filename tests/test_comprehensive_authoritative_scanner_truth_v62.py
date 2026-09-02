@@ -206,6 +206,10 @@ def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator()
 
 def test_node_only_run_rebuilds_phase14_without_inapplicable_or_contract_blockers() -> None:
     records = [_record(name) for name in TOOLS]
+    bandit_record = next(item for item in records if item["scanner_name"] == "bandit")
+    bandit_record["status"] = "completed_with_findings"
+    bandit_record["state"] = "completed_with_findings"
+    bandit_record["exit_code"] = 1
     pip_record = next(item for item in records if item["scanner_name"] == "pip-audit")
     pip_record.update(
         {
@@ -247,6 +251,11 @@ def test_node_only_run_rebuilds_phase14_without_inapplicable_or_contract_blocker
     assert not any(item["scanner"] == "pip-audit" for item in phase14["blockers"])
     assert not any(item["scanner"] == "evidence-contract" for item in phase14["blockers"])
     assert set(phase14["required_scanners"]) == set(TOOLS) - {"pip-audit"}
+    assert result["evidence_health_summary"]["incomplete_analyzers"] == []
+    assert result["evidence_health_summary"]["incomplete_scanner_records"] == []
+    assert set(result["evidence_health_summary"]["completed_scanners"]) == set(TOOLS) - {
+        "pip-audit"
+    }
 
 
 def test_report_runtime_reconciles_after_authoritative_projection_without_redesign() -> None:
