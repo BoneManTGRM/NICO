@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+from nico.comprehensive_pdf_embedded_fonts_v1 import (
+    install_comprehensive_pdf_embedded_fonts_v1,
+)
+
+PDF_EMBEDDED_FONTS = install_comprehensive_pdf_embedded_fonts_v1()
+if PDF_EMBEDDED_FONTS.get("status") not in {"installed", "already_installed"}:
+    raise RuntimeError("Renderer worker embedded PDF fonts did not install")
+if PDF_EMBEDDED_FONTS.get("bound") is not True:
+    raise RuntimeError("Renderer worker embedded PDF fonts are not bound")
+if PDF_EMBEDDED_FONTS.get("client_viewer_font_substitution_required") is not False:
+    raise RuntimeError("Renderer worker PDF fonts still depend on client substitution")
+
 from nico.api.terminal_authority_bootstrap import app
 from nico.comprehensive_canonical_truth_hash_compat_v1 import (
     install_canonical_truth_hash_compat,
@@ -26,7 +38,7 @@ from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
     install_comprehensive_spanish_final_report_runtime_cache_v94,
 )
 
-VERSION = "nico.api.final_report_worker_bootstrap.v8.1"
+VERSION = "nico.api.final_report_worker_bootstrap.v8.2"
 
 # This module is the isolated final-report renderer entry point. Parent-process monkey
 # patches do not cross the subprocess boundary. Install the report/review integrity
@@ -270,6 +282,7 @@ FINAL_REPORT_WORKER_RUNTIME = {
     "status": "ready",
     "same_terminal_report_authority_as_production": True,
     "report_review_integrity_bound": True,
+    "embedded_pdf_fonts_bound": True,
     "final_worker_pdf_reflow_bound": True,
     "final_worker_pdf_reflow_bilingual": True,
     "spanish_canonical_acceptance_normalization_bound": True,
@@ -297,6 +310,7 @@ __all__ = [
     "CANONICAL_TRUTH_HASH_COMPAT",
     "FINAL_REPORT_WORKER_RUNTIME",
     "FINAL_WORKER_PDF_REFLOW",
+    "PDF_EMBEDDED_FONTS",
     "REPORT_REVIEW_INTEGRITY",
     "SPANISH_ASSESSMENT_SCOPE",
     "SPANISH_CANONICAL_ACCEPTANCE_NORMALIZATION",
