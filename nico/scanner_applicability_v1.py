@@ -157,6 +157,7 @@ def _explicitly_not_applicable(
             marker in lowered
             for marker in (
                 "requirements.txt not found",
+                "requirements.txt was not found",
                 "no supported python dependency manifest",
                 "python dependency manifest is missing",
             )
