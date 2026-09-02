@@ -64,9 +64,11 @@ install_background_terminal_ordering()
 install_bounded_report_flatten()
 install_pre_render_authoritative_scanner_truth()
 
-VERSION = "nico.comprehensive_run_service.v17"
+VERSION = "nico.comprehensive_run_service.v18"
 
 _EXECUTIVE_BRIEFING_STAGE_ID = "risk_reduction_and_executive_briefing"
+_SCANNER_TRIAGE_STAGE_ID = "deep_scanner_triage"
+_SCANNER_SOURCE_STAGE_ID = "dependency_security_static_analysis"
 _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
     "evidence_reconciliation_and_scoring",
     "functional_qa",
@@ -77,6 +79,51 @@ _EXECUTIVE_BRIEFING_PRIOR_STAGE_IDS = (
     "six_month_roadmap",
     "staffing_sequencing_and_cost",
 )
+
+
+def _scanner_lookup_reference(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain only the durable scanner identity needed by scanner triage.
+
+    The complete exact-SHA scanner artifact already lives in the scanner store and is
+    loaded by ``comprehensive_native_providers._scan``. Copying its retained run-record
+    projection before entering the background boundary makes browser continuation time
+    proportional to candidate volume. A scan id is the authoritative lookup key; the
+    optional nested copy preserves compatibility with records that stored it there.
+    """
+
+    output: dict[str, Any] = {}
+    scan_id = str(value.get("scan_id") or "").strip()
+    if scan_id:
+        output["scan_id"] = scan_id
+
+    scanner = value.get("scanner")
+    if isinstance(scanner, Mapping):
+        nested_scan_id = str(scanner.get("scan_id") or "").strip()
+        if nested_scan_id:
+            output["scanner"] = {
+                "scan_id": nested_scan_id,
+                "status": str(scanner.get("status") or "").strip(),
+            }
+    return output
+
+
+def _background_poll_reference(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the small fields required to resume one durable background poll."""
+
+    output = {
+        key: deepcopy(value[key])
+        for key in (
+            "status",
+            "reason",
+            "summary",
+            "scan_id",
+            "progress_percent",
+            "stage_progress_percent",
+            "stage_execution",
+        )
+        if key in value
+    }
+    return output
 
 
 def _require_exact_final_report_integrity(record: Mapping[str, Any]) -> None:
@@ -117,6 +164,20 @@ def _prior_stage_results_for_stage(
             for completed_stage in completed
             if completed_stage in retained_stage_results
         }
+
+    if stage_id == _SCANNER_TRIAGE_STAGE_ID:
+        projected: dict[str, Any] = {}
+        scanner_source = retained_stage_results.get(_SCANNER_SOURCE_STAGE_ID)
+        if isinstance(scanner_source, Mapping):
+            projected[_SCANNER_SOURCE_STAGE_ID] = _scanner_lookup_reference(
+                scanner_source
+            )
+        current_poll = retained_stage_results.get(_SCANNER_TRIAGE_STAGE_ID)
+        if isinstance(current_poll, Mapping):
+            projected[_SCANNER_TRIAGE_STAGE_ID] = _background_poll_reference(
+                current_poll
+            )
+        return projected
 
     if stage_id == _EXECUTIVE_BRIEFING_STAGE_ID:
         return {
