@@ -720,7 +720,7 @@ def calibrated_attachment_handler(context: dict[str, Any], outputs: dict[str, An
     return result
 
 
-def _rebind() -> None:
+def _rebind(*, preserve_attachment_handler: bool = False) -> None:
     hosted.scan_files = calibrated_scan_files
     hosted.analyze_secrets = calibrated_analyze_secrets
     snapshot_repository.scan_files = calibrated_scan_files
@@ -747,14 +747,19 @@ def _rebind() -> None:
     }
     scanner_worker.run_tool = calibrated_run_tool
 
-    snapshot_handlers._snapshot_evidence_attachment_handler = calibrated_attachment_handler
-    mid_handlers._snapshot_evidence_attachment_handler = calibrated_attachment_handler
+    if not preserve_attachment_handler:
+        snapshot_handlers._snapshot_evidence_attachment_handler = calibrated_attachment_handler
+        mid_handlers._snapshot_evidence_attachment_handler = calibrated_attachment_handler
 
 
 def install_assessment_score_integrity() -> dict[str, Any]:
     installed = bool(getattr(scanner_worker, "_nico_score_integrity_installed", False))
+    # Reassert the scoring/scanner bindings on every call because later
+    # compatibility installers may replace them.  Attachment handlers are a
+    # composed chain, though, so an idempotent reinstall must retain any
+    # privacy/evidence wrappers that were attached after the initial install.
+    _rebind(preserve_attachment_handler=installed)
     if not installed:
-        _rebind()
         scanner_worker._nico_score_integrity_installed = True
     return {
         "status": "already_installed" if installed else "installed",

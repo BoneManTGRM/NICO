@@ -796,7 +796,56 @@ def assessment_recovery_status(
             "blockers": ["durable_postgres_required"],
         }
     try:
-        records = active.list("assessment_runs")[:MAX_RECONCILE_RECORDS]
+        adapter_instance = getattr(active, "adapter", active)
+        query = getattr(adapter_instance, "_query", None)
+        if callable(query):
+            rows = query(
+                """
+                SELECT
+                    run_id,
+                    customer_id,
+                    project_id,
+                    workflow,
+                    status,
+                    created_at,
+                    COALESCE(
+                        payload #>> '{response,execution_checkpoint,heartbeat_at}',
+                        payload #>> '{response,execution_heartbeat_at}',
+                        payload #>> '{execution_checkpoint,heartbeat_at}',
+                        payload ->> 'updated_at',
+                        created_at::text
+                    ) AS heartbeat_at
+                FROM assessment_runs
+                WHERE workflow IN (%s, %s)
+                  AND status IN (%s, %s, %s, %s)
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (
+                    "mid_assessment",
+                    "full_assessment",
+                    "running",
+                    "resuming",
+                    "planned",
+                    RECOVERY_REQUIRED_STATUS,
+                    MAX_RECONCILE_RECORDS,
+                ),
+            )
+            records = [
+                {
+                    "run_id": row.get("run_id"),
+                    "customer_id": row.get("customer_id"),
+                    "project_id": row.get("project_id"),
+                    "workflow": row.get("workflow"),
+                    "status": row.get("status"),
+                    "created_at": str(row.get("created_at") or ""),
+                    "updated_at": str(row.get("heartbeat_at") or ""),
+                }
+                for row in rows
+                if isinstance(row, dict)
+            ]
+        else:
+            records = active.list("assessment_runs")[:MAX_RECONCILE_RECORDS]
     except Exception:
         return {
             "artifact_schema": ASSESSMENT_RECOVERY_SCHEMA,
