@@ -14,6 +14,10 @@ on:
       - nico/comprehensive_api_routes.py
       - nico/repository_snapshot.py
       - nico/snapshot_repository_evidence.py
+      - nico/storage.py
+      - nico/scanner_recovery_status.py
+      - nico/assessment_recovery.py
+      - nico/backup_restore_readiness.py
       - scripts/provider_live_acceptance.py
       - tests/test_provider_live_acceptance.py
       - tests/test_provider_live_clients.py
@@ -30,6 +34,10 @@ on:
       - nico/comprehensive_api_routes.py
       - nico/repository_snapshot.py
       - nico/snapshot_repository_evidence.py
+      - nico/storage.py
+      - nico/scanner_recovery_status.py
+      - nico/assessment_recovery.py
+      - nico/backup_restore_readiness.py
       - scripts/provider_live_acceptance.py
       - tests/test_provider_live_acceptance.py
       - tests/test_provider_live_clients.py

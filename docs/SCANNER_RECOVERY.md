@@ -114,6 +114,19 @@ The resume process:
 6. starts the process-local scanner thread using the same scan ID;
 7. retains normal scanner evidence and completion persistence.
 
+If the interrupted scanner is no longer authorized or useful, close it without
+deleting evidence:
+
+```text
+POST /operations/recovery/scanner/{scan_id}/close
+```
+
+The authenticated request requires an operator identity and one bounded reason
+code: `superseded_by_terminal_assessment`, `authorization_expired`,
+`duplicate_or_test_run`, or `no_longer_required`. Closing atomically changes
+only `recovery_required` to `cancelled`, retains the same scan ID and scanner
+evidence, writes an audit event, and permanently disables resume for that item.
+
 Concurrent resume requests cannot both claim the same `recovery_required` record. The winning request changes the durable status first. Later requests observe `queued`, `running`, or a terminal state and return idempotent reuse without starting a second thread.
 
 If thread creation fails after the claim, NICO returns the same record to `recovery_required` and stores only the exception class.
@@ -137,7 +150,8 @@ A non-empty recovery queue degrades operations readiness and requires operator a
 3. Refresh reconciliation.
 4. Confirm the exact Vercel and Railway release SHA in Operations.
 5. Review each repository, run binding, requested tool set, prior status, and recovery reason.
-6. Resume only work that is still authorized and required.
+6. Resume only work that is still authorized and required. Explicitly close
+   reviewed superseded, expired, duplicate/test, or no-longer-required items.
 7. Confirm the same scan ID moves to `queued`, then `running`, then a terminal state.
 8. Refresh the parent Mid or Full run through its existing status endpoint.
 9. Verify that reports and approvals are reused rather than duplicated.

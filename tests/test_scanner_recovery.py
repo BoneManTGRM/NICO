@@ -12,9 +12,11 @@ from nico.operations_readiness import REQUIRED_OPERATION_ROUTES
 from nico.scanner_recovery import (
     RECOVERY_REQUIRED_STATUS,
     REQUIRED_SCANNER_RECOVERY_ROUTE_NAMES,
+    SCANNER_CLOSE_ROUTE,
     SCANNER_RECOVERY_ROUTE,
     SCANNER_RESUME_ROUTE,
     atomic_scanner_transition,
+    close_interrupted_scanner_run,
     install_scanner_recovery,
     reconcile_interrupted_scanner_runs,
     resume_interrupted_scanner_run,
@@ -100,6 +102,29 @@ class _PostgresAdapter:
         self.transition_calls = 0
 
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        if "SELECT" in sql and "FROM scanner_runs" in sql:
+            statuses, limit = params
+            rows = []
+            for current in self.records.values():
+                if str(current.get("status")) not in set(statuses):
+                    continue
+                rows.append(
+                    {
+                        "scan_id": current.get("scan_id"),
+                        "customer_id": current.get("customer_id"),
+                        "project_id": current.get("project_id"),
+                        "status": current.get("status"),
+                        "created_at": current.get("created_at"),
+                        "updated_at": current.get("updated_at"),
+                        "run_id": current.get("run_id"),
+                        "repository": current.get("repository"),
+                        "tools_requested": deepcopy(current.get("tools_requested") or []),
+                        "recovery": deepcopy(current.get("recovery") or {}),
+                        "completed_at": current.get("completed_at"),
+                    }
+                )
+            rows.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+            return rows[: int(limit)]
         assert "UPDATE scanner_runs" in sql
         self.transition_calls += 1
         new_status, patch_jsonb, updated_at, scan_id, expected = params
@@ -276,6 +301,68 @@ def test_resume_is_blocked_when_original_authorization_metadata_is_missing() -> 
     assert store.records[record["scan_id"]]["status"] == RECOVERY_REQUIRED_STATUS
 
 
+def test_operator_can_close_superseded_recovery_without_deleting_evidence() -> None:
+    record = _scan(status=RECOVERY_REQUIRED_STATUS)
+    record["recovery"] = {
+        "state": RECOVERY_REQUIRED_STATUS,
+        "reason": "stale_process_local_execution",
+        "attempt": 0,
+        "resume_allowed": True,
+    }
+    record["scanner_results"] = [{"tool": "bandit", "status": "complete"}]
+    store = _PostgresStore([record])
+
+    first = close_interrupted_scanner_run(
+        record["scan_id"],
+        actor="operations-reviewer",
+        reason_code="superseded_by_terminal_assessment",
+        store=store,
+    )
+    repeated = close_interrupted_scanner_run(
+        record["scan_id"],
+        actor="operations-reviewer",
+        reason_code="superseded_by_terminal_assessment",
+        store=store,
+    )
+
+    assert first["status"] == "cancelled"
+    assert first["idempotent_reuse"] is False
+    assert repeated["status"] == "cancelled"
+    assert repeated["idempotent_reuse"] is True
+    retained = store.records[record["scan_id"]]
+    assert retained["scanner_results"] == record["scanner_results"]
+    assert retained["recovery"]["state"] == "closed_by_operator"
+    assert retained["recovery"]["resume_allowed"] is False
+    assert retained["recovery"]["close_reason_code"] == "superseded_by_terminal_assessment"
+    assert store.audit_events[-1][0] == "scanner.recovery_closed"
+
+
+def test_close_rejects_unknown_reason_and_non_recovery_work() -> None:
+    recovery_record = _scan(status=RECOVERY_REQUIRED_STATUS)
+    active_record = _scan("scan_abcdef1234567890", status="running")
+    store = _PostgresStore([recovery_record, active_record])
+
+    bad_reason = close_interrupted_scanner_run(
+        recovery_record["scan_id"],
+        actor="operations-reviewer",
+        reason_code="erase_everything",
+        store=store,
+    )
+    active = close_interrupted_scanner_run(
+        active_record["scan_id"],
+        actor="operations-reviewer",
+        reason_code="no_longer_required",
+        store=store,
+    )
+
+    assert bad_reason["status"] == "blocked"
+    assert bad_reason["code"] == "scanner_close_reason_invalid"
+    assert active["status"] == "blocked"
+    assert active["code"] == "scanner_close_state_invalid"
+    assert store.records[recovery_record["scan_id"]]["status"] == RECOVERY_REQUIRED_STATUS
+    assert store.records[active_record["scan_id"]]["status"] == "running"
+
+
 def test_inventory_is_bounded_and_excludes_scanner_output() -> None:
     records = []
     for index in range(3):
@@ -317,6 +404,16 @@ def test_routes_require_admin_validate_limits_and_install_idempotently(monkeypat
             "client_delivery_allowed": False,
         },
     )
+    monkeypatch.setattr(
+        recovery,
+        "close_interrupted_scanner_run",
+        lambda scan_id, actor, reason_code: {
+            "status": "cancelled",
+            "scan": {"scan_id": scan_id},
+            "close": {"closed_by": actor, "reason_code": reason_code},
+            "client_delivery_allowed": False,
+        },
+    )
 
     app = FastAPI()
     first = install_scanner_recovery(app)
@@ -336,6 +433,18 @@ def test_routes_require_admin_validate_limits_and_install_idempotently(monkeypat
     )
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "clear"
+    denied_close = client.post(
+        "/operations/recovery/scanner/scan_1234567890abcdef/close",
+        json={"actor": "operations-reviewer", "reason_code": "no_longer_required"},
+    )
+    assert denied_close.status_code == 403
+    allowed_close = client.post(
+        "/operations/recovery/scanner/scan_1234567890abcdef/close",
+        headers={"X-NICO-Admin-Token": "operator-secret"},
+        json={"actor": "operations-reviewer", "reason_code": "no_longer_required"},
+    )
+    assert allowed_close.status_code == 200
+    assert allowed_close.json()["close"]["closed_by"] == "operations-reviewer"
 
     route_pairs = {
         (str(method).upper(), str(getattr(route, "path", "")))
@@ -346,4 +455,5 @@ def test_routes_require_admin_validate_limits_and_install_idempotently(monkeypat
     assert second["routes_reused"] is True
     assert SCANNER_RECOVERY_ROUTE in route_pairs
     assert SCANNER_RESUME_ROUTE in route_pairs
+    assert SCANNER_CLOSE_ROUTE in route_pairs
     assert REQUIRED_SCANNER_RECOVERY_ROUTE_NAMES <= REQUIRED_OPERATION_ROUTES

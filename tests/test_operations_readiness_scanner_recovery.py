@@ -109,3 +109,4 @@ def test_interrupted_scanner_queue_degrades_but_does_not_falsely_block_core_stor
 def test_recovery_routes_are_required_for_production_readiness() -> None:
     assert "GET /operations/recovery" in REQUIRED_OPERATION_ROUTES
     assert "POST /operations/recovery/scanner/{scan_id}/resume" in REQUIRED_OPERATION_ROUTES
+    assert "POST /operations/recovery/scanner/{scan_id}/close" in REQUIRED_OPERATION_ROUTES

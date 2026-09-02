@@ -9,6 +9,42 @@ SCANNER_RECOVERY_STATUS_SCHEMA = "nico.scanner_recovery_status.v1"
 MAX_STATUS_RECORDS = 1000
 
 
+def _bounded_recovery_records(active: StorageAdapter) -> list[dict[str, Any]]:
+    """Read only lifecycle metadata when the live Postgres adapter supports it.
+
+    Scanner payloads can contain large retained analyzer outputs. Readiness needs
+    only status and timestamps, so deserializing every payload makes the health
+    endpoint grow with assessment history.
+    """
+
+    adapter = getattr(active, "adapter", active)
+    query = getattr(adapter, "_query", None)
+    if callable(query):
+        rows = query(
+            """
+            SELECT scan_id, customer_id, project_id, status, created_at, updated_at
+            FROM scanner_runs
+            WHERE status IN (%s, %s, %s)
+            ORDER BY updated_at DESC
+            LIMIT %s
+            """,
+            ("queued", "running", RECOVERY_REQUIRED_STATUS, MAX_STATUS_RECORDS),
+        )
+        return [
+            {
+                "scan_id": row.get("scan_id"),
+                "customer_id": row.get("customer_id"),
+                "project_id": row.get("project_id"),
+                "status": row.get("status"),
+                "created_at": str(row.get("created_at") or ""),
+                "updated_at": str(row.get("updated_at") or ""),
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
+    return active.list("scanner_runs")[:MAX_STATUS_RECORDS]
+
+
 def scanner_recovery_status(store: StorageAdapter | None = None) -> dict[str, Any]:
     active = store or STORE
     try:
@@ -31,7 +67,7 @@ def scanner_recovery_status(store: StorageAdapter | None = None) -> dict[str, An
         }
 
     try:
-        records = active.list("scanner_runs")[:MAX_STATUS_RECORDS]
+        records = _bounded_recovery_records(active)
     except Exception:
         return {
             "artifact_schema": SCANNER_RECOVERY_STATUS_SCHEMA,

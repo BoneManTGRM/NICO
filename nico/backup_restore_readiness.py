@@ -207,7 +207,14 @@ def minimum_pitr_hours() -> int:
 
 def _record_payload(record: dict[str, Any]) -> dict[str, Any]:
     payload = record.get("payload")
-    return dict(payload) if isinstance(payload, dict) else {}
+    if isinstance(payload, dict):
+        return dict(payload)
+    # PostgresAdapter normalizes JSONB audit payloads into the top-level record,
+    # while the memory adapter retains them under ``payload``. Accept both
+    # storage representations so real evidence remains readable after restart.
+    if record.get("artifact_schema") == BACKUP_RESTORE_SCHEMA:
+        return dict(record)
+    return {}
 
 
 def _records_for_action(
@@ -218,7 +225,35 @@ def _records_for_action(
     project_id: str | None = None,
 ) -> list[dict[str, Any]]:
     active = _store(store)
-    records = active.list("audit_log", customer_id=customer_id, project_id=project_id)[-MAX_AUDIT_RECORDS:]
+    adapter = getattr(active, "adapter", active)
+    query = getattr(adapter, "_query", None)
+    normalize = getattr(adapter, "_normalize_jsonb", None)
+    if callable(query) and callable(normalize):
+        clauses = ["action=%s"]
+        params: list[Any] = [action]
+        if customer_id:
+            clauses.append("customer_id=%s")
+            params.append(customer_id)
+        if project_id:
+            clauses.append("project_id=%s")
+            params.append(project_id)
+        params.append(1)
+        rows = query(
+            """
+            SELECT audit_id, customer_id, project_id, action, payload, created_at
+            FROM audit_log
+            WHERE """
+            + " AND ".join(clauses)
+            + " ORDER BY created_at DESC LIMIT %s",
+            tuple(params),
+        )
+        records = [normalize("audit_log", row) for row in rows]
+    else:
+        records = active.list(
+            "audit_log",
+            customer_id=customer_id,
+            project_id=project_id,
+        )[-MAX_AUDIT_RECORDS:]
     matched: list[dict[str, Any]] = []
     for item in records:
         if not isinstance(item, dict) or str(item.get("action") or "") != action:
