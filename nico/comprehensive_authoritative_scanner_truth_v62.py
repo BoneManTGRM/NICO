@@ -5,6 +5,7 @@ import re
 from typing import Any, Mapping
 
 from nico import comprehensive_client_readiness_v59 as v59
+from nico.phase14_analyzer_evidence_v1 import apply_analyzer_evidence
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_canonical
 
 VERSION = "nico.comprehensive_authoritative_scanner_truth.v62"
@@ -24,10 +25,81 @@ _INCOMPLETE_ANALYZER_LIMITATION = re.compile(
     r"^Incomplete applicable analyzers:\s*(?P<names>[^.]+)\.?$",
     re.IGNORECASE,
 )
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _commit_sha(value: Mapping[str, Any]) -> str:
+    assessment = _mapping(value.get("assessment"))
+    identities = (
+        _mapping(value.get("identity")),
+        _mapping(value.get("assessment_identity")),
+        _mapping(assessment.get("identity")),
+    )
+    candidates = [
+        value.get("commit_sha"),
+        value.get("immutable_revision"),
+        assessment.get("commit_sha"),
+    ]
+    for identity in identities:
+        candidates.extend((identity.get("commit_sha"), identity.get("immutable_revision")))
+    for candidate in candidates:
+        text = str(candidate or "").strip().lower()
+        if _SHA_RE.fullmatch(text):
+            return text
+    return ""
+
+
+def _phase14_records(
+    records: list[dict[str, Any]], *, commit_sha: str
+) -> list[dict[str, Any]]:
+    """Project authoritative records into the raw Phase 14 evidence contract."""
+
+    projected: list[dict[str, Any]] = []
+    for index, record in enumerate(records, start=1):
+        scanner = v59._tool(record)
+        if not scanner:
+            continue
+        status = str(record.get("status") or record.get("state") or "unknown")
+        normalized_status = status.casefold().replace("-", "_").replace(" ", "_")
+        if normalized_status in {
+            "completed_clean",
+            "completed_with_findings",
+            "passed",
+            "pass",
+            "ok",
+            "complete",
+        }:
+            status = "completed"
+        item = {
+            "scanner": scanner,
+            "status": status,
+            "commit_sha": record.get("commit_sha") or commit_sha,
+            "run_sequence": record.get("run_sequence") or index,
+            "capture_complete": bool(
+                record.get("capture_complete") is True
+                or record.get("verified_complete") is True
+                or record.get("verified_for_this_report") is True
+            ),
+            "artifact_sha256": record.get("artifact_sha256")
+            or record.get("artifact_hash")
+            or record.get("output_sha256"),
+            "exit_code": record.get("exit_code"),
+            "coverage": deepcopy(record.get("coverage") or {}),
+        }
+        if status.casefold().replace("-", "_") == "not_applicable":
+            item.pop("artifact_sha256", None)
+            item["capture_complete"] = True
+            item["not_applicable_reason"] = (
+                record.get("applicability_reason")
+                or record.get("not_applicable_reason")
+                or record.get("failure_reason")
+            )
+        projected.append(item)
+    return projected
 
 
 def _names(value: Any) -> list[str]:
@@ -375,6 +447,41 @@ def reconcile_authoritative_scanner_truth(
             output,
             not_applicable=not_applicable_names,
         )
+
+    # Phase 15 may have produced an analyzer summary before repository
+    # applicability was finalized. Rebuild the projection from authoritative raw
+    # records so summary rows are never re-ingested as evidence and inapplicable
+    # analyzers cannot remain required blockers.
+    commit_sha = _commit_sha(output)
+    phase14_records = _phase14_records(requested_records, commit_sha=commit_sha)
+    if commit_sha and phase14_records:
+        output = apply_analyzer_evidence(
+            output,
+            expected_sha=commit_sha,
+            records=phase14_records,
+            required_scanners=applicable_tools,
+        )
+        evidence_health = deepcopy(dict(output.get("evidence_health_summary") or {}))
+        phase14 = _mapping(evidence_health.get("phase14_analyzer_evidence"))
+        analyzer_summaries = [
+            deepcopy(dict(item))
+            for item in phase14.get("analyzers") or []
+            if isinstance(item, Mapping)
+        ]
+        execution_incomplete = [
+            item
+            for item in analyzer_summaries
+            if item.get("required") is True
+            and item.get("status") not in {"completed", "success"}
+        ]
+        evidence_health["completed_scanners"] = [
+            item.get("scanner")
+            for item in analyzer_summaries
+            if item.get("status") in {"completed", "success"}
+        ]
+        evidence_health["incomplete_analyzers"] = deepcopy(execution_incomplete)
+        evidence_health["incomplete_scanner_records"] = deepcopy(execution_incomplete)
+        output["evidence_health_summary"] = evidence_health
     assessment_output = deepcopy(dict(_mapping(output.get("assessment"))))
     assessment_output["requested_scanner_records"] = deepcopy(requested_records)
     assessment_output["scanner_execution_records"] = deepcopy(applicable_records)

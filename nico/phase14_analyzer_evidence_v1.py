@@ -194,6 +194,20 @@ def reconcile_analyzers(
         if scanner in required and not complete:
             ready = False
         cause, impact, remediation = _failure_explanation(latest.get("status", "missing"))
+        if scanner in required and latest.get("status") in TERMINAL_SUCCESS and not complete:
+            remaining = consecutive_passes_required - len(trailing)
+            cause = (
+                f"Only {len(trailing)} of {consecutive_passes_required} required consecutive "
+                "exact-SHA evidence passes are retained."
+            )
+            impact = (
+                "Analyzer execution completed, but repeatability assurance remains constrained; "
+                "this is not itself a confirmed client defect."
+            )
+            remediation = (
+                f"Retain {remaining} additional complete exact-SHA analyzer "
+                f"{'pass' if remaining == 1 else 'passes'}."
+            )
         summaries.append(
             {
                 "scanner": scanner,

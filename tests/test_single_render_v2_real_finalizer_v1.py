@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 
+from nico.comprehensive_client_ready_projection_v1 import authorization_confirmation_label
 from nico.v2_production_authority import wrap_final_report_publication
 
 
@@ -89,6 +90,10 @@ def test_real_v2_finalizer_renders_once_from_canonical_source() -> None:
     assert package["html"]
     assert package["json"]["identity"]["run_id"] == "comprun_real_single_render"
     assert package["json"]["identity"]["generated_at"] == GENERATED_AT
+    assert package["json"]["authorization_confirmed"] is True
+    assert authorization_confirmation_label(package["json"], spanish=False) == (
+        "Confirmed by requester for assessment of the submitted repository"
+    )
     assert base64.b64decode(package["pdf_base64"]).startswith(b"%PDF")
     assert package["canonical_truth_sha256"]
     contract = result["v2_production_authority"]

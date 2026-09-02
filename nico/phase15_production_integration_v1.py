@@ -144,12 +144,18 @@ def normalize_production_scanner_records(
 def integrate_production_truth(payload: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(payload))
     commit_sha = _commit_sha(result)
+    previous_marker = result.get("phase15_production_integration")
+    already_integrated = bool(
+        isinstance(previous_marker, Mapping)
+        and previous_marker.get("version") == VERSION
+        and previous_marker.get("analyzer_contract_applied") is True
+    )
     combined = _combined_findings(result)
     if combined:
         result["findings_register"] = combined
         result = remediate_assessment(result, commit_sha=commit_sha)
 
-    raw_records = _legacy_scanner_records(result)
+    raw_records = [] if already_integrated else _legacy_scanner_records(result)
     if commit_sha and raw_records:
         records = normalize_production_scanner_records(raw_records, expected_sha=commit_sha)
         required = {"bandit", "eslint", "gitleaks"}
@@ -181,8 +187,11 @@ def integrate_production_truth(payload: Mapping[str, Any]) -> dict[str, Any]:
         "version": VERSION,
         "canonical_population_applied": bool(canonical),
         "canonical_finding_count": len(canonical),
-        "analyzer_contract_applied": bool(commit_sha and raw_records),
-        "bandit_record_ingested": any(_scanner_name(item) == "bandit" for item in raw_records),
+        "analyzer_contract_applied": already_integrated or bool(commit_sha and raw_records),
+        "bandit_record_ingested": bool(
+            (isinstance(previous_marker, Mapping) and previous_marker.get("bandit_record_ingested") is True)
+            or any(_scanner_name(item) == "bandit" for item in raw_records)
+        ),
         "legacy_report_surfaces_replaced": True,
         "mirrored_scanner_records_deduplicated": True,
     }
