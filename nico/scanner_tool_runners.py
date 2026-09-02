@@ -47,6 +47,12 @@ class ProjectCommandPreparation:
     timed_out: bool = False
     output_truncated: bool = False
 
+    @property
+    def project_dir(self) -> Path:
+        """Layout-neutral alias retained alongside the legacy ``web_dir`` field."""
+
+        return self.web_dir
+
 
 TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
     ScannerToolSpec("pip-audit", ("pip-audit", "-r", "requirements.txt", "-f", "json"), "dependency", timeout_seconds=240, max_output_chars=500_000),
@@ -456,6 +462,12 @@ def _node_project_dir(repo_dir: Path) -> Path:
 def _project_label(project_dir: Path, repo_dir: Path) -> str:
     relative = project_dir.relative_to(repo_dir)
     return "." if not relative.parts else relative.as_posix()
+
+
+def resolve_node_project_dir(repo_dir: Path) -> Path:
+    """Public layout-neutral alias for deterministic Node project selection."""
+
+    return _node_project_dir(repo_dir)
 
 
 def prepare_project_commands(

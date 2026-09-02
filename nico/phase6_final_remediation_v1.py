@@ -623,20 +623,20 @@ def _patch_scanner_runners() -> None:
         return pipeline._tool_payload(spec, result, findings=findings, capture_complete=complete, reason=reason, raw_blob=blob, execution_source="canonical_bandit_csv_v2", workspace=workspace, valid_returncodes={0, 1}, extra={"compact_complete_result": True, "bandit_header_normalized": True})
 
     def eslint(spec: ScannerToolSpec, workspace: Any, runner: Callable[..., Any], preparation: Any) -> dict[str, Any]:
-        web_dir = workspace.repo_dir / "apps" / "web"
-        if not pipeline._supported_web_files(web_dir):
-            return pipeline._unavailable(spec, "No supported JavaScript or TypeScript source files were found in apps/web/app.", source="canonical_eslint_v2")
-        binary = shutil.which("eslint") or str(web_dir / "node_modules" / ".bin" / "eslint")
+        project_dir = preparation.project_dir if preparation else pipeline.resolve_node_project_dir(workspace.repo_dir)
+        if not pipeline._supported_web_files(project_dir):
+            return pipeline._unavailable(spec, "No supported JavaScript or TypeScript source files were found in the resolved Node project.", source="canonical_eslint_v2")
+        binary = shutil.which("eslint") or str(project_dir / "node_modules" / ".bin" / "eslint")
         if not Path(binary).exists() and shutil.which(binary) is None:
             return pipeline._unavailable(spec, "eslint is not installed in the worker image.", source="canonical_eslint_v2")
-        config, config_reason = pipeline._eslint_config(workspace, web_dir)
+        config, config_reason = pipeline._eslint_config(workspace, project_dir)
         if config is None:
             return pipeline._unavailable(spec, config_reason, source="canonical_eslint_v2")
         raw = workspace.root / "scanner-raw" / "eslint.json"
-        command = (binary, "app/**/*.{js,jsx,mjs,cjs,ts,tsx}", "--format", "json", "--config", str(config), "--no-config-lookup", "--no-error-on-unmatched-pattern")
-        env = pipeline._node_env(workspace, web_dir)
+        command = (binary, ".", "--ext", ".js,.jsx,.mjs,.cjs,.ts,.tsx", "--format", "json", "--config", str(config), "--no-config-lookup", "--no-error-on-unmatched-pattern")
+        env = pipeline._node_env(workspace, project_dir)
         env["NODE_OPTIONS"] = os.getenv("NICO_NODE_OPTIONS", "--max-old-space-size=2048")
-        result = pipeline._run(runner, command, cwd=web_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 16_000_000)), stdout_path=raw, extra_env=env)
+        result = pipeline._run(runner, command, cwd=project_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 16_000_000)), stdout_path=raw, extra_env=env)
         payload, reason = pipeline._read_json(raw)
         findings: list[Any] = []
         if isinstance(payload, list):

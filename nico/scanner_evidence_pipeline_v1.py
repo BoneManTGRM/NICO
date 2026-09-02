@@ -21,6 +21,7 @@ from nico.scanner_tool_runners import (
     prepare_project_commands,
     redact_payload,
     redact_text,
+    resolve_node_project_dir,
 )
 from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
 
