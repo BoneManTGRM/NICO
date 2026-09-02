@@ -78,3 +78,104 @@ def test_changed_or_new_evidence_gets_fresh_triage_without_inheriting_prior_verd
         assert finding["technical_triage_source"] == "fresh_deterministic_contextual_analysis"
         assert finding["disposition"] == "review_required"
         assert finding["technical_triage_human_approval_carried_forward"] is False
+
+
+def test_low_severity_bandit_assert_in_acceptance_harness_routes_to_quality_control() -> None:
+    source, _candidate_id = _synthetic_source("needs_review")
+    register = {
+        "findings": [
+            {
+                "finding_id": "NICO-B101-ACCEPTANCE",
+                "lineage_status": "carried_forward_evidence_changed",
+                "category": "static",
+                "scanner": "bandit",
+                "rule_id": "B101",
+                "source_path": "scripts/mobile_restart_live_acceptance_v1.py",
+                "line": 236,
+                "severity": "low",
+                "evidence_quality": "exact_source",
+                "disposition": "review_required",
+                "human_approval_status": "pending",
+            }
+        ],
+        "totals": {"raw": 1},
+    }
+
+    result = apply_candidate_technical_triage(register, triage=source)
+    finding = result["findings"][0]
+
+    assert finding["technical_triage_verdict"] == "not_actionable"
+    assert finding["technical_triage_confidence"] == "high"
+    assert finding["technical_triage_rationale_code"] == "assert_nonproduction_validation_harness"
+    assert finding["production_test_development_scope"] == "test"
+    assert finding["technical_review_required"] is False
+    assert finding["review_routing_class"] == "QUALITY_CONTROL_ELIGIBLE"
+    assert finding["disposition"] == "review_required"
+    assert finding["human_approval_status"] == "pending"
+    assert finding["technical_triage_client_delivery_allowed"] is False
+
+
+def test_bandit_assert_in_production_or_generic_script_stays_fail_closed() -> None:
+    source, _candidate_id = _synthetic_source("needs_review")
+    register = {
+        "findings": [
+            {
+                "finding_id": "NICO-B101-PRODUCTION",
+                "lineage_status": "carried_forward_evidence_changed",
+                "category": "static",
+                "scanner": "bandit",
+                "rule_id": "B101",
+                "source_path": "nico/comprehensive_api_routes.py",
+                "line": 236,
+                "severity": "low",
+                "evidence_quality": "exact_source",
+                "disposition": "review_required",
+            },
+            {
+                "finding_id": "NICO-B101-GENERIC-SCRIPT",
+                "lineage_status": "carried_forward_evidence_changed",
+                "category": "static",
+                "scanner": "bandit",
+                "rule_id": "B101",
+                "source_path": "scripts/deploy.py",
+                "line": 12,
+                "severity": "low",
+                "evidence_quality": "exact_source",
+                "disposition": "review_required",
+            },
+            {
+                "finding_id": "NICO-B101-EXPLICIT-PRODUCTION",
+                "lineage_status": "newly_observed",
+                "category": "static",
+                "scanner": "bandit",
+                "rule_id": "B101",
+                "source_path": "scripts/production_acceptance.py",
+                "line": 20,
+                "severity": "low",
+                "scope": "production",
+                "evidence_quality": "exact_source",
+                "disposition": "review_required",
+            },
+            {
+                "finding_id": "NICO-B101-MEDIUM-SEVERITY",
+                "lineage_status": "newly_observed",
+                "category": "static",
+                "scanner": "bandit",
+                "rule_id": "B101",
+                "source_path": "scripts/live_acceptance.py",
+                "line": 30,
+                "severity": "medium",
+                "evidence_quality": "exact_source",
+                "disposition": "review_required",
+            },
+        ],
+        "totals": {"raw": 4},
+    }
+
+    result = apply_candidate_technical_triage(register, triage=source)
+
+    for finding in result["findings"]:
+        assert finding["technical_triage_verdict"] == "needs_review"
+        assert finding["technical_review_required"] is True
+        assert finding["review_routing_class"] == "HUMAN_TECHNICAL_REVIEW"
+        assert finding["disposition"] == "review_required"

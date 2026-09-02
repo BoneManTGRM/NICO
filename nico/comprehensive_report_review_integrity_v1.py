@@ -337,6 +337,11 @@ def _client_summary_truth_evidence(
     triage_completed = number(workload, "technical_triage_completed")
     triage_pending = number(workload, "technical_triage_pending", default=review_required)
     work_units = number(triage, "human_review_work_units", default=number(workload, "human_review_work_units", default=review_required))
+    human_attention = number(
+        workload,
+        "human_attention_candidate_count_before_grouping",
+        default=review_required,
+    )
 
     def state(value: Any) -> str:
         raw = str(value or "not_supplied")
@@ -377,7 +382,7 @@ def _client_summary_truth_evidence(
             f"Ejecución de analizadores: solicitados={requested}; completados={completed}; incompletos={incomplete}",
             f"Estado del triaje técnico: {state(triage_status)}; completados={triage_completed}; pendientes={triage_pending}",
             f"Estado de candidatos: brutos={raw_candidates}; requieren revisión={review_required}; materiales confirmados={confirmed}",
-            f"Carga de revisión humana: unidades de trabajo={work_units}; candidatos que requieren revisión={review_required}",
+            f"Carga de revisión humana: unidades de trabajo={work_units}; candidatos dirigidos a atención humana={human_attention}; disposiciones canónicas pendientes={review_required}",
             f"Estado de revisión: {review_state}",
             f"Estado de aprobación: {approval_state}",
             f"Estado de entrega al cliente: {delivery_state}",
@@ -393,7 +398,7 @@ def _client_summary_truth_evidence(
         f"Scanner execution: requested={requested}; completed={completed}; incomplete={incomplete}",
         f"Technical-triage status: {triage_status}; completed={triage_completed}; pending={triage_pending}",
         f"Candidate state: raw={raw_candidates}; review required={review_required}; confirmed material={confirmed}",
-        f"Human-review workload: work units={work_units}; candidates requiring review={review_required}",
+        f"Human-review workload: work units={work_units}; candidates routed to human attention={human_attention}; canonical dispositions pending={review_required}",
         f"Review state: {review_state}",
         f"Approval state: {approval_state}",
         f"Client-delivery state: {delivery_state}",
