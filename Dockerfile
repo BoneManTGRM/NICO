@@ -4,7 +4,9 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 ENV NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true
-ENV NICO_ALLOW_PROJECT_COMMANDS=true
+# Repository-controlled project commands stay disabled unless an operator
+# supplies an explicitly reviewed sandbox boundary at deployment time.
+ENV NICO_ALLOW_PROJECT_COMMANDS=false
 ENV NICO_ENABLE_FULL_HISTORY_SECRET_SCAN=true
 ENV NICO_NODE_OPTIONS=--max-old-space-size=2048
 ENV NICO_MAX_SCANNER_PARSE_BYTES=268435456

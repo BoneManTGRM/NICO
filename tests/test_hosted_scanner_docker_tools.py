@@ -17,7 +17,8 @@ def test_dockerfile_installs_hosted_scanner_tools_without_polluting_app_python()
     assert '"typescript@${NICO_TYPESCRIPT_VERSION}"' in dockerfile
     assert "install_hosted_scanner_binaries.py" in dockerfile
     assert "NICO_ENABLE_HOSTED_SCANNER_AUTORUN=true" in dockerfile
-    assert "NICO_ALLOW_PROJECT_COMMANDS=true" in dockerfile
+    assert "NICO_ALLOW_PROJECT_COMMANDS=false" in dockerfile
+    assert "NICO_ALLOW_PROJECT_COMMANDS=true" not in dockerfile
     assert "USER nico" in dockerfile
 
 
