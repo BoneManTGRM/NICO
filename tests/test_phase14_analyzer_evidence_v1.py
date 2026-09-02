@@ -122,6 +122,20 @@ def test_missing_required_scanner_blocks_acceptance_without_false_defect():
     assert missing["client_defect_allowed"] is False
 
 
+def test_single_success_has_actionable_repeatability_remediation():
+    result = reconcile_analyzers(
+        [_success("bandit", DIGEST_A, 1)],
+        expected_sha=SHA,
+        required_scanners=["bandit"],
+    )
+    analyzer = result["analyzers"][0]
+
+    assert analyzer["failure_cause"].startswith("Only 1 of 2")
+    assert "repeatability assurance" in analyzer["assurance_impact"]
+    assert analyzer["remediation"] == "Retain 1 additional complete exact-SHA analyzer pass."
+    assert result["blockers"][0]["remediation"] == analyzer["remediation"]
+
+
 def test_invalid_record_is_retained_as_rejected_evidence_and_blocks_gate():
     result = reconcile_analyzers(
         [
