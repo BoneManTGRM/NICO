@@ -290,10 +290,18 @@ def analyze_dependencies(root: Path, files: list[Path], scan_findings: list[dict
                 if not any(op in raw for op in ["==", ">=", "~=", "<=", ">", "<"]):
                     loose.append(f"{name}: {raw}")
     tools = scanner_availability()
+    has_python_manifest = any(name.endswith(("requirements.txt", "pyproject.toml", "Pipfile")) for name in manifests)
     unavailable = [
         f"{tool['tool']} not available locally for {tool['purpose']}."
         for tool in tools
-        if not tool.get("available") and tool["tool"] in {"osv-scanner", "pip-audit", "npm"}
+        if (
+            (not tool.get("available") and tool["tool"] in {"osv-scanner", "npm"})
+            or (
+                not tool.get("available")
+                and tool["tool"] == "pip-audit"
+                and has_python_manifest
+            )
+        )
     ]
     score = 58
     if manifests:
@@ -337,7 +345,24 @@ def analyze_cicd(root: Path, files: list[Path]) -> dict[str, Any]:
     workflows = [path for path in files if ".github/workflows" in rel(root, path) and path.suffix.lower() in {".yml", ".yaml"}]
     deploy_configs = [path for path in files if path.name in {"Dockerfile", "render.yaml", "railway.json", "fly.toml", "vercel.json", "Procfile"}]
     combined = "\n".join(read_text(path).lower() for path in workflows)
-    has_test = any(term in combined for term in ["pytest", "npm test", "npm run lint", "next build", "ruff", "mypy", "eslint"])
+    has_test = any(
+        term in combined
+        for term in [
+            "pytest",
+            "npm test",
+            "npm run test",
+            "npm run verify",
+            "npm run lint",
+            "npm run build",
+            "pnpm test",
+            "yarn test",
+            "node --test",
+            "next build",
+            "ruff",
+            "mypy",
+            "eslint",
+        ]
+    )
     has_permissions = "permissions:" in combined
     has_credential_reference = "secrets." in combined
     score = 42
@@ -501,7 +526,7 @@ def build_report(target_type: str, target: str, root: Path | None, scan_result: 
         repair.get("smallest_safe_change") or repair.get("exact_issue")
         for repair in repairs[:12]
     ]
-    repair_recommendations = [item for item in repair_recommendations if item]
+    repair_recommendations = list(dict.fromkeys(item for item in repair_recommendations if item))
     if not repair_recommendations:
         repair_recommendations = [
             "Address the highest-risk findings above with the smallest safe local change.",
@@ -679,7 +704,7 @@ def run_archive_assessment(archive_path: str, authorized: bool) -> dict[str, Any
     archive = Path(archive_path).expanduser().resolve()
     if not archive.exists() or not archive.is_file():
         raise FileNotFoundError(f"Archive not found: {archive}")
-    with tempfile.TemporaryDirectory(prefix="nico_archive_") as tmp:
+    with tempfile.TemporaryDirectory(prefix=".nico_archive_", dir=Path.cwd()) as tmp:
         destination = Path(tmp)
         if zipfile.is_zipfile(archive):
             safe_extract_zip(archive, destination)
@@ -726,7 +751,7 @@ def download_github_repo(repo: str, destination: Path) -> Path:
 def run_github_assessment(repo_value: str, authorized: bool) -> dict[str, Any]:
     require_authorization(authorized)
     repo = normalize_repo(repo_value)
-    with tempfile.TemporaryDirectory(prefix="nico_github_") as tmp:
+    with tempfile.TemporaryDirectory(prefix=".nico_github_", dir=Path.cwd()) as tmp:
         root = download_github_repo(repo, Path(tmp))
         scan_result = run_scan(str(root), kind="no_server_github")
         return build_report("github", repo, root, scan_result, None, "User confirmed ownership or explicit authorization for read-only GitHub repository assessment. Repository content was downloaded locally into a temporary directory and no destructive changes were made.")
