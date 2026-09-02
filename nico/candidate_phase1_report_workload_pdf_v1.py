@@ -229,11 +229,11 @@ def render_phase1_evidence_review_gate_pdf(
                 [labels["project_name"], engagement_value("project_name")],
                 [labels["primary_technical_contact"], engagement_value("primary_technical_contact")],
                 [labels["access_method"], engagement_value("access_method")],
+                [labels["authorized_scope"], engagement_value("authorized_scope")],
                 [
                     labels["authorization_confirmation"],
                     projection.authorization_confirmation_label(canonical, spanish=spanish),
                 ],
-                [labels["authorized_scope"], engagement_value("authorized_scope")],
                 [labels["repository"], _text(identity.get("repository"))],
                 [labels["exact_commit"], _text(identity.get("commit_sha"))],
                 [labels["run_id"], _text(identity.get("run_id"))],
@@ -241,7 +241,7 @@ def render_phase1_evidence_review_gate_pdf(
                 [labels["evidence_adjusted"], f"{int(adjusted_score)}/100" if isinstance(adjusted_score, (int, float)) else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")],
             ],
             [1.55 * inch, 5.85 * inch],
-            client_literal_rows={1, 2, 3, 4, 6},
+            client_literal_rows={1, 2, 3, 4, 5},
         ),
         p("El triaje técnico y la disposición humana están separados" if spanish else "Technical triage and human disposition are separate", h2),
         p(
