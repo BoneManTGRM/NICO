@@ -7,6 +7,7 @@ import pytest
 from nico.scanner_tool_runners import (
     ScannerToolSpec,
     parse_tool_findings,
+    prepare_project_commands,
     redact_payload,
     redact_text,
     run_scanner_tool,
@@ -127,3 +128,40 @@ def test_write_scanner_artifact_redacts_before_disk(tmp_path: Path):
     text = output.read_text(encoding="utf-8")
     assert secret_value not in text
     assert "[REDACTED]" in text
+
+
+def test_prepare_project_commands_discovers_root_node_project(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "nico.scanner_tool_runners.shutil.which",
+        lambda name: "/usr/bin/npm" if name == "npm" else None,
+    )
+    workspace = WorkerWorkspace(root=tmp_path)
+    workspace.repo_dir.mkdir()
+    (workspace.repo_dir / "package.json").write_text(
+        '{"scripts":{"lint":"eslint src"}}', encoding="utf-8"
+    )
+    (workspace.repo_dir / "package-lock.json").write_text(
+        '{"lockfileVersion":3,"packages":{}}', encoding="utf-8"
+    )
+    (workspace.repo_dir / "tsconfig.json").write_text("{}", encoding="utf-8")
+    (workspace.repo_dir / "src").mkdir()
+    (workspace.repo_dir / "src" / "server.ts").write_text(
+        "export const ready = true;\n", encoding="utf-8"
+    )
+
+    calls = []
+
+    def fake_runner(args, *, cwd, limits, extra_env, stdout_path):
+        calls.append((tuple(args), cwd, extra_env["NODE_PATH"]))
+        (cwd / "node_modules").mkdir()
+        return WorkerCommandResult(
+            args=tuple(args), returncode=0, stdout="", stderr=""
+        )
+
+    preparation = prepare_project_commands(workspace, runner=fake_runner)
+
+    assert preparation.status == "completed"
+    assert preparation.node_modules_ready is True
+    assert preparation.web_dir == workspace.repo_dir
+    assert calls[0][1] == workspace.repo_dir
+    assert calls[0][2].split(":", 1)[0] == str(workspace.repo_dir / "node_modules")

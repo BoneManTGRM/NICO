@@ -443,7 +443,14 @@ def _replace_pdf_text(pdf: bytes, *, spanish: bool) -> tuple[bytes, int]:
         if changed:
             page.replace_contents(stream)
 
-    if writer.pages:
+    first_page_text = writer.pages[0].extract_text() if writer.pages else ""
+    approval_marker = "APROBACIÓN HUMANA PENDIENTE" if spanish else "PENDING HUMAN APPROVAL"
+    delivery_marker = "ENTREGA" if spanish else "CLIENT DELIVERY BLOCKED"
+    has_lifecycle_boundary = (
+        approval_marker in (first_page_text or "")
+        and delivery_marker in (first_page_text or "")
+    )
+    if writer.pages and not has_lifecycle_boundary:
         overlay = PdfReader(io.BytesIO(_final_status_overlay(spanish=spanish)))
         writer.pages[0].merge_page(overlay.pages[0], over=True)
 

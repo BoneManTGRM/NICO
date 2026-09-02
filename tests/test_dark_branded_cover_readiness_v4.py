@@ -10,6 +10,7 @@ from nico.v2_dark_branded_cover import apply_dark_branded_cover
 from nico.v2_dark_branded_cover_readiness_v4 import (
     install_dark_branded_cover_readiness_v4,
 )
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY
 
 
 COMMIT = "3c4352ae1873c547dd01406da833d2faedb5039b"
@@ -82,3 +83,19 @@ def test_cover_installation_preserves_automated_delivery_boundary() -> None:
     assert installation["client_delivery_status"] == "blocked"
     assert installation["roadmap_claim"] == "framework_pending_stakeholder_validation"
     assert installation["client_delivery_allowed"] is False
+
+
+def test_quality_repair_does_not_overlay_duplicate_cover_boundary() -> None:
+    from nico import v2_report_quality_repairs as quality
+    from nico.v2_automated_draft_quality_compat_v1 import (
+        install_automated_draft_quality_compat,
+    )
+
+    install_automated_draft_quality_compat()
+    covered = apply_dark_branded_cover(_package())
+    source = base64.b64decode(covered["pdf_base64"])
+
+    repaired, _ = quality._replace_pdf_text(source, spanish=False)
+    first_page = PdfReader(io.BytesIO(repaired)).pages[0].extract_text() or ""
+
+    assert first_page.count(EN_BOUNDARY) == 1
