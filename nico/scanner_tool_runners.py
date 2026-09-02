@@ -47,6 +47,12 @@ class ProjectCommandPreparation:
     timed_out: bool = False
     output_truncated: bool = False
 
+    @property
+    def project_dir(self) -> Path:
+        """Layout-neutral alias retained alongside the legacy ``web_dir`` field."""
+
+        return self.web_dir
+
 
 TOOL_SPECS: tuple[ScannerToolSpec, ...] = (
     ScannerToolSpec("pip-audit", ("pip-audit", "-r", "requirements.txt", "-f", "json"), "dependency", timeout_seconds=240, max_output_chars=500_000),
@@ -458,22 +464,28 @@ def _project_label(project_dir: Path, repo_dir: Path) -> str:
     return "." if not relative.parts else relative.as_posix()
 
 
+def resolve_node_project_dir(repo_dir: Path) -> Path:
+    """Public layout-neutral alias for deterministic Node project discovery."""
+
+    return _node_project_dir(repo_dir)
+
+
 def prepare_project_commands(
     workspace: WorkerWorkspace,
     *,
     runner: Callable[..., WorkerCommandResult] = run_command,
 ) -> ProjectCommandPreparation:
-    web_dir = _node_project_dir(workspace.repo_dir)
-    project_label = _project_label(web_dir, workspace.repo_dir)
-    package_json = web_dir / "package.json"
-    lockfile = web_dir / "package-lock.json"
+    project_dir = _node_project_dir(workspace.repo_dir)
+    project_label = _project_label(project_dir, workspace.repo_dir)
+    package_json = project_dir / "package.json"
+    lockfile = project_dir / "package-lock.json"
     if not package_json.exists():
-        return ProjectCommandPreparation("unavailable", web_dir, False, "package.json not found in a supported Node project.")
+        return ProjectCommandPreparation("unavailable", project_dir, False, "package.json not found in a supported Node project.")
     if not lockfile.exists():
-        return ProjectCommandPreparation("unavailable", web_dir, False, f"{project_label}/package-lock.json is required for deterministic project-tool preparation.")
+        return ProjectCommandPreparation("unavailable", project_dir, False, f"{project_label}/package-lock.json is required for deterministic project-tool preparation.")
     npm = shutil.which("npm")
     if not npm:
-        return ProjectCommandPreparation("unavailable", web_dir, False, "npm is not installed in the worker image.")
+        return ProjectCommandPreparation("unavailable", project_dir, False, "npm is not installed in the worker image.")
 
     output_path = workspace.root / "scanner-output" / "npm-ci.stdout"
     result = runner(
@@ -485,16 +497,16 @@ def prepare_project_commands(
             "--no-fund",
             "--prefer-offline",
         ),
-        cwd=web_dir,
+        cwd=project_dir,
         limits=WorkerLimits(timeout_seconds=420, max_output_chars=200_000),
-        extra_env=_node_env(workspace, web_dir),
+        extra_env=_node_env(workspace, project_dir),
         stdout_path=output_path,
     )
-    ready = result.returncode == 0 and not result.timed_out and (web_dir / "node_modules").is_dir()
+    ready = result.returncode == 0 and not result.timed_out and (project_dir / "node_modules").is_dir()
     reason = "" if ready else redact_text(result.stderr or result.stdout or "npm ci did not establish node_modules")[:2000]
     return ProjectCommandPreparation(
         "completed" if ready else "failed",
-        web_dir,
+        project_dir,
         ready,
         reason,
         returncode=result.returncode,

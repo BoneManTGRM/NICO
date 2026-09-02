@@ -473,6 +473,50 @@ def _candidate_summary(canonical: Mapping[str, Any]) -> tuple[int, int, dict[str
     return review, material, {str(key): value for key, value in categories.items() if isinstance(value, Mapping)}
 
 
+def authorization_confirmation_label(canonical: Mapping[str, Any], *, spanish: bool) -> str:
+    """Render only explicit intake authorization, never inferred ownership or scope."""
+
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    confirmed = any(
+        value is True
+        for value in (
+            canonical.get("authorization_confirmed"),
+            canonical.get("authorized"),
+            identity.get("authorization_confirmed"),
+            identity.get("authorized"),
+            assessment.get("authorization_confirmed"),
+        )
+    )
+    if not confirmed:
+        human = canonical.get("human_evidence") if isinstance(canonical.get("human_evidence"), Mapping) else {}
+        modules = human.get("modules") if isinstance(human.get("modules"), Mapping) else human
+        engagement = modules.get("engagement_context") if isinstance(modules.get("engagement_context"), Mapping) else {}
+        evidence = engagement.get("evidence") if isinstance(engagement.get("evidence"), Mapping) else {}
+        confirmation = evidence.get("authorization_confirmation")
+        values = confirmation if isinstance(confirmation, (list, tuple, set)) else [confirmation]
+        confirmed = any(_text(value).casefold() == "confirmed" for value in values)
+    if not confirmed:
+        direct_stage = canonical.get("authorization_and_scope")
+        stage_candidates = [direct_stage, *(canonical.get("stage_summaries") or [])]
+        for stage in stage_candidates:
+            if not isinstance(stage, Mapping):
+                continue
+            if stage is not direct_stage and _text(stage.get("stage_id")).casefold() != "authorization_and_scope":
+                continue
+            evidence = stage.get("evidence") if isinstance(stage.get("evidence"), Mapping) else {}
+            confirmed = evidence.get("authorization_confirmed") is True
+            if confirmed:
+                break
+    if confirmed:
+        return (
+            "Confirmada por el solicitante para evaluar el repositorio enviado"
+            if spanish
+            else "Confirmed by requester for assessment of the submitted repository"
+        )
+    return "No evidenciada" if spanish else "Not evidenced"
+
+
 def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapping[str, Any], *, spanish: bool) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
@@ -536,6 +580,7 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
         ["Nombre del proyecto" if spanish else "Project name", engagement_value("project_name", 180)],
         ["Contacto técnico principal" if spanish else "Primary technical contact", engagement_value("primary_technical_contact", 600)],
         ["Método de acceso" if spanish else "Access method", engagement_value("access_method", 1200)],
+        ["Confirmación de autorización" if spanish else "Authorization confirmation", authorization_confirmation_label(canonical, spanish=spanish)],
         ["Alcance autorizado" if spanish else "Authorized scope", engagement_value("authorized_scope", 4000)],
         ["Repositorio" if spanish else "Repository", _text(identity.get("repository"))],
         ["Commit exacto" if spanish else "Exact commit", _text(identity.get("commit_sha"))],

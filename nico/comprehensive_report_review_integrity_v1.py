@@ -590,6 +590,7 @@ def _install_required_report_sections() -> dict[str, bool]:
             "primary_technical_contact": "Contacto técnico principal" if spanish else "Primary technical contact",
             "access_method": "Método de acceso" if spanish else "Access method",
             "authorized_scope": "Alcance autorizado" if spanish else "Authorized scope",
+            "authorization_confirmation": "Confirmación de autorización" if spanish else "Authorization confirmation",
         }
         limits = {
             "customer_name": 180,
@@ -599,6 +600,13 @@ def _install_required_report_sections() -> dict[str, bool]:
             "authorized_scope": 4000,
         }
         for key in labels:
+            if key == "authorization_confirmation":
+                from nico.comprehensive_client_ready_projection_v1 import authorization_confirmation_label
+
+                client_evidence.append(
+                    f"{labels[key]}: {authorization_confirmation_label(canonical, spanish=spanish)}"
+                )
+                continue
             value = _display_literal(display.get(key), limits[key])
             client_evidence.append(
                 f"{labels[key]}: {value}"
