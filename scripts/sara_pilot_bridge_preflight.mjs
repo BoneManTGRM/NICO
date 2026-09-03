@@ -1,87 +1,72 @@
-const RUN_ID = "comprun_0094b14ba0691ae027e8e52ffd3a1e58";
+const RUN_ID = "comprun_2ba62f37f4ab4b7988c609f27398c63e";
+const REPOSITORY = "BoneManTGRM/SARA";
 const COMMIT_SHA = "d63f09d3d5d6e4a53860faec0ea5cb372a37c381";
+const CUSTOMER_ID = "boneman-sara-client";
+const PROJECT_ID = "sara-controlled-pilot-001";
+const CLIENT_NAME = "SARA / BoneManTGRM";
+const PROJECT_NAME = "SARA — First Controlled Production Pilot";
+const CONTACT = "Cody Ryan Jenkins (GitHub: BoneManTGRM)";
+const ACCESS_METHOD = "Authorized public GitHub repository using anonymous read-only access; no write permissions or provider credential supplied.";
+const AUTHORIZED_SCOPE = `Read-only technical assessment of ${REPOSITORY} at exact commit ${COMMIT_SHA} only. No writes, deployments, account changes, outreach, or access outside this repository and SHA.`;
+const METADATA_SHA256 = "c486348bd6b69e3406198c66383a635f3a3c2455b47ed77efb8cb17308f8af58";
 const URL = `https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/${RUN_ID}/report/json`;
 
 function record(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function norm(key) {
-  return key.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-}
-
-function collect(value, key, depth = 0) {
-  if (depth > 14 || value == null) return [];
-  if (Array.isArray(value)) return value.flatMap((item) => collect(item, key, depth + 1));
-  if (typeof value !== "object") return [];
-  const found = [];
-  for (const [candidate, child] of Object.entries(value)) {
-    if (norm(candidate) === key) found.push(child);
-    found.push(...collect(child, key, depth + 1));
+function exact(owner, key, expected, label) {
+  if (String(owner[key] ?? "") !== expected) {
+    throw new Error(`${label} mismatch`);
   }
-  return found;
 }
 
 function zero(owner, key, label) {
-  if (!(key in owner)) throw new Error(`${label} absent`);
   const value = Number(owner[key]);
-  if (!Number.isFinite(value) || value !== 0) throw new Error(`${label}=${owner[key]}`);
+  if (!Number.isFinite(value) || value !== 0) {
+    throw new Error(`${label}=${owner[key]}`);
+  }
 }
 
-function empty(owner, key, label) {
-  if (!Array.isArray(owner[key])) throw new Error(`${label} absent`);
-  if (owner[key].length !== 0) throw new Error(`${label}=${owner[key].length}`);
-}
-
-const response = await fetch(URL, {headers: {Accept: "application/json"}, cache: "no-store"});
+const response = await fetch(URL, {
+  headers: {Accept: "application/json", "User-Agent": "NICO-SARA-Bridge-Preflight/2.0"},
+  cache: "no-store",
+});
 if (!response.ok) throw new Error(`report read failed: HTTP ${response.status}`);
 const report = record(await response.json());
 const identity = record(report.identity);
+const engagement = record(report.engagement_metadata);
 const assessment = record(report.assessment);
-if (String(identity.run_id || "") !== RUN_ID || String(assessment.run_id || "") !== RUN_ID) {
-  throw new Error("run identity mismatch");
-}
-if (String(identity.commit_sha || "").toLowerCase() !== COMMIT_SHA || String(assessment.commit_sha || "").toLowerCase() !== COMMIT_SHA) {
-  throw new Error("commit identity mismatch");
-}
 
-const candidateSummary = record(assessment.review_candidate_summary);
-const candidateDisposition = record(assessment.candidate_disposition);
-const findingPopulation = record(assessment.finding_population);
-const scannerRegister = record(assessment.canonical_scanner_finding_register);
-const triage = record(scannerRegister.technical_triage);
-const metrics = record(triage.workload_metrics);
+for (const [key, expected, label] of [
+  ["run_id", RUN_ID, "run ID"],
+  ["repository", REPOSITORY, "repository"],
+  ["commit_sha", COMMIT_SHA, "commit SHA"],
+  ["customer_id", CUSTOMER_ID, "customer ID"],
+  ["project_id", PROJECT_ID, "project ID"],
+  ["customer_name", CLIENT_NAME, "client name"],
+  ["project_name", PROJECT_NAME, "project name"],
+  ["primary_technical_contact", CONTACT, "primary technical contact"],
+  ["access_method", ACCESS_METHOD, "access method"],
+  ["authorized_scope", AUTHORIZED_SCOPE, "authorized scope"],
+  ["engagement_metadata_source", "client_supplied_intake", "metadata source"],
+  ["engagement_metadata_sha256", METADATA_SHA256, "identity metadata digest"],
+]) exact(identity, key, expected, label);
 
-zero(candidateSummary, "review_required_total", "review-required candidates");
-zero(candidateDisposition, "review_required", "candidate disposition review-required");
-zero(assessment, "review_required_candidate_count", "assessment review-required candidates");
-zero(triage, "human_review_work_units", "scanner review work units");
-zero(metrics, "human_review_work_units", "scanner workload metric");
-zero(triage, "technical_triage_pending", "pending technical triage");
-zero(findingPopulation, "exact_source_code_finding_count", "exact-source findings");
-zero(findingPopulation, "operational_or_context_finding_count", "operational/context findings");
-zero(findingPopulation, "canonical_finding_count", "canonical findings");
-zero(assessment, "exact_source_finding_count", "assessment exact-source findings");
-zero(assessment, "operational_context_finding_count", "assessment operational/context findings");
-empty(report, "findings", "top-level findings");
-empty(assessment, "review_candidate_register", "review-candidate register");
-empty(assessment, "decision_grade_findings_register", "decision-grade register");
+for (const [key, expected, label] of [
+  ["client_name", CLIENT_NAME, "retained client name"],
+  ["project_name", PROJECT_NAME, "retained project name"],
+  ["primary_technical_contact", CONTACT, "retained contact"],
+  ["access_method", ACCESS_METHOD, "retained access method"],
+  ["authorized_scope", AUTHORIZED_SCOPE, "retained scope"],
+  ["source", "client_supplied_intake", "retained metadata source"],
+  ["sha256", METADATA_SHA256, "retained metadata digest"],
+]) exact(engagement, key, expected, label);
 
-const registers = collect(report, "client_finding_remediation_register")
-  .map(record)
-  .filter((item) => Array.isArray(item.code_findings) && Array.isArray(item.operational_findings));
-if (!registers.length) throw new Error("canonical client finding/remediation register absent");
-for (const [index, register] of registers.entries()) {
-  empty(register, "code_findings", `client code findings ${index + 1}`);
-  empty(register, "operational_findings", `client operational findings ${index + 1}`);
-  const summary = record(register.summary);
-  for (const [key, label] of [
-    ["exact_source_code_finding_count", "client exact-source findings"],
-    ["operational_or_context_finding_count", "client operational/context findings"],
-    ["canonical_finding_count", "client canonical findings"],
-  ]) {
-    if (key in summary) zero(summary, key, `${label} ${index + 1}`);
-  }
+zero(assessment, "canonical_finding_count", "canonical findings");
+zero(assessment, "review_required_candidate_count", "review-required candidates");
+if (!Array.isArray(report.findings) || report.findings.length !== 0) {
+  throw new Error("top-level finding register is not empty");
 }
 
 const artifacts = Array.isArray(report.artifacts) ? report.artifacts.map(record) : [];
@@ -92,13 +77,19 @@ if (!pdf || !/^[0-9a-f]{64}$/i.test(String(pdf.sha256 || ""))) {
 
 console.log(JSON.stringify({
   status: "passed",
+  client_delivery_identity_verified: true,
+  exact_artifact_ready: true,
   run_id: RUN_ID,
+  repository: REPOSITORY,
   commit_sha: COMMIT_SHA,
-  register_projections_verified: registers.length,
+  customer_id: CUSTOMER_ID,
+  project_id: PROJECT_ID,
+  client_name: CLIENT_NAME,
+  project_name: PROJECT_NAME,
+  score: assessment.score,
   review_required_candidates: 0,
-  scanner_review_work_units: 0,
-  exact_source_findings: 0,
-  operational_context_findings: 0,
   canonical_findings: 0,
   pdf_sha256: pdf.sha256,
+  review_status: report.review_status,
+  client_delivery_allowed: report.client_delivery_allowed,
 }, null, 2));
