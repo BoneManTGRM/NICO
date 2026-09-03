@@ -1133,6 +1133,10 @@ def build_comprehensive_report_package(
     from nico.comprehensive_engagement_metadata_v1 import _literal
 
     report_identity = dict(required_identity)
+    for field in ("assessment_depth", "report_language"):
+        value = _text(identity.get(field), 80)
+        if value:
+            report_identity[field] = value
     for field, limit in (
         ("customer_name", 180),
         ("project_name", 180),
