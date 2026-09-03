@@ -3,7 +3,6 @@ import {
   PilotActionError,
   approvalRecorded,
   approvedDeliveryPackage,
-  assertExactRun,
   authorizeExactDelivery,
   deliveryAllowed,
   downloadResponse,
@@ -11,6 +10,10 @@ import {
   operatorTokenFromForm,
   statusPayload,
 } from "../_lib";
+import {
+  assertCanonicalReportClear,
+  assertExactArtifactIdentity,
+} from "../_truth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,7 +23,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     const token = await operatorTokenFromForm(request, "confirm_approved_pdf");
     const current = await statusPayload(token);
-    const {identity} = assertExactRun(current);
+    const {identity} = assertExactArtifactIdentity(current);
+    await assertCanonicalReportClear();
 
     if (!approvalRecorded(current)) {
       throw new PilotActionError(
@@ -34,7 +38,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     const finalStatus = await statusPayload(token);
-    assertExactRun(finalStatus);
+    assertExactArtifactIdentity(finalStatus);
     if (!approvalRecorded(finalStatus) || !deliveryAllowed(finalStatus)) {
       throw new PilotActionError(
         "NICO did not record client-delivery authorization for the exact approved edition.",
