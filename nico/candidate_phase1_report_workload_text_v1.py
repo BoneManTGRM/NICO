@@ -37,10 +37,17 @@ def _find(node: Any, name: str, depth: int = 0) -> Mapping[str, Any]:
 
 
 def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
+    from nico.review_workload_truth_v1 import review_workload_summary
+
     triage = _find(canonical, "technical_triage")
     metrics = triage.get("workload_metrics") if isinstance(triage.get("workload_metrics"), Mapping) else {}
     if not metrics:
         return ""
+    workload = review_workload_summary(canonical)
+    scanner_units = workload["scanner_candidate_review_work_units"]
+    exact_units = workload["exact_source_review_work_units"]
+    operational_units = workload["operational_context_review_work_units"]
+    total_units = workload["total_unresolved_human_review_work_units"]
     has_end_to_end_queue_metrics = any(
         key in metrics
         for key in (
@@ -67,7 +74,10 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             ),
             f"- Atención humana individual: {_integer(metrics.get('candidates_requiring_individual_human_attention'))}.",
             f"- Grupos de revisión humana: {_integer(metrics.get('grouped_review_cluster_count'))}, cubriendo {_integer(metrics.get('grouped_human_review_candidate_count'))} candidatos.",
-            f"- Unidades de trabajo humano: {_integer(metrics.get('human_review_work_units'))}.",
+            f"- Unidades de trabajo de revisión de candidatos de analizadores: {scanner_units}.",
+            f"- Unidades de revisión con fuente exacta: {exact_units}.",
+            f"- Unidades de revisión operativa o contextual: {operational_units}.",
+            f"- Total de unidades de revisión humana sin resolver: {total_units}.",
             *(
                 [
                     f"- Reducción de bruto a unidades de trabajo: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
@@ -95,7 +105,10 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             ),
             f"- Individual human attention: {_integer(metrics.get('candidates_requiring_individual_human_attention'))}.",
             f"- Grouped human-review clusters: {_integer(metrics.get('grouped_review_cluster_count'))}, covering {_integer(metrics.get('grouped_human_review_candidate_count'))} candidates.",
-            f"- Human review work units: {_integer(metrics.get('human_review_work_units'))}.",
+            f"- Scanner-candidate review work units: {scanner_units}.",
+            f"- Exact-source review work units: {exact_units}.",
+            f"- Operational/context review work units: {operational_units}.",
+            f"- Total unresolved human-review work units: {total_units}.",
             *(
                 [
                     f"- Raw-to-work-unit reduction: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",

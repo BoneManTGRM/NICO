@@ -246,7 +246,6 @@ def _scope(record: Mapping[str, Any]) -> str:
     if (
         raw in {"test", "tests", "testing"}
         or path_parts & {"test", "tests", "fixture", "fixtures", "mock", "mocks"}
-        or _is_nonproduction_validation_harness_path(path)
     ):
         return "test"
     if raw in {"dev", "development", "devdependency", "development_only"}:

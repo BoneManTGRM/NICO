@@ -767,7 +767,9 @@ def _review_queue_error(code: str, message: str) -> HTTPException:
     )
 
 
-def _canonical_review_queue_register(record: Mapping[str, Any]) -> Mapping[str, Any]:
+def _canonical_review_queue_register(
+    record: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     if record.get("terminal") is not True or str(record.get("status") or "") != "review_required":
         raise _review_queue_error(
             "comprehensive_review_queue_terminal_run_required",
@@ -839,7 +841,7 @@ def _canonical_review_queue_register(record: Mapping[str, Any]) -> Mapping[str, 
                 "comprehensive_review_queue_candidate_count_mismatch",
                 "The terminal report candidate count does not reconcile with the canonical findings list.",
             )
-        return register
+        return register, canonical
 
     raise _review_queue_error(
         "comprehensive_review_queue_register_unavailable",
@@ -854,9 +856,15 @@ def _review_queue_projection(record: dict[str, Any]) -> dict[str, Any]:
             "comprehensive_review_queue_identity_missing",
             "The exact run identity is unavailable.",
         )
-    register = _canonical_review_queue_register(record)
+    register, canonical = _canonical_review_queue_register(record)
     triage = register.get("technical_triage")
     triage = triage if isinstance(triage, Mapping) else {}
+    from nico.review_workload_truth_v1 import review_workload_summary
+
+    workload = review_workload_summary(
+        canonical,
+        candidate_register=register,
+    )
     return {
         "artifact_schema": "nico.exception_first_reviewer_queue.v1",
         "service_id": "comprehensive",
@@ -871,6 +879,7 @@ def _review_queue_projection(record: dict[str, Any]) -> dict[str, Any]:
         "source": "canonical_terminal_comprehensive_report_json",
         "candidate_count": int(register.get("candidate_record_count") or 0),
         "human_review_work_units": int(triage.get("human_review_work_units") or 0),
+        **workload,
         "candidate_register": dict(register),
         "human_review_required": True,
         "client_delivery_allowed": False,

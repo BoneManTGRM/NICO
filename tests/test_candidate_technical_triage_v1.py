@@ -93,6 +93,7 @@ def test_low_severity_bandit_assert_in_acceptance_harness_routes_to_quality_cont
                 "source_path": "scripts/mobile_restart_live_acceptance_v1.py",
                 "line": 236,
                 "severity": "low",
+                "scope": "test",
                 "evidence_quality": "exact_source",
                 "disposition": "review_required",
                 "human_approval_status": "pending",
@@ -113,6 +114,36 @@ def test_low_severity_bandit_assert_in_acceptance_harness_routes_to_quality_cont
     assert finding["disposition"] == "review_required"
     assert finding["human_approval_status"] == "pending"
     assert finding["technical_triage_client_delivery_allowed"] is False
+
+
+def test_bandit_assert_named_acceptance_path_without_explicit_scope_stays_fail_closed() -> None:
+    source, _candidate_id = _synthetic_source("needs_review")
+    register = {
+        "findings": [
+            {
+                "finding_id": "NICO-B101-OMITTED-SCOPE",
+                "lineage_status": "newly_observed",
+                "category": "static",
+                "scanner": "bandit",
+                "rule_id": "B101",
+                "source_path": "scripts/production_acceptance.py",
+                "line": 20,
+                "severity": "low",
+                "evidence_quality": "exact_source",
+                "disposition": "review_required",
+            }
+        ],
+        "totals": {"raw": 1},
+    }
+
+    result = apply_candidate_technical_triage(register, triage=source)
+    finding = result["findings"][0]
+
+    assert finding["production_test_development_scope"] == "unknown"
+    assert finding["technical_triage_verdict"] == "needs_review"
+    assert finding["technical_review_required"] is True
+    assert finding["review_routing_class"] == "HUMAN_TECHNICAL_REVIEW"
+    assert finding["disposition"] == "review_required"
 
 
 def test_bandit_assert_in_production_or_generic_script_stays_fail_closed() -> None:

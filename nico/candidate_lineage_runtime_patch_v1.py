@@ -203,7 +203,7 @@ def _patch_candidate_stage() -> bool:
                         f"{metrics.get('quality_control_sample_pool', 0)}."
                     ),
                     (
-                        "Human review work units: "
+                        "Scanner-candidate review work units: "
                         f"{metrics.get('human_review_work_units', 0)} "
                         f"from {metrics.get('human_attention_candidate_count_before_grouping', 0)} "
                         "candidate-level human-attention observations before deterministic grouping."

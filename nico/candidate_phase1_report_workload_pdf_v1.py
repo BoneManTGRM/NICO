@@ -73,7 +73,13 @@ def render_phase1_evidence_review_gate_pdf(
     individual = _integer(metrics.get("candidates_requiring_individual_human_attention"))
     grouped_candidates = _integer(metrics.get("grouped_human_review_candidate_count"))
     grouped_clusters = _integer(metrics.get("grouped_review_cluster_count"))
-    work_units = _integer(metrics.get("human_review_work_units"))
+    from nico.review_workload_truth_v1 import review_workload_summary
+
+    workload = review_workload_summary(canonical, finding_register=register)
+    work_units = workload["scanner_candidate_review_work_units"]
+    exact_review_units = workload["exact_source_review_work_units"]
+    operational_review_units = workload["operational_context_review_work_units"]
+    total_review_units = workload["total_unresolved_human_review_work_units"]
     automated_not_actionable = _integer(
         metrics.get("automated_not_actionable_candidate_count")
     )
@@ -98,7 +104,7 @@ def render_phase1_evidence_review_gate_pdf(
     stable = _integer(metrics.get("stable_carry_forward_count"))
     fresh = _integer(triage.get("fresh_technical_triage_completed"))
     qc_pool = _integer(metrics.get("quality_control_sample_pool"))
-    exact_findings = _integer((register.get("summary") or {}).get("exact_source_code_finding_count"))
+    exact_findings = exact_review_units
 
     buffer = io.BytesIO()
     styles = getSampleStyleSheet()
@@ -196,7 +202,10 @@ def render_phase1_evidence_review_gate_pdf(
             "individual": "Candidatos que requieren atención individual",
             "grouped_candidates": "Candidatos cubiertos por revisión agrupada",
             "grouped_clusters": "Grupos para revisión humana conjunta",
-            "work_units": "Unidades de trabajo de revisión humana",
+            "work_units": "Unidades de trabajo de revisión de candidatos de analizadores",
+            "exact_review_units": "Unidades de revisión con fuente exacta",
+            "operational_review_units": "Unidades de revisión operativa o contextual",
+            "total_review_units": "Total de unidades de revisión humana sin resolver",
             "automated_not_actionable": "Candidatos automatizados no accionables / control de calidad",
             "human_attention": "Candidatos dirigidos a atención humana",
             "total_reduction": "Reducción de bruto a unidades de trabajo",
@@ -235,7 +244,10 @@ def render_phase1_evidence_review_gate_pdf(
             "individual": "Candidates requiring individual attention",
             "grouped_candidates": "Candidates covered by grouped review",
             "grouped_clusters": "Grouped human-review clusters",
-            "work_units": "Human review work units",
+            "work_units": "Scanner-candidate review work units",
+            "exact_review_units": "Exact-source review work units",
+            "operational_review_units": "Operational/context review work units",
+            "total_review_units": "Total unresolved human-review work units",
             "automated_not_actionable": "Automated non-actionable / QC candidates",
             "human_attention": "Candidates routed to human attention",
             "total_reduction": "Raw-to-work-unit reduction",
@@ -304,6 +316,9 @@ def render_phase1_evidence_review_gate_pdf(
                 [labels["grouped_candidates"], grouped_candidates],
                 [labels["grouped_clusters"], grouped_clusters],
                 [labels["work_units"], work_units],
+                [labels["exact_review_units"], exact_review_units],
+                [labels["operational_review_units"], operational_review_units],
+                [labels["total_review_units"], total_review_units],
                 *(
                     [[labels["total_reduction"], f"{total_reduction} ({total_reduction_pct}%)"]]
                     if has_end_to_end_queue_metrics

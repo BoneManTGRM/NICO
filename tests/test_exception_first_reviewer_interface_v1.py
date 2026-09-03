@@ -71,6 +71,15 @@ def test_queue_is_exception_first_and_preserves_every_candidate_identity() -> No
     assert "new Set(queuedIds).size !== findings.length" in component
     assert "expectedWorkUnits !== units.length" in component
     assert "payload.human_review_work_units" in component
+    assert "payload.scanner_candidate_review_work_units" in component
+    assert "payload.exact_source_review_work_units" in component
+    assert "payload.operational_context_review_work_units" in component
+    assert "payload.total_unresolved_human_review_work_units" in component
+    assert "Scanner-candidate review work units" in component
+    assert "Exact-source review work units" in component
+    assert "Operational/context review work units" in component
+    assert "Total unresolved human-review work units" in component
+    assert "Exact-source findings requiring review" in component
     assert "payload.candidate_count" in component
     assert "Queue integrity check failed closed" in component
 
