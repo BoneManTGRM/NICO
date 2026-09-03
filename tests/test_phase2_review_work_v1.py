@@ -14,6 +14,7 @@ from nico.comprehensive_run_record import (
 from nico.comprehensive_review_work_record_v1 import apply_review_work_ledger
 from nico.comprehensive_review_work_v1 import (
     apply_review_work_action,
+    ledger_for_record,
     review_work_projection,
 )
 
@@ -126,6 +127,45 @@ def _human(action: str, reviewer: str = "Alice", role: str = "Security specialis
 
 def _with_ledger(record: dict, ledger: dict) -> dict:
     return {**record, "review_work_ledger": deepcopy(ledger)}
+
+
+def test_machine_only_ledger_is_rebuilt_when_final_candidate_count_changes() -> None:
+    preliminary = _record()
+    preliminary_ledger = ledger_for_record(preliminary)
+    assert preliminary_ledger["candidate_count"] == 3
+
+    final = _record(
+        {
+            "artifact_schema": "nico.canonical_scanner_finding_register.v1",
+            "candidate_record_count": 0,
+            "findings": [],
+            "review_workload_clusters": [],
+        }
+    )
+    final["review_work_ledger"] = preliminary_ledger
+
+    reconciled = ledger_for_record(final)
+    assert reconciled["candidate_count"] == 0
+    assert reconciled["candidate_ids"] == []
+
+
+def test_candidate_count_change_fails_closed_after_human_review_begins() -> None:
+    preliminary = _record()
+    preliminary_ledger = ledger_for_record(preliminary)
+    preliminary_ledger["audit_events"] = [{"action": "start_session"}]
+
+    final = _record(
+        {
+            "artifact_schema": "nico.canonical_scanner_finding_register.v1",
+            "candidate_record_count": 0,
+            "findings": [],
+            "review_workload_clusters": [],
+        }
+    )
+    final["review_work_ledger"] = preliminary_ledger
+
+    with pytest.raises(ValueError, match="review_work_ledger_candidate_count_mismatch"):
+        ledger_for_record(final)
 
 
 def test_group_review_preserves_candidate_level_accounting_and_independent_qc() -> None:
