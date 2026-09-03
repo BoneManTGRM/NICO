@@ -72,7 +72,6 @@ for (const [key, expected, label] of [
   ["primary_technical_contact", CONTACT, "primary technical contact"],
   ["access_method", ACCESS_METHOD, "access method"],
   ["authorized_scope", AUTHORIZED_SCOPE, "authorized scope"],
-  ["engagement_metadata_source", "client_supplied_intake", "metadata source"],
   ["engagement_metadata_sha256", METADATA_SHA256, "identity metadata digest"],
 ]) exact(identity, key, expected, label);
 
@@ -90,6 +89,15 @@ zero(assessment, "canonical_finding_count", "canonical findings");
 zero(assessment, "review_required_candidate_count", "review-required candidates");
 if (!Array.isArray(report.findings) || report.findings.length !== 0) {
   throw new Error("top-level finding register is not empty");
+}
+if (report.review_package_ready !== true) {
+  throw new Error("review package is not ready");
+}
+if (String(report.report_finality || "") !== "automated_draft") {
+  throw new Error("report is not at the expected pre-approval finality");
+}
+if (report.client_delivery_allowed !== false) {
+  throw new Error("client delivery state is not safely blocked before approval");
 }
 
 const artifacts = Array.isArray(report.artifacts) ? report.artifacts.map(record) : [];
