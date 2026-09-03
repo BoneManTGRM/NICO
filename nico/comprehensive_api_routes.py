@@ -12,7 +12,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
 
-from nico.admin_security import require_admin_write
+from nico.admin_security import require_comprehensive_operator
 from nico.comprehensive_api_controller import (
     ComprehensiveApiController,
     _canonical_final_report_outputs,
@@ -444,7 +444,7 @@ def _prepare_public_intake_reservation_payload(payload: Mapping[str, Any]) -> di
 
 
 def _authorize_review(token: str) -> None:
-    allowed, status = require_admin_write(token)
+    allowed, status = require_comprehensive_operator(token)
     if allowed:
         return
     raise HTTPException(

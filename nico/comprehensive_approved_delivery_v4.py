@@ -27,6 +27,11 @@ from nico.comprehensive_client_delivery_contract_v1 import (
 from nico.comprehensive_delivery_authorization_v1 import (
     validate_delivery_authorization,
 )
+from nico.comprehensive_authorized_report_v1 import (
+    VERSION as AUTHORIZED_REPORT_VERSION,
+    authorized_text,
+    build_authorized_report_pdf,
+)
 
 VERSION = "nico.comprehensive_approved_delivery.v4"
 _RECEIPT_PATH = "12_phase4_approval_receipt.json"
@@ -138,7 +143,7 @@ def _enhance_delivery_archive(
     receipt: Mapping[str, Any],
     accepted_edition: Mapping[str, Any],
     delivery_authorization: Mapping[str, Any],
-) -> tuple[bytes, dict[str, Any], str]:
+) -> tuple[bytes, dict[str, Any], str, str, str]:
     try:
         source = base64.b64decode(_text(delivery.get("zip_base64")), validate=True)
     except Exception as exc:
@@ -148,6 +153,31 @@ def _enhance_delivery_archive(
         for name in archive.namelist():
             if not name.endswith("/"):
                 entries[name] = archive.read(name)
+    approved_source_pdf = entries.get(_REPORT_PATH, b"")
+    approved_source_sha = _sha256(approved_source_pdf)
+    if approved_source_sha != _text(receipt.get("pdf_sha256")):
+        raise ValueError("approved_source_pdf_receipt_mismatch")
+    identity = {
+        "run_id": receipt.get("assessment_run_id"),
+        "repository": receipt.get("repository"),
+        "commit_sha": receipt.get("assessed_repository_commit"),
+    }
+    authorized_pdf = build_authorized_report_pdf(
+        approved_source_pdf,
+        identity=identity,
+        delivery_authorization=delivery_authorization,
+        source_pdf_sha256=approved_source_sha,
+    )
+    authorized_pdf_sha = _sha256(authorized_pdf)
+    entries[_REPORT_PATH] = authorized_pdf
+    for name, content in list(entries.items()):
+        if name == _REPORT_PATH:
+            continue
+        if name.casefold().endswith((".md", ".html", ".txt")):
+            try:
+                entries[name] = authorized_text(content.decode("utf-8")).encode("utf-8")
+            except UnicodeDecodeError:
+                pass
     receipt_bytes = _json_bytes(receipt)
     authorization_bytes = _json_bytes(delivery_authorization)
     entries[_APPROVAL_RECORD_PATH] = _json_bytes(accepted_edition)
@@ -187,6 +217,11 @@ def _enhance_delivery_archive(
         }
     )
     artifacts.sort(key=lambda item: _text(item.get("path")))
+    for item in artifacts:
+        path = _text(item.get("path"))
+        if path in entries:
+            item["sha256"] = _sha256(entries[path])
+            item["size_bytes"] = len(entries[path])
     manifest.update(
         {
             "artifact_schema": VERSION,
@@ -218,11 +253,21 @@ def _enhance_delivery_archive(
             "client_pdf_count": 1,
             "human_review_required": True,
             "client_delivery_allowed": True,
+            "client_facing_status": "authorized",
+            "authorized_report_version": AUTHORIZED_REPORT_VERSION,
+            "approved_source_pdf_sha256": approved_source_sha,
+            "authorized_edition_pdf_sha256": authorized_pdf_sha,
         }
     )
     manifest_bytes = _json_bytes(manifest)
     entries[_MANIFEST_PATH] = manifest_bytes
-    return _zip(entries), manifest, _sha256(manifest_bytes)
+    return (
+        _zip(entries),
+        manifest,
+        _sha256(manifest_bytes),
+        approved_source_sha,
+        authorized_pdf_sha,
+    )
 
 
 def build_approved_delivery_package(
@@ -255,7 +300,13 @@ def build_approved_delivery_package(
         authorization_basis=_text(review.get("authorization_basis"))
         or "protected_admin_write_and_explicit_review_authorization",
     )
-    archive, delivery_manifest, evidence_manifest_sha = _enhance_delivery_archive(
+    (
+        archive,
+        delivery_manifest,
+        evidence_manifest_sha,
+        approved_source_pdf_sha,
+        authorized_edition_pdf_sha,
+    ) = _enhance_delivery_archive(
         delivery,
         receipt,
         bound,
@@ -309,6 +360,13 @@ def build_approved_delivery_package(
             "client_pdf_count": 1,
             "human_review_required": True,
             "client_delivery_allowed": True,
+            "client_facing_status": "authorized",
+            "authorized_report_version": AUTHORIZED_REPORT_VERSION,
+            "approved_source_pdf_sha256": approved_source_pdf_sha,
+            "authorized_edition_pdf_sha256": authorized_edition_pdf_sha,
+            "authorized_edition_created": True,
+            "approved_report_pdf_preserved_exactly": False,
+            "delivery_authorization_certificate_page_prepended": True,
         }
     )
     certificate["delivery_package_sha256"] = _sha256(archive)
@@ -332,6 +390,13 @@ def build_approved_delivery_package(
         "client_pdf_count": 1,
         "human_review_required": True,
         "client_delivery_allowed": True,
+        "client_facing_status": "authorized",
+        "authorized_report_version": AUTHORIZED_REPORT_VERSION,
+        "approved_source_pdf_sha256": approved_source_pdf_sha,
+        "authorized_edition_pdf_sha256": authorized_edition_pdf_sha,
+        "authorized_edition_created": True,
+        "approved_report_pdf_preserved_exactly": False,
+        "delivery_authorization_certificate_page_prepended": True,
     }
 
 
@@ -396,10 +461,14 @@ def validate_approved_delivery_package(
         errors.add("phase4_final_approval_status_invalid")
     if _text(package.get("client_delivery_authorization_status")) != "authorized":
         errors.add("phase4_delivery_status_invalid")
-    if package.get("approval_certificate_page_appended") is not False:
-        errors.add("phase4_approved_pdf_was_mutated")
-    if package.get("approved_report_pdf_preserved_exactly") is not True:
-        errors.add("phase4_approved_pdf_preservation_missing")
+    if package.get("authorized_edition_created") is not True:
+        errors.add("phase4_authorized_edition_missing")
+    if not _text(package.get("approved_source_pdf_sha256")):
+        errors.add("phase4_approved_source_pdf_hash_missing")
+    if package.get("delivery_authorization_certificate_page_prepended") is not True:
+        errors.add("phase4_delivery_authorization_certificate_missing")
+    if _text(package.get("client_facing_status")) != "authorized":
+        errors.add("phase4_client_facing_status_invalid")
     if package.get("approval_certificate_separate_json") is not True:
         errors.add("phase4_separate_approval_certificate_missing")
 
@@ -422,20 +491,14 @@ def validate_approved_delivery_package(
                 errors.add("phase4_one_report_rule_violated")
             elif isinstance(manifest, Mapping) and isinstance(receipt, Mapping):
                 delivered_pdf_sha = _sha256(archive.read(pdfs[0]))
-                manifest_digests = manifest.get("artifact_digests")
-                manifest_digests = (
-                    manifest_digests
-                    if isinstance(manifest_digests, Mapping)
-                    else {}
-                )
-                approved_pdf = manifest_digests.get("pdf")
-                approved_pdf = approved_pdf if isinstance(approved_pdf, Mapping) else {}
-                if delivered_pdf_sha != _text(approved_pdf.get("sha256")):
-                    errors.add("phase4_delivered_pdf_accepted_edition_mismatch")
-                if delivered_pdf_sha != _text(receipt.get("pdf_sha256")):
-                    errors.add("phase4_delivered_pdf_receipt_mismatch")
+                if delivered_pdf_sha != _text(package.get("authorized_edition_pdf_sha256")):
+                    errors.add("phase4_authorized_edition_pdf_mismatch")
                 if pdfs[0] != _REPORT_PATH:
                     errors.add("phase4_client_report_path_mismatch")
+                if _text(package.get("approved_source_pdf_sha256")) != _text(
+                    receipt.get("pdf_sha256")
+                ):
+                    errors.add("phase4_approved_source_pdf_receipt_mismatch")
             if _APPROVAL_RECORD_PATH not in names:
                 errors.add("phase4_approval_record_missing")
             elif isinstance(manifest, Mapping) and archive.read(
@@ -526,6 +589,16 @@ def validate_approved_delivery_package(
                         errors.add(f"phase4_evidence_manifest_{key}_mismatch")
                 if _text(archive_manifest.get("delivery_status")) != "approved_for_delivery":
                     errors.add("phase4_evidence_manifest_delivery_status_invalid")
+                if _text(archive_manifest.get("client_facing_status")) != "authorized":
+                    errors.add("phase4_evidence_manifest_client_status_invalid")
+                if _text(archive_manifest.get("approved_source_pdf_sha256")) != _text(
+                    package.get("approved_source_pdf_sha256")
+                ):
+                    errors.add("phase4_evidence_manifest_source_pdf_hash_mismatch")
+                if _text(archive_manifest.get("authorized_edition_pdf_sha256")) != _text(
+                    package.get("authorized_edition_pdf_sha256")
+                ):
+                    errors.add("phase4_evidence_manifest_authorized_pdf_hash_mismatch")
                 if archive_manifest.get("human_review_required") is not True:
                     errors.add("phase4_evidence_manifest_human_review_boundary_missing")
                 if archive_manifest.get("client_delivery_allowed") is not True:
@@ -598,6 +671,14 @@ def validate_approved_delivery_package(
             "client_id": binding["client_id"],
             "project_id": binding["project_id"],
             "package_classification": CLIENT_FINAL_CLASSIFICATION,
+            "client_facing_status": "authorized",
+            "authorized_report_version": AUTHORIZED_REPORT_VERSION,
+            "approved_source_pdf_sha256": package.get(
+                "approved_source_pdf_sha256"
+            ),
+            "authorized_edition_pdf_sha256": package.get(
+                "authorized_edition_pdf_sha256"
+            ),
         }
         delivery_authorization = (
             record.get("delivery_authorization")
@@ -685,10 +766,18 @@ def validate_approved_delivery_package(
             errors.add("phase4_certificate_human_review_boundary_missing")
         if certificate.get("client_delivery_allowed") is not True:
             errors.add("phase4_certificate_delivery_authorization_missing")
+        if certificate.get("authorized_edition_created") is not True:
+            errors.add("phase4_certificate_authorized_edition_missing")
+        if _text(certificate.get("approved_source_pdf_sha256")) != _text(
+            package.get("approved_source_pdf_sha256")
+        ):
+            errors.add("phase4_certificate_approved_source_hash_mismatch")
+        if certificate.get("delivery_authorization_certificate_page_prepended") is not True:
+            errors.add("phase4_certificate_authorization_page_missing")
         if certificate.get("approval_certificate_page_appended") is not False:
             errors.add("phase4_certificate_approved_pdf_was_mutated")
-        if certificate.get("approved_report_pdf_preserved_exactly") is not True:
-            errors.add("phase4_certificate_approved_pdf_preservation_missing")
+        if certificate.get("approved_report_pdf_preserved_exactly") is not False:
+            errors.add("phase4_certificate_authorized_pdf_truth_invalid")
         if certificate.get("approval_certificate_separate_json") is not True:
             errors.add("phase4_certificate_separate_approval_missing")
         if certificate.get("report_analysis_regenerated_during_delivery_packaging") is not False:

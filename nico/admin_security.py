@@ -6,6 +6,7 @@ import secrets
 from typing import Any
 
 ADMIN_TOKEN_ENV = "NICO_ADMIN_TOKEN"
+SARA_OPERATOR_PASSWORD_ENV = "NICO_SARA_OPERATOR_PASSWORD"
 _INTERNAL_ADMIN_TOKEN = secrets.token_urlsafe(48)
 
 
@@ -68,6 +69,47 @@ def require_admin_write(provided_token: str | None = None) -> tuple[bool, dict[s
     }
 
 
+def require_comprehensive_operator(provided_token: str | None = None) -> tuple[bool, dict[str, Any]]:
+    """Authorize only Comprehensive review and delivery operations.
+
+    SARA's service password is deliberately not accepted by ``require_admin_write``.
+    It therefore cannot administer projects, runtime configuration, recovery,
+    backups, or any other NICO operator surface.
+    """
+
+    admin_allowed, admin_status = require_admin_write(provided_token)
+    if admin_allowed:
+        authority = (
+            "nico_internal"
+            if admin_status.get("status") == "internal"
+            else "nico_admin"
+        )
+        return True, {
+            **admin_status,
+            "authority": authority,
+            "scope": "comprehensive_review_and_delivery",
+        }
+    configured = os.getenv(SARA_OPERATOR_PASSWORD_ENV, "").strip()
+    allowed = bool(configured and provided_token) and hmac.compare_digest(
+        str(provided_token), configured
+    )
+    if allowed:
+        return True, {
+            "enabled": True,
+            "status": "enabled",
+            "authority": "sara_comprehensive_operator",
+            "scope": "comprehensive_review_and_delivery",
+            "reason": "Scoped SARA Comprehensive operator accepted.",
+        }
+    return False, {
+        "status": "unavailable",
+        "mode": "read_only",
+        "configured": bool(configured),
+        "scope": "comprehensive_review_and_delivery",
+        "reason": "Comprehensive operator authentication is required.",
+    }
+
+
 def safe_public_admin_status() -> dict[str, Any]:
     status = admin_write_status(None)
     return {
@@ -80,8 +122,10 @@ def safe_public_admin_status() -> dict[str, Any]:
 
 __all__ = [
     "ADMIN_TOKEN_ENV",
+    "SARA_OPERATOR_PASSWORD_ENV",
     "admin_write_status",
     "internal_admin_token",
     "require_admin_write",
+    "require_comprehensive_operator",
     "safe_public_admin_status",
 ]

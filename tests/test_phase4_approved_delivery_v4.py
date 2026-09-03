@@ -346,6 +346,18 @@ def test_phase4_approved_delivery_binds_full_identity_and_receipt_inside_one_rep
     with zipfile.ZipFile(io.BytesIO(archive), "r") as zipped:
         pdf_names = [name for name in zipped.namelist() if name.endswith(".pdf")]
         assert pdf_names == ["01_nico_comprehensive_report.pdf"]
+        authorized_pdf = zipped.read("01_nico_comprehensive_report.pdf")
+        from pypdf import PdfReader
+
+        authorized_text = "\n".join(
+            page.extract_text() or ""
+            for page in PdfReader(io.BytesIO(authorized_pdf)).pages
+        )
+        assert "CLIENT DELIVERY AUTHORIZED" in authorized_text
+        assert "Delivery: Authorized" in authorized_text
+        assert "DELIVERY CONTROLLED" not in authorized_text.upper()
+        assert _sha256(authorized_pdf) == certificate["authorized_edition_pdf_sha256"]
+        assert certificate["approved_source_pdf_sha256"] == receipt["pdf_sha256"]
         assert "12_phase4_approval_receipt.json" in zipped.namelist()
         assert "16_delivery_authorization.json" in zipped.namelist()
         assert "11_evidence_manifest.json" in zipped.namelist()
@@ -383,6 +395,11 @@ def test_delivery_authorization_keeps_accepted_edition_byte_for_byte_immutable()
     assert attached["accepted_edition"]["accepted_edition_manifest_sha256"] == before_hash
     assert authorization["accepted_edition_manifest_sha256"] == before_hash
     assert "delivery_authorization" not in attached["accepted_edition"]
+    assert attached["approved_delivery_package"]["authorized_edition_created"] is True
+    assert attached["approved_delivery_package"]["approved_report_pdf_preserved_exactly"] is False
+    assert attached["approved_delivery_package"]["approved_source_pdf_sha256"] == manifest[
+        "artifact_digests"
+    ]["pdf"]["sha256"]
 
 
 def test_service_authorization_is_distinct_atomic_revision_and_replay_fails(
@@ -659,11 +676,7 @@ def test_fully_rehashed_archive_cannot_replace_exact_approval_record_or_pdf() ->
     )
     pdf_validation = validate_approved_delivery_package(attached, pdf_delivery)
     assert pdf_validation["status"] == "invalid"
-    assert (
-        "phase4_delivered_pdf_accepted_edition_mismatch"
-        in pdf_validation["validation_errors"]
-    )
-    assert "phase4_delivered_pdf_receipt_mismatch" in pdf_validation[
+    assert "phase4_authorized_edition_pdf_mismatch" in pdf_validation[
         "validation_errors"
     ]
 
