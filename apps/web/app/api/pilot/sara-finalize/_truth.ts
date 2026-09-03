@@ -38,6 +38,12 @@ function strings(value: unknown, test: (key: string) => boolean): string[] {
     .filter(Boolean);
 }
 
+function records(value: unknown, exactKey: string): JsonRecord[] {
+  return collect(value, (candidate) => candidate === exactKey)
+    .map((item) => asRecord(item))
+    .filter((item) => Object.keys(item).length > 0);
+}
+
 function requireZero(record: JsonRecord, key: string, label: string): void {
   if (!(key in record)) {
     throw new PilotActionError(`${label} is absent from the canonical report.`, 409);
@@ -48,6 +54,10 @@ function requireZero(record: JsonRecord, key: string, label: string): void {
   }
 }
 
+function requireZeroWhenPresent(record: JsonRecord, key: string, label: string): void {
+  if (key in record) requireZero(record, key, label);
+}
+
 function requireEmptyArray(record: JsonRecord, key: string, label: string): void {
   const value = record[key];
   if (!Array.isArray(value)) {
@@ -55,6 +65,46 @@ function requireEmptyArray(record: JsonRecord, key: string, label: string): void
   }
   if (value.length !== 0) {
     throw new PilotActionError(`${label} is not empty.`, 409);
+  }
+}
+
+function assertClientFindingRegistersClear(report: JsonRecord): void {
+  const registerProjections = records(report, "client_finding_remediation_register");
+  const canonicalRegisters = registerProjections.filter(
+    (register) => Array.isArray(register.code_findings) && Array.isArray(register.operational_findings),
+  );
+
+  if (!canonicalRegisters.length) {
+    throw new PilotActionError(
+      "The canonical client finding/remediation register is absent from the retained report.",
+      409,
+    );
+  }
+
+  for (const [index, register] of canonicalRegisters.entries()) {
+    const suffix = canonicalRegisters.length > 1 ? ` projection ${index + 1}` : "";
+    requireEmptyArray(register, "code_findings", `Client code-finding register${suffix}`);
+    requireEmptyArray(register, "operational_findings", `Client operational-finding register${suffix}`);
+
+    // Older retained runs do not necessarily expose every duplicate summary counter in
+    // every projection. When present, each counter must still reconcile to zero. The
+    // canonical arrays above remain mandatory and are the authoritative finding truth.
+    const summary = asRecord(register.summary);
+    requireZeroWhenPresent(
+      summary,
+      "exact_source_code_finding_count",
+      `Client-register exact-source finding total${suffix}`,
+    );
+    requireZeroWhenPresent(
+      summary,
+      "operational_or_context_finding_count",
+      `Client-register operational/context finding total${suffix}`,
+    );
+    requireZeroWhenPresent(
+      summary,
+      "canonical_finding_count",
+      `Client-register canonical finding total${suffix}`,
+    );
   }
 }
 
@@ -139,8 +189,6 @@ export async function assertCanonicalReportClear(
   const scannerRegister = asRecord(assessment.canonical_scanner_finding_register);
   const technicalTriage = asRecord(scannerRegister.technical_triage);
   const technicalTriageMetrics = asRecord(technicalTriage.workload_metrics);
-  const clientRegister = asRecord(assessment.client_finding_remediation_register);
-  const clientRegisterSummary = asRecord(clientRegister.summary);
 
   requireZero(candidateSummary, "review_required_total", "Review-required candidate total");
   requireZero(candidateDisposition, "review_required", "Candidate disposition review-required total");
@@ -153,14 +201,11 @@ export async function assertCanonicalReportClear(
   requireZero(findingPopulation, "canonical_finding_count", "Canonical finding total");
   requireZero(assessment, "exact_source_finding_count", "Assessment exact-source finding total");
   requireZero(assessment, "operational_context_finding_count", "Assessment operational/context finding total");
-  requireZero(clientRegisterSummary, "exact_source_code_finding_count", "Client-register exact-source finding total");
-  requireZero(clientRegisterSummary, "operational_or_context_finding_count", "Client-register operational/context finding total");
 
   requireEmptyArray(report, "findings", "Top-level finding register");
   requireEmptyArray(assessment, "review_candidate_register", "Review-candidate register");
   requireEmptyArray(assessment, "decision_grade_findings_register", "Decision-grade finding register");
-  requireEmptyArray(clientRegister, "code_findings", "Client code-finding register");
-  requireEmptyArray(clientRegister, "operational_findings", "Client operational-finding register");
+  assertClientFindingRegistersClear(report);
 
   if (expectedDraftPdfSha256) {
     const artifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
