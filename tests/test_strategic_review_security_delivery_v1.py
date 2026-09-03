@@ -21,8 +21,12 @@ DELIVERY = ROOT / "nico" / "comprehensive_approved_delivery_v1.py"
 
 def test_strategic_review_and_delivery_routes_require_admin_authentication() -> None:
     source = ROUTES.read_text(encoding="utf-8")
+    security = (ROOT / "nico" / "admin_security.py").read_text(encoding="utf-8")
 
-    assert "from nico.admin_security import require_admin_write" in source
+    assert "from nico.admin_security import require_comprehensive_operator" in source
+    assert "def require_comprehensive_operator(" in security
+    assert "admin_allowed, admin_status = require_admin_write(provided_token)" in security
+    assert "SARA's service password is deliberately not accepted by ``require_admin_write``" in security
     assert 'x_nico_admin_token: str = Header(default="")' in source
     assert "_authorize_review(x_nico_admin_token)" in source
     assert "strategic_review_admin_authentication_required" in source

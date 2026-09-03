@@ -183,6 +183,47 @@ def test_gitleaks_non_placeholder_finding_blocks_even_in_tests(tmp_path: Path) -
     assert any("gitleaks reported 1" in item for item in manifest["security_gate"]["blockers"])
 
 
+def test_gitleaks_accepts_only_the_exact_public_sara_verifier_digest(tmp_path: Path) -> None:
+    _clean_evidence(tmp_path)
+    finding = {
+        "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+        "File": "nico/admin_security.py",
+        "StartLine": 14,
+        "Match": 'DEPLOYED_SARA_OPERATOR_PASSWORD_SHA256 = "REDACTED"',
+        "Fingerprint": "public-verifier-fingerprint",
+    }
+    _write(tmp_path, "gitleaks.json", [finding])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+
+    manifest = build_manifest(tmp_path)
+
+    gitleaks = manifest["tools"]["gitleaks"]
+    assert gitleaks["blocking"] == 0
+    assert gitleaks["approved_public_verifiers"] == 1
+    assert gitleaks["triage"][0]["disposition"] == "approved_public_verifier_digest"
+    assert manifest["security_gate"]["status"] == "passed"
+
+
+def test_gitleaks_rejects_public_verifier_lookalikes(tmp_path: Path) -> None:
+    _clean_evidence(tmp_path)
+    finding = {
+        "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+        "File": "nico/another_module.py",
+        "StartLine": 1,
+        "Match": 'DEPLOYED_SARA_OPERATOR_PASSWORD_SHA256 = "REDACTED"',
+        "Fingerprint": "lookalike-fingerprint",
+    }
+    _write(tmp_path, "gitleaks.json", [finding])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+
+    manifest = build_manifest(tmp_path)
+
+    assert manifest["tools"]["gitleaks"]["blocking"] == 1
+    assert manifest["security_gate"]["status"] == "blocked"
+
+
 def _trufflehog_finding(*, path: str, verified: bool) -> dict[str, object]:
     return {
         "SourceMetadata": {"Data": {"Git": {"file": path}}},

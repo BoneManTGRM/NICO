@@ -221,6 +221,7 @@ def _gitleaks(root: Path) -> dict[str, Any]:
 
     blocking = 0
     approved_test_placeholders = 0
+    approved_public_verifiers = 0
     triage: list[dict[str, Any]] = []
     for finding in data:
         if not isinstance(finding, dict):
@@ -229,16 +230,29 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         path = str(finding.get("File") or "")
         rule = str(finding.get("RuleID") or "")
         secret = str(finding.get("Secret") or "")
-        approved = (
+        approved_test_placeholder = (
             path.startswith("tests/")
             and rule == "generic-api-key"
             and secret == "REDACTED"
         )
-        disposition = "approved_test_placeholder" if approved else "blocking"
-        if approved:
+        approved_public_verifier = (
+            path == "nico/admin_security.py"
+            and rule == "generic-api-key"
+            and secret == "REDACTED"
+            and str(finding.get("Match") or "").startswith(
+                'DEPLOYED_SARA_OPERATOR_PASSWORD_SHA256 = "'
+            )
+        )
+        approved = approved_test_placeholder or approved_public_verifier
+        if approved_test_placeholder:
             approved_test_placeholders += 1
+            disposition = "approved_test_placeholder"
+        elif approved_public_verifier:
+            approved_public_verifiers += 1
+            disposition = "approved_public_verifier_digest"
         else:
             blocking += 1
+            disposition = "blocking"
         triage.append(
             {
                 "fingerprint": str(finding.get("Fingerprint") or ""),
@@ -256,6 +270,7 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         blocking=blocking,
         needs_review=0,
         approved_test_placeholders=approved_test_placeholders,
+        approved_public_verifiers=approved_public_verifiers,
         triage=triage[:200],
         summary_artifact_hash=_digest(root, "gitleaks-summary.json"),
     )

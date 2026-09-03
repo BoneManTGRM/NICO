@@ -12,7 +12,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
 
-from nico.admin_security import require_admin_write
+from nico.admin_security import require_comprehensive_operator
 from nico.comprehensive_api_controller import (
     ComprehensiveApiController,
     _canonical_final_report_outputs,
@@ -22,6 +22,7 @@ from nico.comprehensive_browser_continuation_dispatch_v1 import (
     dispatch_browser_continuation,
 )
 from nico.comprehensive_approved_delivery_v1 import validate_approved_delivery_package
+from nico.comprehensive_automated_delivery_v1 import build_automated_delivery_package
 from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunNotFound
 from nico.comprehensive_review_decision_v1 import review_artifact_identity
 from nico.exact_commit_binding import expected_commit_sha
@@ -45,6 +46,7 @@ COMPREHENSIVE_API_ROUTES = {
     ("POST", "/assessment/comprehensive-run/{run_id}/review"),
     ("POST", "/assessment/comprehensive-run/{run_id}/authorize-delivery"),
     ("GET", "/assessment/comprehensive-run/{run_id}/approved-delivery-package"),
+    ("POST", "/assessment/comprehensive-run/{run_id}/automated-delivery-package"),
 }
 
 _SAFE_RUNTIME_REASONS = {
@@ -443,10 +445,10 @@ def _prepare_public_intake_reservation_payload(payload: Mapping[str, Any]) -> di
     }
 
 
-def _authorize_review(token: str) -> None:
-    allowed, status = require_admin_write(token)
+def _authorize_review(token: str) -> dict[str, Any]:
+    allowed, status = require_comprehensive_operator(token)
     if allowed:
-        return
+        return status
     raise HTTPException(
         status_code=403,
         detail={
@@ -964,6 +966,55 @@ def _approved_delivery_response(record: dict[str, Any]) -> Response:
             "X-NICO-Delivery-Certificate-SHA256": str(
                 certificate.get("delivery_authorization_certificate_sha256") or ""
             ),
+        },
+    )
+
+
+def _automated_delivery_response(
+    record: dict[str, Any],
+    payload: Mapping[str, Any],
+) -> Response:
+    queue = _review_queue_projection(record)
+    if int(queue.get("human_review_work_units") or 0) != 0:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "automated_delivery_unresolved_review_work",
+                "message": (
+                    "Automated delivery requires zero unresolved human-review work units. "
+                    "This job stopped safely and must not be represented as authorized."
+                ),
+                "human_review_required": False,
+                "client_delivery_allowed": False,
+            },
+        )
+    if (
+        payload.get("automated_authorization_confirmed") is not True
+        or payload.get("exact_artifact_confirmed") is not True
+        or payload.get("automated_disclosure_confirmed") is not True
+    ):
+        raise ValueError("explicit_automated_delivery_authorization_required")
+    candidate = build_automated_delivery_package(
+        record,
+        expected_artifact_identity=payload.get("expected_artifact_identity"),
+        authorized_at=(
+            str(payload.get("authorized_at")).strip()
+            if payload.get("authorized_at")
+            else None
+        ),
+    )
+    archive = base64.b64decode(str(candidate["zip_base64"]), validate=True)
+    filename = str(candidate["filename"]).replace("\r", "").replace("\n", "").replace('"', "'")
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, private, max-age=0",
+            "X-NICO-Run-ID": str(record["identity"]["run_id"]),
+            "X-NICO-Certified-Package-SHA256": str(candidate["zip_sha256"]),
+            "X-NICO-Authorization-Mode": "automated_policy",
+            "X-NICO-Human-Reviewed": "false",
         },
     )
 
@@ -1536,6 +1587,32 @@ def register_comprehensive_api_routes(
             controller_value = _controller(request)
             record = _service(controller_value).load(run_id)
             return _approved_delivery_response(record)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _translate_error(exc) from exc
+
+    @app.post("/assessment/comprehensive-run/{run_id}/automated-delivery-package")
+    async def automated_delivery_package(
+        run_id: str,
+        request: Request,
+        x_nico_admin_token: str = Header(default=""),
+    ) -> Response:
+        try:
+            authority = _authorize_review(x_nico_admin_token)
+            if authority.get("authority") != "sara_comprehensive_operator":
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "sara_automated_delivery_authority_required",
+                        "message": "This route accepts only SARA's scoped automated-delivery credential.",
+                    },
+                )
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise TypeError("request_body_must_be_object")
+            record = _service(_controller(request)).load(run_id)
+            return _automated_delivery_response(record, payload)
         except HTTPException:
             raise
         except Exception as exc:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import zipfile
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from nico.comprehensive_approved_delivery_v4 import (
     bind_phase4_approval_manifest,
     validate_approved_delivery_package,
 )
+from nico.comprehensive_automated_delivery_v1 import build_automated_delivery_package
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_delivery_authorization_v1 import (
     authorize_accepted_edition,
@@ -346,6 +348,18 @@ def test_phase4_approved_delivery_binds_full_identity_and_receipt_inside_one_rep
     with zipfile.ZipFile(io.BytesIO(archive), "r") as zipped:
         pdf_names = [name for name in zipped.namelist() if name.endswith(".pdf")]
         assert pdf_names == ["01_nico_comprehensive_report.pdf"]
+        authorized_pdf = zipped.read("01_nico_comprehensive_report.pdf")
+        from pypdf import PdfReader
+
+        authorized_text = "\n".join(
+            page.extract_text() or ""
+            for page in PdfReader(io.BytesIO(authorized_pdf)).pages
+        )
+        assert "CLIENT DELIVERY AUTHORIZED" in authorized_text
+        assert "Delivery: Authorized" in authorized_text
+        assert "DELIVERY CONTROLLED" not in authorized_text.upper()
+        assert _sha256(authorized_pdf) == certificate["authorized_edition_pdf_sha256"]
+        assert certificate["approved_source_pdf_sha256"] == receipt["pdf_sha256"]
         assert "12_phase4_approval_receipt.json" in zipped.namelist()
         assert "16_delivery_authorization.json" in zipped.namelist()
         assert "11_evidence_manifest.json" in zipped.namelist()
@@ -383,6 +397,11 @@ def test_delivery_authorization_keeps_accepted_edition_byte_for_byte_immutable()
     assert attached["accepted_edition"]["accepted_edition_manifest_sha256"] == before_hash
     assert authorization["accepted_edition_manifest_sha256"] == before_hash
     assert "delivery_authorization" not in attached["accepted_edition"]
+    assert attached["approved_delivery_package"]["authorized_edition_created"] is True
+    assert attached["approved_delivery_package"]["approved_report_pdf_preserved_exactly"] is False
+    assert attached["approved_delivery_package"]["approved_source_pdf_sha256"] == manifest[
+        "artifact_digests"
+    ]["pdf"]["sha256"]
 
 
 def test_service_authorization_is_distinct_atomic_revision_and_replay_fails(
@@ -659,11 +678,7 @@ def test_fully_rehashed_archive_cannot_replace_exact_approval_record_or_pdf() ->
     )
     pdf_validation = validate_approved_delivery_package(attached, pdf_delivery)
     assert pdf_validation["status"] == "invalid"
-    assert (
-        "phase4_delivered_pdf_accepted_edition_mismatch"
-        in pdf_validation["validation_errors"]
-    )
-    assert "phase4_delivered_pdf_receipt_mismatch" in pdf_validation[
+    assert "phase4_authorized_edition_pdf_mismatch" in pdf_validation[
         "validation_errors"
     ]
 
@@ -750,3 +765,47 @@ def test_rehashed_certificate_cannot_contradict_exact_approval(
     validation = validate_approved_delivery_package(attached, delivery)
     assert validation["status"] == "invalid"
     assert expected_error in validation["validation_errors"]
+
+
+def test_automated_delivery_is_authorized_without_claiming_human_review() -> None:
+    record = deepcopy(_record_template())
+    identity = review_artifact_identity(record)
+    package = build_automated_delivery_package(
+        record,
+        expected_artifact_identity=identity,
+        authorized_at="2026-09-03T22:00:00+00:00",
+    )
+
+    assert package["status"] == "authorized"
+    assert package["client_facing_status"] == "authorized_automated_technical_assessment"
+    assert package["authorization_mode"] == "automated_policy"
+    assert package["human_reviewed"] is False
+    assert package["human_review_required"] is False
+    assert package["client_delivery_allowed"] is True
+
+    payload = base64.b64decode(package["zip_base64"], validate=True)
+    assert _sha256(payload) == package["zip_sha256"]
+    with zipfile.ZipFile(io.BytesIO(payload), "r") as archive:
+        authorization = json.loads(archive.read("07_automated_authorization.json"))
+        report_json = json.loads(archive.read("02_nico_comprehensive_report.json"))
+        report_markdown = archive.read("03_nico_comprehensive_report.md").decode()
+        report_pdf = archive.read("01_nico_comprehensive_report.pdf")
+
+    assert authorization["human_reviewed"] is False
+    assert authorization["security_certification"] is False
+    assert report_json["client_facing_status"] == "authorized_automated_technical_assessment"
+    assert report_json["human_review_completed"] is False
+    assert "PENDING HUMAN APPROVAL" not in report_markdown
+    assert "AUTHORIZED FINAL" in report_markdown
+
+    from pypdf import PdfReader
+
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(report_pdf)).pages
+    )
+    normalized_pdf_text = " ".join(pdf_text.split())
+    assert "AUTHORIZED AUTOMATED TECHNICAL ASSESSMENT" in normalized_pdf_text
+    assert "Human reviewed" in pdf_text
+    assert "NO" in pdf_text
+    assert "No human cybersecurity specialist reviewed or certified this report." in normalized_pdf_text

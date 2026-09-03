@@ -179,10 +179,17 @@ def validate_approved_delivery_package(
         errors.add("delivery_review_source_hash_mismatch")
     if package.get("one_client_report") is not True or int(package.get("client_pdf_count") or 0) != 1:
         errors.add("delivery_not_single_comprehensive_report")
-    if package.get("approved_report_pdf_preserved_exactly") is not True:
-        errors.add("delivery_approved_pdf_not_preserved")
-    if package.get("approval_certificate_page_appended") is not False:
-        errors.add("delivery_approved_pdf_was_mutated")
+    authorized_edition = package.get("authorized_edition_created") is True
+    if authorized_edition:
+        if not _text(package.get("approved_source_pdf_sha256")):
+            errors.add("delivery_approved_source_pdf_hash_missing")
+        if package.get("delivery_authorization_certificate_page_prepended") is not True:
+            errors.add("delivery_authorization_certificate_missing")
+    else:
+        if package.get("approved_report_pdf_preserved_exactly") is not True:
+            errors.add("delivery_approved_pdf_not_preserved")
+        if package.get("approval_certificate_page_appended") is not False:
+            errors.add("delivery_approved_pdf_was_mutated")
     if _text(certificate.get("final_human_approval_status")) != "approved":
         errors.add("delivery_final_approval_status_invalid")
     if _text(certificate.get("client_delivery_authorization_status")) != "authorized":
