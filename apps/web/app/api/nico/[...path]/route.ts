@@ -12,6 +12,7 @@ const COMPREHENSIVE_REVIEW_WORK = /^\/assessment\/comprehensive-run\/[^/?#]+\/re
 const COMPREHENSIVE_REVIEW = /^\/assessment\/comprehensive-run\/[^/?#]+\/review$/;
 const COMPREHENSIVE_AUTHORIZE_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/authorize-delivery$/;
 const COMPREHENSIVE_APPROVED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/approved-delivery-package$/;
+const COMPREHENSIVE_AUTOMATED_DELIVERY = /^\/assessment\/comprehensive-run\/[^/?#]+\/automated-delivery-package$/;
 const COMPREHENSIVE_REPORT_ARTIFACT = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/(?:markdown|html|json|pdf)$/;
 const COMPREHENSIVE_LOCALIZED_REPORT = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-report\/(?:en|es-MX)(?:\/pdf)?$/;
 const ALLOWED_DIAGNOSTIC_PATH = /^\/diagnostics\/comprehensive-runtime$/;
@@ -93,6 +94,7 @@ function assessmentRouteAllowed(method: string, path: string): boolean {
   if (method === "POST" && COMPREHENSIVE_REVIEW.test(path)) return true;
   if (method === "POST" && COMPREHENSIVE_AUTHORIZE_DELIVERY.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path)) return true;
+  if (method === "POST" && COMPREHENSIVE_AUTOMATED_DELIVERY.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_REPORT_ARTIFACT.test(path)) return true;
   if (method === "GET" && COMPREHENSIVE_LOCALIZED_REPORT.test(path)) return true;
   return false;
@@ -103,7 +105,8 @@ function protectedReviewRoute(method: string, path: string): boolean {
     || ((method === "GET" || method === "POST") && COMPREHENSIVE_REVIEW_WORK.test(path))
     || (method === "POST" && COMPREHENSIVE_REVIEW.test(path))
     || (method === "POST" && COMPREHENSIVE_AUTHORIZE_DELIVERY.test(path))
-    || (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path));
+    || (method === "GET" && COMPREHENSIVE_APPROVED_DELIVERY.test(path))
+    || (method === "POST" && COMPREHENSIVE_AUTOMATED_DELIVERY.test(path));
 }
 
 function wait(ms: number): Promise<void> {
@@ -254,6 +257,9 @@ async function proxyNico(
         "x-nico-artifact-finality",
         "x-nico-frozen-source-artifact",
         "x-nico-delivery-package-sha256",
+        "x-nico-certified-package-sha256",
+        "x-nico-authorization-mode",
+        "x-nico-human-reviewed",
         "x-nico-accepted-edition-sha256",
         "x-nico-delivery-certificate-sha256",
       ]) {
