@@ -13,7 +13,7 @@ export const ACCESS_METHOD = "Authorized public GitHub repository using anonymou
 export const AUTHORIZED_SCOPE = `Read-only technical assessment of ${SARA_REPOSITORY} at exact commit ${SARA_COMMIT_SHA} only. No writes, deployments, account changes, outreach, or access outside this repository and SHA.`;
 export const ENGAGEMENT_METADATA_SHA256 = "c486348bd6b69e3406198c66383a635f3a3c2455b47ed77efb8cb17308f8af58";
 export const REVIEWER = "Cody Ryan Jenkins";
-export const REVIEWER_ROLE = "Owner and authorized reviewer";
+export const REVIEWER_ROLE = "Security reviewer";
 export const HELPER_PATH = "/operations/sara-pilot-finalize";
 
 const ORIGIN = "https://app.nicoaudit.com";
