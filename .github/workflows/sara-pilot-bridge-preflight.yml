@@ -1,0 +1,30 @@
+name: SARA Pilot Bridge Preflight
+
+on:
+  push:
+    branches:
+      - ops/sara-pilot-final-review-bridge
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sara-pilot-bridge-preflight
+  cancel-in-progress: true
+
+jobs:
+  exact-retained-report-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out bridge branch
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Verify exact retained SARA report truth
+        run: node scripts/sara_pilot_bridge_preflight.mjs
