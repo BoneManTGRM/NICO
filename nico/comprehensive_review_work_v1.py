@@ -197,6 +197,28 @@ def _empty_ledger(record: Mapping[str, Any], register: Mapping[str, Any]) -> dic
     }
 
 
+def _has_human_review_state(ledger: Mapping[str, Any]) -> bool:
+    """Return whether rebuilding a stale machine ledger would discard human work."""
+
+    for field in (
+        "reviewer_identities",
+        "assignments",
+        "dispositions",
+        "quality_control",
+        "evidence_requests",
+        "stakeholder_evidence",
+        "review_sessions",
+        "audit_events",
+    ):
+        if ledger.get(field):
+            return True
+    empirical = ledger.get("empirical_study")
+    return bool(
+        isinstance(empirical, Mapping)
+        and _text(empirical.get("status")) not in {"", "not_yet_measured"}
+    )
+
+
 def ledger_for_record(record: Mapping[str, Any], register: Mapping[str, Any] | None = None) -> dict[str, Any]:
     register = dict(register or canonical_candidate_register(record))
     expected = _empty_ledger(record, register)
@@ -210,7 +232,13 @@ def ledger_for_record(record: Mapping[str, Any], register: Mapping[str, Any] | N
         if _text(ledger.get(field)) != _text(expected.get(field)):
             raise ValueError(f"review_work_ledger_identity_mismatch:{field}")
     if int(ledger.get("candidate_count") or -1) != expected["candidate_count"]:
-        raise ValueError("review_work_ledger_candidate_count_mismatch")
+        # The final report compiler can legitimately collapse or remove machine-only
+        # candidates after a preliminary review ledger has been initialized. Rebuild
+        # that untouched ledger against the final canonical register. Once any human
+        # review state exists, keep failing closed rather than discarding it.
+        if _has_human_review_state(ledger):
+            raise ValueError("review_work_ledger_candidate_count_mismatch")
+        return expected
     if sorted(_text(value) for value in ledger.get("candidate_ids") or []) != expected["candidate_ids"]:
         raise ValueError("review_work_ledger_candidate_identity_mismatch")
     if sorted(_text(value) for value in ledger.get("qc_required_candidate_ids") or []) != expected["qc_required_candidate_ids"]:
