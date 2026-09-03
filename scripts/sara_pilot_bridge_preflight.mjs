@@ -82,7 +82,7 @@ for (const [key, expected, label] of [
   ["access_method", ACCESS_METHOD, "retained access method"],
   ["authorized_scope", AUTHORIZED_SCOPE, "retained scope"],
   ["source", "client_supplied_intake", "retained metadata source"],
-  ["sha256", METADATA_SHA256, "retained metadata digest"],
+  ["engagement_metadata_sha256", METADATA_SHA256, "retained metadata digest"],
 ]) exact(engagement, key, expected, label);
 
 zero(assessment, "canonical_finding_count", "canonical findings");
