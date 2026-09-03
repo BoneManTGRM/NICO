@@ -51,7 +51,7 @@ jobs:
 
           request = urllib.request.Request(
               url,
-              headers={"Accept": "application/json", "User-Agent": "NICO-SARA-Identity-Proof/1.0"},
+              headers={"Accept": "application/json", "User-Agent": "NICO-SARA-Identity-Proof/1.1"},
           )
           with urllib.request.urlopen(request, timeout=240) as response:
               report = json.load(response)
@@ -59,8 +59,20 @@ jobs:
           identity = report.get("identity") or {}
           engagement = report.get("engagement_metadata") or {}
           assessment = report.get("assessment") or {}
-          artifacts = report.get("artifacts") or {}
-          pdf = artifacts.get("comprehensive_pdf") or {}
+          artifacts = report.get("artifacts") or []
+          if isinstance(artifacts, list):
+              pdf = next(
+                  (
+                      item for item in artifacts
+                      if isinstance(item, dict)
+                      and item.get("artifact_type") == "comprehensive_pdf"
+                  ),
+                  {},
+              )
+          elif isinstance(artifacts, dict):
+              pdf = artifacts.get("comprehensive_pdf") or {}
+          else:
+              pdf = {}
 
           expected_identity = {
               "run_id": run_id,
