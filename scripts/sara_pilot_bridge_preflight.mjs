@@ -1,3 +1,5 @@
+import {readFile} from "node:fs/promises";
+
 const RUN_ID = "comprun_2ba62f37f4ab4b7988c609f27398c63e";
 const REPOSITORY = "BoneManTGRM/SARA";
 const COMMIT_SHA = "d63f09d3d5d6e4a53860faec0ea5cb372a37c381";
@@ -9,6 +11,13 @@ const CONTACT = "Cody Ryan Jenkins (GitHub: BoneManTGRM)";
 const ACCESS_METHOD = "Authorized public GitHub repository using anonymous read-only access; no write permissions or provider credential supplied.";
 const AUTHORIZED_SCOPE = `Read-only technical assessment of ${REPOSITORY} at exact commit ${COMMIT_SHA} only. No writes, deployments, account changes, outreach, or access outside this repository and SHA.`;
 const METADATA_SHA256 = "c486348bd6b69e3406198c66383a635f3a3c2455b47ed77efb8cb17308f8af58";
+const REVIEWER_ROLE = "Security reviewer";
+const APPROVAL_ROLE_ALLOWLIST = new Set([
+  "cybersecurity specialist",
+  "cybersecurity reviewer",
+  "security specialist",
+  "security reviewer",
+]);
 const URL = `https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/${RUN_ID}/report/json`;
 
 function record(value) {
@@ -28,8 +37,22 @@ function zero(owner, key, label) {
   }
 }
 
+if (!APPROVAL_ROLE_ALLOWLIST.has(REVIEWER_ROLE.toLowerCase())) {
+  throw new Error(`reviewer role is not authorized by NICO's final approval contract: ${REVIEWER_ROLE}`);
+}
+const helperSource = await readFile(
+  new URL("../apps/web/app/api/pilot/sara-finalize/_pilot.ts", import.meta.url),
+  "utf8",
+);
+if (!helperSource.includes(`export const REVIEWER_ROLE = "${REVIEWER_ROLE}";`)) {
+  throw new Error("secure finalization helper reviewer role does not match the approved role");
+}
+if (helperSource.includes('export const REVIEWER_ROLE = "Owner and authorized reviewer";')) {
+  throw new Error("secure finalization helper retained the rejected owner-only role");
+}
+
 const response = await fetch(URL, {
-  headers: {Accept: "application/json", "User-Agent": "NICO-SARA-Bridge-Preflight/2.0"},
+  headers: {Accept: "application/json", "User-Agent": "NICO-SARA-Bridge-Preflight/3.0"},
   cache: "no-store",
 });
 if (!response.ok) throw new Error(`report read failed: HTTP ${response.status}`);
@@ -78,6 +101,8 @@ if (!pdf || !/^[0-9a-f]{64}$/i.test(String(pdf.sha256 || ""))) {
 console.log(JSON.stringify({
   status: "passed",
   client_delivery_identity_verified: true,
+  reviewer_role_contract_verified: true,
+  reviewer_role: REVIEWER_ROLE,
   exact_artifact_ready: true,
   run_id: RUN_ID,
   repository: REPOSITORY,
