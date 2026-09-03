@@ -62,6 +62,8 @@ def _record(
     identity_mismatch: bool = False,
     count_mismatch: bool = False,
     empty: bool = False,
+    exact_source_finding: bool = False,
+    operational_finding: bool = False,
 ) -> dict:
     identity = {
         "run_id": "comprun_exception_queue_001",
@@ -118,6 +120,40 @@ def _record(
     canonical_identity = dict(identity)
     if identity_mismatch:
         canonical_identity["commit_sha"] = "c" * 40
+    exact_source_findings = (
+        [
+            {
+                "finding_id": "RISK-P1-COMPLEXITY",
+                "category": "architecture",
+                "status": "needs_review",
+                "title": "Reduce complexity in completeRevenuePilotRole",
+                "path": "src/revenue-pilot.ts",
+                "line": 331,
+                "location": "src/revenue-pilot.ts:331",
+                "function": "completeRevenuePilotRole",
+                "severity": "moderate",
+                "cyclomatic_complexity": 60,
+                "complexity_threshold": 30,
+                "client_actionable": True,
+                "exact_commit_match": True,
+            }
+        ]
+        if exact_source_finding
+        else []
+    )
+    operational_findings = (
+        [
+            {
+                "finding_id": "RISK-OPS-EVIDENCE",
+                "category": "operations",
+                "status": "needs_review",
+                "title": "Confirm production recovery evidence",
+                "client_actionable": True,
+            }
+        ]
+        if operational_finding
+        else []
+    )
     canonical = {
         "service_id": "comprehensive",
         "report_id": "report_exception_queue_001",
@@ -128,6 +164,16 @@ def _record(
             "report_language": "en",
             "locale": "en",
             "canonical_scanner_finding_register": register,
+        },
+        "canonical_findings": exact_source_findings,
+        "client_finding_remediation_register": {
+            "code_findings": exact_source_findings,
+            "operational_findings": operational_findings,
+            "summary": {
+                "decision_finding_count": len(exact_source_findings) + len(operational_findings),
+                "exact_source_code_finding_count": len(exact_source_findings),
+                "operational_or_context_finding_count": len(operational_findings),
+            },
         },
         "human_review_required": True,
         "client_delivery_allowed": False,
@@ -223,6 +269,47 @@ def test_review_queue_preserves_valid_zero_candidate_workload(monkeypatch) -> No
     assert body["candidate_register"]["findings"] == []
     assert body["human_review_required"] is True
     assert body["client_delivery_allowed"] is False
+
+
+def test_review_queue_combines_zero_scanner_work_with_one_exact_source_finding(monkeypatch) -> None:
+    client = _client(monkeypatch, _record(empty=True, exact_source_finding=True))
+    response = client.get(
+        "/assessment/comprehensive-run/comprun_exception_queue_001/review-queue",
+        headers={"X-NICO-Admin-Token": "operator-secret"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scanner_candidate_review_work_units"] == 0
+    assert body["exact_source_review_work_units"] == 1
+    assert body["operational_context_review_work_units"] == 0
+    assert body["total_unresolved_human_review_work_units"] == 1
+    assert body["operator_attention_required"] is True
+    assert body["exact_source_review_findings"][0]["finding_id"] == (
+        "RISK-P1-COMPLEXITY"
+    )
+    assert body["exact_source_review_findings"][0]["location"] == (
+        "src/revenue-pilot.ts:331"
+    )
+
+
+def test_review_queue_includes_unresolved_operational_findings_in_total(monkeypatch) -> None:
+    client = _client(monkeypatch, _record(empty=True, operational_finding=True))
+    response = client.get(
+        "/assessment/comprehensive-run/comprun_exception_queue_001/review-queue",
+        headers={"X-NICO-Admin-Token": "operator-secret"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scanner_candidate_review_work_units"] == 0
+    assert body["exact_source_review_work_units"] == 0
+    assert body["operational_context_review_work_units"] == 1
+    assert body["total_unresolved_human_review_work_units"] == 1
+    assert body["operator_attention_required"] is True
+    assert body["operational_context_review_findings"][0]["finding_id"] == (
+        "RISK-OPS-EVIDENCE"
+    )
 
 
 def test_review_queue_fails_closed_before_terminal_human_review(monkeypatch) -> None:

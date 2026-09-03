@@ -119,7 +119,11 @@ def extract_report(text: str, expected_assessed_sha: str) -> dict[str, Any]:
         "grouped": _one(r"grouped-review eligible candidates:\s*(\d+)", compact, "grouped review"),
         "clusters": _one(r"grouped human-review clusters:\s*(\d+)", compact, "cluster count"),
         "qc_pool": _one(r"quality-control pool:\s*(\d+)", compact, "quality-control pool"),
-        "work_units": _one(r"Human review work units:\s*(\d+)", compact, "review work units"),
+        "work_units": _one(
+            r"(?:Scanner-candidate review work units|Human review work units):\s*(\d+)",
+            compact,
+            "scanner-candidate review work units",
+        ),
     }
     if report["fresh_required"] != report["fresh_completed"]:
         raise ValueError("Fresh-triage required/completed counts do not match")

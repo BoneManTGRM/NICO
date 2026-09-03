@@ -29,7 +29,8 @@ def test_runtime_report_surface_distinguishes_technical_from_human_review() -> N
 
     assert "Technical triage proposals imported for " in source
     assert "Current-evidence candidates requiring new technical triage: " in source
-    assert "Human review work units: " in source
+    assert "Scanner-candidate review work units: " in source
+    assert '"Human review work units: "' not in source
     assert "NICO automated technical triage completed" in source
     assert "Technical triage remains proposal-only." in source
     assert "Authorized human approval" in source

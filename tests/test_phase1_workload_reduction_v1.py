@@ -8,6 +8,7 @@ from nico.candidate_lineage_migration_v1 import apply_candidate_lineage, lineage
 from nico.candidate_phase1_report_workload_v1 import (
     render_phase1_evidence_review_gate_pdf,
 )
+from nico.candidate_phase1_report_workload_text_v1 import workload_markdown
 from nico.candidate_phase1_workload_refinement_v1 import (
     refine_candidate_review_workload,
     scan_assessment_subject,
@@ -455,7 +456,7 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
 
     assert "automated technical triage" in text.lower()
     assert "human dispositions remain pending" in text.lower()
-    assert "human review work units" in text.lower()
+    assert "scanner-candidate review work units" in text.lower()
     assert "grouped human-review clusters" in text.lower()
     assert "canonical pending dispositions are not the active operator queue" in text.lower()
     assert "raw-to-work-unit reduction" in text.lower()
@@ -467,6 +468,137 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
     )
     assert "Client delivery requires a separate authorized action." in text
     assert "APPROVED FINAL and CLIENT DELIVERY AUTHORIZED" not in text
+
+
+def test_zero_scanner_queue_and_one_exact_source_finding_render_as_one_total_review_unit() -> None:
+    canonical = {
+        "identity": {
+            "repository": "BoneManTGRM/SARA",
+            "commit_sha": "a" * 40,
+            "run_id": "comprun_zero_scanner_one_exact_source",
+        },
+        "assessment": {"technical_score": 93, "evidence_adjusted_score": 93},
+        "scanner_execution_records": [],
+        "review_candidate_summary": {
+            "review_required_total": 0,
+            "verified_material_total": 0,
+            "by_category": {},
+        },
+        "technical_triage": {
+            "status": "complete",
+            "fresh_technical_triage_completed": 0,
+            "workload_metrics": {
+                "total_candidates": 0,
+                "technical_triage_completed": 0,
+                "technical_triage_coverage_pct": 100.0,
+                "human_review_work_units": 0,
+            },
+        },
+    }
+    finding_register = {
+        "code_findings": [
+            {
+                "finding_id": "RISK-P1-COMPLEXITY",
+                "status": "needs_review",
+                "path": "src/revenue-pilot.ts",
+                "line": 331,
+                "title": "Reduce complexity in completeRevenuePilotRole",
+            }
+        ],
+        "operational_findings": [],
+        "summary": {"exact_source_code_finding_count": 1},
+    }
+    canonical["client_finding_remediation_register"] = finding_register
+
+    english = workload_markdown(canonical, spanish=False)
+    spanish = workload_markdown(canonical, spanish=True)
+    pdf = render_phase1_evidence_review_gate_pdf(
+        canonical, finding_register, spanish=False
+    )
+    pdf_text = " ".join(
+        " ".join((page.extract_text() or "").split())
+        for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+
+    assert "Scanner-candidate review work units: 0" in english
+    assert "Exact-source review work units: 1" in english
+    assert "Operational/context review work units: 0" in english
+    assert "Total unresolved human-review work units: 1" in english
+    assert "Unidades de trabajo de revisión de candidatos de analizadores: 0" in spanish
+    assert "Unidades de revisión con fuente exacta: 1" in spanish
+    assert "Unidades de revisión operativa o contextual: 0" in spanish
+    assert "Total de unidades de revisión humana sin resolver: 1" in spanish
+    assert "Scanner-candidate review work units" in pdf_text
+    assert "Exact-source review work units" in pdf_text
+    assert "Operational/context review work units" in pdf_text
+    assert "Total unresolved human-review work units" in pdf_text
+    assert "0 verified findings" not in english.casefold()
+
+
+def test_workload_markdown_reads_scanner_units_from_nested_canonical_register() -> None:
+    canonical = {
+        "assessment": {
+            "canonical_scanner_finding_register": {
+                "technical_triage": {
+                    "human_review_work_units": 7,
+                    "workload_metrics": {
+                        "total_candidates": 11,
+                        "technical_triage_completed": 11,
+                        "technical_triage_coverage_pct": 100.0,
+                    },
+                }
+            },
+            "client_finding_remediation_register": {
+                "code_findings": [],
+                "operational_findings": [],
+            },
+        }
+    }
+
+    english = workload_markdown(canonical, spanish=False)
+
+    assert "Scanner-candidate review work units: 7" in english
+    assert "Exact-source review work units: 0" in english
+    assert "Operational/context review work units: 0" in english
+    assert "Total unresolved human-review work units: 7" in english
+
+
+def test_scanner_derived_findings_are_not_double_counted_as_supplemental_work() -> None:
+    canonical = {
+        "assessment": {
+            "canonical_scanner_finding_register": {
+                "technical_triage": {"human_review_work_units": 1},
+            },
+            "client_finding_remediation_register": {
+                "code_findings": [
+                    {
+                        "finding_id": "SCANNER-B101",
+                        "status": "review_required",
+                        "path": "src/service.py",
+                        "line": 20,
+                        "record_source": "scanner_finding",
+                    }
+                ],
+                "operational_findings": [
+                    {
+                        "finding_id": "SCANNER-CONFIG",
+                        "status": "review_required",
+                        "title": "Scanner configuration requires review",
+                        "record_source": "scanner_finding",
+                    }
+                ],
+            },
+        }
+    }
+
+    from nico.review_workload_truth_v1 import review_workload_summary
+
+    workload = review_workload_summary(canonical)
+
+    assert workload["scanner_candidate_review_work_units"] == 1
+    assert workload["exact_source_review_work_units"] == 0
+    assert workload["operational_context_review_work_units"] == 0
+    assert workload["total_unresolved_human_review_work_units"] == 1
 
 
 def test_spanish_phase1_review_gate_is_laid_out_from_spanish_copy() -> None:

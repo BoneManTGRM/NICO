@@ -791,6 +791,10 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Candidates requiring individual attention", "Candidatos que requieren atención individual"),
     ("Candidates covered by grouped review", "Candidatos cubiertos por revisión agrupada"),
     ("Grouped human-review clusters", "Grupos para revisión humana conjunta"),
+    ("Scanner-candidate review work units", "Unidades de trabajo de revisión de candidatos de analizadores"),
+    ("Exact-source review work units", "Unidades de revisión con fuente exacta"),
+    ("Operational/context review work units", "Unidades de revisión operativa o contextual"),
+    ("Total unresolved human-review work units", "Total de unidades de revisión humana sin resolver"),
     ("Human review work units", "Unidades de trabajo de revisión humana"),
     ("Quality-control sample pool", "Conjunto de muestra para control de calidad"),
     ("Client package boundary", "Límite del paquete del cliente"),
@@ -2653,8 +2657,8 @@ def _translate_presentation(value: Any) -> str:
         text,
     )
     text = re.sub(
-        r"Human review work units: (\d+) from (\d+) candidate-level human-attention observations before deterministic grouping\.",
-        r"Unidades de trabajo de revisión humana: \1 a partir de \2 observaciones de atención humana a nivel de candidato antes de la agrupación determinista.",
+        r"Scanner-candidate review work units: (\d+) from (\d+) candidate-level human-attention observations before deterministic grouping\.",
+        r"Unidades de trabajo de revisión de candidatos de analizadores: \1 a partir de \2 observaciones de atención humana a nivel de candidato antes de la agrupación determinista.",
         text,
     )
     text = re.sub(

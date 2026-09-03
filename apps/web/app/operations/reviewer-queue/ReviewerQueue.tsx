@@ -17,6 +17,13 @@ type ReviewQueuePayload = {
   source?: string;
   candidate_count?: number;
   human_review_work_units?: number;
+  scanner_candidate_review_work_units?: number;
+  exact_source_review_work_units?: number;
+  operational_context_review_work_units?: number;
+  total_unresolved_human_review_work_units?: number;
+  operator_attention_required?: boolean;
+  exact_source_review_findings?: JsonRecord[];
+  operational_context_review_findings?: JsonRecord[];
   human_review_required?: boolean;
   client_delivery_allowed?: boolean;
   candidate_register?: JsonRecord;
@@ -34,6 +41,12 @@ type QueueModel = {
   groupedUnits: QueueUnit[];
   candidateCount: number;
   clusterCount: number;
+  exactSourceFindings: JsonRecord[];
+  operationalContextFindings: JsonRecord[];
+  scannerCandidateReviewWorkUnits: number;
+  exactSourceReviewWorkUnits: number;
+  operationalContextReviewWorkUnits: number;
+  totalUnresolvedHumanReviewWorkUnits: number;
   integrityErrors: string[];
 };
 
@@ -206,7 +219,20 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
   if (finiteNumber(payload.candidate_count) !== candidateCount) integrityErrors.push(tr(locale, "Protected queue candidate count does not match the canonical register.", "El número de candidatos de la cola protegida no coincide con el registro canónico."));
   if (finiteNumber(payload.human_review_work_units) !== units.length) integrityErrors.push(tr(locale, "Protected queue work-unit count does not reconcile with the displayed queue.", "El número de unidades de trabajo de la cola protegida no coincide con la cola mostrada."));
 
-  return {units, individualUnits, groupedUnits, candidateCount, clusterCount: clusterRecords.length, integrityErrors: Array.from(new Set(integrityErrors))};
+  const exactSourceFindings = asRecords(payload.exact_source_review_findings);
+  const operationalContextFindings = asRecords(payload.operational_context_review_findings);
+  const scannerCandidateReviewWorkUnits = finiteNumber(payload.scanner_candidate_review_work_units);
+  const exactSourceReviewWorkUnits = finiteNumber(payload.exact_source_review_work_units);
+  const operationalContextReviewWorkUnits = finiteNumber(payload.operational_context_review_work_units);
+  const totalUnresolvedHumanReviewWorkUnits = finiteNumber(payload.total_unresolved_human_review_work_units);
+  if (scannerCandidateReviewWorkUnits === null || scannerCandidateReviewWorkUnits !== units.length) integrityErrors.push(tr(locale, "Scanner-candidate review work units do not reconcile with the displayed scanner queue.", "Las unidades de revisión de candidatos de analizadores no coinciden con la cola de analizadores mostrada."));
+  if (exactSourceReviewWorkUnits === null || exactSourceReviewWorkUnits !== exactSourceFindings.length) integrityErrors.push(tr(locale, "Exact-source review work units do not reconcile with the retained exact-source findings.", "Las unidades de revisión con fuente exacta no coinciden con los hallazgos con fuente exacta conservados."));
+  if (operationalContextReviewWorkUnits === null || operationalContextReviewWorkUnits !== operationalContextFindings.length) integrityErrors.push(tr(locale, "Operational/context review work units do not reconcile with the retained operational findings.", "Las unidades de revisión operativa o contextual no coinciden con los hallazgos operativos conservados."));
+  const combinedUnits = units.length + exactSourceFindings.length + operationalContextFindings.length;
+  if (totalUnresolvedHumanReviewWorkUnits === null || totalUnresolvedHumanReviewWorkUnits !== combinedUnits) integrityErrors.push(tr(locale, "Total unresolved human-review work units do not reconcile across scanner, exact-source, and operational/context findings.", "El total de unidades de revisión humana sin resolver no coincide entre los hallazgos de analizadores, de fuente exacta y operativos o contextuales."));
+  if (payload.operator_attention_required !== (combinedUnits > 0)) integrityErrors.push(tr(locale, "Operator-attention state does not reconcile with the combined unresolved workload.", "El estado de atención del operador no coincide con la carga combinada sin resolver."));
+
+  return {units, individualUnits, groupedUnits, candidateCount, clusterCount: clusterRecords.length, exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits: scannerCandidateReviewWorkUnits ?? 0, exactSourceReviewWorkUnits: exactSourceReviewWorkUnits ?? 0, operationalContextReviewWorkUnits: operationalContextReviewWorkUnits ?? 0, totalUnresolvedHumanReviewWorkUnits: totalUnresolvedHumanReviewWorkUnits ?? 0, integrityErrors: Array.from(new Set(integrityErrors))};
 }
 
 function evidenceLabel(candidate: JsonRecord, locale: Locale): string {
@@ -288,6 +314,19 @@ function ClusterDisclosure({unit, locale}: {unit: QueueUnit; locale: Locale}) {
         {unit.candidates.map((candidate) => <CandidateDisclosure key={candidateId(candidate)} candidate={candidate} locale={locale} representative={candidateId(candidate) === candidateId(unit.representative)} />)}
       </div>
     </div> : null}
+  </details>;
+}
+
+function FindingDisclosure({finding, locale}: {finding: JsonRecord; locale: Locale}) {
+  const identifier = text(finding.finding_id) || text(finding.id) || tr(locale, "finding identity unavailable", "identidad del hallazgo no disponible");
+  const location = text(finding.location) || [text(finding.path || finding.file_path || finding.source_path), text(finding.line || finding.start_line)].filter(Boolean).join(":");
+  return <details className={styles.candidateDisclosure} data-review-finding-id={identifier}>
+    <summary className={styles.candidateSummary}>
+      <span className={styles.summaryIdentity}><code>{identifier}</code><strong>{text(finding.title) || text(finding.decision_title) || tr(locale, "Finding requiring review", "Hallazgo que requiere revisión")}</strong></span>
+      <span className={styles.summaryMeta}>{location || tr(locale, "finding retained in the canonical report", "hallazgo conservado en el informe canónico")}</span>
+      <span className={styles.disclosureState}><span className={styles.closedLabel}>{tr(locale, "Expand finding", "Expandir hallazgo")}</span><span className={styles.openLabel}>{tr(locale, "Collapse finding", "Contraer hallazgo")}</span></span>
+    </summary>
+    <div className={styles.candidateBody}><pre className={styles.exactSourceRecord}>{JSON.stringify(finding, null, 2)}</pre></div>
   </details>;
 }
 
@@ -373,10 +412,21 @@ export default function ReviewerQueue() {
       </section>
       <section className={styles.metrics} aria-label={tr(locale, "Canonical review workload", "Carga de trabajo canónica de revisión")}>
         <article><span>{tr(locale, "Canonical candidates", "Candidatos canónicos")}</span><strong>{model.candidateCount}</strong></article><article><span>{tr(locale, "Deterministic clusters", "Grupos deterministas")}</span><strong>{model.clusterCount}</strong></article>
-        <article><span>{tr(locale, "Individual work units", "Unidades de trabajo individuales")}</span><strong>{model.individualUnits.length}</strong></article><article><span>{tr(locale, "Grouped work units", "Unidades de trabajo agrupadas")}</span><strong>{model.groupedUnits.length}</strong></article><article><span>{tr(locale, "Total work units", "Unidades de trabajo totales")}</span><strong>{model.units.length}</strong></article>
+        <article><span>{tr(locale, "Individual scanner work units", "Unidades individuales de analizadores")}</span><strong>{model.individualUnits.length}</strong></article><article><span>{tr(locale, "Grouped scanner work units", "Unidades agrupadas de analizadores")}</span><strong>{model.groupedUnits.length}</strong></article>
+        <article><span>{tr(locale, "Scanner-candidate review work units", "Unidades de revisión de candidatos de analizadores")}</span><strong>{model.scannerCandidateReviewWorkUnits}</strong></article><article><span>{tr(locale, "Exact-source review work units", "Unidades de revisión con fuente exacta")}</span><strong>{model.exactSourceReviewWorkUnits}</strong></article><article><span>{tr(locale, "Operational/context review work units", "Unidades de revisión operativa o contextual")}</span><strong>{model.operationalContextReviewWorkUnits}</strong></article><article><span>{tr(locale, "Total unresolved human-review work units", "Total de unidades de revisión humana sin resolver")}</span><strong>{model.totalUnresolvedHumanReviewWorkUnits}</strong></article>
       </section>
       {model.integrityErrors.length ? <section className={styles.integrityError} role="alert"><strong>{tr(locale, "Queue integrity check failed closed.", "La verificación de integridad de la cola falló de forma cerrada.")}</strong><p>{tr(locale, "No candidate or cluster content is displayed until exact candidate, cluster, identity, and workload parity is restored.", "No se muestra contenido de candidatos ni grupos hasta restablecer la paridad exacta de candidatos, grupos, identidad y carga de trabajo.")}</p><ul>{model.integrityErrors.map((item) => <li key={item}>{item}</li>)}</ul></section> : <>
         <section className={styles.integrityOk}><strong>{tr(locale, "Canonical parity verified.", "Paridad canónica verificada.")}</strong> {tr(locale, "Every retained candidate appears exactly once, deterministic cluster membership matches the canonical register, and the work-unit total reconciles with the report.", "Cada candidato conservado aparece exactamente una vez, la pertenencia a grupos deterministas coincide con el registro canónico y el total de unidades de trabajo coincide con el informe.")}</section>
+        <section className={styles.queueSection}>
+          <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>{tr(locale, "EXACT SOURCE", "FUENTE EXACTA")}</p><h2>{tr(locale, "Exact-source findings requiring review", "Hallazgos con fuente exacta que requieren revisión")}</h2></div><strong>{model.exactSourceReviewWorkUnits} {tr(locale, model.exactSourceReviewWorkUnits === 1 ? "work unit" : "work units", model.exactSourceReviewWorkUnits === 1 ? "unidad de trabajo" : "unidades de trabajo")}</strong></div>
+          <p className={styles.sectionLead}>{tr(locale, "These decision-grade findings are separate from scanner-candidate triage and remain part of the combined unresolved human-review workload.", "Estos hallazgos de nivel de decisión son independientes del triaje de candidatos de analizadores y siguen formando parte de la carga combinada de revisión humana sin resolver.")}</p>
+          <div className={styles.queue}>{model.exactSourceFindings.map((finding, index) => <FindingDisclosure key={text(finding.finding_id) || text(finding.id) || String(index)} finding={finding} locale={locale} />)}</div>
+        </section>
+        <section className={styles.queueSection}>
+          <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>{tr(locale, "OPERATIONAL", "OPERATIVO")}</p><h2>{tr(locale, "Operational or contextual findings requiring review", "Hallazgos operativos o contextuales que requieren revisión")}</h2></div><strong>{model.operationalContextReviewWorkUnits} {tr(locale, model.operationalContextReviewWorkUnits === 1 ? "work unit" : "work units", model.operationalContextReviewWorkUnits === 1 ? "unidad de trabajo" : "unidades de trabajo")}</strong></div>
+          <p className={styles.sectionLead}>{tr(locale, "These unresolved assessment findings are included in the combined workload even when they do not have an exact source-code anchor.", "Estos hallazgos sin resolver se incluyen en la carga combinada aunque no tengan una ubicación exacta en el código fuente.")}</p>
+          <div className={styles.queue}>{model.operationalContextFindings.map((finding, index) => <FindingDisclosure key={text(finding.finding_id) || text(finding.id) || String(index)} finding={finding} locale={locale} />)}</div>
+        </section>
         <section className={styles.queueSection}>
           <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>{tr(locale, "FIRST", "PRIMERO")}</p><h2>{tr(locale, "Individual attention", "Atención individual")}</h2></div><strong>{model.individualUnits.length} {tr(locale, model.individualUnits.length === 1 ? "work unit" : "work units", model.individualUnits.length === 1 ? "unidad de trabajo" : "unidades de trabajo")}</strong></div>
           <p className={styles.sectionLead}>{tr(locale, "Each candidate expands into its complete retained canonical evidence and technical-triage record.", "Cada candidato se expande para mostrar su evidencia canónica completa conservada y su registro de triaje técnico.")}</p>
