@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import zipfile
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from nico.comprehensive_approved_delivery_v4 import (
     bind_phase4_approval_manifest,
     validate_approved_delivery_package,
 )
+from nico.comprehensive_automated_delivery_v1 import build_automated_delivery_package
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_delivery_authorization_v1 import (
     authorize_accepted_edition,
@@ -763,3 +765,46 @@ def test_rehashed_certificate_cannot_contradict_exact_approval(
     validation = validate_approved_delivery_package(attached, delivery)
     assert validation["status"] == "invalid"
     assert expected_error in validation["validation_errors"]
+
+
+def test_automated_delivery_is_authorized_without_claiming_human_review() -> None:
+    record = deepcopy(_record_template())
+    identity = review_artifact_identity(record)
+    package = build_automated_delivery_package(
+        record,
+        expected_artifact_identity=identity,
+        authorized_at="2026-09-03T22:00:00+00:00",
+    )
+
+    assert package["status"] == "authorized"
+    assert package["client_facing_status"] == "authorized_automated_technical_assessment"
+    assert package["authorization_mode"] == "automated_policy"
+    assert package["human_reviewed"] is False
+    assert package["human_review_required"] is False
+    assert package["client_delivery_allowed"] is True
+
+    payload = base64.b64decode(package["zip_base64"], validate=True)
+    assert _sha256(payload) == package["zip_sha256"]
+    with zipfile.ZipFile(io.BytesIO(payload), "r") as archive:
+        authorization = json.loads(archive.read("07_automated_authorization.json"))
+        report_json = json.loads(archive.read("02_nico_comprehensive_report.json"))
+        report_markdown = archive.read("03_nico_comprehensive_report.md").decode()
+        report_pdf = archive.read("01_nico_comprehensive_report.pdf")
+
+    assert authorization["human_reviewed"] is False
+    assert authorization["security_certification"] is False
+    assert report_json["client_facing_status"] == "authorized_automated_technical_assessment"
+    assert report_json["human_review_completed"] is False
+    assert "PENDING HUMAN APPROVAL" not in report_markdown
+    assert "AUTHORIZED FINAL" in report_markdown
+
+    from pypdf import PdfReader
+
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(report_pdf)).pages
+    )
+    assert "AUTHORIZED AUTOMATED TECHNICAL ASSESSMENT" in pdf_text
+    assert "Human reviewed" in pdf_text
+    assert "NO" in pdf_text
+    assert "No human cybersecurity specialist reviewed or certified this report." in pdf_text

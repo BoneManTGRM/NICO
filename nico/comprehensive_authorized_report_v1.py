@@ -32,10 +32,30 @@ _REPLACEMENTS = (
 )
 
 
-def authorized_text(value: str) -> str:
+def authorized_text(value: str, *, authorization_mode: str = "human") -> str:
     output = str(value or "")
     for previous, replacement in _REPLACEMENTS:
         output = output.replace(previous, replacement)
+    if authorization_mode == "automated":
+        for previous, replacement in (
+            (
+                "DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED",
+                "AUTHORIZED FINAL · AUTOMATED VERIFICATION RECORDED · CLIENT DELIVERY AUTHORIZED",
+            ),
+            (
+                "DRAFT | PENDING HUMAN APPROVAL | CLIENT DELIVERY BLOCKED",
+                "AUTHORIZED FINAL | AUTOMATED VERIFICATION RECORDED | CLIENT DELIVERY AUTHORIZED",
+            ),
+            (
+                "BORRADOR · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA",
+                "FINAL AUTORIZADO · VERIFICACIÓN AUTOMATIZADA REGISTRADA · ENTREGA AL CLIENTE AUTORIZADA",
+            ),
+            ("HUMAN REVIEW RECORDED", "AUTOMATED VERIFICATION RECORDED"),
+            ("HUMAN DECISION RECORDED", "AUTOMATED VERIFICATION RECORDED"),
+            ("Human review recorded", "Automated verification recorded"),
+            ("REVISIÓN HUMANA REGISTRADA", "VERIFICACIÓN AUTOMATIZADA REGISTRADA"),
+        ):
+            output = output.replace(previous, replacement)
     return output
 
 
@@ -49,6 +69,7 @@ def _certificate_pdf(
     authorized_at: str,
     authorization_reason: str,
     source_pdf_sha256: str,
+    authorization_mode: str = "human",
 ) -> bytes:
     from html import escape
 
@@ -66,9 +87,12 @@ def _certificate_pdf(
         author="NICO",
         invariant=1,
     )
+    automated = authorization_mode == "automated"
     rows = [
         ["Report status", "AUTHORIZED FINAL"],
         ["Client delivery", "AUTHORIZED"],
+        ["Review mode", "AUTOMATED TECHNICAL ASSESSMENT" if automated else "HUMAN REVIEW"],
+        ["Human reviewed", "NO" if automated else "YES"],
         ["Authorizer", authorizer],
         ["Authorizer role", authorizer_role],
         ["Authorized at", authorized_at],
@@ -93,14 +117,28 @@ def _certificate_pdf(
         )
     )
     story = [
-        Paragraph("NICO Comprehensive — AUTHORIZED FINAL", styles["Title"]),
+        Paragraph(
+            (
+                "NICO Comprehensive — AUTHORIZED AUTOMATED TECHNICAL ASSESSMENT"
+                if automated
+                else "NICO Comprehensive — AUTHORIZED FINAL"
+            ),
+            styles["Title"],
+        ),
         Paragraph("CLIENT DELIVERY AUTHORIZED", styles["Heading1"]),
         Paragraph("Delivery: Authorized", styles["Heading2"]),
         Paragraph("Client Delivery Authorization Certificate", styles["Heading2"]),
         Spacer(1, 10),
         Paragraph(
-            "The named reviewer approved the exact evidence-bound report and the "
-            "named delivery authorizer separately authorized this same artifact for client delivery.",
+            (
+                "SARA's independent logical verifier and NICO's deterministic artifact gates "
+                "accepted the exact evidence-bound report under the disclosed automated-delivery policy. "
+                "No human cybersecurity specialist reviewed or certified this report."
+                if automated
+                else
+                "The named reviewer approved the exact evidence-bound report and the "
+                "named delivery authorizer separately authorized this same artifact for client delivery."
+            ),
             styles["BodyText"],
         ),
         Spacer(1, 12),
@@ -119,6 +157,7 @@ def build_authorized_report_pdf(
     identity: Mapping[str, Any],
     delivery_authorization: Mapping[str, Any],
     source_pdf_sha256: str,
+    authorization_mode: str = "human",
 ) -> bytes:
     from pypdf import PdfReader, PdfWriter
     from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
@@ -134,6 +173,7 @@ def build_authorized_report_pdf(
         authorized_at=str(delivery_authorization.get("authorized_at") or ""),
         authorization_reason=str(delivery_authorization.get("authorization_reason") or ""),
         source_pdf_sha256=source_pdf_sha256,
+        authorization_mode=authorization_mode,
     )
     source_writer = PdfWriter(clone_from=io.BytesIO(source_pdf))
     for page in source_writer.pages:
@@ -149,7 +189,7 @@ def build_authorized_report_pdf(
             for index, operand in enumerate(targets):
                 if isinstance(operand, TextStringObject):
                     original = str(operand)
-                    updated = authorized_text(original)
+                    updated = authorized_text(original, authorization_mode=authorization_mode)
                     normalized = original.strip().casefold()
                     if updated == original and normalized == "controlled":
                         updated = "Authorized"
@@ -165,7 +205,7 @@ def build_authorized_report_pdf(
                             decoded = raw.decode(encoding)
                         except UnicodeDecodeError:
                             continue
-                        updated = authorized_text(decoded)
+                        updated = authorized_text(decoded, authorization_mode=authorization_mode)
                         if updated != decoded:
                             targets[index] = ByteStringObject(updated.encode(encoding))
                             changed = True
@@ -180,7 +220,11 @@ def build_authorized_report_pdf(
         output.add_page(page)
     output.add_metadata(
         {
-            "/Title": "NICO Comprehensive — Authorized Final",
+            "/Title": (
+                "NICO Comprehensive — Authorized Automated Technical Assessment"
+                if authorization_mode == "automated"
+                else "NICO Comprehensive — Authorized Final"
+            ),
             "/Author": "NICO",
             "/Producer": "NICO deterministic delivery-authorized report finalizer",
         }
