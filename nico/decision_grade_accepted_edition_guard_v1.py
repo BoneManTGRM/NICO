@@ -70,6 +70,8 @@ def current_report_artifact_digest(package: Mapping[str, Any]) -> str:
 def validate_accepted_edition(
     package: Mapping[str, Any],
     candidate: Mapping[str, Any],
+    *,
+    trusted_report_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
     if candidate.get("artifact_schema") != ACCEPTED_EDITION_VERSION:
@@ -133,6 +135,8 @@ def validate_accepted_edition(
         "assessment_depth",
     ):
         expected = str(identity.get(field) or "").strip()
+        if not expected and isinstance(trusted_report_identity, Mapping):
+            expected = str(trusted_report_identity.get(field) or "").strip()
         actual = str(candidate.get(field) or "").strip()
         if not expected:
             errors.append(f"current_report_identity_missing:{field}")
