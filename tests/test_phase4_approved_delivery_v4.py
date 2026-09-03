@@ -804,7 +804,8 @@ def test_automated_delivery_is_authorized_without_claiming_human_review() -> Non
         page.extract_text() or ""
         for page in PdfReader(io.BytesIO(report_pdf)).pages
     )
-    assert "AUTHORIZED AUTOMATED TECHNICAL ASSESSMENT" in pdf_text
+    normalized_pdf_text = " ".join(pdf_text.split())
+    assert "AUTHORIZED AUTOMATED TECHNICAL ASSESSMENT" in normalized_pdf_text
     assert "Human reviewed" in pdf_text
     assert "NO" in pdf_text
-    assert "No human cybersecurity specialist reviewed or certified this report." in pdf_text
+    assert "No human cybersecurity specialist reviewed or certified this report." in normalized_pdf_text
