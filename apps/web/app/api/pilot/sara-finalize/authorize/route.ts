@@ -9,11 +9,12 @@ import {
   errorResponse,
   operatorTokenFromForm,
   statusPayload,
-} from "../_lib";
+} from "../_pilot";
 import {
   assertCanonicalReportClear,
+  assertDeliveryAuthorization,
   assertExactArtifactIdentity,
-} from "../_truth";
+} from "../_truth-v2";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,14 +35,15 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     if (!deliveryAllowed(current)) {
-      await authorizeExactDelivery(token, identity);
+      const authorized = await authorizeExactDelivery(token, identity);
+      assertDeliveryAuthorization(authorized);
     }
 
     const finalStatus = await statusPayload(token);
     assertExactArtifactIdentity(finalStatus);
     if (!approvalRecorded(finalStatus) || !deliveryAllowed(finalStatus)) {
       throw new PilotActionError(
-        "NICO did not record client-delivery authorization for the exact approved edition.",
+        "NICO did not retain client-delivery authorization for the exact approved edition.",
         409,
       );
     }
