@@ -710,7 +710,12 @@ def _accepted_final_report_integrity_bound(
     except ValueError:
         return False
 
-    validation = validate_accepted_edition(report, accepted)
+    identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
+    validation = validate_accepted_edition(
+        report,
+        accepted,
+        trusted_report_identity=identity,
+    )
     if validation.get("status") != "valid" or list(
         validation.get("validation_errors") or []
     ):

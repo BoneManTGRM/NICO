@@ -26,7 +26,12 @@ from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
 from tests.test_v2_premium_report_renderer import _package
 
 
-def _exact_report(record: dict, *, regenerated: bool = False) -> dict:
+def _exact_report(
+    record: dict,
+    *,
+    regenerated: bool = False,
+    omit_strategic_identity: bool = False,
+) -> dict:
     identity = record["identity"]
     source = _package(identity["report_language"])
     source["json"]["identity"].update(
@@ -46,10 +51,17 @@ def _exact_report(record: dict, *, regenerated: bool = False) -> dict:
         source["json"]["identity"]["generated_at"] = (
             "2026-07-26T01:19:00Z"
         )
+    if omit_strategic_identity:
+        source["json"]["identity"].pop("assessment_depth")
+        source["json"]["identity"].pop("report_language")
     return rebuild_client_artifacts(source)
 
 
-def _review_ready_record(*, report_language: str = "en") -> dict:
+def _review_ready_record(
+    *,
+    report_language: str = "en",
+    omit_strategic_report_identity: bool = False,
+) -> dict:
     record = create_comprehensive_run_record(
         run_id=f"comprun_review_{report_language}",
         repository="owner/repo",
@@ -78,7 +90,10 @@ def _review_ready_record(*, report_language: str = "en") -> dict:
         },
         now=datetime(2026, 7, 26, 1, 0, tzinfo=UTC),
     )
-    package = _exact_report(record)
+    package = _exact_report(
+        record,
+        omit_strategic_identity=omit_strategic_report_identity,
+    )
     for stage_id in COMPREHENSIVE_STAGES:
         result: dict = {"status": "complete", "summary": stage_id}
         if stage_id == "immutable_repository_snapshot":
@@ -122,6 +137,23 @@ def test_approved_review_binds_exact_artifacts_without_authorizing_delivery() ->
     assert approved["human_review_completed"] is True
     assert approved["accepted_edition"]["accepted_edition"] is True
     assert approved["review_context"]["report_regenerated_during_review"] is False
+    assert validate_comprehensive_run_record(approved)["status"] == "valid"
+
+
+def test_approval_uses_trusted_run_identity_for_older_exact_report_package() -> None:
+    record = _review_ready_record(omit_strategic_report_identity=True)
+    package = record["stage_results"]["final_comprehensive_report_generation"][
+        "report_package"
+    ]
+    assert "assessment_depth" not in package["json"]["identity"]
+    assert package["json"]["identity"]["report_language"] == "en"
+
+    manifest = _manifest(record)
+    approved = apply_comprehensive_review_decision(record, manifest=manifest)
+
+    assert approved["status"] == "approved"
+    assert approved["accepted_edition"]["assessment_depth"] == "strategic"
+    assert approved["accepted_edition"]["report_language"] == "en"
     assert validate_comprehensive_run_record(approved)["status"] == "valid"
 
 

@@ -19,6 +19,8 @@ IDENTITY = {
     "evidence_ledger_id": "ledger_report_v2_001",
     "customer_id": "customer_cody",
     "project_id": "project_nico",
+    "assessment_depth": "strategic",
+    "report_language": "en",
 }
 
 
@@ -162,6 +164,8 @@ def test_native_package_is_comprehensive_branded_and_cross_format_complete() -> 
     assert report["pdf_filename"].endswith("-DRAFT.pdf")
     assert report["human_review_required"] is True
     assert report["client_delivery_allowed"] is False
+    assert report["json"]["identity"]["assessment_depth"] == "strategic"
+    assert report["json"]["identity"]["report_language"] == "en"
 
 
 def test_markdown_retains_deep_modules_roadmap_staffing_and_identity() -> None:

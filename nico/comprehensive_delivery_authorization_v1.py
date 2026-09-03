@@ -43,7 +43,12 @@ def _assert_current_accepted_edition(
     record: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> None:
-    validation = validate_accepted_edition(report_package_from_record(record), manifest)
+    identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
+    validation = validate_accepted_edition(
+        report_package_from_record(record),
+        manifest,
+        trusted_report_identity=identity,
+    )
     if validation["status"] != "valid":
         raise ValueError(
             "invalid_accepted_edition:" + ",".join(validation["validation_errors"])

@@ -233,7 +233,11 @@ def _review_manifest_errors(
             errors.append(f"review_identity_missing:{field}")
 
     if decision == "approved":
-        validation = validate_accepted_edition(package, candidate)
+        validation = validate_accepted_edition(
+            package,
+            candidate,
+            trusted_report_identity=identity,
+        )
         errors.extend(str(item) for item in validation.get("validation_errors") or [])
     else:
         if candidate.get("accepted_edition") is not False:
