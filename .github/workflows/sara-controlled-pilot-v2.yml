@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 45
     env:
       NICO_ORIGIN: https://app.nicoaudit.com
-      NICO_RUN_ID: comprun_efd84449a8004a83927b99805bff1f42
+      NICO_RUN_ID: comprun_92861eae651a410c80211a2db02d9275
       SARA_REPOSITORY: BoneManTGRM/SARA
       SARA_COMMIT_SHA: d63f09d3d5d6e4a53860faec0ea5cb372a37c381
       CUSTOMER_ID: boneman-sara-client
@@ -44,7 +44,6 @@ jobs:
           commit_sha = os.environ["SARA_COMMIT_SHA"]
           customer_id = os.environ["CUSTOMER_ID"]
           project_id = os.environ["PROJECT_ID"]
-
           transient = {408, 425, 429, 500, 502, 503, 504}
 
           def call(method, path, payload=None, *, attempts=5):
@@ -52,17 +51,12 @@ jobs:
               headers = {
                   "Accept": "application/json",
                   "X-NICO-Browser-Projection": "terminal-manifest-v1",
-                  "User-Agent": "NICO-SARA-Controlled-Pilot-V2/1.0",
+                  "User-Agent": "NICO-SARA-Controlled-Pilot-V2/2.0",
               }
               if body is not None:
                   headers["Content-Type"] = "application/json"
               for attempt in range(1, attempts + 1):
-                  request = urllib.request.Request(
-                      origin + path,
-                      data=body,
-                      headers=headers,
-                      method=method,
-                  )
+                  request = urllib.request.Request(origin + path, data=body, headers=headers, method=method)
                   try:
                       with urllib.request.urlopen(request, timeout=270) as response:
                           raw = response.read()
@@ -76,10 +70,8 @@ jobs:
                       try:
                           detail = json.loads(raw)
                       except Exception:
-                          detail = raw[:2000]
-                      raise RuntimeError(
-                          f"HTTP {exc.code} for {method} {path}: {detail}"
-                      ) from exc
+                          detail = raw[:4000]
+                      raise RuntimeError(f"HTTP {exc.code} for {method} {path}: {detail}") from exc
                   except (TimeoutError, urllib.error.URLError) as exc:
                       if attempt < attempts:
                           print(f"Transient transport failure for {method} {path}: {exc}; retry {attempt}/{attempts}")
@@ -88,50 +80,44 @@ jobs:
                       raise
               raise RuntimeError(f"Request attempts exhausted: {method} {path}")
 
-          observed_at = "2026-09-03T13:25:00Z"
+          observed_at = "2026-09-03T13:45:00Z"
+          customer_name = "SARA / BoneManTGRM"
+          project_name = "SARA — First Controlled Production Pilot"
           contact = "Cody Ryan Jenkins (GitHub: BoneManTGRM)"
           access_method = (
-              "Authorized public GitHub repository using anonymous read-only access "
-              "with no write permissions."
+              "Authorized public GitHub repository using anonymous read-only access; "
+              "no write permissions or provider credential supplied."
           )
           scope = (
               f"Read-only technical assessment of {repository} at exact commit {commit_sha} only. "
               "No writes, deployments, account changes, outreach, or access outside this repository and SHA."
           )
-          client_identity = "SARA / BoneManTGRM"
-          project_identity = "SARA — First Controlled Production Pilot"
+
+          # NICO's strategic human-evidence normalizer retains the exact client-delivery
+          # fields only from a recognized module's evidence object. Use its literal field
+          # names: customer_name and project_name, not client_identity/project_identity.
           human_evidence = {
-              # These direct fields are the durable client-engagement identity consumed by
-              # the Phase-3 and final-approval guards. They intentionally duplicate the
-              # stakeholder module's readable evidence rather than relying on inference.
-              "engagement_mode": "client",
-              "client_identity": client_identity,
-              "project_identity": project_identity,
-              "primary_technical_contact": contact,
-              "access_method": access_method,
-              "authorized_scope": scope,
-              "repository_identity": repository,
-              "authorization_confirmation": "confirmed",
-              "client_name": client_identity,
-              "project_name": project_identity,
               "modules": {
                   "stakeholder_context": {
                       "reviewer": "Cody Ryan Jenkins",
                       "observed_at": observed_at,
-                      "source_reference": "Explicit repository-assessment and controlled-client-pilot authorization supplied by the owner in the active ChatGPT work session on 2026-09-03.",
+                      "source_reference": (
+                          "Explicit owner authorization for an owner-controlled client pilot "
+                          "provided in the active ChatGPT work session on 2026-09-03."
+                      ),
                       "evidence": {
                           "objectives": [
-                              "Complete NICO's first owner-controlled production client pilot and produce an exact approved final report package.",
-                              "Verify the production client workflow without widening repository scope or granting write access."
+                              "Complete NICO's first owner-controlled production client pilot.",
+                              "Produce the exact human-approved final report and certified delivery package."
                           ],
                           "constraints": [
                               "One authorized public repository and one immutable commit only.",
-                              "Read-only access with no write permissions, deployments, account changes, outreach, or access outside the authorized scope.",
-                              "Explicit human review and separate client-delivery authorization remain required."
+                              "Read-only access; no writes, deployments, account changes, outreach, or broader access.",
+                              "Human approval and client-delivery authorization remain separate explicit actions."
                           ],
                           "engagement_mode": "client",
-                          "client_identity": client_identity,
-                          "project_identity": project_identity,
+                          "customer_name": customer_name,
+                          "project_name": project_name,
                           "primary_technical_contact": contact,
                           "access_method": access_method,
                           "authorized_scope": scope,
@@ -141,6 +127,7 @@ jobs:
                   }
               }
           }
+
           intake = {
               "run_id": run_id,
               "repository": repository,
@@ -149,8 +136,8 @@ jobs:
               "expected_commit_sha": commit_sha,
               "customer_id": customer_id,
               "project_id": project_id,
-              "client_name": client_identity,
-              "project_name": project_identity,
+              "client_name": customer_name,
+              "project_name": project_name,
               "assessment_depth": "strategic",
               "report_language": "en",
               "authorized": True,
@@ -180,15 +167,15 @@ jobs:
 
               terminal = status.get("terminal") is True
               state = str(status.get("status") or status.get("canonical_status") or "unknown")
-              stage = str(status.get("current_stage") or "")
-              progress = status.get("progress_percent")
-              print(f"tick={tick} status={state} terminal={terminal} stage={stage} progress={progress}")
-
+              print(
+                  f"tick={tick} status={state} terminal={terminal} "
+                  f"stage={status.get('current_stage')} progress={status.get('progress_percent')}"
+              )
               if terminal:
                   if state not in {"review_required", "complete", "completed"}:
                       raise RuntimeError(
                           "Production assessment reached an unexpected terminal state: "
-                          + json.dumps(status, sort_keys=True)[:4000]
+                          + json.dumps(status, sort_keys=True)[:5000]
                       )
                   break
 
@@ -200,34 +187,48 @@ jobs:
                       attempts=2,
                   )
               except RuntimeError as exc:
-                  # A continuation can have an ambiguous transport result. Recover only
-                  # through the exact-run status read; never replay in a tight loop.
-                  print(f"Continuation outcome requires status recovery: {exc}")
+                  print(f"Continuation outcome requires exact-status recovery: {exc}")
               time.sleep(5)
           else:
-              raise RuntimeError("Timed out waiting for the production assessment to reach human review.")
+              raise RuntimeError("Timed out waiting for production assessment human-review boundary.")
 
           _, report = call(
               "GET",
               f"/api/nico/assessment/comprehensive-run/{run_id}/report/json",
               attempts=5,
           )
-          report_identity = report.get("identity") if isinstance(report.get("identity"), dict) else {}
+          identity = report.get("identity") if isinstance(report.get("identity"), dict) else {}
           assessment = report.get("assessment") if isinstance(report.get("assessment"), dict) else {}
-          report_human = report.get("human_evidence") if isinstance(report.get("human_evidence"), dict) else {}
+          engagement = report.get("engagement_metadata") if isinstance(report.get("engagement_metadata"), dict) else {}
+          human = report.get("human_evidence") if isinstance(report.get("human_evidence"), dict) else {}
+          stakeholder = (
+              human.get("modules", {}).get("stakeholder_context", {})
+              if isinstance(human.get("modules"), dict)
+              else {}
+          )
+          evidence = stakeholder.get("evidence") if isinstance(stakeholder.get("evidence"), dict) else {}
+
           checks = {
-              "run_id": str(report_identity.get("run_id") or "") == run_id,
-              "commit_sha": str(report_identity.get("commit_sha") or "").lower() == commit_sha,
-              "customer_id": str(report_identity.get("customer_id") or "") == customer_id,
-              "project_id": str(report_identity.get("project_id") or "") == project_id,
-              "repository": str(report_identity.get("repository") or "").casefold() == repository.casefold(),
+              "run_id": str(identity.get("run_id") or "") == run_id,
+              "commit_sha": str(identity.get("commit_sha") or "").lower() == commit_sha,
+              "customer_id": str(identity.get("customer_id") or "") == customer_id,
+              "project_id": str(identity.get("project_id") or "") == project_id,
+              "repository": str(identity.get("repository") or "").casefold() == repository.casefold(),
+              "engagement_mode": str(evidence.get("engagement_mode") or "").casefold() == "client",
+              "customer_name": str(evidence.get("customer_name") or "") == customer_name,
+              "project_name": str(evidence.get("project_name") or "") == project_name,
+              "primary_technical_contact": str(evidence.get("primary_technical_contact") or "") == contact,
+              "access_method": str(evidence.get("access_method") or "") == access_method,
+              "authorized_scope": str(evidence.get("authorized_scope") or "") == scope,
               "review_required_candidates_zero": int(assessment.get("review_required_candidate_count") or 0) == 0,
               "canonical_findings_zero": int(assessment.get("canonical_finding_count") or 0) == 0,
+              "display_customer_name": str(engagement.get("client_name") or customer_name) == customer_name,
           }
           failed = sorted(name for name, passed in checks.items() if not passed)
           if failed:
               raise RuntimeError(
-                  f"Terminal report identity/evidence check failed: {failed}; identity={report_identity}"
+                  f"Terminal report identity/evidence check failed: {failed}; "
+                  f"identity={identity}; engagement={engagement}; stakeholder_evidence={evidence}"
               )
 
           summary = {
@@ -240,10 +241,10 @@ jobs:
               "score": assessment.get("score"),
               "review_required_candidate_count": assessment.get("review_required_candidate_count"),
               "canonical_finding_count": assessment.get("canonical_finding_count"),
+              "engagement_mode": evidence.get("engagement_mode"),
+              "customer_name": evidence.get("customer_name"),
+              "project_name": evidence.get("project_name"),
               "client_delivery_allowed": report.get("client_delivery_allowed"),
-              "engagement_mode": report_human.get("engagement_mode"),
-              "client_identity": report_human.get("client_identity"),
-              "project_identity": report_human.get("project_identity"),
           }
           print("SARA_CONTROLLED_PILOT_V2_TERMINAL=" + json.dumps(summary, sort_keys=True))
           with open("sara-controlled-pilot-v2-summary.json", "w", encoding="utf-8") as handle:
