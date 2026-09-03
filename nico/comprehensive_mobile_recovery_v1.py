@@ -303,6 +303,11 @@ def _accepted_pdf_binding(
     validation = validate_accepted_edition(
         report_package_from_record(record),
         accepted,
+        trusted_report_identity=(
+            record.get("identity")
+            if isinstance(record.get("identity"), Mapping)
+            else {}
+        ),
     )
     if validation.get("status") != "valid" or list(
         validation.get("validation_errors") or []
