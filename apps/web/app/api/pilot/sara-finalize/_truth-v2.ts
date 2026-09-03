@@ -143,7 +143,10 @@ export function assertExactArtifactIdentity(
     );
   }
   if (text(identity.identity_version) !== "nico.comprehensive.review_artifact_identity.v1") {
-    throw new PilotActionError("NICO returned an unsupported review-artifact identity version.", 409);
+    throw new PilotActionError(
+      "NICO returned an unsupported review-artifact identity version.",
+      409,
+    );
   }
 
   const pdfSha256 = requireSha(identity.pdf_sha256, "Review PDF identity");
@@ -191,6 +194,8 @@ export async function assertCanonicalReportClear(
   const identity = asRecord(report.identity);
   const engagement = asRecord(report.engagement_metadata);
   const assessment = asRecord(report.assessment);
+  const approval = asRecord(report.approval);
+  const lifecycle = asRecord(report.lifecycle);
 
   requireEqual(identity.run_id, NICO_RUN_ID, "Canonical report run ID");
   requireEqual(identity.repository, SARA_REPOSITORY, "Canonical repository");
@@ -211,11 +216,6 @@ export async function assertCanonicalReportClear(
   );
   requireEqual(identity.access_method, ACCESS_METHOD, "Access method");
   requireEqual(identity.authorized_scope, AUTHORIZED_SCOPE, "Authorized scope");
-  requireEqual(
-    identity.engagement_metadata_source,
-    "client_supplied_intake",
-    "Engagement-metadata source",
-  );
   if (lower(identity.engagement_metadata_sha256) !== ENGAGEMENT_METADATA_SHA256) {
     throw new PilotActionError("The canonical identity metadata digest changed.", 409);
   }
@@ -230,7 +230,7 @@ export async function assertCanonicalReportClear(
   requireEqual(engagement.access_method, ACCESS_METHOD, "Retained access method");
   requireEqual(engagement.authorized_scope, AUTHORIZED_SCOPE, "Retained authorized scope");
   requireEqual(engagement.source, "client_supplied_intake", "Retained metadata source");
-  if (lower(engagement.sha256) !== ENGAGEMENT_METADATA_SHA256) {
+  if (lower(engagement.engagement_metadata_sha256) !== ENGAGEMENT_METADATA_SHA256) {
     throw new PilotActionError("The retained engagement metadata digest changed.", 409);
   }
 
@@ -264,6 +264,13 @@ export async function assertCanonicalReportClear(
     throw new PilotActionError("The canonical assessment score is absent.", 409);
   }
 
+  const reviewStatus = text(
+    approval.decision
+      || lifecycle.human_review_status
+      || report.approval_status
+      || "pending",
+  );
+
   return {
     ready: true,
     client_delivery_identity_verified: true,
@@ -282,7 +289,7 @@ export async function assertCanonicalReportClear(
     score,
     canonical_finding_count: canonicalFindingCount,
     review_required_candidate_count: reviewRequiredCandidateCount,
-    review_status: text(report.review_status || asRecord(report.review).status || "pending"),
+    review_status: reviewStatus,
     client_delivery_allowed: deliveryAllowed(report),
     pdf_filename: pdfFilename,
     pdf_sha256: pdfSha256,
