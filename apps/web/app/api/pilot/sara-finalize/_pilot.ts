@@ -49,10 +49,15 @@ function reviewCertificate(payload: JsonRecord): JsonRecord {
 }
 
 export function approvalRecorded(payload: JsonRecord): boolean {
+  const approval = asRecord(payload.approval);
+  const lifecycle = asRecord(payload.lifecycle);
   const statuses = [
     payload.review_status,
     payload.status,
-    asRecord(payload.approval).status,
+    payload.approval_status,
+    approval.status,
+    approval.decision,
+    lifecycle.human_review_status,
     reviewCertificate(payload).decision,
   ].map((item) => String(item || "").trim().toLowerCase());
   return statuses.includes("approved") || payload.human_review_completed === true;
@@ -169,10 +174,15 @@ function safeFilename(value: unknown, fallback: string): string {
 }
 
 function approvedDigest(payload: JsonRecord): string {
+  const identity = artifactIdentity(payload);
   const edition = acceptedEdition(payload);
+  const direct = String(identity.pdf_sha256 || "").trim().toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(direct)) return direct;
   return String(
-    asRecord(asRecord(artifactIdentity(payload).artifact_digests).pdf).sha256
+    asRecord(asRecord(identity.artifact_digests).pdf).sha256
       || asRecord(asRecord(edition.artifact_digests).pdf).sha256
+      || asRecord(asRecord(asRecord(edition.review_artifact_identity).artifact_digests).pdf).sha256
+      || asRecord(edition.review_artifact_identity).pdf_sha256
       || "",
   ).trim().toLowerCase();
 }
