@@ -1,6 +1,5 @@
 import type {NextRequest} from "next/server";
 import {
-  PilotActionError,
   approvalRecorded,
   approveExactReport,
   approvedPdf,
@@ -8,11 +7,12 @@ import {
   errorResponse,
   operatorTokenFromForm,
   statusPayload,
-} from "../_lib";
+} from "../_pilot";
 import {
+  assertApprovalDecision,
   assertCanonicalReportClear,
   assertExactArtifactIdentity,
-} from "../_truth";
+} from "../_truth-v2";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,14 +29,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       ? current
       : await approveExactReport(token, identity);
 
-    assertExactArtifactIdentity(approved);
-    if (!approvalRecorded(approved)) {
-      throw new PilotActionError(
-        "NICO did not record an approved human-review decision for the exact edition.",
-        409,
-      );
-    }
-
+    assertApprovalDecision(approved);
     const pdf = approvedPdf(approved);
     return downloadResponse(
       pdf.bytes,
