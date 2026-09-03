@@ -1028,7 +1028,11 @@ def _accepted_source_binding(
         if accepted_pdf_size != len(pdf_bytes):
             raise ValueError("accepted_edition_pdf_size_mismatch")
 
-    validation = validate_accepted_edition(reports, accepted)
+    validation = validate_accepted_edition(
+        reports,
+        accepted,
+        trusted_report_identity=identity_binding,
+    )
     if (
         validation.get("status") != "valid"
         or list(validation.get("validation_errors") or [])
