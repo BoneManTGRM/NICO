@@ -395,7 +395,7 @@ jobs:
           PY
 
       - name: Upload terminal pilot summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: sara-controlled-pilot-v2-summary
           path: sara-controlled-pilot-v2-summary.json
