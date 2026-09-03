@@ -34,7 +34,6 @@ jobs:
           python - <<'PY'
           import json
           import os
-          import sys
           import time
           import urllib.error
           import urllib.request
@@ -90,10 +89,58 @@ jobs:
               raise RuntimeError(f"Request attempts exhausted: {method} {path}")
 
           observed_at = "2026-09-03T13:25:00Z"
+          contact = "Cody Ryan Jenkins (GitHub: BoneManTGRM)"
+          access_method = (
+              "Authorized public GitHub repository using anonymous read-only access "
+              "with no write permissions."
+          )
           scope = (
               f"Read-only technical assessment of {repository} at exact commit {commit_sha} only. "
               "No writes, deployments, account changes, outreach, or access outside this repository and SHA."
           )
+          client_identity = "SARA / BoneManTGRM"
+          project_identity = "SARA — First Controlled Production Pilot"
+          human_evidence = {
+              # These direct fields are the durable client-engagement identity consumed by
+              # the Phase-3 and final-approval guards. They intentionally duplicate the
+              # stakeholder module's readable evidence rather than relying on inference.
+              "engagement_mode": "client",
+              "client_identity": client_identity,
+              "project_identity": project_identity,
+              "primary_technical_contact": contact,
+              "access_method": access_method,
+              "authorized_scope": scope,
+              "repository_identity": repository,
+              "authorization_confirmation": "confirmed",
+              "client_name": client_identity,
+              "project_name": project_identity,
+              "modules": {
+                  "stakeholder_context": {
+                      "reviewer": "Cody Ryan Jenkins",
+                      "observed_at": observed_at,
+                      "source_reference": "Explicit repository-assessment and controlled-client-pilot authorization supplied by the owner in the active ChatGPT work session on 2026-09-03.",
+                      "evidence": {
+                          "objectives": [
+                              "Complete NICO's first owner-controlled production client pilot and produce an exact approved final report package.",
+                              "Verify the production client workflow without widening repository scope or granting write access."
+                          ],
+                          "constraints": [
+                              "One authorized public repository and one immutable commit only.",
+                              "Read-only access with no write permissions, deployments, account changes, outreach, or access outside the authorized scope.",
+                              "Explicit human review and separate client-delivery authorization remain required."
+                          ],
+                          "engagement_mode": "client",
+                          "client_identity": client_identity,
+                          "project_identity": project_identity,
+                          "primary_technical_contact": contact,
+                          "access_method": access_method,
+                          "authorized_scope": scope,
+                          "repository_identity": repository,
+                          "authorization_confirmation": "confirmed"
+                      }
+                  }
+              }
+          }
           intake = {
               "run_id": run_id,
               "repository": repository,
@@ -102,42 +149,15 @@ jobs:
               "expected_commit_sha": commit_sha,
               "customer_id": customer_id,
               "project_id": project_id,
-              "client_name": "SARA / BoneManTGRM",
-              "project_name": "SARA — First Controlled Production Pilot",
+              "client_name": client_identity,
+              "project_name": project_identity,
               "assessment_depth": "strategic",
               "report_language": "en",
               "authorized": True,
               "authorization_confirmed": True,
               "authorized_by": "Cody Ryan Jenkins / BoneManTGRM",
               "authorization_scope": scope,
-              "human_evidence": {
-                  "modules": {
-                      "stakeholder_context": {
-                          "reviewer": "Cody Ryan Jenkins",
-                          "observed_at": observed_at,
-                          "source_reference": "Explicit repository-assessment and pilot authorization supplied by the owner in the active ChatGPT work session on 2026-09-03.",
-                          "evidence": {
-                              "objectives": [
-                                  "Complete NICO's first owner-controlled production client pilot and produce an exact approved final report package.",
-                                  "Verify the production client workflow without widening repository scope or granting write access."
-                              ],
-                              "constraints": [
-                                  "One authorized public repository and one immutable commit only.",
-                                  "Read-only access with no write permissions, deployments, account changes, outreach, or access outside the authorized scope.",
-                                  "Explicit human review and separate client-delivery authorization remain required."
-                              ],
-                              "engagement_mode": "client",
-                              "client_identity": "SARA / BoneManTGRM",
-                              "project_identity": "SARA — First Controlled Production Pilot",
-                              "primary_technical_contact": "Cody Ryan Jenkins (GitHub: BoneManTGRM)",
-                              "access_method": "Authorized public GitHub repository using anonymous read-only access with no write permissions.",
-                              "authorized_scope": scope,
-                              "repository_identity": repository,
-                              "authorization_confirmation": "confirmed"
-                          }
-                      }
-                  }
-              }
+              "human_evidence": human_evidence,
           }
 
           _, started = call("POST", "/api/nico/assessment/comprehensive-intake", intake)
@@ -194,6 +214,7 @@ jobs:
           )
           report_identity = report.get("identity") if isinstance(report.get("identity"), dict) else {}
           assessment = report.get("assessment") if isinstance(report.get("assessment"), dict) else {}
+          report_human = report.get("human_evidence") if isinstance(report.get("human_evidence"), dict) else {}
           checks = {
               "run_id": str(report_identity.get("run_id") or "") == run_id,
               "commit_sha": str(report_identity.get("commit_sha") or "").lower() == commit_sha,
@@ -220,6 +241,9 @@ jobs:
               "review_required_candidate_count": assessment.get("review_required_candidate_count"),
               "canonical_finding_count": assessment.get("canonical_finding_count"),
               "client_delivery_allowed": report.get("client_delivery_allowed"),
+              "engagement_mode": report_human.get("engagement_mode"),
+              "client_identity": report_human.get("client_identity"),
+              "project_identity": report_human.get("project_identity"),
           }
           print("SARA_CONTROLLED_PILOT_V2_TERMINAL=" + json.dumps(summary, sort_keys=True))
           with open("sara-controlled-pilot-v2-summary.json", "w", encoding="utf-8") as handle:
