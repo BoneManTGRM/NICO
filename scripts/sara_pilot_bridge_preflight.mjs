@@ -18,7 +18,7 @@ const APPROVAL_ROLE_ALLOWLIST = new Set([
   "security specialist",
   "security reviewer",
 ]);
-const URL = `https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/${RUN_ID}/report/json`;
+const REPORT_URL = `https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/${RUN_ID}/report/json`;
 
 function record(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -41,7 +41,7 @@ if (!APPROVAL_ROLE_ALLOWLIST.has(REVIEWER_ROLE.toLowerCase())) {
   throw new Error(`reviewer role is not authorized by NICO's final approval contract: ${REVIEWER_ROLE}`);
 }
 const helperSource = await readFile(
-  new URL("../apps/web/app/api/pilot/sara-finalize/_pilot.ts", import.meta.url),
+  new globalThis.URL("../apps/web/app/api/pilot/sara-finalize/_pilot.ts", import.meta.url),
   "utf8",
 );
 if (!helperSource.includes(`export const REVIEWER_ROLE = "${REVIEWER_ROLE}";`)) {
@@ -51,7 +51,7 @@ if (helperSource.includes('export const REVIEWER_ROLE = "Owner and authorized re
   throw new Error("secure finalization helper retained the rejected owner-only role");
 }
 
-const response = await fetch(URL, {
+const response = await fetch(REPORT_URL, {
   headers: {Accept: "application/json", "User-Agent": "NICO-SARA-Bridge-Preflight/3.0"},
   cache: "no-store",
 });
