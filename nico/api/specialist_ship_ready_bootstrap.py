@@ -18,15 +18,21 @@ from nico.specialist_access_v1 import (  # noqa: E402
     SESSION_SIGNING_SECRET_ENV,
     install_specialist_access,
 )
+from nico.specialist_review_session_bridge_v1 import (  # noqa: E402
+    install_specialist_review_session_bridge,
+)
 
 SPECIALIST_READINESS_ROUTE = "/diagnostics/specialist-readiness"
 app = production_app
 SPECIALIST_ACCESS = install_specialist_access(app)
+REVIEW_SESSION_BRIDGE = install_specialist_review_session_bridge(app)
 
 if RELEASE_PROVENANCE.get("installed") is not True:
     raise RuntimeError("NICO release provenance binding was not installed")
 if SPECIALIST_ACCESS.get("installed") is not True:
     raise RuntimeError("NICO specialist access boundary was not installed")
+if REVIEW_SESSION_BRIDGE.get("installed") is not True:
+    raise RuntimeError("NICO specialist review-session bridge was not installed")
 
 
 def _route_count(path: str) -> int:
@@ -71,6 +77,7 @@ def specialist_readiness() -> dict[str, Any]:
     )
     session_signing_configured = SPECIALIST_ACCESS.get("session_signing_configured") is True
     generic_operator_password_configured = bool(credentials["operator"])
+    review_session_bridge_installed = REVIEW_SESSION_BRIDGE.get("installed") is True
     release_identity_complete = (
         release.get("deployment_identity_established") is True
         and release.get("frontend_identity_established") is True
@@ -81,6 +88,7 @@ def specialist_readiness() -> dict[str, Any]:
             session_signing_configured,
             generic_operator_password_configured,
             credential_separation,
+            review_session_bridge_installed,
             runtime_ready,
             release_identity_complete,
         )
@@ -90,6 +98,7 @@ def specialist_readiness() -> dict[str, Any]:
         "status": "ready" if ready else "blocked",
         "specialist_access_installed": SPECIALIST_ACCESS.get("installed") is True,
         "authenticated_comprehensive_routes_enforced": True,
+        "signed_review_sessions_enforced": review_session_bridge_installed,
         "operator_password_configured": generic_operator_password_configured,
         "generic_operator_password_configured": generic_operator_password_configured,
         "legacy_operator_password_configured": bool(credentials["legacy_operator"]),
@@ -123,11 +132,13 @@ if _route_count(SPECIALIST_READINESS_ROUTE) == 0:
 # establish a signing key. Production verification must prove readiness is true.
 app.state.nico_release_provenance = RELEASE_PROVENANCE
 app.state.nico_specialist_access = SPECIALIST_ACCESS
+app.state.nico_specialist_review_session_bridge = REVIEW_SESSION_BRIDGE
 
 __all__ = [
     "app",
     "RELEASE_PROVENANCE",
     "SPECIALIST_ACCESS",
+    "REVIEW_SESSION_BRIDGE",
     "SPECIALIST_READINESS_ROUTE",
     "specialist_readiness",
 ]
