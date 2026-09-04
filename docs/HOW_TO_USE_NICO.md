@@ -1,387 +1,273 @@
-# How to Use NICO
-
-NICO is an authorized technical assessment, repair-intelligence, QA/parity, and retainer-ops platform. It is designed to collect evidence, explain risk, recommend fixes, and create approval-gated repair workflows. It does not replace human review.
-
-## Golden rules
-
-1. Only use NICO on systems you own or have written permission to assess.
-2. Treat every result as evidence-bound, not magic truth.
-3. Missing evidence must stay marked as unavailable.
-4. Code changes should be suggestions or draft PRs only.
-5. Never push directly to main or deploy automatically.
-6. Human review is required before client delivery.
-
-## Dashboard
-
-Use the dashboard first to confirm the system is healthy.
-
-Step by step:
-
-1. Open `https://app.nicoaudit.com`.
-2. Check Backend Health.
-3. Confirm the backend says `ok`.
-4. Review target coverage.
-5. Check whether Express, Mid, and Retainer workflows have latest runs.
-6. Review storage status.
-7. If persistence is unavailable, understand that current results may not survive backend restart.
-
-What to look for:
-
-- Backend online
-- Target coverage visible
-- Storage status visible
-- Latest workflow status visible
-- No unavailable backend warnings
-
-## Express Assessment
-
-Use Express when a client wants a fast technical health assessment of a repository.
-
-Step by step:
-
-1. Get written authorization from the client.
-2. Confirm the repo is owned by the client or explicitly authorized.
-3. Enter repository as `owner/repo`, for example `BoneManTGRM/NICO`.
-4. Add client name and project name if available.
-5. Check the authorization box.
-6. Run the Express assessment.
-7. Review maturity signal.
-8. Review every section:
-   - Code Audit
-   - Dependency / Library Ecosystem
-   - Secrets Exposure Review
-   - Static Analysis
-   - CI/CD Analysis
-   - Architecture & Technical Debt
-   - Velocity / Complexity
-9. Review unavailable-data notes.
-10. Export Markdown, HTML, or PDF.
-11. Human-review the final report before sending it to the client.
-
-Good Express output should answer:
-
-- Is the repo healthy?
-- Are dependencies risky or unclear?
-- Is CI/CD mature?
-- Are there obvious architecture/debt risks?
-- What should be fixed first?
-- What evidence supports each conclusion?
-
-## Scanner Worker
-
-Use the scanner worker when you want deeper technical evidence from tool availability and, later, sandboxed scanner execution.
-
-Current safe MVP behavior:
-
-- Creates a job ID.
-- Requires authorization.
-- Checks scanner availability.
-- Stores status and unavailable notes.
-- Does not clone or modify code in this safe MVP phase.
-
-Step by step:
-
-1. Confirm customer authorization.
-2. Submit repository, customer ID, project ID, authorized by, and scope.
-3. Start worker scan.
-4. Copy the returned `scan_id`.
-5. Poll `/worker/scan/{scan_id}`.
-6. Review scanner results.
-7. Treat unavailable tools as missing evidence, not a pass.
-8. Use the result in the client report only after human review.
-
-Scanner statuses:
-
-- `queued`: job accepted.
-- `running`: job in progress.
-- `complete`: job finished.
-- `failed`: job failed safely.
-- `unavailable`: tool or evidence unavailable.
-
-## Mid Assessment
-
-Use Mid when the client needs QA, platform parity, stakeholder context, and roadmap planning.
-
-Step by step:
-
-1. Collect QA evidence:
-   - bug reports
-   - screenshots
-   - screen recordings
-   - crash logs
-   - reproduction steps
-2. Collect platform parity notes:
-   - iOS vs Android
-   - web vs mobile
-   - feature differences
-   - copy differences
-   - permission differences
-3. Collect stakeholder notes:
-   - goals
-   - pain points
-   - deadlines
-   - business risks
-4. Collect roadmap notes:
-   - near-term fixes
-   - medium-term product goals
-   - dependencies
-   - staffing constraints
-5. Add known risks.
-6. Run Mid workflow.
-7. Review evidence readiness score.
-8. Review unavailable-data notes.
-9. Review QA checklist and parity checklist.
-10. Human-review roadmap before client delivery.
-
-Good Mid output should answer:
-
-- What user flows are risky?
-- What platform gaps exist?
-- What stakeholder concerns matter?
-- What should happen in the next 6 months?
-- What evidence is still missing?
-
-## Evidence Uploads
-
-Use evidence uploads to attach client materials to a project/run.
-
-Supported evidence:
-
-- text notes
-- markdown
-- CSV
-- JSON
-- PDFs
-- PNG/JPEG/WebP images
-- MP4 videos
-
-Step by step:
-
-1. Choose customer/project.
-2. Choose workflow run if available.
-3. Upload evidence file.
-4. Check upload response.
-5. If text preview is extracted, review it.
-6. If file is PDF/media, check unavailable notes.
-7. Do not invent conclusions from unreadable files.
-8. Attach useful evidence to Mid or report package.
-
-Important limits:
-
-- Files are treated as untrusted input.
-- The safe MVP stores metadata and text preview only.
-- Private file storage should be configured before retaining full customer uploads.
-
-## Retainer Ops
-
-Use Retainer Ops for ongoing customer support after an initial assessment.
-
-Step by step:
-
-1. Collect weekly delivery evidence:
-   - commits
-   - PRs
-   - issues
-   - blockers
-   - release notes
-   - roadmap progress
-2. Run Retainer Ops workflow.
-3. Review Weekly Delivery Status.
-4. Review Backlog Health.
-5. Review Release Readiness.
-6. Review Monthly Strategy.
-7. Review Blockers / Approval Needs.
-8. Export weekly or monthly report.
-9. Human-review before sending to client.
-
-Good Retainer output should answer:
-
-- What changed this week?
-- What is blocked?
-- What is risky?
-- What should be fixed next?
-- What needs client approval?
-
-## Repair Intelligence
-
-Use Repair Intelligence when NICO finds a problem and you want a safer suggested fix.
-
-Step by step:
-
-1. Start from a finding, failed test, unavailable evidence, or scanner result.
-2. Provide the issue description.
-3. Attach evidence.
-4. List affected files or systems if known.
-5. Request repair suggestion.
-6. Review suggested strategy.
-7. Review risk level.
-8. Review test plan.
-9. Review rollback plan.
-10. If the fix looks appropriate, create an approval item.
-11. Only after approval, request a draft PR path.
-
-Good repair suggestions include:
-
-- evidence
-- root-cause hypothesis
-- affected files
-- minimal proposed change
-- test plan
-- rollback plan
-- risk level
-- human approval gate
-
-Bad repair behavior:
-
-- editing main directly
-- deploying automatically
-- claiming untested fixes are verified
-- creating PRs without approval
-- inventing root cause without evidence
-
-## Approval Queue
-
-Use the approval queue before any code-change workflow.
-
-Step by step:
-
-1. Create approval item.
-2. Include requested action.
-3. Add evidence.
-4. Add affected files or systems.
-5. Set risk level.
-6. Add test plan.
-7. Add rollback plan.
-8. Human reviewer approves, rejects, or asks for more evidence.
-9. Only approved items can move toward draft PR request.
-10. Keep audit trail.
-
-Approval states:
-
-- `pending`: waiting for decision.
-- `approved`: human allowed the next step.
-- `rejected`: do not proceed.
-- `needs_more_evidence`: collect more proof.
-- `expired`: old or stale approval.
-- `executed`: approved action was completed.
-
-## Draft PR Request
-
-Use this only after approval.
-
-Step by step:
-
-1. Confirm approval item status is `approved`.
-2. Confirm requested action is appropriate.
-3. Confirm affected files are known.
-4. Confirm test plan exists.
-5. Confirm rollback plan exists.
-6. Request draft PR.
-7. In the safe MVP, GitHub write integration remains unavailable and no branch/PR is created.
-8. When GitHub write integration is enabled later, NICO should create only a draft branch and draft PR.
-
-Strict policy:
-
-- never push to main
-- never auto-merge
-- never deploy
-- never edit production systems
-- never create PRs without approval
-
-## Reports
-
-Use reports to prepare client-ready deliverables.
-
-Step by step:
-
-1. Choose report type:
-   - Executive report
-   - Technical report
-   - Risk register
-   - Evidence appendix
-   - Roadmap
-   - Retainer weekly status
-   - Retainer monthly strategy
-2. Confirm client name and project name.
-3. Confirm repository/source scope.
-4. Confirm authorization statement.
-5. Include maturity signal.
-6. Include evidence readiness.
-7. Include findings and risks.
-8. Include unavailable-data notes.
-9. Include next steps.
-10. Export Markdown, HTML, JSON, or PDF where available.
-11. Human-review before client delivery.
-
-## GitHub App Plan
-
-Use this when preparing real customer onboarding.
-
-Step by step:
-
-1. Start with read-only permissions.
-2. Allow selected repositories only.
-3. Do not expose installation tokens to browser.
-4. Store installation metadata.
-5. Keep write permissions disabled by default.
-6. Enable draft PR permissions only after customer approval and implementation review.
-
-Recommended initial permissions:
-
-- metadata read
-- contents read
-- pull requests read
-- issues read
-- actions read
-- checks read
-
-Optional later permissions:
-
-- contents write for draft repair branches only
-- pull requests write for draft PR creation only
-- issues write for approval-gated issue creation only
-
-## Customer and tenant controls
-
-Use these controls before working with real customers.
-
-Step by step:
-
-1. Assign each customer a `customer_id`.
-2. Assign each project a `project_id`.
-3. Scope every repo, report, evidence item, scanner job, and approval item to customer/project.
-4. Use roles:
-   - owner
-   - admin
-   - reviewer
-   - viewer
-5. Only owners/admins should run scans.
-6. Only approved reviewers/admins/owners should approve actions.
-7. Never mix customer data.
-
-## Recommended real-customer workflow
-
-1. Customer signs authorization.
-2. Customer selects repository/project scope.
-3. Run Express.
-4. Upload QA/client evidence.
-5. Run Mid if needed.
-6. Create report package.
-7. Review findings with client.
-8. Create repair suggestions.
-9. Add approval queue items.
-10. After approval, create draft PR requests.
-11. CI runs.
-12. Human reviews.
-13. Customer merges.
-14. Retainer Ops tracks progress weekly/monthly.
-
-## What NICO should sell
-
-NICO should be sold as:
-
-> An authorized technical assessment and repair-intelligence platform that gives clients evidence-backed clarity, risk ranking, repair recommendations, reports, and approval-gated remediation workflows.
-
-Do not sell NICO as:
-
-> A tool that automatically replaces engineers or rewrites production code without review.
+# NICO Cybersecurity Specialist Operating Manual
+
+NICO is shipped as an authenticated, specialist-operated Comprehensive technical assessment system. It collects repository evidence at an immutable revision, runs bounded analysis and scanners, generates cross-format reports, preserves unavailable evidence, and requires explicit human review before client delivery.
+
+This production workflow is for an accountable cybersecurity professional. It does not depend on Cody or SARA to run, review, approve, or deliver an assessment.
+
+## Production authority boundary
+
+NICO may:
+
+- acquire authorized read-only repository evidence
+- bind the assessment to an exact commit
+- run the configured bounded scanner and analysis pipeline
+- generate canonical JSON, Markdown, HTML, and PDF artifacts
+- create an exception-first technical review queue
+- preserve review and delivery certificates for the exact artifact set
+
+NICO may not:
+
+- assess a repository without written authorization
+- treat missing evidence as a pass
+- modify the client repository
+- push code, merge pull requests, or deploy client software
+- silently repeat an ambiguous paid intake or human decision
+- mark a report client-ready before exact-artifact review and delivery authorization
+
+## Required production configuration
+
+The hosting operator configures these secrets and identities before a specialist receives access:
+
+- `DATABASE_URL`: durable PostgreSQL storage for run and review state
+- `NICO_COMPREHENSIVE_OPERATOR_PASSWORD`: the bounded specialist login credential
+- `NICO_OPERATOR_SESSION_SIGNING_SECRET`: an independent random secret of at least 32 bytes
+- `NICO_ADMIN_TOKEN`: a separate site-administration credential that is not given to the specialist
+- `NICO_RELEASE_COMMIT_SHA`: the exact deployed backend commit
+- `NICO_FRONTEND_BUILD_COMMIT_SHA`: the exact deployed frontend commit
+
+Optional bounded controls:
+
+- `NICO_SPECIALIST_SESSION_TTL_SECONDS`, default 14,400 seconds
+- `NICO_SPECIALIST_LOGIN_LIMIT_PER_MINUTE`, default 10
+- `NICO_SPECIALIST_REQUEST_LIMIT_PER_MINUTE`, default 240
+- `NICO_SPECIALIST_INTAKE_LIMIT_PER_HOUR`, default 12
+
+`NICO_SARA_OPERATOR_PASSWORD` is retained only as a migration-compatible credential name. New handoffs use `NICO_COMPREHENSIVE_OPERATOR_PASSWORD`. Remove the legacy variable after the specialist credential has been rotated and verified.
+
+The specialist password and session-signing secret must be different. The specialist password must also be different from `NICO_ADMIN_TOKEN`.
+
+## Sign in
+
+1. Open the production NICO site.
+2. The root page redirects to **Cybersecurity specialist access**.
+3. Enter the private NICO operator password.
+4. NICO exchanges the password for a signed, short-lived, HttpOnly, SameSite=Strict session cookie.
+5. The password is not stored in the URL, local storage, or session storage.
+6. After the session expires, sign in again.
+
+Do not share the specialist password by email, chat, screenshots, or client reports. Rotate it when a specialist leaves the engagement or when exposure is suspected.
+
+## Supported assessment intake
+
+The public site intake is designed for a repository that NICO can acquire through an authorized read-only provider path.
+
+For each engagement, retain:
+
+- client legal or accountable name
+- project name
+- primary technical contact
+- access method
+- written authorization and exact authorized scope
+- repository identifier
+- evidence supplied directly by the client
+- requested report language
+
+Never paste a provider token, password, private key, or secret into the browser intake form. Private-provider access must use a server-side read-only credential configured by the hosting operator. The browser must never receive that credential.
+
+## Start a Comprehensive assessment
+
+1. Confirm written authorization covers the exact repository and assessment scope.
+2. Sign in to NICO.
+3. Open **Comprehensive Assessment**.
+4. Select the repository provider and enter the canonical repository URL or identifier.
+5. Enter the client and project display names.
+6. Complete or explicitly mark unavailable each engagement-context field.
+7. Add client-supplied evidence only when its origin and meaning are known.
+8. Confirm authorization.
+9. Start the assessment once.
+10. Record the generated `comprun_...` run ID.
+
+NICO reserves the run identity before provider acquisition. A network timeout during intake can leave the upstream outcome uncertain. Do not start another paid assessment until the exact reserved run ID has been checked.
+
+## Immutable run behavior
+
+A valid run is bound to:
+
+- repository
+- exact commit SHA
+- run ID
+- evidence ledger ID
+- customer and project scope
+- report language
+- engagement metadata digest
+
+Do not replace a run with another revision during review. A new commit requires a new assessment.
+
+The browser stores only the minimum run-recovery identity needed to resume the exact run. Closing the page or losing connectivity does not authorize creating a replacement run.
+
+## Monitor and recover a run
+
+The pipeline advances one bounded stage at a time. Scanner and report stages can take several minutes.
+
+When the browser reports a transport timeout:
+
+1. Keep the exact run ID.
+2. Use **Check again** or reopen the exact run.
+3. Let the idempotent status read recover durable truth.
+4. Do not repeat an intake, continuation, review decision, or delivery authorization merely because the browser timed out.
+
+A run is not deliverable when it is:
+
+- running
+- blocked
+- failed
+- timed out without recovered terminal truth
+- missing durable storage proof
+- missing final artifacts
+- pending human review
+- approved but pending separate delivery authorization
+
+## Review scanner and evidence truth
+
+At the terminal review boundary, open the exception-first reviewer queue for the exact run.
+
+The specialist reviews:
+
+- failed scanner executions
+- timed-out scanner executions
+- unavailable tools or evidence
+- secret-exposure candidates
+- dependency and vulnerability candidates
+- static-analysis candidates
+- candidate lineage and deduplication
+- evidence limitations
+- score and assurance boundaries
+- business or stakeholder statements that automation cannot verify
+
+A low or zero review-work count is not automatically a pass. Confirm that the candidate register, scanner execution records, and unavailable-evidence disclosures reconcile with the final report.
+
+## Download the pre-approval report
+
+Before approval:
+
+1. Open **Internal final review** for the exact run.
+2. Identify the accountable reviewer and select an authorized cybersecurity reviewer role.
+3. Open the exact review package.
+4. Download the pre-approval PDF.
+5. Verify the PDF opens and the displayed run, repository, commit, language, and artifact digest match the review screen.
+6. Read the scorecard, findings, limitations, evidence appendix, and release-provenance page.
+7. Confirm the browser-computed PDF digest matches the server-bound digest.
+
+The pre-approval PDF must remain visibly marked as an automated draft pending human approval. It is not a client deliverable.
+
+## Make the human review decision
+
+The specialist has three bounded decisions:
+
+### Approve
+
+Approve only after reviewing the exact downloaded artifact. Approval creates an accepted edition and human-review certificate without changing the technical analysis.
+
+### Request more evidence
+
+Use this when evidence is insufficient. Record a specific reason. The unchanged report cannot later be approved. Start a new assessment with the requested evidence.
+
+### Reject
+
+Use this when the report is not fit for client delivery. Record a specific reason. Rejection remains bound to the exact artifact set.
+
+Every decision must identify the reviewer, reviewer role, time, reason, exact artifact identity, and certificate digest.
+
+## Review the approved final PDF
+
+Approval and delivery authorization are separate.
+
+After approval:
+
+1. Download the generated **APPROVED FINAL** PDF.
+2. Verify that its technical content still matches the reviewed report.
+3. Verify the appended human-review certificate.
+4. Verify the approved PDF digest and accepted-edition manifest digest.
+5. Read the approved PDF itself before authorizing delivery.
+
+Approval alone does not permit client delivery.
+
+## Authorize client delivery
+
+Authorize delivery only after reviewing the approved final PDF.
+
+1. Confirm the exact approved PDF digest.
+2. Confirm the accepted-edition manifest.
+3. Confirm the delivery authorization statement.
+4. Explicitly authorize client delivery.
+5. Download the certified delivery ZIP.
+6. Verify the ZIP opens and contains the expected report and certificate artifacts.
+7. Send only the certified package or its approved final PDF to the client.
+
+The delivered package must remain bound to the same repository, commit, run ID, evidence ledger, report language, approved PDF digest, reviewer certificate, and delivery certificate.
+
+## Verify release provenance
+
+Every generated report includes a **NICO Release Provenance** section in canonical JSON, Markdown, HTML, and PDF.
+
+Before paid delivery, verify:
+
+- `deployment_identity_established` is `true`
+- `backend_build_commit` is the exact 40-character deployed commit
+- `frontend_build_commit` is the exact 40-character deployed commit
+- Railway deployment identity is present when supplied by the platform
+- report renderer version is present
+- OSV-Scanner, Gitleaks, TruffleHog, Semgrep, ESLint, and TypeScript versions are present or explicitly marked unavailable
+
+An unavailable value must remain unavailable. Do not infer a deployment or scanner version from repository history alone.
+
+## Confidentiality rules
+
+Treat all run data and artifacts as client-confidential.
+
+- Use one client and project scope per engagement.
+- Do not reuse a run for another client.
+- Do not send pre-approval artifacts externally.
+- Do not place credentials in evidence fields, notes, filenames, or reports.
+- Do not expose run IDs publicly even though a run ID is not sufficient authentication.
+- Store written authorization and the final delivered package in the engagement record.
+- Follow the client's retention and deletion requirements.
+
+## Specialist handoff checklist
+
+Before handing NICO to a cybersecurity professional, the hosting operator verifies:
+
+- production frontend and backend are deployed from the same approved release
+- PostgreSQL durability and container-replacement survival are green
+- the specialist login page is the only public entry to assessment operations
+- unauthenticated browser and direct-backend requests fail closed
+- the specialist password works and does not grant site administration
+- the independent session-signing secret is configured
+- English and Mexican Spanish assessment routes are gated
+- intake, exact-run status, continuation, reports, review, approval, and delivery require authentication
+- CodeQL and security checks are green
+- the complete CI suite is green
+- one non-client smoke run reaches the human-review boundary
+- one approved test artifact remains blocked until separate delivery authorization
+- the certified ZIP validates after authorization
+- release provenance appears in all four report formats
+- rollback to the prior release is available
+
+## Paid-engagement acceptance checklist
+
+Do not begin a paid client run until all answers are yes:
+
+1. Is written authorization retained?
+2. Is the repository and scope exact?
+3. Is read-only provider access working?
+4. Is durable storage green?
+5. Is the deployed release identity exact?
+6. Is the specialist session authenticated?
+7. Is the specialist prepared to review every exception and limitation?
+8. Is there a secure delivery channel for the approved package?
+9. Is the client aware that NICO does not modify or deploy their code?
+10. Is rollback available if production verification fails?
+
+## Operational non-goals
+
+The shipped specialist workflow does not require Cody or SARA. It does not use NICO as an autonomous employee, does not permit unattended client delivery, and does not turn automated analysis into professional approval. The accountable cybersecurity specialist remains the reviewer and delivery authorizer.
