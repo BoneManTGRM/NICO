@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable, Mapping
@@ -13,18 +14,33 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from nico.admin_security import require_comprehensive_operator
+from nico.github_actions_proof_auth_v1 import (
+    proof_audience,
+    verify_github_actions_oidc_token,
+)
 
-VERSION = "nico.specialist_access.v1"
+VERSION = "nico.specialist_access.v2"
 SESSION_ROUTE = "/assessment/comprehensive-operator/session"
+GITHUB_ACTIONS_SESSION_ROUTE = "/assessment/github-actions-production-proof/session"
 SESSION_HEADER = "x-nico-operator-session"
 ADMIN_HEADER = "x-nico-admin-token"
 SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"
+SPECIALIST_SCOPE = "nico_specialist_operation"
+PRODUCTION_PROOF_SCOPE = "nico_production_proof"
+_ALLOWED_SESSION_SCOPES = {SPECIALIST_SCOPE, PRODUCTION_PROOF_SCOPE}
 _MINIMUM_SIGNING_SECRET_BYTES = 32
 _PROTECTED_PREFIX = "/assessment/"
+_PROOF_STATUS = re.compile(r"^/assessment/comprehensive-run/[^/]+$")
+_PROOF_CONTINUE = re.compile(r"^/assessment/comprehensive-run/[^/]+/continue$")
+_PROOF_ARTIFACT = re.compile(
+    r"^/assessment/comprehensive-run/[^/]+/"
+    r"(?:report/(?:markdown|html|json|pdf)|localized-report/(?:en|es-MX)(?:/pdf)?)$"
+)
 
 
 def _integer_env(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -60,19 +76,37 @@ def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + padding)
 
 
-def issue_specialist_session(authority: Mapping[str, Any], *, now: int | None = None) -> tuple[str, int]:
+def issue_specialist_session(
+    authority: Mapping[str, Any],
+    *,
+    now: int | None = None,
+    scope: str = SPECIALIST_SCOPE,
+    ttl_seconds: int | None = None,
+    retained_claims: Mapping[str, Any] | None = None,
+) -> tuple[str, int]:
     secret = _session_secret()
     if secret is None:
         raise RuntimeError("specialist_session_signing_secret_unavailable")
+    normalized_scope = str(scope or "").strip()
+    if normalized_scope not in _ALLOWED_SESSION_SCOPES:
+        raise ValueError("specialist_session_scope_invalid")
     issued_at = int(time.time() if now is None else now)
-    ttl = _session_ttl_seconds()
-    payload = {
-        "v": 1,
+    default_ttl = _session_ttl_seconds()
+    ttl = default_ttl if ttl_seconds is None else max(300, min(14_400, int(ttl_seconds)))
+    payload: dict[str, Any] = {
+        "v": 2,
         "iat": issued_at,
         "exp": issued_at + ttl,
         "authority": str(authority.get("authority") or "nico_comprehensive_operator"),
-        "scope": "nico_specialist_operation",
+        "scope": normalized_scope,
     }
+    if normalized_scope == PRODUCTION_PROOF_SCOPE:
+        claims = retained_claims if isinstance(retained_claims, Mapping) else {}
+        for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt"):
+            value = str(claims.get(key) or "").strip()
+            if not value:
+                raise ValueError(f"production_proof_session_{key}_required")
+            payload[key] = value[:600]
     encoded = _b64url_encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     )
@@ -93,7 +127,7 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
         payload = json.loads(_b64url_decode(encoded).decode("utf-8"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    if not isinstance(payload, dict) or payload.get("v") != 1:
+    if not isinstance(payload, dict) or payload.get("v") not in {1, 2}:
         return None
     current = int(time.time() if now is None else now)
     try:
@@ -103,15 +137,34 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
         return None
     if issued_at > current + 60 or expires_at <= current or expires_at - issued_at > 43_200:
         return None
-    if payload.get("scope") != "nico_specialist_operation":
+    scope = str(payload.get("scope") or "")
+    if scope not in _ALLOWED_SESSION_SCOPES:
+        return None
+    if scope == PRODUCTION_PROOF_SCOPE and any(
+        not str(payload.get(key) or "").strip()
+        for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt")
+    ):
         return None
     return payload
 
 
 def _protected_request(path: str) -> bool:
-    if path == SESSION_ROUTE:
+    if path in {SESSION_ROUTE, GITHUB_ACTIONS_SESSION_ROUTE}:
         return False
     return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)
+
+
+def _production_proof_request_allowed(method: str, path: str) -> bool:
+    normalized_method = str(method or "").upper()
+    if normalized_method == "POST" and path == "/assessment/comprehensive-intake":
+        return True
+    if normalized_method == "GET" and _PROOF_STATUS.fullmatch(path):
+        return True
+    if normalized_method == "POST" and _PROOF_CONTINUE.fullmatch(path):
+        return True
+    if normalized_method == "GET" and _PROOF_ARTIFACT.fullmatch(path):
+        return True
+    return False
 
 
 def _credential_fingerprint(request: Request, raw_token: str, session_token: str) -> str:
@@ -213,6 +266,12 @@ async def _specialist_access_middleware(
     else:
         return _authentication_response(401, "specialist_authentication_required")
 
+    if (
+        authority.get("scope") == PRODUCTION_PROOF_SCOPE
+        and not _production_proof_request_allowed(request.method, request.url.path)
+    ):
+        return _authentication_response(403, "production_proof_session_scope_forbidden")
+
     key = _credential_fingerprint(request, raw_token, session_token)
     general_limit = _integer_env("NICO_SPECIALIST_REQUEST_LIMIT_PER_MINUTE", 240, 30, 5000)
     if not _RATE_LIMITER.allowed(key, "general", limit=general_limit, window_seconds=60):
@@ -232,6 +291,19 @@ async def _specialist_access_middleware(
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-store, private, max-age=0"
     return response
+
+
+def _bearer_token(value: str) -> str:
+    scheme, _, token = str(value or "").strip().partition(" ")
+    if scheme.casefold() != "bearer" or not token.strip():
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "github_actions_oidc_bearer_required",
+                "message": "A GitHub Actions OIDC bearer token is required.",
+            },
+        )
+    return token.strip()
 
 
 def install_specialist_access(app: FastAPI) -> dict[str, Any]:
@@ -279,7 +351,7 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
             "artifact_schema": VERSION,
             "session_token": session_token,
             "expires_in": expires_in,
-            "scope": "nico_specialist_operation",
+            "scope": SPECIALIST_SCOPE,
         }
 
     async def validate_session(
@@ -301,8 +373,62 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
             "scope": payload["scope"],
         }
 
+    async def create_github_actions_proof_session(
+        authorization: str = Header(default=""),
+    ) -> Response:
+        encoded = _bearer_token(authorization)
+        try:
+            claims = await run_in_threadpool(
+                verify_github_actions_oidc_token,
+                encoded,
+            )
+            session_token, expires_in = issue_specialist_session(
+                {"authority": "github_actions_production_proof"},
+                scope=PRODUCTION_PROOF_SCOPE,
+                ttl_seconds=10_800,
+                retained_claims=claims,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": str(exc).split(":", 1)[0],
+                    "message": "GitHub Actions production-proof identity was not accepted.",
+                },
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": str(exc),
+                    "message": "Production-proof session signing is unavailable.",
+                },
+            ) from exc
+        return JSONResponse(
+            {
+                "status": "authenticated",
+                "artifact_schema": VERSION,
+                "session_token": session_token,
+                "expires_in": expires_in,
+                "scope": PRODUCTION_PROOF_SCOPE,
+                "repository": claims["repository"],
+                "release_sha": claims["sha"],
+                "workflow_ref": claims["workflow_ref"],
+                "run_id": claims["run_id"],
+                "run_attempt": claims["run_attempt"],
+                "oidc_audience": proof_audience(),
+            },
+            headers={"Cache-Control": "no-store, private, max-age=0"},
+        )
+
     app.add_api_route(SESSION_ROUTE, create_session, methods=["POST"], tags=["specialist-access"])
     app.add_api_route(SESSION_ROUTE, validate_session, methods=["GET"], tags=["specialist-access"])
+    app.add_api_route(
+        GITHUB_ACTIONS_SESSION_ROUTE,
+        create_github_actions_proof_session,
+        methods=["POST"],
+        tags=["specialist-access"],
+    )
     app.add_middleware(BaseHTTPMiddleware, dispatch=_specialist_access_middleware)
     status = {
         "artifact_schema": VERSION,
@@ -310,6 +436,8 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
         "protected_prefix": _PROTECTED_PREFIX,
         "all_assessment_routes_protected": True,
         "session_route": SESSION_ROUTE,
+        "github_actions_session_route": GITHUB_ACTIONS_SESSION_ROUTE,
+        "production_proof_scope_is_read_and_continue_only": True,
         "session_signing_configured": _session_secret() is not None,
         "rate_limiting": True,
         "client_delivery_allowed": False,
@@ -322,7 +450,10 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
 __all__ = [
     "VERSION",
     "SESSION_ROUTE",
+    "GITHUB_ACTIONS_SESSION_ROUTE",
     "SESSION_SIGNING_SECRET_ENV",
+    "SPECIALIST_SCOPE",
+    "PRODUCTION_PROOF_SCOPE",
     "install_specialist_access",
     "issue_specialist_session",
     "validate_specialist_session",
