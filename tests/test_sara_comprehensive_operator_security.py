@@ -1,5 +1,3 @@
-import hashlib
-
 from nico.admin_security import require_admin_write, require_comprehensive_operator
 
 
@@ -32,17 +30,15 @@ def test_master_admin_and_process_local_authority_remain_supported(monkeypatch):
     assert status["authority"] == "nico_admin"
 
 
-def test_sara_password_can_use_a_deploy_bound_sha256_verifier(monkeypatch):
-    password = "a-strong-machine-password-kept-only-by-sara"
+def test_legacy_fast_hash_verifier_is_not_accepted(monkeypatch):
     monkeypatch.delenv("NICO_SARA_OPERATOR_PASSWORD", raising=False)
     monkeypatch.setenv(
         "NICO_SARA_OPERATOR_PASSWORD_SHA256",
-        hashlib.sha256(password.encode("utf-8")).hexdigest(),
+        "282e0db5774a2613bf34e5bc25fde8df2ea180c59b261495cd67ba1d40e1207a",
     )
 
-    allowed, status = require_comprehensive_operator(password)
-    assert allowed is True
-    assert status["authority"] == "sara_comprehensive_operator"
-
-    denied, _ = require_comprehensive_operator(f"{password}-changed")
-    assert denied is False
+    allowed, status = require_comprehensive_operator(
+        "a-strong-machine-password-kept-only-by-sara"
+    )
+    assert allowed is False
+    assert status["configured"] is False

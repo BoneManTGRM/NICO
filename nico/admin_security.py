@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import hmac
 import os
 import secrets
@@ -8,10 +7,6 @@ from typing import Any
 
 ADMIN_TOKEN_ENV = "NICO_ADMIN_TOKEN"
 SARA_OPERATOR_PASSWORD_ENV = "NICO_SARA_OPERATOR_PASSWORD"
-SARA_OPERATOR_PASSWORD_SHA256_ENV = "NICO_SARA_OPERATOR_PASSWORD_SHA256"
-# This verifier is safe to publish: the corresponding 256-bit password exists
-# only in SARA's production secret store.
-DEPLOYED_SARA_OPERATOR_PASSWORD_SHA256 = "282e0db5774a2613bf34e5bc25fde8df2ea180c59b261495cd67ba1d40e1207a"
 _INTERNAL_ADMIN_TOKEN = secrets.token_urlsafe(48)
 
 
@@ -95,22 +90,8 @@ def require_comprehensive_operator(provided_token: str | None = None) -> tuple[b
             "scope": "comprehensive_review_and_delivery",
         }
     configured = os.getenv(SARA_OPERATOR_PASSWORD_ENV, "").strip()
-    configured_digest = (
-        os.getenv(SARA_OPERATOR_PASSWORD_SHA256_ENV, "").strip().lower()
-        or DEPLOYED_SARA_OPERATOR_PASSWORD_SHA256
-    )
-    digest_configured = bool(
-        len(configured_digest) == 64
-        and all(character in "0123456789abcdef" for character in configured_digest)
-    )
-    provided_digest = hashlib.sha256(str(provided_token or "").encode("utf-8")).hexdigest()
-    allowed = (
-        bool(configured and provided_token)
-        and hmac.compare_digest(str(provided_token), configured)
-    ) or (
-        bool(provided_token)
-        and digest_configured
-        and hmac.compare_digest(provided_digest, configured_digest)
+    allowed = bool(configured and provided_token) and hmac.compare_digest(
+        str(provided_token), configured
     )
     if allowed:
         return True, {
@@ -123,7 +104,7 @@ def require_comprehensive_operator(provided_token: str | None = None) -> tuple[b
     return False, {
         "status": "unavailable",
         "mode": "read_only",
-        "configured": bool(configured or digest_configured),
+        "configured": bool(configured),
         "scope": "comprehensive_review_and_delivery",
         "reason": "Comprehensive operator authentication is required.",
     }
@@ -142,7 +123,6 @@ def safe_public_admin_status() -> dict[str, Any]:
 __all__ = [
     "ADMIN_TOKEN_ENV",
     "SARA_OPERATOR_PASSWORD_ENV",
-    "SARA_OPERATOR_PASSWORD_SHA256_ENV",
     "admin_write_status",
     "internal_admin_token",
     "require_admin_write",
