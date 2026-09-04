@@ -18,7 +18,11 @@ def test_frontend_proxy_accepts_restricted_session_without_exposing_it():
     assert "print(session" not in auth
     assert "write_text(session" not in auth
     assert "write_bytes(session" not in auth
+
+    # Retain only a boolean proving that the credential was discarded. Never retain
+    # the credential itself under either the generic or proof-specific field name.
     assert 'result["production_proof_session_token_retained"] = False' in live
-    assert "session_token" not in " ".join(
-        line for line in live.splitlines() if "result[" in line
-    )
+    assert 'result["session_token"]' not in live
+    assert "result['session_token']" not in live
+    assert 'result["production_proof_session_token"]' not in live
+    assert "result['production_proof_session_token']" not in live
