@@ -5,8 +5,7 @@ import io
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
-from urllib.error import HTTPError
+from types import ModuleType, SimpleNamespace
 from urllib.request import Request
 
 import pytest
@@ -15,11 +14,40 @@ import yaml
 from scripts.github_actions_nico_proof_auth_v1 import AuthenticatedBrowser, SESSION_HEADER
 
 ROOT = Path(__file__).resolve().parents[1]
-# Executed scripts use sibling imports when invoked directly by Actions.
-SCRIPTS = str(ROOT / "scripts")
-if SCRIPTS not in sys.path:
-    sys.path.insert(0, SCRIPTS)
-consumer = importlib.import_module("completed_run_authenticated_two_pass_acceptance_v1")
+# Contract tests exercise transport/authentication with fake browsers. Real pinned
+# Chromium/WebKit behavior is verified by their dedicated CI jobs, not these workers.
+def _load_proof_module(monkeypatch, name):
+    playwright = ModuleType("playwright")
+    sync_api = ModuleType("playwright.sync_api")
+    for symbol in ("Browser", "Page", "Locator"):
+        setattr(sync_api, symbol, object)
+
+    def real_browser_is_not_a_unit_test():
+        raise AssertionError("contract_unit_test_attempted_to_launch_real_browser")
+
+    sync_api.sync_playwright = real_browser_is_not_a_unit_test
+    playwright.sync_api = sync_api
+    monkeypatch.setitem(sys.modules, "playwright", playwright)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    before = set(sys.modules)
+    loaded = importlib.import_module(name)
+    # Remove newly imported proof modules at teardown too: their captured type
+    # stubs must not leak into another test that intentionally installs Playwright.
+    for key in set(sys.modules) - before:
+        module = sys.modules.get(key)
+        location = getattr(module, "__file__", "") or ""
+        if str(ROOT / "scripts") in location:
+            sys.modules.pop(key)
+            monkeypatch.setitem(sys.modules, key, module)
+    return loaded
+
+
+@pytest.fixture
+def consumer(monkeypatch):
+    return _load_proof_module(
+        monkeypatch, "completed_run_authenticated_two_pass_acceptance_v1",
+    )
 
 WORKFLOWS = {
     "mobile-restart-production-proof.yml": "mobile_restart_authenticated_live_acceptance_v1.py",
@@ -87,7 +115,7 @@ def test_each_clean_browser_context_receives_only_origin_scoped_cookie():
     ("https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/run/report/json?next=other", "GET"),
     ("https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/run/report/json", "POST"),
 ])
-def test_report_credentials_are_rejected_before_untrusted_request(monkeypatch, url, method):
+def test_report_credentials_are_rejected_before_untrusted_request(monkeypatch, consumer, url, method):
     calls = []
     monkeypatch.setattr(consumer, "build_opener", lambda *_: SimpleNamespace(open=lambda *a, **kw: calls.append(a)))
     open_report = consumer.authenticated_report_opener("https://app.nicoaudit.com", "test-proof-session")
@@ -96,7 +124,7 @@ def test_report_credentials_are_rejected_before_untrusted_request(monkeypatch, u
     assert not calls
 
 
-def test_fresh_canonical_read_is_authenticated_and_digest_validated(monkeypatch):
+def test_fresh_canonical_read_is_authenticated_and_digest_validated(monkeypatch, consumer):
     canonical = {"identity": {"run_id": "comprun_test", "commit_sha": "b" * 40}}
     from scripts.comprehensive_production_run_handoff_v1 import canonical_json_sha256
     digest = canonical_json_sha256(canonical)
@@ -128,7 +156,7 @@ def test_fresh_canonical_read_is_authenticated_and_digest_validated(monkeypatch)
     ("ios_webkit_authenticated_live_acceptance_v1", "_launch_webkit"),
 ])
 def test_mobile_wrappers_authenticate_and_restore_launcher_even_on_failure(monkeypatch, name, launch):
-    module = importlib.import_module(name)
+    module = _load_proof_module(monkeypatch, name)
     monkeypatch.setattr(module.recovery, "parse_args", lambda _: SimpleNamespace(frontend_url="https://app.nicoaudit.com"))
     retained = {"scope": "nico_production_proof"}
     monkeypatch.setattr(module, "acquire_production_proof_session", lambda _: ("test-proof-session", retained))
