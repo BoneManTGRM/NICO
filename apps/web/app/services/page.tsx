@@ -35,6 +35,17 @@ const comprehensiveStages = [
   "Human review and final delivery",
 ];
 
+const deliveryModes = [
+  {
+    name: "Human-reviewed Comprehensive",
+    description: "A named authorized reviewer approves the exact evidence-bound report before separate client-delivery authorization.",
+  },
+  {
+    name: "Authorized Automated Technical Assessment",
+    description: "No human specialist review. Release is allowed only when deterministic checks pass, the review queue is empty, and the package discloses Human reviewed: No.",
+  },
+];
+
 export default function ServicesPage() {
   return (
     <main className="shell">
@@ -48,6 +59,21 @@ export default function ServicesPage() {
         <div className="hero-actions">
           <a href="/#assessment" className="primary-link">Run an assessment</a>
           <a href="/" className="secondary-link">Return to command center</a>
+        </div>
+      </section>
+
+      <section className="section panel">
+        <div className="section-head">
+          <div><p className="eyebrow">Delivery authorization</p><h2>Two truthful release modes</h2></div>
+          <span className="status blue">Mode disclosed in every package</span>
+        </div>
+        <div className="grid two">
+          {deliveryModes.map((mode) => (
+            <article key={mode.name} className="mini-panel">
+              <h3>{mode.name}</h3>
+              <p>{mode.description}</p>
+            </article>
+          ))}
         </div>
       </section>
 
