@@ -4,7 +4,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from nico.github_actions_proof_auth_v1 import validate_github_actions_claims
+from nico.github_actions_proof_auth_v1 import (
+    FINALIZER_WORKFLOW_PATH,
+    validate_github_actions_claims,
+)
 from nico.specialist_access_v1 import (
     GITHUB_ACTIONS_SESSION_ROUTE,
     PRODUCTION_PROOF_SCOPE,
@@ -12,6 +15,7 @@ from nico.specialist_access_v1 import (
     issue_specialist_session,
     validate_specialist_session,
 )
+from scripts.github_actions_nico_proof_auth_v1 import AuthenticatedBrowser
 
 
 SHA = "a" * 40
@@ -19,6 +23,7 @@ WORKFLOW_REF = (
     "BoneManTGRM/NICO/.github/workflows/"
     "spanish-comprehensive-production-proof.yml@refs/heads/main"
 )
+FINALIZER_WORKFLOW_REF = f"BoneManTGRM/NICO/{FINALIZER_WORKFLOW_PATH}@refs/heads/main"
 CLAIMS = {
     "repository": "BoneManTGRM/NICO",
     "ref": "refs/heads/main",
@@ -29,6 +34,12 @@ CLAIMS = {
     "run_id": "33899900001",
     "run_attempt": "1",
     "actor": "BoneManTGRM",
+}
+FINALIZER_CLAIMS = {
+    **CLAIMS,
+    "event_name": "workflow_run",
+    "workflow_ref": FINALIZER_WORKFLOW_REF,
+    "run_id": "33899900002",
 }
 
 
@@ -98,6 +109,21 @@ def test_exact_github_actions_claims_are_required(monkeypatch: pytest.MonkeyPatc
             validate_github_actions_claims(candidate)
 
 
+def test_exact_workflow_run_finalizer_identity_is_allowed(monkeypatch: pytest.MonkeyPatch):
+    _environment(monkeypatch)
+    accepted = validate_github_actions_claims(FINALIZER_CLAIMS)
+    assert accepted["workflow_ref"] == FINALIZER_WORKFLOW_REF
+    assert accepted["event_name"] == "workflow_run"
+
+    wrong_event = {**FINALIZER_CLAIMS, "event_name": "push"}
+    with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch:event_name"):
+        validate_github_actions_claims(wrong_event)
+
+    wrong_subject = {**FINALIZER_CLAIMS, "sub": "repo:BoneManTGRM/NICO:environment:production"}
+    with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch:sub"):
+        validate_github_actions_claims(wrong_subject)
+
+
 def test_production_proof_session_can_scan_but_cannot_approve_or_deliver(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -152,3 +178,42 @@ def test_oidc_exchange_issues_only_restricted_session(monkeypatch: pytest.Monkey
     assert session is not None
     assert session["scope"] == PRODUCTION_PROOF_SCOPE
     assert session["sha"] == SHA
+
+
+class _FakeContext:
+    def __init__(self) -> None:
+        self.cookies: list[dict[str, object]] = []
+
+    def add_cookies(self, cookies):
+        self.cookies.extend(cookies)
+
+
+class _FakeBrowser:
+    def __init__(self) -> None:
+        self.kwargs = None
+        self.context = _FakeContext()
+
+    def new_context(self, *args, **kwargs):
+        self.kwargs = kwargs
+        return self.context
+
+
+def test_browser_auth_is_cookie_scoped_and_never_global_header():
+    raw = _FakeBrowser()
+    wrapped = AuthenticatedBrowser(
+        raw,
+        session="scoped-session-token",
+        frontend_url="https://app.nicoaudit.com",
+    )
+    wrapped.new_context(extra_http_headers={"Cache-Control": "no-store"})
+    assert raw.kwargs == {"extra_http_headers": {"Cache-Control": "no-store"}}
+    assert raw.context.cookies == [
+        {
+            "name": "nico-specialist-session",
+            "value": "scoped-session-token",
+            "url": "https://app.nicoaudit.com",
+            "httpOnly": True,
+            "secure": True,
+            "sameSite": "Strict",
+        }
+    ]
