@@ -15,7 +15,9 @@ def test_frontend_proxy_accepts_restricted_session_without_exposing_it():
     assert "/assessment/github-actions-production-proof/session" in exchange
     assert '"Cache-Control": "no-store, private, max-age=0"' in exchange
     assert "ACTIONS_ID_TOKEN_REQUEST_TOKEN" in auth
-    assert "session_token_retained" not in auth
+    assert "print(session" not in auth
+    assert "write_text(session" not in auth
+    assert "write_bytes(session" not in auth
     assert 'result["production_proof_session_token_retained"] = False' in live
     assert "session_token" not in " ".join(
         line for line in live.splitlines() if "result[" in line
