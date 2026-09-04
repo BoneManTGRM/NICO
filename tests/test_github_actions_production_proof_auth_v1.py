@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 import pytest
 
 from nico.github_actions_proof_auth_v1 import (
-    FINALIZER_WORKFLOW_PATH,
+    CONSUMER_WORKFLOW_PATHS,
+    CONSUMER_ENVIRONMENT,
     validate_github_actions_claims,
 )
 from nico.specialist_access_v1 import (
@@ -23,7 +24,7 @@ WORKFLOW_REF = (
     "BoneManTGRM/NICO/.github/workflows/"
     "spanish-comprehensive-production-proof.yml@refs/heads/main"
 )
-FINALIZER_WORKFLOW_REF = f"BoneManTGRM/NICO/{FINALIZER_WORKFLOW_PATH}@refs/heads/main"
+
 CLAIMS = {
     "repository": "BoneManTGRM/NICO",
     "ref": "refs/heads/main",
@@ -35,12 +36,7 @@ CLAIMS = {
     "run_attempt": "1",
     "actor": "BoneManTGRM",
 }
-FINALIZER_CLAIMS = {
-    **CLAIMS,
-    "event_name": "workflow_run",
-    "workflow_ref": FINALIZER_WORKFLOW_REF,
-    "run_id": "33899900002",
-}
+
 
 
 def _app() -> FastAPI:
@@ -109,19 +105,60 @@ def test_exact_github_actions_claims_are_required(monkeypatch: pytest.MonkeyPatc
             validate_github_actions_claims(candidate)
 
 
-def test_exact_workflow_run_finalizer_identity_is_allowed(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("workflow_path", sorted(CONSUMER_WORKFLOW_PATHS))
+def test_only_exact_environment_bound_consumers_are_accepted(monkeypatch, workflow_path):
     _environment(monkeypatch)
-    accepted = validate_github_actions_claims(FINALIZER_CLAIMS)
-    assert accepted["workflow_ref"] == FINALIZER_WORKFLOW_REF
-    assert accepted["event_name"] == "workflow_run"
+    claims = {
+        **CLAIMS,
+        "event_name": "workflow_run",
+        "environment": CONSUMER_ENVIRONMENT,
+        "sub": f"repo:BoneManTGRM/NICO:environment:{CONSUMER_ENVIRONMENT}",
+        "workflow_ref": f"BoneManTGRM/NICO/{workflow_path}@refs/heads/main",
+    }
+    accepted = validate_github_actions_claims(claims)
+    assert accepted["proof_role"] == "consumer"
+    assert accepted["sha"] == SHA
+    for field, wrong in (
+        ("repository", "other/repo"), ("ref", "refs/heads/feature"),
+        ("sha", "b" * 40), ("environment", "production"),
+        ("sub", CLAIMS["sub"]), ("event_name", "pull_request"),
+        ("event_name", "push"), ("run_attempt", "0"),
+        ("workflow_ref", "BoneManTGRM/NICO/.github/workflows/untrusted.yml@refs/heads/main"),
+    ):
+        with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch"):
+            validate_github_actions_claims({**claims, field: wrong})
+    with pytest.raises(ValueError, match="environment"):
+        validate_github_actions_claims({k: v for k, v in claims.items() if k != "environment"})
 
-    wrong_event = {**FINALIZER_CLAIMS, "event_name": "push"}
-    with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch:event_name"):
-        validate_github_actions_claims(wrong_event)
 
-    wrong_subject = {**FINALIZER_CLAIMS, "sub": "repo:BoneManTGRM/NICO:environment:production"}
-    with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch:sub"):
-        validate_github_actions_claims(wrong_subject)
+def test_retired_finalizer_identity_is_not_accepted(monkeypatch):
+    _environment(monkeypatch)
+    with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch"):
+        validate_github_actions_claims({
+            **CLAIMS, "event_name": "workflow_run",
+            "workflow_ref": "BoneManTGRM/NICO/.github/workflows/specialist-production-proof-finalizer.yml@refs/heads/main",
+        })
+
+
+def test_consumer_session_cannot_start_continue_review_or_deliver(monkeypatch):
+    _environment(monkeypatch)
+    token, _ = issue_specialist_session(
+        {"authority": "github_actions_production_proof"},
+        scope=PRODUCTION_PROOF_SCOPE,
+        retained_claims={**CLAIMS, "proof_role": "consumer"},
+    )
+    client = TestClient(_app())
+    headers = {"X-NICO-Operator-Session": token}
+    assert client.get("/assessment/comprehensive-run/comprun_test", headers=headers).status_code == 200
+    assert client.get("/assessment/comprehensive-run/comprun_test/report/json", headers=headers).status_code == 200
+    for path in (
+        "/assessment/comprehensive-intake",
+        "/assessment/comprehensive-run/comprun_test/continue",
+        "/assessment/comprehensive-run/comprun_test/review",
+        "/assessment/comprehensive-run/comprun_test/authorize-delivery",
+    ):
+        assert client.post(path, headers=headers).status_code == 403
+    assert client.get("/assessment/comprehensive-run/comprun_test/approved-delivery-package", headers=headers).status_code == 403
 
 
 def test_production_proof_session_can_scan_but_cannot_approve_or_deliver(

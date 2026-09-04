@@ -38,6 +38,8 @@ def _write(path: Path, value: Any) -> None:
 def _read_final_canonical(
     frontend_url: str,
     run_id: str,
+    *,
+    open_request: Any = None,
 ) -> tuple[dict[str, Any], str]:
     """Read final immutable truth without Playwright's shorter socket idle limit."""
 
@@ -47,7 +49,8 @@ def _read_final_canonical(
         headers={"Accept": "application/json", "Cache-Control": "no-store"},
         method="GET",
     )
-    with urllib.request.urlopen(
+    open_request = open_request or urllib.request.urlopen
+    with open_request(
         request,
         timeout=FINAL_CANONICAL_READ_TIMEOUT_SECONDS,
     ) as response:
@@ -584,7 +587,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    browser_wrapper: Any = None,
+    open_request: Any = None,
+) -> int:
     args = parse_args(argv)
     if args.passes != 2 or args.observation_seconds < 90.0:
         raise ValueError("two passes with at least 90 seconds each are required")
@@ -602,8 +610,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        raw_browser = playwright.chromium.launch(headless=True)
         try:
+            browser = browser_wrapper(raw_browser) if browser_wrapper else raw_browser
             # The exact source proof is Spanish. Exercise that source-language
             # pass before the regenerated English pass so any browser-managed
             # target-language downloads are the final localized work in the run.
@@ -620,10 +629,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             runs = [first_pass, second_pass]
         finally:
-            browser.close()
+            raw_browser.close()
     canonical, canonical_digest = _read_final_canonical(
         args.frontend_url,
         handoff["run_id"],
+        open_request=open_request,
     )
     identity = canonical.get("identity") if isinstance(canonical, dict) else {}
     assert identity.get("run_id") == handoff["run_id"]
