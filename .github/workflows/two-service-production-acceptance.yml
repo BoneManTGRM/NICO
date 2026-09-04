@@ -12,19 +12,16 @@ permissions:
   contents: read
   actions: read
   statuses: write
-  id-token: write
 
 concurrency:
-  group: unified-production-acceptance-v3-${{ github.event.workflow_run.head_sha || github.ref }}
+  group: unified-production-acceptance-v2-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
   contract:
-    name: Validate authenticated unified acceptance contract
+    name: Validate unified acceptance contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
     steps:
       - name: Require successful main Spanish source proof
         if: github.event_name == 'workflow_run'
@@ -41,36 +38,100 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Compile and verify authenticated acceptance contract
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Compile acceptance runner and verify bounded contract
         run: |
           set -euo pipefail
-          python -m py_compile \
-            scripts/github_actions_proof_session_v1.py \
-            scripts/production_specialist_release_identity_v1.py \
-            scripts/comprehensive_production_run_handoff_v1.py \
-            scripts/authenticated_completed_run_acceptance_v1.py
+          python -m py_compile scripts/two_service_live_acceptance.py scripts/two_service_live_acceptance_v2.py scripts/two_service_live_acceptance_v3.py
+          python -m py_compile scripts/unified_production_acceptance.py scripts/unified_production_acceptance_authoritative.py scripts/production_frontend_release_identity.py
+          python -m py_compile scripts/comprehensive_production_run_handoff_v1.py scripts/completed_run_two_pass_acceptance_v1.py
+          python -m py_compile scripts/phase1_structured_artifact_audit_v1.py
           python - <<'PY'
           from pathlib import Path
-          workflow = Path(".github/workflows/two-service-production-acceptance.yml").read_text(encoding="utf-8")
-          verifier = Path("scripts/authenticated_completed_run_acceptance_v1.py").read_text(encoding="utf-8")
-          assert "id-token: write" in workflow
-          assert "authenticated_completed_run_acceptance_v1.py" in workflow
-          assert "production_specialist_release_identity_v1.py" in workflow
-          assert 'STATUS_CONTEXT: NICO Two-Service Production Acceptance' in workflow
-          assert '"read_only_pass_count": 2' in verifier
-          assert '"exact_release_provenance_verified": True' in verifier
-          assert '"client_delivery_allowed": False' in verifier
+
+          legacy = Path("scripts/two_service_live_acceptance.py").read_text(encoding="utf-8")
+          reconnect = Path("scripts/two_service_live_acceptance_v2.py").read_text(encoding="utf-8")
+          unified = Path("scripts/two_service_live_acceptance_v3.py").read_text(encoding="utf-8")
+          production = Path("scripts/unified_production_acceptance.py").read_text(encoding="utf-8")
+          authoritative = Path("scripts/unified_production_acceptance_authoritative.py").read_text(encoding="utf-8")
+          release_identity = Path("scripts/production_frontend_release_identity.py").read_text(encoding="utf-8")
+          closure_audit = Path("scripts/phase1_structured_artifact_audit_v1.py").read_text(encoding="utf-8")
+          workspace = Path("apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
+          controller = Path("apps/web/app/assessment/useAssessmentRun.ts").read_text(encoding="utf-8")
+
+          assert 'SERVICE_LABELS = {"express": "Express", "comprehensive": "Comprehensive"}' in legacy
+          assert 'passes=args.passes' in legacy
+          assert 'acceptance.status_reconnect = status_reconnect' in reconnect
+          assert 'return f"{parsed.scheme}://{parsed.netloc}{path}"' in reconnect
+          assert 'APIRequestContext: Invalid URL' in reconnect
+
+          assert 'LEGACY_WORKSPACE_SELECTOR' in unified
+          assert 'runtime._wait_for_service_terminal = _wait_for_service_terminal' in unified
+          assert 'runtime.run_service = _run_service_at_expected_commit' in unified
+          assert 'UI_BACKEND_RECONCILIATION_SECONDS' in unified
+          assert '"human_review_required": True' in unified
+          assert '"client_delivery_blocked": True' in unified
+          assert '"markdown_html_pdf_json_parity": True' in unified
+          assert '"comprehensive_depth_verified": True' in unified
+          assert '"post_run_reconnect_identity_preserved": True' in unified
+
+          assert 'ASSESSMENT_WORKSPACE_SELECTOR' in production
+          assert 'data-workspace="assessment"' in production
+          assert 'data-engagement-type="comprehensive"' in production
+          assert 'data-canonical-assessment="strategic"' in production
+          assert 'ASSESSMENT_RUN_SELECTOR' in production
+          assert 'data-assessment-primary-action' in production
+          assert 'Create engagement and capture repository snapshot' in production
+          assert 'Crear encargo y capturar instantánea del repositorio' in production
+          assert 'install_unified_workspace_contract' in production
+          assert 'COMPREHENSIVE_REPORT_IDENTITIES' in production
+          assert 'has_comprehensive_report_identity' in production
+          assert 'canonical_report_identity_verified' in production
+          assert 'acceptance.validate_report = validate_report' in production
+
+          assert 'install_authoritative_identity_reader' in authoritative
+          assert 'production.canonical_ui_state = authoritative_ui_state' in authoritative
+          assert 'production.acceptance.ui_state = authoritative_ui_state' in authoritative
+          assert 'production.unified._current_ui_state = authoritative_ui_state' in authoritative
+          assert 'production.unified._impl._safe_ui_state = authoritative_ui_state' in authoritative
+          assert 'expected_commit_sha' in authoritative
+          assert 'run_id' in authoritative
+
+          assert 'nico.frontend_production_release_identity.v1' in release_identity
+          assert 'A successful provider deployment status is insufficient' in release_identity
+          assert 'data-assessment-copy-contract="expert-engagement-v2"' in release_identity
+          assert 'Create engagement and capture repository snapshot' in release_identity
+          assert 'Crear encargo y capturar instantánea del repositorio' in release_identity
+
+          assert 'nico.phase1-structured-artifact-audit.v1' in closure_audit
+          assert 'candidate_register_sha256_observed' in closure_audit
+          assert 'automation_created_human_disposition' in closure_audit
+          assert 'workload.score_effect_not_none' in closure_audit
+
+          assert 'data-workspace="assessment"' in workspace
+          assert 'data-engagement-type="comprehensive"' in workspace
+          assert 'data-assessment-service-count' not in workspace
+          assert 'data-assessment-primary-action="true"' in workspace
+          assert 'data-assessment-authorization="true"' in workspace
+          assert 'issue ? <div' in workspace
+          assert 'setPhase("checking")' in controller
+          assert 'setPhase(normalized.kind === "run_failed" ? "failed" : "unavailable")' in controller
+          assert 'async function retry()' in controller
           PY
 
   live-production:
-    name: Observe one authenticated completed deployed run twice
+    name: Observe one completed deployed run twice
     if: >-
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main'
     needs: contract
     runs-on: ubuntu-latest
-    timeout-minutes: 210
+    timeout-minutes: 240
     environment: production-smoke
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
@@ -96,7 +157,7 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Publish pending unified acceptance status
+      - name: Publish pending acceptance status
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/status.json
@@ -104,7 +165,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated completed-run acceptance running",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} waiting for completed-run acceptance proof",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -116,16 +177,29 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
             --data-binary @/tmp/status.json
 
+      - name: Validate configured production scope
+        run: |
+          set -euo pipefail
+          test "${NICO_PRODUCTION_FRONTEND_URL}" = "https://app.nicoaudit.com"
+          test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "https://gitlab.com/gitlab-org/gitlab-test"
+          test -n "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}"
+          test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
+
       - name: Wait for exact frontend and backend deployments
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, os, time, urllib.request
+          import json
+          import os
+          import time
+          import urllib.request
+
           repository = os.environ["GITHUB_REPOSITORY"]
           sha = os.environ["RELEASE_SHA"]
           token = os.environ["GITHUB_TOKEN"]
           required = {"Vercel", os.environ["NICO_PRODUCTION_BACKEND_STATUS_CONTEXT"]}
           deadline = time.time() + 30 * 60
+          last = {}
           while time.time() < deadline:
               request = urllib.request.Request(
                   f"https://api.github.com/repos/{repository}/commits/{sha}/status",
@@ -133,30 +207,37 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-authenticated-unified-acceptance",
+                      "User-Agent": "nico-unified-acceptance",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
                   payload = json.loads(response.read().decode("utf-8"))
-              latest = {}
+              last = {}
               for item in payload.get("statuses") or []:
-                  latest.setdefault(str(item.get("context") or ""), str(item.get("state") or "unknown"))
-              observed = {context: latest.get(context, "missing") for context in required}
+                  context = str(item.get("context") or "")
+                  last.setdefault(context, str(item.get("state") or "unknown"))
+              observed = {context: last.get(context, "missing") for context in required}
               print(f"Deployment statuses: {observed}", flush=True)
-              if all(observed[context] == "success" for context in required): break
+              if all(observed[context] == "success" for context in required):
+                  break
               if any(observed[context] in {"error", "failure"} for context in required):
                   raise SystemExit(f"Deployment failed for exact SHA {sha}: {observed}")
               time.sleep(20)
           else:
-              raise SystemExit(f"Timed out waiting for exact SHA deployments: {observed}")
+              raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
           PY
 
-      - name: Wait for exact-source Mobile and iOS proofs
+      - name: Wait for serialized Mobile and iOS production proofs
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, os, time, urllib.request
+          import json
+          import os
+          import time
+          import urllib.request
+
           from scripts.comprehensive_production_run_handoff_v1 import select_source_bound_status
+
           repository = os.environ["GITHUB_REPOSITORY"]
           sha = os.environ["RELEASE_SHA"]
           token = os.environ["GITHUB_TOKEN"]
@@ -164,7 +245,10 @@ jobs:
               "NICO Mobile Restart Production Proof",
               "NICO iOS WebKit Paint Proof",
           }
-          deadline = time.time() + 190 * 60
+          source_run_id = os.environ["SOURCE_RUN_ID"]
+          source_run_attempt = os.environ["SOURCE_RUN_ATTEMPT"]
+          deadline = time.time() + 150 * 60
+          last = {}
           while time.time() < deadline:
               request = urllib.request.Request(
                   f"https://api.github.com/repos/{repository}/commits/{sha}/status",
@@ -172,7 +256,7 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-unified-wait-for-mobile-ios",
+                      "User-Agent": "nico-serialized-production-acceptance",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
@@ -181,32 +265,105 @@ jobs:
                   context: select_source_bound_status(
                       payload.get("statuses") or [],
                       context=context,
-                      source_workflow_run_id=os.environ["SOURCE_RUN_ID"],
-                      source_workflow_run_attempt=os.environ["SOURCE_RUN_ATTEMPT"],
+                      source_workflow_run_id=source_run_id,
+                      source_workflow_run_attempt=source_run_attempt,
                   )
                   for context in required
               }
               observed = {context: value["state"] for context, value in selected.items()}
+              last = observed
               print(f"Serialized prerequisite statuses: {observed}", flush=True)
-              if all(state == "success" for state in observed.values()): break
-              if any(state in {"error", "failure"} for state in observed.values()):
-                  raise SystemExit("A prerequisite proof failed: " + json.dumps(observed, sort_keys=True))
+              if all(observed[context] == "success" for context in required):
+                  break
+              if any(observed[context] in {"error", "failure"} for context in required):
+                  raise SystemExit(
+                      "A prerequisite production proof failed for the exact release: "
+                      + json.dumps(observed, sort_keys=True)
+                  )
               time.sleep(20)
           else:
-              raise SystemExit("Timed out waiting for prerequisite proofs: " + json.dumps(observed, sort_keys=True))
+              raise SystemExit(
+                  "Timed out waiting for serialized Mobile and iOS production proofs: "
+                  + json.dumps(last, sort_keys=True)
+              )
           PY
 
-      - name: Verify exact specialist-gated frontend release
+      - name: Verify exact production frontend release and copy contract
         run: |
           set -euo pipefail
-          mkdir -p audit-results
-          python scripts/production_specialist_release_identity_v1.py \
+          python scripts/production_frontend_release_identity.py \
             --origin "${NICO_PRODUCTION_FRONTEND_URL}" \
             --expected-sha "${RELEASE_SHA}" \
             --expected-ui-contract "expert-engagement-v2" \
+            --expected-deployment-environment "production" \
             --timeout-seconds 900 \
             --interval-seconds 15 \
-            --output audit-results/frontend-specialist-release.json
+            --output audit-results/frontend-production-release-identity.json
+
+      - name: Verify production assessment readiness
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
+          url = origin + "/api/nico/diagnostics/comprehensive-runtime"
+          request = urllib.request.Request(
+              url,
+              headers={"Accept": "application/json", "User-Agent": "nico-production-readiness"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  status = response.status
+                  raw = response.read().decode("utf-8")
+          except urllib.error.HTTPError as exc:
+              status = exc.code
+              raw = exc.read().decode("utf-8", errors="replace")
+          except Exception as exc:
+              raise SystemExit(f"Assessment readiness endpoint was unreachable: {type(exc).__name__}: {exc}") from exc
+
+          try:
+              payload = json.loads(raw)
+          except json.JSONDecodeError as exc:
+              raise SystemExit(f"Assessment readiness returned invalid JSON (HTTP {status})") from exc
+
+          detail = payload.get("detail") if isinstance(payload.get("detail"), dict) else {}
+          persistence = payload.get("persistence") if isinstance(payload.get("persistence"), dict) else {}
+          reason = str(payload.get("reason") or detail.get("code") or "unknown")
+          runtime_status = str(payload.get("status") or "unknown").lower()
+          replacement_safe = bool(
+              payload.get("survives_container_replacement_verified") is True
+              or persistence.get("survives_container_replacement_verified") is True
+          )
+          bounded = {
+              "http_status": status,
+              "runtime_status": runtime_status,
+              "reason": reason,
+              "persistence_adapter": payload.get("persistence_adapter") or persistence.get("adapter") or "unknown",
+              "storage_source": payload.get("storage_source") or "unknown",
+              "survives_container_replacement_verified": replacement_safe,
+          }
+          print("Assessment readiness:", json.dumps(bounded, sort_keys=True), flush=True)
+          if status < 200 or status >= 300 or runtime_status != "ready" or not replacement_safe:
+              raise SystemExit(
+                  "Production assessment is not safe to start. Configure Postgres or a verified persistent volume before rerunning acceptance: "
+                  + json.dumps(bounded, sort_keys=True)
+              )
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install pinned browser proof dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0" "pypdf>=5,<7"
+          python -m playwright install --with-deps chromium
 
       - name: Validate sole Comprehensive run handoff
         run: |
@@ -221,13 +378,13 @@ jobs:
             --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
             --output audit-results/comprehensive-run-handoff.json
 
-      - name: Observe the same completed run twice through authenticated API
+      - name: Observe the same completed run twice for 90 seconds
         id: acceptance
         continue-on-error: true
         run: |
           set -euo pipefail
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
-          python scripts/authenticated_completed_run_acceptance_v1.py \
+          python scripts/completed_run_two_pass_acceptance_v1.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -235,58 +392,125 @@ jobs:
             --source-workflow-run-id "${SOURCE_RUN_ID}" \
             --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
             --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
-            --output audit-results/two-service-live-acceptance.json
+            --passes 2 \
+            --observation-seconds 90 \
+            --output audit-results/two-service-live-acceptance.json \
+            --screenshot-dir audit-results/two-service-live-screenshots \
+            --artifact-dir audit-results/two-service-live-artifacts
 
-      - name: Upload immutable unified acceptance evidence
+      - name: Audit Phase 1 structured candidate artifacts
+        id: phase1_audit
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          test "${{ steps.acceptance.outcome }}" = "success"
+          ASSESSED_COMMIT_SHA="$(jq -r '.assessed_commit_sha' audit-results/comprehensive-run-handoff.json)"
+          python scripts/phase1_structured_artifact_audit_v1.py \
+            --canonical-json audit-results/two-service-live-artifacts/pass-2-comprehensive.json \
+            --expected-sha "${ASSESSED_COMMIT_SHA}" \
+            --output audit-results/phase1-structured-artifact-audit.json
+
+      - name: Upload immutable production acceptance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unified-production-acceptance-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             audit-results/comprehensive-run-handoff.json
-            audit-results/frontend-specialist-release.json
+            audit-results/frontend-production-release-identity.json
             audit-results/two-service-live-acceptance.json
-          if-no-files-found: error
+            audit-results/phase1-structured-artifact-audit.json
+            audit-results/two-service-live-screenshots/
+            audit-results/two-service-live-artifacts/
+          if-no-files-found: warn
           retention-days: 90
 
-      - name: Require passing authenticated unified evidence
+      - name: Require passing live evidence contract
         if: always()
         run: |
           set -euo pipefail
           test "${{ steps.acceptance.outcome }}" = "success"
+          test "${{ steps.phase1_audit.outcome }}" = "success"
           python - <<'PY'
-          import json, os
+          import json
           from pathlib import Path
 
-          frontend = json.loads(Path("audit-results/frontend-specialist-release.json").read_text(encoding="utf-8"))
-          assert frontend["artifact_schema"] == "nico.production_specialist_release_identity.v1"
-          assert frontend["status"] == "passed"
-          assert frontend["expected_sha"] == os.environ["RELEASE_SHA"]
-          assert all(frontend["proof"].values())
+          release_payload = json.loads(Path("audit-results/frontend-production-release-identity.json").read_text(encoding="utf-8"))
+          assert release_payload["artifact_schema"] == "nico.frontend_production_release_identity.v1"
+          assert release_payload["status"] == "passed"
+          assert release_payload["expected_ui_contract"] == "expert-engagement-v2"
+          assert release_payload["expected_deployment_environment"] == "production"
+          assert release_payload["final_release_observation"]["release_sha"] == release_payload["expected_sha"]
+          assert release_payload["final_release_observation"]["ui_contract"] == release_payload["expected_ui_contract"]
+          assert release_payload["final_release_observation"]["deployment_environment"] == "production"
+          assert set(release_payload["pages"]) == {"en", "es-MX"}
+          assert all(item["verified"] is True for item in release_payload["pages"].values())
+          assert all(release_payload["proof"].values())
 
           payload = json.loads(Path("audit-results/two-service-live-acceptance.json").read_text(encoding="utf-8"))
-          assert payload["artifact_schema"] == "nico.authenticated_completed_run_acceptance.v1"
+          assert payload["artifact_schema"] == "nico.completed-run-two-pass-production-acceptance.v1"
           assert payload["status"] == "passed"
-          assert payload["expected_sha"] == os.environ["RELEASE_SHA"]
-          assert payload["source_workflow_run_id"] == os.environ["SOURCE_RUN_ID"]
-          assert payload["source_workflow_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
-          assert payload["read_only_pass_count"] == 2
-          assert payload["status_stable_across_passes"] is True
-          assert payload["report_json_stable_across_passes"] is True
-          assert payload["report_pdf_stable_across_passes"] is True
-          assert payload["exact_release_provenance_verified"] is True
-          assert payload["human_review_required"] is True
-          assert payload["client_delivery_allowed"] is False
-          session = payload["github_actions_proof_session"]
-          assert session["authority"] == "github_actions_production_proof"
-          assert session["release_sha"] == os.environ["RELEASE_SHA"]
-          assert session["workflow_file"] == ".github/workflows/two-service-production-acceptance.yml"
-          assert session["session_cookie_present"] is True
-          assert session["session_cookie_value_exposed"] is False
-          assert session["oidc_token_exposed"] is False
+          assert payload["live_production_claim"] is True
+          assert payload["passes_required"] == 2
+          assert payload["passes_completed"] == 2
+          assert len(payload["runs"]) == 2
+          assert all(payload["proof"].values())
+          assert len(payload["unique_run_ids"]) == 1
+          assert payload["fresh_assessment_count"] == 0
+          assert payload["start_request_count"] == 0
+          assert payload["continuation_post_count"] == 0
+          assert payload["source_workflow_run_id"] == "${{ github.event.workflow_run.id }}"
+          assert payload["source_workflow_run_attempt"] == "${{ github.event.workflow_run.run_attempt }}"
+          assert payload["source_binding"] == "${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}"
+          assert payload["canonical_truth_digest_computed_from_json"] is True
+          assert all(item["commit_sha"] == payload["assessed_commit_sha"] for item in payload["runs"])
+          assert {item["locale"] for item in payload["runs"]} == {"en", "es-MX"}
+          assert all(item["run_id"] == payload["unique_run_ids"][0] for item in payload["runs"])
+          assert all(item["observation"]["observed_seconds"] >= 90 for item in payload["runs"])
+          assert all(item["start_request_count"] == 0 for item in payload["runs"])
+          assert all(item["continuation_post_count"] == 0 for item in payload["runs"])
+          assert all(item["professional_review_navigation_verified"] is True for item in payload["runs"])
+          assert all(item["professional_review_locale_preserved"] is True for item in payload["runs"])
+          assert all(item["assessment_post_request_count"] == 0 for item in payload["runs"])
+          assert all(item["wrong_run_request_count"] == 0 for item in payload["runs"])
+          assert all(item["locale_round_trip"]["locale_control_used"] is True for item in payload["runs"])
+          assert all(len(item["observation"]["markdown_action_proofs"]) == 2 for item in payload["runs"])
+          assert all(item["observation"]["legacy_markdown_get_count"] == 0 for item in payload["runs"])
+          assert all(item["observation"]["markdown_action_success_count"] == 2 for item in payload["runs"])
+          assert all(item["observation"]["markdown_verification_get_count"] == 2 for item in payload["runs"])
+          assert all(item["observation"]["markdown_network_bounded"] is True for item in payload["runs"])
+          assert all(item["observation"]["visible_pdf_action_count"] == 2 for item in payload["runs"])
+          assert all(item["observation"]["pdf_ui_action_digests_stable"] is True for item in payload["runs"])
+          assert all(item["observation"]["pdf_ui_actions_network_bounded"] is True for item in payload["runs"])
+          assert all(item["observation"]["pdf_ui_action_anchor_click_count"] == 2 for item in payload["runs"])
+          assert all(len(item["observation"]["pdf_ui_action_proofs"]) == 2 for item in payload["runs"])
+          assert all(
+              proof["ui_review_pdf_lifecycle_contract_verified"] is True
+              for item in payload["runs"]
+              for proof in item["observation"]["pdf_ui_action_proofs"]
+          )
+          assert all(
+              proof["ui_review_pdf_requested_report_language"] == item["locale"]
+              for item in payload["runs"]
+              for proof in item["observation"]["pdf_ui_action_proofs"]
+          )
+
+          audit = json.loads(Path("audit-results/phase1-structured-artifact-audit.json").read_text(encoding="utf-8"))
+          assert audit["artifact_schema"] == "nico.phase1-structured-artifact-audit.v1"
+          assert audit["status"] == "passed"
+          assert audit["commit_sha"] == payload["assessed_commit_sha"]
+          assert audit["candidate_count"] > 0 or audit["zero_candidate_register_verified"] is True
+          assert audit["candidate_register_sha256_expected"] == audit["candidate_register_sha256_observed"]
+          assert audit["human_review_required"] is True
+          assert audit["client_delivery_allowed"] is False
+          assert audit["score_effect"] == "none"
+          assert audit["cluster_integrity_error_count"] == 0
+          assert audit["errors"] == []
           PY
 
       - name: Publish successful production acceptance status
+        if: success()
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/status.json
@@ -294,7 +518,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated completed-run acceptance passed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} two completed-run passes succeeded",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -307,7 +531,7 @@ jobs:
             --data-binary @/tmp/status.json
 
       - name: Publish failed production acceptance status
-        if: failure() || cancelled()
+        if: failure()
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/status.json
@@ -315,7 +539,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated completed-run acceptance failed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} completed-run acceptance failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
