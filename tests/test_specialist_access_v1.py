@@ -22,6 +22,10 @@ def _app() -> FastAPI:
     def intake() -> dict[str, str]:
         return {"status": "started"}
 
+    @app.post("/assessment/github")
+    def legacy_assessment() -> dict[str, str]:
+        return {"status": "started"}
+
     @app.get("/assessment/comprehensive-run/{run_id}")
     def status(run_id: str) -> dict[str, str]:
         return {"status": "running", "run_id": run_id}
@@ -30,15 +34,16 @@ def _app() -> FastAPI:
     return app
 
 
-def test_comprehensive_routes_require_authenticated_specialist(monkeypatch):
+def test_all_assessment_routes_require_authenticated_specialist(monkeypatch):
     monkeypatch.setenv("NICO_COMPREHENSIVE_OPERATOR_PASSWORD", "correct horse battery staple")
     monkeypatch.setenv("NICO_OPERATOR_SESSION_SIGNING_SECRET", "test-only-session-secret-with-sufficient-entropy")
     client = TestClient(_app())
 
     assert client.get("/health").status_code == 200
-    blocked = client.post("/assessment/comprehensive-intake")
-    assert blocked.status_code == 401
-    assert blocked.json()["detail"]["code"] == "specialist_authentication_required"
+    for path in ("/assessment/comprehensive-intake", "/assessment/github"):
+        blocked = client.post(path)
+        assert blocked.status_code == 401
+        assert blocked.json()["detail"]["code"] == "specialist_authentication_required"
 
     wrong = client.post(
         "/assessment/comprehensive-intake",
@@ -46,12 +51,13 @@ def test_comprehensive_routes_require_authenticated_specialist(monkeypatch):
     )
     assert wrong.status_code == 403
 
-    allowed = client.post(
-        "/assessment/comprehensive-intake",
-        headers={"X-NICO-Admin-Token": "correct horse battery staple"},
-    )
-    assert allowed.status_code == 200
-    assert allowed.json()["status"] == "started"
+    for path in ("/assessment/comprehensive-intake", "/assessment/github"):
+        allowed = client.post(
+            path,
+            headers={"X-NICO-Admin-Token": "correct horse battery staple"},
+        )
+        assert allowed.status_code == 200
+        assert allowed.json()["status"] == "started"
 
 
 def test_signed_http_session_authorizes_exact_run_reads(monkeypatch):
@@ -66,12 +72,14 @@ def test_signed_http_session_authorizes_exact_run_reads(monkeypatch):
     assert login.status_code == 200
     token = login.json()["session_token"]
     assert token and "operator-password" not in token
+    assert login.json()["scope"] == "nico_specialist_operation"
 
     validation = client.get(
         "/assessment/comprehensive-operator/session",
         headers={"X-NICO-Operator-Session": token},
     )
     assert validation.status_code == 200
+    assert validation.json()["scope"] == "nico_specialist_operation"
 
     status = client.get(
         "/assessment/comprehensive-run/comprun_test",
