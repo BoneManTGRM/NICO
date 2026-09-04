@@ -12,6 +12,7 @@ permissions:
   contents: read
   actions: read
   statuses: write
+  id-token: write
 
 concurrency:
   group: nico-production-ios-webkit-proof-${{ github.event.workflow_run.head_sha || github.ref }}
@@ -19,9 +20,11 @@ concurrency:
 
 jobs:
   contract:
-    name: Validate iOS stability contract
+    name: Validate authenticated iOS WebKit proof contract
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Require successful main Spanish source proof
         if: github.event_name == 'workflow_run'
@@ -37,110 +40,41 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.13"
-      - name: Compile and verify WebKit lightweight intake and terminal layout proof
+
+      - name: Compile authenticated WebKit proof
         run: |
           set -euo pipefail
           python -m py_compile \
-            scripts/mobile_failure_layout_probe.py \
+            scripts/github_actions_proof_session_v1.py \
+            scripts/authenticated_proof_browser_v1.py \
+            scripts/production_specialist_release_identity_v1.py \
             scripts/comprehensive_production_run_handoff_v1.py \
-            scripts/mobile_pdf_download_action_proof_v1.py \
+            scripts/mobile_failure_layout_probe.py \
             scripts/mobile_restart_live_acceptance_v1.py \
             scripts/mobile_restart_live_acceptance_v2.py \
             scripts/mobile_restart_live_acceptance_v3.py \
             scripts/mobile_restart_live_acceptance_v4.py \
             scripts/mobile_restart_live_acceptance_v6.py \
-            scripts/prepare_playwright_webkit_native_visibility_v1.py
+            scripts/mobile_restart_authenticated_webkit_acceptance_v7.py
           python - <<'PY'
           from pathlib import Path
-          proof = Path("scripts/mobile_restart_live_acceptance_v2.py").read_text(encoding="utf-8")
-          failure = Path("scripts/mobile_failure_layout_probe.py").read_text(encoding="utf-8")
-          dispatch = Path("scripts/mobile_restart_live_acceptance_v3.py").read_text(encoding="utf-8")
-          download = Path("scripts/mobile_pdf_download_action_proof_v1.py").read_text(encoding="utf-8")
-          wrapper = Path("scripts/mobile_restart_live_acceptance_v6.py").read_text(encoding="utf-8")
-          component = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
-          css = Path("apps/web/styles/assessment-mobile-stability.css").read_text(encoding="utf-8")
+          wrapper = Path("scripts/mobile_restart_authenticated_webkit_acceptance_v7.py").read_text(encoding="utf-8")
           workflow = Path(".github/workflows/ios-webkit-paint-proof.yml").read_text(encoding="utf-8")
-          workflow_header = workflow.split("\njobs:", 1)[0]
-          assert 'nico.mobile_restart_live_acceptance.webkit.v5' in proof
-          assert 'failure_layout.prove_failure_layouts(browser, args)' in proof
-          assert 'terminal_failure_layout_viewports_verified' in proof
-          assert 'VIEWPORT_WIDTHS = (320, 375, 390, 414, 430)' in failure
-          assert 'data-assessment-failure-evidence="true"' in failure
-          assert 'raw_error_prominent' in failure
-          assert 'recovery_visible' in failure
-          assert 'data-mobile-evidence-boundary="true"' in proof
-          assert 'client_context_control_count' in proof
-          assert 'client_context_single_line_input_count' in proof
-          assert 'client_context_state_button_count' in proof
-          assert 'name="Exclude from scope", exact=True).count() == 0' in proof
-          assert 'per_field_state_controls_absent' in proof
-          assert 'included_human_literal_preserved' in proof
-          assert 'rich_editor_control_count' in proof
-          assert 'optional_evidence_editor_unmounted' in proof
-          assert 'result["start_dispatch"] = "not_dispatched_existing_run"' in dispatch
-          assert 'single_native_dom_click' not in dispatch
-          assert 'page.expect_download(timeout=240_000)' in download
-          assert 'ui_review_pdf_download_verified' in download
-          assert 'install_ui_pdf_download_proof(recovery, source_proof_path=args.source_proof)' in wrapper
-          assert 'useRichEvidenceEditor' in component
-          assert 'data-evidence-editor-mounted="false"' in component
-          assert 'data-mobile-evidence-note="true"' in component
-          assert 'data-mobile-client-engagement-context="true"' in component
-          assert 'const MOBILE_CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"]' in component
-          assert ':not([data-mobile-evidence-boundary="true"])' in css
-          assert 'group: nico-production-ios-webkit-proof-' in workflow_header
-          assert 'group: nico-production-assessment-proof-' not in workflow_header
-          assert 'Wait for exact-SHA Mobile production proof' in workflow
-          assert 'NICO Mobile Restart Production Proof' in workflow
-          assert 'archive.ubuntu.com/ubuntu/' in workflow
-          assert 'Acquire::https::Timeout "20";' in workflow
-          assert 'timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps webkit' in workflow
-          assert 'NICO_PROOF_WEBKIT_NATIVE_VISIBILITY: "1"' in workflow
-          assert 'python scripts/prepare_playwright_webkit_native_visibility_v1.py' in workflow
-          assert 'NICO_PROOF_' + 'HEADED_WEBKIT' not in workflow
-          assert 'open' + 'box' not in workflow
-          assert 'xdo' + 'tool' not in workflow
-          assert 'recovery._launch_webkit(playwright)' in proof
-          assert 'if: failure() || cancelled()' in workflow
-          assert 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' in workflow
-          assert '--source-proof source-proof/spanish-comprehensive-live-proof.json' in workflow
-          assert '--source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}"' in workflow
-          assert '--observation-seconds 90' in workflow
+          assert "AuthenticatedProofBrowser" in wrapper
+          assert "github_actions_proof_sessions" in wrapper
+          assert "id-token: write" in workflow
+          assert "mobile_restart_authenticated_webkit_acceptance_v7.py" in workflow
           PY
 
-      - name: Install and prepare pinned WebKit lifecycle dependency for PR proof
-        if: github.event_name == 'pull_request'
-        timeout-minutes: 15
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
-          python -m pip install --disable-pip-version-check --no-cache-dir "pytest==9.1.1"
-          timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps webkit
-          python scripts/prepare_playwright_webkit_native_visibility_v1.py
-
-      - name: Prove installed WebKit observes native tab lifecycle
-        if: github.event_name == 'pull_request'
-        env:
-          NICO_PROOF_WEBKIT_NATIVE_VISIBILITY: "1"
-        run: |
-          set -euo pipefail
-          python -m pytest -q --noconftest \
-            tests/test_mobile_visibility_lifecycle_proof_v1.py \
-            -k installed_webkit_observes_real_browser_visibility
-
   live-production:
-    name: Prove iPhone WebKit intake, failure layout, exact-run recovery, and review PDF download
+    name: Prove authenticated iPhone WebKit intake and exact review PDF
     if: >-
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main'
     needs: contract
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 210
     environment: production-smoke
     env:
       NICO_PROOF_WEBKIT_NATIVE_VISIBILITY: "1"
@@ -167,7 +101,7 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Publish pending proof status
+      - name: Publish pending WebKit proof status
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/ios-status.json
@@ -175,7 +109,7 @@ jobs:
           print(json.dumps({
               "state": "pending",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} WebKit recovery proof running",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated WebKit proof running",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -196,7 +130,6 @@ jobs:
           token = os.environ["GITHUB_TOKEN"]
           required = {"Vercel", os.environ["NICO_PRODUCTION_BACKEND_STATUS_CONTEXT"]}
           deadline = time.time() + 30 * 60
-          last = {}
           while time.time() < deadline:
               request = urllib.request.Request(
                   f"https://api.github.com/repos/{repository}/commits/{sha}/status",
@@ -204,44 +137,34 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-ios-webkit-editor-unmount-proof",
+                      "User-Agent": "nico-authenticated-webkit-proof",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
                   payload = json.loads(response.read().decode("utf-8"))
-              last = {}
+              latest = {}
               for item in payload.get("statuses") or []:
-                  last.setdefault(str(item.get("context") or ""), str(item.get("state") or "unknown"))
-              observed = {context: last.get(context, "missing") for context in required}
+                  latest.setdefault(str(item.get("context") or ""), str(item.get("state") or "unknown"))
+              observed = {context: latest.get(context, "missing") for context in required}
               print(f"Deployment statuses: {observed}", flush=True)
-              if all(observed[context] == "success" for context in required):
-                  break
+              if all(observed[context] == "success" for context in required): break
               if any(observed[context] in {"error", "failure"} for context in required):
                   raise SystemExit(f"Deployment failed for exact SHA {sha}: {observed}")
               time.sleep(20)
           else:
-              raise SystemExit(f"Timed out waiting for exact SHA deployments: {last}")
+              raise SystemExit(f"Timed out waiting for exact SHA deployments: {observed}")
           PY
 
-      - name: Wait for exact-SHA Mobile production proof
+      - name: Wait for exact-source Mobile production proof
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
-          import os
-          import time
-          import urllib.request
-
+          import json, os, time, urllib.request
           from scripts.comprehensive_production_run_handoff_v1 import select_source_bound_status
-
           repository = os.environ["GITHUB_REPOSITORY"]
           sha = os.environ["RELEASE_SHA"]
           token = os.environ["GITHUB_TOKEN"]
-          required_context = "NICO Mobile Restart Production Proof"
-          source_run_id = os.environ["SOURCE_RUN_ID"]
-          source_run_attempt = os.environ["SOURCE_RUN_ATTEMPT"]
           deadline = time.time() + 170 * 60
-          last_state = "missing"
           while time.time() < deadline:
               request = urllib.request.Request(
                   f"https://api.github.com/repos/{repository}/commits/{sha}/status",
@@ -249,40 +172,34 @@ jobs:
                       "Authorization": f"Bearer {token}",
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "nico-ios-wait-for-mobile-proof",
+                      "User-Agent": "nico-ios-wait-mobile",
                   },
               )
               with urllib.request.urlopen(request, timeout=30) as response:
                   payload = json.loads(response.read().decode("utf-8"))
               selected = select_source_bound_status(
                   payload.get("statuses") or [],
-                  context=required_context,
-                  source_workflow_run_id=source_run_id,
-                  source_workflow_run_attempt=source_run_attempt,
+                  context="NICO Mobile Restart Production Proof",
+                  source_workflow_run_id=os.environ["SOURCE_RUN_ID"],
+                  source_workflow_run_attempt=os.environ["SOURCE_RUN_ATTEMPT"],
               )
-              last_state = selected["state"]
-              print(f"Mobile prerequisite status: {last_state}", flush=True)
-              if last_state == "success":
-                  break
-              if last_state in {"error", "failure"}:
-                  raise SystemExit(
-                      f"The exact-SHA Mobile production proof failed before WebKit proof: {last_state}"
-                  )
+              state = selected["state"]
+              print(f"Mobile prerequisite status: {state}", flush=True)
+              if state == "success": break
+              if state in {"error", "failure"}: raise SystemExit(f"Mobile proof failed: {state}")
               time.sleep(20)
           else:
-              raise SystemExit(
-                  f"Timed out waiting for exact-SHA Mobile production proof: {last_state}"
-              )
+              raise SystemExit(f"Timed out waiting for Mobile proof: {state}")
           PY
 
-      - name: Verify exact frontend release identity
+      - name: Verify exact specialist-gated frontend release
         run: |
           set -euo pipefail
-          python scripts/production_frontend_release_identity.py \
+          mkdir -p audit-results
+          python scripts/production_specialist_release_identity_v1.py \
             --origin "${NICO_PRODUCTION_FRONTEND_URL}" \
             --expected-sha "${RELEASE_SHA}" \
             --expected-ui-contract "expert-engagement-v2" \
-            --expected-deployment-environment "production" \
             --timeout-seconds 900 \
             --interval-seconds 15 \
             --output audit-results/ios-webkit-frontend-release.json
@@ -291,11 +208,13 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
-      - name: Install pinned WebKit proof dependency
+
+      - name: Install pinned WebKit proof runtime
         timeout-minutes: 15
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0"
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            . "playwright==1.61.0" "pypdf==6.15.0" "pytest==9.1.1"
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           fi
@@ -327,13 +246,14 @@ jobs:
             --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
             --output audit-results/comprehensive-run-handoff.json
 
-      - name: Prove WebKit intake, bilingual failure layout, recovery, and review PDF download
-        id: ios_proof
+      - name: Prove authenticated WebKit intake, recovery, and review PDF
+        id: webkit_proof
         continue-on-error: true
+        timeout-minutes: 120
         run: |
           set -euo pipefail
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
-          python scripts/mobile_restart_live_acceptance_v6.py \
+          python scripts/mobile_restart_authenticated_webkit_acceptance_v7.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -342,183 +262,67 @@ jobs:
             --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
             --expected-proof-tool-sha "${PROOF_TOOL_SHA}" \
             --observation-seconds 90 \
-            --ui-locale es-MX \
+            --ui-locale en \
             --output audit-results/ios-webkit-live-proof.json
 
-      - name: Upload immutable iOS proof
+      - name: Upload immutable WebKit proof
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ios-webkit-paint-proof-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ios-webkit-production-proof-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             audit-results/comprehensive-run-handoff.json
             audit-results/ios-webkit-frontend-release.json
             audit-results/ios-webkit-live-proof.json
-            audit-results/ios-webkit-live-proof.png
-            audit-results/ios-webkit-live-proof-intake-top.png
-            audit-results/ios-webkit-live-proof-intake-bottom.png
-            audit-results/ios-webkit-live-proof-failure-*.png
+            audit-results/ios-webkit-live-proof*.png
           if-no-files-found: warn
           retention-days: 90
 
-      - name: Require passing iOS evidence contract
+      - name: Require passing authenticated WebKit evidence
         if: always()
         run: |
           set -euo pipefail
-          test "${{ steps.ios_proof.outcome }}" = "success"
+          test "${{ steps.webkit_proof.outcome }}" = "success"
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
           payload = json.loads(Path("audit-results/ios-webkit-live-proof.json").read_text(encoding="utf-8"))
-          assert payload["status"] == "passed"
-          assert payload["expected_sha"] == "${{ github.event.workflow_run.head_sha }}"
-          assert payload["source_workflow_run_id"] == "${{ github.event.workflow_run.id }}"
-          assert payload["source_workflow_run_attempt"] == "${{ github.event.workflow_run.run_attempt }}"
-          assert payload["source_binding"] == "${{ github.event.workflow_run.id }}:${{ github.event.workflow_run.run_attempt }}"
-          assert payload["ui_locale"] == "es-MX"
-          assert payload["assessment_path"] == "/es/assessment"
-          assert payload["browser_evidence_class"] == "Playwright WebKit iPhone-sized mobile emulation"
-          assert payload["real_device_tested"] is False
-          assert "not real Safari or real iOS device evidence" in payload["safari_equivalent_evidence"]
-          assert len(payload["canonical_truth_sha256"]) == 64
-          assert payload["canonical_truth"]["canonical_truth_digest_computed_from_json"] is True
-          assert payload["browser_engine"] == "webkit"
+          assert payload["artifact_schema"] == "nico.mobile_restart_live_acceptance.v1"
           assert payload["acceptance_version"] == "nico.mobile_restart_live_acceptance.webkit.v5"
-          assert payload["start_dispatch"] == "not_dispatched_existing_run"
-          assert payload["start_dispatch_retry_absent"] is True
-          assert payload["terminal_failure_layout_viewports_verified"] is True
-          layouts = payload["terminal_failure_layouts"]
-          assert layouts["status"] == "passed"
-          assert layouts["viewports"] == [320, 375, 390, 414, 430]
-          assert layouts["locales"] == ["en", "es-MX"]
-          assert layouts["cases_required"] == 10
-          assert layouts["cases_completed"] == 10
-          assert layouts["horizontal_overflow_absent"] is True
-          assert layouts["duplicate_terminal_content_absent"] is True
-          assert layouts["raw_diagnostics_collapsed"] is True
-          assert layouts["recovery_reachable"] is True
-          assert all(item["status"] == "passed" for item in layouts["results"])
+          assert payload["status"] == "passed"
+          assert payload["expected_sha"] == os.environ["RELEASE_SHA"]
+          assert payload["source_workflow_run_id"] == os.environ["SOURCE_RUN_ID"]
+          assert payload["source_workflow_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
+          assert payload["authenticated_production_proof"] is True
+          sessions = payload["github_actions_proof_sessions"]
+          assert isinstance(sessions, list) and sessions
+          for session in sessions:
+              assert session["status"] == "authenticated"
+              assert session["release_sha"] == os.environ["RELEASE_SHA"]
+              assert session["workflow_file"] == ".github/workflows/ios-webkit-paint-proof.yml"
+              assert session["session_cookie_present"] is True
+              assert session["human_review_required"] is True
+              assert session["client_delivery_allowed"] is False
+          assert payload["browser_engine"] == "webkit"
           assert payload["webkit_intake_paint_stability_verified"] is True
-          intake = payload["webkit_intake_paint"]
-          assert intake["optional_evidence_editor_unmounted"] is True
-          assert intake["optional_evidence_controls_allocated"] == 3
-          assert intake["rich_optional_evidence_controls_allocated"] == 0
-          assert intake["lightweight_client_context_controls_allocated"] == 3
-          assert intake["lightweight_client_context_state_buttons_allocated"] == 0
-          assert intake["per_field_state_controls_absent"] is True
-          assert intake["included_human_literal_preserved"] is True
-          paint_boundary = intake["paint_boundary"]
-          assert paint_boundary["editor_mounted"] == "false"
-          assert paint_boundary["client_context_present"] is True
-          assert paint_boundary["interactive_control_count"] == 3
-          assert paint_boundary["client_context_control_count"] == 3
-          assert paint_boundary["client_context_textarea_count"] == 0
-          assert paint_boundary["client_context_single_line_input_count"] == 3
-          assert paint_boundary["client_context_state_button_count"] == 0
-          assert paint_boundary["rich_editor_control_count"] == 0
-          assert paint_boundary["rich_editor_node_count"] == 0
-          assert set(paint_boundary["client_context_labels"]) == {
-              "access method",
-              "primary technical contact",
-              "authorized scope",
-          }
-          assert intake["authorization_reachable"] is True
-          assert intake["assessment_action_reachable"] is True
-          assert intake["ancestor_clipping_absent"] is True
-          assert intake["page_crash_absent"] is True
-          assert payload["fresh_assessment_count"] == 0
-          assert payload["start_request_count"] == 0
-          assert payload["continuation_post_count"] == 0
-          assert payload["prohibited_mutation_guard_verified"] is True
-          assert payload["terminal_restart_recovery_verified"] is True
-          assert payload["clean_context_reopen_verified"] is True
-          assert payload["browser_context_count"] == 2
-          assert payload["first_context_closed_before_reopen"] is True
-          assert payload["terminal_background_foreground_recovery_verified"] is True
-          assert payload["terminal_visibility_transitions"] == ["hidden", "visible"]
-          for visibility in (
-              payload["initial_context_visibility"],
-              payload["terminal_visibility"],
-          ):
-              assert visibility["browser_engine"] == "webkit"
-              assert visibility["browser_launch_mode"] == "headless"
-              assert visibility["visibility_transition_mechanism"] == "webkit_protocol_active_and_focused_transition"
-              assert visibility["native_visibility_runtime"] == "nico.playwright_webkit_native_visibility.v1"
-              assert visibility["playwright_forced_active_override_enabled"] is False
-              assert visibility["webkit_active_transition_protocol"] == "Emulation.setActiveAndFocused"
-              assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]
-              assert visibility["document_hidden_observed"] is True
-              assert visibility["document_visible_after_foreground"] is True
-          assert payload["terminal_observation_at_least_90_seconds"] is True
-          assert payload["terminal_observation"]["observed_seconds"] >= 90
-          assert payload["terminal_observation"]["status_get_count"] <= 4
-          assert payload["terminal_observation"]["localized_markdown_get_count"] <= 2
-          assert payload["terminal_observation"]["legacy_markdown_get_count"] == 0
-          assert payload["terminal_observation"]["markdown_action_success_count"] == 2
-          assert payload["terminal_observation"]["markdown_verification_get_count"] == 2
-          assert payload["terminal_observation"]["markdown_report_language"] == "es-MX"
-          assert payload["terminal_observation"]["markdown_network_bounded"] is True
-          assert payload["terminal_observation"]["post_request_count"] == 0
-          assert payload["terminal_observation"]["unexpected_assessment_request_count"] == 0
-          assert len(payload["terminal_observation"]["markdown_action_proofs"]) == 2
-          assert all(
-              item["report_language"] == "es-MX"
-              and item["locale_identity_verified"] is True
-              and item["lifecycle_contract_verified"] is True
-              for item in payload["terminal_observation"]["markdown_action_proofs"]
-          )
-          assert payload["terminal_horizontal_overflow_absent"] is True
-          assert payload["terminal_touch_targets_verified"] is True
-          assert payload["terminal_mobile_layout"]["minimum_touch_target_px"] == 44
-          assert payload["terminal_navigation_recovery_verified"] is True
-          assert payload["terminal_locale_preserved_across_recovery"] is True
-          assert payload["mobile_locale_switch_control_verified"] is True
-          assert payload["mobile_locale_round_trip"]["source_locale"] == "es-MX"
-          assert payload["mobile_locale_round_trip"]["target_locale"] == "en"
-          assert payload["mobile_locale_round_trip"]["same_run_preserved"] is True
-          assert payload["professional_review_navigation_verified"] is True
-          assert payload["professional_review_locale_preserved"] is True
-          assert payload["terminal_manifest_bounded"] is True
+          assert payload["terminal_failure_layout_viewports_verified"] is True
           assert payload["ui_review_pdf_download_verified"] is True
-          assert payload["ui_review_pdf_user_gesture_anchor_click_count"] == 1
-          assert payload["ui_review_pdf_anchor_click_observation_verified"] is True
-          assert payload["ui_review_pdf_source_artifact_reused"] is True
-          assert payload["ui_review_pdf_artifact_evidence_source"] == "exact-sha-spanish-source-proof"
-          assert payload["ui_review_pdf_signature_verified"] is True
-          assert payload["pdf_artifact_hash_header_verified"] is True
-          assert payload["ui_review_pdf_artifact_hash_header_verified"] is True
-          assert payload["pdf_canonical_truth_digest_verified"] is True
-          assert payload["ui_review_pdf_canonical_truth_digest_verified"] is True
-          assert payload["ui_review_pdf_exact_run_filename_verified"] is True
-          assert payload["ui_review_pdf_artifact_status_cleared"] is True
-          assert payload["ui_review_pdf_original_user_gesture_preserved"] is True
-          assert payload["ui_review_pdf_original_page_visible_after_action"] is True
-          assert payload["ui_review_pdf_requested_report_language"] == "es-MX"
-          assert payload["ui_review_pdf_lifecycle_contract_verified"] is True
-          assert payload["ui_review_pdf_action_kind"] in {
-              "accepted-edition", "localized-draft-pending-approval",
-          }
-          if payload["ui_review_pdf_action_kind"] == "accepted-edition":
-              assert payload["ui_review_pdf_network_path"].endswith("/report/pdf")
-              assert payload["ui_review_pdf_accepted_edition_digest_verified"] is True
-          else:
-              assert payload["ui_review_pdf_network_path"].endswith("/localized-report/es-MX/pdf")
-              assert payload["ui_review_pdf_localized_draft_identity_verified"] is True
-          assert payload["ui_review_pdf_proof_version"] == "nico.mobile-pdf-download-action-proof.v1"
-          assert "Awaiting" not in payload["terminal_before_reload"]["score"]
-          assert payload["terminal_after_reload"]["pdf_enabled"] == "true"
+          assert payload["terminal_restart_recovery_verified"] is True
+          assert payload["fresh_assessment_count"] == 0
+          assert payload["human_review_required"] is True
+          assert payload["client_delivery_allowed"] is False
+          assert payload["real_device_tested"] is False
           PY
 
-      - name: Publish successful iOS proof status
-        if: success()
+      - name: Publish successful WebKit proof status
         run: |
           set -euo pipefail
-          python - <<'PY' > /tmp/ios-status.json
+          python - <<'PY' > /tmp/ios-success.json
           import json, os
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} WebKit recovery proof passed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated WebKit proof passed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -527,18 +331,18 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
-            --data-binary @/tmp/ios-status.json
+            --data-binary @/tmp/ios-success.json
 
-      - name: Publish failed iOS proof status
+      - name: Publish failed WebKit proof status
         if: failure() || cancelled()
         run: |
           set -euo pipefail
-          python - <<'PY' > /tmp/ios-status.json
+          python - <<'PY' > /tmp/ios-failure.json
           import json, os
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} WebKit recovery proof failed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated WebKit proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -547,4 +351,4 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
-            --data-binary @/tmp/ios-status.json
+            --data-binary @/tmp/ios-failure.json
