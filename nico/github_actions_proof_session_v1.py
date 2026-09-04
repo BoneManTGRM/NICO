@@ -12,7 +12,10 @@ import jwt
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from nico.specialist_access_v1 import issue_specialist_session
+from nico.specialist_access_v1 import (
+    PRODUCTION_PROOF_SCOPE,
+    issue_specialist_session,
+)
 
 VERSION = "nico.github_actions_proof_session.v1"
 ROUTE = "/assessment/github-actions-proof-session"
@@ -72,9 +75,7 @@ def _workflow_file(workflow_ref: str) -> str:
 def _subject_is_expected(subject: str) -> bool:
     suffix = f":environment:{ENVIRONMENT}"
     legacy = f"repo:{REPOSITORY}{suffix}"
-    immutable = (
-        f"repo:BoneManTGRM@{OWNER_ID}/NICO@{REPOSITORY_ID}{suffix}"
-    )
+    immutable = f"repo:BoneManTGRM@{OWNER_ID}/NICO@{REPOSITORY_ID}{suffix}"
     return hmac.compare_digest(subject, legacy) or hmac.compare_digest(subject, immutable)
 
 
@@ -156,11 +157,9 @@ def validate_github_actions_oidc(
         "repository_visibility": hmac.compare_digest(visibility, "public"),
         "ref": hmac.compare_digest(ref, "refs/heads/main"),
         "release_sha_configured": bool(expected_release_sha),
-        "release_sha": bool(expected_release_sha)
-        and hmac.compare_digest(release_sha, expected_release_sha),
+        "release_sha": bool(expected_release_sha) and hmac.compare_digest(release_sha, expected_release_sha),
         "workflow_ref": workflow_file in ALLOWED_WORKFLOW_FILES,
-        "workflow_sha": bool(expected_release_sha)
-        and hmac.compare_digest(workflow_sha, expected_release_sha),
+        "workflow_sha": bool(expected_release_sha) and hmac.compare_digest(workflow_sha, expected_release_sha),
         "event_name": event_name in ALLOWED_EVENT_NAMES,
         "environment": hmac.compare_digest(environment, ENVIRONMENT),
         "runner_environment": hmac.compare_digest(runner_environment, "github-hosted"),
@@ -176,7 +175,7 @@ def validate_github_actions_oidc(
 
     return {
         "authority": "github_actions_production_proof",
-        "scope": "nico_specialist_operation",
+        "scope": PRODUCTION_PROOF_SCOPE,
         "repository": repository,
         "repository_id": repository_id,
         "release_sha": release_sha,
@@ -262,8 +261,13 @@ def install_github_actions_proof_session(app: FastAPI) -> dict[str, Any]:
                 },
             )
         try:
-            session_token, expires_in = issue_specialist_session(authority)
-        except RuntimeError as exc:
+            session_token, expires_in = issue_specialist_session(
+                authority,
+                scope=PRODUCTION_PROOF_SCOPE,
+                ttl_seconds=10_800,
+                retained_claims=authority,
+            )
+        except (RuntimeError, ValueError) as exc:
             raise HTTPException(
                 status_code=503,
                 detail={
@@ -277,7 +281,7 @@ def install_github_actions_proof_session(app: FastAPI) -> dict[str, Any]:
             "session_token": session_token,
             "expires_in": expires_in,
             "authority": "github_actions_production_proof",
-            "scope": "nico_specialist_operation",
+            "scope": PRODUCTION_PROOF_SCOPE,
             "release_sha": authority["release_sha"],
             "workflow_file": authority["workflow_file"],
             "run_id": authority["run_id"],
@@ -299,6 +303,10 @@ def install_github_actions_proof_session(app: FastAPI) -> dict[str, Any]:
         "workflow_allowlist_bound": True,
         "workflow_sha_bound": True,
         "environment_bound": True,
+        "least_privilege_scope": PRODUCTION_PROOF_SCOPE,
+        "review_allowed": False,
+        "delivery_allowed": False,
+        "administration_allowed": False,
         "replay_blocked": True,
         "client_delivery_allowed": False,
     }
