@@ -17,7 +17,7 @@ def _source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_github_actions_oidc_exchange_is_exact_release_and_workflow_bound() -> None:
+def test_github_actions_oidc_exchange_is_exact_release_workflow_and_scope_bound() -> None:
     backend = _source(ROOT / "nico/github_actions_proof_session_v1.py")
     frontend = _source(ROOT / "apps/web/app/api/nico/github-actions-proof-session/route.ts")
     bootstrap = _source(ROOT / "nico/api/specialist_ship_ready_bootstrap.py")
@@ -25,10 +25,15 @@ def test_github_actions_oidc_exchange_is_exact_release_and_workflow_bound() -> N
 
     assert 'AUDIENCE = "nico-production-proof"' in backend
     assert 'ISSUER = "https://token.actions.githubusercontent.com"' in backend
+    assert 'OWNER_ID = "235159333"' in backend
     assert 'REPOSITORY_ID = "1282576027"' in backend
     assert 'ENVIRONMENT = "production-smoke"' in backend
     assert '"release_sha": bool(expected_release_sha)' in backend
     assert '"workflow_ref": workflow_file in ALLOWED_WORKFLOW_FILES' in backend
+    assert '"workflow_sha": bool(expected_release_sha)' in backend
+    assert 'scope=PRODUCTION_PROOF_SCOPE' in backend
+    assert '"review_allowed": False' in backend
+    assert '"delivery_allowed": False' in backend
     assert '"jti"' in backend and "_consume_jti" in backend
     assert 'new URL("/assessment/github-actions-proof-session", backend)' in frontend
     assert "httpOnly: true" in frontend
@@ -36,8 +41,12 @@ def test_github_actions_oidc_exchange_is_exact_release_and_workflow_bound() -> N
     assert 'secure: process.env.NODE_ENV === "production"' in frontend
     assert "install_github_actions_proof_session(app)" in bootstrap
     assert 'GITHUB_ACTIONS_PROOF_SESSION_ROUTE = "/assessment/github-actions-proof-session"' in middleware
-    assert "if path in {SESSION_ROUTE, GITHUB_ACTIONS_PROOF_SESSION_ROUTE}" in middleware
-    assert 'return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)' in middleware
+    assert 'PRODUCTION_PROOF_SCOPE = "nico_production_proof"' in middleware
+    assert "if normalized in {SESSION_ROUTE, GITHUB_ACTIONS_PROOF_SESSION_ROUTE}" in middleware
+    assert '_PROTECTED_ROOTS = ("/assessment", "/reports")' in middleware
+    assert "_production_proof_request_allowed" in middleware
+    assert '"production_proof_review_allowed": False' in middleware
+    assert '"production_proof_delivery_allowed": False' in middleware
 
 
 def test_live_proofs_use_oidc_sessions_without_password_secrets() -> None:
