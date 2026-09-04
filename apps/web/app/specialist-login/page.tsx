@@ -2,9 +2,14 @@
 
 import {FormEvent, useEffect, useState} from "react";
 
+const ENGLISH_DESTINATION = "/assessment?tier=comprehensive#assessment";
+const SPANISH_DESTINATION = "/es/assessment?tier=comprehensive#assessment";
+
 function safeDestination(): string {
-  const value = new URLSearchParams(window.location.search).get("next") || "/assessment?tier=comprehensive#assessment";
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/assessment?tier=comprehensive#assessment";
+  const requested = new URLSearchParams(window.location.search).get("next");
+  return requested === SPANISH_DESTINATION
+    ? SPANISH_DESTINATION
+    : ENGLISH_DESTINATION;
 }
 
 export default function SpecialistLoginPage() {
