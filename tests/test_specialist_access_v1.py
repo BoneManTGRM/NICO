@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -96,3 +97,16 @@ def test_session_expiration_and_tamper_fail_closed(monkeypatch):
     assert validate_specialist_session(token, now=1_001) is not None
     assert validate_specialist_session(token, now=100_000) is None
     assert validate_specialist_session(f"{token[:-1]}x", now=1_001) is None
+
+
+def test_session_signing_never_reuses_operator_or_admin_credentials(monkeypatch):
+    monkeypatch.setenv("NICO_COMPREHENSIVE_OPERATOR_PASSWORD", "operator-password")
+    monkeypatch.setenv("NICO_ADMIN_TOKEN", "site-wide-admin-token")
+    monkeypatch.delenv("NICO_OPERATOR_SESSION_SIGNING_SECRET", raising=False)
+
+    with pytest.raises(RuntimeError, match="specialist_session_signing_secret_unavailable"):
+        issue_specialist_session({"authority": "nico_comprehensive_operator"})
+
+    monkeypatch.setenv("NICO_OPERATOR_SESSION_SIGNING_SECRET", "too-short")
+    with pytest.raises(RuntimeError, match="specialist_session_signing_secret_unavailable"):
+        issue_specialist_session({"authority": "nico_comprehensive_operator"})
