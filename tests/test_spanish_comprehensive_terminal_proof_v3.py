@@ -426,7 +426,9 @@ def test_production_workflow_preflights_entrypoint_before_assessment() -> None:
 
     install = workflow.index("Install pinned browser proof dependencies")
     preflight = workflow.index("Verify Spanish proof entrypoint before assessment")
-    assessment = workflow.index("Run fresh Spanish Comprehensive final-report proof")
+    assessment = workflow.index(
+        "Run fresh authenticated Spanish Comprehensive final-report proof"
+    )
     assert install < preflight < assessment
     install_block = workflow[install:preflight]
     assert '. "playwright==1.61.0" "pypdf==6.15.0"' in install_block
