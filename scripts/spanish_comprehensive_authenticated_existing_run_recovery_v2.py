@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import spanish_comprehensive_existing_run_recovery_v1 as recovery
@@ -10,6 +11,7 @@ from github_actions_proof_session_v1 import (
 )
 
 VERSION = "nico.spanish_comprehensive_authenticated_existing_run_recovery.v2"
+GUARD_ENV = "NICO_AUTHENTICATED_PROOF_WRAPPER_ACTIVE"
 _ACTIVE_COOKIE_HEADER = ""
 
 
@@ -50,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     global _ACTIVE_COOKIE_HEADER
     original_run = recovery.run_recovery
     original_client = recovery.spanish.httpx.Client
+    prior_guard = os.environ.get(GUARD_ENV)
 
     def authenticated_run(browser: Any, args: Any) -> dict[str, Any]:
         wrapped = _AuthenticatedBrowser(browser, args.frontend_url)
@@ -61,12 +64,17 @@ def main(argv: list[str] | None = None) -> int:
 
     recovery.run_recovery = authenticated_run
     recovery.spanish.httpx.Client = _authenticated_httpx_client(original_client)
+    os.environ[GUARD_ENV] = "1"
     try:
         return recovery.main(argv)
     finally:
         recovery.run_recovery = original_run
         recovery.spanish.httpx.Client = original_client
         _ACTIVE_COOKIE_HEADER = ""
+        if prior_guard is None:
+            os.environ.pop(GUARD_ENV, None)
+        else:
+            os.environ[GUARD_ENV] = prior_guard
 
 
 if __name__ == "__main__":
