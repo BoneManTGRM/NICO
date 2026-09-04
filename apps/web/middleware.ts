@@ -5,9 +5,10 @@ const SESSION_COOKIE = "nico-specialist-session";
 export function middleware(request: NextRequest) {
   if (request.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
   const login = request.nextUrl.clone();
-  login.pathname = "/specialist-login";
+  login.pathname = request.nextUrl.pathname.startsWith("/es/")
+    ? "/es/specialist-login"
+    : "/specialist-login";
   login.search = "";
-  login.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
   return NextResponse.redirect(login);
 }
 
