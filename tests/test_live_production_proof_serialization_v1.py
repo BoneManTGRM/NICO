@@ -46,6 +46,8 @@ def test_sole_fresh_producer_fails_closed_on_wrong_production_scope() -> None:
     assert 'test "${NICO_PRODUCTION_SMOKE_REPOSITORY}" = "https://gitlab.com/gitlab-org/gitlab-test"' in spanish
     assert 'test "${GITHUB_REF}" = "refs/heads/main"' in spanish
     assert 'test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"' in spanish
+    assert 'test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"' in spanish
+    assert 'test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"' in spanish
 
 
 def test_closure_chain_has_bounded_fixture_producer_and_consumer_only_downstream() -> None:
@@ -63,13 +65,20 @@ def test_closure_chain_has_bounded_fixture_producer_and_consumer_only_downstream
     }
 
     producer = workflows["spanish-comprehensive-production-proof.yml"]
-    assert producer.count("python scripts/spanish_comprehensive_live_acceptance_v3.py") == 2
+    assert producer.count(
+        "python scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py"
+    ) == 2
+    assert producer.count(
+        "python scripts/spanish_comprehensive_authenticated_existing_run_recovery_v1.py"
+    ) == 1
+    assert "id-token: write" in producer
     assert "NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE: excluded" in producer
-    assert "Run explicit exclusion-state Comprehensive proof" in producer
+    assert "Run explicit authenticated exclusion-state Comprehensive proof" in producer
     for name, source in workflows.items():
         if name == "spanish-comprehensive-production-proof.yml":
             continue
         assert "python scripts/spanish_comprehensive_live_acceptance" not in source
+        assert "python scripts/spanish_comprehensive_authenticated_live_acceptance" not in source
         assert "/comprehensive-intake" not in source
         assert "/continue" not in source
         assert "--source-proof source-proof/spanish-comprehensive-live-proof.json" in source

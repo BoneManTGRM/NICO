@@ -57,7 +57,7 @@ def test_source_workflow_still_publishes_pending_before_live_proof() -> None:
     text = SOURCE.read_text(encoding="utf-8")
 
     pending = text.index("Publish pending Spanish proof status")
-    live_proof = text.index("Run fresh Spanish Comprehensive final-report proof")
+    live_proof = text.index("Run fresh authenticated Spanish Comprehensive final-report proof")
     assert pending < live_proof
     assert '"state": "pending"' in text
     assert "NICO Spanish Comprehensive Production Proof" in text
