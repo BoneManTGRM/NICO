@@ -97,7 +97,13 @@ def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, 
 
 
 class AuthenticatedBrowser:
-    """Wrap Playwright Browser so every context starts inside the proof session."""
+    """Wrap Playwright Browser so NICO-origin requests carry the proof session.
+
+    The session is installed only as a Secure, HttpOnly, SameSite=Strict cookie for
+    the exact production frontend origin. It is deliberately not added to global
+    Playwright extra HTTP headers, so navigations or subresources to third-party
+    origins cannot receive the NICO proof credential.
+    """
 
     def __init__(self, browser: Any, *, session: str, frontend_url: str) -> None:
         self._browser = browser
@@ -105,9 +111,6 @@ class AuthenticatedBrowser:
         self._origin = _https_origin(frontend_url)
 
     def new_context(self, *args: Any, **kwargs: Any) -> Any:
-        existing = dict(kwargs.get("extra_http_headers") or {})
-        existing[SESSION_HEADER] = self._session
-        kwargs["extra_http_headers"] = existing
         context = self._browser.new_context(*args, **kwargs)
         context.add_cookies(
             [
@@ -128,7 +131,7 @@ class AuthenticatedBrowser:
 
 
 def install_authenticated_httpx_client(module: Any, session: str) -> None:
-    """Add the restricted session to direct report/status reads in one proof process."""
+    """Add the restricted session to direct NICO report/status reads in one proof process."""
 
     httpx_module = module.httpx
     original = getattr(httpx_module.Client, "_nico_proof_original", httpx_module.Client)

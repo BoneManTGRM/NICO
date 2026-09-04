@@ -7,16 +7,20 @@ from typing import Any, Mapping
 
 import jwt
 
-VERSION = "nico.github_actions_proof_auth.v1"
+VERSION = "nico.github_actions_proof_auth.v2"
 ISSUER = "https://token.actions.githubusercontent.com"
 JWKS_URL = f"{ISSUER}/.well-known/jwks"
 DEFAULT_AUDIENCE = "https://app.nicoaudit.com/nico-production-proof"
 DEFAULT_REPOSITORY = "BoneManTGRM/NICO"
 DEFAULT_REF = "refs/heads/main"
 DEFAULT_WORKFLOW_PATH = ".github/workflows/spanish-comprehensive-production-proof.yml"
+FINALIZER_WORKFLOW_PATH = ".github/workflows/specialist-production-proof-finalizer.yml"
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _RUN_ID = re.compile(r"^[1-9][0-9]{0,19}$")
-_ALLOWED_EVENTS = {"push", "workflow_dispatch"}
+_WORKFLOW_EVENT_POLICY = {
+    DEFAULT_WORKFLOW_PATH: {"push", "workflow_dispatch"},
+    FINALIZER_WORKFLOW_PATH: {"workflow_run"},
+}
 
 
 def _configured(name: str, default: str) -> str:
@@ -56,6 +60,16 @@ def _required_claim(claims: Mapping[str, Any], name: str) -> str:
     return value
 
 
+def _allowed_workflow_paths(explicit_workflow_path: str | None) -> dict[str, set[str]]:
+    if explicit_workflow_path is not None:
+        normalized = str(explicit_workflow_path).strip().lstrip("/")
+        return {normalized: set(_WORKFLOW_EVENT_POLICY.get(normalized, {"push", "workflow_dispatch"}))}
+    configured = expected_workflow_path()
+    policy = {configured: set(_WORKFLOW_EVENT_POLICY.get(configured, {"push", "workflow_dispatch"}))}
+    policy[FINALIZER_WORKFLOW_PATH] = set(_WORKFLOW_EVENT_POLICY[FINALIZER_WORKFLOW_PATH])
+    return policy
+
+
 def validate_github_actions_claims(
     claims: Mapping[str, Any],
     *,
@@ -64,16 +78,16 @@ def validate_github_actions_claims(
     ref: str | None = None,
     workflow_path: str | None = None,
 ) -> dict[str, str]:
-    """Validate the exact trusted production-proof workflow identity.
+    """Validate an exact trusted production-proof workflow identity.
 
-    The function is intentionally pure so CI can exercise every rejection path without
-    contacting GitHub. Cryptographic signature, issuer, audience, and token lifetime are
-    enforced separately by ``verify_github_actions_oidc_token``.
+    Only the canonical Spanish producer and the bounded post-producer specialist
+    finalizer are accepted. Each workflow has an explicit event policy, while exact
+    repository, protected main ref, deployed release SHA, subject, run identity,
+    signature, issuer, audience, and lifetime remain mandatory.
     """
 
     expected_repo = str(repository or expected_repository()).strip()
     expected_branch_ref = str(ref or expected_ref()).strip()
-    expected_workflow = str(workflow_path or expected_workflow_path()).strip().lstrip("/")
     expected_sha = str(release_sha or expected_release_sha()).strip().lower()
     if not _GIT_SHA.fullmatch(expected_sha):
         raise ValueError("github_actions_proof_release_sha_invalid")
@@ -87,15 +101,21 @@ def validate_github_actions_claims(
     observed_run_id = _required_claim(claims, "run_id")
     observed_run_attempt = _required_claim(claims, "run_attempt")
 
-    expected_workflow_ref = f"{expected_repo}/{expected_workflow}@{expected_branch_ref}"
+    workflow_policy = _allowed_workflow_paths(workflow_path)
+    observed_workflow_path = ""
+    workflow_suffix = f"@{expected_branch_ref}"
+    repo_prefix = f"{expected_repo}/"
+    if observed_workflow_ref.startswith(repo_prefix) and observed_workflow_ref.endswith(workflow_suffix):
+        observed_workflow_path = observed_workflow_ref[len(repo_prefix) : -len(workflow_suffix)]
+    allowed_events = workflow_policy.get(observed_workflow_path, set())
     expected_subject = f"repo:{expected_repo}:ref:{expected_branch_ref}"
     checks = {
         "repository": observed_repo == expected_repo,
         "ref": observed_ref == expected_branch_ref,
         "sha": observed_sha == expected_sha,
-        "event_name": observed_event in _ALLOWED_EVENTS,
+        "event_name": observed_event in allowed_events,
         "sub": observed_subject == expected_subject,
-        "workflow_ref": observed_workflow_ref == expected_workflow_ref,
+        "workflow_ref": observed_workflow_path in workflow_policy,
         "run_id": bool(_RUN_ID.fullmatch(observed_run_id)),
         "run_attempt": bool(_RUN_ID.fullmatch(observed_run_attempt)),
     }
@@ -168,6 +188,8 @@ def verify_github_actions_oidc_token(token: str) -> dict[str, str]:
 __all__ = [
     "VERSION",
     "DEFAULT_AUDIENCE",
+    "DEFAULT_WORKFLOW_PATH",
+    "FINALIZER_WORKFLOW_PATH",
     "proof_audience",
     "validate_github_actions_claims",
     "verify_github_actions_oidc_token",
