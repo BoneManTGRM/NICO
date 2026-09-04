@@ -1,5 +1,5 @@
 import {redirect} from "next/navigation";
 
 export default function Page() {
-  redirect("/specialist-login");
+  redirect("/assessment?tier=comprehensive#assessment");
 }

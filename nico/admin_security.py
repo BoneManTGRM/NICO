@@ -96,10 +96,12 @@ def _configured_operator_passwords() -> list[tuple[str, str, str]]:
 def require_comprehensive_operator(provided_token: str | None = None) -> tuple[bool, dict[str, Any]]:
     """Authorize only Comprehensive assessment, review, and delivery operations.
 
-    A scoped NICO operator password is deliberately not accepted by
-    ``require_admin_write``. It therefore cannot administer projects, runtime
-    configuration, recovery, backups, or any other NICO operator surface. The
-    previous environment variable remains valid during credential-name migration.
+    SARA's service password is deliberately not accepted by ``require_admin_write``.
+    The generic scoped NICO operator password is also deliberately excluded from
+    site-administration authority. These credentials therefore cannot administer
+    projects, runtime configuration, recovery, backups, or any other NICO operator
+    surface. The previous environment variable remains valid during credential-name
+    migration.
     """
 
     admin_allowed, admin_status = require_admin_write(provided_token)

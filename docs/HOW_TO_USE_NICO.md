@@ -1,4 +1,4 @@
-# NICO Cybersecurity Specialist Operating Manual
+# How to Use NICO — Cybersecurity Specialist Operating Manual
 
 NICO is shipped as an authenticated, specialist-operated Comprehensive technical assessment system. It collects repository evidence at an immutable revision, runs bounded analysis and scanners, generates cross-format reports, preserves unavailable evidence, and requires explicit human review before client delivery.
 
@@ -49,7 +49,7 @@ The specialist password and session-signing secret must be different. The specia
 ## Sign in
 
 1. Open the production NICO site.
-2. The root page redirects to **Cybersecurity specialist access**.
+2. The root page opens the Comprehensive route, whose middleware redirects unauthenticated users to **Cybersecurity specialist access**.
 3. Enter the private NICO operator password.
 4. NICO exchanges the password for a signed, short-lived, HttpOnly, SameSite=Strict session cookie.
 5. The password is not stored in the URL, local storage, or session storage.
@@ -59,7 +59,7 @@ Do not share the specialist password by email, chat, screenshots, or client repo
 
 ## Supported assessment intake
 
-The public site intake is designed for a repository that NICO can acquire through an authorized read-only provider path.
+The authenticated site intake is designed for a repository that NICO can acquire through an authorized read-only provider path.
 
 For each engagement, retain:
 
