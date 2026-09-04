@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-ARTIFACT_SCHEMA = "nico.frontend_production_release_identity.v1"
+ARTIFACT_SCHEMA = "nico.frontend_production_release_identity.v2"
 DEFAULT_UI_CONTRACT = "expert-engagement-v2"
 DEFAULT_DEPLOYMENT_ENVIRONMENT = "production"
 DEFAULT_TIMEOUT_SECONDS = 15 * 60
@@ -31,11 +31,23 @@ LOCALES = {
         "path": "/assessment",
         "expected_label": "Create engagement and capture repository snapshot",
         "forbidden_labels": ("Run NICO Assessment",),
+        "authentication_gate_markers": (
+            "Cybersecurity specialist access",
+            "Operator password",
+            "Open NICO",
+            'type="password"',
+        ),
     },
     "es-MX": {
         "path": "/es/assessment",
         "expected_label": "Crear encargo y capturar instantánea del repositorio",
         "forbidden_labels": ("Ejecutar evaluación NICO",),
+        "authentication_gate_markers": (
+            "Acceso para especialistas en ciberseguridad",
+            "Contraseña del operador",
+            "Abrir NICO",
+            'type="password"',
+        ),
     },
 }
 
@@ -309,20 +321,38 @@ def verify_assessment_page(
         else marker
         for marker in WORKSPACE_MARKERS
     )
-    missing = [marker for marker in expected_markers if marker not in html]
+    missing_workspace = [marker for marker in expected_markers if marker not in html]
     expected_label = str(expected["expected_label"])
     if expected_label not in html:
-        missing.append(expected_label)
+        missing_workspace.append(expected_label)
     forbidden = [label for label in expected["forbidden_labels"] if str(label) in html]
-    verified = page.get("http_status") == 200 and not missing and not forbidden
+    gate_markers = tuple(str(item) for item in expected["authentication_gate_markers"])
+    missing_gate = [marker for marker in gate_markers if marker not in html]
+    workspace_verified = not missing_workspace
+    authentication_gate_verified = not missing_gate
+    verified = bool(
+        page.get("http_status") == 200
+        and not forbidden
+        and (workspace_verified or authentication_gate_verified)
+    )
     evidence = {
         "locale": locale,
         "url": page.get("url") or "",
         "http_status": page.get("http_status") or 0,
         "expected_label": expected_label,
-        "workspace_markers_verified": not any(marker in missing for marker in expected_markers),
-        "exact_label_verified": expected_label not in missing,
-        "missing": missing,
+        "workspace_markers_verified": workspace_verified,
+        "exact_label_verified": expected_label not in missing_workspace,
+        "authentication_gate_verified": authentication_gate_verified,
+        "authentication_gate_markers": list(gate_markers),
+        "presentation_mode": (
+            "authenticated_workspace"
+            if workspace_verified
+            else "specialist_authentication_gate"
+            if authentication_gate_verified
+            else "unverified"
+        ),
+        "missing": missing_workspace,
+        "missing_authentication_gate_markers": missing_gate,
         "forbidden": forbidden,
         "verified": verified,
     }
@@ -330,7 +360,7 @@ def verify_assessment_page(
         evidence["error"] = page["error"]
     if not verified:
         raise ReleaseIdentityError(
-            f"Production {locale} assessment page is stale or violates the exact UI contract.",
+            f"Production {locale} assessment access is stale or violates the specialist authentication/workspace contract.",
             {
                 "artifact_schema": ARTIFACT_SCHEMA,
                 "status": "failed",
@@ -405,6 +435,7 @@ def verify_production_frontend(
             }
             raise ReleaseIdentityError(str(exc), evidence) from exc
 
+    page_values = tuple(pages.values())
     return {
         "artifact_schema": ARTIFACT_SCHEMA,
         "status": "passed",
@@ -425,7 +456,12 @@ def verify_production_frontend(
             "cache_busted_no_store_requests": True,
             "english_copy_contract": True,
             "spanish_copy_contract": True,
-            "workspace_contract": True,
+            "workspace_contract": all(item.get("verified") is True for item in page_values),
+            "specialist_authentication_gate": all(
+                item.get("authentication_gate_verified") is True
+                or item.get("workspace_markers_verified") is True
+                for item in page_values
+            ),
             "preview_deployment_rejected": True,
         },
     }
@@ -437,7 +473,7 @@ def _write(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Verify that the NICO production domain serves an exact frontend release.")
+    parser = argparse.ArgumentParser(description="Verify that the NICO production domain serves an exact frontend release and its specialist access boundary.")
     parser.add_argument("--origin", required=True)
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--expected-ui-contract", default=DEFAULT_UI_CONTRACT)
