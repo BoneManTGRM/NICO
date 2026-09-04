@@ -53,9 +53,13 @@ def _distinct_nonempty(values: list[str]) -> bool:
 
 def specialist_readiness() -> dict[str, Any]:
     credentials = _configured_credentials()
-    operator_password = credentials["operator"] or credentials["legacy_operator"]
     credential_separation = _distinct_nonempty(
-        [credentials["admin"], operator_password, credentials["session_signing"]]
+        [
+            credentials["admin"],
+            credentials["operator"],
+            credentials["legacy_operator"],
+            credentials["session_signing"],
+        ]
     )
     release = comprehensive_release_provenance()
     runtime = dict(getattr(app.state, "nico_comprehensive_production_runtime", {}) or {})
@@ -66,7 +70,7 @@ def specialist_readiness() -> dict[str, Any]:
         and runtime.get("client_delivery_allowed") is False
     )
     session_signing_configured = SPECIALIST_ACCESS.get("session_signing_configured") is True
-    operator_password_configured = bool(operator_password)
+    generic_operator_password_configured = bool(credentials["operator"])
     release_identity_complete = (
         release.get("deployment_identity_established") is True
         and release.get("frontend_identity_established") is True
@@ -75,7 +79,7 @@ def specialist_readiness() -> dict[str, Any]:
         (
             SPECIALIST_ACCESS.get("installed") is True,
             session_signing_configured,
-            operator_password_configured,
+            generic_operator_password_configured,
             credential_separation,
             runtime_ready,
             release_identity_complete,
@@ -86,9 +90,10 @@ def specialist_readiness() -> dict[str, Any]:
         "status": "ready" if ready else "blocked",
         "specialist_access_installed": SPECIALIST_ACCESS.get("installed") is True,
         "authenticated_comprehensive_routes_enforced": True,
-        "operator_password_configured": operator_password_configured,
-        "generic_operator_password_configured": bool(credentials["operator"]),
+        "operator_password_configured": generic_operator_password_configured,
+        "generic_operator_password_configured": generic_operator_password_configured,
         "legacy_operator_password_configured": bool(credentials["legacy_operator"]),
+        "specialist_credential_migration_complete": generic_operator_password_configured,
         "session_signing_configured": session_signing_configured,
         "credential_separation_verified": credential_separation,
         "session_cookie_http_only": True,
