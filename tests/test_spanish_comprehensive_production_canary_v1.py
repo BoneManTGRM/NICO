@@ -6,6 +6,9 @@ from pathlib import Path
 SCRIPT = Path("scripts/spanish_comprehensive_live_acceptance_v1.py")
 TELEMETRY_SCRIPT = Path("scripts/spanish_comprehensive_live_acceptance_v2.py")
 TERMINAL_SCRIPT = Path("scripts/spanish_comprehensive_live_acceptance_v3.py")
+AUTHENTICATED_SCRIPT = Path(
+    "scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py"
+)
 WORKFLOW = Path(".github/workflows/spanish-comprehensive-production-proof.yml")
 
 
@@ -61,27 +64,35 @@ def test_spanish_production_workflow_is_an_exact_main_release_gate() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     telemetry = TELEMETRY_SCRIPT.read_text(encoding="utf-8")
     terminal = TERMINAL_SCRIPT.read_text(encoding="utf-8")
+    authenticated = AUTHENTICATED_SCRIPT.read_text(encoding="utf-8")
     compile(telemetry, str(TELEMETRY_SCRIPT), "exec")
     compile(terminal, str(TERMINAL_SCRIPT), "exec")
+    compile(authenticated, str(AUTHENTICATED_SCRIPT), "exec")
 
     assert "name: Spanish Comprehensive Production Proof" in text
     assert "branches:\n      - main" in text
     assert "workflow_dispatch:" in text
     assert "statuses: write" in text
+    assert "id-token: write" in text
     assert "group: nico-spanish-comprehensive-production" in text
     assert "cancel-in-progress: false" in text
     assert "cancel-in-progress: true" not in text
     assert "NICO Spanish Comprehensive Production Proof" in text
     assert "Wait for exact frontend and backend deployments" in text
     assert "Verify exact frontend release identity" in text
-    assert "scripts/spanish_comprehensive_live_acceptance_v3.py" in text
+    assert "scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py" in text
     assert "spanish-comprehensive-live-proof.progress.json" in text
     assert "SPANISH_PROOF_PROGRESS" in telemetry
+    assert "acquire_production_proof_session" in authenticated
+    assert "AuthenticatedBrowser" in authenticated
     assert 'SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"' in terminal
     assert 'SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"' in terminal
     assert 'SPANISH_TERMINAL_REPORT = "Completa"' in terminal
     assert 'payload["report_language_requested"] == "es-MX"' in text
     assert 'payload["production_proof_scope_verified"] is True' in text
+    assert 'payload["github_actions_oidc_session_verified"] is True' in text
+    assert 'payload["production_proof_session_scope"] == "nico_production_proof"' in text
+    assert 'payload["production_proof_session_token_retained"] is False' in text
     assert 'payload["terminal"]["phase"] == "Se requiere revisión experta"' in text
     assert 'payload["terminal"]["review"] == "Revisión interna requerida"' in text
     assert 'payload["terminal"]["report"] == "Completa"' in text
@@ -112,9 +123,10 @@ def test_spanish_canary_runs_supplied_and_module_exclusion_fixtures() -> None:
     terminal = TERMINAL_SCRIPT.read_text(encoding="utf-8")
 
     assert workflow.count(
-        "python scripts/spanish_comprehensive_live_acceptance_v3.py"
+        "python scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py"
     ) == 2
-    assert "Run explicit exclusion-state Comprehensive proof" in workflow
+    assert "scripts/spanish_comprehensive_live_acceptance_v3.py" in workflow
+    assert "Run explicit authenticated exclusion-state Comprehensive proof" in workflow
     assert "NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE: excluded" in workflow
     assert "spanish-comprehensive-exclusion-live-proof.json" in workflow
     assert 'exclusion["module_exclusion_verified"] is True' in workflow
@@ -141,8 +153,9 @@ def test_spanish_canary_does_not_approve_or_deliver_client_artifacts() -> None:
     script = SCRIPT.read_text(encoding="utf-8")
     telemetry = TELEMETRY_SCRIPT.read_text(encoding="utf-8")
     terminal = TERMINAL_SCRIPT.read_text(encoding="utf-8")
+    authenticated = AUTHENTICATED_SCRIPT.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    combined = script + "\n" + telemetry + "\n" + terminal + "\n" + workflow
+    combined = script + "\n" + telemetry + "\n" + terminal + "\n" + authenticated + "\n" + workflow
 
     assert "/approve" not in combined
     assert "client_delivery_allowed = True" not in combined
