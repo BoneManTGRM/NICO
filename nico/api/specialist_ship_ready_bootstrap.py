@@ -22,6 +22,7 @@ from nico.github_actions_proof_session_v1 import (  # noqa: E402
     install_github_actions_proof_session,
 )
 from nico.specialist_access_v1 import (  # noqa: E402
+    PRODUCTION_PROOF_SCOPE,
     SESSION_SIGNING_SECRET_ENV,
     install_specialist_access,
 )
@@ -90,7 +91,19 @@ def specialist_readiness() -> dict[str, Any]:
     session_signing_configured = SPECIALIST_ACCESS.get("session_signing_configured") is True
     generic_operator_password_configured = bool(credentials["operator"])
     review_session_bridge_installed = REVIEW_SESSION_BRIDGE.get("installed") is True
-    github_actions_proof_installed = GITHUB_ACTIONS_PROOF_SESSION.get("installed") is True
+    all_assessment_routes_protected = SPECIALIST_ACCESS.get("all_assessment_routes_protected") is True
+    all_report_routes_protected = SPECIALIST_ACCESS.get("all_report_routes_protected") is True
+    proof_scope_least_privilege = all(
+        (
+            GITHUB_ACTIONS_PROOF_SESSION.get("installed") is True,
+            GITHUB_ACTIONS_PROOF_SESSION.get("least_privilege_scope") == PRODUCTION_PROOF_SCOPE,
+            GITHUB_ACTIONS_PROOF_SESSION.get("review_allowed") is False,
+            GITHUB_ACTIONS_PROOF_SESSION.get("delivery_allowed") is False,
+            GITHUB_ACTIONS_PROOF_SESSION.get("administration_allowed") is False,
+            SPECIALIST_ACCESS.get("production_proof_review_allowed") is False,
+            SPECIALIST_ACCESS.get("production_proof_delivery_allowed") is False,
+        )
+    )
     approved_lifecycle_consistency_installed = (
         APPROVED_LIFECYCLE_CONSISTENCY.get("installed") is True
         and APPROVED_LIFECYCLE_CONSISTENCY.get("cross_format_fail_closed") is True
@@ -102,11 +115,13 @@ def specialist_readiness() -> dict[str, Any]:
     ready = all(
         (
             SPECIALIST_ACCESS.get("installed") is True,
+            all_assessment_routes_protected,
+            all_report_routes_protected,
             session_signing_configured,
             generic_operator_password_configured,
             credential_separation,
             review_session_bridge_installed,
-            github_actions_proof_installed,
+            proof_scope_least_privilege,
             approved_lifecycle_consistency_installed,
             runtime_ready,
             release_identity_complete,
@@ -116,11 +131,17 @@ def specialist_readiness() -> dict[str, Any]:
         "artifact_schema": "nico.specialist_ship_readiness.v1",
         "status": "ready" if ready else "blocked",
         "specialist_access_installed": SPECIALIST_ACCESS.get("installed") is True,
-        "authenticated_comprehensive_routes_enforced": True,
+        "authenticated_comprehensive_routes_enforced": all_assessment_routes_protected,
+        "authenticated_report_routes_enforced": all_report_routes_protected,
         "signed_review_sessions_enforced": review_session_bridge_installed,
-        "github_actions_production_proof_enabled": github_actions_proof_installed,
+        "github_actions_production_proof_enabled": GITHUB_ACTIONS_PROOF_SESSION.get("installed") is True,
         "github_actions_proof_exact_release_bound": GITHUB_ACTIONS_PROOF_SESSION.get("exact_release_bound") is True,
         "github_actions_proof_workflow_allowlist_bound": GITHUB_ACTIONS_PROOF_SESSION.get("workflow_allowlist_bound") is True,
+        "github_actions_proof_workflow_sha_bound": GITHUB_ACTIONS_PROOF_SESSION.get("workflow_sha_bound") is True,
+        "github_actions_proof_least_privilege": proof_scope_least_privilege,
+        "github_actions_proof_review_allowed": False,
+        "github_actions_proof_delivery_allowed": False,
+        "github_actions_proof_administration_allowed": False,
         "approved_lifecycle_consistency_enforced": approved_lifecycle_consistency_installed,
         "operator_password_configured": generic_operator_password_configured,
         "generic_operator_password_configured": generic_operator_password_configured,
@@ -150,8 +171,8 @@ if _route_count(SPECIALIST_READINESS_ROUTE) == 0:
     )
     app.openapi_schema = None
 
-# A secret-free test import remains possible, but every protected assessment route
-# still fails closed and browser session creation returns 503 until deployment
+# A secret-free test import remains possible, but every protected assessment/report
+# route still fails closed and browser session creation returns 503 until deployment
 # credentials establish a signing key. Production verification must prove readiness.
 app.state.nico_approved_lifecycle_consistency = APPROVED_LIFECYCLE_CONSISTENCY
 app.state.nico_release_provenance = RELEASE_PROVENANCE
