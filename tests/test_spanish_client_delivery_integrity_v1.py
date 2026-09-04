@@ -67,12 +67,14 @@ def test_delivery_language_prefers_manifest_then_canonical_truth() -> None:
     assert _report_language({}, {}) == "en"
 
 
-def test_spanish_public_entrypoint_is_comprehensive_only() -> None:
+def test_spanish_public_entrypoint_is_authenticated_and_comprehensive_only() -> None:
     home = Path("apps/web/app/es/page.tsx").read_text(encoding="utf-8")
+    login = Path("apps/web/app/es/specialist-login/page.tsx").read_text(encoding="utf-8")
     assessment = Path("apps/web/app/es/assessment/page.tsx").read_text(encoding="utf-8")
 
-    assert "tier=comprehensive" in home
-    assert "tier=express" not in home.casefold()
+    assert 'redirect("/es/specialist-login")' in home
+    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment";' in login
+    assert "tier=express" not in f"{home}\n{login}".casefold()
     assert "Express" not in assessment
     assert "NICO Comprehensive" in assessment
 
