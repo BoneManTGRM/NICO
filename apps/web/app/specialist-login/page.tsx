@@ -2,15 +2,7 @@
 
 import {FormEvent, useEffect, useState} from "react";
 
-const ENGLISH_DESTINATION = "/assessment?tier=comprehensive#assessment";
-const SPANISH_DESTINATION = "/es/assessment?tier=comprehensive#assessment";
-
-function safeDestination(): string {
-  const requested = new URLSearchParams(window.location.search).get("next");
-  return requested === SPANISH_DESTINATION
-    ? SPANISH_DESTINATION
-    : ENGLISH_DESTINATION;
-}
+const DESTINATION = "/assessment?tier=comprehensive#assessment";
 
 export default function SpecialistLoginPage() {
   const [password, setPassword] = useState("");
@@ -19,7 +11,7 @@ export default function SpecialistLoginPage() {
 
   useEffect(() => {
     void fetch("/api/nico/operator-session", {method: "GET", cache: "no-store"}).then((response) => {
-      if (response.ok) window.location.replace(safeDestination());
+      if (response.ok) window.location.replace(DESTINATION);
     });
   }, []);
 
@@ -40,7 +32,7 @@ export default function SpecialistLoginPage() {
         return;
       }
       setPassword("");
-      window.location.assign(safeDestination());
+      window.location.assign(DESTINATION);
     } catch {
       setError("Secure specialist access is unavailable.");
     } finally {
@@ -68,6 +60,7 @@ export default function SpecialistLoginPage() {
         {error ? <p role="alert">{error}</p> : null}
       </form>
       <p className="muted">The password is exchanged once for a signed, short-lived, HttpOnly session cookie. It is not stored in the URL or browser storage.</p>
+      <p className="muted"><a href="/es/specialist-login">Español (México)</a></p>
     </section>
   </main>;
 }
