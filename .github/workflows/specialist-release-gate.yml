@@ -1,0 +1,187 @@
+name: Specialist Release Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  pull-requests: write
+  statuses: read
+
+concurrency:
+  group: specialist-release-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-merge:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Wait for every exact-head release check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          repo = os.environ['REPOSITORY']
+          pr_number = int(os.environ['PR_NUMBER'])
+          head_sha = os.environ['HEAD_SHA']
+          token = os.environ['GH_TOKEN']
+          api = 'https://api.github.com'
+          required_workflows = {
+              'NICO CI',
+              'CodeQL Advanced',
+              'Security Audit Evidence',
+              'Phase 9 Comprehensive Production Proof',
+              'Phase 9 Production Report and Node Scanner Proof',
+              'Postgres Restart Proof',
+              'Resilience Proof',
+              'Recorded Golden Demonstration',
+              'Phase 8 Operational Acceptance',
+              'Remediation Evidence',
+          }
+          gate_name = 'Specialist Release Gate'
+          bad = {'failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure'}
+
+          def request(path, *, method='GET', payload=None):
+              headers = {
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': f'Bearer {token}',
+                  'X-GitHub-Api-Version': '2022-11-28',
+              }
+              body = None if payload is None else json.dumps(payload).encode()
+              req = urllib.request.Request(api + path, data=body, method=method, headers=headers)
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)
+
+          def unresolved_threads():
+              query = '''
+              query($owner:String!, $name:String!, $number:Int!) {
+                repository(owner:$owner, name:$name) {
+                  pullRequest(number:$number) {
+                    reviewThreads(first:100) { nodes { isResolved isOutdated } }
+                  }
+                }
+              }
+              '''
+              owner, name = repo.split('/', 1)
+              data = request('/graphql', method='POST', payload={
+                  'query': query,
+                  'variables': {'owner': owner, 'name': name, 'number': pr_number},
+              })
+              threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
+              return [item for item in threads if not item['isResolved'] and not item['isOutdated']]
+
+          deadline = time.time() + 35 * 60
+          while time.time() < deadline:
+              pr = request(f'/repos/{repo}/pulls/{pr_number}')
+              if pr.get('state') != 'open' or pr.get('head', {}).get('sha') != head_sha:
+                  raise SystemExit('Pull request state or exact head changed; refusing stale merge.')
+              if pr.get('mergeable_state') in {'dirty', 'behind', 'blocked'}:
+                  raise SystemExit(f"Pull request is not current and mergeable: {pr.get('mergeable_state')}")
+
+              runs = request(f'/repos/{repo}/actions/runs?head_sha={head_sha}&per_page=100').get('workflow_runs', [])
+              latest = {}
+              for run in sorted(runs, key=lambda item: item.get('created_at', '')):
+                  if run.get('name') != gate_name:
+                      latest[run.get('name')] = run
+              missing = sorted(required_workflows - set(latest))
+              failures = [
+                  {'name': name, 'conclusion': run.get('conclusion'), 'url': run.get('html_url')}
+                  for name, run in latest.items()
+                  if run.get('conclusion') in bad
+              ]
+              if failures:
+                  raise SystemExit('Exact-head workflow failure: ' + json.dumps(failures, sort_keys=True))
+              pending = [
+                  name for name, run in latest.items()
+                  if run.get('status') != 'completed'
+              ]
+
+              statuses = request(f'/repos/{repo}/commits/{head_sha}/status')
+              vercel = [item for item in statuses.get('statuses', []) if item.get('context') == 'Vercel']
+              vercel_green = bool(vercel and vercel[0].get('state') == 'success')
+              vercel_failed = bool(vercel and vercel[0].get('state') in {'failure', 'error'})
+              if vercel_failed:
+                  raise SystemExit('Vercel exact-head deployment failed.')
+
+              if not missing and not pending and vercel_green and not unresolved_threads():
+                  unexpected_bad = [
+                      {'name': name, 'conclusion': run.get('conclusion')}
+                      for name, run in latest.items()
+                      if run.get('status') == 'completed'
+                      and run.get('conclusion') not in {'success', 'skipped', 'neutral'}
+                  ]
+                  if unexpected_bad:
+                      raise SystemExit('A non-required exact-head workflow did not pass: ' + json.dumps(unexpected_bad))
+                  print(json.dumps({
+                      'head_sha': head_sha,
+                      'workflow_count': len(latest),
+                      'required_workflows': sorted(required_workflows),
+                      'vercel': 'success',
+                      'unresolved_review_threads': 0,
+                  }, indent=2))
+                  break
+
+              print(json.dumps({
+                  'waiting': True,
+                  'missing_required': missing,
+                  'pending': pending,
+                  'vercel_green': vercel_green,
+                  'unresolved_review_threads': len(unresolved_threads()),
+              }, sort_keys=True))
+              time.sleep(30)
+          else:
+              raise SystemExit('Timed out waiting for exact-head release evidence.')
+          PY
+
+      - name: Squash merge the exact verified head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          repo = os.environ['REPOSITORY']
+          number = os.environ['PR_NUMBER']
+          head_sha = os.environ['HEAD_SHA']
+          request = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/pulls/{number}/merge',
+              data=json.dumps({
+                  'sha': head_sha,
+                  'merge_method': 'squash',
+                  'commit_title': 'Harden NICO for specialist-operated confidential assessments (#1482)',
+              }).encode(),
+              method='PUT',
+              headers={
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'Content-Type': 'application/json',
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              result = json.load(response)
+          if result.get('merged') is not True:
+              raise SystemExit('GitHub refused the exact-head merge: ' + json.dumps(result))
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
