@@ -63,7 +63,7 @@ def test_exact_release_and_allowlisted_workflow_are_accepted(monkeypatch, subjec
     authority = validate_github_actions_oidc(token, signing_key=public_key)
 
     assert authority["authority"] == "github_actions_production_proof"
-    assert authority["scope"] == "nico_specialist_operation"
+    assert authority["scope"] == "nico_production_proof"
     assert authority["release_sha"] == RELEASE_SHA
     assert authority["workflow_sha"] == RELEASE_SHA
     assert authority["workflow_file"] == ".github/workflows/spanish-comprehensive-production-proof.yml"
