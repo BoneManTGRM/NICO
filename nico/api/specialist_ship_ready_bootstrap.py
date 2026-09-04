@@ -14,6 +14,9 @@ from nico.comprehensive_release_provenance_v1 import (
 RELEASE_PROVENANCE = install_comprehensive_release_provenance()
 
 from nico.api.same_run_locale_report_bootstrap import app as production_app  # noqa: E402
+from nico.github_actions_proof_session_v1 import (  # noqa: E402
+    install_github_actions_proof_session,
+)
 from nico.specialist_access_v1 import (  # noqa: E402
     SESSION_SIGNING_SECRET_ENV,
     install_specialist_access,
@@ -25,12 +28,15 @@ from nico.specialist_review_session_bridge_v1 import (  # noqa: E402
 SPECIALIST_READINESS_ROUTE = "/diagnostics/specialist-readiness"
 app = production_app
 SPECIALIST_ACCESS = install_specialist_access(app)
+GITHUB_ACTIONS_PROOF_SESSION = install_github_actions_proof_session(app)
 REVIEW_SESSION_BRIDGE = install_specialist_review_session_bridge(app)
 
 if RELEASE_PROVENANCE.get("installed") is not True:
     raise RuntimeError("NICO release provenance binding was not installed")
 if SPECIALIST_ACCESS.get("installed") is not True:
     raise RuntimeError("NICO specialist access boundary was not installed")
+if GITHUB_ACTIONS_PROOF_SESSION.get("installed") is not True:
+    raise RuntimeError("NICO GitHub Actions proof-session boundary was not installed")
 if REVIEW_SESSION_BRIDGE.get("installed") is not True:
     raise RuntimeError("NICO specialist review-session bridge was not installed")
 
@@ -78,6 +84,7 @@ def specialist_readiness() -> dict[str, Any]:
     session_signing_configured = SPECIALIST_ACCESS.get("session_signing_configured") is True
     generic_operator_password_configured = bool(credentials["operator"])
     review_session_bridge_installed = REVIEW_SESSION_BRIDGE.get("installed") is True
+    github_actions_proof_installed = GITHUB_ACTIONS_PROOF_SESSION.get("installed") is True
     release_identity_complete = (
         release.get("deployment_identity_established") is True
         and release.get("frontend_identity_established") is True
@@ -89,6 +96,7 @@ def specialist_readiness() -> dict[str, Any]:
             generic_operator_password_configured,
             credential_separation,
             review_session_bridge_installed,
+            github_actions_proof_installed,
             runtime_ready,
             release_identity_complete,
         )
@@ -99,6 +107,9 @@ def specialist_readiness() -> dict[str, Any]:
         "specialist_access_installed": SPECIALIST_ACCESS.get("installed") is True,
         "authenticated_comprehensive_routes_enforced": True,
         "signed_review_sessions_enforced": review_session_bridge_installed,
+        "github_actions_production_proof_enabled": github_actions_proof_installed,
+        "github_actions_proof_exact_release_bound": GITHUB_ACTIONS_PROOF_SESSION.get("exact_release_bound") is True,
+        "github_actions_proof_workflow_allowlist_bound": GITHUB_ACTIONS_PROOF_SESSION.get("workflow_allowlist_bound") is True,
         "operator_password_configured": generic_operator_password_configured,
         "generic_operator_password_configured": generic_operator_password_configured,
         "legacy_operator_password_configured": bool(credentials["legacy_operator"]),
@@ -127,17 +138,19 @@ if _route_count(SPECIALIST_READINESS_ROUTE) == 0:
     )
     app.openapi_schema = None
 
-# A secret-free test import remains possible, but every Comprehensive route still
-# fails closed and browser session creation returns 503 until deployment credentials
-# establish a signing key. Production verification must prove readiness is true.
+# A secret-free test import remains possible, but every protected assessment route
+# still fails closed and browser session creation returns 503 until deployment
+# credentials establish a signing key. Production verification must prove readiness.
 app.state.nico_release_provenance = RELEASE_PROVENANCE
 app.state.nico_specialist_access = SPECIALIST_ACCESS
+app.state.nico_github_actions_proof_session = GITHUB_ACTIONS_PROOF_SESSION
 app.state.nico_specialist_review_session_bridge = REVIEW_SESSION_BRIDGE
 
 __all__ = [
     "app",
     "RELEASE_PROVENANCE",
     "SPECIALIST_ACCESS",
+    "GITHUB_ACTIONS_PROOF_SESSION",
     "REVIEW_SESSION_BRIDGE",
     "SPECIALIST_READINESS_ROUTE",
     "specialist_readiness",
