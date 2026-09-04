@@ -9,6 +9,7 @@ COPY = ASSESSMENT / "assessmentCopy.ts"
 HOOK = ASSESSMENT / "useAssessmentRun.ts"
 SPANISH_PAGE = ROOT / "apps" / "web" / "app" / "es" / "assessment" / "page.tsx"
 SPANISH_HOME = ROOT / "apps" / "web" / "app" / "es" / "page.tsx"
+SPANISH_LOGIN = ROOT / "apps" / "web" / "app" / "es" / "specialist-login" / "page.tsx"
 LEGACY_LOCALIZATION = ROOT / "apps" / "web" / "app" / "es" / "assessment" / "SpanishAssessmentLocalization.tsx"
 
 
@@ -35,10 +36,13 @@ def test_english_route_is_a_thin_wrapper_around_the_single_canonical_page() -> N
     assert "<AssessmentHydrationContract" in page
 
 
-def test_spanish_home_routes_to_the_same_unified_assessment_workflow() -> None:
-    source = SPANISH_HOME.read_text(encoding="utf-8")
-    assert 'redirect("/es/assessment?tier=comprehensive#assessment")' in source
-    assert "tier=express" not in source
+def test_spanish_home_routes_through_fixed_specialist_login_to_unified_assessment() -> None:
+    home = SPANISH_HOME.read_text(encoding="utf-8")
+    login = SPANISH_LOGIN.read_text(encoding="utf-8")
+
+    assert 'redirect("/es/specialist-login")' in home
+    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment";' in login
+    assert "tier=express" not in f"{home}\n{login}".casefold()
 
 
 def test_shared_catalog_contains_one_comprehensive_assessment() -> None:
