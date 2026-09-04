@@ -6,6 +6,7 @@ import secrets
 from typing import Any
 
 ADMIN_TOKEN_ENV = "NICO_ADMIN_TOKEN"
+COMPREHENSIVE_OPERATOR_PASSWORD_ENV = "NICO_COMPREHENSIVE_OPERATOR_PASSWORD"
 SARA_OPERATOR_PASSWORD_ENV = "NICO_SARA_OPERATOR_PASSWORD"
 _INTERNAL_ADMIN_TOKEN = secrets.token_urlsafe(48)
 
@@ -69,12 +70,38 @@ def require_admin_write(provided_token: str | None = None) -> tuple[bool, dict[s
     }
 
 
+def _configured_operator_passwords() -> list[tuple[str, str, str]]:
+    configured: list[tuple[str, str, str]] = []
+    generic = os.getenv(COMPREHENSIVE_OPERATOR_PASSWORD_ENV, "").strip()
+    legacy = os.getenv(SARA_OPERATOR_PASSWORD_ENV, "").strip()
+    if generic:
+        configured.append(
+            (
+                generic,
+                "nico_comprehensive_operator",
+                "Scoped NICO Comprehensive operator accepted.",
+            )
+        )
+    if legacy and not any(hmac.compare_digest(legacy, value) for value, _, _ in configured):
+        configured.append(
+            (
+                legacy,
+                "sara_comprehensive_operator",
+                "Scoped legacy Comprehensive operator accepted.",
+            )
+        )
+    return configured
+
+
 def require_comprehensive_operator(provided_token: str | None = None) -> tuple[bool, dict[str, Any]]:
-    """Authorize only Comprehensive review and delivery operations.
+    """Authorize only Comprehensive assessment, review, and delivery operations.
 
     SARA's service password is deliberately not accepted by ``require_admin_write``.
-    It therefore cannot administer projects, runtime configuration, recovery,
-    backups, or any other NICO operator surface.
+    The generic scoped NICO operator password is also deliberately excluded from
+    site-administration authority. These credentials therefore cannot administer
+    projects, runtime configuration, recovery, backups, or any other NICO operator
+    surface. The previous environment variable remains valid during credential-name
+    migration.
     """
 
     admin_allowed, admin_status = require_admin_write(provided_token)
@@ -89,18 +116,18 @@ def require_comprehensive_operator(provided_token: str | None = None) -> tuple[b
             "authority": authority,
             "scope": "comprehensive_review_and_delivery",
         }
-    configured = os.getenv(SARA_OPERATOR_PASSWORD_ENV, "").strip()
-    allowed = bool(configured and provided_token) and hmac.compare_digest(
-        str(provided_token), configured
-    )
-    if allowed:
-        return True, {
-            "enabled": True,
-            "status": "enabled",
-            "authority": "sara_comprehensive_operator",
-            "scope": "comprehensive_review_and_delivery",
-            "reason": "Scoped SARA Comprehensive operator accepted.",
-        }
+
+    supplied = str(provided_token or "")
+    configured = _configured_operator_passwords()
+    for expected, authority, reason in configured:
+        if supplied and hmac.compare_digest(supplied, expected):
+            return True, {
+                "enabled": True,
+                "status": "enabled",
+                "authority": authority,
+                "scope": "comprehensive_review_and_delivery",
+                "reason": reason,
+            }
     return False, {
         "status": "unavailable",
         "mode": "read_only",
@@ -122,6 +149,7 @@ def safe_public_admin_status() -> dict[str, Any]:
 
 __all__ = [
     "ADMIN_TOKEN_ENV",
+    "COMPREHENSIVE_OPERATOR_PASSWORD_ENV",
     "SARA_OPERATOR_PASSWORD_ENV",
     "admin_write_status",
     "internal_admin_token",
