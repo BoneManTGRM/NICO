@@ -72,7 +72,7 @@ These strings do not restore the retired public selector; UnifiedAssessmentPubli
 
 export const metadata = {
   title: "NICO",
-  description: "Expert-led, evidence-bound technical assessment and engineering advisory.",
+  description: "Evidence-bound technical assessments with human-reviewed and authorized automated delivery modes.",
 };
 
 export default function RootLayout({children}: {children: ReactNode}) {

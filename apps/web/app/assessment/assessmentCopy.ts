@@ -60,10 +60,10 @@ const ES_STAGE_LABELS: Record<keyof typeof EN_STAGE_LABELS, string> = {
 
 const EN = {
   heroEyebrow: "TECHNICAL ASSESSMENT AND ENGINEERING ADVISORY",
-  title: "Decision-grade technical diligence, led by experts and bound to evidence.",
-  lead: "NICO combines proprietary repository analysis with experienced technical review to identify engineering risk, quantify business impact, and produce a prioritized plan for action.",
-  trustIndicators: ["Exact repository snapshot", "Internal technical review", "Evidence traceability", "Independent quality control", "Controlled client release"],
-  heroBoundary: "Every client-facing recommendation is internally reviewed before release.",
+  title: "Decision-grade technical diligence, bound to exact evidence.",
+  lead: "Choose a human-reviewed Comprehensive engagement or an Authorized Automated Technical Assessment that explicitly discloses no human specialist review.",
+  trustIndicators: ["Exact repository snapshot", "Human-reviewed option", "Authorized automated option", "Evidence traceability", "Integrity-bound release"],
+  heroBoundary: "Human-reviewed Comprehensive reports require a named reviewer. Eligible automated reports may be authorized only when the deterministic review queue is empty and are labeled Human reviewed: No.",
   coverage: "Evidence coverage calculated after analysis",
   warning: "Only submit repositories that NICO is authorized to assess. Analysis is defensive and read-only; client release requires internal technical approval.",
   repo: "Repository owner/name or GitHub URL", repoPlaceholder: "your-org/your-repo",
@@ -137,10 +137,10 @@ type CompleteLocalizedCopy = { [K in keyof typeof EN]: unknown };
 
 const ES = {
   heroEyebrow: "EVALUACIÓN TÉCNICA Y ASESORÍA DE INGENIERÍA",
-  title: "Diligencia técnica para decisiones, dirigida por expertos y vinculada a evidencia.",
-  lead: "NICO combina análisis propietario del repositorio con revisión técnica experta para identificar riesgo de ingeniería, cuantificar el impacto comercial y producir un plan de acción priorizado.",
-  trustIndicators: ["Instantánea exacta", "Revisión técnica experta", "Trazabilidad de evidencia", "Control de calidad independiente", "Aprobación humana"],
-  heroBoundary: "Cada recomendación para el cliente recibe revisión interna antes de su entrega.",
+  title: "Diligencia técnica para decisiones, vinculada a evidencia exacta.",
+  lead: "Elige un encargo Comprehensive con revisión humana o una Evaluación Técnica Automatizada Autorizada que declara explícitamente que no tuvo revisión de un especialista humano.",
+  trustIndicators: ["Instantánea exacta", "Opción con revisión humana", "Opción automatizada autorizada", "Trazabilidad de evidencia", "Entrega vinculada a integridad"],
+  heroBoundary: "Los informes Comprehensive con revisión humana requieren un revisor identificado. Los informes automatizados elegibles solo pueden autorizarse cuando la cola determinista de revisión está vacía y se etiquetan Revisión humana: No.",
   coverage: "Cobertura calculada después del análisis",
   warning: "Envía únicamente repositorios que NICO esté autorizado a evaluar. El análisis es defensivo y de solo lectura; la entrega requiere revisión técnica y de calidad.",
   repo: "Propietario/nombre del repositorio o URL de GitHub", repoPlaceholder: "tu-organización/tu-repositorio", client: "Nombre del cliente, opcional", project: "Nombre del proyecto, opcional",
