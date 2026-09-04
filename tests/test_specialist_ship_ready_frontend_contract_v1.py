@@ -5,7 +5,8 @@ def test_specialist_frontend_and_runtime_contracts_are_fail_closed():
     session_route = Path("apps/web/app/api/nico/operator-session/route.ts").read_text()
     assessment_proxy = Path("apps/web/app/api/nico/assessment/[...path]/route.ts").read_text()
     readiness_proxy = Path("apps/web/app/api/nico/diagnostics/specialist-readiness/route.ts").read_text()
-    login_page = Path("apps/web/app/specialist-login/page.tsx").read_text()
+    english_login = Path("apps/web/app/specialist-login/page.tsx").read_text()
+    spanish_login = Path("apps/web/app/es/specialist-login/page.tsx").read_text()
     middleware = Path("apps/web/middleware.ts").read_text()
     specialist_access = Path("nico/specialist_access_v1.py").read_text()
     specialist_bootstrap = Path("nico/api/specialist_ship_ready_bootstrap.py").read_text()
@@ -22,11 +23,15 @@ def test_specialist_frontend_and_runtime_contracts_are_fail_closed():
     assert 'SPECIALIST_READINESS_ROUTE = "/diagnostics/specialist-readiness"' in specialist_bootstrap
     assert '"secrets_exposed": False' in specialist_bootstrap
     assert 'nico-specialist-session' in middleware
-    assert 'type="password"' in login_page
-    assert 'const ENGLISH_DESTINATION = "/assessment?tier=comprehensive#assessment"' in login_page
-    assert 'const SPANISH_DESTINATION = "/es/assessment?tier=comprehensive#assessment"' in login_page
-    assert "return requested" not in login_page
+    assert 'type="password"' in english_login
+    assert 'type="password"' in spanish_login
+    assert 'const DESTINATION = "/assessment?tier=comprehensive#assessment"' in english_login
+    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment"' in spanish_login
+    assert "URLSearchParams" not in english_login
+    assert "URLSearchParams" not in spanish_login
+    assert "searchParams.set" not in middleware
     assert 'SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"' in specialist_access
+    assert 'return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)' in specialist_access
     session_secret_body = specialist_access.split("def _session_secret()", 1)[1].split("def _b64url_encode", 1)[0]
     assert "NICO_ADMIN_TOKEN" not in session_secret_body
     assert "NICO_COMPREHENSIVE_OPERATOR_PASSWORD" not in session_secret_body
