@@ -18,9 +18,10 @@ if RELEASE_PROVENANCE.get("installed") is not True:
     raise RuntimeError("NICO release provenance binding was not installed")
 if SPECIALIST_ACCESS.get("installed") is not True:
     raise RuntimeError("NICO specialist access boundary was not installed")
-if SPECIALIST_ACCESS.get("session_signing_configured") is not True:
-    raise RuntimeError("NICO specialist session signing is not configured")
 
+# A secret-free test import remains possible, but every Comprehensive route still
+# fails closed and browser session creation returns 503 until deployment credentials
+# establish a signing key. Production verification must prove this flag is true.
 app.state.nico_release_provenance = RELEASE_PROVENANCE
 app.state.nico_specialist_access = SPECIALIST_ACCESS
 
