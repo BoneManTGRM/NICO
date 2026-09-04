@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 ARTIFACT_SCHEMA = "nico.frontend_production_release_identity.v2"
+LEGACY_ARTIFACT_SCHEMA = "nico.frontend_production_release_identity.v1"
 DEFAULT_UI_CONTRACT = "expert-engagement-v2"
 DEFAULT_DEPLOYMENT_ENVIRONMENT = "production"
 DEFAULT_TIMEOUT_SECONDS = 15 * 60
