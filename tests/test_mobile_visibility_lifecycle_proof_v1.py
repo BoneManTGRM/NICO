@@ -496,8 +496,14 @@ def test_production_chromium_proofs_use_headed_browser_under_xvfb() -> None:
     assert "python scripts/prepare_playwright_native_visibility_v1.py" in spanish
     assert "command -v xvfb-run" in spanish
     assert "xvfb-run -a python -m pytest" in spanish
-    assert "xvfb-run -a python scripts/spanish_comprehensive_live_acceptance_v3.py" in spanish
-    assert "xvfb-run -a python scripts/spanish_comprehensive_existing_run_recovery_v1.py" in spanish
+    assert (
+        "xvfb-run -a python scripts/"
+        "spanish_comprehensive_authenticated_live_acceptance_v1.py"
+    ) in spanish
+    assert (
+        "xvfb-run -a python scripts/"
+        "spanish_comprehensive_authenticated_existing_run_recovery_v1.py"
+    ) in spanish
     assert 'NICO_PROOF_HEADED_CHROMIUM: "1"' in mobile
     assert 'NICO_PROOF_NATIVE_VISIBILITY: "1"' in mobile
     patch_invocations = [
