@@ -72,8 +72,17 @@ async function proxyAssessment(
     return errorResponse(404, "nico_assessment_route_not_allowed", "Only bounded NICO Comprehensive lifecycle routes are available.");
   }
 
-  const session = request.cookies.get(SESSION_COOKIE)?.value?.trim() || "";
+  const cookieSession = request.cookies.get(SESSION_COOKIE)?.value?.trim() || "";
+  const headerSession = request.headers.get("x-nico-operator-session")?.trim() || "";
   const rawOperatorToken = request.headers.get("x-nico-admin-token")?.trim() || "";
+  if (cookieSession && headerSession && cookieSession !== headerSession) {
+    return errorResponse(
+      409,
+      "specialist_session_identity_conflict",
+      "The browser and request supplied different specialist sessions.",
+    );
+  }
+  const session = cookieSession || headerSession;
   if (!session && !rawOperatorToken) {
     return errorResponse(401, "specialist_authentication_required", "Sign in with an authorized NICO specialist account before accessing assessment data.");
   }
