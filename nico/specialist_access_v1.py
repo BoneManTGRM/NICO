@@ -24,10 +24,7 @@ SESSION_HEADER = "x-nico-operator-session"
 ADMIN_HEADER = "x-nico-admin-token"
 SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"
 _MINIMUM_SIGNING_SECRET_BYTES = 32
-_PROTECTED_ROOTS = (
-    "/assessment/comprehensive-intake",
-    "/assessment/comprehensive-run",
-)
+_PROTECTED_PREFIX = "/assessment/"
 
 
 def _integer_env(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -74,7 +71,7 @@ def issue_specialist_session(authority: Mapping[str, Any], *, now: int | None = 
         "iat": issued_at,
         "exp": issued_at + ttl,
         "authority": str(authority.get("authority") or "nico_comprehensive_operator"),
-        "scope": "comprehensive_specialist_operation",
+        "scope": "nico_specialist_operation",
     }
     encoded = _b64url_encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -106,7 +103,7 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
         return None
     if issued_at > current + 60 or expires_at <= current or expires_at - issued_at > 43_200:
         return None
-    if payload.get("scope") != "comprehensive_specialist_operation":
+    if payload.get("scope") != "nico_specialist_operation":
         return None
     return payload
 
@@ -114,9 +111,7 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
 def _protected_request(path: str) -> bool:
     if path == SESSION_ROUTE:
         return False
-    return path == _PROTECTED_ROOTS[0] or path == _PROTECTED_ROOTS[1] or path.startswith(
-        f"{_PROTECTED_ROOTS[1]}/"
-    )
+    return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)
 
 
 def _credential_fingerprint(request: Request, raw_token: str, session_token: str) -> str:
@@ -222,7 +217,13 @@ async def _specialist_access_middleware(
     general_limit = _integer_env("NICO_SPECIALIST_REQUEST_LIMIT_PER_MINUTE", 240, 30, 5000)
     if not _RATE_LIMITER.allowed(key, "general", limit=general_limit, window_seconds=60):
         return _rate_limit_response()
-    if request.method == "POST" and request.url.path == "/assessment/comprehensive-intake":
+    if request.method == "POST" and request.url.path in {
+        "/assessment/comprehensive-intake",
+        "/assessment/express-run",
+        "/assessment/mid-run",
+        "/assessment/github",
+        "/assessment/mid",
+    }:
         intake_limit = _integer_env("NICO_SPECIALIST_INTAKE_LIMIT_PER_HOUR", 12, 1, 500)
         if not _RATE_LIMITER.allowed(key, "intake", limit=intake_limit, window_seconds=3600):
             return _rate_limit_response()
@@ -278,7 +279,7 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
             "artifact_schema": VERSION,
             "session_token": session_token,
             "expires_in": expires_in,
-            "scope": "comprehensive_specialist_operation",
+            "scope": "nico_specialist_operation",
         }
 
     async def validate_session(
@@ -306,7 +307,8 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
     status = {
         "artifact_schema": VERSION,
         "installed": True,
-        "protected_roots": list(_PROTECTED_ROOTS),
+        "protected_prefix": _PROTECTED_PREFIX,
+        "all_assessment_routes_protected": True,
         "session_route": SESSION_ROUTE,
         "session_signing_configured": _session_secret() is not None,
         "rate_limiting": True,
