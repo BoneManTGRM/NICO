@@ -22,6 +22,12 @@ def test_comprehensive_readiness_preflight_is_bounded_and_fail_closed() -> None:
     assert 'survives_container_replacement_verified: false' in source
     assert 'human_review_required: true' in source
     assert 'client_delivery_allowed: false' in source
+    assert 'diagnostic_scope: "human_reviewed_comprehensive_runtime"' in source
+    assert 'human_reviewed_comprehensive' in source
+    assert 'authorized_automated_technical_assessment' in source
+    assert 'human_specialist_review_required: false' in source
+    assert 'deterministic_review_queue_must_be_empty: true' in source
+    assert 'client_label: "Authorized — Automated Technical Assessment"' in source
 
 
 def test_permanent_configuration_blocks_use_successful_transport() -> None:
@@ -99,7 +105,8 @@ def test_successful_upstream_readiness_is_forwarded_without_reinterpretation() -
     source = ROUTE.read_text(encoding="utf-8")
     success = source[source.index("if (\n    diagnostic.httpStatus"):source.index("const reason = upstreamReason")]
 
-    assert "Response.json(diagnostic.payload" in success
+    assert "...diagnostic.payload" in success
+    assert "...RELEASE_MODE_DISCLOSURE" in success
     assert "status: 200" in success
     assert "boundedHeaders(requestId, upstreamRequests)" in success
     assert "const upstreamRequests = warmup.attempts + diagnostic.attempts" in source
