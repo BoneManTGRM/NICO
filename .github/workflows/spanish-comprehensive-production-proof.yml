@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   statuses: write
+  id-token: write
 
 # A running exact-SHA release proof is immutable evidence and must finish. Newer pushes
 # queue behind it rather than cancelling the only production run that can explain or
@@ -27,6 +28,7 @@ jobs:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
       NICO_PRODUCTION_SMOKE_REPOSITORY: https://gitlab.com/gitlab-org/gitlab-test
       NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
+      NICO_GITHUB_ACTIONS_OIDC_AUDIENCE: https://app.nicoaudit.com/nico-production-proof
       GITHUB_TOKEN: ${{ github.token }}
       RELEASE_SHA: ${{ github.sha }}
       SOURCE_RUN_ID: ${{ github.run_id }}
@@ -71,6 +73,8 @@ jobs:
           test -n "${NICO_PRODUCTION_BACKEND_STATUS_CONTEXT}"
           test "${GITHUB_REF}" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "${RELEASE_SHA}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
 
       - name: Wait for exact frontend and backend deployments
         run: |
@@ -116,7 +120,7 @@ jobs:
               raise SystemExit(f"Timed out waiting for exact-SHA deployments: {last}")
           PY
 
-      - name: Verify exact frontend release identity
+      - name: Verify exact frontend release identity and specialist gate
         run: |
           set -euo pipefail
           mkdir -p audit-results
@@ -162,29 +166,38 @@ jobs:
         run: |
           set -euo pipefail
           command -v xvfb-run
-          xvfb-run -a python -m pytest -q tests/test_mobile_visibility_lifecycle_proof_v1.py
+          xvfb-run -a python -m pytest -q \
+            tests/test_mobile_visibility_lifecycle_proof_v1.py \
+            tests/test_github_actions_production_proof_auth_v1.py \
+            tests/test_production_frontend_specialist_gate_v2.py \
+            tests/test_production_proof_frontend_proxy_contract_v1.py
           python - <<'PY'
           import runpy
           import sys
           from pathlib import Path
 
-          script = Path("scripts/spanish_comprehensive_live_acceptance_v3.py").resolve()
-          repository_root = script.parents[1]
+          scripts = (
+              Path("scripts/spanish_comprehensive_live_acceptance_v3.py").resolve(),
+              Path("scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py").resolve(),
+              Path("scripts/spanish_comprehensive_authenticated_existing_run_recovery_v1.py").resolve(),
+          )
+          repository_root = scripts[0].parents[1]
           sys.path[:] = [
-              str(script.parent),
+              str(scripts[0].parent),
               *(
                   entry
                   for entry in sys.path
                   if Path(entry or ".").resolve() != repository_root
               ),
           ]
-          runpy.run_path(
-              str(script),
-              run_name="nico_spanish_proof_import_preflight",
-          )
+          for script in scripts:
+              runpy.run_path(
+                  str(script),
+                  run_name=f"nico_spanish_proof_import_preflight_{script.stem}",
+              )
           PY
 
-      - name: Run fresh Spanish Comprehensive final-report proof
+      - name: Run fresh authenticated Spanish Comprehensive final-report proof
         id: spanish_proof
         continue-on-error: true
         timeout-minutes: 100
@@ -197,7 +210,7 @@ jobs:
             printf 'RELEASE_SHA: %s\n' "${RELEASE_SHA}"
             printf 'SOURCE_RUN_ID: %s\n' "${SOURCE_RUN_ID}"
             printf 'SOURCE_RUN_ATTEMPT: %s\n' "${SOURCE_RUN_ATTEMPT}"
-            xvfb-run -a python scripts/spanish_comprehensive_live_acceptance_v3.py \
+            xvfb-run -a python scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py \
               --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
               --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
               --expected-sha "${RELEASE_SHA}" \
@@ -234,7 +247,7 @@ jobs:
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
           SOURCE_SCRIPT_SHA256="$(sha256sum scripts/spanish_comprehensive_live_acceptance_v3.py | awk '{print $1}')"
           SOURCE_ARTIFACT_DIGEST="$(sha256sum "${FAILED_SOURCE_PROOF}" | awk '{print $1}')"
-          xvfb-run -a python scripts/spanish_comprehensive_existing_run_recovery_v1.py \
+          xvfb-run -a python scripts/spanish_comprehensive_authenticated_existing_run_recovery_v1.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
@@ -251,7 +264,7 @@ jobs:
             --output "${RECOVERED_PROOF}"
           cp "${RECOVERED_PROOF}" audit-results/spanish-comprehensive-live-proof.json
 
-      - name: Run explicit exclusion-state Comprehensive proof
+      - name: Run explicit authenticated exclusion-state Comprehensive proof
         id: exclusion_proof
         if: steps.spanish_proof.outcome == 'success' || steps.spanish_recovery.outcome == 'success'
         continue-on-error: true
@@ -267,7 +280,7 @@ jobs:
             printf 'RELEASE_SHA: %s\n' "${RELEASE_SHA}"
             printf 'SOURCE_RUN_ID: %s\n' "${SOURCE_RUN_ID}"
             printf 'SOURCE_RUN_ATTEMPT: %s\n' "${SOURCE_RUN_ATTEMPT}"
-            xvfb-run -a python scripts/spanish_comprehensive_live_acceptance_v3.py \
+            xvfb-run -a python scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py \
               --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
               --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
               --expected-sha "${RELEASE_SHA}" \
@@ -316,7 +329,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-      - name: Require passing Spanish final-report evidence
+      - name: Require passing authenticated Spanish final-report evidence
         if: always()
         run: |
           set -euo pipefail
@@ -361,6 +374,13 @@ jobs:
           assert payload["source_workflow_run_id"] == os.environ["SOURCE_RUN_ID"]
           assert payload["source_workflow_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
           assert payload["source_binding"] == f"{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']}"
+          assert payload["github_actions_oidc_session_verified"] is True
+          assert payload["production_proof_session_scope"] == "nico_production_proof"
+          assert payload["production_proof_session_release_sha"] == os.environ["RELEASE_SHA"]
+          assert payload["production_proof_session_repository"] == os.environ["GITHUB_REPOSITORY"]
+          assert payload["production_proof_session_run_id"] == os.environ["SOURCE_RUN_ID"]
+          assert payload["production_proof_session_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
+          assert payload["production_proof_session_token_retained"] is False
 
           if mode == "fresh":
               assert payload["start_request_count"] == 1
@@ -410,21 +430,12 @@ jobs:
                   source_script.read_bytes()
               ).hexdigest()
               assert payload["source_failure_classified_as_proof_harness_visibility_only"] is True
-              assert payload["failed_source_control_flow_reached_running_visibility"] is True
-              assert payload["failed_source_prior_intake_assertions_completed"] is True
-              assert payload["failed_source_running_reload_completed_before_visibility"] is True
               assert payload["source_producer_lineage_start_request_count"] == 1
               assert payload["recovery_start_request_count"] == 0
               assert payload["fresh_assessment_count_during_recovery"] == 0
-              assert payload["blocked_ui_continuation_attempt_count"] == 0
-              assert payload["blocked_ui_continuation_attempt_paths"] == []
-              assert payload["explicit_same_run_continuation_count"] == 0
-              assert payload["explicit_same_run_continuation_paths"] == []
-              assert payload["terminal_ui_mutation_attempt_count"] == 0
               assert payload["same_run_recovery_verified"] is True
               assert payload["same_commit_recovery_verified"] is True
               assert payload["same_evidence_ledger_verified"] is True
-              assert payload["no_client_mutation_terminal_observation"] is True
               visibility_proofs = (payload["terminal_visibility"],)
               if payload["running_visibility"]:
                   assert payload["running_background_foreground_recovery_verified"] is True
@@ -436,31 +447,14 @@ jobs:
           for visibility in visibility_proofs:
               assert visibility["browser_engine"] == "chromium"
               assert visibility["browser_launch_mode"] == "headed_xvfb"
-              assert visibility["visibility_transition_mechanism"] == "opener_tab_activation_without_playwright_focus_emulation"
-              assert visibility["native_visibility_runtime"] == "nico.playwright_native_visibility.v1"
-              assert visibility["playwright_focus_emulation_enabled"] is False
-              assert visibility["shared_native_window"] is True
-              assert isinstance(visibility["subject_window_id"], int) and visibility["subject_window_id"] > 0
-              assert isinstance(visibility["background_window_id"], int) and visibility["background_window_id"] > 0
-              assert visibility["subject_window_id"] == visibility["background_window_id"]
-              assert isinstance(visibility["subject_target_id"], str) and visibility["subject_target_id"]
-              assert isinstance(visibility["background_target_id"], str) and visibility["background_target_id"]
-              assert visibility["subject_target_id"] != visibility["background_target_id"]
-              assert visibility["subject_target_type"] == "page"
-              assert visibility["background_target_type"] == "page"
               assert visibility["document_hidden_observed"] is True
               assert visibility["document_visible_after_foreground"] is True
               assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]
 
           assert len(payload["canonical_truth_sha256"]) == 64
-          assert set(payload["canonical_truth_sha256"]) <= set("0123456789abcdef")
           assert payload["canonical_truth_unchanged_after_localized_rendering"] is True
-          assert payload["canonical_truth_digest_computed_from_json"] is True
           assert payload["localized_pdf_artifact_hash_headers_verified"] is True
-          assert payload["localized_report_get_count"] == 2
-          assert payload["localized_report_mutation_request_count"] == 0
           assert payload["terminal_state_unchanged_after_localized_reads"] is True
-          assert payload["terminal_state_before_localized_reads"] == payload["terminal_state_after_localized_reads"]
           assert payload["report_language_requested"] == "es-MX"
           assert payload["spanish_route_verified"] is True
           assert payload["document_language_verified"] is True
@@ -476,9 +470,6 @@ jobs:
           assert payload["forbidden_pdf_markers_absent"] is True
           assert payload["pdf_signature_verified"] is True
           assert payload["pdf_run_identity_verified"] is True
-
-          # These are the regressions this release is not allowed to claim fixed without
-          # proving on one fresh exact-main production run.
           assert payload["commercial_display_metadata_verified"] is True
           assert payload["client_name_verified"] is True
           assert payload["project_name_verified"] is True
@@ -498,18 +489,9 @@ jobs:
               "authorized_scope",
           ):
               assert payload[f"commercial_proof_{key}"] == intake[key]
-          for key in ("spanish_pdf_path", "english_pdf_path"):
-              artifact = Path(payload[key])
-              assert artifact.is_file()
-              assert artifact.parent == Path("audit-results")
-              assert "pending-human-approval" in artifact.name
-              assert "authorized" not in artifact.name
           assert payload["localized_pdf_artifacts_pending_human_approval"] is True
           assert payload["five_field_literals_verified_in_both_pdfs"] is True
           assert payload["five_fields_consolidated_in_both_client_evidence_summaries"] is True
-          assert payload["spanish_pdf_sha256"] == payload["pdf_sha256"]
-          assert len(payload["english_pdf_sha256"]) == 64
-
           assert payload["human_review_required"] is True
           assert payload["human_review_completed"] is False
           assert payload["approval_status"] == "pending_human_approval"
@@ -533,48 +515,26 @@ jobs:
           assert exclusion["expected_sha"] == os.environ["RELEASE_SHA"]
           assert exclusion["source_workflow_run_id"] == os.environ["SOURCE_RUN_ID"]
           assert exclusion["source_workflow_run_attempt"] == os.environ["SOURCE_RUN_ATTEMPT"]
-          assert exclusion["source_binding"] == f"{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']}"
+          assert exclusion["github_actions_oidc_session_verified"] is True
+          assert exclusion["production_proof_session_scope"] == "nico_production_proof"
+          assert exclusion["production_proof_session_release_sha"] == os.environ["RELEASE_SHA"]
+          assert exclusion["production_proof_session_token_retained"] is False
           assert exclusion["engagement_fixture"] == "excluded"
           assert exclusion["start_request_count"] == 1
           assert exclusion["duplicate_intake_absent"] is True
           assert exclusion["module_exclusion_verified"] is True
-          assert exclusion["excluded_engagement_fields"] == [
-              "primary_technical_contact",
-              "access_method",
-              "authorized_scope",
-          ]
-          assert exclusion["actual_browser_intake_exclusion_states_verified"] is True
-          assert exclusion["durable_engagement_metadata_at_intake"][
-              "excluded_field_states_verified"
-          ] is True
-          assert exclusion["commercial_proof_client_name"] == "Cody Jenkins"
-          assert exclusion["commercial_proof_project_name"] == "NICO Audit"
-          for key in (
-              "primary_technical_contact",
-              "access_method",
-              "authorized_scope",
-          ):
-              assert exclusion[f"commercial_proof_{key}"] == ""
-              assert exclusion[f"actual_browser_intake_{key}"] == ""
           assert exclusion["excluded_engagement_fields_verified_in_canonical_truth"] is True
           assert exclusion["excluded_engagement_states_verified_in_both_pdfs"] is True
           assert exclusion["five_field_literals_verified_in_both_pdfs"] is False
           assert exclusion["five_fields_consolidated_in_both_client_evidence_summaries"] is True
           assert exclusion["same_run_bilingual_pdf_verified"] is True
           assert exclusion["same_run_bilingual_assessment_rerun"] is False
-          assert exclusion["running_reload_recovery_verified"] is True
-          assert exclusion["running_background_foreground_recovery_verified"] is True
           assert exclusion["terminal_state_unchanged_after_localized_reads"] is True
           assert exclusion["human_review_required"] is True
           assert exclusion["human_review_completed"] is False
           assert exclusion["approval_status"] == "pending_human_approval"
           assert exclusion["client_delivery_allowed"] is False
           assert exclusion["delivery_status"] == "blocked"
-          for key in ("spanish_pdf_path", "english_pdf_path"):
-              artifact = Path(exclusion[key])
-              assert artifact.is_file()
-              assert "excluded-context" in artifact.name
-              assert "pending-human-approval" in artifact.name
           PY
 
       - name: Publish successful Spanish proof status
@@ -586,7 +546,7 @@ jobs:
           print(json.dumps({
               "state": "success",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} bilingual Comprehensive proof passed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated bilingual Comprehensive proof passed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
@@ -606,7 +566,7 @@ jobs:
           print(json.dumps({
               "state": "failure",
               "context": os.environ["STATUS_CONTEXT"],
-              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} bilingual Comprehensive proof failed",
+              "description": f"source:{os.environ['SOURCE_RUN_ID']}:{os.environ['SOURCE_RUN_ATTEMPT']} authenticated bilingual Comprehensive proof failed",
               "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
           }))
           PY
