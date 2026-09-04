@@ -20,6 +20,7 @@ from nico.admin_security import require_comprehensive_operator
 
 VERSION = "nico.specialist_access.v1"
 SESSION_ROUTE = "/assessment/comprehensive-operator/session"
+GITHUB_ACTIONS_PROOF_SESSION_ROUTE = "/assessment/github-actions-proof-session"
 SESSION_HEADER = "x-nico-operator-session"
 ADMIN_HEADER = "x-nico-admin-token"
 SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"
@@ -109,7 +110,7 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
 
 
 def _protected_request(path: str) -> bool:
-    if path == SESSION_ROUTE:
+    if path in {SESSION_ROUTE, GITHUB_ACTIONS_PROOF_SESSION_ROUTE}:
         return False
     return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)
 
@@ -310,6 +311,7 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
         "protected_prefix": _PROTECTED_PREFIX,
         "all_assessment_routes_protected": True,
         "session_route": SESSION_ROUTE,
+        "github_actions_proof_session_route": GITHUB_ACTIONS_PROOF_SESSION_ROUTE,
         "session_signing_configured": _session_secret() is not None,
         "rate_limiting": True,
         "client_delivery_allowed": False,
@@ -322,6 +324,7 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
 __all__ = [
     "VERSION",
     "SESSION_ROUTE",
+    "GITHUB_ACTIONS_PROOF_SESSION_ROUTE",
     "SESSION_SIGNING_SECRET_ENV",
     "install_specialist_access",
     "issue_specialist_session",
