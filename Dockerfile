@@ -94,6 +94,7 @@ EXPOSE 8000
 # uvicorn nico.api.comprehensive_production_bootstrap:app
 # uvicorn nico.api.terminal_authority_bootstrap:app
 # uvicorn nico.api.spanish_final_report_bootstrap:app
-# Runtime starts one layer later only so the same-run bilingual report projection is
-# installed after every report/language compatibility and Spanish cache installer.
-CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-1}; case \"$workers\" in ''|*[!0-9]*) echo 'NICO_WEB_WORKERS must be a positive integer' >&2; exit 1;; esac; if [ \"$workers\" -lt 1 ]; then echo 'NICO_WEB_WORKERS must be at least 1' >&2; exit 1; fi; exec uvicorn nico.api.same_run_locale_report_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
+# uvicorn nico.api.same_run_locale_report_bootstrap:app
+# Runtime starts one layer later so authenticated specialist access and exact release
+# provenance wrap the complete established Comprehensive production chain.
+CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-1}; case \"$workers\" in ''|*[!0-9]*) echo 'NICO_WEB_WORKERS must be a positive integer' >&2; exit 1;; esac; if [ \"$workers\" -lt 1 ]; then echo 'NICO_WEB_WORKERS must be at least 1' >&2; exit 1; fi; exec uvicorn nico.api.specialist_ship_ready_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
