@@ -44,12 +44,18 @@ def test_same_origin_proxy_allows_only_exact_review_routes_and_forwards_secret()
 
     assert "COMPREHENSIVE_REVIEW" in source
     assert "COMPREHENSIVE_APPROVED_DELIVERY" in source
+    assert "COMPREHENSIVE_AUTOMATED_DELIVERY" in source
     assert "protectedReviewRoute(request.method, apiPath)" in source
     assert 'request.headers.get("x-nico-admin-token")' in source
     assert 'headers.set("X-NICO-Admin-Token", adminToken)' in source
     assert "approved-delivery-package" in source
+    assert "automated-delivery-package" in source
+    assert 'method === "POST" && COMPREHENSIVE_AUTOMATED_DELIVERY.test(path)' in source
     assert '"content-disposition"' in source
     assert '"x-nico-delivery-package-sha256"' in source
+    assert '"x-nico-certified-package-sha256"' in source
+    assert '"x-nico-authorization-mode"' in source
+    assert '"x-nico-human-reviewed"' in source
 
 
 def test_final_review_requires_memory_only_token_and_downloads_certified_zip() -> None:
