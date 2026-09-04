@@ -8,9 +8,12 @@ from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from nico.specialist_access_v1 import validate_specialist_session
+from nico.specialist_access_v1 import (
+    SPECIALIST_SCOPE,
+    validate_specialist_session,
+)
 
-VERSION = "nico.specialist_review_session_bridge.v1"
+VERSION = "nico.specialist_review_session_bridge.v2"
 _SESSION_HEADER = "x-nico-operator-session"
 _CURRENT_AUTHORITY: ContextVar[dict[str, Any] | None] = ContextVar(
     "nico_specialist_review_authority",
@@ -24,7 +27,7 @@ async def _bind_session_context(
 ) -> Response:
     authority = validate_specialist_session(request.headers.get(_SESSION_HEADER))
     reset: Token[dict[str, Any] | None] | None = None
-    if authority is not None:
+    if authority is not None and authority.get("scope") == SPECIALIST_SCOPE:
         reset = _CURRENT_AUTHORITY.set(dict(authority))
     try:
         return await call_next(request)
@@ -36,11 +39,13 @@ async def _bind_session_context(
 def install_specialist_review_session_bridge(app: FastAPI) -> dict[str, Any]:
     from nico import comprehensive_api_routes as routes
 
-    if getattr(routes, "_nico_specialist_review_session_bridge_v1", False):
+    if getattr(routes, "_nico_specialist_review_session_bridge_v2", False):
         return {
             "artifact_schema": VERSION,
             "installed": True,
             "request_context_isolated": True,
+            "specialist_scope_required": True,
+            "production_proof_scope_rejected": True,
         }
 
     original = routes.require_comprehensive_operator
@@ -50,7 +55,7 @@ def install_specialist_review_session_bridge(app: FastAPI) -> dict[str, Any]:
         if allowed:
             return allowed, status
         authority = _CURRENT_AUTHORITY.get()
-        if authority is None:
+        if authority is None or authority.get("scope") != SPECIALIST_SCOPE:
             return allowed, status
         return True, {
             "enabled": True,
@@ -64,13 +69,15 @@ def install_specialist_review_session_bridge(app: FastAPI) -> dict[str, Any]:
         }
 
     routes.require_comprehensive_operator = require_comprehensive_operator_with_session
-    routes._nico_specialist_review_session_bridge_v1 = True
+    routes._nico_specialist_review_session_bridge_v2 = True
     app.add_middleware(BaseHTTPMiddleware, dispatch=_bind_session_context)
     app.openapi_schema = None
     return {
         "artifact_schema": VERSION,
         "installed": True,
         "request_context_isolated": True,
+        "specialist_scope_required": True,
+        "production_proof_scope_rejected": True,
         "raw_admin_authority_unchanged": True,
         "client_delivery_allowed": False,
     }
