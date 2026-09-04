@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import spanish_comprehensive_live_acceptance_v3 as production
@@ -10,6 +11,7 @@ from github_actions_proof_session_v1 import (
 )
 
 VERSION = "nico.spanish_comprehensive_authenticated_live_acceptance.v4"
+GUARD_ENV = "NICO_AUTHENTICATED_PROOF_WRAPPER_ACTIVE"
 _ACTIVE_COOKIE_HEADER = ""
 
 
@@ -51,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     production.install_spanish_terminal_boundary()
     original_run = production.base.run_proof
     original_client = production.httpx.Client
+    prior_guard = os.environ.get(GUARD_ENV)
 
     def authenticated_run(browser: Any, args: Any) -> dict[str, Any]:
         wrapped = _AuthenticatedBrowser(browser, args.frontend_url)
@@ -63,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     production.base.run_proof = authenticated_run
     production.telemetry.proof.run_proof = authenticated_run
     production.httpx.Client = _authenticated_httpx_client(original_client)
+    os.environ[GUARD_ENV] = "1"
     try:
         return production.telemetry.main(argv)
     finally:
@@ -70,6 +74,10 @@ def main(argv: list[str] | None = None) -> int:
         production.telemetry.proof.run_proof = original_run
         production.httpx.Client = original_client
         _ACTIVE_COOKIE_HEADER = ""
+        if prior_guard is None:
+            os.environ.pop(GUARD_ENV, None)
+        else:
+            os.environ[GUARD_ENV] = prior_guard
 
 
 if __name__ == "__main__":
