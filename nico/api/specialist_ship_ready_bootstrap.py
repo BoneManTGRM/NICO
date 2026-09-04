@@ -4,13 +4,17 @@ import hmac
 import os
 from typing import Any
 
+from nico.comprehensive_approved_lifecycle_consistency_v1 import (
+    install_approved_lifecycle_consistency,
+)
 from nico.comprehensive_release_provenance_v1 import (
     comprehensive_release_provenance,
     install_comprehensive_release_provenance,
 )
 
-# Install the deterministic report provenance boundary before the established
-# production bootstrap imports and captures report builders.
+# Install deterministic report boundaries before the established production
+# bootstrap imports and captures report builders.
+APPROVED_LIFECYCLE_CONSISTENCY = install_approved_lifecycle_consistency()
 RELEASE_PROVENANCE = install_comprehensive_release_provenance()
 
 from nico.api.same_run_locale_report_bootstrap import app as production_app  # noqa: E402
@@ -27,6 +31,8 @@ app = production_app
 SPECIALIST_ACCESS = install_specialist_access(app)
 REVIEW_SESSION_BRIDGE = install_specialist_review_session_bridge(app)
 
+if APPROVED_LIFECYCLE_CONSISTENCY.get("installed") is not True:
+    raise RuntimeError("NICO approved lifecycle consistency binding was not installed")
 if RELEASE_PROVENANCE.get("installed") is not True:
     raise RuntimeError("NICO release provenance binding was not installed")
 if SPECIALIST_ACCESS.get("installed") is not True:
@@ -78,6 +84,10 @@ def specialist_readiness() -> dict[str, Any]:
     session_signing_configured = SPECIALIST_ACCESS.get("session_signing_configured") is True
     generic_operator_password_configured = bool(credentials["operator"])
     review_session_bridge_installed = REVIEW_SESSION_BRIDGE.get("installed") is True
+    approved_lifecycle_consistency_installed = (
+        APPROVED_LIFECYCLE_CONSISTENCY.get("installed") is True
+        and APPROVED_LIFECYCLE_CONSISTENCY.get("cross_format_fail_closed") is True
+    )
     release_identity_complete = (
         release.get("deployment_identity_established") is True
         and release.get("frontend_identity_established") is True
@@ -89,6 +99,7 @@ def specialist_readiness() -> dict[str, Any]:
             generic_operator_password_configured,
             credential_separation,
             review_session_bridge_installed,
+            approved_lifecycle_consistency_installed,
             runtime_ready,
             release_identity_complete,
         )
@@ -99,6 +110,7 @@ def specialist_readiness() -> dict[str, Any]:
         "specialist_access_installed": SPECIALIST_ACCESS.get("installed") is True,
         "authenticated_comprehensive_routes_enforced": True,
         "signed_review_sessions_enforced": review_session_bridge_installed,
+        "approved_lifecycle_consistency_enforced": approved_lifecycle_consistency_installed,
         "operator_password_configured": generic_operator_password_configured,
         "generic_operator_password_configured": generic_operator_password_configured,
         "legacy_operator_password_configured": bool(credentials["legacy_operator"]),
@@ -130,12 +142,14 @@ if _route_count(SPECIALIST_READINESS_ROUTE) == 0:
 # A secret-free test import remains possible, but every Comprehensive route still
 # fails closed and browser session creation returns 503 until deployment credentials
 # establish a signing key. Production verification must prove readiness is true.
+app.state.nico_approved_lifecycle_consistency = APPROVED_LIFECYCLE_CONSISTENCY
 app.state.nico_release_provenance = RELEASE_PROVENANCE
 app.state.nico_specialist_access = SPECIALIST_ACCESS
 app.state.nico_specialist_review_session_bridge = REVIEW_SESSION_BRIDGE
 
 __all__ = [
     "app",
+    "APPROVED_LIFECYCLE_CONSISTENCY",
     "RELEASE_PROVENANCE",
     "SPECIALIST_ACCESS",
     "REVIEW_SESSION_BRIDGE",
