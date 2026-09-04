@@ -100,5 +100,7 @@ def test_root_routes_are_fixed_locale_specialist_entrypoints() -> None:
     assert 'redirect("/es/specialist-login")' in spanish_home
     assert "URLSearchParams" not in english_login
     assert "URLSearchParams" not in spanish_login
-    assert 'window.location.assign("/assessment?tier=comprehensive#assessment")' in english_login
-    assert 'window.location.assign("/es/assessment?tier=comprehensive#assessment")' in spanish_login
+    assert 'const DESTINATION = "/assessment?tier=comprehensive#assessment"' in english_login
+    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment"' in spanish_login
+    assert "window.location.assign(DESTINATION)" in english_login
+    assert "window.location.assign(DESTINATION)" in spanish_login
