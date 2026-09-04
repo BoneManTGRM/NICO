@@ -440,6 +440,8 @@ jobs:
               assert payload["source_producer_lineage_start_request_count"] == 1
               assert payload["recovery_start_request_count"] == 0
               assert payload["fresh_assessment_count_during_recovery"] == 0
+              assert payload["explicit_same_run_continuation_count"] == 0
+              assert payload["terminal_ui_mutation_attempt_count"] == 0
               assert payload["same_run_recovery_verified"] is True
               assert payload["same_commit_recovery_verified"] is True
               assert payload["same_evidence_ledger_verified"] is True
