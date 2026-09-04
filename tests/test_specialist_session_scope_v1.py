@@ -24,4 +24,4 @@ def test_signed_specialist_session_is_scoped_below_admin(monkeypatch):
     specialist_status = validate_specialist_session(token)
     assert specialist_status is not None
     assert specialist_status["authority"] == "nico_comprehensive_operator"
-    assert specialist_status["scope"] == "comprehensive_specialist_operation"
+    assert specialist_status["scope"] == "nico_specialist_operation"
