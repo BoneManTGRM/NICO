@@ -20,6 +20,7 @@ AUDIENCE = "nico-production-proof"
 ISSUER = "https://token.actions.githubusercontent.com"
 JWKS_URL = "https://token.actions.githubusercontent.com/.well-known/jwks"
 REPOSITORY = "BoneManTGRM/NICO"
+OWNER_ID = "235159333"
 REPOSITORY_ID = "1282576027"
 ENVIRONMENT = "production-smoke"
 ALLOWED_EVENT_NAMES = {"push", "workflow_run", "workflow_dispatch"}
@@ -70,14 +71,11 @@ def _workflow_file(workflow_ref: str) -> str:
 
 def _subject_is_expected(subject: str) -> bool:
     suffix = f":environment:{ENVIRONMENT}"
-    if not subject.endswith(suffix):
-        return False
     legacy = f"repo:{REPOSITORY}{suffix}"
-    if hmac.compare_digest(subject, legacy):
-        return True
-    immutable_prefix = "repo:BoneManTGRM@"
-    immutable_repo = f"/NICO@{REPOSITORY_ID}{suffix}"
-    return subject.startswith(immutable_prefix) and subject.endswith(immutable_repo)
+    immutable = (
+        f"repo:BoneManTGRM@{OWNER_ID}/NICO@{REPOSITORY_ID}{suffix}"
+    )
+    return hmac.compare_digest(subject, legacy) or hmac.compare_digest(subject, immutable)
 
 
 def _required_text(claims: dict[str, Any], name: str) -> str:
@@ -121,6 +119,7 @@ def validate_github_actions_oidc(
                     "ref",
                     "sha",
                     "workflow_ref",
+                    "workflow_sha",
                     "event_name",
                     "environment",
                     "runner_environment",
@@ -140,6 +139,7 @@ def validate_github_actions_oidc(
     ref = _required_text(claims, "ref")
     release_sha = _required_text(claims, "sha").lower()
     workflow_ref = _required_text(claims, "workflow_ref")
+    workflow_sha = _required_text(claims, "workflow_sha").lower()
     event_name = _required_text(claims, "event_name")
     environment = _required_text(claims, "environment")
     runner_environment = _required_text(claims, "runner_environment")
@@ -159,6 +159,8 @@ def validate_github_actions_oidc(
         "release_sha": bool(expected_release_sha)
         and hmac.compare_digest(release_sha, expected_release_sha),
         "workflow_ref": workflow_file in ALLOWED_WORKFLOW_FILES,
+        "workflow_sha": bool(expected_release_sha)
+        and hmac.compare_digest(workflow_sha, expected_release_sha),
         "event_name": event_name in ALLOWED_EVENT_NAMES,
         "environment": hmac.compare_digest(environment, ENVIRONMENT),
         "runner_environment": hmac.compare_digest(runner_environment, "github-hosted"),
@@ -179,6 +181,7 @@ def validate_github_actions_oidc(
         "repository_id": repository_id,
         "release_sha": release_sha,
         "workflow_ref": workflow_ref,
+        "workflow_sha": workflow_sha,
         "workflow_file": workflow_file,
         "event_name": event_name,
         "environment": environment,
@@ -291,8 +294,10 @@ def install_github_actions_proof_session(app: FastAPI) -> dict[str, Any]:
         "route": ROUTE,
         "audience": AUDIENCE,
         "repository_id_bound": True,
+        "immutable_owner_id_bound": True,
         "exact_release_bound": True,
         "workflow_allowlist_bound": True,
+        "workflow_sha_bound": True,
         "environment_bound": True,
         "replay_blocked": True,
         "client_delivery_allowed": False,
@@ -303,6 +308,7 @@ def install_github_actions_proof_session(app: FastAPI) -> dict[str, Any]:
 
 __all__ = [
     "AUDIENCE",
+    "ISSUER",
     "ROUTE",
     "VERSION",
     "GitHubActionsProofSessionRequest",
