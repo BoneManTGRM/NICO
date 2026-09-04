@@ -170,7 +170,7 @@ def test_workflow_uses_semantic_identity_runner_and_requires_proof() -> None:
 
     assert "scripts/unified_production_acceptance.py" in source
     assert "scripts/unified_production_acceptance_authoritative.py" in source
-    assert "python scripts/completed_run_two_pass_acceptance_v1.py" in source
+    assert "python scripts/completed_run_authenticated_two_pass_acceptance_v1.py" in source
     assert "same_immutable_completed_run" in completed_runner
     assert 'proof["visible_pdf_action_count"] = 2' in completed_runner
     assert 'item["ui_review_pdf_user_gesture_anchor_click_count"] == 1' in completed_runner

@@ -75,7 +75,7 @@ def test_production_workflows_execute_non_retrying_download_entry_points() -> No
     mobile = MOBILE_WORKFLOW.read_text(encoding="utf-8")
     ios = IOS_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "python scripts/mobile_restart_live_acceptance_v5.py" in mobile
+    assert "python scripts/mobile_restart_authenticated_live_acceptance_v1.py" in mobile
     assert "not_dispatched_existing_run" in mobile
     assert 'payload["start_request_count"] == 0' in mobile
     assert 'payload["continuation_post_count"] == 0' in mobile
@@ -92,7 +92,7 @@ def test_production_workflows_execute_non_retrying_download_entry_points() -> No
     assert 'payload["ui_review_pdf_source_artifact_reused"] is True' in mobile
     assert "python scripts/mobile_restart_live_acceptance_v1.py" not in mobile
 
-    assert "python scripts/mobile_restart_live_acceptance_v6.py" in ios
+    assert "python scripts/ios_webkit_authenticated_live_acceptance_v1.py" in ios
     assert "not_dispatched_existing_run" in ios
     assert 'payload["start_request_count"] == 0' in ios
     assert 'payload["continuation_post_count"] == 0' in ios

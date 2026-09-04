@@ -102,6 +102,10 @@ def issue_specialist_session(
     }
     if normalized_scope == PRODUCTION_PROOF_SCOPE:
         claims = retained_claims if isinstance(retained_claims, Mapping) else {}
+        proof_role = str(claims.get("proof_role") or "producer")
+        if proof_role not in {"producer", "consumer"}:
+            raise ValueError("production_proof_session_role_invalid")
+        payload["proof_role"] = proof_role
         for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt"):
             value = str(claims.get(key) or "").strip()
             if not value:
@@ -144,6 +148,8 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
         not str(payload.get(key) or "").strip()
         for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt")
     ):
+        return None
+    if scope == PRODUCTION_PROOF_SCOPE and payload.get("proof_role", "producer") not in {"producer", "consumer"}:
         return None
     return payload
 
@@ -268,7 +274,10 @@ async def _specialist_access_middleware(
 
     if (
         authority.get("scope") == PRODUCTION_PROOF_SCOPE
-        and not _production_proof_request_allowed(request.method, request.url.path)
+        and (
+            not _production_proof_request_allowed(request.method, request.url.path)
+            or (authority.get("proof_role") == "consumer" and request.method != "GET")
+        )
     ):
         return _authentication_response(403, "production_proof_session_scope_forbidden")
 

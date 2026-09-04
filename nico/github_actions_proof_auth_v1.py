@@ -7,19 +7,24 @@ from typing import Any, Mapping
 
 import jwt
 
-VERSION = "nico.github_actions_proof_auth.v2"
+VERSION = "nico.github_actions_proof_auth.v3"
 ISSUER = "https://token.actions.githubusercontent.com"
 JWKS_URL = f"{ISSUER}/.well-known/jwks"
 DEFAULT_AUDIENCE = "https://app.nicoaudit.com/nico-production-proof"
 DEFAULT_REPOSITORY = "BoneManTGRM/NICO"
 DEFAULT_REF = "refs/heads/main"
 DEFAULT_WORKFLOW_PATH = ".github/workflows/spanish-comprehensive-production-proof.yml"
-FINALIZER_WORKFLOW_PATH = ".github/workflows/specialist-production-proof-finalizer.yml"
+CONSUMER_WORKFLOW_PATHS = frozenset({
+    ".github/workflows/mobile-restart-production-proof.yml",
+    ".github/workflows/ios-webkit-paint-proof.yml",
+    ".github/workflows/two-service-production-acceptance.yml",
+})
+CONSUMER_ENVIRONMENT = "production-smoke"
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _RUN_ID = re.compile(r"^[1-9][0-9]{0,19}$")
 _WORKFLOW_EVENT_POLICY = {
     DEFAULT_WORKFLOW_PATH: {"push", "workflow_dispatch"},
-    FINALIZER_WORKFLOW_PATH: {"workflow_run"},
+    **{path: {"workflow_run"} for path in CONSUMER_WORKFLOW_PATHS},
 }
 
 
@@ -66,7 +71,7 @@ def _allowed_workflow_paths(explicit_workflow_path: str | None) -> dict[str, set
         return {normalized: set(_WORKFLOW_EVENT_POLICY.get(normalized, {"push", "workflow_dispatch"}))}
     configured = expected_workflow_path()
     policy = {configured: set(_WORKFLOW_EVENT_POLICY.get(configured, {"push", "workflow_dispatch"}))}
-    policy[FINALIZER_WORKFLOW_PATH] = set(_WORKFLOW_EVENT_POLICY[FINALIZER_WORKFLOW_PATH])
+    policy.update({path: {"workflow_run"} for path in CONSUMER_WORKFLOW_PATHS})
     return policy
 
 
@@ -80,8 +85,8 @@ def validate_github_actions_claims(
 ) -> dict[str, str]:
     """Validate an exact trusted production-proof workflow identity.
 
-    Only the canonical Spanish producer and the bounded post-producer specialist
-    finalizer are accepted. Each workflow has an explicit event policy, while exact
+    Only the canonical Spanish producer and the three named, environment-bound
+    consumers are accepted. Each workflow has an explicit event policy, while exact
     repository, protected main ref, deployed release SHA, subject, run identity,
     signature, issuer, audience, and lifetime remain mandatory.
     """
@@ -108,13 +113,22 @@ def validate_github_actions_claims(
     if observed_workflow_ref.startswith(repo_prefix) and observed_workflow_ref.endswith(workflow_suffix):
         observed_workflow_path = observed_workflow_ref[len(repo_prefix) : -len(workflow_suffix)]
     allowed_events = workflow_policy.get(observed_workflow_path, set())
-    expected_subject = f"repo:{expected_repo}:ref:{expected_branch_ref}"
+    is_consumer = observed_workflow_path in CONSUMER_WORKFLOW_PATHS
+    expected_subject = (
+        f"repo:{expected_repo}:environment:{CONSUMER_ENVIRONMENT}"
+        if is_consumer
+        else f"repo:{expected_repo}:ref:{expected_branch_ref}"
+    )
+    # An environment subject does not prove a branch. Keep the independent exact
+    # ref and SHA comparisons below, and require the signed environment claim too.
+    expected_environment = CONSUMER_ENVIRONMENT if is_consumer else ""
     checks = {
         "repository": observed_repo == expected_repo,
         "ref": observed_ref == expected_branch_ref,
         "sha": observed_sha == expected_sha,
         "event_name": observed_event in allowed_events,
         "sub": observed_subject == expected_subject,
+        "environment": str(claims.get("environment") or "") == expected_environment,
         "workflow_ref": observed_workflow_path in workflow_policy,
         "run_id": bool(_RUN_ID.fullmatch(observed_run_id)),
         "run_attempt": bool(_RUN_ID.fullmatch(observed_run_attempt)),
@@ -126,6 +140,7 @@ def validate_github_actions_claims(
         )
 
     return {
+        "proof_role": "consumer" if is_consumer else "producer",
         "repository": observed_repo,
         "ref": observed_ref,
         "sha": observed_sha,
@@ -189,7 +204,8 @@ __all__ = [
     "VERSION",
     "DEFAULT_AUDIENCE",
     "DEFAULT_WORKFLOW_PATH",
-    "FINALIZER_WORKFLOW_PATH",
+    "CONSUMER_WORKFLOW_PATHS",
+    "CONSUMER_ENVIRONMENT",
     "proof_audience",
     "validate_github_actions_claims",
     "verify_github_actions_oidc_token",

@@ -78,7 +78,7 @@ jobs:
               if line.strip() == 'python scripts/prepare_playwright_native_visibility_v1.py'
           ]
           assert len(patch_invocations) == 2
-          assert 'xvfb-run -a python scripts/mobile_restart_live_acceptance_v5.py' in workflow
+          assert 'xvfb-run -a python scripts/mobile_restart_authenticated_live_acceptance_v1.py' in workflow
           assert 'if: failure() || cancelled()' in workflow
           assert 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' in workflow
           assert '--source-proof source-proof/spanish-comprehensive-live-proof.json' in workflow
@@ -130,6 +130,11 @@ jobs:
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main'
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
+      id-token: write
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -275,7 +280,7 @@ jobs:
           set -euo pipefail
           command -v xvfb-run
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
-          xvfb-run -a python scripts/mobile_restart_live_acceptance_v5.py \
+          xvfb-run -a python scripts/mobile_restart_authenticated_live_acceptance_v1.py \
             --frontend-url "${NICO_PRODUCTION_FRONTEND_URL}" \
             --repository "${NICO_PRODUCTION_SMOKE_REPOSITORY}" \
             --expected-sha "${RELEASE_SHA}" \
