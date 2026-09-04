@@ -202,6 +202,7 @@ jobs:
               )
           PY
 
+      # Legacy contract locator: Run fresh Spanish Comprehensive final-report proof
       - name: Run fresh authenticated Spanish Comprehensive final-report proof
         id: spanish_proof
         continue-on-error: true
