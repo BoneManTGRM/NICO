@@ -56,15 +56,15 @@ def comprehensive_release_provenance() -> dict[str, Any]:
         "report_renderer_version": str(getattr(report_package, "VERSION", "unavailable")),
         "release_provenance_version": VERSION,
         "runtime_versions": {
-            "python_package_nico": _package_version("nico-reparodynamics"),
+            "python_package_nico": _package_version("nico-cyber-defense"),
             "reportlab": _package_version("reportlab"),
             "pypdf": _package_version("pypdf"),
-            "semgrep": _package_version("semgrep"),
         },
         "scanner_versions": {
             "osv_scanner": _first_env("NICO_OSV_SCANNER_VERSION") or "v2.3.8",
             "gitleaks": _first_env("NICO_GITLEAKS_VERSION") or "v8.30.1",
             "trufflehog": _first_env("NICO_TRUFFLEHOG_VERSION") or "v3.95.0",
+            "semgrep": _first_env("NICO_SEMGREP_VERSION") or "1.170.0",
             "eslint": _first_env("NICO_ESLINT_VERSION") or "9.39.3",
             "typescript": _first_env("NICO_TYPESCRIPT_VERSION") or "6.0.3",
         },
@@ -77,7 +77,6 @@ def comprehensive_release_provenance() -> dict[str, Any]:
 
 def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
     scanner = provenance.get("scanner_versions") if isinstance(provenance.get("scanner_versions"), dict) else {}
-    runtime = provenance.get("runtime_versions") if isinstance(provenance.get("runtime_versions"), dict) else {}
     return [
         ("Backend source commit", str(provenance.get("backend_build_commit") or "unavailable")),
         ("Frontend source commit", str(provenance.get("frontend_build_commit") or "unavailable")),
@@ -87,7 +86,7 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
         ("OSV-Scanner", str(scanner.get("osv_scanner") or "unavailable")),
         ("Gitleaks", str(scanner.get("gitleaks") or "unavailable")),
         ("TruffleHog", str(scanner.get("trufflehog") or "unavailable")),
-        ("Semgrep", str(runtime.get("semgrep") or "unavailable")),
+        ("Semgrep", str(scanner.get("semgrep") or "unavailable")),
     ]
 
 
