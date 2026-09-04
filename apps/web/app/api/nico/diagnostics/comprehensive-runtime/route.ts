@@ -36,6 +36,24 @@ type DiagnosticResult = UpstreamObservation & {
   elapsedMs: number;
 };
 
+const RELEASE_MODE_DISCLOSURE = {
+  diagnostic_scope: "human_reviewed_comprehensive_runtime",
+  release_modes: {
+    human_reviewed_comprehensive: {
+      human_specialist_review_required: true,
+      exact_report_approval_required: true,
+      separate_client_delivery_authorization_required: true,
+    },
+    authorized_automated_technical_assessment: {
+      human_specialist_review_required: false,
+      human_reviewed: false,
+      authorization_mode: "automated_policy",
+      deterministic_review_queue_must_be_empty: true,
+      client_label: "Authorized — Automated Technical Assessment",
+    },
+  },
+} as const;
+
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as JsonRecord
@@ -128,6 +146,7 @@ function blockedReadiness(
       },
       human_review_required: true,
       client_delivery_allowed: false,
+      ...RELEASE_MODE_DISCLOSURE,
     },
     {
       // The dedicated route already owns the complete bounded warm-up cycle.
@@ -327,7 +346,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     && diagnostic.httpStatus < 300
     && Object.keys(diagnostic.payload).length
   ) {
-    return Response.json(diagnostic.payload, {
+    return Response.json({
+      ...diagnostic.payload,
+      ...RELEASE_MODE_DISCLOSURE,
+    }, {
       status: 200,
       headers: boundedHeaders(requestId, upstreamRequests),
     });
