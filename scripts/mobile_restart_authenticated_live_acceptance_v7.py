@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ import mobile_restart_live_acceptance_v5 as proof
 from authenticated_proof_browser_v1 import AuthenticatedProofBrowser
 
 VERSION = "nico.mobile_restart_authenticated_live_acceptance.v7"
+GUARD_ENV = "NICO_AUTHENTICATED_PROOF_WRAPPER_ACTIVE"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -16,6 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     original_launch = recovery._launch_chromium
     original_write = recovery._write
     wrappers: list[AuthenticatedProofBrowser] = []
+    prior_guard = os.environ.get(GUARD_ENV)
 
     def launch(playwright: Any) -> AuthenticatedProofBrowser:
         wrapped = AuthenticatedProofBrowser(
@@ -36,11 +39,16 @@ def main(argv: list[str] | None = None) -> int:
 
     recovery._launch_chromium = launch
     recovery._write = write
+    os.environ[GUARD_ENV] = "1"
     try:
         return proof.main(argv)
     finally:
         recovery._launch_chromium = original_launch
         recovery._write = original_write
+        if prior_guard is None:
+            os.environ.pop(GUARD_ENV, None)
+        else:
+            os.environ[GUARD_ENV] = prior_guard
 
 
 if __name__ == "__main__":
