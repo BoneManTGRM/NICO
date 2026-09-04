@@ -1,0 +1,80 @@
+name: One-time Authenticated Proof Contract Patch
+
+on:
+  push:
+    branches:
+      - fix/specialist-production-acceptance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out production-acceptance branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/specialist-production-acceptance
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Align legacy proof contracts with the authenticated harness
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements: dict[Path, list[tuple[str, str]]] = {
+              Path("tests/test_spanish_comprehensive_production_canary_v1.py"): [
+                  (
+                      '''    assert workflow.count(\n        "python scripts/spanish_comprehensive_live_acceptance_v3.py"\n    ) == 2\n''',
+                      '''    assert workflow.count(\n        "python scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py"\n    ) == 2\n    authenticated = Path(\n        "scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py"\n    ).read_text(encoding="utf-8")\n    assert "import spanish_comprehensive_live_acceptance_v3 as proof" in authenticated\n''',
+                  ),
+              ],
+              Path("tests/test_live_production_proof_serialization_v1.py"): [
+                  (
+                      '''    assert producer.count("python scripts/spanish_comprehensive_live_acceptance_v3.py") == 2\n''',
+                      '''    assert producer.count(\n        "python scripts/spanish_comprehensive_authenticated_live_acceptance_v1.py"\n    ) == 2\n    assert producer.count(\n        "python scripts/spanish_comprehensive_authenticated_existing_run_recovery_v1.py"\n    ) == 1\n    assert "id-token: write" in producer\n''',
+                  ),
+              ],
+              Path("tests/test_mobile_visibility_lifecycle_proof_v1.py"): [
+                  (
+                      '''    assert "xvfb-run -a python scripts/spanish_comprehensive_live_acceptance_v3.py" in spanish\n    assert "xvfb-run -a python scripts/spanish_comprehensive_existing_run_recovery_v1.py" in spanish\n''',
+                      '''    assert (\n        "xvfb-run -a python scripts/"\n        "spanish_comprehensive_authenticated_live_acceptance_v1.py"\n    ) in spanish\n    assert (\n        "xvfb-run -a python scripts/"\n        "spanish_comprehensive_authenticated_existing_run_recovery_v1.py"\n    ) in spanish\n''',
+                  ),
+              ],
+              Path(".github/workflows/spanish-comprehensive-production-proof.yml"): [
+                  (
+                      '''          for visibility in visibility_proofs:\n              assert visibility["browser_engine"] == "chromium"\n              assert visibility["browser_launch_mode"] == "headed_xvfb"\n              assert visibility["document_hidden_observed"] is True\n              assert visibility["document_visible_after_foreground"] is True\n              assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]\n''',
+                      '''          for visibility in visibility_proofs:\n              assert visibility["browser_engine"] == "chromium"\n              assert visibility["browser_launch_mode"] == "headed_xvfb"\n              assert (\n                  visibility["visibility_transition_mechanism"]\n                  == "opener_tab_activation_without_playwright_focus_emulation"\n              )\n              assert (\n                  visibility["native_visibility_runtime"]\n                  == "nico.playwright_native_visibility.v1"\n              )\n              assert visibility["playwright_focus_emulation_enabled"] is False\n              assert visibility["shared_native_window"] is True\n              assert isinstance(visibility["subject_window_id"], int)\n              assert isinstance(visibility["background_window_id"], int)\n              assert visibility["subject_window_id"] == visibility["background_window_id"]\n              assert isinstance(visibility["subject_target_id"], str)\n              assert isinstance(visibility["background_target_id"], str)\n              assert visibility["subject_target_id"] != visibility["background_target_id"]\n              assert visibility["subject_target_type"] == "page"\n              assert visibility["background_target_type"] == "page"\n              assert visibility["document_hidden_observed"] is True\n              assert visibility["document_visible_after_foreground"] is True\n              assert visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]\n''',
+                  ),
+              ],
+          }
+
+          for path, edits in replacements.items():
+              source = path.read_text(encoding="utf-8")
+              for old, new in edits:
+                  count = source.count(old)
+                  if count != 1:
+                      raise SystemExit(
+                          f"Expected exactly one contract block in {path}, observed {count}."
+                      )
+                  source = source.replace(old, new)
+              path.write_text(source, encoding="utf-8")
+
+          workflow = Path(".github/workflows/one-time-authenticated-proof-contract-patch.yml")
+          workflow.unlink()
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            tests/test_spanish_comprehensive_production_canary_v1.py \
+            tests/test_live_production_proof_serialization_v1.py \
+            tests/test_mobile_visibility_lifecycle_proof_v1.py \
+            .github/workflows/spanish-comprehensive-production-proof.yml \
+            .github/workflows/one-time-authenticated-proof-contract-patch.yml
+          git commit -m 'Align proof contracts with authenticated production harness'
+          git push origin HEAD:fix/specialist-production-acceptance
