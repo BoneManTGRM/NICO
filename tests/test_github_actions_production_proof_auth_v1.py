@@ -55,6 +55,18 @@ def _app() -> FastAPI:
     def review(run_id: str) -> dict[str, str]:
         return {"status": "approved", "run_id": run_id}
 
+    @app.post("/assessment/comprehensive-run/{run_id}/authorize-delivery")
+    def authorize_delivery(run_id: str) -> dict[str, str]:
+        return {"status": "authorized", "run_id": run_id}
+
+    @app.get("/assessment/comprehensive-run/{run_id}/approved-delivery-package")
+    def approved_delivery(run_id: str) -> dict[str, str]:
+        return {"status": "client_final", "run_id": run_id}
+
+    @app.post("/assessment/comprehensive-run/{run_id}/automated-delivery-package")
+    def automated_delivery(run_id: str) -> dict[str, str]:
+        return {"status": "automated", "run_id": run_id}
+
     install_specialist_access(app)
     return app
 
@@ -86,7 +98,9 @@ def test_exact_github_actions_claims_are_required(monkeypatch: pytest.MonkeyPatc
             validate_github_actions_claims(candidate)
 
 
-def test_production_proof_session_can_scan_but_cannot_review(monkeypatch: pytest.MonkeyPatch):
+def test_production_proof_session_can_scan_but_cannot_approve_or_deliver(
+    monkeypatch: pytest.MonkeyPatch,
+):
     _environment(monkeypatch)
     token, _ = issue_specialist_session(
         {"authority": "github_actions_production_proof"},
@@ -103,9 +117,19 @@ def test_production_proof_session_can_scan_but_cannot_review(monkeypatch: pytest
     assert client.post("/assessment/comprehensive-run/comprun_test/continue", headers=headers).status_code == 200
     assert client.get("/assessment/comprehensive-run/comprun_test/report/json", headers=headers).status_code == 200
 
-    forbidden = client.post("/assessment/comprehensive-run/comprun_test/review", headers=headers)
-    assert forbidden.status_code == 403
-    assert forbidden.json()["detail"]["code"] == "production_proof_session_scope_forbidden"
+    protected_actions = (
+        ("post", "/assessment/comprehensive-run/comprun_test/review"),
+        ("post", "/assessment/comprehensive-run/comprun_test/authorize-delivery"),
+        ("get", "/assessment/comprehensive-run/comprun_test/approved-delivery-package"),
+        ("post", "/assessment/comprehensive-run/comprun_test/automated-delivery-package"),
+    )
+    for method, path in protected_actions:
+        forbidden = getattr(client, method)(path, headers=headers)
+        assert forbidden.status_code == 403
+        assert (
+            forbidden.json()["detail"]["code"]
+            == "production_proof_session_scope_forbidden"
+        )
 
 
 def test_oidc_exchange_issues_only_restricted_session(monkeypatch: pytest.MonkeyPatch):
