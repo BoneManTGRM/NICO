@@ -22,6 +22,8 @@ VERSION = "nico.specialist_access.v1"
 SESSION_ROUTE = "/assessment/comprehensive-operator/session"
 SESSION_HEADER = "x-nico-operator-session"
 ADMIN_HEADER = "x-nico-admin-token"
+SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"
+_MINIMUM_SIGNING_SECRET_BYTES = 32
 _PROTECTED_ROOTS = (
     "/assessment/comprehensive-intake",
     "/assessment/comprehensive-run",
@@ -41,16 +43,15 @@ def _session_ttl_seconds() -> int:
 
 
 def _session_secret() -> bytes | None:
-    for name in (
-        "NICO_OPERATOR_SESSION_SIGNING_SECRET",
-        "NICO_ADMIN_TOKEN",
-        "NICO_COMPREHENSIVE_OPERATOR_PASSWORD",
-        "NICO_SARA_OPERATOR_PASSWORD",
-    ):
-        value = os.getenv(name, "").strip()
-        if value:
-            return hashlib.sha256(f"{VERSION}:{value}".encode("utf-8")).digest()
-    return None
+    """Return only the dedicated high-entropy session-signing key.
+
+    Operator passwords and the site-wide admin token are authentication credentials,
+    not key-derivation material. Keeping the signing key separate permits independent
+    rotation and avoids retaining or fast-hashing a password for secondary use.
+    """
+
+    value = os.getenv(SESSION_SIGNING_SECRET_ENV, "").strip().encode("utf-8")
+    return value if len(value) >= _MINIMUM_SIGNING_SECRET_BYTES else None
 
 
 def _b64url_encode(value: bytes) -> str:
@@ -119,11 +120,24 @@ def _protected_request(path: str) -> bool:
 
 
 def _credential_fingerprint(request: Request, raw_token: str, session_token: str) -> str:
+    """Return a non-reversible keyed rate-limit identity without storing credentials."""
+
+    secret = _session_secret()
+    if secret is None:
+        return "specialist-session-signing-unconfigured"
     credential = session_token or raw_token
-    credential_digest = hashlib.sha256(credential.encode("utf-8")).hexdigest()[:24]
     forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
     host = forwarded or (request.client.host if request.client else "unknown")
-    return hashlib.sha256(f"{credential_digest}:{host}".encode("utf-8")).hexdigest()
+    credential_digest = hmac.new(
+        secret,
+        credential.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.new(
+        secret,
+        f"{credential_digest}:{host}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 class _BoundedRateLimiter:
@@ -306,6 +320,7 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
 __all__ = [
     "VERSION",
     "SESSION_ROUTE",
+    "SESSION_SIGNING_SECRET_ENV",
     "install_specialist_access",
     "issue_specialist_session",
     "validate_specialist_session",
