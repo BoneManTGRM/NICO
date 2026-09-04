@@ -14,15 +14,25 @@ from nico.github_actions_proof_session_v1 import (
 
 
 RELEASE_SHA = "a" * 40
+LEGACY_SUBJECT = "repo:BoneManTGRM/NICO:environment:production-smoke"
+IMMUTABLE_SUBJECT = (
+    "repo:BoneManTGRM@235159333/NICO@1282576027:environment:production-smoke"
+)
 
 
-def _token(*, workflow: str = "spanish-comprehensive-production-proof.yml", sha: str = RELEASE_SHA):
+def _token(
+    *,
+    workflow: str = "spanish-comprehensive-production-proof.yml",
+    sha: str = RELEASE_SHA,
+    workflow_sha: str | None = None,
+    subject: str = LEGACY_SUBJECT,
+):
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     now = int(time.time())
     claims = {
         "iss": ISSUER,
         "aud": AUDIENCE,
-        "sub": "repo:BoneManTGRM/NICO:environment:production-smoke",
+        "sub": subject,
         "exp": now + 600,
         "iat": now,
         "nbf": now - 5,
@@ -34,7 +44,7 @@ def _token(*, workflow: str = "spanish-comprehensive-production-proof.yml", sha:
         "ref_protected": "true",
         "sha": sha,
         "workflow_ref": f"BoneManTGRM/NICO/.github/workflows/{workflow}@refs/heads/main",
-        "workflow_sha": sha,
+        "workflow_sha": workflow_sha or sha,
         "event_name": "push",
         "environment": "production-smoke",
         "runner_environment": "github-hosted",
@@ -45,23 +55,33 @@ def _token(*, workflow: str = "spanish-comprehensive-production-proof.yml", sha:
     return token, private_key.public_key()
 
 
-def test_exact_release_and_allowlisted_workflow_are_accepted(monkeypatch):
+@pytest.mark.parametrize("subject", [LEGACY_SUBJECT, IMMUTABLE_SUBJECT])
+def test_exact_release_and_allowlisted_workflow_are_accepted(monkeypatch, subject):
     monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", RELEASE_SHA)
-    token, public_key = _token()
+    token, public_key = _token(subject=subject)
 
     authority = validate_github_actions_oidc(token, signing_key=public_key)
 
     assert authority["authority"] == "github_actions_production_proof"
     assert authority["scope"] == "nico_specialist_operation"
     assert authority["release_sha"] == RELEASE_SHA
+    assert authority["workflow_sha"] == RELEASE_SHA
     assert authority["workflow_file"] == ".github/workflows/spanish-comprehensive-production-proof.yml"
 
 
 def test_stale_release_is_rejected(monkeypatch):
     monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", RELEASE_SHA)
-    token, public_key = _token(sha="b" * 40)
+    token, public_key = _token(sha="b" * 40, workflow_sha=RELEASE_SHA)
 
     with pytest.raises(ValueError, match="release_sha"):
+        validate_github_actions_oidc(token, signing_key=public_key)
+
+
+def test_stale_workflow_sha_is_rejected(monkeypatch):
+    monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", RELEASE_SHA)
+    token, public_key = _token(workflow_sha="b" * 40)
+
+    with pytest.raises(ValueError, match="workflow_sha"):
         validate_github_actions_oidc(token, signing_key=public_key)
 
 
@@ -70,4 +90,14 @@ def test_unapproved_workflow_is_rejected(monkeypatch):
     token, public_key = _token(workflow="untrusted.yml")
 
     with pytest.raises(ValueError, match="workflow_ref"):
+        validate_github_actions_oidc(token, signing_key=public_key)
+
+
+def test_wrong_immutable_owner_id_is_rejected(monkeypatch):
+    monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", RELEASE_SHA)
+    token, public_key = _token(
+        subject="repo:BoneManTGRM@1/NICO@1282576027:environment:production-smoke"
+    )
+
+    with pytest.raises(ValueError, match="subject"):
         validate_github_actions_oidc(token, signing_key=public_key)
