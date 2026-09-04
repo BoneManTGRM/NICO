@@ -570,15 +570,27 @@ def test_production_final_gates_use_authoritative_visibility_mechanism() -> None
         'visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]',
     )
 
-    for workflow_path in (SPANISH_WORKFLOW, MOBILE_WORKFLOW):
-        workflow = workflow_path.read_text(encoding="utf-8")
-        assert (
-            f'visibility["visibility_transition_mechanism"] == "{expected}"'
-            in workflow
-        )
-        assert retired not in workflow
-        for contract in required_contracts:
-            assert contract in workflow
+    mobile = MOBILE_WORKFLOW.read_text(encoding="utf-8")
+    assert (
+        f'visibility["visibility_transition_mechanism"] == "{expected}"'
+        in mobile
+    )
+    assert retired not in mobile
+    for contract in required_contracts:
+        assert contract in mobile
+
+    spanish = SPANISH_WORKFLOW.read_text(encoding="utf-8")
+    assert retired not in spanish
+    assert "spanish_comprehensive_authenticated_live_acceptance_v1.py" in spanish
+    assert "spanish_comprehensive_authenticated_existing_run_recovery_v1.py" in spanish
+    for contract in (
+        'visibility["browser_engine"] == "chromium"',
+        'visibility["browser_launch_mode"] == "headed_xvfb"',
+        'visibility["document_hidden_observed"] is True',
+        'visibility["document_visible_after_foreground"] is True',
+        'visibility["observed_visibility_transitions"][-2:] == ["hidden", "visible"]',
+    ):
+        assert contract in spanish
 
 
 def test_installed_headed_chromium_observes_real_browser_visibility() -> None:
