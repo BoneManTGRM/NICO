@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hmac
 import os
+import time
 from typing import Any
+
+from nico.admin_security import require_comprehensive_operator
 
 from nico.comprehensive_approved_lifecycle_consistency_v1 import (
     install_approved_lifecycle_consistency,
@@ -20,6 +23,9 @@ RELEASE_PROVENANCE = install_comprehensive_release_provenance()
 from nico.api.same_run_locale_report_bootstrap import app as production_app  # noqa: E402
 from nico.specialist_access_v1 import (  # noqa: E402
     SESSION_SIGNING_SECRET_ENV,
+    SPECIALIST_SCOPE,
+    issue_specialist_session,
+    validate_specialist_session,
     install_specialist_access,
 )
 from nico.specialist_review_session_bridge_v1 import (  # noqa: E402
@@ -63,8 +69,32 @@ def _distinct_nonempty(values: list[str]) -> bool:
     )
 
 
+def _positive_authentication_self_test(credentials: dict[str, str]) -> dict[str, bool]:
+    """Exercise configured authentication in-process; disclose booleans only."""
+    credential_ok = False
+    session_ok = False
+    try:
+        supplied = credentials.get("operator", "")
+        allowed, authority = require_comprehensive_operator(supplied)
+        credential_ok = bool(supplied and allowed and authority.get("authority") == "nico_comprehensive_operator")
+        if credential_ok:
+            now = int(time.time())
+            token, _ = issue_specialist_session(authority, now=now)
+            validated = validate_specialist_session(token, now=now + 1)
+            session_ok = bool(validated and validated.get("scope") == SPECIALIST_SCOPE
+                              and validated.get("authority") == "nico_comprehensive_operator")
+    except Exception:
+        # Never return an exception message: it may contain credential material.
+        credential_ok = False
+        session_ok = False
+    return {"operator_credential_self_test": credential_ok,
+            "session_round_trip_self_test": session_ok,
+            "positive_authentication_verified_server_side": credential_ok and session_ok}
+
+
 def specialist_readiness() -> dict[str, Any]:
     credentials = _configured_credentials()
+    self_test = _positive_authentication_self_test(credentials)
     credential_separation = _distinct_nonempty(
         [
             credentials["admin"],
@@ -95,6 +125,10 @@ def specialist_readiness() -> dict[str, Any]:
     ready = all(
         (
             SPECIALIST_ACCESS.get("installed") is True,
+            SPECIALIST_ACCESS.get("all_assessment_routes_protected") is True,
+            SPECIALIST_ACCESS.get("all_report_routes_protected") is True,
+            SPECIALIST_ACCESS.get("rate_limiting") is True,
+            self_test["positive_authentication_verified_server_side"],
             session_signing_configured,
             generic_operator_password_configured,
             credential_separation,
@@ -108,7 +142,9 @@ def specialist_readiness() -> dict[str, Any]:
         "artifact_schema": "nico.specialist_ship_readiness.v1",
         "status": "ready" if ready else "blocked",
         "specialist_access_installed": SPECIALIST_ACCESS.get("installed") is True,
-        "authenticated_comprehensive_routes_enforced": True,
+        "authenticated_comprehensive_routes_enforced": SPECIALIST_ACCESS.get("all_assessment_routes_protected") is True,
+        "authenticated_report_routes_enforced": SPECIALIST_ACCESS.get("all_report_routes_protected") is True,
+        **self_test,
         "signed_review_sessions_enforced": review_session_bridge_installed,
         "approved_lifecycle_consistency_enforced": approved_lifecycle_consistency_installed,
         "operator_password_configured": generic_operator_password_configured,

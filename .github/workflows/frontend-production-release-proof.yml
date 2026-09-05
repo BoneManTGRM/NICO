@@ -33,6 +33,7 @@ jobs:
           route = Path("apps/web/app/api/release/route.ts").read_text(encoding="utf-8")
           workspace = Path("apps/web/app/assessment/AssessmentWorkspace.tsx").read_text(encoding="utf-8")
           copy = Path("apps/web/app/assessment/assessmentCopy.ts").read_text(encoding="utf-8")
+          verifier = Path("scripts/production_frontend_release_identity.py").read_text(encoding="utf-8")
 
           assert 'const UI_CONTRACT = "expert-engagement-v2"' in route
           assert "process.env.VERCEL_GIT_COMMIT_SHA" in route
@@ -41,6 +42,10 @@ jobs:
           assert 'data-assessment-action-copy="create-engagement-v2"' in workspace
           assert 'run: "Create engagement and capture repository snapshot"' in copy
           assert 'run: "Run NICO Assessment"' not in copy
+          assert '"specialist_authentication_gate"' in verifier
+          assert '"authentication_gate_markers"' in verifier
+          assert '"Cybersecurity specialist access"' in verifier
+          assert '"Acceso para especialistas en ciberseguridad"' in verifier
           PY
 
   production:
@@ -55,6 +60,12 @@ jobs:
       RELEASE_SHA: ${{ github.sha }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
       - name: Wait for exact Vercel deployment status
         run: |
           set -euo pipefail
@@ -81,7 +92,11 @@ jobs:
               )
               with urllib.request.urlopen(request, timeout=30) as response:
                   payload = json.loads(response.read().decode("utf-8"))
-              statuses = [item for item in payload.get("statuses") or [] if item.get("context") == "Vercel"]
+              statuses = [
+                  item
+                  for item in payload.get("statuses") or []
+                  if item.get("context") == "Vercel"
+              ]
               if statuses:
                   last = str(statuses[0].get("state") or "unknown")
                   print(f"Vercel status: {last}", flush=True)
@@ -91,80 +106,29 @@ jobs:
                       raise SystemExit(f"Vercel deployment failed for exact SHA {sha}")
               time.sleep(20)
           else:
-              raise SystemExit(f"Timed out waiting for Vercel deployment for {sha}; last={last}")
+              raise SystemExit(
+                  f"Timed out waiting for Vercel deployment for {sha}; last={last}"
+              )
           PY
 
-      - name: Verify custom domain release identity and UI contract
+      - name: Verify exact release and bilingual specialist access boundary
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import time
-          import urllib.error
-          import urllib.parse
-          import urllib.request
+          mkdir -p audit-results
+          python scripts/production_frontend_release_identity.py \
+            --origin "${NICO_PRODUCTION_FRONTEND_URL}" \
+            --expected-sha "${RELEASE_SHA}" \
+            --expected-ui-contract "expert-engagement-v2" \
+            --expected-deployment-environment "production" \
+            --timeout-seconds 720 \
+            --interval-seconds 15 \
+            --output audit-results/frontend-production-release-proof.json
 
-          origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
-          expected_sha = os.environ["RELEASE_SHA"]
-          deadline = time.time() + 12 * 60
-          last = {}
-
-          while time.time() < deadline:
-              release_url = origin + "/api/release?" + urllib.parse.urlencode({"expected": expected_sha, "ts": int(time.time())})
-              request = urllib.request.Request(
-                  release_url,
-                  headers={
-                      "Accept": "application/json",
-                      "Cache-Control": "no-cache",
-                      "User-Agent": "nico-frontend-release-proof",
-                  },
-              )
-              try:
-                  with urllib.request.urlopen(request, timeout=45) as response:
-                      status = response.status
-                      raw = response.read().decode("utf-8")
-                  payload = json.loads(raw)
-                  last = {"http_status": status, **payload}
-              except urllib.error.HTTPError as exc:
-                  last = {"http_status": exc.code, "body": exc.read().decode("utf-8", errors="replace")[:240]}
-              except Exception as exc:
-                  last = {"error": f"{type(exc).__name__}: {exc}"}
-
-              print("Custom-domain release:", json.dumps(last, sort_keys=True), flush=True)
-              if (
-                  last.get("http_status") == 200
-                  and last.get("release_sha") == expected_sha
-                  and last.get("ui_contract") == "expert-engagement-v2"
-              ):
-                  break
-              time.sleep(15)
-          else:
-              raise SystemExit(
-                  "The production custom domain is not serving the exact successful Vercel deployment. "
-                  "Verify the Vercel production branch, project root, and app.nicoaudit.com domain assignment: "
-                  + json.dumps(last, sort_keys=True)
-              )
-
-          page_url = origin + "/assessment?" + urllib.parse.urlencode({"tier": "comprehensive", "release_sha": expected_sha})
-          request = urllib.request.Request(
-              page_url,
-              headers={"Cache-Control": "no-cache", "User-Agent": "nico-frontend-release-proof"},
-          )
-          with urllib.request.urlopen(request, timeout=60) as response:
-              html = response.read().decode("utf-8", errors="replace")
-
-          required = (
-              'data-assessment-copy-contract="expert-engagement-v2"',
-              'data-assessment-action-copy="create-engagement-v2"',
-              "Create engagement and capture repository snapshot",
-              "Decision-grade technical diligence",
-          )
-          missing = [item for item in required if item not in html]
-          forbidden = [item for item in ("Run NICO Assessment", "One assessment. One evidence ledger. One decision-grade report.") if item in html]
-          if missing or forbidden:
-              raise SystemExit(
-                  "The exact-release endpoint passed, but the custom-domain assessment HTML is stale or inconsistent: "
-                  + json.dumps({"missing": missing, "forbidden": forbidden}, sort_keys=True)
-              )
-          PY
+      - name: Upload immutable frontend release evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-production-release-proof-${{ github.sha }}-${{ github.run_id }}
+          path: audit-results/frontend-production-release-proof.json
+          if-no-files-found: warn
+          retention-days: 90

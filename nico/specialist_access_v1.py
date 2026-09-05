@@ -157,7 +157,8 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
 def _protected_request(path: str) -> bool:
     if path in {SESSION_ROUTE, GITHUB_ACTIONS_SESSION_ROUTE}:
         return False
-    return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)
+    return (path == "/assessment" or path.startswith(_PROTECTED_PREFIX)
+            or path == "/reports" or path.startswith("/reports/"))
 
 
 def _production_proof_request_allowed(method: str, path: str) -> bool:
@@ -444,6 +445,7 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
         "installed": True,
         "protected_prefix": _PROTECTED_PREFIX,
         "all_assessment_routes_protected": True,
+        "all_report_routes_protected": True,
         "session_route": SESSION_ROUTE,
         "github_actions_session_route": GITHUB_ACTIONS_SESSION_ROUTE,
         "production_proof_scope_is_read_and_continue_only": True,

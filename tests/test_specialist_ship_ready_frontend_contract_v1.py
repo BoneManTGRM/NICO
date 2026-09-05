@@ -31,7 +31,13 @@ def test_specialist_frontend_and_runtime_contracts_are_fail_closed():
     assert "URLSearchParams" not in spanish_login
     assert "searchParams.set" not in middleware
     assert 'SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"' in specialist_access
-    assert 'return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)' in specialist_access
+    from nico.specialist_access_v1 import (
+        GITHUB_ACTIONS_SESSION_ROUTE, SESSION_ROUTE, _protected_request,
+    )
+    for route in ("/assessment", "/assessment/comprehensive-intake", "/reports", "/reports/exact-report"):
+        assert _protected_request(route), route
+    for route in ("/health", SESSION_ROUTE, GITHUB_ACTIONS_SESSION_ROUTE):
+        assert not _protected_request(route), route
     session_secret_body = specialist_access.split("def _session_secret()", 1)[1].split("def _b64url_encode", 1)[0]
     assert "NICO_ADMIN_TOKEN" not in session_secret_body
     assert "NICO_COMPREHENSIVE_OPERATOR_PASSWORD" not in session_secret_body
