@@ -52,11 +52,12 @@ def _bind_history_metadata() -> None:
             return result
         output = dict(result)
         completed = str(output.get("status") or "").casefold() == "completed"
-        output["history_scope"] = "reachable_ancestry_at_assessed_commit"
-        output["history_depth_verified"] = completed
-        output["full_history_verified"] = completed
-        output["immutable_head_selector"] = "HEAD"
-        output["deterministic_head_selector_applied"] = True
+        history_verified = completed and output.get("full_history_verified") is True and output.get("history_coverage_unavailable") is not True
+        output["history_scope"] = "reachable_ancestry_at_assessed_commit" if history_verified else "unverified_or_snapshot_only"
+        output["history_depth_verified"] = history_verified
+        output["full_history_verified"] = history_verified
+        output["immutable_head_selector"] = "HEAD" if history_verified else ""
+        output["deterministic_head_selector_applied"] = history_verified
         output["descendant_refs_scanned"] = False
         return output
 

@@ -57,6 +57,10 @@ def serialized_canonical_evidence_literal(value: Any, key: Any) -> bool:
     if str(key or "").strip().casefold() != "evidence":
         return False
     text = str(value or "")
+    # This exact renderer-owned label is not a flattened machine path.
+    # Preserve provider names, but localize the label after the final bootstrap.
+    if re.fullmatch(r"Provider: (GitHub|GitLab|Bitbucket Cloud|Azure DevOps)\.", text.strip()):
+        return False
     match = _SERIALIZED_EVIDENCE_RE.fullmatch(text.strip())
     if match is None:
         return False

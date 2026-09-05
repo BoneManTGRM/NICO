@@ -396,7 +396,7 @@ def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable
     if binary is None:
         return _unavailable(spec, "osv-scanner is not installed in the worker image.", source="canonical_osv_scanner")
     attempts = (
-        (binary, "scan", "source", "-r", ".", "--format", "json"),
+        (binary, "scan", "source", "-r", "--format", "json", "."),
         (binary, "--format", "json", "."),
     )
     failure_reasons: list[str] = []
@@ -407,6 +407,48 @@ def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable
         result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, spec.max_output_chars), stdout_path=raw)
         last_result, last_raw = result, raw
         payload, reason = _read_json(raw)
+        if result.returncode == 128 and not result.timed_out and not result.output_truncated:
+            from nico.scanner_package_inventory_v1 import inspect_package_sources
+
+            inventory = inspect_package_sources(workspace.repo_dir)
+            no_sources = "no package sources found" in (result.stderr or "").casefold()
+            if no_sources and inventory["no_declared_package_sources"] is True:
+                # OSV emits no native JSON for exit 128. Retain its actual
+                # diagnostic plus independent inventory, not a fake clean scan.
+                reason = (
+                    "No declared package source exists in the completely inspected snapshot; "
+                    "OSV dependency matching is not applicable to the supplied evidence. "
+                    "Undeclared dependencies were not assessed."
+                )
+                diagnostic = workspace.root / "scanner-raw" / "osv-scanner-applicability.json"
+                diagnostic.write_text(json.dumps({
+                    "schema": "nico.osv-applicability-observation.v1",
+                    "native_exit_code": result.returncode,
+                    "native_stdout": _read_text(raw),
+                    "native_stderr": result.stderr,
+                    "native_json_output": False,
+                    "inventory": inventory,
+                }, sort_keys=True), encoding="utf-8")
+                blob = _raw_blob(spec.name, diagnostic, "json")
+                output = _tool_payload(spec, result, findings=[], capture_complete=True,
+                    reason=reason, raw_blob=blob, execution_source="osv_observed_no_package_sources",
+                    workspace=workspace, valid_returncodes={0, 1})
+                output.update({
+                    "status": "not_applicable", "applicable": False, "evidence_required": False,
+                    "verified_for_this_report": False, "completed": False, "verified": False,
+                    "reason": reason, "failure_or_unavailable_reason": "",
+                    "applicability_reason": reason, "applicability_evidence": inventory,
+                    "native_json_output": False, "no_vulnerabilities_claimed": False,
+                })
+                return output
+            reason = (
+                "OSV reported no package sources (exit 128), but dependency declarations "
+                "exist or the snapshot inventory is incomplete; dependency coverage remains unverified."
+            )
+            blob = _raw_blob(spec.name, raw, "json")
+            return _tool_payload(spec, result, findings=[], capture_complete=False, reason=reason,
+                raw_blob=blob, execution_source="osv_no_package_sources_unverified", workspace=workspace,
+                valid_returncodes={0, 1}, extra={"applicability_evidence": inventory})
         if payload is not None and result.returncode in {0, 1} and not result.timed_out:
             canonical = workspace.root / "scanner-raw" / "osv-scanner.json"
             shutil.copyfile(raw, canonical)

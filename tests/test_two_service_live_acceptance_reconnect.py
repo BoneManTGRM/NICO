@@ -129,7 +129,7 @@ def test_workflow_runs_terminal_reconciliation_wrapper_and_compiles_all_contract
     live_step = source.split(
         "Observe the same completed run twice for 90 seconds", 1
     )[1]
-    assert "python scripts/completed_run_two_pass_acceptance_v1.py" in live_step
+    assert "python scripts/completed_run_authenticated_two_pass_acceptance_v1.py" in live_step
     assert "python scripts/unified_production_acceptance.py" not in live_step
     assert "python scripts/two_service_live_acceptance_v3.py" not in live_step
     assert "python scripts/two_service_live_acceptance_v2.py" not in live_step

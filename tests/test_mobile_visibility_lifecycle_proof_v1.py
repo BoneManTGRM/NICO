@@ -513,7 +513,7 @@ def test_production_chromium_proofs_use_headed_browser_under_xvfb() -> None:
     ]
     assert len(patch_invocations) == 2
     assert "command -v xvfb-run" in mobile
-    assert "xvfb-run -a python scripts/mobile_restart_live_acceptance_v5.py" in mobile
+    assert "xvfb-run -a python scripts/mobile_restart_authenticated_live_acceptance_v1.py" in mobile
     assert "test_installed_headed_chromium_observes_real_browser_visibility" in mobile
 
     launchers = (
@@ -541,7 +541,7 @@ def test_production_webkit_proof_uses_prepared_native_tab_visibility() -> None:
     assert "NICO_PROOF_" + "HEADED_WEBKIT" not in workflow
     assert "open" + "box" not in workflow
     assert "xdo" + "tool" not in workflow
-    assert "python scripts/mobile_restart_live_acceptance_v6.py" in workflow
+    assert "python scripts/ios_webkit_authenticated_live_acceptance_v1.py" in workflow
     assert "_launch_webkit(playwright)" in launcher
     assert "playwright.webkit.launch(headless=True)" not in launcher
     assert "Object.defineProperty(document" not in lifecycle

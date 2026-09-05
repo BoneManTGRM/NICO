@@ -102,6 +102,10 @@ def issue_specialist_session(
     }
     if normalized_scope == PRODUCTION_PROOF_SCOPE:
         claims = retained_claims if isinstance(retained_claims, Mapping) else {}
+        proof_role = str(claims.get("proof_role") or "producer")
+        if proof_role not in {"producer", "consumer"}:
+            raise ValueError("production_proof_session_role_invalid")
+        payload["proof_role"] = proof_role
         for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt"):
             value = str(claims.get(key) or "").strip()
             if not value:
@@ -145,13 +149,16 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
         for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt")
     ):
         return None
+    if scope == PRODUCTION_PROOF_SCOPE and payload.get("proof_role", "producer") not in {"producer", "consumer"}:
+        return None
     return payload
 
 
 def _protected_request(path: str) -> bool:
     if path in {SESSION_ROUTE, GITHUB_ACTIONS_SESSION_ROUTE}:
         return False
-    return path == "/assessment" or path.startswith(_PROTECTED_PREFIX)
+    return (path == "/assessment" or path.startswith(_PROTECTED_PREFIX)
+            or path == "/reports" or path.startswith("/reports/"))
 
 
 def _production_proof_request_allowed(method: str, path: str) -> bool:
@@ -268,7 +275,10 @@ async def _specialist_access_middleware(
 
     if (
         authority.get("scope") == PRODUCTION_PROOF_SCOPE
-        and not _production_proof_request_allowed(request.method, request.url.path)
+        and (
+            not _production_proof_request_allowed(request.method, request.url.path)
+            or (authority.get("proof_role") == "consumer" and request.method != "GET")
+        )
     ):
         return _authentication_response(403, "production_proof_session_scope_forbidden")
 
@@ -435,6 +445,7 @@ def install_specialist_access(app: FastAPI) -> dict[str, Any]:
         "installed": True,
         "protected_prefix": _PROTECTED_PREFIX,
         "all_assessment_routes_protected": True,
+        "all_report_routes_protected": True,
         "session_route": SESSION_ROUTE,
         "github_actions_session_route": GITHUB_ACTIONS_SESSION_ROUTE,
         "production_proof_scope_is_read_and_continue_only": True,

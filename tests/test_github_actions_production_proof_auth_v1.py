@@ -4,7 +4,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from nico.github_actions_proof_auth_v1 import validate_github_actions_claims
+from nico.github_actions_proof_auth_v1 import (
+    CONSUMER_WORKFLOW_PATHS,
+    CONSUMER_ENVIRONMENT,
+    validate_github_actions_claims,
+)
 from nico.specialist_access_v1 import (
     GITHUB_ACTIONS_SESSION_ROUTE,
     PRODUCTION_PROOF_SCOPE,
@@ -12,6 +16,7 @@ from nico.specialist_access_v1 import (
     issue_specialist_session,
     validate_specialist_session,
 )
+from scripts.github_actions_nico_proof_auth_v1 import AuthenticatedBrowser
 
 
 SHA = "a" * 40
@@ -19,6 +24,7 @@ WORKFLOW_REF = (
     "BoneManTGRM/NICO/.github/workflows/"
     "spanish-comprehensive-production-proof.yml@refs/heads/main"
 )
+
 CLAIMS = {
     "repository": "BoneManTGRM/NICO",
     "ref": "refs/heads/main",
@@ -30,6 +36,7 @@ CLAIMS = {
     "run_attempt": "1",
     "actor": "BoneManTGRM",
 }
+
 
 
 def _app() -> FastAPI:
@@ -98,6 +105,62 @@ def test_exact_github_actions_claims_are_required(monkeypatch: pytest.MonkeyPatc
             validate_github_actions_claims(candidate)
 
 
+@pytest.mark.parametrize("workflow_path", sorted(CONSUMER_WORKFLOW_PATHS))
+def test_only_exact_environment_bound_consumers_are_accepted(monkeypatch, workflow_path):
+    _environment(monkeypatch)
+    claims = {
+        **CLAIMS,
+        "event_name": "workflow_run",
+        "environment": CONSUMER_ENVIRONMENT,
+        "sub": f"repo:BoneManTGRM/NICO:environment:{CONSUMER_ENVIRONMENT}",
+        "workflow_ref": f"BoneManTGRM/NICO/{workflow_path}@refs/heads/main",
+    }
+    accepted = validate_github_actions_claims(claims)
+    assert accepted["proof_role"] == "consumer"
+    assert accepted["sha"] == SHA
+    for field, wrong in (
+        ("repository", "other/repo"), ("ref", "refs/heads/feature"),
+        ("sha", "b" * 40), ("environment", "production"),
+        ("sub", CLAIMS["sub"]), ("event_name", "pull_request"),
+        ("event_name", "push"), ("run_attempt", "0"),
+        ("workflow_ref", "BoneManTGRM/NICO/.github/workflows/untrusted.yml@refs/heads/main"),
+    ):
+        with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch"):
+            validate_github_actions_claims({**claims, field: wrong})
+    with pytest.raises(ValueError, match="environment"):
+        validate_github_actions_claims({k: v for k, v in claims.items() if k != "environment"})
+
+
+def test_retired_finalizer_identity_is_not_accepted(monkeypatch):
+    _environment(monkeypatch)
+    with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch"):
+        validate_github_actions_claims({
+            **CLAIMS, "event_name": "workflow_run",
+            "workflow_ref": "BoneManTGRM/NICO/.github/workflows/specialist-production-proof-finalizer.yml@refs/heads/main",
+        })
+
+
+def test_consumer_session_cannot_start_continue_review_or_deliver(monkeypatch):
+    _environment(monkeypatch)
+    token, _ = issue_specialist_session(
+        {"authority": "github_actions_production_proof"},
+        scope=PRODUCTION_PROOF_SCOPE,
+        retained_claims={**CLAIMS, "proof_role": "consumer"},
+    )
+    client = TestClient(_app())
+    headers = {"X-NICO-Operator-Session": token}
+    assert client.get("/assessment/comprehensive-run/comprun_test", headers=headers).status_code == 200
+    assert client.get("/assessment/comprehensive-run/comprun_test/report/json", headers=headers).status_code == 200
+    for path in (
+        "/assessment/comprehensive-intake",
+        "/assessment/comprehensive-run/comprun_test/continue",
+        "/assessment/comprehensive-run/comprun_test/review",
+        "/assessment/comprehensive-run/comprun_test/authorize-delivery",
+    ):
+        assert client.post(path, headers=headers).status_code == 403
+    assert client.get("/assessment/comprehensive-run/comprun_test/approved-delivery-package", headers=headers).status_code == 403
+
+
 def test_production_proof_session_can_scan_but_cannot_approve_or_deliver(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -152,3 +215,42 @@ def test_oidc_exchange_issues_only_restricted_session(monkeypatch: pytest.Monkey
     assert session is not None
     assert session["scope"] == PRODUCTION_PROOF_SCOPE
     assert session["sha"] == SHA
+
+
+class _FakeContext:
+    def __init__(self) -> None:
+        self.cookies: list[dict[str, object]] = []
+
+    def add_cookies(self, cookies):
+        self.cookies.extend(cookies)
+
+
+class _FakeBrowser:
+    def __init__(self) -> None:
+        self.kwargs = None
+        self.context = _FakeContext()
+
+    def new_context(self, *args, **kwargs):
+        self.kwargs = kwargs
+        return self.context
+
+
+def test_browser_auth_is_cookie_scoped_and_never_global_header():
+    raw = _FakeBrowser()
+    wrapped = AuthenticatedBrowser(
+        raw,
+        session="scoped-session-token",
+        frontend_url="https://app.nicoaudit.com",
+    )
+    wrapped.new_context(extra_http_headers={"Cache-Control": "no-store"})
+    assert raw.kwargs == {"extra_http_headers": {"Cache-Control": "no-store"}}
+    assert raw.context.cookies == [
+        {
+            "name": "nico-specialist-session",
+            "value": "scoped-session-token",
+            "url": "https://app.nicoaudit.com",
+            "httpOnly": True,
+            "secure": True,
+            "sameSite": "Strict",
+        }
+    ]

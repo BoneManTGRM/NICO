@@ -27,6 +27,17 @@ def main(argv: list[str] | None = None) -> int:
     proof.install_spanish_terminal_boundary()
     install_authenticated_httpx_client(proof, session)
     original_run = proof.base.run_proof
+    original_fetch = proof._fetch_canonical_json
+
+    def checked_canonical_json(*, frontend_origin: str, run_id: str):
+        from nico.complete_assessment_gate_v1 import require_complete_assessment
+
+        canonical, header, digest = original_fetch(frontend_origin=frontend_origin, run_id=run_id)
+        identity = canonical.get("identity") or {}
+        require_complete_assessment(canonical, expected_commit=str(identity.get("commit_sha") or ""), expected_run=run_id)
+        return canonical, header, digest
+
+    proof._fetch_canonical_json = checked_canonical_json
 
     def authenticated_run(browser: Any, args: Any) -> dict[str, Any]:
         result = original_run(
@@ -53,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         return proof.telemetry.main(argv)
     finally:
         proof.base.run_proof = original_run
+        proof._fetch_canonical_json = original_fetch
 
 
 if __name__ == "__main__":

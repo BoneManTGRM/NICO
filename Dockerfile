@@ -12,12 +12,18 @@ ENV NICO_NODE_OPTIONS=--max-old-space-size=2048
 ENV NICO_MAX_SCANNER_PARSE_BYTES=268435456
 ENV NICO_SCANNER_RAW_ARTIFACT_ROOT=/data/scanner-artifacts
 ARG NICO_SCANNER_INSTALL_STRICT=true
+ARG NICO_OSV_SCANNER_VERSION=v2.3.8
+ARG NICO_GITLEAKS_VERSION=v8.30.1
+ARG NICO_TRUFFLEHOG_VERSION=v3.95.0
 ARG NICO_SEMGREP_VERSION=1.170.0
 ARG NICO_ESLINT_VERSION=9.39.3
 ARG NICO_ESLINT_JS_VERSION=9.39.3
 ARG NICO_TYPESCRIPT_ESLINT_VERSION=8.65.0
 ARG NICO_TYPESCRIPT_VERSION=6.0.3
 ENV NICO_SCANNER_INSTALL_STRICT=${NICO_SCANNER_INSTALL_STRICT}
+ENV NICO_OSV_SCANNER_VERSION=${NICO_OSV_SCANNER_VERSION}
+ENV NICO_GITLEAKS_VERSION=${NICO_GITLEAKS_VERSION}
+ENV NICO_TRUFFLEHOG_VERSION=${NICO_TRUFFLEHOG_VERSION}
 ENV NICO_SEMGREP_VERSION=${NICO_SEMGREP_VERSION}
 ENV NICO_ESLINT_VERSION=${NICO_ESLINT_VERSION}
 ENV NICO_ESLINT_JS_VERSION=${NICO_ESLINT_JS_VERSION}
@@ -100,7 +106,6 @@ EXPOSE 8000
 # uvicorn nico.api.terminal_authority_bootstrap:app
 # uvicorn nico.api.spanish_final_report_bootstrap:app
 # uvicorn nico.api.same_run_locale_report_bootstrap:app
-# uvicorn nico.api.specialist_ship_ready_bootstrap:app
-# Runtime starts one layer later so the deployed readiness endpoint also performs a
-# secret-free positive operator-authentication and signed-session round-trip self-test.
-CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-1}; case \"$workers\" in ''|*[!0-9]*) echo 'NICO_WEB_WORKERS must be a positive integer' >&2; exit 1;; esac; if [ \"$workers\" -lt 1 ]; then echo 'NICO_WEB_WORKERS must be at least 1' >&2; exit 1; fi; exec uvicorn nico.api.specialist_ship_verified_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]
+# Runtime starts one layer later so authenticated specialist access and exact release
+# provenance wrap the complete established Comprehensive production chain.
+CMD ["sh", "-c", "workers=${NICO_WEB_WORKERS:-1}; case \"$workers\" in ''|*[!0-9]*) echo 'NICO_WEB_WORKERS must be a positive integer' >&2; exit 1;; esac; if [ \"$workers\" -lt 1 ]; then echo 'NICO_WEB_WORKERS must be at least 1' >&2; exit 1; fi; exec uvicorn nico.api.specialist_ship_ready_bootstrap:app --host 0.0.0.0 --port ${PORT:-8000} --workers $workers"]

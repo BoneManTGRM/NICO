@@ -57,7 +57,8 @@ def test_unified_final_canonical_read_avoids_playwright_socket_idle_timeout() ->
 
     assert timeout_seconds is not None
     assert timeout_seconds >= 300
-    assert "with urllib.request.urlopen(" in source
+    assert "open_request = open_request or urllib.request.urlopen" in source
+    assert "with open_request(" in source
     assert "timeout=FINAL_CANONICAL_READ_TIMEOUT_SECONDS" in source
     assert '"Cache-Control": "no-store"' in source
     assert "response.read()" in source
