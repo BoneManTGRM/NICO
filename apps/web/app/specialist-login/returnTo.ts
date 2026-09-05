@@ -10,10 +10,10 @@ export function specialistReturnTo(search: string, locale: "en" | "es" = "en"): 
   if (values.length !== 1) return fallback;
   const value = values[0];
   if (!value || value.length > 8192 || !value.startsWith("/") || value.startsWith("//")) return fallback;
-  if (/[\\\u0000-\u0020\u007f]/.test(value)) return fallback;
+  if (Array.from(value).some(character => character === "\\" || character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)) return fallback;
   try {
     // Decode only for validation. Return the original bytes so query identity is preserved.
-    if (/[\\\u0000-\u001f\u007f]/.test(decodeURIComponent(value))) return fallback;
+    if (Array.from(decodeURIComponent(value)).some(character => character === "\\" || character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) return fallback;
     const pathname = value.split(/[?#]/, 1)[0];
     if (pathname.includes("%") || pathname.includes("//")) return fallback;
     const parsed = new URL(value, "https://nico.invalid");
