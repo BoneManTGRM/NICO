@@ -1,0 +1,34 @@
+name: Export frozen SARA integration history
+on:
+  push:
+    branches: [verification/read-blocked-run-20260905-1519]
+    paths: [.github/workflows/export-sara-frozen-history.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read public source history without running repository code
+        run: |
+          set -euo pipefail
+          git clone --mirror https://github.com/BoneManTGRM/SARA.git /tmp/sara-public.git
+          mkdir -p source-evidence
+          cd /tmp/sara-public.git
+          git update-ref refs/review/main e804c3169419f363b472c0bbba0675f25569fe35
+          git update-ref refs/review/pr56 b4b001ca4806abb994fb26fa757a8ccd0232458e
+          git update-ref refs/review/pr69 44788ca2bec9556f038c992d30f3cfe80e9ae24e
+          git update-ref refs/review/pr70 e07fe3e3965a8fea6d43efb3767e01595a7cecc9
+          git update-ref refs/review/pr90 23014289921e671f249ac62f598dbc831ceb6905
+          git update-ref refs/review/pr93 a59facdfbaf05f35d8a4e0c87c5758cb5c003d76
+          git bundle create "$GITHUB_WORKSPACE/source-evidence/sara-frozen-history.bundle" refs/review/main refs/review/pr56 refs/review/pr69 refs/review/pr70 refs/review/pr90 refs/review/pr93
+          git bundle verify "$GITHUB_WORKSPACE/source-evidence/sara-frozen-history.bundle"
+          git bundle list-heads "$GITHUB_WORKSPACE/source-evidence/sara-frozen-history.bundle" > "$GITHUB_WORKSPACE/source-evidence/refs.txt"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum source-evidence/sara-frozen-history.bundle > source-evidence/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frozen-sara-integration-history
+          path: source-evidence/
+          if-no-files-found: error
