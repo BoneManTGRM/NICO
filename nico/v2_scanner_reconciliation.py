@@ -106,7 +106,15 @@ def normalize_record(raw: Mapping[str, Any], commit_sha: str) -> dict[str, Any]:
     verified_signal = any(item.get(field_name) is True for field_name in verification_fields)
     verified = bool(completed and retention_valid and (verified_signal if verification_declared else retained_result))
 
-    if completed:
+    if status == "not_applicable":
+        # Preserve the producer's applicability observation and inventory. This is
+        # not completion credit; the independent acceptance gate validates its basis.
+        item.update({
+            "status": "not_applicable", "state": "not_applicable",
+            "completed": False, "verified": False, "verified_complete": False,
+            "verified_for_this_report": False,
+        })
+    elif completed:
         item["status"] = (
             "completed_with_findings"
             if item["findings"] or finding_count > 0 or findings_exit
