@@ -213,6 +213,11 @@ def _inject_live_runtime_truth(
             }
 
     if records:
+        # The full requested population must use the same retained exact-run
+        # records. A pre-injection projection must not override these records
+        # later during applicability reconciliation or publication acceptance.
+        canonical["requested_scanner_records"] = [dict(item) for item in records]
+        assessment["requested_scanner_records"] = [dict(item) for item in records]
         canonical["scanner_execution_records"] = [dict(item) for item in records]
         assessment["scanner_execution_records"] = [dict(item) for item in records]
         assessment["scanner_execution_summary"] = {

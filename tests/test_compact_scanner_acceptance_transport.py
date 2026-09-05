@@ -197,3 +197,66 @@ def test_not_applicable_cannot_restore_a_stale_raw_verified_flag():
     result = compact([raw])[0]
     assert result["verified_for_this_report"] is False
     assert result["completed"] is False
+
+
+@pytest.mark.parametrize("bootstrap", [
+    "nico.api.specialist_ship_ready_bootstrap",
+    "nico.api.final_report_worker_bootstrap",
+])
+def test_live_injection_replaces_stale_requested_projection_before_full_normalization(bootstrap):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = r'''
+import importlib, runpy
+from copy import deepcopy
+importlib.import_module(BOOTSTRAP)
+f = runpy.run_path('tests/test_compact_scanner_acceptance_transport.py')
+from nico.v2_production_authority import _inject_live_runtime_truth
+from nico import phase9_comprehensive_report_integration_v1 as integration
+raw = [f['no_packages']() if t == 'osv-scanner' else f['scanner_result'](t)
+       for t in f['REQUIRED_TOOLS']]
+records = f['compact'](raw)
+stale = deepcopy(records)
+for record in stale:
+    record.pop('raw_artifact_sha256', None)
+    if record['tool'] == 'osv-scanner':
+        record.update(status='unavailable', state='unavailable', applicable=True)
+        record.pop('applicability_reason', None)
+        record.pop('applicability_evidence', None)
+source = {'report_package': {'json': f['canonical'](stale)}}
+context = {'run_id': f['RUN'], 'commit_sha': f['SHA'], 'report_language': 'en',
+    'prior_stage_results': {'dependency_security_static_analysis': {
+        'scanner_execution_records': records,
+        'scanner': {'scan_id': 'scan_transport_fixture',
+            'tools_requested': list(f['REQUIRED_TOOLS']),
+            'actual_commit_sha': f['SHA'], 'snapshot_match': True}}}}
+original_source, original_context = deepcopy(source), deepcopy(context)
+result = _inject_live_runtime_truth(source, context)
+canonical = integration.normalize_canonical_report(result['report_package']['json'])
+proof = f['complete_assessment_evidence'](canonical, expected_commit=f['SHA'], expected_run=f['RUN'])
+assert proof['passed'], proof['failures']
+assert proof['not_applicable_tools'] == ['osv-scanner']
+assert source == original_source and context == original_context
+assert canonical['human_review_required'] is True
+assert canonical['client_delivery_allowed'] is False
+
+# Fresh retained evidence with an explicitly wrong source is not rescued by the
+# older report projection, even when that projection claims the expected source.
+bad = deepcopy(context)
+for record in bad['prior_stage_results']['dependency_security_static_analysis']['scanner_execution_records']:
+    if record['tool'] == 'bandit':
+        for key in ('commit_sha', 'snapshot_commit_sha', 'target_commit_sha'):
+            record[key] = 'f' * 40
+        record['exact_commit_match'] = False
+bad_result = _inject_live_runtime_truth(source, bad)
+bad_canonical = integration.normalize_canonical_report(bad_result['report_package']['json'])
+bad_proof = f['complete_assessment_evidence'](bad_canonical, expected_commit=f['SHA'], expected_run=f['RUN'])
+assert 'bandit:source_identity_unverified' in bad_proof['failures']
+assert bad_proof['passed'] is False
+'''
+    result = subprocess.run([sys.executable, "-c", f"BOOTSTRAP={bootstrap!r}\n" + script],
+                            cwd=Path(__file__).resolve().parents[1],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr[-5000:]
