@@ -80,9 +80,12 @@ def _head_scoped_runner(
 ) -> Callable[..., WorkerCommandResult]:
     def scoped(command: tuple[str, ...], **kwargs: Any) -> WorkerCommandResult:
         immutable_command = tuple(command)
-        if tool_name == "gitleaks":
+        executable = Path(immutable_command[0]).name if immutable_command else ""
+        subcommand = immutable_command[1] if len(immutable_command) > 1 else ""
+        probe = any(flag in immutable_command for flag in ("--help", "-h", "--version", "version"))
+        if not probe and tool_name == "gitleaks" and executable in {"gitleaks", "gitleaks.exe"} and subcommand in {"detect", "git"} and "--no-git" not in immutable_command:
             immutable_command = _force_option(immutable_command, "--log-opts", "HEAD")
-        elif tool_name == "trufflehog":
+        elif not probe and tool_name == "trufflehog" and executable in {"trufflehog", "trufflehog.exe"} and subcommand == "git":
             immutable_command = _force_option(immutable_command, "--branch", "HEAD")
         filtered = scanner_pipeline._runner_kwargs(runner, **kwargs)
         return runner(immutable_command, **filtered)
@@ -110,10 +113,10 @@ def _history_scoped_delegate(
         )
         output.update(
             {
-                "history_scope": "reachable_ancestry_at_assessed_commit",
+                "history_scope": "reachable_ancestry_at_assessed_commit" if verified else "unverified_or_snapshot_only",
                 "history_depth_verified": verified,
-                "immutable_head_selector": "HEAD",
-                "deterministic_head_selector_applied": True,
+                "immutable_head_selector": "HEAD" if verified else "",
+                "deterministic_head_selector_applied": verified,
                 "descendant_refs_scanned": False,
             }
         )

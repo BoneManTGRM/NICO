@@ -809,10 +809,12 @@ def checkout_hosted_provider_snapshot(
         ]
 
     repo_path = workspace / "repo"
-    clone = _git_run(git_command("clone", "--filter=blob:none", "--no-checkout", clone_url, str(repo_path)), cwd=None, env=git_env, runner=runner)
+    # Fetch only the authorized immutable commit and its complete ancestry. A
+    # shallow/partial clone makes history scanners silently lose coverage.
+    clone = _git_run(git_command("init", str(repo_path)), cwd=None, env=git_env, runner=runner)
     if clone.returncode != 0:
         return None, "", [f"{provider.value} snapshot-bound git clone failed safely."]
-    fetch = _git_run(git_command("fetch", "--depth", "1", "origin", commit_sha), cwd=repo_path, env=git_env, runner=runner)
+    fetch = _git_run(git_command("fetch", "--no-tags", clone_url, commit_sha), cwd=repo_path, env=git_env, timeout=300, runner=runner)
     if fetch.returncode != 0:
         shutil.rmtree(repo_path, ignore_errors=True)
         return None, "", [f"{provider.value} exact snapshot revision could not be fetched."]
@@ -825,6 +827,10 @@ def checkout_hosted_provider_snapshot(
     if resolved.returncode != 0 or actual != commit_sha.casefold():
         shutil.rmtree(repo_path, ignore_errors=True)
         return None, actual, ["Provider scanner checkout did not match the immutable assessment revision."]
+    history = _git_run(git_command("rev-parse", "--is-shallow-repository"), cwd=repo_path, env=git_env, timeout=30, runner=runner)
+    if history.returncode != 0 or (history.stdout or "").strip().casefold() != "false":
+        shutil.rmtree(repo_path, ignore_errors=True)
+        return None, actual, ["Provider checkout did not establish complete exact-commit ancestry."]
     from nico import scanner_worker as scanner_base
 
     if scanner_base.directory_size(repo_path) > scanner_base.MAX_REPO_BYTES:

@@ -227,6 +227,10 @@ def _example_placeholder(finding: Mapping[str, Any], repo_dir: Path) -> tuple[bo
 
 def _reconcile_osv(payload: dict[str, Any], blob: Mapping[str, Any] | None, workspace: WorkerWorkspace) -> dict[str, Any]:
     raw = _raw_json(blob)
+    if payload.get("status") == "not_applicable" and isinstance(raw, Mapping) and raw.get("schema") == "nico.osv-applicability-observation.v1":
+        payload["osv_context_status"] = "observed_no_package_sources_not_clean"
+        payload["osv_context_fail_closed"] = True
+        return payload
     contextual, ignored, manifests = _osv_contextual_findings(raw, workspace.repo_dir)
     if raw is None:
         payload["osv_context_status"] = "raw_json_unavailable"
