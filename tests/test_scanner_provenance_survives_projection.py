@@ -136,7 +136,8 @@ def test_requested_population_retains_inapplicable_source_identity():
         assert by_name[name]['completed'] is False
 
 @pytest.mark.parametrize('bootstrap', ['nico.api.specialist_ship_ready_bootstrap', 'nico.api.final_report_worker_bootstrap'])
-def test_actual_renderer_entrypoints_preserve_complete_assessment_contract(bootstrap):
+@pytest.mark.parametrize('locale', ['en', 'es-MX'])
+def test_actual_renderer_entrypoints_preserve_complete_assessment_contract(bootstrap, locale):
     import subprocess
     import sys
     from pathlib import Path
@@ -153,7 +154,7 @@ compact = compact_scanner_records({'scan_id':'scan_projection_fixture','scanner_
 result = adapter.apply_v2_pipeline({'status':'complete','report_package':{'json':{
  'identity':{'repository':'example/projection-fixture','commit_sha':sha,'run_id':run,
  'evidence_ledger_id':'ledger_projection_fixture','customer_id':'fixture','project_id':'fixture',
- 'report_language':'en','generated_at':'2026-09-05T00:00:00Z'},
+ 'report_language':LOCALE,'generated_at':'2026-09-05T00:00:00Z'},
  'generated_at':'2026-09-05T00:00:00Z',
  'assessment':{'technical_score':80,'canonical_evidence_adjusted_score':80,'sections':[]},
  'scanner_execution_records':compact,
@@ -165,6 +166,6 @@ assert result['client_delivery_allowed'] is False
 assert result['report_package']['pdf_base64']
 '''
     root = Path(__file__).resolve().parents[1]
-    prelude = f'BOOTSTRAP={bootstrap!r}\nTEST_FILE={str(Path(__file__).resolve())!r}\n'
+    prelude = f'BOOTSTRAP={bootstrap!r}\nLOCALE={locale!r}\nTEST_FILE={str(Path(__file__).resolve())!r}\n'
     result = subprocess.run([sys.executable,'-c',prelude + source],cwd=root,capture_output=True,text=True,timeout=45)
     assert result.returncode == 0, result.stderr[-6000:]

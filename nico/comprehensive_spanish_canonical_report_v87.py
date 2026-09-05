@@ -160,6 +160,15 @@ _CANONICAL_PARITY_EXACT.update({
     for prefix in ("", "osv-scanner: ")
 })
 
+
+# This label is derived by the scanner evidence renderer after normalization.
+# Match the complete known field; an unknown suffix must still fail closed.
+_CANONICAL_PARITY_EXACT.update({
+    "osv-scanner: not applicable; " + source:
+        "osv-scanner: no aplicable; " + translated
+    for source, translated in _OSV_APPLICABILITY_ES.items()
+})
+
 _STAGE_PHRASE_ES = {
     "authorization and scope": "autorización y alcance",
     "immutable repository snapshot": "instantánea inmutable del repositorio",
