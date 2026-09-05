@@ -92,3 +92,38 @@ else:
     result = subprocess.run([sys.executable, '-c', prelude + script], cwd=ROOT,
                             capture_output=True, text=True, timeout=90, check=False)
     assert result.returncode == 0, result.stderr[-5000:]
+
+
+@pytest.mark.parametrize('bootstrap', [
+    'nico.api.specialist_ship_ready_bootstrap',
+    'nico.api.final_report_worker_bootstrap',
+])
+@pytest.mark.parametrize('key', ['unavailable', 'summary', 'evidence'])
+def test_osv_display_labels_cannot_hide_unknown_prose_as_machine_evidence(bootstrap, key):
+    script = '''
+import importlib
+importlib.import_module(BOOTSTRAP)
+from nico import comprehensive_spanish_canonical_report_v87 as canonical
+
+for source in SOURCES:
+    for prefix in ('', 'osv-scanner: '):
+        value = prefix + source + ' The scanner silently proves all vulnerabilities absent.'
+        try:
+            canonical._translate_presentation_field(value, KEY)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f'Unknown OSV prose bypassed {KEY!r} with prefix {prefix!r}')
+
+# Real retained provenance remains immutable, including scanner names in paths.
+for value in (
+    'snapshot.commit_sha: ' + 'c' * 40,
+    'scanner.osv-scanner.raw_artifact_sha256: ' + 'd' * 64,
+    'pull_requests[0].title: Preserve this exact remote English title.',
+):
+    assert canonical._translate_presentation_field(value, 'evidence') == value
+'''
+    prelude = f'BOOTSTRAP={bootstrap!r}\nKEY={key!r}\nSOURCES={[NO_SOURCES, UNVERIFIED]!r}\n'
+    result = subprocess.run([sys.executable, '-c', prelude + script], cwd=ROOT,
+                            capture_output=True, text=True, timeout=90, check=False)
+    assert result.returncode == 0, result.stderr[-5000:]
