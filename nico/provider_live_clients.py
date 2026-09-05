@@ -316,7 +316,8 @@ class BaseProviderClient:
                 self._client.cookies.clear()
                 response = self._client.get(
                     url,
-                    params=dict(params or {}),
+                    # Empty params must not erase a provider next-page URL query.
+                    params=dict(params) if params else None,
                     headers={
                         **authorization_headers(self._active_credential),
                         "Accept": "application/json",
@@ -472,7 +473,13 @@ class BaseProviderClient:
         elif exc.code == "provider_auth_failed" or exc.status_code == 403:
             state = CapabilityState.UNAVAILABLE_PERMISSION
             reason = f"{capability.value} evidence is unavailable with the current provider permission"
-        elif exc.status_code == 404:
+        elif exc.status_code == 404 or (
+            # Bitbucket Cloud retired its native issue tracker (HTTP 410).
+            # This is unavailable evidence, never a successful empty collection.
+            self.provider is ProviderKind.BITBUCKET
+            and capability is Capability.WORK_ITEMS
+            and exc.status_code == 410
+        ):
             state = CapabilityState.UNAVAILABLE_PROVIDER
             reason = f"{capability.value} is unavailable from this provider or repository"
         elif exc.code == "provider_rate_limited":
@@ -853,7 +860,9 @@ class BitbucketCloudClient(BaseProviderClient):
         self._require_source_tree(source_tree)
         pull_requests = self._optional_collection(
             Capability.CHANGE_REQUESTS,
-            lambda: self._bitbucket_pages(f"{root}/pullrequests", {"state": "ALL"}),
+            lambda: self._bitbucket_pages(
+                f"{root}/pullrequests", {"state": "ALL", "pagelen": 50}
+            ),
         )
         pipeline_query = f'target.commit.hash="{exact_revision}"'
         raw_pipelines = self._optional_collection(
