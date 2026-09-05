@@ -3,6 +3,14 @@ const PROTECTED_ROOTS = [
   "/operator", "/final-review", "/coverage-targets", "/setup-readiness", "/setup-actions",
 ];
 
+function hasUnsafeCharacters(value: string, includeSpace: boolean): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code <= (includeSpace ? 32 : 31) || code === 127 || character === "\\") return true;
+  }
+  return false;
+}
+
 /** Accept only unambiguous local specialist pages, never arbitrary redirect URLs. */
 export function specialistReturnTo(search: string, locale: "en" | "es" = "en"): string {
   const fallback = `${locale === "es" ? "/es" : ""}/assessment?tier=comprehensive#assessment`;
@@ -10,10 +18,10 @@ export function specialistReturnTo(search: string, locale: "en" | "es" = "en"): 
   if (values.length !== 1) return fallback;
   const value = values[0];
   if (!value || value.length > 8192 || !value.startsWith("/") || value.startsWith("//")) return fallback;
-  if (/[\\\u0000-\u0020\u007f]/.test(value)) return fallback;
+  if (hasUnsafeCharacters(value, true)) return fallback;
   try {
     // Decode only for validation. Return the original bytes so query identity is preserved.
-    if (/[\\\u0000-\u001f\u007f]/.test(decodeURIComponent(value))) return fallback;
+    if (hasUnsafeCharacters(decodeURIComponent(value), false)) return fallback;
     const pathname = value.split(/[?#]/, 1)[0];
     if (pathname.includes("%") || pathname.includes("//")) return fallback;
     const parsed = new URL(value, "https://nico.invalid");

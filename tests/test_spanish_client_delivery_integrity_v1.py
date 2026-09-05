@@ -73,7 +73,9 @@ def test_spanish_public_entrypoint_is_authenticated_and_comprehensive_only() -> 
     assessment = Path("apps/web/app/es/assessment/page.tsx").read_text(encoding="utf-8")
 
     assert 'redirect("/es/specialist-login")' in home
-    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment";' in login
+    assert 'specialistReturnTo(window.location.search, "es")' in login
+    assert "window.location.replace(destination)" in login
+    assert 'window.location.assign(specialistReturnTo(window.location.search, "es"))' in login
     assert "tier=express" not in f"{home}\n{login}".casefold()
     assert "Express" not in assessment
     assert "NICO Comprehensive" in assessment
