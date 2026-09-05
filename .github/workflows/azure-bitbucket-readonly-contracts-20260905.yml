@@ -1,0 +1,59 @@
+name: Azure and Bitbucket read-only contracts
+on:
+  push:
+    branches: [verification/1496-positive-providers-20260905]
+    paths: [.github/workflows/azure-bitbucket-readonly-contracts-20260905.yml]
+permissions:
+  contents: read
+concurrency:
+  group: nico-azure-bitbucket-public-contracts-20260905
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 569ec3e1fa8cfbeea350b230b38eeba9cc1793af
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check -e .
+      - name: Inspect current Bitbucket public contracts without retrying rate limits
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import httpx
+          base='https://api.bitbucket.org/2.0/repositories/atlassian_tutorial/helloworld'
+          cases=[('/pullrequests', {'pagelen':1,'state':'ALL'}), ('/pullrequests',{'pagelen':1,'state':['OPEN','MERGED','DECLINED','SUPERSEDED']}),('/issues',{'pagelen':1})]
+          records=[]
+          with httpx.Client(timeout=25,follow_redirects=False,trust_env=False) as client:
+              for path,params in cases:
+                  r=client.get(base+path,params=params,headers={'Accept':'application/json'})
+                  try:p=r.json()
+                  except ValueError:p={}
+                  record={'path':path,'params':params,'status':r.status_code,'content_type':r.headers.get('content-type'),'retry_after':r.headers.get('retry-after'),'top_level_keys':sorted(p) if isinstance(p,dict) else [],'credentials_sent':False}
+                  if isinstance(p,dict) and isinstance(p.get('error'),dict):
+                      record['provider_error_message']=str(p['error'].get('message',''))[:500]
+                  records.append(record)
+                  if r.status_code==429:break
+          output=Path('audit-results/provider-contracts');output.mkdir(parents=True,exist_ok=True)
+          (output/'bitbucket-http.json').write_text(json.dumps(records,indent=2))
+          print(json.dumps(records,indent=2))
+          PY
+      - name: Two positive Azure source passes on the retained previously authorized public fixture
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          python scripts/provider_live_acceptance.py --provider azure_devops --repository swellaby/OpenSource/mirror2 --access-mode anonymous_public --expected-outcome success --passes 2 --workflow-sha 569ec3e1fa8cfbeea350b230b38eeba9cc1793af --workflow-run-id "$GITHUB_RUN_ID" --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" --output audit-results/provider-contracts/azure-source.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: readonly-provider-contracts-${{ github.run_id }}
+          path: audit-results/provider-contracts/
+          if-no-files-found: error
+          retention-days: 30
