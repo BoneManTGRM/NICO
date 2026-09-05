@@ -1,0 +1,281 @@
+name: Issue 1496 scanner repair candidate
+
+on:
+  push:
+    branches: [fix/1496-scanner-completion]
+    paths: [.github/workflows/scanner-1496-repair-candidate.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nico-1496-repair-candidate
+  cancel-in-progress: false
+
+jobs:
+  repair-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    env:
+      NICO_SCANNER_INSTALL_STRICT: 'true'
+      NICO_SCANNER_INSTALL_DIR: /tmp/nico-pinned-scanners
+      NICO_SCANNER_RAW_ARTIFACT_ROOT: /tmp/nico-1496-raw-evidence
+      NICO_ALLOW_PROJECT_COMMANDS: 'false'
+      NICO_ENABLE_FULL_HISTORY_SECRET_SCAN: 'true'
+      NICO_LIVE_SCANNER_CONTRACTS: '1'
+      NICO_REPAIR_BRANCH: fix/1496-scanner-completion
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Apply bounded command corrections in the candidate workspace
+        run: |
+          python - <<'PY'
+          import ast, json, os
+          from pathlib import Path
+          if os.environ['GITHUB_REF'] != 'refs/heads/' + os.environ['NICO_REPAIR_BRANCH']:
+              raise SystemExit('Refusing to edit outside the isolated repair branch.')
+          output = Path('audit-results'); output.mkdir(exist_ok=True)
+          changes = []
+          path = Path('nico/v2_snapshot_scanner_authority.py')
+          original = path.read_text()
+          nodes = [n for n in ast.parse(original).body if isinstance(n, ast.FunctionDef) and n.name == '_head_scoped_runner']
+          if len(nodes) != 1:
+              raise SystemExit('Expected unique history-command boundary not found.')
+          node = nodes[0]
+          old = ''.join(original.splitlines(keepends=True)[node.lineno - 1:node.end_lineno])
+          new = '''def _head_scoped_runner(
+              tool_name: str,
+              runner: Callable[..., WorkerCommandResult],
+          ) -> Callable[..., WorkerCommandResult]:
+              def scoped(command: tuple[str, ...], **kwargs: Any) -> WorkerCommandResult:
+                  immutable_command = tuple(command)
+                  # Scope history scans, not version probes, filesystem scans, or git preparation.
+                  executable = Path(immutable_command[0]).name if immutable_command else ""
+                  subcommand = immutable_command[1] if len(immutable_command) > 1 else ""
+                  if tool_name == "gitleaks" and executable in {"gitleaks", "gitleaks.exe"} and subcommand in {"detect", "git"}:
+                      immutable_command = _force_option(immutable_command, "--log-opts", "HEAD")
+                  elif tool_name == "trufflehog" and executable in {"trufflehog", "trufflehog.exe"} and subcommand == "git":
+                      immutable_command = _force_option(immutable_command, "--branch", "HEAD")
+                  filtered = scanner_pipeline._runner_kwargs(runner, **kwargs)
+                  return runner(immutable_command, **filtered)
+
+              return scoped
+          '''
+          if old != new:
+              if '_force_option(immutable_command, "--branch", "HEAD")' not in old:
+                  raise SystemExit('History boundary has changed; refusing speculative replacement.')
+              path.write_text(original.replace(old, new, 1))
+              changes.append(str(path))
+          # The source path must follow OSV's options. Keep parse errors and all
+          # existing completion and history requirements intact.
+          replacements = 0
+          for path in sorted(Path('nico').glob('*scanner*.py')):
+              text = path.read_text()
+              edits = []
+              for node in ast.walk(ast.parse(text)):
+                  if not isinstance(node, ast.Tuple) or len(node.elts) != 7:
+                      continue
+                  tail = [e.value if isinstance(e, ast.Constant) else None for e in node.elts[1:]]
+                  if tail != ['scan', 'source', '-r', '.', '--format', 'json']:
+                      continue
+                  before = ast.get_source_segment(text, node)
+                  executable = ast.get_source_segment(text, node.elts[0])
+                  after = '(' + executable + ', "scan", "source", "-r", "--format", "json", ".")'
+                  edits.append((before, after))
+              for before, after in edits:
+                  text = text.replace(before, after)
+              if edits:
+                  ast.parse(text)
+                  path.write_text(text)
+                  changes.append(str(path))
+                  replacements += len(edits)
+          if not replacements:
+              raise SystemExit('Reproduced OSV command was not found; no repair claim is permitted.')
+          for name in changes:
+              ast.parse(Path(name).read_text())
+          (output / 'candidate.json').write_text(json.dumps({'source_commit': os.environ['GITHUB_SHA'], 'changed_files': changes, 'osv_command_replacements': replacements, 'production_modified': False, 'ship_ready': False}, indent=2))
+          PY
+      - name: Install exact pinned scanner binaries and test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -e '.[dev]'
+          python scripts/install_hosted_scanner_binaries.py
+          echo /tmp/nico-pinned-scanners >> "$GITHUB_PATH"
+      - name: Verify selector boundaries and real default-bootstrap scanner execution
+        id: live_tests
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, shutil, subprocess, tempfile
+          from pathlib import Path
+          from nico.api.specialist_ship_ready_bootstrap import app
+          from nico import scanner_tool_runners
+          from nico.v2_snapshot_scanner_authority import _head_scoped_runner
+          from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
+          observations = []
+          def retain():
+              Path('audit-results/live-scanner-results.json').write_text(json.dumps({'production_modified': False, 'ship_ready': False, 'observations': observations}, indent=2))
+          def observe(command, **kwargs):
+              return WorkerCommandResult(args=tuple(command), returncode=0, stdout='', stderr='')
+          for tool, command, must_scope in [
+              ('trufflehog', ('trufflehog', '--version'), False),
+              ('trufflehog', ('trufflehog', 'filesystem', '.'), False),
+              ('trufflehog', ('git', 'rev-parse', 'HEAD'), False),
+              ('trufflehog', ('trufflehog', 'git', 'file:///tmp/synthetic'), True),
+              ('gitleaks', ('gitleaks', 'version'), False),
+              ('gitleaks', ('gitleaks', 'detect', '--source', '.'), True),
+          ]:
+              result = _head_scoped_runner(tool, observe)(command)
+              selector = '--branch' if tool == 'trufflehog' else '--log-opts'
+              assert (selector in result.args) == must_scope, 'history_selector_boundary_incorrect'
+              if not must_scope:
+                  assert tuple(result.args) == command, 'non_history_command_was_changed'
+          observations.append({'selector_boundaries': 'passed'})
+          retain()
+          for name in ('trufflehog', 'osv-scanner'):
+              assert shutil.which(name), 'required_pinned_binary_missing:' + name
+          def git(repo, *args):
+              result = subprocess.run(('git', *args), cwd=repo, capture_output=True, text=True, timeout=180, check=False)
+              if result.returncode:
+                  raise RuntimeError('fixture_git_command_failed:' + args[0])
+              return result.stdout.strip()
+          def test_scanners(root, fixture):
+              repo = root / 'repo'
+              sha = git(repo, 'rev-parse', 'HEAD')
+              assert git(repo, 'rev-parse', '--is-shallow-repository') == 'false'
+              for name in ('trufflehog', 'osv-scanner'):
+                  spec = next(s for s in scanner_tool_runners.TOOL_SPECS if s.name == name)
+                  result = scanner_tool_runners.run_scanner_tool(spec, WorkerWorkspace(root=root))
+                  keys = ('status', 'returncode', 'exit_code', 'scanner_tool_version', 'command_intent', 'output_capture_complete', 'raw_artifact_retention_complete', 'full_history_verified', 'history_scope', 'commit_sha', 'snapshot_commit_sha', 'reason', 'failure_or_unavailable_reason', 'raw_artifact_sha256')
+                  record = {'fixture': fixture, 'tool': name, 'source_commit': sha, 'result': {key: result.get(key) for key in keys}}
+                  observations.append(record)
+                  retain()
+                  assert result.get('status') == 'completed', 'scanner_not_completed:' + fixture + ':' + name
+                  assert result.get('output_capture_complete') is True, 'scanner_output_incomplete:' + name
+                  assert result.get('raw_artifact_retention_complete') is True, 'scanner_raw_evidence_not_retained:' + name
+                  assert result.get('commit_sha') == sha, 'scanner_source_identity_mismatch:' + name
+                  if name == 'trufflehog':
+                      assert result.get('full_history_verified') is True, 'history_not_verified'
+                      intent = str(result.get('command_intent') or '')
+                      assert ' git ' in ' ' + intent + ' ' and 'filesystem' not in intent, 'filesystem_result_is_not_full_history_proof'
+          with tempfile.TemporaryDirectory(prefix='nico-1496-synthetic-') as temporary:
+              root = Path(temporary); repo = root / 'repo'; repo.mkdir()
+              git(repo, 'init', '-q')
+              git(repo, 'config', 'user.name', 'NICO synthetic scanner test')
+              git(repo, 'config', 'user.email', 'synthetic@example.invalid')
+              (repo / 'README.md').write_text('Synthetic local scanner integration test.\n')
+              (repo / 'requirements.txt').write_text('idna==3.10\n')
+              git(repo, 'add', '.')
+              git(repo, 'commit', '-qm', 'Synthetic scanner fixture')
+              test_scanners(root, 'synthetic-dependency-fixture')
+          with tempfile.TemporaryDirectory(prefix='nico-1496-public-fixture-') as temporary:
+              root = Path(temporary); repo = root / 'repo'; repo.mkdir()
+              sha = 'ddd0f15ae83993f5cb66a927a28673882e99100b'
+              git(repo, 'init', '-q')
+              git(repo, 'fetch', '--no-tags', 'https://gitlab.com/gitlab-org/gitlab-test.git', sha)
+              git(repo, 'checkout', '--detach', sha)
+              assert git(repo, 'rev-parse', 'HEAD') == sha
+              test_scanners(root, 'exact-public-GitLab-reproduction')
+          observations.append({'real_scanner_regression': 'passed', 'public_fixture_only': True, 'human_review_performed': False, 'client_delivery_authorized': False})
+          retain()
+          PY
+      - name: Run existing scanner regression tests
+        id: regressions
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          files = sorted({str(p) for pattern in ('test_scanner*.py', 'test_v2_snapshot_scanner*.py') for p in Path('tests').glob(pattern)})
+          if not files:
+              raise SystemExit('No existing scanner regression tests found.')
+          raise SystemExit(subprocess.call(['python', '-m', 'pytest', '-q', *files, '--junitxml=audit-results/existing-scanner-regressions.xml']))
+          PY
+      - name: Retain candidate diff and truthful result
+        if: always()
+        env:
+          LIVE_RESULT: ${{ steps.live_tests.outcome }}
+          REGRESSION_RESULT: ${{ steps.regressions.outcome }}
+        run: |
+          mkdir -p audit-results
+          git diff --binary > audit-results/candidate.patch
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          result = {'source_commit': os.environ['GITHUB_SHA'], 'live_scanner_test': os.getenv('LIVE_RESULT'), 'existing_regressions': os.getenv('REGRESSION_RESULT'), 'production_modified': False, 'ship_ready': False}
+          Path('audit-results/test-outcome.json').write_text(json.dumps(result, indent=2))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('## Isolated scanner repair candidate\n\n')
+              out.write('Real scanner regression: ' + str(result['live_scanner_test']) + '\n\n')
+              out.write('Existing regression suite: ' + str(result['existing_regressions']) + '\n\n')
+              out.write('No production deployment, specialist approval, or client delivery. This is not a ship-readiness clearance.\n')
+          PY
+      - name: Publish only passing scoped code changes to the existing repair branch
+        if: steps.live_tests.outcome == 'success' && steps.regressions.outcome == 'success'
+        env:
+          REPAIR_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, json, os, subprocess
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from urllib.parse import quote
+          repo = 'BoneManTGRM/NICO'
+          branch = 'fix/1496-scanner-completion'
+          if os.environ['GITHUB_REPOSITORY'] != repo or os.environ['GITHUB_REF'] != 'refs/heads/' + branch:
+              raise SystemExit('Unexpected repository or ref; publishing prohibited.')
+          source = os.environ['GITHUB_SHA']
+          token = os.environ['REPAIR_GITHUB_TOKEN']
+          base = 'https://api.github.com/repos/' + repo
+          def api(method, path, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              request = Request(base + path, data=data, method=method, headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
+              with urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          live_ref = api('GET', '/git/ref/heads/' + quote(branch, safe=''))
+          if live_ref['object']['sha'] != source:
+              raise SystemExit('Repair branch advanced; refusing stale publication.')
+          candidate = json.loads(Path('audit-results/candidate.json').read_text())
+          changed = subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines()
+          expected = sorted(set(candidate['changed_files']))
+          if sorted(changed) != expected or not expected:
+              raise SystemExit('Unexpected or empty candidate diff; publishing prohibited.')
+          for name in expected:
+              if not name.startswith('nico/') or 'scanner' not in Path(name).name or not name.endswith('.py'):
+                  raise SystemExit('Candidate changed a file outside scanner implementation scope.')
+          parent = api('GET', '/git/commits/' + source)
+          entries = []
+          for name in expected:
+              blob = api('POST', '/git/blobs', {'content': base64.b64encode(Path(name).read_bytes()).decode(), 'encoding': 'base64'})
+              entries.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
+          tree = api('POST', '/git/trees', {'base_tree': parent['tree']['sha'], 'tree': entries})
+          commit = api('POST', '/git/commits', {'message': 'Correct scanner CLI boundaries after pinned-binary and scanner-regression verification', 'tree': tree['sha'], 'parents': [source]})
+          if api('GET', '/git/ref/heads/' + quote(branch, safe=''))['object']['sha'] != source:
+              raise SystemExit('Concurrent branch update; generated commit retained but ref unchanged.')
+          api('PATCH', '/git/refs/heads/' + quote(branch, safe=''), {'sha': commit['sha'], 'force': False})
+          evidence = {'candidate_commit': commit['sha'], 'candidate_tree': tree['sha'], 'tested_source_parent': source, 'changed_files': expected, 'production_modified': False, 'ship_ready': False, 'full_PR_CI_and_production_verification_still_required': True}
+          Path('audit-results/published-candidate.json').write_text(json.dumps(evidence, indent=2))
+          print('Verified scanner candidate published only to the existing repair branch: ' + commit['sha'])
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: scanner-1496-repair-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: audit-results/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Require both real-binary and regression success
+        if: always()
+        env:
+          LIVE_RESULT: ${{ steps.live_tests.outcome }}
+          REGRESSION_RESULT: ${{ steps.regressions.outcome }}
+        run: |
+          test "$LIVE_RESULT" = success
+          test "$REGRESSION_RESULT" = success
