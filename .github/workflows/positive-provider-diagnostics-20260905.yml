@@ -1,0 +1,105 @@
+name: Positive provider fixture diagnostics
+on:
+  push:
+    branches: [verification/1496-positive-providers-20260905]
+    paths: [.github/workflows/positive-provider-diagnostics-20260905.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nico-positive-provider-fixtures-20260905
+  cancel-in-progress: false
+env:
+  RELEASE_SHA: 569ec3e1fa8cfbeea350b230b38eeba9cc1793af
+jobs:
+  source-fixtures:
+    name: Public source fixture - ${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - provider: github
+            repository: octocat/Hello-World
+          - provider: gitlab
+            repository: gitlab-org/gitlab-test
+          - provider: bitbucket_cloud
+            repository: atlassian_tutorial/helloworld
+          - provider: azure_devops
+            repository: clearmeasurelabs/Onion-DevOps-Architecture/Onion-DevOps-Architecture
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install exact project release
+        run: python -m pip install --disable-pip-version-check -e .
+      - name: Two fresh anonymous source-only passes on a real fixture
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          REPOSITORY: ${{ matrix.repository }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          mkdir -p audit-results/positive-fixtures
+          python scripts/provider_live_acceptance.py --provider "$PROVIDER" --repository "$REPOSITORY" --access-mode anonymous_public --expected-outcome success --passes 2 --workflow-sha "$RELEASE_SHA" --workflow-run-id "$GITHUB_RUN_ID" --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" --output audit-results/positive-fixtures/source.json
+      - name: Diagnose exact public optional-evidence endpoints without credentials
+        if: always() && matrix.provider == 'bitbucket_cloud'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import httpx
+          base='https://api.bitbucket.org/2.0/repositories/atlassian_tutorial/helloworld'
+          records=[]
+          with httpx.Client(timeout=30,follow_redirects=False,trust_env=False) as client:
+              for path in ('/pullrequests','/issues'):
+                  response=client.get(base+path,params={'pagelen':1},headers={'Accept':'application/json'})
+                  try: payload=response.json()
+                  except ValueError: payload={}
+                  records.append({'path':path,'status':response.status_code,'top_level_keys':sorted(payload) if isinstance(payload,dict) else [],'error':payload.get('error') if isinstance(payload,dict) else None,'credentials_sent':False})
+          output=Path('audit-results/positive-fixtures');output.mkdir(parents=True,exist_ok=True)
+          (output/'optional-endpoints.json').write_text(json.dumps(records,indent=2))
+          PY
+      - name: Retain source scope, not a report clearance
+        if: always()
+        run: |
+          mkdir -p audit-results/positive-fixtures
+          printf '%s\n' "$RELEASE_SHA" > audit-results/positive-fixtures/release.txt
+          echo 'These are public source-acquisition tests only. No assessment, scanner completion, private-repository access, professional approval, or client delivery is claimed.' > audit-results/positive-fixtures/SCOPE.txt
+          cat audit-results/positive-fixtures/SCOPE.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: positive-source-${{ matrix.provider }}-${{ github.run_id }}
+          path: audit-results/positive-fixtures/
+          if-no-files-found: error
+          retention-days: 30
+  exact-source:
+    name: Preserve exact source for independent local verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - run: |
+          mkdir -p /tmp/nico-exact-source
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git archive --format=tar HEAD > /tmp/nico-exact-source/source.tar
+          git rev-parse HEAD > /tmp/nico-exact-source/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/nico-exact-source/tree.txt
+          sha256sum /tmp/nico-exact-source/source.tar > /tmp/nico-exact-source/source.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: current-source-${{ env.RELEASE_SHA }}
+          path: /tmp/nico-exact-source/
+          if-no-files-found: error
+          retention-days: 30
