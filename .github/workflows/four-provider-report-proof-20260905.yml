@@ -1,0 +1,262 @@
+name: Owner-authorized four-provider report verification
+
+on:
+  push:
+    branches: [verification/four-provider-report-proof-20260905]
+    paths: [.github/workflows/four-provider-report-proof-20260905.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-four-provider-verification-20260905
+  cancel-in-progress: false
+
+env:
+  RELEASE_SHA: 9c4b5d1e74a4aa74b787ed12b1507b9a28142c8f
+
+jobs:
+  source-acquisition:
+    name: Real source acquisition only - ${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - provider: github
+            repository: octocat/Hello-World
+            outcome: success
+          - provider: gitlab
+            repository: gitlab-org/gitlab-test
+            outcome: success
+          - provider: bitbucket_cloud
+            repository: atlassian_tutorial/helloworld
+            outcome: success
+          - provider: azure_devops
+            repository: clearmeasurelabs/Onion-DevOps-Architecture/nico-tokenless-auth-required-fixture-does-not-exist
+            outcome: authentication_required
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - name: Install exact release
+        run: python -m pip install --disable-pip-version-check --no-cache-dir -e .
+      - name: Run two fresh real provider clients, not report proof
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          REPOSITORY: ${{ matrix.repository }}
+          EXPECTED: ${{ matrix.outcome }}
+        run: |
+          set -euo pipefail
+          unset NICO_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN NICO_GITLAB_TOKEN GITLAB_TOKEN
+          unset NICO_BITBUCKET_CLOUD_TOKEN BITBUCKET_TOKEN NICO_AZURE_DEVOPS_TOKEN AZURE_DEVOPS_TOKEN AZURE_DEVOPS_EXT_PAT SYSTEM_ACCESSTOKEN
+          python scripts/provider_live_acceptance.py --provider "$PROVIDER" --repository "$REPOSITORY" --access-mode anonymous_public --expected-outcome "$EXPECTED" --passes 2 --workflow-sha "$RELEASE_SHA" --workflow-run-id "$GITHUB_RUN_ID" --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" --output audit-results/source-acquisition.json
+          echo 'This job proves source acquisition or the explicitly expected rejection only. It does not prove a completed assessment, report, specialist approval, or delivery.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: source-only-${{ matrix.provider }}-${{ github.run_id }}
+          path: audit-results/source-acquisition.json
+          if-no-files-found: error
+          retention-days: 30
+
+  production-report-downloads:
+    name: Actual deployed assessment to downloaded reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    environment: production-smoke
+    env:
+      SMOKE_OPERATOR: ${{ secrets.NICO_PRODUCTION_SMOKE_ADMIN_TOKEN }}
+      SCOPED_OPERATOR: ${{ secrets.NICO_COMPREHENSIVE_OPERATOR_PASSWORD }}
+      AZURE_AUTHORIZED_PUBLIC_REPOSITORY: ${{ vars.NICO_AZURE_DEVOPS_PUBLIC_TEST_REPOSITORY }}
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --disable-pip-version-check 'pypdf==6.16.2'
+      - name: Verify real production runs without bypassing credentials or review
+        run: |
+          python - <<'PY'
+          import hashlib, io, json, os, re, time, uuid
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          from pypdf import PdfReader
+
+          root = Path('production-report-evidence'); root.mkdir()
+          base = 'https://nico-production-690a.up.railway.app'
+          expected = os.environ['RELEASE_SHA']
+          secrets = [v for v in (os.getenv('SCOPED_OPERATOR', ''), os.getenv('SMOKE_OPERATOR', '')) if v]
+          results = {'schema': 'nico.owner-four-provider-report-proof.v1', 'release_sha': expected, 'workflow_run_id': os.environ['GITHUB_RUN_ID'], 'new_runs': [], 'report_proof_complete': False, 'human_approval_proven': False, 'client_delivery_authorized': False, 'browser_ui_proven': False}
+          def persist():
+              text = json.dumps(results, indent=2)
+              for secret in secrets:
+                  text = text.replace(secret, '[REDACTED]')
+              (root / 'manifest.json').write_text(text)
+          def request(method, path, payload=None, headers=None, origin=base):
+              body = None if payload is None else json.dumps(payload).encode()
+              h = {'Accept': 'application/json', 'Cache-Control': 'no-cache'}
+              if body is not None: h['Content-Type'] = 'application/json'
+              h.update(headers or {})
+              try:
+                  with urlopen(Request(origin + path, data=body, headers=h, method=method), timeout=180) as r:
+                      return r.status, dict(r.headers), r.read()
+              except HTTPError as e:
+                  return e.code, dict(e.headers), e.read()
+          def get_json(method, path, payload=None, headers=None, origin=base):
+              status, h, body = request(method, path, payload, headers, origin)
+              try: value = json.loads(body)
+              except ValueError: value = {'non_json_response': True}
+              return status, value
+          def require(condition, code):
+              if not condition: raise RuntimeError(code)
+          def safe_write(path, body):
+              require(not any(secret.encode() in body for secret in secrets), 'raw_credential_in_artifact')
+              path.write_bytes(body)
+          def artifact(folder, run_id, fmt, headers):
+              status, h, body = request('GET', f'/assessment/comprehensive-run/{run_id}/report/{fmt}', headers=headers)
+              require(status == 200, f'{fmt}_download_http_{status}')
+              require(len(body) > 30, f'{fmt}_download_empty')
+              meta = {'format': fmt, 'http_status': status, 'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest(), 'content_type': h.get('Content-Type', '')}
+              if fmt == 'pdf':
+                  require(body.startswith(b'%PDF-'), 'pdf_signature_invalid')
+                  pdf = PdfReader(io.BytesIO(body)); meta['pages'] = len(pdf.pages)
+                  require(meta['pages'] > 0, 'pdf_has_no_pages')
+                  text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+                  require('NICO' in text, 'pdf_nico_identity_missing')
+                  meta['extractable_text_characters'] = len(text)
+              elif fmt == 'json':
+                  value = json.loads(body)
+                  require(isinstance(value, dict), 'report_json_not_object')
+                  require(run_id in json.dumps(value), 'report_run_identity_missing')
+              else:
+                  require('NICO' in body.decode('utf-8'), f'{fmt}_nico_identity_missing')
+              safe_write(folder / ('report.' + ('md' if fmt == 'markdown' else fmt)), body)
+              return meta
+          targets = [('github', 'octocat/Hello-World'), ('gitlab', 'gitlab-org/gitlab-test'), ('bitbucket_cloud', 'atlassian_tutorial/helloworld')]
+          azure = os.getenv('AZURE_AUTHORIZED_PUBLIC_REPOSITORY', '').strip()
+          if azure:
+              targets.append(('azure_devops', azure))
+          else:
+              results['azure_devops'] = {'status': 'blocked', 'reason': 'no_configured_authorized_real_public_Azure_test_repository', 'nonexistent_rejection_fixture_is_not_report_proof': True}
+          try:
+              status, front = get_json('GET', '/api/release', origin='https://app.nicoaudit.com')
+              results['frontend'] = front
+              require(status == 200 and front.get('release_sha') == expected, 'frontend_release_mismatch')
+              status, ready = get_json('GET', '/diagnostics/specialist-readiness')
+              results['backend_readiness'] = ready
+              provenance = ready.get('release_provenance', {})
+              require(status == 200 and ready.get('status') == 'ready', 'backend_not_ready')
+              require(provenance.get('backend_build_commit') == expected and provenance.get('frontend_build_commit') == expected, 'backend_release_mismatch')
+              require(bool(secrets), 'protected_runner_has_no_operator_credential')
+              auth = None
+              for secret in secrets:
+                  status, login = get_json('POST', '/assessment/comprehensive-operator/session', {}, {'X-NICO-Admin-Token': secret})
+                  if status == 200 and login.get('session_token'):
+                      token = login['session_token']; secrets.append(token)
+                      print('::add-mask::' + token)
+                      auth = {'X-NICO-Operator-Session': token}; break
+              require(auth is not None, 'protected_runner_operator_credential_rejected')
+              results['authenticated'] = True
+              for provider, repository in targets:
+                  pinned = ''
+                  for pass_number in (1, 2):
+                      run_id = 'comprun_' + uuid.uuid4().hex
+                      row = {'provider': provider, 'repository': repository, 'pass': pass_number, 'run_id': run_id, 'status': 'starting'}
+                      results['new_runs'].append(row); persist()
+                      folder = root / f'{provider}-pass-{pass_number}'; folder.mkdir()
+                      payload = {'provider': provider, 'repository': repository, 'provider_access_mode': 'anonymous_public', 'run_id': run_id, 'customer_id': 'owner_verification_' + os.environ['GITHUB_RUN_ID'], 'project_id': provider + '_' + str(pass_number), 'client_name': 'NICO internal verification', 'project_name': provider + ' report-path verification', 'assessment_depth': 'strategic', 'report_language': 'en', 'authorized': True, 'authorization_confirmed': True, 'authorized_by': 'Cody owner-authorized verification', 'authorization_scope': 'Read-only static analysis of existing public test fixture. No active scanning, human approval, or client delivery.', 'expected_commit_sha': pinned}
+                      try:
+                          try:
+                              status, value = get_json('POST', '/assessment/comprehensive-intake', payload, auth)
+                              require(status in (200, 202), f'intake_http_{status}')
+                          except TimeoutError:
+                              row['intake_response_timeout'] = True
+                          deadline = time.monotonic() + 540
+                          while time.monotonic() < deadline:
+                              status, value = get_json('GET', f'/assessment/comprehensive-run/{run_id}', headers=auth)
+                              require(status == 200, f'run_status_http_{status}')
+                              row['terminal_observed_status'] = value.get('status')
+                              if value.get('status') in ('review_required', 'completed', 'complete', 'approved', 'failed', 'blocked', 'cancelled'):
+                                  break
+                              status, continuation = get_json('POST', f'/assessment/comprehensive-run/{run_id}/continue', {}, auth)
+                              require(status in (200, 202), f'continue_http_{status}')
+                              time.sleep(5)
+                          require(value.get('status') == 'review_required', 'run_did_not_reach_required_human_review')
+                          require(value.get('human_review_required') is True and value.get('client_delivery_allowed') is False, 'human_review_or_delivery_boundary_invalid')
+                          safe_write(folder / 'terminal.json', json.dumps(value, indent=2).encode())
+                          revision = str(value.get('commit_sha') or (value.get('identity') or {}).get('commit_sha') or '')
+                          require(bool(re.fullmatch('[0-9a-f]{40}', revision)), 'source_revision_missing')
+                          require(not pinned or revision == pinned, 'source_revision_drift')
+                          pinned = revision; row['source_revision'] = revision
+                          row['artifacts'] = [artifact(folder, run_id, fmt, auth) for fmt in ('json', 'markdown', 'html', 'pdf')]
+                          report = json.loads((folder / 'report.json').read_text())
+                          require(revision in json.dumps(report), 'report_source_revision_missing')
+                          status, reconnect = get_json('GET', f'/assessment/comprehensive-run/{run_id}', headers=auth)
+                          require(status == 200 and reconnect.get('run_id') == run_id and reconnect.get('status') == 'review_required', 'reconnect_identity_not_preserved')
+                          row['status'] = 'report_downloads_verified_pending_human_review'
+                          row['same_run_source_identity_verified'] = True
+                          row['human_approval_proven'] = False
+                          row['client_delivery_authorized'] = False
+                      except Exception as exc:
+                          row['status'] = 'blocked_or_failed'; row['failure'] = str(exc)[:200]
+                      persist()
+                      print(json.dumps({k: row[k] for k in ('provider', 'pass', 'run_id', 'status')}))
+                      if row['status'] != 'report_downloads_verified_pending_human_review': break
+              rows = results['new_runs']
+              results['report_proof_complete'] = len(rows) == 8 and all(r['status'] == 'report_downloads_verified_pending_human_review' for r in rows)
+          except Exception as exc:
+              results['execution_blocker'] = str(exc)[:200]
+          finally:
+              persist()
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                  summary.write('## Four-provider deployed report proof\n\n')
+                  summary.write('All-four reporting proof complete: ' + str(results['report_proof_complete']) + '\n\n')
+                  summary.write('New runs initiated: ' + str(len(results['new_runs'])) + '\n\n')
+                  summary.write('Blocker: ' + str(results.get('execution_blocker', 'see provider manifest')) + '\n\n')
+                  summary.write('No human specialist approval or client delivery was performed. API proof does not claim browser UI proof.\n')
+          raise SystemExit(0 if results['report_proof_complete'] else 1)
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: actual-production-report-attempts-${{ github.run_id }}
+          path: production-report-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+  fresh-canonical-gitlab-proof:
+    name: Launch existing trusted main production browser proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Dispatch unchanged canonical main workflow using its existing OIDC boundary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from urllib.request import Request, urlopen
+          base = 'https://api.github.com/repos/BoneManTGRM/NICO'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          with urlopen(Request(base + '/branches/main', headers=headers), timeout=30) as r:
+              actual = json.load(r)['commit']['sha']
+          if actual != os.environ['RELEASE_SHA']:
+              raise SystemExit('Current main changed; no stale production proof dispatched.')
+          req = Request(base + '/actions/workflows/spanish-comprehensive-production-proof.yml/dispatches', headers={**headers, 'Content-Type': 'application/json'}, data=json.dumps({'ref': 'main'}).encode(), method='POST')
+          with urlopen(req, timeout=30) as r:
+              if r.status != 204: raise SystemExit('Production proof dispatch not accepted.')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('Existing trusted main production proof dispatched. This is a fresh GitLab browser/report test, not proof of all four platforms. No deployed code or authentication policy was changed.\n')
+          print('Canonical main GitLab production proof dispatch accepted (204).')
+          PY
