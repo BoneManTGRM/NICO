@@ -44,7 +44,7 @@ jobs:
           from urllib.request import Request, urlopen
           assert os.environ['GITHUB_REPOSITORY'] == 'BoneManTGRM/NICO'
           assert os.environ['GITHUB_REF'] == 'refs/heads/fix/1496-scanner-completion'
-          output = Path('audit-results'); output.mkdir()
+          output = Path('audit-results'); output.mkdir(exist_ok=True)
           url = 'https://api.github.com/repos/BoneManTGRM/NICO/git/blobs/' + os.environ['REVIEWED_PATCH_BLOB']
           req = Request(url, headers={'Authorization': 'Bearer ' + os.environ['PATCH_READ_TOKEN'], 'Accept': 'application/vnd.github+json'})
           with urlopen(req, timeout=30) as r:
