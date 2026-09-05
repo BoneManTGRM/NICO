@@ -25,11 +25,14 @@ def test_specialist_frontend_and_runtime_contracts_are_fail_closed():
     assert 'nico-specialist-session' in middleware
     assert 'type="password"' in english_login
     assert 'type="password"' in spanish_login
-    assert 'const DESTINATION = "/assessment?tier=comprehensive#assessment"' in english_login
-    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment"' in spanish_login
-    assert "URLSearchParams" not in english_login
-    assert "URLSearchParams" not in spanish_login
-    assert "searchParams.set" not in middleware
+    # Saved-run navigation is permitted only through the shared local validator.
+    for login, locale in ((english_login, "en"), (spanish_login, "es")):
+        assert f'const destination = specialistReturnTo(window.location.search, "{locale}");' in login
+        assert "window.location.replace(destination)" in login
+        assert f'window.location.assign(specialistReturnTo(window.location.search, "{locale}"));' in login
+        assert "window.location.assign(window.location.search)" not in login
+        assert "window.location.replace(window.location.search)" not in login
+    assert 'login.searchParams.set("returnTo", request.nextUrl.pathname + request.nextUrl.search)' in middleware
     assert 'SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"' in specialist_access
     from nico.specialist_access_v1 import (
         GITHUB_ACTIONS_SESSION_ROUTE, SESSION_ROUTE, _protected_request,

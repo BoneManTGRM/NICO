@@ -18,7 +18,8 @@ def test_public_home_uses_fixed_specialist_gate_before_comprehensive_intake() ->
 
     assert 'from "next/navigation"' in source or "from 'next/navigation'" in source
     assert 'redirect("/specialist-login")' in source
-    assert 'const DESTINATION = "/assessment?tier=comprehensive#assessment";' in login
+    assert 'const destination = specialistReturnTo(window.location.search, "en");' in login
+    assert 'window.location.assign(specialistReturnTo(window.location.search, "en"));' in login
 
 
 def test_legacy_express_mid_selector_is_not_public_surface() -> None:
