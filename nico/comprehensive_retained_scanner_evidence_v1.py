@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+
 from typing import Any, Mapping
 
-from nico.v2_scanner_reconciliation import KNOWN_SCANNERS, SCANNER_PROVENANCE_FIELDS, normalize_record
+from nico.v2_scanner_reconciliation import KNOWN_SCANNERS, normalize_record
 
 VERSION = "nico.comprehensive_retained_scanner_evidence.v1"
 
@@ -189,11 +190,10 @@ def compact_scanner_records(
         findings = _list(raw.get("findings") or raw.get("issues") or raw.get("results"))
         artifact_hash = _text(normalized.get("artifact_hash"), 160)
         exact = normalized.get("exact_commit_match") is True
-        retained = bool(scan_id and artifact_hash and exact)
+        observed_commit = _text(normalized.get("commit_sha"), 80).casefold()
         tool_summary = dict(_mapping(by_tool.get(name)))
         output.append(
             {
-                **{key: deepcopy(raw[key]) for key in SCANNER_PROVENANCE_FIELDS if key in raw},
                 "scanner_name": name,
                 "tool": name,
                 "category": _text(raw.get("category"), 80) or "unknown",
@@ -203,8 +203,7 @@ def compact_scanner_records(
                 "verified": normalized.get("verified") is True,
                 "verified_complete": normalized.get("verified_complete") is True,
                 "verified_for_this_report": (
-                    raw.get("verified_for_this_report") is True
-                    or normalized.get("verified_complete") is True
+                    normalized.get("verified_complete") is True
                 ),
                 "current_run": raw.get("current_run") is True,
                 "execution_observed_for_this_report": (
@@ -221,14 +220,29 @@ def compact_scanner_records(
                 "full_history_verified": raw.get("full_history_verified") is True,
                 "required": raw.get("required") is not False,
                 "exit_code": normalized.get("exit_code"),
-                "commit_sha": _text(commit_sha, 80).casefold(),
-                "snapshot_commit_sha": _text(commit_sha, 80).casefold(),
-                "target_commit_sha": _text(commit_sha, 80).casefold(),
+                "commit_sha": observed_commit,
+                "snapshot_commit_sha": observed_commit,
+                "target_commit_sha": observed_commit,
                 "exact_commit_match": exact,
                 "artifact_hash": artifact_hash,
                 "raw_artifact_retention_complete": (
-                    raw.get("raw_artifact_retention_complete") is True or retained
+                    raw.get("raw_artifact_retention_complete") is True
                 ),
+                # The normalized record hash is not the retained scanner output hash.
+                # Keep proof metadata, never private storage locations or raw output.
+                "raw_artifact_sha256": _text(
+                    raw.get("raw_artifact_sha256")
+                    or _mapping(raw.get("raw_artifact")).get("sha256"), 160
+                ),
+                **{
+                    key: deepcopy(raw[key])
+                    for key in (
+                        "applicable", "evidence_required", "applicability_reason",
+                        "applicability_evidence", "native_json_output",
+                        "no_vulnerabilities_claimed",
+                    )
+                    if key in raw
+                },
                 "evidence_reference": (
                     f"scanner_runs/{scan_id}" if scan_id else ""
                 ),

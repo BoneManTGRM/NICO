@@ -122,12 +122,13 @@ def normalize_record(raw: Mapping[str, Any], commit_sha: str) -> dict[str, Any]:
     verified = bool(completed and retention_valid and (verified_signal if verification_declared else retained_result))
 
     if status == "not_applicable":
-        # Keep an observed applicability decision distinct from tool failure.
-        # The complete-assessment gate still validates its independent evidence.
-        item["status"] = "not_applicable"
-        item["completed"] = False
-        item["verified"] = False
-        item["verified_complete"] = False
+        # Preserve the producer's applicability observation and inventory. This is
+        # not completion credit; the independent acceptance gate validates its basis.
+        item.update({
+            "status": "not_applicable", "state": "not_applicable",
+            "completed": False, "verified": False, "verified_complete": False,
+            "verified_for_this_report": False,
+        })
     elif completed:
         item["status"] = (
             "completed_with_findings"
