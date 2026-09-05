@@ -1,0 +1,156 @@
+name: Reviewed scanner coverage repair
+
+on:
+  push:
+    branches: [fix/1496-scanner-completion]
+    paths: [.github/workflows/verify-1496-reviewed-repair.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nico-reviewed-1496-repair
+  cancel-in-progress: false
+
+jobs:
+  verify-and-publish-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    env:
+      NICO_SCANNER_INSTALL_STRICT: 'true'
+      NICO_SCANNER_INSTALL_DIR: /tmp/nico-pinned-scanners
+      NICO_SCANNER_RAW_ARTIFACT_ROOT: /tmp/nico-1496-raw-evidence
+      NICO_ALLOW_PROJECT_COMMANDS: 'false'
+      NICO_ENABLE_FULL_HISTORY_SECRET_SCAN: 'true'
+      REVIEWED_PATCH_BLOB: fbccf616214429e467109df8104f165239a61304
+      REVIEWED_PATCH_SHA256: 4188b499df975ab20b354658ee52e0c23034138ac7868f202ded2250f084ab4b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Verify and apply immutable reviewed patch
+        env:
+          PATCH_READ_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib, json, os, subprocess
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          assert os.environ['GITHUB_REPOSITORY'] == 'BoneManTGRM/NICO'
+          assert os.environ['GITHUB_REF'] == 'refs/heads/fix/1496-scanner-completion'
+          output = Path('audit-results'); output.mkdir()
+          url = 'https://api.github.com/repos/BoneManTGRM/NICO/git/blobs/' + os.environ['REVIEWED_PATCH_BLOB']
+          req = Request(url, headers={'Authorization': 'Bearer ' + os.environ['PATCH_READ_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urlopen(req, timeout=30) as r:
+              blob = json.load(r)
+          patch = gzip.decompress(base64.b64decode(blob['content']))
+          assert len(patch) == 35701 and hashlib.sha256(patch).hexdigest() == os.environ['REVIEWED_PATCH_SHA256'], 'Reviewed patch digest mismatch'
+          path = output / 'reviewed.patch'; path.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(path)],check=True)
+          subprocess.run(['git','apply',str(path)],check=True)
+          files = sorted(line[6:] for line in patch.decode().splitlines() if line.startswith('+++ b/'))
+          assert len(files) == 12 and all(f.startswith(('nico/','scripts/','tests/')) for f in files)
+          for f in files:
+              assert Path(f).is_file() and not Path(f).is_symlink()
+          subprocess.run(['git','add','-N','--',*files],check=True)
+          actual = subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          assert sorted(actual) == files
+          manifest = {'source_head':os.environ['GITHUB_SHA'],'patch_sha256':hashlib.sha256(patch).hexdigest(),'files':{f:hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in files},'production_modified':False,'ship_ready':False}
+          (output/'candidate-manifest.json').write_text(json.dumps(manifest,indent=2))
+          PY
+      - name: Install checksum-verified pinned scanners
+        run: |
+          python -m pip install --disable-pip-version-check -e '.[dev]'
+          python scripts/install_hosted_scanner_binaries.py
+          echo /tmp/nico-pinned-scanners >> "$GITHUB_PATH"
+      - name: Execute actual binaries and native GitLab checkout
+        id: live
+        continue-on-error: true
+        env:
+          NICO_LIVE_SCANNER_CONTRACTS: '1'
+        run: python -m pytest -q tests/test_scanner_live_contracts.py tests/test_scanner_completion_gate.py --junitxml=audit-results/live-contracts.xml
+      - name: Execute existing scanner and provider regressions
+        id: regressions
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          patterns = ('test_scanner*.py','test_v2*scanner*.py','test_phase5_report_truth*.py','test_phase6_final_remediation*.py','test_hosted_provider_comprehensive_runtime_v1.py','test_github_actions_production_proof_auth_v1.py')
+          files = sorted({str(p) for pattern in patterns for p in Path('tests').glob(pattern)})
+          assert len(files) >= 35
+          raise SystemExit(subprocess.call(['python','-m','pytest','-q',*files,'--junitxml=audit-results/regressions.xml']))
+          PY
+      - name: Retain truthful verification result
+        if: always()
+        env:
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
+          REGRESSION_OUTCOME: ${{ steps.regressions.outcome }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path('audit-results');p.mkdir(exist_ok=True)
+          record={'live_pinned_binary_tests':os.getenv('LIVE_OUTCOME'),'regressions':os.getenv('REGRESSION_OUTCOME'),'production_modified':False,'ship_ready':False,'source_head':os.environ['GITHUB_SHA']}
+          (p/'verification.json').write_text(json.dumps(record,indent=2))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('## Reviewed scanner repair candidate\n\nReal pinned binary tests: '+str(record['live_pinned_binary_tests'])+'\n\nRegressions: '+str(record['regressions'])+'\n\nNo production merge, deployment, human approval, or delivery.\n')
+          PY
+      - name: Publish only the exact tested files to the repair branch
+        if: steps.live.outcome == 'success' && steps.regressions.outcome == 'success'
+        env:
+          PUBLISH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64,hashlib,json,os,subprocess
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          base='https://api.github.com/repos/BoneManTGRM/NICO'
+          branch='fix/1496-scanner-completion'
+          assert os.environ['GITHUB_REPOSITORY']=='BoneManTGRM/NICO' and os.environ['GITHUB_REF']=='refs/heads/'+branch
+          source=os.environ['GITHUB_SHA']
+          def api(method,path,body=None):
+              data=None if body is None else json.dumps(body).encode()
+              req=Request(base+path,data=data,method=method,headers={'Authorization':'Bearer '+os.environ['PUBLISH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'})
+              with urlopen(req,timeout=40) as r:return json.load(r)
+          manifest=json.loads(Path('audit-results/candidate-manifest.json').read_text())
+          assert manifest['source_head']==source and len(manifest['files'])==12
+          assert api('GET','/git/ref/heads/'+branch)['object']['sha']==source,'Branch advanced; publication stopped'
+          actual=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          assert sorted(actual)==sorted(manifest['files'])
+          entries=[]
+          for name,digest in manifest['files'].items():
+              path=Path(name);assert path.is_file() and not path.is_symlink()
+              data=path.read_bytes();assert hashlib.sha256(data).hexdigest()==digest,'Test changed candidate source'
+              blob=api('POST','/git/blobs',{'content':base64.b64encode(data).decode(),'encoding':'base64'})
+              entries.append({'path':name,'mode':'100644','type':'blob','sha':blob['sha']})
+          parent=api('GET','/git/commits/'+source)
+          tree=api('POST','/git/trees',{'base_tree':parent['tree']['sha'],'tree':entries})
+          commit=api('POST','/git/commits',{'message':'Repair exact-provider scanner history and fail closed on incomplete assessment evidence','tree':tree['sha'],'parents':[source]})
+          assert api('GET','/git/ref/heads/'+branch)['object']['sha']==source,'Branch advanced during publication'
+          api('PATCH','/git/refs/heads/'+branch,{'sha':commit['sha'],'force':False})
+          Path('audit-results/publication.json').write_text(json.dumps({'branch':branch,'commit':commit['sha'],'tree':tree['sha'],'production_modified':False},indent=2))
+          print('Published verified repair branch commit: '+commit['sha'])
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: reviewed-scanner-repair-${{ github.run_id }}-${{ github.run_attempt }}
+          path: audit-results/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Reject failed or missing verification
+        if: always()
+        env:
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
+          REGRESSION_OUTCOME: ${{ steps.regressions.outcome }}
+        run: |
+          test "$LIVE_OUTCOME" = success
+          test "$REGRESSION_OUTCOME" = success
+          test -f audit-results/publication.json
