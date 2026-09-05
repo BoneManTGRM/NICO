@@ -1,0 +1,128 @@
+name: Verify bilingual scanner provenance candidate
+on:
+  push:
+    branches: [verification/1496-scanner-provenance-20260905]
+    paths: [.github/workflows/verify-bilingual-scanner-provenance-20260905.yml]
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: nico-bilingual-scanner-provenance-candidate-20260905
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8777d29375bc3733fc2ba62205471ad350cf4c0f
+          persist-credentials: false
+      - name: Retire only obsolete CI executions, preserving all release proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          out=Path('audit-results/bilingual-candidate');out.mkdir(parents=True)
+          old_heads=['b5b2bac6625b871f6d7922649f990fb2d9742b28','1b6218c3bbd70488e0fc76bdbf016f4e11920afe','57992d97834a03f9806b5bd0e89760979fa4c866',os.environ['GITHUB_SHA']]
+          records=[]
+          for head in old_heads:
+              payload=json.loads(subprocess.check_output(['gh','api',f'repos/BoneManTGRM/NICO/actions/runs?head_sha={head}&per_page=100'],text=True))
+              for run in payload['workflow_runs']:
+                  if run['head_sha']!=head or run['path']!='.github/workflows/nico-ci.yml' or run['status']=='completed':continue
+                  if run['event'] not in ('push','pull_request'):continue
+                  if run['repository']['full_name']!='BoneManTGRM/NICO':raise RuntimeError('repository identity mismatch')
+                  # These are superseded PRs or helper-only baseline CI, never the
+                  # current combined candidate, main, production or an assessment.
+                  result=subprocess.run(['gh','api','--method','POST',f"repos/BoneManTGRM/NICO/actions/runs/{run['id']}/cancel"],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
+                  records.append({'run_id':run['id'],'head_sha':head,'previous_status':run['status'],'cancellation_requested':result.returncode==0,'artifacts_deleted':False})
+          (out/'obsolete-ci-actions.json').write_text(json.dumps(records,indent=2))
+          print(json.dumps(records))
+          PY
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - name: Apply only the exact presentation contract and bilingual regression patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,hashlib,json,subprocess
+          from pathlib import Path
+          base='8777d29375bc3733fc2ba62205471ad350cf4c0f'
+          assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==base
+          spec={
+           'nico/comprehensive_spanish_canonical_report_v87.py':['9df75137556de5fd4b2df849820f48309f0ceab40be905603520fd40e456183f','beb8a6fcd8310ecdd67e93188c2d50f130e87481921534eb8deb1ae51aa4fd27'],
+           'tests/test_scanner_provenance_survives_projection.py':['6545e0ab45d21f019c6c149a91a54ba6a95c694297fd32c19e0373f901a871ac','71da9f1b03e7e3f3ad2158c050fc95a0d0b831ee01a9cf970eb9b311e7d35fb9']}
+          out=Path('audit-results/bilingual-candidate')
+          gate=Path('nico/complete_assessment_gate_v1.py');gate_hash=hashlib.sha256(gate.read_bytes()).hexdigest()
+          for name,hashes in spec.items():assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==hashes[0],name
+          obj=json.loads(subprocess.check_output(['gh','api','repos/BoneManTGRM/NICO/git/blobs/90fc691b4178c547b70db9ee4722fa328f033dcd'],text=True))
+          patch=base64.b64decode(obj['content'])
+          assert hashlib.sha256(patch).hexdigest()=='f055c70d04ba4762f3929b86e7582a81df0ff11cd11cef342952ed54854173e8'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          subprocess.run(['git','diff','--check'],check=True)
+          for name,hashes in spec.items():assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==hashes[1],name
+          assert hashlib.sha256(gate.read_bytes()).hexdigest()==gate_hash
+          (out/'candidate.patch').write_bytes(patch)
+          (out/'manifest.json').write_text(json.dumps({'base':base,'files':spec,'unchanged_gate_sha256':gate_hash},indent=2))
+          PY
+      - run: python -m pip install --disable-pip-version-check -e . 'pytest==9.1.1' 'pypdf==6.15.0'
+      - name: Execute both regression families and related tests on the combined bilingual candidate
+        run: |
+          python - <<'PY'
+          import json,subprocess,sys,xml.etree.ElementTree as ET
+          from pathlib import Path
+          out=Path('audit-results/bilingual-candidate')
+          files=['test_scanner_provenance_survives_projection.py','test_compact_scanner_acceptance_transport.py','test_comprehensive_requested_scanner_projection_v62.py','test_comprehensive_scanner_completion_projection_v56.py','test_production_report_truth_gate_v1.py','test_retained_scanner_final_publication_v1.py','test_v2_assessment_pipeline.py','test_v2_production_regressions.py','test_v2_pipeline_adapter.py','test_scanner_applicability_v2.py','test_comprehensive_final_register_scanner_truth_v62.py','test_osv_applicability_spanish_publication.py']
+          results=[]
+          for name in files:
+              with (out/(name+'.log')).open('w') as log:
+                  r=subprocess.run([sys.executable,'-m','pytest','-q','tests/'+name,'--junitxml='+str(out/(name+'.xml'))],stdout=log,stderr=subprocess.STDOUT,timeout=180)
+              results.append({'file':name,'exit':r.returncode});print(json.dumps(results[-1]),flush=True)
+          (out/'results.json').write_text(json.dumps(results,indent=2))
+          assert all(r['exit']==0 for r in results),results
+          totals={k:0 for k in ('tests','failures','errors','skipped')}
+          for xml in out.glob('*.xml'):
+              root=ET.parse(xml).getroot()
+              for s in ([root] if root.tag=='testsuite' else root.findall('testsuite')):
+                  for k in totals:totals[k]+=int(s.get(k,0))
+          (out/'junit-summary.json').write_text(json.dumps(totals,indent=2));print(json.dumps(totals))
+          assert totals['tests']==74 and all(totals[k]==0 for k in ('failures','errors','skipped')),totals
+          PY
+      - name: Retain a verified commit object without moving any release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          def api(path,payload=None):
+              args=['gh','api','repos/BoneManTGRM/NICO/'+path]
+              if payload is not None:args+=['--method','POST','--input','-']
+              return json.loads(subprocess.check_output(args,input=json.dumps(payload) if payload is not None else None,text=True))
+          out=Path('audit-results/bilingual-candidate');manifest=json.loads((out/'manifest.json').read_text())
+          assert api('git/ref/heads/main')['object']['sha']=='8e0014e69569aa7a72cc9215107ea8d61a4db7b3'
+          assert api('git/ref/heads/fix/1496-scanner-provenance')['object']['sha']==manifest['base']
+          assert hashlib.sha256(Path('nico/complete_assessment_gate_v1.py').read_bytes()).hexdigest()==manifest['unchanged_gate_sha256']
+          entries=[]
+          for name,hashes in manifest['files'].items():
+              data=Path(name).read_bytes();assert hashlib.sha256(data).hexdigest()==hashes[1]
+              blob=api('git/blobs',{'content':data.decode(),'encoding':'utf-8'})
+              entries.append({'path':name,'mode':'100644','type':'blob','sha':blob['sha']})
+          tree=api('git/trees',{'base_tree':'4f025a9dd33d7ef8938f9506fc03ee2fd4df2503','tree':entries})
+          commit=api('git/commits',{'message':'Localize the exact derived OSV non-applicability label and verify both renderer locales\n\nPreserve whole-field fail-closed translation, original scanner evidence and separate approval/delivery gates. Combined transport, canonical projection and bilingual renderer verification executed before retaining this candidate. No production or branch mutation from verification.','tree':tree['sha'],'parents':[manifest['base']]})
+          (out/'candidate.json').write_text(json.dumps({'base':manifest['base'],'commit':commit['sha'],'tree':tree['sha'],'branch_updated':False,'production_deployed':False},indent=2))
+          print((out/'candidate.json').read_text())
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: verified-bilingual-scanner-candidate-${{ github.run_id }}
+          path: audit-results/bilingual-candidate/
+          if-no-files-found: error
+          retention-days: 30
