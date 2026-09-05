@@ -1,0 +1,34 @@
+name: Export pinned review sources
+on:
+  push:
+    branches: [verification/read-blocked-run-20260905-1519]
+    paths: [.github/workflows/export-pinned-review-sources.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 5cbb5c34a45981a5c24ca8711bdc005fd2d36967
+          persist-credentials: false
+      - name: Archive pinned public sources only; do not execute repository code
+        run: |
+          set -euo pipefail
+          mkdir -p review-sources
+          test "$(git rev-parse HEAD)" = 5cbb5c34a45981a5c24ca8711bdc005fd2d36967
+          git archive --format=tar.gz HEAD > review-sources/nico-5cbb5c3.tar.gz
+          git rev-parse HEAD HEAD^{tree} > review-sources/nico-identity.txt
+          git init /tmp/sara-review
+          git -C /tmp/sara-review remote add origin https://github.com/BoneManTGRM/SARA.git
+          git -C /tmp/sara-review fetch --depth=1 origin e7446f76386aba31e6f46974fc76f7269cf11ed4
+          git -C /tmp/sara-review archive --format=tar.gz e7446f76386aba31e6f46974fc76f7269cf11ed4 > review-sources/sara-pr56-e7446f7.tar.gz
+          git -C /tmp/sara-review rev-parse e7446f76386aba31e6f46974fc76f7269cf11ed4 e7446f76386aba31e6f46974fc76f7269cf11ed4^{tree} > review-sources/sara-pr56-identity.txt
+          sha256sum review-sources/*.tar.gz > review-sources/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-blocker-review-sources
+          path: review-sources/
+          if-no-files-found: error
