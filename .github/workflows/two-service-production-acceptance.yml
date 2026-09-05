@@ -101,6 +101,7 @@ jobs:
           assert 'expected_commit_sha' in authoritative
           assert 'run_id' in authoritative
 
+          assert 'nico.frontend_production_release_identity.v2' in release_identity
           assert 'nico.frontend_production_release_identity.v1' in release_identity
           assert 'A successful provider deployment status is insufficient' in release_identity
           assert 'data-assessment-copy-contract="expert-engagement-v2"' in release_identity
@@ -442,7 +443,7 @@ jobs:
           from pathlib import Path
 
           release_payload = json.loads(Path("audit-results/frontend-production-release-identity.json").read_text(encoding="utf-8"))
-          assert release_payload["artifact_schema"] == "nico.frontend_production_release_identity.v1"
+          assert release_payload["artifact_schema"] == "nico.frontend_production_release_identity.v2"
           assert release_payload["status"] == "passed"
           assert release_payload["expected_ui_contract"] == "expert-engagement-v2"
           assert release_payload["expected_deployment_environment"] == "production"
