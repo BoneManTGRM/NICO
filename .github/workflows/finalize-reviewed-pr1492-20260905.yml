@@ -1,0 +1,220 @@
+name: Finalize exact reviewed NICO specialist repair
+
+on:
+  push:
+    branches: [ops/finalize-reviewed-pr1492-20260905]
+    paths: [.github/workflows/finalize-reviewed-pr1492-20260905.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nico-finalize-reviewed-pr1492-20260905
+  cancel-in-progress: false
+
+jobs:
+  guarded-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      checks: read
+      statuses: read
+    steps:
+      - name: Verify the exact existing candidate, merge only when green, and verify production
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import io, json, os, re, time, zipfile, xml.etree.ElementTree as ET
+          from pathlib import Path
+          from urllib.error import HTTPError
+          from urllib.parse import urlparse
+          from urllib.request import Request, build_opener, HTTPRedirectHandler, urlopen
+
+          REPO = 'BoneManTGRM/NICO'
+          PR = 1492
+          HEAD = 'f2b51df4c32a689156bfd10e707eb7e417ce84de'
+          BASE = 'bd7b2be41f7353a204b0bd74a007d7d3cb448f6a'
+          TREE = 'b79d538dbdea7208e408e951613f7ba7cd4c6d9c'
+          API = 'https://api.github.com/repos/' + REPO
+          required = {'Frontend Production Release Proof', 'Unified Production Acceptance', 'Phase 9 Bandit Reliability', 'Resilience Proof', 'Phase 9 Client Delivery Proof', 'Phase 8 Operational Acceptance', 'Recorded Golden Demonstration', 'Audit Evidence', 'Scanner Live Contracts', 'iOS WebKit Paint Proof', 'Postgres Restart Proof', 'Mobile Restart Production Proof', 'Phase 9 Production Report and Node Scanner Proof', 'Phase 9 Comprehensive Production Proof', 'NICO CI', 'Remediation Evidence', 'CodeQL Advanced', 'Security Audit Evidence'}
+          root = Path('nico-release-evidence'); root.mkdir(exist_ok=True)
+          result = {'schema': 'nico.exact-reviewed-pr1492-execution.v1', 'pr': PR, 'expected_head': HEAD, 'expected_base': BASE, 'merged': False, 'production_verified': False, 'all_four_providers_verified': False, 'human_approval_performed': False, 'client_delivery_authorized': False}
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = build_opener(NoRedirect())
+          def api(method, path, payload=None):
+              data = None if payload is None else json.dumps(payload).encode()
+              req = Request(API + path, data=data, method=method, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
+              with opener.open(req, timeout=45) as r:
+                  body = r.read()
+                  return json.loads(body) if body else {'http_status': r.status}
+          def pages(path, key=None):
+              values=[]
+              for page in range(1, 21):
+                  data=api('GET', path + ('&' if '?' in path else '?') + 'per_page=100&page=' + str(page))
+                  batch=data.get(key, []) if key else data
+                  if not isinstance(batch,list): raise RuntimeError('Unexpected paginated response')
+                  values.extend(batch)
+                  if len(batch)<100:return values
+              raise RuntimeError('Pagination incomplete; refusing partial release evidence')
+          def public(url):
+              with opener.open(Request(url, headers={'Accept':'application/json','Cache-Control':'no-cache'}), timeout=45) as r:
+                  return json.load(r)
+          def retain():
+              (root/'result.json').write_text(json.dumps(result,indent=2))
+          def require(condition, reason):
+              if not condition: raise RuntimeError(reason)
+          def exact_pr():
+              pr=api('GET', '/pulls/'+str(PR))
+              require(pr['head']['sha']==HEAD and pr['head']['repo']['full_name']==REPO and not pr.get('draft'), 'Candidate identity changed; no merge authorized')
+              require(pr['base']['ref']=='main', 'Unexpected target branch')
+              return pr
+          def review_boundary():
+              reviews=pages('/pulls/'+str(PR)+'/reviews')
+              latest={}
+              for r in sorted(reviews,key=lambda r:r.get('submitted_at') or ''):
+                  if r.get('state') in ('APPROVED','CHANGES_REQUESTED','DISMISSED'):
+                      latest[r['user']['id']]=r['state']
+              require('CHANGES_REQUESTED' not in latest.values(), 'A reviewer still requests changes')
+              query='query($cursor:String){repository(owner:"BoneManTGRM",name:"NICO"){pullRequest(number:1492){reviewThreads(first:100,after:$cursor){nodes{isResolved}pageInfo{hasNextPage endCursor}}}}}'
+              cursor=None
+              for _ in range(20):
+                  req=Request('https://api.github.com/graphql', data=json.dumps({'query':query,'variables':{'cursor':cursor}}).encode(), method='POST', headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Content-Type':'application/json'})
+                  with opener.open(req,timeout=45) as r:data=json.load(r)
+                  require(not data.get('errors'),'Review-thread verification failed')
+                  threads=data['data']['repository']['pullRequest']['reviewThreads']
+                  require(all(n['isResolved'] for n in threads['nodes']), 'Unresolved review threads remain')
+                  if not threads['pageInfo']['hasNextPage']:return
+                  cursor=threads['pageInfo']['endCursor']
+              raise RuntimeError('Review pagination incomplete')
+          def current_checks():
+              runs=pages('/actions/runs?head_sha='+HEAD,'workflow_runs')
+              latest={}
+              for r in sorted(runs,key=lambda r:(r['created_at'],r.get('run_attempt',1),r['id'])):
+                  require(r['head_sha']==HEAD,'Workflow head mismatch')
+                  latest[(r['path'],r['event'])]=r
+              relevant=list(latest.values())
+              failures=[{'name':r['name'],'id':r['id'],'conclusion':r.get('conclusion')} for r in relevant if r.get('conclusion') not in (None,'success','skipped','neutral')]
+              result['candidate_failed_workflows']=failures
+              require(not failures,'Current candidate workflow failed')
+              missing=sorted(required-{r['name'] for r in relevant if r['event']=='pull_request' and r['status']=='completed' and r['conclusion']=='success'})
+              pending=[r['name'] for r in relevant if r['status']!='completed']
+              statuses=api('GET','/commits/'+HEAD+'/status')
+              bad=[s['context'] for s in statuses.get('statuses',[]) if s['state'] in ('failure','error')]
+              require(not bad,'Candidate external status failed: '+','.join(bad))
+              vercel=any(s['context']=='Vercel' and s['state']=='success' for s in statuses.get('statuses',[]))
+              result['candidate_missing_or_pending']={'missing':missing,'pending':pending,'vercel_success':vercel};retain()
+              return not missing and not pending and vercel,relevant
+          def scanner_artifact(runs):
+              matches=[r for r in runs if r['name']=='Scanner Live Contracts' and r['conclusion']=='success']
+              require(bool(matches),'Actual scanner binary test is missing')
+              for run in matches:
+                  artifacts=pages('/actions/runs/'+str(run['id'])+'/artifacts','artifacts')
+                  entries=[a for a in artifacts if a['name'].startswith('scanner-live-contracts-') and not a['expired']]
+                  require(len(entries)==1,'Scanner artifact missing or ambiguous')
+                  aid=entries[0]['id']
+                  req=Request(API+'/actions/artifacts/'+str(aid)+'/zip',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+                  try:
+                      with opener.open(req,timeout=45) as r: archive=r.read(20000001)
+                  except HTTPError as e:
+                      require(e.code in (301,302,303,307,308),'Scanner artifact cannot be downloaded')
+                      location=e.headers.get('Location','');u=urlparse(location)
+                      require(u.scheme=='https' and u.hostname and not u.username and not u.password,'Invalid artifact download destination')
+                      # Signed artifact URL only: never forward the GitHub credential.
+                      with urlopen(Request(location,headers={'Accept':'application/octet-stream'}),timeout=60) as r:archive=r.read(20000001)
+                  require(len(archive)<=20000000,'Scanner artifact exceeds bound')
+                  with zipfile.ZipFile(io.BytesIO(archive)) as z:
+                      xmls=[n for n in z.namelist() if n.endswith('scanner-contracts.xml')]
+                      ids=[n for n in z.namelist() if n.endswith('scanner-tested-commit.txt')]
+                      require(len(xmls)==1 and len(ids)==1,'Scanner evidence files incomplete')
+                      tested=z.read(ids[0]).decode().strip()
+                      require(bool(re.fullmatch('[0-9a-f]{40}',tested)),'Scanner tested commit invalid')
+                      require(api('GET','/git/commits/'+tested)['tree']['sha']==TREE,'Scanner tested tree differs from candidate')
+                      suites=ET.fromstring(z.read(xmls[0]))
+                      cases=list(suites.iter('testcase'))
+                      require(len(cases)>=35 and not list(suites.iter('failure')) and not list(suites.iter('error')) and not list(suites.iter('skipped')),'Scanner integration tests missing, skipped, or failed')
+                      result.setdefault('scanner_artifacts',[]).append({'run':run['id'],'artifact':aid,'tested_commit':tested,'tests':len(cases),'skipped':0})
+          try:
+              require(os.environ['GITHUB_REPOSITORY']==REPO and os.environ['GITHUB_REF']=='refs/heads/ops/finalize-reviewed-pr1492-20260905','Unauthorized release-controller context')
+              require(api('GET','/git/commits/'+HEAD)['tree']['sha']==TREE,'Reviewed candidate tree changed')
+              pr=exact_pr()
+              if not pr.get('merged'):
+                  require(pr['state']=='open','Candidate is closed without merge')
+                  deadline=time.monotonic()+15*60
+                  while True:
+                      require(api('GET','/git/ref/heads/main')['object']['sha']==BASE,'Main advanced; reconcile instead of stale merge')
+                      good,runs=current_checks()
+                      if good:break
+                      require(time.monotonic()<deadline,'Candidate checks still pending; no merge performed')
+                      time.sleep(30)
+                  review_boundary();scanner_artifact(runs)
+                  pr=exact_pr()
+                  require(pr['state']=='open' and pr.get('mergeable') is True and pr.get('mergeable_state') not in ('dirty','behind','blocked'),'GitHub merge eligibility not established')
+                  require(api('GET','/git/ref/heads/main')['object']['sha']==BASE,'Main changed before merge')
+                  merge=api('PUT','/pulls/'+str(PR)+'/merge',{'sha':HEAD,'merge_method':'squash','commit_title':'Consolidate verified specialist access and production proof (#1492)','commit_message':'Merge only the exact reviewed f2b51df4 candidate after current-head CI, CodeQL, security, scanner binary artifacts, report tests, preview and review checks pass. Preserve scanner fixes and mandatory human-review and delivery boundaries. Refs #1496; post-merge production and provider verification remain separate.'})
+                  require(merge.get('merged') is True,'GitHub did not merge the verified candidate')
+                  pr=exact_pr()
+              require(pr.get('merged') is True,'Merge state unverified')
+              merged=pr['merge_commit_sha'];result.update(merged=True,merge_sha=merged)
+              require(api('GET','/git/commits/'+merged)['tree']['sha']==TREE,'Merged tree differs from reviewed candidate')
+              require(api('GET','/git/ref/heads/main')['object']['sha']==merged,'Main advanced after merge; exact release not current')
+              retain()
+              deadline=time.monotonic()+12*60
+              while True:
+                  require(api('GET','/git/ref/heads/main')['object']['sha']==merged,'Main changed while waiting for deployment')
+                  try:
+                      front=public('https://app.nicoaudit.com/api/release')
+                      ready=public('https://app.nicoaudit.com/api/nico/diagnostics/specialist-readiness')
+                      provenance=ready.get('release_provenance') or {}
+                      statuses=api('GET','/commits/'+merged+'/status').get('statuses',[])
+                      result['deployment_observation']={'frontend_sha':front.get('release_sha'),'backend_sha':provenance.get('backend_build_commit'),'provenance_frontend_sha':provenance.get('frontend_build_commit'),'railway_deployment_id':provenance.get('railway_deployment_id'),'readiness':ready.get('status'),'operator_self_test':ready.get('operator_credential_self_test'),'session_self_test':ready.get('session_round_trip_self_test')}
+                      deployed=all(any(s['context']==ctx and s['state']=='success' for s in statuses) for ctx in ('Vercel','successful-cat - NICO'))
+                      aligned=front.get('release_sha')==merged and provenance.get('backend_build_commit')==merged and provenance.get('frontend_build_commit')==merged
+                      if deployed and aligned and ready.get('status')=='ready' and ready.get('human_review_required') is True and ready.get('client_delivery_allowed') is False:break
+                  except (HTTPError,TimeoutError,OSError):
+                      result['deployment_read_temporarily_unavailable']=True
+                  retain()
+                  require(time.monotonic()<deadline,'Exact production deployment/readiness identities not converged; no clearance')
+                  time.sleep(30)
+              before=pages('/actions/workflows/spanish-comprehensive-production-proof.yml/runs?head_sha='+merged,'workflow_runs')
+              prior_ids={r['id'] for r in before}
+              api('POST','/actions/workflows/spanish-comprehensive-production-proof.yml/dispatches',{'ref':'main'})
+              result['fresh_canonical_proof_dispatch_accepted']=True;retain()
+              deadline=time.monotonic()+18*60
+              while True:
+                  require(api('GET','/git/ref/heads/main')['object']['sha']==merged,'Main advanced during live verification')
+                  runs=pages('/actions/workflows/spanish-comprehensive-production-proof.yml/runs?head_sha='+merged,'workflow_runs')
+                  fresh=[r for r in runs if r['id'] not in prior_ids and r['event']=='workflow_dispatch' and r['head_sha']==merged]
+                  if fresh:
+                      r=max(fresh,key=lambda r:r['id']);result['fresh_proof']={k:r.get(k) for k in ('id','head_sha','status','conclusion','html_url')}
+                      if r['status']=='completed':
+                          require(r['conclusion']=='success','Fresh complete-assessment production proof failed')
+                          result['canonical_complete_assessment_proof_passed']=True
+                          break
+                  retain();require(time.monotonic()<deadline,'Fresh production proof not complete; no clearance');time.sleep(30)
+              result['reason']='Canonical assessment proof passed; downstream, four-provider, private-access and operational closure still require review of retained evidence.'
+          except Exception as exc:
+              result['blocker']=type(exc).__name__+': '+str(exc)[:600]
+          finally:
+              retain()
+              text='## Exact specialist release execution\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n\nNo specialist approval or client delivery was performed. Deployment success is not an all-provider readiness certificate.\n'
+              Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(text)
+              try:api('POST','/issues/'+str(PR)+'/comments',{'body':text})
+              except Exception:pass
+              print(json.dumps(result,indent=2))
+          raise SystemExit(0 if result.get('canonical_complete_assessment_proof_passed') else 1)
+          PY
+      - name: Retain release execution evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nico-reviewed-pr1492-execution-${{ github.run_id }}
+          path: nico-release-evidence/result.json
+          if-no-files-found: error
+          retention-days: 30
