@@ -130,6 +130,36 @@ _CANONICAL_PARITY_EXACT = {
     ),
 }
 
+
+# OSV emits these renderer-owned limitations after the first canonical preflight.
+# Register whole-field contracts only: translating a known substring must not make
+# unknown appended English publishable. The scanner state and retained inventory
+# remain canonical, and not-applicable never becomes completed or vulnerability-free.
+_OSV_APPLICABILITY_ES = {
+    (
+        "No declared package source exists in the completely inspected snapshot; "
+        "OSV dependency matching is not applicable to the supplied evidence. "
+        "Undeclared dependencies were not assessed."
+    ): (
+        "No existe ninguna fuente de paquetes declarada en la instantánea inspeccionada "
+        "por completo; la comparación de dependencias de OSV no es aplicable a la "
+        "evidencia proporcionada. Las dependencias no declaradas no se evaluaron."
+    ),
+    (
+        "OSV reported no package sources (exit 128), but dependency declarations "
+        "exist or the snapshot inventory is incomplete; dependency coverage remains unverified."
+    ): (
+        "OSV informó que no hay fuentes de paquetes (código de salida 128), pero existen "
+        "declaraciones de dependencias o el inventario de la instantánea está incompleto; "
+        "la cobertura de dependencias sigue sin verificarse."
+    ),
+}
+_CANONICAL_PARITY_EXACT.update({
+    prefix + source: prefix + translated
+    for source, translated in _OSV_APPLICABILITY_ES.items()
+    for prefix in ("", "osv-scanner: ")
+})
+
 _STAGE_PHRASE_ES = {
     "authorization and scope": "autorización y alcance",
     "immutable repository snapshot": "instantánea inmutable del repositorio",

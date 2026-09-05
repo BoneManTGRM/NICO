@@ -70,7 +70,20 @@ def serialized_canonical_evidence_literal(value: Any, key: Any) -> bool:
     if not source_leaf:
         return False
 
+    # This bare scanner label introduces renderer-owned applicability prose, not
+    # a canonical field path. Keep unknown suffixes under the strict translator;
+    # dotted scanner provenance paths and their exact values remain protected.
+    if source_path == "osv-scanner":
+        return False
+
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
+
+    # A registered whole-field presentation contract is not a flattened machine
+    # path merely because its label contains a colon (for example, "osv-scanner:").
+    # Send only those explicitly registered fields through the strict translator;
+    # actual snapshot paths, hashes and remote titles keep their existing protection.
+    if text.strip() in canonical._CANONICAL_PARITY_EXACT:
+        return False
 
     presentation_fields = {
         str(item).casefold() for item in canonical._PRESENTATION_PROSE_FIELDS
