@@ -41,7 +41,8 @@ def test_spanish_home_routes_through_fixed_specialist_login_to_unified_assessmen
     login = SPANISH_LOGIN.read_text(encoding="utf-8")
 
     assert 'redirect("/es/specialist-login")' in home
-    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment";' in login
+    assert 'const destination = specialistReturnTo(window.location.search, "es");' in login
+    assert 'window.location.assign(specialistReturnTo(window.location.search, "es"));' in login
     assert "tier=express" not in f"{home}\n{login}".casefold()
 
 

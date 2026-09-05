@@ -45,16 +45,22 @@ def test_both_homes_are_server_components_not_client_redirects() -> None:
     assert "window.location" not in spanish
 
 
-def test_login_destinations_are_constants_not_url_parameters() -> None:
-    english = ENGLISH_LOGIN.read_text(encoding="utf-8")
-    spanish = SPANISH_LOGIN.read_text(encoding="utf-8")
+def test_login_destinations_are_validated_with_locale_fallbacks() -> None:
+    # Exact saved-run returns replace the former discard-all-query contract.
+    # The behavioral suite exercises safe recovery and malicious targets at both
+    # real component navigation seams; raw user input must never navigate.
+    for path, locale in ((ENGLISH_LOGIN, "en"), (SPANISH_LOGIN, "es")):
+        source = path.read_text(encoding="utf-8")
+        assert 'import {specialistReturnTo}' in source
+        assert f'const destination = specialistReturnTo(window.location.search, "{locale}")' in source
+        assert "window.location.replace(destination)" in source
+        assert f'window.location.assign(specialistReturnTo(window.location.search, "{locale}"))' in source
+        assert "window.location.assign(window.location.search)" not in source
+        assert "window.location.replace(window.location.search)" not in source
 
-    assert 'const DESTINATION = "/assessment?tier=comprehensive#assessment"' in english
-    assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment"' in spanish
-    assert "URLSearchParams" not in english
-    assert "URLSearchParams" not in spanish
-    assert "window.location.search" not in english
-    assert "window.location.search" not in spanish
+    validator = (ROOT / "apps/web/app/specialist-login/returnTo.ts").read_text(encoding="utf-8")
+    assert 'const fallback = `${locale === "es" ? "/es" : ""}/assessment?tier=comprehensive#assessment`' in validator
+    assert "return fallback" in validator
 
 
 def test_specialist_middleware_covers_english_spanish_and_operator_surfaces() -> None:
@@ -71,4 +77,6 @@ def test_specialist_middleware_covers_english_spanish_and_operator_surfaces() ->
     assert '"nico-specialist-session"' in source
     assert '? "/es/specialist-login"' in source
     assert ': "/specialist-login"' in source
-    assert "searchParams.set" not in source
+    assert 'login.search = ""' in source
+    assert 'login.searchParams.set("returnTo", request.nextUrl.pathname + request.nextUrl.search)' in source
+    assert source.index('login.search = ""') < source.index('login.searchParams.set("returnTo"')
