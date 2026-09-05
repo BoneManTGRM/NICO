@@ -161,6 +161,28 @@ def test_watchdog_automatically_recovers_hung_renderer_without_second_advance(
     call_lock = threading.Lock()
     calls = 0
 
+    # Expire only the deliberately hung lease through the real deadline
+    # evaluator. The healthy replacement must not inherit a 120 ms wall-clock
+    # race against SQLite and a contended CI runner. Queue timing, watchdog
+    # execution, recovery limits and stale-result fencing remain real.
+    expired_lease: list[str | None] = [None]
+    evaluate_deadline = background._job_deadline_state
+
+    def controlled_deadline(job, *, now_epoch: float) -> dict:
+        observed = evaluate_deadline(job, now_epoch=now_epoch)
+        if not observed["active"] or observed["phase"] != "rendering":
+            return observed
+        elapsed = (
+            observed["deadline_seconds"] + 1.0
+            if job.get("lease_id") == expired_lease[0]
+            else 0.0
+        )
+        return evaluate_deadline(
+            job, now_epoch=observed["started_epoch"] + elapsed
+        )
+
+    monkeypatch.setattr(background, "_job_deadline_state", controlled_deadline)
+
     def executor(context: dict) -> dict:
         nonlocal calls
         with call_lock:
@@ -178,6 +200,7 @@ def test_watchdog_automatically_recovers_hung_renderer_without_second_advance(
     claimed = coordinator.advance(record, executor, _context(record))
     assert first_started.wait(1.0)
     first_lease = claimed["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
+    expired_lease[0] = first_lease
 
     assert second_started.wait(1.5), "watchdog must relaunch the bounded recovery automatically"
     completed = _wait_for_complete(store, record["identity"]["run_id"])

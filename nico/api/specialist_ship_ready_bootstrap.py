@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 import time
 from typing import Any
 
@@ -121,6 +122,10 @@ def specialist_readiness() -> dict[str, Any]:
     release_identity_complete = (
         release.get("deployment_identity_established") is True
         and release.get("frontend_identity_established") is True
+        and release.get("deployment_identity_conflict") is not True
+        and isinstance(release.get("backend_build_commit"), str)
+        and re.fullmatch(r"[0-9a-f]{40}", release["backend_build_commit"]) is not None
+        and release.get("frontend_build_commit") == release["backend_build_commit"]
     )
     ready = all(
         (

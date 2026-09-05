@@ -146,7 +146,9 @@ def sqlite_database_fingerprints(
 
 class SQLiteBackupRuntime:
     def __init__(self, *, encrypted_artifact: bool = False) -> None:
-        self.encrypted_artifact = bool(encrypted_artifact)
+        if encrypted_artifact:
+            raise BackupRuntimeError("backup_artifact_encryption_not_implemented")
+        self.encrypted_artifact = False
 
     def backup(
         self,
@@ -189,7 +191,9 @@ class SQLiteBackupRuntime:
             artifact_sha256=_sha256_file(artifact),
             created_at_epoch=time.time(),
             size_bytes=artifact.stat().st_size,
-            encrypted=self.encrypted_artifact,
+            # These adapters write plaintext archives. Storage encryption is
+            # a separate externally verified property, not a caller-controlled flag.
+            encrypted=False,
             exact_sha=str(exact_sha or ""),
         )
 
@@ -285,7 +289,7 @@ class PostgresBackupRuntime:
         restore_service: str,
         runner: CommandRunner = default_command_runner,
         timeout_seconds: int = 900,
-        encrypted_artifact: bool = True,
+        encrypted_artifact: bool = False,
     ) -> None:
         self.source_service = self._service(source_service)
         self.restore_service = self._service(restore_service)
@@ -293,7 +297,9 @@ class PostgresBackupRuntime:
             raise BackupRuntimeError("postgres_restore_service_must_be_isolated")
         self.runner = runner
         self.timeout_seconds = max(30, int(timeout_seconds))
-        self.encrypted_artifact = bool(encrypted_artifact)
+        if encrypted_artifact:
+            raise BackupRuntimeError("backup_artifact_encryption_not_implemented")
+        self.encrypted_artifact = False
 
     @staticmethod
     def _service(value: str) -> str:
@@ -311,14 +317,21 @@ class PostgresBackupRuntime:
         return selected
 
     def _run(self, command: Sequence[str], *, environment: Mapping[str, str]) -> None:
-        result = self.runner(
-            command,
-            environment=environment,
-            timeout_seconds=self.timeout_seconds,
-        )
+        try:
+            result = self.runner(
+                command,
+                environment=environment,
+                timeout_seconds=self.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            raise BackupRuntimeError("postgres_backup_command_timed_out") from None
+        except (OSError, subprocess.SubprocessError):
+            raise BackupRuntimeError("postgres_backup_command_execution_failed") from None
         if result.returncode != 0:
-            safe_error = " ".join(str(result.stderr or "").split())[:500]
-            raise BackupRuntimeError(f"postgres_backup_command_failed:{safe_error or result.returncode}")
+            # libpq errors can contain credentials, connection strings or data.
+            # Retain only the bounded failure class and process exit code.
+            code = result.returncode if isinstance(result.returncode, int) else "unknown"
+            raise BackupRuntimeError(f"postgres_backup_command_failed:exit_code={code}")
 
     def backup(
         self,
@@ -354,7 +367,9 @@ class PostgresBackupRuntime:
             artifact_sha256=_sha256_file(artifact),
             created_at_epoch=time.time(),
             size_bytes=artifact.stat().st_size,
-            encrypted=self.encrypted_artifact,
+            # These adapters write plaintext archives. Storage encryption is
+            # a separate externally verified property, not a caller-controlled flag.
+            encrypted=False,
             exact_sha=str(exact_sha or ""),
         )
 

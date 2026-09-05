@@ -45,7 +45,7 @@ def test_sqlite_backup_restore_preserves_selected_table_truth(tmp_path: Path) ->
     backup = tmp_path / "backups" / "nico.sqlite3"
     restored = tmp_path / "restore" / "nico.sqlite3"
     _database(source)
-    runtime = SQLiteBackupRuntime(encrypted_artifact=True)
+    runtime = SQLiteBackupRuntime()
 
     artifact = runtime.backup(
         source_path=source,
@@ -62,7 +62,7 @@ def test_sqlite_backup_restore_preserves_selected_table_truth(tmp_path: Path) ->
     assert artifact.adapter == "sqlite"
     assert artifact.artifact_sha256.startswith("sha256:")
     assert artifact.size_bytes > 0
-    assert artifact.encrypted is True
+    assert artifact.encrypted is False
     assert proof.equivalent is True
     assert proof.issues == ()
     assert {item.table for item in proof.source_fingerprints} == {"runs", "artifacts"}
@@ -129,7 +129,7 @@ def test_postgres_backup_restore_uses_named_services_and_no_raw_credentials(tmp_
 
     assert artifact.adapter == "postgres"
     assert artifact.source_identity == "service:nico_source"
-    assert artifact.encrypted is True
+    assert artifact.encrypted is False
     assert artifact.artifact_sha256.startswith("sha256:")
     assert elapsed >= 0
     assert runner.calls[0][0][0] == "pg_dump"

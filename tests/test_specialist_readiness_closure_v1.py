@@ -94,7 +94,7 @@ installed = {'installed': True, 'session_signing_configured': True, 'all_assessm
 bootstrap.SPECIALIST_ACCESS = installed
 bootstrap.REVIEW_SESSION_BRIDGE = {'installed': True}
 bootstrap.APPROVED_LIFECYCLE_CONSISTENCY = {'installed': True, 'cross_format_fail_closed': True}
-bootstrap.comprehensive_release_provenance = lambda: {'deployment_identity_established': True, 'frontend_identity_established': True}
+bootstrap.comprehensive_release_provenance = lambda: {'deployment_identity_established': True, 'frontend_identity_established': True, 'backend_build_commit': 'a' * 40, 'frontend_build_commit': 'a' * 40}
 bootstrap.app.state.nico_comprehensive_production_runtime = {
     'status': 'ready', 'survives_container_replacement_verified': True,
     'human_review_required': True, 'client_delivery_allowed': False}
