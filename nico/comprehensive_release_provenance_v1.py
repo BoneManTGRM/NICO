@@ -35,10 +35,17 @@ def _package_version(name: str) -> str:
 def comprehensive_release_provenance() -> dict[str, Any]:
     from nico import comprehensive_report_package as report_package
 
+    # Native deployment identity outranks a manually configured release label.
+    # An invalid native value must not be rescued by an unverified fallback.
     backend_commit = _commit(
-        "NICO_RELEASE_COMMIT_SHA",
         "RAILWAY_GIT_COMMIT_SHA",
+        "NICO_RELEASE_COMMIT_SHA",
         "GITHUB_SHA",
+    )
+    identity_conflict = bool(
+        _first_env("RAILWAY_GIT_COMMIT_SHA")
+        and _first_env("NICO_RELEASE_COMMIT_SHA")
+        and _commit("RAILWAY_GIT_COMMIT_SHA") != _commit("NICO_RELEASE_COMMIT_SHA")
     )
     frontend_commit = _commit(
         "NICO_FRONTEND_BUILD_COMMIT_SHA",
@@ -46,7 +53,8 @@ def comprehensive_release_provenance() -> dict[str, Any]:
     )
     return {
         "artifact_schema": VERSION,
-        "deployment_identity_established": backend_commit != "unavailable",
+        "deployment_identity_established": backend_commit != "unavailable" and not identity_conflict,
+        "deployment_identity_conflict": identity_conflict,
         "backend_build_commit": backend_commit,
         "frontend_build_commit": frontend_commit,
         "frontend_identity_established": frontend_commit != "unavailable",
