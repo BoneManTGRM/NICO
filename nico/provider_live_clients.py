@@ -472,7 +472,13 @@ class BaseProviderClient:
         elif exc.code == "provider_auth_failed" or exc.status_code == 403:
             state = CapabilityState.UNAVAILABLE_PERMISSION
             reason = f"{capability.value} evidence is unavailable with the current provider permission"
-        elif exc.status_code == 404:
+        elif exc.status_code == 404 or (
+            # Bitbucket Cloud retired its native issue tracker (HTTP 410).
+            # This is unavailable evidence, never a successful empty collection.
+            self.provider is ProviderKind.BITBUCKET
+            and capability is Capability.WORK_ITEMS
+            and exc.status_code == 410
+        ):
             state = CapabilityState.UNAVAILABLE_PROVIDER
             reason = f"{capability.value} is unavailable from this provider or repository"
         elif exc.code == "provider_rate_limited":
