@@ -1,0 +1,68 @@
+name: Publish diagnostic source objects
+on:
+  push:
+    branches: [diagnostic/release-source-export-20260905]
+    paths: [.github/workflows/publish-diagnostic-candidate.yml]
+permissions:
+  contents: write
+jobs:
+  reconstruct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 4867afdfbf618a9ba16d5fd21c147a8b82f1893b
+          persist-credentials: false
+      - name: Create only verified Git objects; no branch update or application execution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, gzip, hashlib, json, os, pathlib, subprocess, urllib.request
+          root='https://api.github.com/repos/BoneManTGRM/NICO/'
+          def api(path, value=None):
+              request=urllib.request.Request(root+path, data=None if value is None else json.dumps(value).encode(), headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='GET' if value is None else 'POST')
+              with urllib.request.urlopen(request,timeout=30) as response:return json.load(response)
+          blob=api('git/blobs/8f1c0065bd3891f8a804dc657d0d59cb264da38c')
+          encoded=base64.b64decode(blob['content']).decode().strip()
+          # Correct two transport transcription defects; source checksum remains mandatory.
+          encoded=encoded.replace('F2prPNLn','F2prfPNLn').replace('gm77Y8dcNFo','gm77Y8NFo')
+          raw=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='f5a7f07f8fd005970c1a45eaeb2297492c95dc3b7533274e16e93fd672a3ce9c'
+          data=json.loads(raw)
+          assert data['baseCommit']=='4867afdfbf618a9ba16d5fd21c147a8b82f1893b'
+          assert data['baseTree']=='9b6e02d16c9c271fc772ab70250694a36c5e4285'
+          allowed={'.github/workflows/spanish-comprehensive-production-proof.yml','scripts/production_blocked_run_diagnostic_v1.py','tests/test_production_blocked_run_diagnostic_v1.py'}
+          files={}
+          for patch in data['patches']:
+              path=patch['path'];assert path in allowed
+              text=pathlib.Path(path).read_text()
+              assert hashlib.sha256(text.encode()).hexdigest()==patch['baseSha256']
+              for before,after in patch['replace']:
+                  assert text.count(before)==1
+                  text=text.replace(before,after)
+              text+=patch['append']
+              assert hashlib.sha256(text.encode()).hexdigest()==patch['sha256']
+              files[path]=text
+          for item in data['files']:
+              assert item['path'] in allowed and item['path'] not in files
+              assert hashlib.sha256(item['content'].encode()).hexdigest()==item['sha256']
+              files[item['path']]=item['content']
+          assert set(files)==allowed
+          entries=[]
+          for path,text in files.items():
+              sha=api('git/blobs',{'content':text,'encoding':'utf-8'})['sha']
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':sha})
+          tree=api('git/trees',{'base_tree':data['baseTree'],'tree':entries})['sha']
+          assert tree=='c86f205a16c7400eb9d83e8d46046ff355b03dc6',tree
+          pathlib.Path('candidate-tree.json').write_text(json.dumps({'tree':tree,'sourcePayloadSha256':hashlib.sha256(raw).hexdigest(),'paths':sorted(files),'sourceExecuted':False,'refUpdated':False},indent=2)+'\n')
+          print('VERIFIED_CANDIDATE_TREE='+tree)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-diagnostic-source-tree
+          path: candidate-tree.json
+          if-no-files-found: error
