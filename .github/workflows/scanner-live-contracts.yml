@@ -8,6 +8,7 @@ on:
       - 'nico/*scanner*'
       - 'scripts/install_hosted_scanner_binaries.py'
       - 'scripts/check_complete_assessment.py'
+      - 'scripts/diagnose_scanner_contracts_1496.py'
       - 'tests/test_scanner_live_contracts.py'
       - 'tests/test_scanner_completion_gate.py'
       - '.github/workflows/scanner-live-contracts.yml'
@@ -48,12 +49,8 @@ jobs:
           python -m pip install --disable-pip-version-check -e '.[dev]'
           python scripts/install_hosted_scanner_binaries.py
           echo /tmp/nico-pinned-scanners >> "$GITHUB_PATH"
-      - name: Retain actual binary command contracts
-        run: |
-          trufflehog --version > audit-results/trufflehog-version.txt 2>&1
-          trufflehog git --help > audit-results/trufflehog-git-help.txt 2>&1
-          osv-scanner --version > audit-results/osv-version.txt 2>&1
-          osv-scanner scan source --help > audit-results/osv-source-help.txt 2>&1
+      - name: Diagnose actual command contracts on synthetic source
+        run: python scripts/diagnose_scanner_contracts_1496.py
       - name: Test pinned binary behavior and completion gate
         run: |
           if test -f tests/test_scanner_live_contracts.py && test -f tests/test_scanner_completion_gate.py; then
