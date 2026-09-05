@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
@@ -80,6 +83,92 @@ def evidence(release_sha: str, assessed_sha: str | None = None):
         },
     }
     return acceptance, audit, release, status
+
+
+_V2_PROOF_FIELDS = (
+    "exact_release_sha", "exact_ui_contract", "production_environment",
+    "cache_busted_no_store_requests", "english_copy_contract",
+    "spanish_copy_contract", "workspace_contract",
+    "specialist_authentication_gate", "preview_deployment_rejected",
+)
+
+
+def frontend_v2_evidence(sha: str) -> dict:
+    """Shape emitted after both locale routes prove the specialist sign-in gate."""
+    return {
+        "artifact_schema": "nico.frontend_production_release_identity.v2",
+        "status": "passed", "expected_sha": sha,
+        "expected_deployment_environment": "production",
+        "expected_ui_contract": "expert-engagement-v2",
+        "final_release_observation": {
+            "release_sha": sha, "deployment_environment": "production",
+            "http_status": 200, "ui_contract": "expert-engagement-v2",
+        },
+        "proof": {key: True for key in _V2_PROOF_FIELDS},
+        "pages": {locale: {
+            "verified": True, "authentication_gate_verified": True,
+            "workspace_markers_verified": False,
+            "presentation_mode": "specialist_authentication_gate",
+        } for locale in ("en", "es-MX")},
+    }
+
+
+def test_external_evidence_accepts_v2_authenticated_gate_without_mutating_proof():
+    release_sha, assessed_sha = "a" * 40, "b" * 40
+    acceptance, audit, _, status = evidence(release_sha, assessed_sha)
+    release = frontend_v2_evidence(release_sha)
+    before = deepcopy((acceptance, audit, release, status))
+    validate_external(acceptance, audit, release, status, release_sha, assessed_sha)
+    assert (acceptance, audit, release, status) == before
+
+
+@pytest.mark.parametrize("field", _V2_PROOF_FIELDS)
+@pytest.mark.parametrize("invalid_value", [False, "true", None])
+def test_v2_frontend_evidence_requires_each_proven_boundary(field, invalid_value):
+    sha = "a" * 40
+    acceptance, audit, _, status = evidence(sha)
+    release = frontend_v2_evidence(sha)
+    if invalid_value is None:
+        release["proof"].pop(field)
+    else:
+        release["proof"][field] = invalid_value
+    with pytest.raises(ValueError):
+        validate_external(acceptance, audit, release, status, sha, sha)
+
+
+@pytest.mark.parametrize("defect", [
+    "unknown_schema", "failed_status", "wrong_expected_sha", "wrong_observed_sha",
+    "missing_observation", "malformed_observation", "missing_proof",
+    "preview_expected", "preview_observed", "wrong_ui_contract", "failed_http",
+])
+def test_v2_frontend_evidence_rejects_unproven_release_identity(defect):
+    sha = "a" * 40
+    acceptance, audit, _, status = evidence(sha)
+    release = frontend_v2_evidence(sha)
+    if defect == "unknown_schema":
+        release["artifact_schema"] = "nico.frontend_production_release_identity.v3"
+    elif defect == "failed_status":
+        release["status"] = "failed"
+    elif defect == "wrong_expected_sha":
+        release["expected_sha"] = "b" * 40
+    elif defect == "wrong_observed_sha":
+        release["final_release_observation"]["release_sha"] = "b" * 40
+    elif defect == "missing_observation":
+        release.pop("final_release_observation")
+    elif defect == "malformed_observation":
+        release["final_release_observation"] = ["not an observation"]
+    elif defect == "missing_proof":
+        release.pop("proof")
+    elif defect == "preview_expected":
+        release["expected_deployment_environment"] = "preview"
+    elif defect == "preview_observed":
+        release["final_release_observation"]["deployment_environment"] = "preview"
+    elif defect == "wrong_ui_contract":
+        release["final_release_observation"]["ui_contract"] = "old-contract"
+    else:
+        release["final_release_observation"]["http_status"] = 503
+    with pytest.raises(ValueError):
+        validate_external(acceptance, audit, release, status, sha, sha)
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -266,7 +355,8 @@ def test_binder_script_isolated_from_application_runtime_dependencies(tmp_path: 
     assert "application requests dependency imported" not in completed.stderr
 
 
-def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_application_startup(tmp_path: Path) -> None:
+@pytest.mark.parametrize("release_schema", ["v1", "v2"])
+def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_application_startup(tmp_path: Path, release_schema: str) -> None:
     release_sha = "3" * 40
     assessed_sha = "9" * 40
     source_pdf = tmp_path / "source.pdf"
@@ -279,6 +369,8 @@ def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_a
 
     _write_source_pdf(source_pdf, assessed_sha)
     acceptance, audit, release, status = evidence(release_sha, assessed_sha)
+    if release_schema == "v2":
+        release = frontend_v2_evidence(release_sha)
     _write_json(acceptance_path, acceptance)
     _write_json(audit_path, audit)
     _write_json(release_path, release)
