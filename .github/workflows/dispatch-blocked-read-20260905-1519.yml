@@ -1,0 +1,39 @@
+name: Dispatch existing blocked-run diagnosis once
+on:
+  push:
+    branches: [verification/read-blocked-run-20260905-1519]
+    paths: [.github/workflows/dispatch-blocked-read-20260905-1519.yml]
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: dispatch-existing-blocked-run-20260905-1519
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    if: github.repository == 'BoneManTGRM/NICO' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require exact current main and dispatch only the reviewed read-only job
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          base = 'https://api.github.com/repos/BoneManTGRM/NICO'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          request = urllib.request.Request(base + '/git/ref/heads/main', headers=headers)
+          with urllib.request.urlopen(request, timeout=20) as response:
+              ref = json.load(response)
+          expected = '5cbb5c34a45981a5c24ca8711bdc005fd2d36967'
+          if ref['object']['sha'] != expected:
+              raise SystemExit('Source advanced; no dispatch performed.')
+          body = {'ref': 'main', 'inputs': {'diagnostic_run_id': 'comprun_8883ad6a74292ddf5dcf6411cf0271c2', 'diagnostic_source_commit': 'ddd0f15ae83993f5cb66a927a28673882e99100b'}}
+          request = urllib.request.Request(base + '/actions/workflows/338238587/dispatches', data=json.dumps(body).encode(), headers=headers, method='POST')
+          with urllib.request.urlopen(request, timeout=20) as response:
+              if response.status != 204:
+                  raise SystemExit('Unexpected dispatch acknowledgement; do not retry automatically.')
+          print('READ_ONLY_DIAGNOSTIC_DISPATCHED_AT_SOURCE=' + expected)
+          print('No assessment created, continued, approved, delivered or reauthorized. The downstream diagnostic intentionally cannot qualify a release.')
+          PY
