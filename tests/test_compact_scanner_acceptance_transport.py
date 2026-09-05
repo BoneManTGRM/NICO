@@ -189,3 +189,11 @@ def test_missing_typescript_compiler_is_not_invented_as_an_exclusion():
     assert not proof["passed"]
     assert "typescript:scanner_incomplete:unavailable" in proof["failures"]
     assert "typescript" not in proof["not_applicable_tools"]
+
+
+def test_not_applicable_cannot_restore_a_stale_raw_verified_flag():
+    raw = no_packages()
+    raw["verified_for_this_report"] = True
+    result = compact([raw])[0]
+    assert result["verified_for_this_report"] is False
+    assert result["completed"] is False

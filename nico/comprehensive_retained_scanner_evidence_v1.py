@@ -203,8 +203,7 @@ def compact_scanner_records(
                 "verified": normalized.get("verified") is True,
                 "verified_complete": normalized.get("verified_complete") is True,
                 "verified_for_this_report": (
-                    raw.get("verified_for_this_report") is True
-                    or normalized.get("verified_complete") is True
+                    normalized.get("verified_complete") is True
                 ),
                 "current_run": raw.get("current_run") is True,
                 "execution_observed_for_this_report": (
