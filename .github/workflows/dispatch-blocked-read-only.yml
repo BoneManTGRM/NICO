@@ -1,0 +1,30 @@
+name: Dispatch retained blocked-run diagnosis
+on:
+  push:
+    branches: [diagnostic/release-source-export-20260905]
+    paths: [.github/workflows/dispatch-blocked-read-only.yml]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Dispatch existing trusted diagnostic without running application code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          root='https://api.github.com/repos/BoneManTGRM/NICO/'
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'}
+          with urllib.request.urlopen(urllib.request.Request(root+'git/ref/heads/main',headers=headers),timeout=20) as response:
+              head=json.load(response)['object']['sha']
+          assert head=='5cbb5c34a45981a5c24ca8711bdc005fd2d36967',head
+          data={'ref':'main','inputs':{'diagnostic_run_id':'comprun_8883ad6a74292ddf5dcf6411cf0271c2','diagnostic_source_commit':'ddd0f15ae83993f5cb66a927a28673882e99100b'}}
+          request=urllib.request.Request(root+'actions/workflows/spanish-comprehensive-production-proof.yml/dispatches',headers=headers,data=json.dumps(data).encode(),method='POST')
+          with urllib.request.urlopen(request,timeout=20) as response:
+              assert response.status==204
+          print('Dispatched read-only diagnosis once; no assessment replay or release success assertion.')
+          PY
