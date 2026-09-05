@@ -316,7 +316,8 @@ class BaseProviderClient:
                 self._client.cookies.clear()
                 response = self._client.get(
                     url,
-                    params=dict(params or {}),
+                    # Empty params must not erase a provider next-page URL query.
+                    params=dict(params) if params else None,
                     headers={
                         **authorization_headers(self._active_credential),
                         "Accept": "application/json",
@@ -859,7 +860,9 @@ class BitbucketCloudClient(BaseProviderClient):
         self._require_source_tree(source_tree)
         pull_requests = self._optional_collection(
             Capability.CHANGE_REQUESTS,
-            lambda: self._bitbucket_pages(f"{root}/pullrequests", {"state": "ALL"}),
+            lambda: self._bitbucket_pages(
+                f"{root}/pullrequests", {"state": "ALL", "pagelen": 50}
+            ),
         )
         pipeline_query = f'target.commit.hash="{exact_revision}"'
         raw_pipelines = self._optional_collection(

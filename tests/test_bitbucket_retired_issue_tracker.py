@@ -125,3 +125,39 @@ def test_other_provider_http_gone_is_not_silently_reclassified():
         assert collector._capability(Capability.WORK_ITEMS)["state"] == "collection_failed"
     finally:
         collector.close()
+
+
+def test_pull_requests_use_endpoint_page_limit_and_follow_remaining_pages():
+    collector, _ = _collector()
+    old_transport = collector._client._transport
+    observed = []
+
+    def paginated_endpoint(request: httpx.Request) -> httpx.Response:
+        if not request.url.path.endswith('/pullrequests'):
+            return old_transport.handle_request(request)
+        observed.append(request)
+        if int(request.url.params.get('pagelen', '10')) > 50:
+            return httpx.Response(400, json={'error': {'message': 'Invalid pagelen'}})
+        page = request.url.params.get('page', '1')
+        response = old_transport.handle_request(request)
+        payload = response.json()
+        if page == '1':
+            payload['next'] = str(request.url.copy_set_param('page', '2'))
+        else:
+            payload['values'][0].update(id=8, state='DECLINED')
+        return httpx.Response(200, json=payload)
+
+    collector._client = httpx.Client(transport=httpx.MockTransport(paginated_endpoint))
+    try:
+        collection = collector.collect('workspace/repo', revision=REVISION)
+        assert _capability(collection, Capability.CHANGE_REQUESTS)['state'] == 'supported'
+        assert [p['id'] for p in collection.payload['pull_requests']] == [7, 8]
+        assert [p['state'] for p in collection.payload['pull_requests']] == ['MERGED', 'DECLINED']
+        assert len(observed) == 2
+        assert all(r.url.params['pagelen'] == '50' for r in observed)
+        assert all(r.url.params['state'] == 'ALL' for r in observed)
+        assert collection.pagination_complete is True
+        assert collection.revision == REVISION
+        assert len(collection.adapt().envelope.change_requests) == 2
+    finally:
+        collector._client.close()
