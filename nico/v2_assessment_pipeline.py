@@ -10,6 +10,7 @@ from pathlib import PurePosixPath
 from typing import Any, Iterable, Mapping
 
 from nico.phase9_production_report_gate_v1 import contextual_title
+from nico.v2_scanner_reconciliation import SCANNER_PROVENANCE_FIELDS
 
 
 class AssessmentState(str, Enum):
@@ -27,6 +28,7 @@ class ScannerState(str, Enum):
     COMPLETED_WITH_FINDINGS = "completed_with_findings"
     PARTIAL = "partial"
     UNAVAILABLE = "unavailable"
+    NOT_APPLICABLE = "not_applicable"
     FAILED = "failed"
 
 
@@ -312,7 +314,11 @@ def normalize_scanner_result(raw: Mapping[str, Any], expected_commit_sha: str) -
     verified_signal = any(raw.get(field_name) is True for field_name in verification_fields)
     verified = bool(completed and (verified_signal if verification_declared else valid_artifact))
 
-    if completed:
+    if raw_status == "not_applicable":
+        state = ScannerState.NOT_APPLICABLE
+        completed = False
+        verified = False
+    elif completed:
         state = ScannerState.COMPLETED_WITH_FINDINGS if findings else ScannerState.COMPLETED
         failure_reason = ""
     elif raw_status in {"missing", "unavailable", "not_installed", "not_available", "not_applicable"}:
@@ -394,6 +400,7 @@ def build_canonical_assessment(report: Mapping[str, Any]) -> dict[str, Any]:
     findings = canonicalize_findings(source_findings)
 
     by_scanner: dict[str, ScannerResult] = {}
+    selected_provenance: dict[str, dict[str, Any]] = {}
     for raw in _scanner_records(canonical):
         result = normalize_scanner_result(raw, commit_sha)
         current = by_scanner.get(result.scanner_name)
@@ -403,9 +410,14 @@ def build_canonical_assessment(report: Mapping[str, Any]) -> dict[str, Any]:
         )
         if current is None or quality(result) > quality(current):
             by_scanner[result.scanner_name] = result
+            selected_provenance[result.scanner_name] = {
+                key: deepcopy(raw[key]) for key in SCANNER_PROVENANCE_FIELDS if key in raw
+            }
     scanners = [by_scanner[name] for name in sorted(by_scanner)]
     scanner_dicts = [
-        {**asdict(item), "state": item.state.value, "findings": [dict(value) for value in item.findings]}
+        {**selected_provenance[item.scanner_name], **asdict(item),
+         "state": item.state.value, "status": item.state.value,
+         "findings": [dict(value) for value in item.findings]}
         for item in scanners
     ]
 

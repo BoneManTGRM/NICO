@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Mapping
 
-from nico.v2_scanner_reconciliation import KNOWN_SCANNERS, normalize_record
+from nico.v2_scanner_reconciliation import KNOWN_SCANNERS, SCANNER_PROVENANCE_FIELDS, normalize_record
 
 VERSION = "nico.comprehensive_retained_scanner_evidence.v1"
 
@@ -192,6 +193,7 @@ def compact_scanner_records(
         tool_summary = dict(_mapping(by_tool.get(name)))
         output.append(
             {
+                **{key: deepcopy(raw[key]) for key in SCANNER_PROVENANCE_FIELDS if key in raw},
                 "scanner_name": name,
                 "tool": name,
                 "category": _text(raw.get("category"), 80) or "unknown",
