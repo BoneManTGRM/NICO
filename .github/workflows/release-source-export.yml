@@ -1,0 +1,42 @@
+name: Pinned release source export
+on:
+  push:
+    branches: [diagnostic/release-source-export-20260905]
+    paths: [.github/workflows/release-source-export.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 4867afdfbf618a9ba16d5fd21c147a8b82f1893b
+          path: nico-source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: BoneManTGRM/SARA
+          ref: 6c1551b052f32c521cfb86e0e67c7c9f3c9d6847
+          path: sara-source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Archive fixed source without executing application code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          test "$(git -C nico-source rev-parse HEAD)" = 4867afdfbf618a9ba16d5fd21c147a8b82f1893b
+          test "$(git -C sara-source rev-parse HEAD)" = 6c1551b052f32c521cfb86e0e67c7c9f3c9d6847
+          git -C nico-source archive --format=tar.gz HEAD > export/nico-source.tar.gz
+          git -C nico-source rev-parse HEAD HEAD^{tree} > export/nico-identity.txt
+          git -C sara-source branch export-main 6c1551b052f32c521cfb86e0e67c7c9f3c9d6847
+          git -C sara-source bundle create ../export/sara-source.bundle --all
+          git -C sara-source show-ref > export/sara-refs.txt
+          (cd export && sha256sum nico-source.tar.gz sara-source.bundle > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-release-source-offline
+          path: export/
+          if-no-files-found: error
