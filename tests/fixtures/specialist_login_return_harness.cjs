@@ -150,6 +150,24 @@ async function main() {
     assert.equal(href.searchParams.get('next'), saved(other), 'language switch must retain saved-run identity');
     const resumed = await component(other, href.search);
     assert.equal(resumed.navigations[0]?.[1], saved(other));
+  } else if (kind === 'unauthenticated') {
+    for (const next of [target, 'https://evil.invalid/assessment']) {
+      const result = await component(locale, query(next), {mode: 'form'});
+      assert.equal(result.navigations.length, 0, 'return target must not create a session');
+      assert.equal(result.calls.length, 1);
+      assert.equal(result.calls[0][1].method, 'GET');
+      assert.ok(find(result.tree, (node) => node.type === 'form'));
+    }
+  } else if (kind === 'language-unsafe') {
+    const other = locale === 'es' ? 'en' : 'es';
+    for (const next of ['https://evil.invalid/assessment', '//evil.invalid/assessment', '/api/nico/operator-session']) {
+      const result = await component(locale, query(next), {mode: 'form'});
+      const link = find(result.tree, (node) => node.type === 'a');
+      const href = new URL(link.props.href, 'https://app.nicoaudit.com');
+      assert.equal(href.origin, 'https://app.nicoaudit.com');
+      assert.equal(href.pathname, (other === 'es' ? '/es' : '') + '/specialist-login');
+      assert.equal(href.searchParams.get('next'), fallback(other));
+    }
   } else if (kind === 'network') {
     const result = await component(locale, query(target), {mode: 'form', rejectGet: true});
     assert.equal(result.unhandled.length, 0, 'session-check failure must not escape as an unhandled rejection');

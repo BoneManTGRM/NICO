@@ -13,7 +13,7 @@ CASES = ["middleware:en", "middleware:es", "routes", "cookie"] + [
     f"{case}:{locale}"
     for case in (
         "existing", "post", "language", "network", "denied", "unsafe",
-        "default", "nested", "duplicate",
+        "default", "nested", "duplicate", "unauthenticated", "language-unsafe",
     )
     for locale in ("en", "es")
 ]

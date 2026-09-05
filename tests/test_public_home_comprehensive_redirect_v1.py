@@ -45,7 +45,7 @@ def test_both_homes_are_server_components_not_client_redirects() -> None:
     assert "window.location" not in spanish
 
 
-def test_login_destinations_are_constants_not_url_parameters() -> None:
+def test_login_uses_validated_local_return_or_constant_fallback() -> None:
     english = ENGLISH_LOGIN.read_text(encoding="utf-8")
     spanish = SPANISH_LOGIN.read_text(encoding="utf-8")
 
@@ -53,8 +53,14 @@ def test_login_destinations_are_constants_not_url_parameters() -> None:
     assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment"' in spanish
     assert "URLSearchParams" not in english
     assert "URLSearchParams" not in spanish
-    assert "window.location.search" not in english
-    assert "window.location.search" not in spanish
+    # Saved-run recovery intentionally permits a return path. Both navigation
+    # sinks must use the shared allowlist; the behavioral suite tests hostile URLs.
+    for source in (english, spanish):
+        navigation = [line.strip() for line in source.splitlines()
+                      if "window.location.assign(" in line or "window.location.replace(" in line]
+        assert len(navigation) == 2
+        assert all("resolveSpecialistReturnTarget(window.location.search, DESTINATION)" in line
+                   for line in navigation)
 
 
 def test_specialist_middleware_covers_english_spanish_and_operator_surfaces() -> None:
@@ -71,4 +77,7 @@ def test_specialist_middleware_covers_english_spanish_and_operator_surfaces() ->
     assert '"nico-specialist-session"' in source
     assert '? "/es/specialist-login"' in source
     assert ': "/specialist-login"' in source
-    assert "searchParams.set" not in source
+    # Clear the login query before carrying only the requested local destination.
+    assert 'login.search = "";' in source
+    assert 'login.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search)' in source
+    assert source.index('login.search = "";') < source.index('login.searchParams.set("next"')

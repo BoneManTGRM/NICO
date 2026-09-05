@@ -29,7 +29,13 @@ def test_specialist_frontend_and_runtime_contracts_are_fail_closed():
     assert 'const DESTINATION = "/es/assessment?tier=comprehensive#assessment"' in spanish_login
     assert "URLSearchParams" not in english_login
     assert "URLSearchParams" not in spanish_login
-    assert "searchParams.set" not in middleware
+    # Preserve saved-run identity without letting either page navigate to raw input.
+    # Hostile destinations and denied sessions are exercised by the behavioral suite.
+    assert 'login.search = "";' in middleware
+    assert 'login.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search)' in middleware
+    for page in (english_login, spanish_login):
+        assert 'window.location.assign(resolveSpecialistReturnTarget(window.location.search, DESTINATION))' in page
+        assert 'window.location.replace(resolveSpecialistReturnTarget(window.location.search, DESTINATION))' in page
     assert 'SESSION_SIGNING_SECRET_ENV = "NICO_OPERATOR_SESSION_SIGNING_SECRET"' in specialist_access
     from nico.specialist_access_v1 import (
         GITHUB_ACTIONS_SESSION_ROUTE, SESSION_ROUTE, _protected_request,
