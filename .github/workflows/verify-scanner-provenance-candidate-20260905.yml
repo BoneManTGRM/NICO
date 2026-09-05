@@ -1,0 +1,131 @@
+name: Verify exact scanner provenance candidate
+on:
+  push:
+    branches: [verification/1496-scanner-provenance-20260905]
+    paths: [.github/workflows/verify-scanner-provenance-candidate-20260905.yml]
+permissions:
+  contents: write
+concurrency:
+  group: nico-scanner-provenance-candidate-20260905
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8e0014e69569aa7a72cc9215107ea8d61a4db7b3
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - name: Apply only the checksum-bound five-file repair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, hashlib, json, subprocess
+          from pathlib import Path
+          base = '8e0014e69569aa7a72cc9215107ea8d61a4db7b3'
+          assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip() == base
+          spec = {
+            'nico/comprehensive_requested_scanner_projection_v62.py': ['48c53e3b36fee70088a51b2c6164f70d4394d6bbe1f43e5d479bdc18bf099bdd','874d21ac177ef0a2a93a40da16408c4613216473664089582ac261bdfe511180'],
+            'nico/comprehensive_retained_scanner_evidence_v1.py': ['bee8c88dfb1af1b014af6eee5e7a09c3beba7a2116a19a63c4988b80c8c64d04','1ae226e5da5b7983a690850047e6a08e7bcc0829b2ce2091868f443123077538'],
+            'nico/v2_assessment_pipeline.py': ['35d5b8f909cfd93f35e4e5aaaedc50bb41fbaa9fe358dfedebbf8d2731205a26','2dbf9daef8de6a7f3231532980824b9bdf3ef130611eaf12d4742966e583f999'],
+            'nico/v2_scanner_reconciliation.py': ['c42463e7194e334a89fc7e877fc04981d2cc40b00015ecf329a395451ae50f7b','a2929334eb56f78346778f0668e6be40e416eff6e33c2895e4565e2ef7456c7f'],
+            'tests/test_scanner_provenance_survives_projection.py': [None,'6545e0ab45d21f019c6c149a91a54ba6a95c694297fd32c19e0373f901a871ac'],
+          }
+          evidence = Path('audit-results/provenance-candidate'); evidence.mkdir(parents=True)
+          gate = Path('nico/complete_assessment_gate_v1.py')
+          gate_hash = hashlib.sha256(gate.read_bytes()).hexdigest()
+          for name,(before,after) in spec.items():
+              path=Path(name)
+              assert (hashlib.sha256(path.read_bytes()).hexdigest() == before) if before else not path.exists(), name
+          blob=json.loads(subprocess.check_output(['gh','api','repos/BoneManTGRM/NICO/git/blobs/ac1c7325b27e2a522535dedef55c892a8a59b385'],text=True))
+          patch=base64.b64decode(blob['content'])
+          assert hashlib.sha256(patch).hexdigest() == '5271e2495a63550b4539c355ec2554245aec626f8cac909db8a51b5efe723fa1'
+          (evidence/'candidate.patch').write_bytes(patch)
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          for name,(before,after) in spec.items():
+              assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == after, name
+          assert hashlib.sha256(gate.read_bytes()).hexdigest() == gate_hash
+          (evidence/'manifest.json').write_text(json.dumps({'base':base,'files':spec,'unchanged_acceptance_gate_sha256':gate_hash},indent=2))
+          subprocess.run(['git','diff','--check'],check=True)
+          PY
+      - name: Install verification dependencies without production credentials
+        run: python -m pip install --disable-pip-version-check -e . 'pytest==9.1.1' 'pypdf==6.15.0'
+      - name: Verify actual entrypoints and related boundaries in isolated test processes
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, subprocess, sys, xml.etree.ElementTree as ET
+          files = [
+            'test_scanner_provenance_survives_projection.py',
+            'test_comprehensive_requested_scanner_projection_v62.py',
+            'test_comprehensive_scanner_completion_projection_v56.py',
+            'test_production_report_truth_gate_v1.py',
+            'test_retained_scanner_final_publication_v1.py',
+            'test_v2_assessment_pipeline.py',
+            'test_v2_production_regressions.py',
+            'test_v2_pipeline_adapter.py',
+            'test_scanner_applicability_v2.py',
+            'test_comprehensive_final_register_scanner_truth_v62.py',
+            'test_osv_applicability_spanish_publication.py',
+          ]
+          out=Path('audit-results/provenance-candidate')
+          results=[]
+          for name in files:
+              log=out/(name+'.log'); xml=out/(name+'.xml')
+              with log.open('w') as stream:
+                  result=subprocess.run([sys.executable,'-m','pytest','-q','tests/'+name,'--junitxml='+str(xml)],stdout=stream,stderr=subprocess.STDOUT,timeout=180)
+              results.append({'file':name,'exit':result.returncode})
+              print(json.dumps(results[-1]),flush=True)
+          (out/'results.json').write_text(json.dumps(results,indent=2))
+          assert all(r['exit']==0 for r in results),results
+          totals={k:0 for k in ('tests','failures','errors','skipped')}
+          for xml in out.glob('*.xml'):
+              root=ET.parse(xml).getroot()
+              for suite in ([root] if root.tag=='testsuite' else root.findall('testsuite')):
+                  for k in totals: totals[k]+=int(suite.get(k,0))
+          assert totals['tests']>=60 and all(totals[k]==0 for k in ('failures','errors','skipped')),totals
+          (out/'junit-summary.json').write_text(json.dumps(totals,indent=2))
+          print(json.dumps(totals))
+          PY
+      - name: Publish only the tested candidate branch, never main or production
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          def api(path,payload=None):
+              args=['gh','api','repos/BoneManTGRM/NICO/'+path]
+              if payload is not None: args+=['--method','POST','--input','-']
+              return json.loads(subprocess.check_output(args,input=json.dumps(payload) if payload is not None else None,text=True))
+          out=Path('audit-results/provenance-candidate'); manifest=json.loads((out/'manifest.json').read_text()); base=manifest['base']
+          assert api('git/ref/heads/main')['object']['sha']==base,'main advanced; do not publish a stale candidate'
+          assert hashlib.sha256(Path('nico/complete_assessment_gate_v1.py').read_bytes()).hexdigest()==manifest['unchanged_acceptance_gate_sha256']
+          entries=[]
+          for name,hashes in manifest['files'].items():
+              data=Path(name).read_bytes(); assert hashlib.sha256(data).hexdigest()==hashes[1],name
+              blob=api('git/blobs',{'content':data.decode('utf-8'),'encoding':'utf-8'})
+              entries.append({'path':name,'mode':'100644','type':'blob','sha':blob['sha']})
+          tree=api('git/trees',{'base_tree':'7b2ec3c4bc7322a09b9366a609a3eafd1f50a1b8','tree':entries})
+          commit=api('git/commits',{'message':'Preserve original scanner provenance and observed non-applicability through canonical report projections\n\nBounded issue1496 repair. Native-output digests remain distinct from normalized-record hashes; source/capture/applicability metadata follow the selected original record. Complete-assessment acceptance, authorization and delivery gates are unchanged. Exact-base targeted and related tests verified before publishing; full PR CI and production proof remain required.','tree':tree['sha'],'parents':[base]})
+          assert api('git/ref/heads/main')['object']['sha']==base,'main advanced; retain unreferenced candidate without changing branches'
+          branch=api('git/refs',{'ref':'refs/heads/fix/1496-scanner-provenance','sha':commit['sha']})
+          (out/'published.json').write_text(json.dumps({'base':base,'tree':tree['sha'],'commit':commit['sha'],'branch':branch['ref'],'main_modified':False,'production_deployed':False},indent=2))
+          print((out/'published.json').read_text())
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: verified-scanner-provenance-candidate-${{ github.run_id }}
+          path: audit-results/provenance-candidate/
+          if-no-files-found: error
+          retention-days: 30
