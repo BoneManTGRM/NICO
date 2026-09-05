@@ -1,0 +1,73 @@
+name: Retire superseded stalled proof attempt
+on:
+  push:
+    branches: [verification/1496-positive-providers-20260905]
+    paths: [.github/workflows/retire-stalled-proof-attempt2-20260905.yml]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: nico-retire-proof-33967832794-attempt2
+  cancel-in-progress: false
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Cancel only the superseded exact workflow attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          assert os.environ['GITHUB_REPOSITORY'] == 'BoneManTGRM/NICO'
+          assert os.environ['GITHUB_REF'] == 'refs/heads/verification/1496-positive-providers-20260905'
+          base = 'https://api.github.com/repos/BoneManTGRM/NICO'
+          target = 33967832794
+          old_sha = '569ec3e1fa8cfbeea350b230b38eeba9cc1793af'
+          current_sha = '4867afdfbf618a9ba16d5fd21c147a8b82f1893b'
+          def api(method, path):
+              request = Request(base + path, method=method, data=b'' if method == 'POST' else None,
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'})
+              with urlopen(request, timeout=30) as response:
+                  data = response.read()
+                  return json.loads(data) if data else {'http_status': response.status}
+          assert api('GET', '/git/ref/heads/main')['object']['sha'] == current_sha, 'Main advanced; stop'
+          run = api('GET', f'/actions/runs/{target}')
+          assert run['head_sha'] == old_sha and run['head_branch'] == 'main'
+          assert run['path'] == '.github/workflows/spanish-comprehensive-production-proof.yml'
+          assert run['run_attempt'] == 2 and run['event'] == 'push'
+          age = (datetime.now(timezone.utc) - datetime.fromisoformat(run['run_started_at'].replace('Z', '+00:00'))).total_seconds()
+          evidence = {'run_id': target, 'attempt': 2, 'superseded_release': old_sha, 'current_release': current_sha,
+                      'observed_age_seconds': age, 'before': run['status'], 'cancelled_by_this_action': False,
+                      'new_assessments_started': 0, 'production_records_changed': False, 'ship_ready': False}
+          if run['status'] != 'completed':
+              assert age >= 1200, 'Do not interrupt a new test'
+              try:
+                  evidence['cancel_receipt'] = api('POST', f'/actions/runs/{target}/cancel')
+                  evidence['cancelled_by_this_action'] = True
+              except HTTPError as error:
+                  if error.code != 409: raise
+              for _ in range(12):
+                  time.sleep(10)
+                  run = api('GET', f'/actions/runs/{target}')
+                  if run['status'] == 'completed': break
+          evidence['after'] = run['status']
+          evidence['conclusion'] = run.get('conclusion')
+          artifacts = api('GET', f'/actions/runs/{target}/artifacts')
+          evidence['retained_artifacts'] = [{'id': a['id'], 'name': a['name'], 'size_in_bytes': a['size_in_bytes']} for a in artifacts.get('artifacts', [])]
+          Path('capture.json').write_text(json.dumps(evidence, indent=2))
+          print(json.dumps(evidence, indent=2))
+          if run['status'] != 'completed': raise SystemExit('Cancellation requested but terminal state remains unverified')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: retired-stalled-proof-attempt2-${{ github.run_id }}
+          path: capture.json
+          if-no-files-found: error
+          retention-days: 30
