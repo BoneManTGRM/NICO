@@ -346,6 +346,8 @@ def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(monke
         environments.append(dict(kwargs.get("env") or {}))
         if command[-2:] == ["rev-parse", "HEAD"]:
             return Result(stdout=revision + "\n")
+        if command[-2:] == ["rev-parse", "--is-shallow-repository"]:
+            return Result(stdout="false\n")
         return Result()
 
     monkeypatch.setattr("nico.hosted_provider_comprehensive_runtime_v1.shutil.which", lambda _: "/usr/bin/git")
@@ -386,6 +388,8 @@ def test_exact_anonymous_checkout_uses_no_credential_or_auth_helper(monkeypatch:
         environments.append(dict(kwargs.get("env") or {}))
         if command[-2:] == ["rev-parse", "HEAD"]:
             return Result(stdout=revision + "\n")
+        if command[-2:] == ["rev-parse", "--is-shallow-repository"]:
+            return Result(stdout="false\n")
         return Result()
 
     monkeypatch.setattr("nico.hosted_provider_comprehensive_runtime_v1.shutil.which", lambda _: "/usr/bin/git")
