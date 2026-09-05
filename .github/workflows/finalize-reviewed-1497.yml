@@ -1,0 +1,204 @@
+name: Finalize reviewed NICO scanner repair 1497
+
+on:
+  push:
+    branches: [verification/four-provider-report-proof-20260905]
+    paths: [.github/workflows/finalize-reviewed-1497.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nico-exact-reviewed-pr-1497-release
+  cancel-in-progress: false
+
+jobs:
+  guarded-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_HEAD: d1effd723b87bc49c17a5dd42fd9910609fc06cf
+      EXPECTED_TREE: cd5948429ec057dae87fa74949a14264d0cbf4b7
+      EXPECTED_BASE: 9c4b5d1e74a4aa74b787ed12b1507b9a28142c8f
+    steps:
+      - name: Verify exact reviewed candidate, merge only passing checks, and request production proof
+        run: |
+          python - <<'PY'
+          import base64, io, json, os, re, time, urllib.error, zipfile
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          root = Path('release-evidence'); root.mkdir(exist_ok=True)
+          repo = 'BoneManTGRM/NICO'
+          base = 'https://api.github.com/repos/' + repo
+          expected = os.environ['EXPECTED_HEAD']
+          state = {'schema':'nico.guarded-scanner-repair-release.v1','pull_request':1497,'expected_head':expected,'merged_by_this_run':False,'ship_ready':False,'all_four_platforms_verified':False,'human_approval_performed':False,'client_delivery_authorized':False,'production_variables_modified':False,'workflow_run_id':os.environ['GITHUB_RUN_ID']}
+          required = {'NICO CI','CodeQL Advanced','Security Audit Evidence','Scanner Live Contracts','Provider Live Acceptance','Frozen SHA Scanner Qualification','Phase 9 Comprehensive Production Proof','Phase 9 Production Report and Node Scanner Proof','Phase 9 Client Delivery Proof','Postgres Restart Proof','Resilience Proof','Mobile Restart Production Proof','iOS WebKit Paint Proof','Unified Production Acceptance','Frontend Production Release Proof','Audit Evidence','Remediation Evidence','Phase 8 Operational Acceptance','Phase 9 Bandit Reliability','Recorded Golden Demonstration','Real 90 Score Truth v4'}
+          def save():
+              (root/'result.json').write_text(json.dumps(state,indent=2))
+          def require(value, reason):
+              if not value: raise RuntimeError(reason)
+          def api(method, path, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              headers = {'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'}
+              request = Request(base+path,data=data,headers=headers,method=method)
+              with urlopen(request,timeout=45) as r:
+                  content=r.read()
+                  return json.loads(content) if content else {'http_status':r.status}
+          def collect(path, key):
+              values=[]
+              for page in range(1,6):
+                  separator='&' if '?' in path else '?'
+                  data=api('GET',path+separator+'per_page=100&page='+str(page))
+                  items=data[key] if key else data
+                  require(isinstance(items,list),'unexpected_paginated_response')
+                  values.extend(items)
+                  if len(items)<100:return values
+              raise RuntimeError('pagination_limit_reached_no_clearance')
+          def public_json(url):
+              with urlopen(Request(url,headers={'Accept':'application/json','Cache-Control':'no-cache'}),timeout=45) as r:
+                  return r.status,json.load(r)
+          def reviewed_candidate():
+              pr=api('GET','/pulls/1497')
+              require(pr['head']['sha']==expected,'reviewed_candidate_head_changed')
+              require(pr['head']['repo']['full_name']==repo and pr['base']['ref']=='main','unexpected_pull_request_scope')
+              commit=api('GET','/git/commits/'+expected)
+              require(commit['tree']['sha']==os.environ['EXPECTED_TREE'],'reviewed_tree_mismatch')
+              require(not pr.get('draft'),'pull_request_is_draft')
+              return pr
+          try:
+              require(os.environ['GITHUB_REPOSITORY']==repo,'unexpected_repository')
+              require(os.environ['GITHUB_REF']=='refs/heads/verification/four-provider-report-proof-20260905','unexpected_controller_ref')
+              pr=reviewed_candidate()
+              if pr.get('merged'):
+                  state['merge_sha']=pr['merge_commit_sha']
+                  state['already_merged']=True
+              else:
+                  require(pr['state']=='open','pull_request_not_open')
+                  deadline=time.monotonic()+900
+                  while True:
+                      pr=reviewed_candidate()
+                      require(api('GET','/branches/main')['commit']['sha']==os.environ['EXPECTED_BASE'],'production_main_changed_before_merge')
+                      runs=collect('/actions/runs?head_sha='+expected,'workflow_runs')
+                      latest={}
+                      for run in runs:
+                          if run['event'] not in ('push','pull_request'):continue
+                          key=(run['name'],run['event'])
+                          if key not in latest or (run['id'],run['run_attempt'])>(latest[key]['id'],latest[key]['run_attempt']):latest[key]=run
+                      pr_runs={name:run for (name,event),run in latest.items() if event=='pull_request'}
+                      state['missing_workflows']=sorted(required-set(pr_runs))
+                      state['candidate_checks']=[{k:r.get(k) for k in ('id','name','event','status','conclusion','run_attempt')} for r in latest.values()]
+                      failures=[r['name']+':'+str(r['conclusion']) for r in latest.values() if r['status']=='completed' and r['conclusion']!='success']
+                      state['failed_workflows']=failures
+                      save()
+                      require(not failures,'candidate_workflow_failed_no_merge')
+                      settled=not state['missing_workflows'] and all(r['status']=='completed' and r['conclusion']=='success' for r in latest.values())
+                      if settled:break
+                      require(time.monotonic()<deadline,'candidate_checks_pending_no_merge')
+                      time.sleep(30)
+                  checks=collect('/commits/'+expected+'/check-runs?filter=latest','check_runs')
+                  require(bool(checks),'missing_check_run_evidence')
+                  require(all(c['status']=='completed' and c['conclusion'] in ('success','neutral','skipped') for c in checks),'unsettled_or_failed_check_run')
+                  status=api('GET','/commits/'+expected+'/status')
+                  require(status['state']=='success','combined_status_not_success')
+                  require(any(s['context']=='Vercel' and s['state']=='success' for s in status['statuses']),'candidate_vercel_preview_not_success')
+                  reviews=collect('/pulls/1497/reviews',None)
+                  latest_reviews={}
+                  for review in reviews:
+                      if review['state'] in ('APPROVED','CHANGES_REQUESTED','DISMISSED'):latest_reviews[review['user']['login']]=review['state']
+                  require('CHANGES_REQUESTED' not in latest_reviews.values(),'review_changes_requested')
+                  query={'query':'query { repository(owner:"BoneManTGRM",name:"NICO") { pullRequest(number:1497) { reviewThreads(first:100) { pageInfo { hasNextPage } nodes { isResolved isOutdated } } } } }'}
+                  req=Request('https://api.github.com/graphql',data=json.dumps(query).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Content-Type':'application/json'},method='POST')
+                  with urlopen(req,timeout=45) as response:review_data=json.load(response)
+                  require(not review_data.get('errors'),'review_thread_evidence_unavailable')
+                  threads=review_data['data']['repository']['pullRequest']['reviewThreads']
+                  require(not threads['pageInfo']['hasNextPage'],'review_thread_pagination_requires_review')
+                  require(all(t['isResolved'] or t['isOutdated'] for t in threads['nodes']),'unresolved_current_review_thread')
+                  scanner_run=pr_runs['Scanner Live Contracts']
+                  artifacts=collect('/actions/runs/'+str(scanner_run['id'])+'/artifacts','artifacts')
+                  matching=[a for a in artifacts if a['name'].startswith('scanner-live-contracts-') and not a['expired']]
+                  require(len(matching)==1,'scanner_contract_artifact_missing_or_ambiguous')
+                  req=Request(matching[0]['archive_download_url'],headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+                  with urlopen(req,timeout=60) as response:archive=response.read()
+                  require(len(archive)<10_000_000,'scanner_contract_artifact_exceeds_bound')
+                  with zipfile.ZipFile(io.BytesIO(archive)) as z:
+                      members=[n for n in z.namelist() if n.endswith('scanner-contracts.xml')]
+                      require(len(members)==1,'scanner_contract_xml_missing')
+                      require(z.getinfo(members[0]).file_size<10_000_000,'scanner_contract_xml_exceeds_bound')
+                      xml=z.read(members[0]); parsed=ET.fromstring(xml)
+                      tests=parsed.findall('.//testcase')
+                      require(len(tests)>=35,'scanner_contract_test_count_insufficient')
+                      require(not parsed.findall('.//failure') and not parsed.findall('.//error') and not parsed.findall('.//skipped'),'scanner_contract_test_failed_or_skipped')
+                      (root/'scanner-contracts.xml').write_bytes(xml)
+                  state['scanner_contract_tests']=len(tests)
+                  # Normal GitHub merge endpoint, exact reviewed head, no bypass.
+                  pr=reviewed_candidate()
+                  require(pr.get('mergeable') is True,'pull_request_not_mergeable')
+                  require(api('GET','/branches/main')['commit']['sha']==os.environ['EXPECTED_BASE'],'main_changed_during_verification')
+                  merged=api('PUT','/pulls/1497/merge',{'sha':expected,'merge_method':'squash','commit_title':'Repair native provider scanner coverage and require complete assessment evidence (#1497)'})
+                  require(merged.get('merged') is True,'github_did_not_merge')
+                  state['merged_by_this_run']=True
+                  state['merge_sha']=merged['sha']
+                  save()
+              release=state['merge_sha']
+              require(api('GET','/branches/main')['commit']['sha']==release,'main_is_not_the_verified_merge')
+              # A merge performed with GITHUB_TOKEN need not start other Actions.
+              # Explicitly dispatch unchanged main workflows that support it.
+              wanted_paths={r['path'].split('@',1)[0] for r in locals().get('pr_runs',{}).values() if r['name'] in {'NICO CI','CodeQL Advanced','Security Audit Evidence','Scanner Live Contracts'}}
+              wanted_paths.add('.github/workflows/spanish-comprehensive-production-proof.yml')
+              state['production_dispatches']=[]
+              for path in sorted(wanted_paths):
+                  content=api('GET','/contents/'+path+'?ref='+release)
+                  text=base64.b64decode(content['content']).decode()
+                  if re.search(r'^\s{2}workflow_dispatch\s*:',text,re.M):
+                      answer=api('POST','/actions/workflows/'+path.rsplit('/',1)[-1]+'/dispatches',{'ref':'main'})
+                      state['production_dispatches'].append({'path':path,'status':'accepted','http_status':answer.get('http_status')})
+                  else:
+                      state['production_dispatches'].append({'path':path,'status':'manual_or_native_trigger_required'})
+                  save()
+              # Verify actual public identities without changing variables to spoof them.
+              deadline=time.monotonic()+900
+              while time.monotonic()<deadline:
+                  require(api('GET','/branches/main')['commit']['sha']==release,'main_advanced_during_production_verification')
+                  try:
+                      code,front=public_json('https://app.nicoaudit.com/api/release')
+                      back_code,ready=public_json('https://nico-production-690a.up.railway.app/diagnostics/specialist-readiness')
+                      p=ready.get('release_provenance',{})
+                      state['production_identity']={'frontend_http':code,'frontend_release_sha':front.get('release_sha'),'backend_http':back_code,'readiness':ready.get('status'),'backend_build_commit':p.get('backend_build_commit'),'frontend_build_commit':p.get('frontend_build_commit')}
+                      save()
+                      if code==200 and back_code==200 and front.get('release_sha')==release and p.get('backend_build_commit')==release and p.get('frontend_build_commit')==release and ready.get('status')=='ready':break
+                  except (urllib.error.URLError,TimeoutError,ValueError) as exc:
+                      state['production_probe_error']=type(exc).__name__;save()
+                  time.sleep(30)
+              else:raise RuntimeError('exact_production_identity_not_verified_no_clearance')
+              state['outcome']='REPAIR_MERGED_EXACT_DEPLOYMENT_OBSERVED_REQUIRES_FRESH_REPORT_CONTENT_VERIFICATION'
+              state['remaining_requirements']=['Inspect newly generated production report scanner completion and retained raw evidence.','Prove each offered provider with actual positive end-to-end assessments; an Azure rejection is not success.','Verify intended authenticated/private scope, operational recovery, and required branch controls.','Retain mandatory human professional review and separate delivery authorization.']
+          except Exception as exc:
+              state['outcome']='BLOCKED_NO_SHIPPING_CLEARANCE'
+              state['blocker']=type(exc).__name__+': '+str(exc)[:400]
+          finally:
+              save()
+              with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:
+                  summary.write('## NICO PR #1497 guarded release execution\n\n')
+                  summary.write('Outcome: '+str(state.get('outcome'))+'\n\n')
+                  summary.write('Merged by this run: '+str(state['merged_by_this_run'])+'\n\n')
+                  summary.write('Release: '+str(state.get('merge_sha','not established'))+'\n\n')
+                  summary.write('Blocker: '+str(state.get('blocker','none recorded'))+'\n\n')
+                  summary.write('This is not all-four-provider shipping clearance. No production variable, database, human approval, or client-delivery operation was performed.\n')
+              print(json.dumps({k:state.get(k) for k in ('outcome','blocker','merged_by_this_run','merge_sha','ship_ready')}))
+          raise SystemExit(1 if state.get('blocker') else 0)
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: nico-pr1497-guarded-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-evidence/
+          if-no-files-found: error
+          retention-days: 30
