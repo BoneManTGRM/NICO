@@ -1,0 +1,67 @@
+name: Capture stalled exact-release proof
+on:
+  push:
+    branches: [verification/1496-positive-providers-20260905]
+    paths: [.github/workflows/capture-stalled-proof-20260905.yml]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: capture-nico-proof-33967832794
+  cancel-in-progress: false
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Stop only the identified stalled test and preserve its failure evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json,os,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError
+          assert os.environ['GITHUB_REPOSITORY']=='BoneManTGRM/NICO'
+          assert os.environ['GITHUB_REF']=='refs/heads/verification/1496-positive-providers-20260905'
+          base='https://api.github.com/repos/BoneManTGRM/NICO'
+          target=33967832794
+          expected='569ec3e1fa8cfbeea350b230b38eeba9cc1793af'
+          def api(method,path):
+              req=Request(base+path,method=method,data=b'' if method=='POST' else None,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+              with urlopen(req,timeout=30) as r:
+                  body=r.read()
+                  return json.loads(body) if body else {'http_status':r.status}
+          current=api('GET',f'/actions/runs/{target}')
+          assert current['head_sha']==expected and current['head_branch']=='main'
+          assert current['path']=='.github/workflows/spanish-comprehensive-production-proof.yml'
+          assert current['run_attempt']==1 and current['event']=='push'
+          age=(datetime.now(timezone.utc)-datetime.fromisoformat(current['run_started_at'].replace('Z','+00:00'))).total_seconds()
+          record={'run_id':target,'release_sha':expected,'before':current['status'],'age_seconds':age,'cancelled_by_this_action':False,'production_changed':False,'new_assessments_started':0,'ship_ready':False}
+          if current['status']!='completed':
+              assert age>=1200,'Test still within its observation interval; do not interrupt'
+              try:
+                  record['cancel_response']=api('POST',f'/actions/runs/{target}/cancel')
+                  record['cancelled_by_this_action']=True
+              except HTTPError as exc:
+                  if exc.code!=409:raise
+              for _ in range(20):
+                  time.sleep(10)
+                  current=api('GET',f'/actions/runs/{target}')
+                  if current['status']=='completed':break
+          record['after']=current['status'];record['conclusion']=current.get('conclusion')
+          artifacts=api('GET',f'/actions/runs/{target}/artifacts')
+          record['retained_artifacts']=[{'id':a['id'],'name':a['name'],'size_in_bytes':a['size_in_bytes']} for a in artifacts.get('artifacts',[])]
+          Path('capture.json').write_text(json.dumps(record,indent=2))
+          print(json.dumps(record,indent=2))
+          if record['after']!='completed':raise SystemExit('Cancellation requested; terminal evidence not yet available')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: stalled-proof-capture-${{ github.run_id }}
+          path: capture.json
+          if-no-files-found: error
+          retention-days: 30
