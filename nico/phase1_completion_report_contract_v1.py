@@ -173,14 +173,43 @@ def validate_external(
     if audit.get("human_review_required") is not True or audit.get("client_delivery_allowed") is not False:
         raise ValueError("Human approval/client-delivery boundary was weakened")
 
-    if release.get("artifact_schema") != "nico.frontend_production_release_identity.v1" or release.get("status") != "passed":
+    release_schema = release.get("artifact_schema")
+    if release_schema not in {
+        "nico.frontend_production_release_identity.v1",
+        "nico.frontend_production_release_identity.v2",
+    } or release.get("status") != "passed":
         raise ValueError("Exact frontend release identity did not pass")
-    final_release = release.get("final_release_observation") or {}
+    final_release = release.get("final_release_observation")
+    if not isinstance(final_release, dict):
+        raise ValueError("Frontend release observation is missing or malformed")
     if (
         release.get("expected_sha") != expected_release_sha
         or final_release.get("release_sha") != expected_release_sha
     ):
         raise ValueError("Frontend release identity is bound to a different SHA")
+    if release_schema == "nico.frontend_production_release_identity.v2":
+        # v2 accepts either the authenticated workspace or its specialist gate.
+        # Consume its explicit proof, never require unauthenticated workspace copy
+        # or silently rewrite a current artifact into the legacy v1 schema.
+        required_proof = (
+            "exact_release_sha", "exact_ui_contract", "production_environment",
+            "cache_busted_no_store_requests", "english_copy_contract",
+            "spanish_copy_contract", "workspace_contract",
+            "specialist_authentication_gate", "preview_deployment_rejected",
+        )
+        release_proof = release.get("proof")
+        if not isinstance(release_proof, dict) or any(
+            release_proof.get(key) is not True for key in required_proof
+        ):
+            raise ValueError("Frontend v2 release proof is incomplete")
+        if (
+            release.get("expected_deployment_environment") != "production"
+            or final_release.get("deployment_environment") != "production"
+            or final_release.get("http_status") != 200
+            or not release.get("expected_ui_contract")
+            or final_release.get("ui_contract") != release.get("expected_ui_contract")
+        ):
+            raise ValueError("Frontend v2 production identity is not verified")
 
     if (
         status.get("artifact_schema") != "nico.phase1-current-head-status.v1"
