@@ -71,6 +71,16 @@ def requested_scanner_population(
         for item in records
         if _name(item.get("scanner_name") or item.get("tool"))
     }
+    # The applicable population intentionally excludes N/A rows. Reattach their
+    # retained source records before filling genuinely missing requested tools.
+    # Do not replace provenance-bearing exclusions with synthetic missing rows.
+    for container in (canonical, _mapping(canonical.get("assessment"))):
+        for raw in container.get("not_applicable_scanner_records") or []:
+            if not isinstance(raw, Mapping):
+                continue
+            name = _name(raw.get("scanner_name") or raw.get("tool"))
+            if name and raw.get("applicable") is False and name not in by_name:
+                by_name[name] = deepcopy(dict(raw))
     selected: list[dict[str, Any]] = []
     for name in requested:
         item = deepcopy(by_name.get(name) or {})

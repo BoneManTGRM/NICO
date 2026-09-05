@@ -14,6 +14,7 @@ from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.comprehensive_retained_scanner_evidence_v1 import retained_scanner_payload
 from nico.comprehensive_scanner_stage_retention_v1 import install_scanner_stage_retention
 from nico.phase9_comprehensive_report_integration_v1 import finalize_report_package
+from nico.v2_scanner_reconciliation import normalize_record
 
 VERSION = "nico.v2.production-authority.v7"
 _MARKER = "__nico_v2_production_authority_v7__"
@@ -203,7 +204,13 @@ def _inject_live_runtime_truth(
         if isinstance(item, Mapping)
     ]
     if not records:
-        records = _existing_scanner_records(canonical, assessment)
+        # Legacy canonical records may carry returncode without exit_code.
+        # Normalize them before sharing the requested and execution populations.
+        expected_commit = _text(identity.get("commit_sha") or context.get("commit_sha"))
+        records = [
+            normalize_record(item, expected_commit)
+            for item in _existing_scanner_records(canonical, assessment)
+        ]
         if records:
             retained = {
                 **retained,
@@ -213,6 +220,11 @@ def _inject_live_runtime_truth(
             }
 
     if records:
+        # The full requested population must use the same retained exact-run
+        # records. A pre-injection projection must not override these records
+        # later during applicability reconciliation or publication acceptance.
+        canonical["requested_scanner_records"] = [dict(item) for item in records]
+        assessment["requested_scanner_records"] = [dict(item) for item in records]
         canonical["scanner_execution_records"] = [dict(item) for item in records]
         assessment["scanner_execution_records"] = [dict(item) for item in records]
         assessment["scanner_execution_summary"] = {

@@ -11,6 +11,21 @@ KNOWN_SCANNERS = {
 }
 FINDINGS_EXIT_SCANNERS = {"bandit", "eslint", "gitleaks"}
 
+# Preserve producer metadata, not raw output or a newly calculated report digest.
+# These fields must follow the same selected scanner record across projections.
+SCANNER_PROVENANCE_FIELDS = (
+    "raw_artifact_sha256", "raw_artifact_retention_complete",
+    "raw_artifact_capture_complete", "output_capture_complete",
+    "returncode_valid", "timed_out", "output_truncated",
+    "exact_commit_match", "snapshot_commit_sha", "target_commit_sha",
+    "run_id", "scan_id", "evidence_reference", "category", "required",
+    "current_run", "execution_observed_for_this_report",
+    "verified_for_this_report", "scans_git_history", "full_history_verified",
+    "applicable", "evidence_required", "applicability_reason",
+    "applicability_evidence", "native_json_output", "no_vulnerabilities_claimed",
+    "scanner_tool_version", "coverage_scope",
+)
+
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
@@ -106,7 +121,15 @@ def normalize_record(raw: Mapping[str, Any], commit_sha: str) -> dict[str, Any]:
     verified_signal = any(item.get(field_name) is True for field_name in verification_fields)
     verified = bool(completed and retention_valid and (verified_signal if verification_declared else retained_result))
 
-    if completed:
+    if status == "not_applicable":
+        # Preserve the producer's applicability observation and inventory. This is
+        # not completion credit; the independent acceptance gate validates its basis.
+        item.update({
+            "status": "not_applicable", "state": "not_applicable",
+            "completed": False, "verified": False, "verified_complete": False,
+            "verified_for_this_report": False,
+        })
+    elif completed:
         item["status"] = (
             "completed_with_findings"
             if item["findings"] or finding_count > 0 or findings_exit
