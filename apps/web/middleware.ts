@@ -9,6 +9,7 @@ export function middleware(request: NextRequest) {
     ? "/es/specialist-login"
     : "/specialist-login";
   login.search = "";
+  login.searchParams.set("returnTo", request.nextUrl.pathname + request.nextUrl.search);
   return NextResponse.redirect(login);
 }
 

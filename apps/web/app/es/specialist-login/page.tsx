@@ -1,18 +1,22 @@
 "use client";
 
 import {FormEvent, useEffect, useState} from "react";
-
-const DESTINATION = "/es/assessment?tier=comprehensive#assessment";
+import {specialistReturnTo} from "../../specialist-login/returnTo";
 
 export default function SpanishSpecialistLoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [languageHref, setLanguageHref] = useState("/specialist-login");
 
   useEffect(() => {
     document.documentElement.lang = "es-MX";
+    const destination = specialistReturnTo(window.location.search, "es");
+    setLanguageHref("/specialist-login?" + new URLSearchParams({returnTo: destination}));
     void fetch("/api/nico/operator-session", {method: "GET", cache: "no-store"}).then((response) => {
-      if (response.ok) window.location.replace(DESTINATION);
+      if (response.ok) window.location.replace(destination);
+    }).catch(() => {
+      setError("El acceso seguro para especialistas no está disponible.");
     });
   }, []);
 
@@ -33,7 +37,7 @@ export default function SpanishSpecialistLoginPage() {
         return;
       }
       setPassword("");
-      window.location.assign(DESTINATION);
+      window.location.assign(specialistReturnTo(window.location.search, "es"));
     } catch {
       setError("El acceso seguro para especialistas no está disponible.");
     } finally {
@@ -61,7 +65,7 @@ export default function SpanishSpecialistLoginPage() {
         {error ? <p role="alert">{error}</p> : null}
       </form>
       <p className="muted">La contraseña se intercambia una sola vez por una cookie de sesión firmada, de duración limitada, HttpOnly y SameSite=Strict. No se guarda en la URL ni en el almacenamiento del navegador.</p>
-      <p className="muted"><a href="/specialist-login">English</a></p>
+      <p className="muted"><a href={languageHref}>English</a></p>
     </section>
   </main>;
 }
