@@ -4,12 +4,16 @@ import base64
 import io
 import os
 import re
+import sys
 from copy import deepcopy
 from importlib import metadata
 from typing import Any, Callable
 
 VERSION = "nico.comprehensive_release_provenance.v1"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_SCANNER_VERSION_BOUNDARY = (
+    "Scanner versions are configured or default declarations, not retained per-run execution evidence."
+)
 
 
 def _first_env(*names: str) -> str:
@@ -98,9 +102,14 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
-def _append_provenance_pdf(encoded: str, provenance: dict[str, Any]) -> str:
+def _append_provenance_pdf(
+    encoded: str,
+    provenance: dict[str, Any],
+    localize_presentation: Callable[[str], str] | None = None,
+) -> str:
     from pypdf import PdfReader, PdfWriter
     from reportlab.lib.pagesizes import letter
+    from reportlab.lib.utils import simpleSplit
     from reportlab.pdfgen import canvas
 
     source = base64.b64decode(encoded, validate=True)
@@ -108,19 +117,26 @@ def _append_provenance_pdf(encoded: str, provenance: dict[str, Any]) -> str:
         raise ValueError("comprehensive_release_provenance_source_pdf_invalid")
     page_buffer = io.BytesIO()
     page = canvas.Canvas(page_buffer, pagesize=letter, invariant=1)
-    page.setTitle("NICO Release Provenance")
+    localize = localize_presentation or (lambda value: value)
+    title = localize("NICO Release Provenance")
+    page.setTitle(title)
     page.setFont("Helvetica-Bold", 16)
-    page.drawString(54, 738, "NICO Release Provenance")
+    page.drawString(54, 738, title)
     page.setFont("Helvetica", 8.5)
     y = 704
     for label, value in _provenance_lines(provenance):
         page.setFont("Helvetica-Bold", 8.5)
-        page.drawString(54, y, f"{label}:")
+        page.drawString(54, y, f"{localize(label)}:")
         page.setFont("Helvetica", 8.5)
-        page.drawString(190, y, value[:96])
-        y -= 22
+        for line in simpleSplit(value, "Helvetica", 8.5, 504):
+            y -= 12
+            page.drawString(54, y, line)
+        y -= 24
     page.setFont("Helvetica", 8)
-    page.drawString(54, y - 8, str(provenance.get("truth_boundary") or "")[:115])
+    disclosure = localize(_SCANNER_VERSION_BOUNDARY) + " " + localize(str(provenance.get("truth_boundary") or ""))
+    for line in simpleSplit(disclosure, "Helvetica", 8, 504):
+        page.drawString(54, y - 8, line)
+        y -= 12
     page.save()
 
     writer = PdfWriter()
@@ -133,15 +149,13 @@ def _append_provenance_pdf(encoded: str, provenance: dict[str, Any]) -> str:
     return base64.b64encode(output.getvalue()).decode("ascii")
 
 
-def install_comprehensive_release_provenance() -> dict[str, Any]:
-    from nico import comprehensive_report_package as package
-
+def _bind_release_provenance(package: Any) -> None:
     if getattr(package, "_nico_release_provenance_v1_installed", False):
-        return {"artifact_schema": VERSION, "installed": True}
+        return
 
-    original_assessment = package._assessment
-    original_markdown = package._markdown
-    original_pdf = package._pdf
+    original_assessment = getattr(package, "_assessment", None)
+    original_markdown = getattr(package, "_markdown", None)
+    original_pdf = getattr(package, "_pdf", None)
 
     def assessment_with_provenance(stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
         assessment = deepcopy(original_assessment(stage_results))
@@ -169,7 +183,7 @@ def install_comprehensive_release_provenance() -> dict[str, Any]:
         localize = localize_presentation or (lambda value: value)
         lines = ["", f"## {localize('NICO Release Provenance')}", ""]
         lines.extend(f"- **{localize(label)}:** `{value}`" for label, value in _provenance_lines(provenance))
-        lines.extend(["", localize(str(provenance.get("truth_boundary") or "")), ""])
+        lines.extend(["", localize(_SCANNER_VERSION_BOUNDARY), "", localize(str(provenance.get("truth_boundary") or "")), ""])
         return markdown.rstrip() + "\n" + "\n".join(lines)
 
     def pdf_with_provenance(
@@ -193,14 +207,37 @@ def install_comprehensive_release_provenance() -> dict[str, Any]:
         if not isinstance(provenance, dict):
             provenance = comprehensive_release_provenance()
         try:
-            return _append_provenance_pdf(encoded, provenance), None, int(page_count or 0) + 1
+            return _append_provenance_pdf(encoded, provenance, localize_presentation), None, int(page_count or 0) + 1
         except Exception:
             return "", "release_provenance_pdf_generation_failed", 0
 
-    package._assessment = assessment_with_provenance
-    package._markdown = markdown_with_provenance
-    package._pdf = pdf_with_provenance
+    for name, original, wrapped in (
+        ("_assessment", original_assessment, assessment_with_provenance),
+        ("_markdown", original_markdown, markdown_with_provenance),
+        ("_pdf", original_pdf, pdf_with_provenance),
+    ):
+        if original is not None and not getattr(original, "_nico_release_provenance_bound", False):
+            wrapped._nico_release_provenance_bound = True
+            setattr(package, name, wrapped)
     package._nico_release_provenance_v1_installed = True
+
+
+def install_comprehensive_release_provenance() -> dict[str, Any]:
+    from nico import comprehensive_report_package as package
+
+    _bind_release_provenance(package)
+    # Package initialization can eagerly capture these helpers before a bootstrap
+    # executes. Preserve each captured implementation while binding the same release
+    # boundary; modules imported later capture the already-bound base helpers.
+    for name in (
+        "nico.comprehensive_canonical_report_source_v1",
+        "nico.v2_premium_report_renderer",
+        "nico.comprehensive_spanish_canonical_report_v87",
+        "nico.comprehensive_same_run_locale_report_v1",
+    ):
+        captured = sys.modules.get(name)
+        if captured is not None:
+            _bind_release_provenance(captured)
     return {
         "artifact_schema": VERSION,
         "installed": True,

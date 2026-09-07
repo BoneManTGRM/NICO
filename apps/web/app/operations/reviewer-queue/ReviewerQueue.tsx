@@ -31,6 +31,7 @@ type ReviewQueuePayload = {
 type QueueUnit = {
   id: string;
   kind: "individual" | "group";
+  requiresHumanAttention: boolean;
   candidates: JsonRecord[];
   representative: JsonRecord;
   cluster: JsonRecord;
@@ -39,6 +40,7 @@ type QueueModel = {
   units: QueueUnit[];
   individualUnits: QueueUnit[];
   groupedUnits: QueueUnit[];
+  retainedUnits: QueueUnit[];
   candidateCount: number;
   clusterCount: number;
   exactSourceFindings: JsonRecord[];
@@ -82,6 +84,9 @@ function routingPriority(candidate: JsonRecord): number {
 function severityPriority(candidate: JsonRecord): number {
   return ({critical: 0, high: 1, medium: 2, moderate: 2, low: 3, informational: 4, info: 4} as Record<string, number>)[text(candidate.severity).toLowerCase()] ?? 5;
 }
+function requiresHumanAttention(candidate: JsonRecord): boolean {
+  return ["CRITICAL_ATTENTION", "HUMAN_TECHNICAL_REVIEW"].includes(text(candidate.review_routing_class));
+}
 function categoryPriority(candidate: JsonRecord): number {
   return ({secret: 0, dependency: 1, static: 2} as Record<string, number>)[text(candidate.category).toLowerCase()] ?? 3;
 }
@@ -122,6 +127,8 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
     sourceIds.push(id);
     if (candidateById.has(id)) integrityErrors.push(tr(locale, `Candidate identity ${id} is duplicated.`, `La identidad de candidato ${id} está duplicada.`));
     candidateById.set(id, candidate);
+    if (!["CRITICAL_ATTENTION", "HUMAN_TECHNICAL_REVIEW", "QUALITY_CONTROL_ELIGIBLE", "STABLE_CARRY_FORWARD", "AUTOMATED_TRIAGE_COMPLETE"].includes(text(candidate.review_routing_class))) integrityErrors.push(tr(locale, `Candidate ${id} has an unknown review-routing class.`, `El candidato ${id} tiene una clase desconocida de enrutamiento de revisión.`));
+    if (candidate.review_requires_individual_attention !== (requiresHumanAttention(candidate) && candidate.grouped_review_eligible !== true)) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent individual-attention routing.`, `El candidato ${id} tiene un enrutamiento inconsistente de atención individual.`));
     const exactCommit = text(candidate.exact_commit_sha);
     if (exactCommit !== text(payload.commit_sha)) integrityErrors.push(tr(locale, `Candidate ${id} does not match the exact run commit.`, `El candidato ${id} no corresponde al commit exacto de la ejecución.`));
     if (candidate.human_review_required !== true || candidate.client_delivery_allowed === true) integrityErrors.push(tr(locale, `Candidate ${id} does not preserve the mandatory pre-approval review boundary.`, `El candidato ${id} no conserva el límite obligatorio de revisión previa a la aprobación.`));
@@ -171,14 +178,16 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
 
     const representativeId = text(cluster.representative_candidate_id);
     const representative = candidates.find((candidate) => candidateId(candidate) === representativeId);
+    const humanAttention = candidates.some(requiresHumanAttention);
+    if (cluster.grouped_human_review_cluster !== (grouped && humanAttention)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has inconsistent human-review routing.`, `El grupo ${clusterId || index + 1} tiene un enrutamiento inconsistente de revisión humana.`));
     if (!representative || !candidateIds.includes(representativeId)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has an invalid representative candidate.`, `El grupo ${clusterId || index + 1} tiene un candidato representativo no válido.`));
     if (grouped) {
-      if (cluster.grouped_human_review_cluster !== true || candidateIds.length < 2) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is not a valid grouped human-review unit.`, `El grupo ${clusterId || index + 1} no es una unidad válida de revisión humana agrupada.`));
+      if (candidateIds.length < 2 || candidates.some((candidate) => requiresHumanAttention(candidate) !== humanAttention)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is not a valid grouped review unit.`, `El grupo ${clusterId || index + 1} no es una unidad válida de revisión agrupada.`));
       if (cluster.homogeneous_evidence !== true || cluster.homogeneous_verdict !== true) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is not homogeneous enough for grouped review.`, `El grupo ${clusterId || index + 1} no es suficientemente homogéneo para la revisión agrupada.`));
       if (candidates.some((candidate) => candidate.grouped_review_eligible !== true || candidate.review_requires_individual_attention === true)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} contains a candidate that requires individual attention.`, `El grupo ${clusterId || index + 1} contiene un candidato que requiere atención individual.`));
     } else {
       if (cluster.grouped_human_review_cluster === true || candidateIds.length !== 1) integrityErrors.push(tr(locale, `Individual cluster ${clusterId || index + 1} does not contain exactly one candidate.`, `El grupo individual ${clusterId || index + 1} no contiene exactamente un candidato.`));
-      if (candidates.some((candidate) => candidate.grouped_review_eligible === true || candidate.review_requires_individual_attention !== true)) integrityErrors.push(tr(locale, `Individual cluster ${clusterId || index + 1} has inconsistent routing.`, `El grupo individual ${clusterId || index + 1} tiene un enrutamiento inconsistente.`));
+      if (candidates.some((candidate) => candidate.grouped_review_eligible === true || candidate.review_requires_individual_attention !== humanAttention)) integrityErrors.push(tr(locale, `Individual cluster ${clusterId || index + 1} has inconsistent routing.`, `El grupo individual ${clusterId || index + 1} tiene un enrutamiento inconsistente.`));
     }
     if (cluster.underlying_candidate_disposition_required !== true) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} does not preserve candidate-level human disposition requirements.`, `El grupo ${clusterId || index + 1} no conserva los requisitos de disposición humana a nivel de candidato.`));
 
@@ -186,6 +195,7 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
       builtUnits.push({
         id: grouped ? clusterId : candidateId(candidates[0]),
         kind: grouped ? "group" : "individual",
+        requiresHumanAttention: humanAttention,
         candidates: [...candidates],
         representative: representative || candidates[0],
         cluster,
@@ -197,8 +207,9 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
   if (new Set(sourceIds).size !== sourceIds.length) integrityErrors.push(tr(locale, "Candidate identities are not unique.", "Las identidades de los candidatos no son únicas."));
   if (queuedIds.length !== findings.length || new Set(queuedIds).size !== findings.length || sourceIds.some((id) => !queuedIds.includes(id))) integrityErrors.push(tr(locale, "Deterministic clusters do not preserve every canonical candidate exactly once.", "Los grupos deterministas no conservan cada candidato canónico exactamente una vez."));
 
-  const individualUnits = builtUnits.filter((unit) => unit.kind === "individual").sort((left, right) => compareCandidates(left.representative, right.representative));
-  const groupedUnits = builtUnits.filter((unit) => unit.kind === "group").sort((left, right) => compareCandidates(left.representative, right.representative) || left.id.localeCompare(right.id));
+  const individualUnits = builtUnits.filter((unit) => unit.requiresHumanAttention && unit.kind === "individual").sort((left, right) => compareCandidates(left.representative, right.representative));
+  const groupedUnits = builtUnits.filter((unit) => unit.requiresHumanAttention && unit.kind === "group").sort((left, right) => compareCandidates(left.representative, right.representative) || left.id.localeCompare(right.id));
+  const retainedUnits = builtUnits.filter((unit) => !unit.requiresHumanAttention).sort((left, right) => compareCandidates(left.representative, right.representative) || left.id.localeCompare(right.id));
   const units = [...individualUnits, ...groupedUnits];
   const groupedCandidateCount = groupedUnits.reduce((total, unit) => total + unit.candidates.length, 0);
   const individualCandidateCount = individualUnits.reduce((total, unit) => total + unit.candidates.length, 0);
@@ -232,7 +243,7 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
   if (totalUnresolvedHumanReviewWorkUnits === null || totalUnresolvedHumanReviewWorkUnits !== combinedUnits) integrityErrors.push(tr(locale, "Total unresolved human-review work units do not reconcile across scanner, exact-source, and operational/context findings.", "El total de unidades de revisión humana sin resolver no coincide entre los hallazgos de analizadores, de fuente exacta y operativos o contextuales."));
   if (payload.operator_attention_required !== (combinedUnits > 0)) integrityErrors.push(tr(locale, "Operator-attention state does not reconcile with the combined unresolved workload.", "El estado de atención del operador no coincide con la carga combinada sin resolver."));
 
-  return {units, individualUnits, groupedUnits, candidateCount, clusterCount: clusterRecords.length, exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits: scannerCandidateReviewWorkUnits ?? 0, exactSourceReviewWorkUnits: exactSourceReviewWorkUnits ?? 0, operationalContextReviewWorkUnits: operationalContextReviewWorkUnits ?? 0, totalUnresolvedHumanReviewWorkUnits: totalUnresolvedHumanReviewWorkUnits ?? 0, integrityErrors: Array.from(new Set(integrityErrors))};
+  return {units, individualUnits, groupedUnits, retainedUnits, candidateCount, clusterCount: clusterRecords.length, exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits: scannerCandidateReviewWorkUnits ?? 0, exactSourceReviewWorkUnits: exactSourceReviewWorkUnits ?? 0, operationalContextReviewWorkUnits: operationalContextReviewWorkUnits ?? 0, totalUnresolvedHumanReviewWorkUnits: totalUnresolvedHumanReviewWorkUnits ?? 0, integrityErrors: Array.from(new Set(integrityErrors))};
 }
 
 function evidenceLabel(candidate: JsonRecord, locale: Locale): string {
@@ -328,6 +339,12 @@ function FindingDisclosure({finding, locale}: {finding: JsonRecord; locale: Loca
     </summary>
     <div className={styles.candidateBody}><pre className={styles.exactSourceRecord}>{JSON.stringify(finding, null, 2)}</pre></div>
   </details>;
+}
+
+function RetainedUnitDisclosure({unit, locale}: {unit: QueueUnit; locale: Locale}) {
+  return unit.kind === "group"
+    ? <ClusterDisclosure unit={unit} locale={locale} />
+    : <CandidateDisclosure candidate={unit.representative} locale={locale} />;
 }
 
 export default function ReviewerQueue() {
@@ -436,6 +453,11 @@ export default function ReviewerQueue() {
           <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>{tr(locale, "THEN", "DESPUÉS")}</p><h2>{tr(locale, "Deterministic grouped work units", "Unidades de trabajo deterministas agrupadas")}</h2></div><strong>{model.groupedUnits.length} {tr(locale, model.groupedUnits.length === 1 ? "work unit" : "work units", model.groupedUnits.length === 1 ? "unidad de trabajo" : "unidades de trabajo")}</strong></div>
           <p className={styles.sectionLead}>{tr(locale, "Expand a cluster to inspect its deterministic basis and then expand every underlying candidate. Groups are presentation-only and never replace candidate identities, evidence, or later human dispositions.", "Expande un grupo para inspeccionar su fundamento determinista y luego expande cada candidato subyacente. Los grupos solo sirven para presentación y nunca sustituyen las identidades, la evidencia ni las disposiciones humanas posteriores de los candidatos.")}</p>
           <div className={styles.queue}>{model.groupedUnits.map((unit) => <ClusterDisclosure key={unit.id} unit={unit} locale={locale} />)}</div>
+        </section>
+        <section className={styles.queueSection}>
+          <div className={styles.sectionHeading}><h2>{tr(locale, "Retained automated triage and quality-control candidates", "Candidatos conservados de triaje automatizado y control de calidad")}</h2><strong>{model.retainedUnits.reduce((total, unit) => total + unit.candidates.length, 0)} {tr(locale, "candidates", "candidatos")}</strong></div>
+          <p className={styles.sectionLead}>{tr(locale, "These candidates remain accessible with their complete evidence and routing. They are outside the canonical human-attention work-unit count; automated triage is not human disposition, approval, or delivery authorization.", "Estos candidatos permanecen accesibles con su evidencia completa y su enrutamiento. Están fuera del recuento canónico de unidades de atención humana; el triaje automatizado no es una disposición humana, aprobación ni autorización de entrega.")}</p>
+          <div className={styles.queue}>{model.retainedUnits.map((unit) => <RetainedUnitDisclosure key={unit.id} unit={unit} locale={locale} />)}</div>
         </section>
       </>}
     </> : null}
