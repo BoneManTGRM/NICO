@@ -107,6 +107,20 @@ def test_session_expiration_and_tamper_fail_closed(monkeypatch):
     assert validate_specialist_session(f"{token[:-1]}x", now=1_001) is None
 
 
+@pytest.mark.parametrize("malformed_token", [b"\xe9.x", b"e.\xe9"], ids=["non_ascii_payload", "non_ascii_signature"])
+def test_non_ascii_session_tokens_receive_normal_protected_request_denial(monkeypatch, malformed_token):
+    monkeypatch.setenv("NICO_OPERATOR_SESSION_SIGNING_SECRET", "synthetic-session-signing-key-at-least-32-bytes")
+    client = TestClient(_app(), raise_server_exceptions=False)
+
+    response = client.get(
+        "/assessment/comprehensive-run/comprun_test",
+        headers=[(b"X-NICO-Operator-Session", malformed_token)],
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "specialist_session_invalid_or_expired"
+
+
 def test_session_signing_never_reuses_operator_or_admin_credentials(monkeypatch):
     monkeypatch.setenv("NICO_COMPREHENSIVE_OPERATOR_PASSWORD", "operator-password")
     monkeypatch.setenv("NICO_ADMIN_TOKEN", "site-wide-admin-token")

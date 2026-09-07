@@ -859,10 +859,23 @@ class ComprehensiveRunStore:
             raise ValueError("browser_projection_durability_contract_missing")
         return deepcopy(projection)
 
-    def save(self, record: dict[str, Any], *, expected_revision: int) -> dict[str, Any]:
+    def save(
+        self,
+        record: dict[str, Any],
+        *,
+        expected_revision: int,
+        publication_lease_id: str | None = None,
+    ) -> dict[str, Any]:
         canonical = self._validated_copy(record)
         browser_projection = self._build_browser_projection(canonical)
         identity = canonical["identity"]
+        publication_status = None
+        if publication_lease_id is not None:
+            from nico.comprehensive_final_report_execution_boundary_v4 import FINAL_REPORT_STAGE_ID
+            result = canonical.get("stage_results", {}).get(FINAL_REPORT_STAGE_ID, {})
+            if not publication_lease_id or result.get("stage_execution", {}).get("publication_lease_id") != publication_lease_id:
+                raise ValueError("final_report_publication_lease_mismatch")
+            publication_status = "complete" if FINAL_REPORT_STAGE_ID in canonical.get("completed_stages", []) else "blocked"
         current_revision = int(canonical["revision"])
         if current_revision != int(expected_revision) + 1:
             raise ComprehensiveRunConflict(
@@ -935,6 +948,22 @@ class ComprehensiveRunStore:
                 raise ComprehensiveRunConflict(
                     f"review_history_commitment_conflict:{identity['run_id']}"
                 )
+            if publication_status is not None:
+                # Canonical completion and the renderer lease are one durable fact.
+                # A terminal/superseded lease must roll back the entire publication.
+                cursor.execute(
+                    f"""
+                    UPDATE nico_comprehensive_final_report_jobs
+                    SET status = {p}, heartbeat_epoch = {p}, updated_at = {p}
+                    WHERE lease_id = {p} AND run_id = {p}
+                        AND status IN ('queued', 'rendering', 'running')
+                    """,
+                    (publication_status, time.time(), canonical["updated_at"],
+                     publication_lease_id, identity["run_id"]),
+                )
+                if int(cursor.rowcount or 0) != 1:
+                    connection.rollback()
+                    raise ComprehensiveRunConflict("final_report_publication_lease_inactive")
             self._write_browser_projection(
                 cursor,
                 canonical,

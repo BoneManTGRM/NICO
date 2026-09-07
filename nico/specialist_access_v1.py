@@ -123,6 +123,9 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
     value = str(token or "").strip()
     if secret is None or not value or value.count(".") != 1 or len(value) > 4096:
         return None
+    # Both base64url segments are ASCII; reject malformed headers before MAC work.
+    if not value.isascii():
+        return None
     encoded, claimed_signature = value.split(".", 1)
     expected = _b64url_encode(hmac.new(secret, encoded.encode("ascii"), hashlib.sha256).digest())
     if not hmac.compare_digest(claimed_signature, expected):
