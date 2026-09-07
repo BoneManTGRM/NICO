@@ -6,12 +6,26 @@ export type IntakeInput = {
 export type Attempt = {
   requestId: string; submittedAt: string; repository: string; commitSha: string;
   state: 'pending' | 'uncertain' | 'received'; runId?: string; receivedAt?: string;
+  httpStatus?: number; failureCode?: string; correlationId?: string;
 };
 export const ATTEMPT_KEY = 'nico.operator-provider-intake.attempt.v1';
 type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const SHA = /^[a-f0-9]{40}$/i;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const RUN = /^comprun_[a-f0-9]{32}$/;
+const CORRELATION = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
+// Only fixed product codes may enter retained browser diagnostics.
+const FAILURE_CODES = new Set(['provider_credential_reference_missing', 'provider_operationally_disabled',
+  'provider_controlled_pilot_not_proven', 'provider_not_production_engagement_ready',
+  'stale_provider_capability_evidence', 'provider_rollout_control_unavailable',
+  'repository_snapshot_unavailable', 'operator_provider_intake_timeout', 'assessment_backend_unreachable',
+  'assessment_backend_not_configured', 'operator_provider_intake_redirect_blocked']);
+
+function diagnostics(data: Partial<Attempt>): Partial<Attempt> {
+  return {...(Number.isInteger(data.httpStatus) && data.httpStatus! >= 100 && data.httpStatus! <= 599 ? {httpStatus: data.httpStatus} : {}),
+    ...(typeof data.failureCode === 'string' && FAILURE_CODES.has(data.failureCode) ? {failureCode: data.failureCode} : {}),
+    ...(typeof data.correlationId === 'string' && CORRELATION.test(data.correlationId) ? {correlationId: data.correlationId} : {})};
+}
 
 export function payloadFor(input: IntakeInput) {
   const repository = input.repository.trim();
@@ -41,7 +55,7 @@ export function readAttempt(store: Store): Attempt | null {
       (data.runId !== undefined && !RUN.test(data.runId))) throw new Error('attempt_record_unreadable');
   return {requestId: data.requestId, submittedAt: data.submittedAt, repository: data.repository,
     commitSha: data.commitSha, state: data.state, ...(data.runId ? {runId: data.runId} : {}),
-    ...(typeof data.receivedAt === 'string' ? {receivedAt: data.receivedAt} : {})};
+    ...(typeof data.receivedAt === 'string' ? {receivedAt: data.receivedAt} : {}), ...diagnostics(data)};
 }
 
 export async function submitIntake(input: IntakeInput, token: string, store: Store, send: typeof fetch = fetch): Promise<Attempt> {
@@ -57,7 +71,9 @@ export async function submitIntake(input: IntakeInput, token: string, store: Sto
       method: 'POST', headers: {'Content-Type': 'application/json', 'X-NICO-Admin-Token': token.trim(), 'X-Request-ID': attempt.requestId},
       body: JSON.stringify(payload), cache: 'no-store', redirect: 'error',
     });
+    Object.assign(attempt, diagnostics({httpStatus: response.status, correlationId: response.headers.get('X-NICO-Correlation-ID') ?? undefined}));
     const data = await response.json();
+    if (!response.ok) Object.assign(attempt, diagnostics({failureCode: typeof data?.detail === 'string' ? data.detail : data?.detail?.code}));
     // This specific rejection happens before any provider or assessment action.
     if (response.status === 403 && data?.detail?.code === 'authorized_nico_operator_required') {
       store.removeItem(ATTEMPT_KEY);

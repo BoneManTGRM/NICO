@@ -42,7 +42,7 @@ from nico.provider_live_clients import AzureDevOpsClient, BitbucketCloudClient, 
 from nico.provider_neutral_contract import ProviderAccessMode
 from nico.provider_neutral_contract import ProviderKind as NeutralProviderKind
 from nico.provider_platform_contract_v1 import ProviderKind
-from nico.provider_rollout_control_v1 import ProviderRolloutRegistry, STATE_KEY as ROLLOUT_STATE_KEY
+from nico.provider_rollout_control_v1 import ProviderRolloutError, ProviderRolloutRegistry, STATE_KEY as ROLLOUT_STATE_KEY
 from nico.repository_snapshot import capture_repository_snapshot, repository_snapshot_id
 from nico.source_signal_analysis_v2 import analyze_source_signals
 from nico.storage import STORE, StorageAdapter
@@ -1409,20 +1409,29 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
     registry = getattr(request.app.state, ROLLOUT_STATE_KEY, None)
     if not isinstance(registry, ProviderRolloutRegistry):
         raise ValueError("provider_rollout_control_unavailable")
-    registry.preflight(
-        {
-            "provider": provider.value,
-            "client_id": customer_id,
-            "project_id": project_id,
-            "session_id": _required(payload.get("session_id") or f"operator:{customer_id}:{project_id}", "session_id"),
-            "run_id": run_id,
-            "locale": report_language,
-            "execution_mode": _text(payload.get("execution_mode") or "internal_test"),
-            "expected_capability_revision": payload.get("expected_capability_revision"),
-            "ci_provider": payload.get("ci_provider") or provider.value,
-        },
-        operator_authorized=True,
-    )
+    try:
+        registry.preflight(
+            {
+                "provider": provider.value,
+                "client_id": customer_id,
+                "project_id": project_id,
+                "session_id": _required(payload.get("session_id") or f"operator:{customer_id}:{project_id}", "session_id"),
+                "run_id": run_id,
+                "locale": report_language,
+                "execution_mode": _text(payload.get("execution_mode") or "internal_test"),
+                "expected_capability_revision": payload.get("expected_capability_revision"),
+                "ci_provider": payload.get("ci_provider") or provider.value,
+            },
+            operator_authorized=True,
+        )
+    except ProviderRolloutError as exc:
+        # This catch is deliberately before acquisition and controller.start.
+        # Do not classify later provider/controller errors as a no-run receipt.
+        raise HTTPException(status_code=exc.status_code, detail={
+            "code": exc.code, "phase": "provider_preflight",
+            "assessment_started": False, "retryable": False,
+            "human_review_required": True, "client_delivery_allowed": False,
+        }) from exc
 
     if provider is ProviderKind.GITHUB:
         snapshot = capture_repository_snapshot(

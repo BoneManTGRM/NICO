@@ -75,6 +75,9 @@ export function ProviderIntake() {
         <dt>{t('Submitted at', 'Fecha de envío')}</dt><dd>{attempt.submittedAt}</dd>
         <dt>{t('Repository', 'Repositorio')}</dt><dd>{attempt.repository}</dd>
         <dt>{t('Expected commit', 'Commit esperado')}</dt><dd>{attempt.commitSha}</dd>
+        {attempt.httpStatus && <><dt>{t('HTTP response status', 'Estado de respuesta HTTP')}</dt><dd>{attempt.httpStatus}</dd></>}
+        {attempt.failureCode && <><dt>{t('Retained error code', 'Código de error conservado')}</dt><dd>{attempt.failureCode}</dd></>}
+        {attempt.correlationId && <><dt>{t('Operational correlation ID', 'ID de correlación de operaciones')}</dt><dd>{attempt.correlationId}</dd></>}
         {attempt.runId && <><dt>{t('Run ID', 'ID de ejecución')}</dt><dd>{attempt.runId}</dd><dt>{t('Receipt observed at', 'Acuse observado el')}</dt><dd>{attempt.receivedAt}</dd></>}
       </dl>
       {attempt.runId ? <a href={`${es ? '/es' : ''}/assessment?tier=comprehensive&run_id=${encodeURIComponent(attempt.runId)}`}>{t('Open the saved assessment', 'Abrir la evaluación guardada')}</a> :

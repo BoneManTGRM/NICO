@@ -8,12 +8,8 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime
-import gzip
 import hashlib
-import io
-from pathlib import Path
 import re
-import zlib
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -59,69 +55,12 @@ def _error(status: int, code: str) -> JSONResponse:
     return JSONResponse({"status": "blocked", "detail": {"code": code}}, status_code=status, headers=_HEADERS)
 
 
-def _raw_metadata(record: Mapping[str, Any]) -> dict[str, Any]:
-    artifact = _mapping(record.get("raw_artifact"))
-    raw_sha = _digest(artifact.get("sha256"))
-    compressed_sha = _digest(artifact.get("gzip_sha256"))
-    result: dict[str, Any] = {
-        "availability": "checksum_unavailable",
-        "sha256": raw_sha,
-        "gzip_sha256": compressed_sha,
-        "declared_raw_bytes": _number(artifact.get("retained_bytes")),
-        "declared_compressed_bytes": _number(artifact.get("gzip_bytes")),
-        "actual_raw_bytes": None,
-        "actual_compressed_bytes": None,
-        "redaction_declared": artifact.get("redacted") is True,
-    }
-    if not raw_sha or not compressed_sha:
-        return result
-    declared_sha = record.get("raw_artifact_sha256")
-    if declared_sha is not None and _digest(declared_sha) != raw_sha:
-        result["availability"] = "artifact_reference_mismatch"
-        return result
-    key = artifact.get("storage_key")
-    if not isinstance(key, str) or not key or len(key) > 1500 or Path(key).is_absolute() or ".." in Path(key).parts:
-        result["availability"] = "storage_reference_invalid"
-        return result
-    try:
-        root = Path(DEFAULT_RAW_ROOT).resolve()
-        path = (root / key).resolve()
-        path.relative_to(root)
-    except (OSError, RuntimeError, ValueError):
-        result["availability"] = "storage_reference_invalid"
-        return result
-    try:
-        with path.open("rb") as source:
-            # The existing scanner parse ceiling bounds both memory and gzip
-            # expansion. Exceeding it is an explicit verification limitation.
-            compressed = source.read(MAX_SCANNER_PARSE_BYTES + 1)
-        result["observed_compressed_bytes"] = len(compressed)
-        if len(compressed) > MAX_SCANNER_PARSE_BYTES:
-            result["availability"] = "verification_limit_exceeded"
-            return result
-        result["actual_compressed_bytes"] = len(compressed)
-        if _hash_bytes(compressed) != compressed_sha:
-            result["availability"] = "compressed_checksum_mismatch"
-            return result
-        with gzip.GzipFile(fileobj=io.BytesIO(compressed), mode="rb") as source:
-            raw = source.read(MAX_SCANNER_PARSE_BYTES + 1)
-        result["observed_raw_bytes"] = len(raw)
-        result["actual_raw_bytes"] = len(raw) if len(raw) <= MAX_SCANNER_PARSE_BYTES else None
-        if len(raw) > MAX_SCANNER_PARSE_BYTES:
-            result["availability"] = "verification_limit_exceeded"
-        elif _hash_bytes(raw) != raw_sha:
-            result["availability"] = "raw_checksum_mismatch"
-        elif any(result[declared] is not None and result[declared] != result[actual] for declared, actual in (("declared_raw_bytes", "actual_raw_bytes"), ("declared_compressed_bytes", "actual_compressed_bytes"))):
-            result["availability"] = "byte_count_mismatch"
-        else:
-            result["availability"] = "verified"
-    except FileNotFoundError:
-        result["availability"] = "missing"
-    except (gzip.BadGzipFile, EOFError, zlib.error):
-        result["availability"] = "invalid_gzip"
-    except (OSError, ValueError):
-        result["availability"] = "unreadable"
-    return result
+def _raw_metadata(record: Mapping[str, Any], *, binding: Mapping[str, Any]) -> dict[str, Any]:
+    from nico.scanner_raw_artifact_storage_v1 import read_scanner_artifact
+    return read_scanner_artifact(
+        record, binding=binding, raw_root=DEFAULT_RAW_ROOT,
+        limit=MAX_SCANNER_PARSE_BYTES,
+    ).metadata
 
 
 def _scanner_name(record: Mapping[str, Any]) -> str | None:
@@ -139,7 +78,7 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
     command = record.get("command_intent")
     command = command if isinstance(command, str) and len(command) <= 8000 else ""
     state = record.get("status")
-    raw = _raw_metadata(record) if source_matches else {"availability": "source_mismatch"}
+    raw = _raw_metadata(record, binding={**{key: scan.get(key) for key in ("run_id", "scan_id", "customer_id", "project_id", "repository")}, "commit_sha": commit, "scanner_name": _scanner_name(record)}) if source_matches else {"availability": "source_mismatch"}
     return {
         "scanner_name": _scanner_name(record),
         "execution_status": state if state in _STATES else "unknown",
