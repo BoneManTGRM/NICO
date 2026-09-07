@@ -20,6 +20,7 @@ from nico.comprehensive_run_store import ComprehensiveRunNotFound
 from nico.scanner_evidence_pipeline_v1 import DEFAULT_RAW_ROOT
 from nico.scanner_tool_runners import MAX_SCANNER_PARSE_BYTES
 from nico.scanner_worker import get_scan
+from nico.scanner_execution_receipt_v1 import provenance_summary
 from nico.specialist_access_v1 import SPECIALIST_SCOPE
 from nico.v2_scanner_reconciliation import KNOWN_SCANNERS
 
@@ -103,6 +104,7 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
         "applicability_evidence_retained": bool(record.get("applicability_evidence")),
         "scanner_error_count": _number(record.get("scanner_error_count")),
         "coverage_status": "not_evaluated_by_inventory",
+        "execution_provenance": provenance_summary(record),
         "raw_artifact": raw,
     }
 

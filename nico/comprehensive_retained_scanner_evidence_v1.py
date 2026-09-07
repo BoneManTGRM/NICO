@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.scanner_execution_receipt_v1 import provenance_summary
+
 from copy import deepcopy
 
 from typing import Any, Mapping
@@ -210,6 +212,7 @@ def compact_scanner_records(
                     raw.get("execution_observed_for_this_report") is True
                 ),
                 "output_capture_complete": raw.get("output_capture_complete") is True,
+                "execution_provenance": provenance_summary(raw),
                 "raw_artifact_capture_complete": (
                     raw.get("raw_artifact_capture_complete") is True
                 ),
