@@ -157,8 +157,10 @@ def _tool_triage(item: dict[str, Any]) -> dict[str, int]:
     findings = [finding for finding in item.get("findings") or [] if isinstance(finding, dict)]
     tool = _tool_name(item)
     category = str(item.get("category") or "unknown")
-    excluded_test_only = sum(1 for finding in findings if _test_or_example_path(_finding_path(finding)))
-    production = [finding for finding in findings if not _test_or_example_path(_finding_path(finding))]
+    # Test/example placement does not establish that a credential is harmless.
+    # Keep secret summary counts aligned with the evidence-backed review boundary.
+    excluded_test_only = 0 if category == "secret" else sum(1 for finding in findings if _test_or_example_path(_finding_path(finding)))
+    production = findings if category == "secret" else [finding for finding in findings if not _test_or_example_path(_finding_path(finding))]
 
     if tool == "bandit" and isinstance(item.get("bandit_triage"), dict):
         triage = item["bandit_triage"]

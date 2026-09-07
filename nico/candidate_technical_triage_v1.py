@@ -462,7 +462,12 @@ def _fresh_triage(record: Mapping[str, Any]) -> dict[str, Any]:
     counter: list[str] = []
     gaps: list[str] = []
 
-    if evidence_quality in {"count_only", "payload_without_source"}:
+    if record.get("candidate_evidence_context_status") == "ambiguous":
+        gaps.append("ambiguous_raw_context_binding")
+        code = "ambiguous_raw_context_binding"
+        rationale = "Retained observations have conflicting context at the same source identity; context cannot be assigned by candidate order."
+        next_step = "Review the retained observations and establish an unambiguous binding before technical disposition."
+    elif evidence_quality in {"count_only", "payload_without_source"}:
         gaps.extend(["raw_candidate_payload", "exact_source_context"])
         code = "count_or_payload_only_evidence"
     elif category == "dependency":
@@ -841,6 +846,8 @@ def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Map
         record["technical_triage_client_delivery_allowed"] = False
         record["human_approval_status"] = record.get("human_approval_status") or "pending"
         prior = indexed.get(prior_candidate_id) if lineage_status in _SAFE_LINEAGE_STATUSES and prior_candidate_id else None
+        if record.get("candidate_evidence_context_status") == "ambiguous":
+            prior = None
         if prior is not None:
             base = _base_fields(record)
             record.update(base)

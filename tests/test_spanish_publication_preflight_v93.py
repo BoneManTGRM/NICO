@@ -77,7 +77,7 @@ def test_current_generated_complexity_family_is_preflighted_after_restoration() 
     # The incident string does not exist in raw retained stage state. It is created by
     # restoration, which is why a preflight before canonical construction is insufficient.
     raw_text = repr(raw_stages)
-    assert "The exact-SHA rerun no longer reports cyclomatic complexity above" not in raw_text
+    assert "The exact-SHA rerun no longer reports cyclomatic complexity" not in raw_text
 
     findings = restored["findings_register"]
     production_source = next(
@@ -86,7 +86,7 @@ def test_current_generated_complexity_family_is_preflighted_after_restoration() 
         if item.get("path") == "nico/comprehensive_review_work_v1.py"
     )
     assert production_source == (
-        "The exact-SHA rerun no longer reports cyclomatic complexity above 30 at "
+        "The exact-SHA rerun no longer reports cyclomatic complexity of 30 or greater at "
         "nico/comprehensive_review_work_v1.py:323."
     )
 
@@ -105,6 +105,7 @@ def test_current_generated_complexity_family_is_preflighted_after_restoration() 
         "acceptance_criteria",
     )
     assert "La nueva ejecución sobre el SHA exacto" in translated
+    assert "igual o superior a 30" in translated
     assert "nico/comprehensive_review_work_v1.py:323" in translated
 
 

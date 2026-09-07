@@ -1096,15 +1096,18 @@ from nico.comprehensive_spanish_client_surface_localization_v86 import (
 install_comprehensive_spanish_client_surface_localization_v86()
 
 SMALL_ENGLISH_GOLDEN = {
-    "markdown": ("2ca2efd359843c7a2c311a1036a6892fcc35c6c3f6e392d20238e89a66f5c6c0", 18849),
-    "html": ("43d3a5097c673763501cc06bfa22921cbb963b59d77f4bb8cd92e0773c440343", 22724),
+    "markdown": ("8454119950349ad431b96720f848b570ff10f5b9a353265518c657c6d20d1c93", 18843),
+    "html": ("f33c224879dfccbf536b21af512be093b7668a7a72e3381885436b0a9d13addc", 22718),
     # The authoritative separately rendered CI/CD boundary replaces the base
     # copy, so one semantic section now produces one physical body page.
     # PDF evidence-integrity repair preserves numeric zero cells and reserves
     # footer space. Across these three goldens the only extracted-text additions
-    # are those previously blank zeros; Markdown/HTML and page totals are unchanged.
-    "pdf_base64": ("2200715d9a3cb75666b73842fa7deb30b25e7530a4a5d498149b66c25f7747b8", 177396),
-    "pdf_sha256": "9c91112490fbee56368044c3569004434e9d53897e4b643e8d0f87d2decca762",
+    # were those previously blank zeros; page totals remain unchanged.
+    # The inclusive complexity threshold repair changes closure wording from
+    # "at or below 30" to "below 30" in small/phase9 and their derived manifest
+    # hashes. Rich output is unchanged; findings, limits, and counters are retained.
+    "pdf_base64": ("1e64d3fa76a4f70004627d2944a515119fa34575811f53ddcc6c946690ebd5f8", 177388),
+    "pdf_sha256": "22cc82a264152728b6b989e4fee0822a24780da674d1c917c6c0f50eccb4cd54",
     "page_count": 21,
 }
 RICH_ENGLISH_GOLDEN = {
@@ -1115,10 +1118,10 @@ RICH_ENGLISH_GOLDEN = {
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
-    "markdown": ("51a2018ab77f58a5393987170771796db6ae6cfa6dbbf2a57d2ee672de15c7b7", 19585),
-    "html": ("e09e9867f511b055a1e80b25902b3891f04279f0e5f2c656029e7d634fb050bc", 23784),
-    "pdf_base64": ("f2bd4bfc6d5d1806f89f7a4454773c73f9a5b18b526ba5fd6d2b121102e0383a", 173944),
-    "pdf_sha256": "8151d94e345be2c1f2f7ead898b9119b83a498f15045c5398b2e5397b39fcfb3",
+    "markdown": ("4b45a138d5d819fd749502ef6d291cc98667a77354ba1d309524609f6d0bc39c", 19573),
+    "html": ("2f0a7e52a0b93665787f16460d1e4576d2faff61eed7c18e1089de4cbf0e6532", 23772),
+    "pdf_base64": ("b7acdf28e672a1431c3ffe826ae401e35409cca4c0836682b5b56c25761fd7be", 173920),
+    "pdf_sha256": "2277edba5c74063efdd9110c463a3aa45534cc45c609a7f1e790087625cacf5f",
     "page_count": 20,
 }
 

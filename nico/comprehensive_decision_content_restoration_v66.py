@@ -240,7 +240,7 @@ def _complexity_recommendation(name: str, path: str) -> str:
         return (
             f"Separate canonical-data preparation, translation selection, layout construction, "
             f"and artifact validation in `{name}`; preserve snapshot report fixtures and "
-            "cross-format truth tests; target cyclomatic complexity at or below 30."
+            "cross-format truth tests; target cyclomatic complexity below 30."
         )
     if any(token in lowered for token in ("collect", "evidence", "snapshot", "scanner")):
         return (
@@ -255,7 +255,7 @@ def _complexity_recommendation(name: str, path: str) -> str:
         )
     return (
         f"Decompose `{name}` around cohesive branch groups, preserve behavior with characterization "
-        "tests, and enforce cyclomatic complexity at or below 30 on the exact remediation commit."
+        "tests, and enforce cyclomatic complexity below 30 on the exact remediation commit."
     )
 
 
@@ -278,7 +278,7 @@ def _synthesized_complexity_findings(
             f"{commit_sha}|{path}|{line}|{name}|complexity_hotspot".encode("utf-8")
         ).hexdigest()[:12].upper()
         verification = [
-            f"The exact-SHA rerun no longer reports cyclomatic complexity above 30 at {path}:{line}.",
+            f"The exact-SHA rerun no longer reports cyclomatic complexity of 30 or greater at {path}:{line}.",
             "Targeted characterization tests pass on the remediation commit.",
             "The repository's complete required-check suite passes on the remediation commit.",
             "No new material regression or cross-format report-truth mismatch is introduced.",

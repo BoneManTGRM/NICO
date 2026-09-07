@@ -131,6 +131,7 @@ def _enrich_candidate(record: Mapping[str, Any]) -> dict[str, Any]:
             "source_path": item.get("source_path"),
             "line": item.get("line"),
             "evidence": item.get("evidence"),
+            **({"source_commit_sha": item["source_commit_sha"]} if item.get("source_commit_sha") else {}),
         }
     )
     family = _rule_family(item)

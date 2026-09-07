@@ -219,7 +219,7 @@ def _priority_for_complexity(item: Mapping[str, Any]) -> dict[str, Any]:
         )
     elif priority == "P2":
         rationale = (
-            f"P2 maintainability priority: measured cyclomatic complexity {complexity} exceeds the "
+            f"P2 maintainability priority: measured cyclomatic complexity {complexity} meets or exceeds the "
             "review threshold, but retained evidence does not establish a delivery-blocking, security-critical, "
             "or otherwise P1-level consequence."
         )

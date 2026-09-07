@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from nico import comprehensive_review_work_v2 as phase2
+from nico.comprehensive_review_work_v1 import is_terminal_disposition
 
 VERSION = "nico.comprehensive_review_work_safe.v2"
 _HUMAN_ROUTES = {"CRITICAL_ATTENTION", "HUMAN_TECHNICAL_REVIEW"}
@@ -75,6 +76,15 @@ def _required_human_candidate_ids(
             for value in ledger.get("high_impact_candidate_ids") or []
             if _text(value)
         )
+        # An explicit unresolved human challenge takes precedence over the original
+        # automated route, without changing the immutable candidate register.
+        dispositions = ledger.get("dispositions")
+        if isinstance(dispositions, Mapping):
+            required.update(
+                _text(candidate_id)
+                for candidate_id, disposition in dispositions.items()
+                if _text(candidate_id) in raw and not is_terminal_disposition(disposition)
+            )
     return required
 
 
@@ -92,11 +102,16 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     ledger = base.get("ledger") if isinstance(base.get("ledger"), Mapping) else {}
     dispositions = ledger.get("dispositions") if isinstance(ledger.get("dispositions"), Mapping) else {}
     disposition_ids = {_text(value) for value in dispositions if _text(value)}
+    completed_ids = {
+        _text(candidate_id)
+        for candidate_id, disposition in dispositions.items()
+        if is_terminal_disposition(disposition)
+    }
     high_impact = {
         _text(value) for value in ledger.get("high_impact_candidate_ids") or [] if _text(value)
     }
     required_ids = _required_human_candidate_ids(record, base)
-    pending_ids = sorted(required_ids - disposition_ids)
+    pending_ids = sorted(required_ids - completed_ids)
 
     candidate_rows: list[dict[str, Any]] = []
     row_by_id: dict[str, dict[str, Any]] = {}
@@ -126,11 +141,21 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         row["human_disposition_required"] = candidate_id in required_ids
         row["human_disposition_state"] = (
             "completed"
-            if candidate_id in disposition_ids
+            if candidate_id in completed_ids
             else "pending"
             if candidate_id in required_ids
             else "automated_triage_complete"
         )
+        # The base projection's confidence heuristic must not label a retained
+        # automated candidate as pending human work after exception-first routing.
+        # This changes presentation only; required IDs and QC gates above stand.
+        if row["human_disposition_state"] == "automated_triage_complete":
+            row["primary_review_queue"] = (
+                "stable_carry_forward"
+                if route == "STABLE_CARRY_FORWARD"
+                or phase2._evidence_change(source) in {"stable", "carried", "carried_forward", "carried_forward_exact", "unchanged"}
+                else "new_automated_triage_complete"
+            )
         candidate_rows.append(row)
         row_by_id[candidate_id] = row
 
@@ -177,6 +202,10 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     required_completed = len(required_ids) - len(pending_ids)
     actual_dispositions = len(disposition_ids & set(raw))
 
+    queue_counts = dict(base.get("queue_counts") or {})
+    for queue in ("critical_material", "human_technical_review", "new_automated_triage_complete", "stable_carry_forward", "human_disposition_completed"):
+        queue_counts[queue] = sum(row.get("primary_review_queue") == queue for row in candidate_rows)
+
     workload = deepcopy(dict(base.get("workload_metrics") or {}))
     workload.update(
         {
@@ -200,11 +229,12 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         {
             "artifact_schema": "nico.comprehensive_review_work_projection.v2.exception_first",
             "candidates": candidate_rows,
+            "queue_counts": queue_counts,
             "clusters": clusters,
             "required_human_disposition_candidate_ids": sorted(required_ids),
             "required_human_disposition_count": len(required_ids),
             "required_human_disposition_completed_count": required_completed,
-            "dispositioned_candidate_count": actual_dispositions,
+            "dispositioned_candidate_count": len(completed_ids & set(raw)),
             "remaining_candidate_count": len(pending_ids),
             "ready_for_final_approval": ready,
             "workload_metrics": workload,
