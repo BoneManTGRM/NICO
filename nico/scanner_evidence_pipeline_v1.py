@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 import gzip
 import hashlib
 import inspect
@@ -85,7 +86,19 @@ def _run(
         stdout_path=stdout_path,
         extra_env=extra_env or {},
     )
+    from nico.scanner_execution_receipt_v1 import input_snapshot, invocation_receipt
+
+    observed_cwd = cwd if "cwd" in kwargs else None
+    input_root = stdout_path.parent.parent
+    before = input_snapshot(command, cwd, workspace_root=input_root) if observed_cwd else []
     result = runner(command, **kwargs)
+    # The runner may add immutable-HEAD flags. Record returned executed argv,
+    # rather than the shorter intent passed to that delegate.
+    after = input_snapshot(result.args, cwd, workspace_root=input_root) if observed_cwd else []
+    result = replace(result, scanner_execution_receipt=invocation_receipt(
+        result.args, cwd=observed_cwd, before=before, after=after,
+        returncode=result.returncode, timed_out=result.timed_out,
+    ))
     if not stdout_path.exists():
         stdout_path.write_text(result.stdout or "", encoding="utf-8", errors="replace")
     return result
@@ -196,6 +209,8 @@ def _tool_payload(
     full_history_verified: bool = False,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from nico.scanner_execution_receipt_v1 import native_coverage_observation, safe_argv
+
     valid = set(valid_returncodes or spec.valid_returncodes)
     if result.timed_out:
         status = "timeout"
@@ -223,10 +238,10 @@ def _tool_payload(
         "output_capture_complete": capture_complete,
         "stdout_bytes": result.stdout_bytes,
         "stderr_bytes": result.stderr_bytes,
-        "command_intent": " ".join(
-            Path(part).name if index == 0 else str(part)
-            for index, part in enumerate(tuple(result.args)[:10])
-        ),
+        "command_intent": " ".join(safe_argv(result.args)["argv"][:10]),
+        "command_intent_scope": "abbreviated_redacted_preview; use scanner_execution_receipt for full argv",
+        "scanner_execution_receipt": result.scanner_execution_receipt,
+        "coverage_evidence": native_coverage_observation(spec.name, raw_blob),
         "scanner_tool_version": _scanner_version(spec.name, str(result.args[0]), workspace.repo_dir),
         "findings": findings,
         "findings_count": len(findings),
@@ -373,6 +388,7 @@ def _run_npm_audit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Ca
     if not directories:
         return _unavailable(spec, "No package-lock.json with an adjacent package.json was found.", source="canonical_npm_audit")
     runs: list[dict[str, Any]] = []
+    invocation_receipts: list[dict[str, Any]] = []
     findings: list[Any] = []
     valid = True
     last_result = WorkerCommandResult(args=(binary,), returncode=0, stdout="", stderr="")
@@ -381,6 +397,7 @@ def _run_npm_audit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Ca
         command = (binary, "audit", "--json", "--package-lock-only", "--ignore-scripts")
         result = _run(runner, command, cwd=directory, limits=WorkerLimits(spec.timeout_seconds, spec.max_output_chars), stdout_path=raw)
         last_result = result
+        invocation_receipts.append(result.scanner_execution_receipt)
         payload, reason = _read_json(raw)
         valid = valid and payload is not None and result.returncode in {0, 1} and not result.timed_out
         findings.extend(_npm_findings(payload))
@@ -388,7 +405,7 @@ def _run_npm_audit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Ca
     combined = workspace.root / "scanner-raw" / "npm-audit.json"
     combined.write_text(json.dumps({"runs": runs}, indent=2, sort_keys=True), encoding="utf-8")
     blob = _raw_blob(spec.name, combined, "json")
-    return _tool_payload(spec, last_result, findings=findings, capture_complete=valid, reason="" if valid else "one or more npm audit runs did not return complete JSON", raw_blob=blob, execution_source="canonical_npm_audit", workspace=workspace, valid_returncodes={0, 1}, extra={"lockfile_count_checked": len(directories)})
+    return _tool_payload(spec, last_result, findings=findings, capture_complete=valid, reason="" if valid else "one or more npm audit runs did not return complete JSON", raw_blob=blob, execution_source="canonical_npm_audit", workspace=workspace, valid_returncodes={0, 1}, extra={"lockfile_count_checked": len(directories), "scanner_invocation_receipts": invocation_receipts})
 
 
 def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult]) -> dict[str, Any]:
@@ -400,12 +417,14 @@ def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable
         (binary, "--format", "json", "."),
     )
     failure_reasons: list[str] = []
+    invocation_receipts: list[dict[str, Any]] = []
     last_result = WorkerCommandResult(args=(binary,), returncode=127, stdout="", stderr="")
     last_raw = workspace.root / "scanner-raw" / "osv-scanner.json"
     for index, command in enumerate(attempts, start=1):
         raw = workspace.root / "scanner-raw" / f"osv-scanner-attempt-{index}.json"
         result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, spec.max_output_chars), stdout_path=raw)
         last_result, last_raw = result, raw
+        invocation_receipts.append(result.scanner_execution_receipt)
         payload, reason = _read_json(raw)
         if result.returncode == 128 and not result.timed_out and not result.output_truncated:
             from nico.scanner_package_inventory_v1 import inspect_package_sources
@@ -432,7 +451,7 @@ def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable
                 blob = _raw_blob(spec.name, diagnostic, "json")
                 output = _tool_payload(spec, result, findings=[], capture_complete=True,
                     reason=reason, raw_blob=blob, execution_source="osv_observed_no_package_sources",
-                    workspace=workspace, valid_returncodes={0, 1})
+                    workspace=workspace, valid_returncodes={0, 1}, extra={"scanner_invocation_receipts": invocation_receipts})
                 output.update({
                     "status": "not_applicable", "applicable": False, "evidence_required": False,
                     "verified_for_this_report": False, "completed": False, "verified": False,
@@ -448,15 +467,15 @@ def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable
             blob = _raw_blob(spec.name, raw, "json")
             return _tool_payload(spec, result, findings=[], capture_complete=False, reason=reason,
                 raw_blob=blob, execution_source="osv_no_package_sources_unverified", workspace=workspace,
-                valid_returncodes={0, 1}, extra={"applicability_evidence": inventory})
+                valid_returncodes={0, 1}, extra={"applicability_evidence": inventory, "scanner_invocation_receipts": invocation_receipts})
         if payload is not None and result.returncode in {0, 1} and not result.timed_out:
             canonical = workspace.root / "scanner-raw" / "osv-scanner.json"
             shutil.copyfile(raw, canonical)
             blob = _raw_blob(spec.name, canonical, "json")
-            return _tool_payload(spec, result, findings=_osv_findings(payload), capture_complete=True, reason="", raw_blob=blob, execution_source=f"canonical_osv_scanner_v{index}", workspace=workspace, valid_returncodes={0, 1}, extra={"command_variant": index})
+            return _tool_payload(spec, result, findings=_osv_findings(payload), capture_complete=True, reason="", raw_blob=blob, execution_source=f"canonical_osv_scanner_v{index}", workspace=workspace, valid_returncodes={0, 1}, extra={"command_variant": index, "scanner_invocation_receipts": invocation_receipts})
         failure_reasons.append(reason or redact_text(result.stderr or result.stdout or f"exit {result.returncode}")[:1000])
     blob = _raw_blob(spec.name, last_raw, "json")
-    return _tool_payload(spec, last_result, findings=[], capture_complete=False, reason="; ".join(failure_reasons), raw_blob=blob, execution_source="canonical_osv_scanner", workspace=workspace, valid_returncodes={0, 1})
+    return _tool_payload(spec, last_result, findings=[], capture_complete=False, reason="; ".join(failure_reasons), raw_blob=blob, execution_source="canonical_osv_scanner", workspace=workspace, valid_returncodes={0, 1}, extra={"scanner_invocation_receipts": invocation_receipts})
 
 
 def _run_bandit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult]) -> dict[str, Any]:
@@ -497,7 +516,9 @@ def _run_bandit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Calla
 
 def _semgrep_config(workspace: WorkerWorkspace) -> Path:
     config = workspace.root / "nico-semgrep-standard.yml"
-    config.write_text(
+    from nico.scanner_execution_receipt_v1 import write_generated_config
+
+    write_generated_config(config,
         """rules:
   - id: nico.python.eval
     message: Dynamic eval execution requires security review.
@@ -609,7 +630,9 @@ def _eslint_config(workspace: WorkerWorkspace, web_dir: Path) -> tuple[Path | No
     if parser_entry is None:
         return None, "The NICO standard ESLint profile requires a resolvable @typescript-eslint/parser entry point."
     config = workspace.root / "nico-eslint.config.cjs"
-    config.write_text(
+    from nico.scanner_execution_receipt_v1 import write_generated_config
+
+    write_generated_config(config,
         "const tsParser = require(" + json.dumps(str(parser_entry)) + ");\n"
         "module.exports = [\n"
         "  { ignores: ['**/node_modules/**','**/.next/**','**/dist/**','**/build/**'] },\n"

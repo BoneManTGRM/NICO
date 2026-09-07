@@ -35,6 +35,7 @@ class WorkerCommandResult:
     stdout_path: str | None = None
     stdout_bytes: int = 0
     stderr_bytes: int = 0
+    scanner_execution_receipt: dict | None = None
 
     @property
     def ok(self) -> bool:
