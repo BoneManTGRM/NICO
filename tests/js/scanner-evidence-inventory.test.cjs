@@ -67,3 +67,76 @@ test('backend owner-only denial is preserved, not interpreted as granted access'
   assert.equal(result.status, 403);
   assert.equal((await result.json()).detail.code, 'owner_administration_required');
 });
+
+// Execute the page's mount effect and language button with an isolated location;
+// locale navigation must preserve recovery identity and never issue a request.
+function inventoryPage(href) {
+  let location = new URL(href);
+  let cursor = 0;
+  let mounted = false;
+  const state = [], effects = [];
+  const React = fromWeb('react');
+  const window = {location: {
+    get href() { return location.href; }, get pathname() { return location.pathname; },
+    get search() { return location.search; }, get hash() { return location.hash; },
+    assign(value) { location = new URL(value, location); },
+  }};
+  function loadTs(filename) {
+    const module = {exports: {}};
+    const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+      compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX},
+    }).outputText;
+    vm.runInNewContext(source, {module, exports: module.exports, URL, URLSearchParams, window,
+      fetch: () => assert.fail('language navigation must not send a request'),
+      require(name) {
+        if (name === 'react') return {...React,
+          useState(initial) { const slot = cursor++; if (!(slot in state)) state[slot] = initial; return [state[slot], value => {state[slot] = value;}]; },
+          useEffect(effect) { if (!mounted) effects.push(effect); },
+        };
+        return name.startsWith('.') ? loadTs(path.resolve(path.dirname(filename), `${name}.ts`)) : fromWeb(name);
+      },
+    }, {filename});
+    return module.exports;
+  }
+  const Page = loadTs(path.join(ROOT, 'apps/web/app/operations/scanner-evidence/page.tsx')).default;
+  Page(); mounted = true; effects.forEach(effect => effect()); cursor = 0;
+  const tree = Page();
+  function find(node, predicate) {
+    if (!node || typeof node !== 'object') return undefined;
+    if (predicate(node)) return node;
+    return React.Children.toArray(node.props?.children).map(child => find(child, predicate)).find(Boolean);
+  }
+  return {heading: find(tree, node => node.type === 'h1').props.children,
+    runId: find(tree, node => node.props?.id === 'scanner-evidence-run').props.value,
+    toggle: () => find(tree, node => node.type === 'button' && node.props.type === 'button').props.onClick(),
+    href: () => location.href};
+}
+
+test('inventory follows global lang links while retaining the exact saved run', () => {
+  const page = inventoryPage('https://app.nico.test/operations/scanner-evidence?run_id=comprun_locale&lang=es-MX');
+  assert.equal(page.heading, 'Evidencia conservada de los analizadores');
+  assert.equal(page.runId, 'comprun_locale');
+  const primary = inventoryPage('https://app.nico.test/operations/scanner-evidence?run_id=comprun_locale&lang=en&language=es-MX');
+  assert.equal(primary.heading, 'Retained scanner evidence', 'standard lang takes precedence over the legacy alias');
+});
+
+test('inventory language navigation persists across remount and preserves recovery query and hash', () => {
+  for (const localeQuery of ['lang=es-MX', 'language=es-MX']) {
+    const page = inventoryPage(`https://app.nico.test/operations/scanner-evidence?run_id=comprun_locale&${localeQuery}&report_locale=es-MX#saved`);
+    page.toggle();
+    const englishUrl = new URL(page.href());
+    assert.equal(englishUrl.searchParams.has('lang'), false);
+    assert.equal(englishUrl.searchParams.has('language'), false);
+    assert.equal(englishUrl.searchParams.get('run_id'), 'comprun_locale');
+    assert.equal(englishUrl.searchParams.get('report_locale'), 'es-MX');
+    assert.equal(englishUrl.hash, '#saved');
+    const english = inventoryPage(page.href());
+    assert.equal(english.heading, 'Retained scanner evidence');
+    assert.equal(english.runId, 'comprun_locale');
+    english.toggle();
+    assert.equal(new URL(english.href()).searchParams.get('lang'), 'es-MX');
+    const spanish = inventoryPage(english.href());
+    assert.equal(spanish.heading, 'Evidencia conservada de los analizadores');
+    assert.equal(spanish.runId, 'comprun_locale');
+  }
+});
