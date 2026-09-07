@@ -8,6 +8,20 @@ VERSION = "nico.comprehensive_report_spanish_text.v51"
 
 
 ES_EXACT = {
+    "NICO Release Provenance": "Procedencia de la versión de NICO",
+    "Backend source commit": "Commit del código del backend",
+    "Frontend source commit": "Commit del código del frontend",
+    "Railway deployment": "Despliegue de Railway",
+    "Report renderer": "Generador del informe",
+    "Release provenance": "Procedencia de la versión",
+    "Scanner versions are configured or default declarations, not retained per-run execution evidence.": (
+        "Las versiones de los analizadores son declaraciones de configuración o valores predeterminados, "
+        "no evidencia conservada de la ejecución de cada evaluación."
+    ),
+    "Unavailable values remain explicit. No deployment or tool identity is inferred from repository state alone.": (
+        "Los valores no disponibles se indican explícitamente. La identidad del despliegue "
+        "o de las herramientas no se infiere únicamente del estado del repositorio."
+    ),
     "Code Audit": "Auditoría de código",
     "Dependency / Library Ecosystem": "Ecosistema de dependencias y bibliotecas",
     "Secrets Exposure Review": "Revisión de exposición de secretos",

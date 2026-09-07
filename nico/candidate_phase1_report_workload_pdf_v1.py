@@ -9,7 +9,7 @@ _HEAVY = {"pdf_base64", "html", "markdown", "scanner_results", "raw_output", "st
 
 
 def _text(value: Any, limit: int = 3000) -> str:
-    normalized = " ".join(str(value or "").split()).strip()
+    normalized = " ".join(str("" if value is None else value).split()).strip()
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
@@ -53,7 +53,7 @@ def render_phase1_evidence_review_gate_pdf(
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     from nico import comprehensive_client_ready_projection_v1 as projection
 
@@ -361,7 +361,7 @@ def render_phase1_evidence_review_gate_pdf(
                 else "Human disposition pending; NICO technical triage complete",
             ])
         story.extend([p(labels["candidate_state"], h2), table(rows, [1.05 * inch, .55 * inch, .75 * inch, .9 * inch, 4.15 * inch])])
-    story.extend([
+    story.append(KeepTogether([
         p(labels["client_boundary"], h2),
         p(
             "La evidencia completa de candidatos, la pertenencia determinista a grupos, los hashes de analizadores y los datos de remediación listos para exportar permanecen en JSON y CSV canónicos. Los resúmenes de grupo nunca sustituyen los ID ni la evidencia de los candidatos subyacentes."
@@ -369,7 +369,11 @@ def render_phase1_evidence_review_gate_pdf(
             else "Full candidate evidence, deterministic cluster membership, scanner hashes, and export-ready remediation data remain in canonical JSON and CSV. Group summaries never replace underlying candidate IDs or evidence."
         ),
         p(f"{labels['exact_findings']}: {exact_findings}", small),
-        PageBreak(),
+    ]))
+    story.extend([
+        # A boundary block that flowed onto the next page can share that page
+        # with the review gate instead of producing a near-empty extra page.
+        CondPageBreak(4 * inch),
         p("Puerta de revisión humana y aceptación" if spanish else "Human Review and Acceptance Gate", h1),
         p(boundary, warning),
     ])
@@ -409,7 +413,9 @@ def render_phase1_evidence_review_gate_pdf(
         leftMargin=.55 * inch,
         rightMargin=.55 * inch,
         topMargin=.55 * inch,
-        bottomMargin=.6 * inch,
+        # Later analyzer/platform summaries paint the bottom 56 points. Reserve
+        # that footer band so their opaque backgrounds cannot erase evidence.
+        bottomMargin=.8 * inch,
         invariant=1,
         title="NICO Client Evidence and Review Gate",
         author="NICO",

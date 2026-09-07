@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+from nico.comprehensive_release_provenance_v1 import (
+    install_comprehensive_release_provenance,
+)
+
+# The child does not inherit the specialist process's report hooks. Bind before
+# terminal bootstrap imports capture the canonical and locale renderer functions.
+RELEASE_PROVENANCE = install_comprehensive_release_provenance()
+if RELEASE_PROVENANCE.get("installed") is not True:
+    raise RuntimeError("Renderer worker release provenance did not install")
+
 from nico.comprehensive_pdf_embedded_fonts_v1 import (
     install_comprehensive_pdf_embedded_fonts_v1,
 )
