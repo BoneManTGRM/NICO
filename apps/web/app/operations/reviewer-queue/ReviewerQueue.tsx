@@ -2,6 +2,7 @@
 
 import {useEffect, useState} from "react";
 import type {ChangeEvent, FormEvent, SyntheticEvent} from "react";
+import ReviewSessionNotice from "./ReviewSessionNotice";
 import styles from "./reviewer-queue.module.css";
 
 type JsonRecord = Record<string, unknown>;
@@ -350,7 +351,6 @@ function RetainedUnitDisclosure({unit, locale}: {unit: QueueUnit; locale: Locale
 export default function ReviewerQueue() {
   const [locale, setLocale] = useState<Locale>("en");
   const [runId, setRunId] = useState("");
-  const [adminToken, setAdminToken] = useState("");
   const [payload, setPayload] = useState<ReviewQueuePayload | null>(null);
   const [model, setModel] = useState<QueueModel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -375,8 +375,8 @@ export default function ReviewerQueue() {
 
   async function loadQueue(event: FormEvent): Promise<void> {
     event.preventDefault();
-    if (!runId.trim() || !adminToken.trim()) {
-      setError(tr(locale, "Enter the exact Comprehensive run ID and operator admin token.", "Ingresa el ID exacto de la ejecución Comprehensive y el token de administrador."));
+    if (!runId.trim()) {
+      setError(tr(locale, "Enter the exact Comprehensive run ID.", "Ingresa el ID exacto de la ejecución Comprehensive."));
       return;
     }
     setLoading(true); setError(""); setPayload(null); setModel(null);
@@ -384,7 +384,8 @@ export default function ReviewerQueue() {
       const requestedRunId = runId.trim();
       const response = await fetch(new URL(`/api/nico/assessment/comprehensive-run/${encodeURIComponent(requestedRunId)}/review-queue`, window.location.origin), {
         cache: "no-store",
-        headers: {Accept: "application/json", "X-NICO-Admin-Token": adminToken.trim()},
+        credentials: "same-origin",
+        headers: {Accept: "application/json"},
       });
       if (!response.ok) throw new Error(tr(locale, `Unable to load the exact protected review queue (${response.status}).`, `No fue posible cargar la cola protegida de revisión exacta (${response.status}).`));
       const next = await response.json() as ReviewQueuePayload;
@@ -398,7 +399,6 @@ export default function ReviewerQueue() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : tr(locale, "Unable to load the exact review queue.", "No fue posible cargar la cola de revisión exacta."));
     } finally {
-      setAdminToken("");
       setLoading(false);
     }
   }
@@ -415,10 +415,10 @@ export default function ReviewerQueue() {
     </section>
     <section className={styles.panel}>
       <h2>{tr(locale, "Open an exact terminal run", "Abrir una ejecución terminal exacta")}</h2>
+      <ReviewSessionNotice runId={runId} locale={locale} />
       <form className={styles.form} onSubmit={loadQueue}>
-        <label>{tr(locale, "Exact Comprehensive run ID", "ID exacto de la ejecución Comprehensive")}<input value={runId} onChange={(event: ChangeEvent<HTMLInputElement>) => setRunId(event.target.value)} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
-        <label>{tr(locale, "Operator admin token", "Token de administrador")}<input type="password" value={adminToken} onChange={(event: ChangeEvent<HTMLInputElement>) => setAdminToken(event.target.value)} autoComplete="off" spellCheck={false} /></label>
-        <button type="submit" disabled={loading || !runId.trim() || !adminToken.trim()}>{loading ? tr(locale, "Loading exact queue…", "Cargando la cola exacta…") : tr(locale, "Load reviewer queue", "Cargar cola de revisión")}</button>
+        <label>{tr(locale, "Exact Comprehensive run ID", "ID exacto de la ejecución Comprehensive")}<input disabled={loading} value={runId} onChange={(event: ChangeEvent<HTMLInputElement>) => {setRunId(event.target.value); setPayload(null); setModel(null);}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+        <button type="submit" disabled={loading || !runId.trim()}>{loading ? tr(locale, "Loading exact queue…", "Cargando la cola exacta…") : tr(locale, "Load reviewer queue", "Cargar cola de revisión")}</button>
       </form>
       {error ? <div className={styles.error} role="alert">{error}</div> : null}
     </section>

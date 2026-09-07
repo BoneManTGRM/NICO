@@ -112,9 +112,10 @@ def test_candidate_expansion_exposes_complete_retained_record_without_new_analys
 def test_wp2_remains_authenticated_read_only_and_does_not_absorb_later_work() -> None:
     component = source(COMPONENT)
 
-    assert '"X-NICO-Admin-Token"' in component
-    assert 'type="password"' in component
-    assert "setAdminToken(\"\")" in component
+    assert '"X-NICO-Admin-Token"' not in component
+    assert 'credentials: "same-origin"' in component
+    assert 'type="password"' not in component
+    assert "adminToken" not in component
     assert "localStorage" not in component
     assert "sessionStorage" not in component
     assert 'data-human-disposition-controls="absent"' in component

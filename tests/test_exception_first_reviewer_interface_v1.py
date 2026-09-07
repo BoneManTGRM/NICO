@@ -47,8 +47,9 @@ def test_queue_consumes_protected_canonical_phase1_projection() -> None:
     assert "human_review_work_units" in component
     assert "/api/nico/assessment/comprehensive-run/" in component
     assert "/review-queue" in component
-    assert '"X-NICO-Admin-Token"' in component
-    assert 'type="password"' in component
+    assert '"X-NICO-Admin-Token"' not in component
+    assert 'credentials: "same-origin"' in component
+    assert 'type="password"' not in component
     assert "COMPREHENSIVE_REVIEW_QUEUE" in proxy
     assert "COMPREHENSIVE_AUTHORIZE_DELIVERY" in proxy
     assert 'method === "POST" && COMPREHENSIVE_AUTHORIZE_DELIVERY.test(path)' in proxy
@@ -94,7 +95,7 @@ def test_package_remains_read_only_and_does_not_absorb_later_work() -> None:
     assert "/review-queue" in component
     assert "reviewer_workload_timer" not in component
     assert "quality_control_sampling" not in component
-    assert "setAdminToken(\"\")" in component
+    assert "adminToken" not in component
 
 
 def test_internal_final_review_exposes_queue_without_changing_client_report() -> None:

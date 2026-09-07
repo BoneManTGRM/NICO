@@ -87,6 +87,16 @@ async function proxyAssessment(
       "The browser and request supplied different specialist sessions.",
     );
   }
+  // Cookie authority is browser-managed. Require an exact same-origin POST;
+  // SameSite alone also permits sibling origins on the same site. Header-only
+  // operator clients retain their existing explicit-credential transport.
+  if (cookieSession && request.method === "POST" && request.headers.get("origin") !== request.nextUrl.origin) {
+    return errorResponse(
+      403,
+      "specialist_mutation_origin_rejected",
+      "Cookie-authenticated assessment changes require a same-origin request.",
+    );
+  }
   const session = cookieSession || headerSession;
   if (!session && !rawOperatorToken) {
     return errorResponse(401, "specialist_authentication_required", "Sign in with an authorized NICO specialist account before accessing assessment data.");

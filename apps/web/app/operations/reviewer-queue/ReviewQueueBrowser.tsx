@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useMemo, useState} from "react";
+import ReviewSessionNotice from "./ReviewSessionNotice";
 import styles from "./review-browser.module.css";
 
 type JsonRecord = Record<string, unknown>;
@@ -80,7 +81,6 @@ function renderDetail(candidate: JsonRecord): string {
 export default function ReviewQueueBrowser() {
   const [locale, setLocale] = useState<Locale>("en");
   const [runId, setRunId] = useState("");
-  const [adminToken, setAdminToken] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [reviewerRole, setReviewerRole] = useState("");
   const [projection, setProjection] = useState<Projection | null>(null);
@@ -115,14 +115,16 @@ export default function ReviewQueueBrowser() {
   );
 
   async function load(): Promise<void> {
-    if (!runId.trim() || !adminToken.trim()) return;
+    if (!runId.trim()) return;
     setBusy(true);
     setError("");
+    setProjection(null);
     try {
       const response = await fetch(endpoint, {
         method: "GET",
         cache: "no-store",
-        headers: {Accept: "application/json", "X-NICO-Admin-Token": adminToken},
+        credentials: "same-origin",
+        headers: {Accept: "application/json"},
       });
       const payload = await response.json().catch(() => ({})) as Projection & JsonRecord;
       if (!response.ok) throw new Error(responseError(payload, response.status, locale));
@@ -136,9 +138,10 @@ export default function ReviewQueueBrowser() {
   }
 
   async function configureSampling(): Promise<void> {
-    if (!runId.trim() || !adminToken.trim() || !reviewer.trim() || !reviewerRole.trim()) return;
+    if (!runId.trim() || !reviewer.trim() || !reviewerRole.trim()) return;
     setBusy(true);
     setError("");
+    setProjection(null);
     try {
       const payload: JsonRecord = {
         action: "configure_qc_sampling",
@@ -152,7 +155,8 @@ export default function ReviewQueueBrowser() {
       const response = await fetch(endpoint, {
         method: "POST",
         cache: "no-store",
-        headers: {"Content-Type": "application/json", Accept: "application/json", "X-NICO-Admin-Token": adminToken},
+        credentials: "same-origin",
+        headers: {"Content-Type": "application/json", Accept: "application/json"},
         body: JSON.stringify(payload),
       });
       const result = await response.json().catch(() => ({})) as Projection & JsonRecord;
@@ -219,15 +223,15 @@ export default function ReviewQueueBrowser() {
       <span className={projection?.ready_for_final_approval ? styles.ready : styles.blocked}>{projection?.ready_for_final_approval ? tr(locale, "Review ready for separate final approval", "Revisión lista para la aprobación final separada") : tr(locale, "Final approval blocked", "Aprobación final bloqueada")}</span>
     </header>
 
+    <ReviewSessionNotice runId={runId} locale={locale} />
     <div className={styles.credentials}>
-      <label>{tr(locale, "Exact run ID", "ID exacto de la ejecución")}<input value={runId} onChange={(event) => setRunId(event.target.value)} autoComplete="off" /></label>
-      <label>{tr(locale, "Operator admin token", "Token de administrador")}<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="off" /></label>
+      <label>{tr(locale, "Exact run ID", "ID exacto de la ejecución")}<input disabled={busy} value={runId} onChange={(event) => {setRunId(event.target.value); setProjection(null);}} autoComplete="off" /></label>
       <label>{tr(locale, "Authorized reviewer", "Revisor autorizado")}<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} autoComplete="off" /></label>
       <label>{tr(locale, "Reviewer role", "Función del revisor")}<input value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)} autoComplete="off" /></label>
-      <button type="button" onClick={load} disabled={busy || !runId.trim() || !adminToken.trim()}>{busy ? tr(locale, "Working…", "Procesando…") : projection ? tr(locale, "Refresh review truth", "Actualizar verdad de revisión") : tr(locale, "Load review truth", "Cargar verdad de revisión")}</button>
+      <button type="button" onClick={load} disabled={busy || !runId.trim()}>{busy ? tr(locale, "Working…", "Procesando…") : projection ? tr(locale, "Refresh review truth", "Actualizar verdad de revisión") : tr(locale, "Load review truth", "Cargar verdad de revisión")}</button>
     </div>
-    <p className={styles.security}>{tr(locale, "The admin token remains only in page-local state and is sent only to the protected exact-run review endpoint.", "El token administrativo permanece únicamente en el estado local de la página y se envía solo al endpoint protegido de revisión de la ejecución exacta.")}</p>
-    {error ? <p className={styles.error}>{error}</p> : null}
+    <p className={styles.security}>{tr(locale, "Your signed-in specialist session protects each exact-run request. Sign in again if your session has expired.", "Su sesión de especialista protege cada solicitud de la ejecución exacta. Inicie sesión nuevamente si su sesión expiró.")}</p>
+    {error ? <p className={styles.error} role="alert">{error}</p> : null}
 
     {projection ? <>
       <div className={styles.metrics}>
