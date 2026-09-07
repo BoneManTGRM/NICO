@@ -67,9 +67,14 @@ def _first(mapping: Mapping[str, Any], *keys: str) -> Any:
 def _mapping_path(value: Any) -> tuple[str, int | None, int | None, int | None]:
     if isinstance(value, str):
         raw = _text(value).replace("\\", "/")
-        match = re.match(r"^(.*?):(\d+)(?::(\d+))?$", raw)
+        match = re.match(r"^(.*?):(\d+)(?:-(\d+))?(?::(\d+))?$", raw)
         if match:
-            return match.group(1), int(match.group(2)), int(match.group(3)) if match.group(3) else None, None
+            return (
+                match.group(1),
+                int(match.group(2)),
+                int(match.group(4)) if match.group(4) else None,
+                int(match.group(3)) if match.group(3) else None,
+            )
         return raw, None, None, None
     if not isinstance(value, Mapping):
         return "", None, None, None

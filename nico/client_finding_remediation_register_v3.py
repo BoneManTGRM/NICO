@@ -125,6 +125,41 @@ def _location(path: str, line: int | None, column: int | None, end_line: int | N
     return f"{path}{suffix}"
 
 
+def _verification_values(item: Mapping[str, Any], values: Any) -> list[str]:
+    """Repair retained generated clauses without editing custom requirements."""
+    if isinstance(values, str):
+        values = [values]
+    path, line, column, end_line = _parse_location(item)
+    prefix = "The exact-SHA rerun no longer reports this condition at "
+    suite = "Targeted tests and the repository's full required-check suite pass on the remediation commit"
+    generated = {suite}
+    if path and line:
+        generated.update(
+            {
+                f"{prefix}{path}:{line}",
+                f"{prefix}{_location(path, line, column, end_line)}",
+                f"The exact-SHA rerun no longer reports cyclomatic complexity of 30 or greater at {path}:{line}",
+            }
+        )
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        text = _text(value)
+        if path and line and end_line and column is None:
+            # Older range parsing treated path:start-end as the filename, then
+            # appended start again. An explicitly retained column is not this defect.
+            broken = f"{prefix}{path}:{line}-{end_line}:{line}"
+            if text.removesuffix(".") == broken:
+                text = f"{prefix}{_location(path, line, None, end_line)}" + ("." if text.endswith(".") else "")
+        key = text.casefold()
+        if text.removesuffix(".") in generated:
+            key = key.removesuffix(".")
+        if text and key not in seen:
+            seen.add(key)
+            output.append(text)
+    return output
+
+
 def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]:
     if depth > 10:
         return
@@ -300,7 +335,7 @@ def _normalize_record(
         item["evidence_source"] = "canonical-evidence"
 
     item["recommended_correction"] = _specific_correction(item, family)
-    item["verification"] = _dedupe(item.get("verification") or [])
+    item["verification"] = _verification_values(item, item.get("verification") or [])
     exits = [value for value in _dedupe(item.get("exit_criteria") or []) if value.casefold() not in {v.casefold() for v in item["verification"]}]
     item["exit_criteria"] = exits or [_GENERIC_EXIT_CRITERION]
     item["verification_and_exit_criteria_distinct"] = True
@@ -373,7 +408,8 @@ def _merge(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[str, Any]:
             other.get("record_source"),
         ]
     )
-    result["verification"] = _dedupe(
+    result["verification"] = _verification_values(
+        result,
         [*list(result.get("verification") or []), *list(other.get("verification") or [])]
     )
     exits = _dedupe(
