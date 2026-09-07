@@ -129,6 +129,61 @@ def _with_ledger(record: dict, ledger: dict) -> dict:
     return {**record, "review_work_ledger": deepcopy(ledger)}
 
 
+def _two_group_record() -> dict:
+    # Cluster hashes and representative candidate IDs have independent orderings.
+    register = _register()
+    register["findings"] = []
+    register["review_workload_clusters"] = []
+    for cluster_id, members in [("CLUSTER-FIRST", ["Z", "ZZ"]), ("CLUSTER-SECOND", ["A", "AA"])]:
+        for candidate_id in members:
+            candidate = _candidate(candidate_id, cluster_id, grouped=True)
+            candidate.update({"cluster_candidate_ids": members, "representative_candidate_id": members[0]})
+            register["findings"].append(candidate)
+        cluster = deepcopy(_register()["review_workload_clusters"][0])
+        cluster.update({"cluster_id": cluster_id, "candidate_ids": members, "representative_candidate_id": members[0]})
+        register["review_workload_clusters"].append(cluster)
+    register["candidate_record_count"] = 4
+    register["technical_triage"] = {"total_candidates": 4, "human_review_work_units": 2,
+                                    "review_workload_clusters": deepcopy(register["review_workload_clusters"])}
+    return _record(register)
+
+
+def test_fresh_review_projection_accepts_same_qc_members_in_cluster_order() -> None:
+    from nico.comprehensive_review_work_safe_v1 import review_work_projection as live_projection
+
+    record = _two_group_record()
+    before = deepcopy(record)
+    projection = live_projection(record)
+    assert projection["quality_control_required_candidate_ids"] == ["A", "Z"]
+    assert projection["quality_control_required_count"] == 2
+    assert projection["ready_for_final_approval"] is False
+    assert record == before
+
+
+def test_reviewed_ledger_retains_original_bytes_when_only_qc_list_order_differs() -> None:
+    record = _two_group_record()
+    ledger = ledger_for_record(record)
+    assert ledger["qc_required_candidate_ids"] == ["Z", "A"]
+    ledger["audit_events"] = [{"action": "retained-synthetic-review", "event_sha256": "b" * 64}]
+    ledger["dispositions"] = {"Z": {"disposition": "needs_more_evidence", "rationale": "Synthetic retained history"}}
+    record["review_work_ledger"] = deepcopy(ledger)
+    before = deepcopy(record)
+    assert ledger_for_record(record) == ledger
+    assert record == before
+
+
+@pytest.mark.parametrize("sample", [["Z"], ["A", "AA"], ["A", "Z", "Z"], ["A", "Z", "unknown"]])
+def test_actual_qc_membership_drift_still_fails_closed(sample: list[str]) -> None:
+    record = _two_group_record()
+    ledger = ledger_for_record(record)
+    ledger["qc_required_candidate_ids"] = sample
+    record["review_work_ledger"] = ledger
+    before = deepcopy(record)
+    with pytest.raises(ValueError, match="review_work_ledger_qc_sample_drift"):
+        ledger_for_record(record)
+    assert record == before
+
+
 def test_machine_only_ledger_is_rebuilt_when_final_candidate_count_changes() -> None:
     preliminary = _record()
     preliminary_ledger = ledger_for_record(preliminary)
