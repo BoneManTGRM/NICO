@@ -225,11 +225,13 @@ def _disposition(category: str, finding: Mapping[str, Any], path: str, severity:
     }
     if explicit in aliases:
         return aliases[explicit]
+    # A credential can remain privileged in a test or example file. Source-path
+    # recognition must not turn a secret observation into an automatic exclusion.
+    if category == "secret":
+        return "verified_material" if bool(finding.get("Verified") or finding.get("verified")) else "review_required"
     scope = _text(finding.get("scope"), 120).casefold()
     if _test_or_example(path) or scope in {"test", "tests", "testing", "development", "dev", "non_production"}:
         return "excluded_test_only"
-    if category == "secret":
-        return "verified_material" if bool(finding.get("Verified") or finding.get("verified")) else "review_required"
     if category == "static" and severity in {"critical", "high"}:
         return "verified_material"
     return "review_required"
@@ -245,18 +247,55 @@ def _fingerprint(
     line: int | None,
     message: str,
     disposition: str,
+    source_commit_sha: str = "",
 ) -> str:
     canonical = {
         "commit_sha": commit_sha.casefold(),
         "scanner": scanner.casefold(),
         "category": category.casefold(),
         "rule_id": rule_id.casefold(),
-        "path": path.casefold(),
+        "path": path if category.casefold() == "secret" else path.casefold(),
         "line": line or 0,
         "message": message.casefold(),
         "disposition": disposition,
     }
+    if source_commit_sha:
+        canonical["source_commit_sha"] = source_commit_sha
     return hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _native_secret_metadata(scanner: str, finding: Mapping[str, Any]) -> dict[str, Any]:
+    """Adapt native source/detector metadata without changing retained input."""
+    item = dict(finding)
+    if scanner == "gitleaks":
+        metadata = {
+            "source_path": finding.get("File"),
+            "line": finding.get("StartLine"),
+            "column": finding.get("StartColumn"),
+            "rule_id": finding.get("RuleID"),
+            "message": finding.get("Description"),
+        }
+        source_commit = finding.get("Commit")
+    elif scanner == "trufflehog":
+        source = finding.get("SourceMetadata")
+        data = source.get("Data") if isinstance(source, Mapping) else None
+        git = data.get("Git") if isinstance(data, Mapping) else None
+        git = git if isinstance(git, Mapping) else {}
+        metadata = {
+            "source_path": git.get("file") or git.get("File"),
+            "line": git.get("line") or git.get("Line"),
+            "rule_id": finding.get("DetectorName") or finding.get("DetectorType"),
+        }
+        source_commit = git.get("commit") or git.get("Commit")
+    else:
+        return item
+    for key, value in metadata.items():
+        if not item.get(key) and value is not None:
+            item[key] = value
+    commit = str(source_commit or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{40}", commit):
+        item["source_commit_sha"] = commit
+    return item
 
 
 def _normalized_record(
@@ -266,6 +305,9 @@ def _normalized_record(
     category: str,
     finding: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if category == "secret":
+        finding = _native_secret_metadata(scanner, finding)
+    source_commit = str(finding.get("source_commit_sha") or "")
     path = _path(finding)
     line = _line(finding)
     column = _column(finding)
@@ -283,6 +325,7 @@ def _normalized_record(
         line=line,
         message=message,
         disposition=disposition,
+        source_commit_sha=source_commit,
     )
     evidence_quality = "exact_source" if path and line else "source_path" if path else "payload_without_source"
     return {
@@ -301,6 +344,7 @@ def _normalized_record(
         "evidence_quality": evidence_quality,
         "occurrence_count": 1,
         "exact_commit_sha": commit_sha,
+        **({"source_commit_sha": source_commit} if source_commit else {}),
         "human_review_required": disposition == "review_required",
     }
 

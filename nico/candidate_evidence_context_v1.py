@@ -83,8 +83,22 @@ def _tool_results(scan: Mapping[str, Any]) -> list[tuple[str, str, Mapping[str, 
     return output
 
 
-def _match_key(scanner: str, finding: Mapping[str, Any]) -> tuple[str, str, str, int]:
-    return (scanner.casefold(), _rule(finding).casefold(), _path(finding).casefold(), _line(finding))
+def _match_key(scanner: str, finding: Mapping[str, Any]) -> tuple[str, str, str, int, str]:
+    scanner = scanner.casefold()
+    if scanner in {"gitleaks", "trufflehog"}:
+        # Use the same source adaptation as the canonical register. Native and
+        # already-normalized records must join to their own historical source,
+        # never to the next record that happens to share a path and line.
+        from .comprehensive_native_providers_v5 import _native_secret_metadata
+
+        finding = _native_secret_metadata(scanner, finding)
+    return (
+        scanner,
+        (_rule(finding) or _text(finding.get("rule"), 300)).casefold(),
+        _path(finding),
+        _line(finding),
+        str(finding.get("source_commit_sha") or ""),
+    )
 
 
 def _safe_context(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -190,18 +204,27 @@ def _safe_context(raw: Mapping[str, Any]) -> dict[str, Any]:
 def enrich_canonical_candidate_evidence(register: Mapping[str, Any], scan: Mapping[str, Any]) -> dict[str, Any]:
     output = deepcopy(dict(register))
     findings = [deepcopy(dict(item)) for item in output.get("findings") or [] if isinstance(item, Mapping)]
-    indexed: dict[tuple[str, str, str, int], deque[Mapping[str, Any]]] = defaultdict(deque)
+    indexed: dict[tuple[str, str, str, int, str], deque[Mapping[str, Any]]] = defaultdict(deque)
     for scanner, _category, raw in _tool_results(scan):
         indexed[_match_key(scanner, raw)].append(raw)
+    ambiguous_keys = set()
+    for key, queue in indexed.items():
+        first_context = _safe_context(queue[0])
+        if any(_safe_context(raw) != first_context for raw in queue):
+            ambiguous_keys.add(key)
     enriched = 0
     unmatched = 0
+    ambiguous = 0
     for finding in findings:
-        key = (
-            _text(finding.get("scanner"), 120).casefold(),
-            _text(finding.get("rule_id") or finding.get("rule"), 300).casefold(),
-            _path(finding).casefold(),
-            _line(finding),
-        )
+        key = _match_key(_text(finding.get("scanner"), 120), finding)
+        if key in ambiguous_keys:
+            # Canonical sorting/aggregate expansion does not preserve observation
+            # order. Conflicting contexts cannot be assigned by FIFO position.
+            finding.pop("deterministic_evidence", None)
+            finding["candidate_evidence_context_schema"] = VERSION
+            finding["candidate_evidence_context_status"] = "ambiguous"
+            ambiguous += 1
+            continue
         queue = indexed.get(key)
         if not queue:
             unmatched += 1
@@ -216,10 +239,11 @@ def enrich_canonical_candidate_evidence(register: Mapping[str, Any], scan: Mappi
     output["findings"] = findings
     output["candidate_evidence_context"] = {
         "artifact_schema": VERSION,
-        "status": "complete",
+        "status": "partial" if ambiguous else "complete",
         "candidate_count": sum(max(1, int(item.get("occurrence_count") or 1)) for item in findings),
         "records_enriched": enriched,
         "records_without_matching_raw_context": unmatched,
+        "records_with_ambiguous_raw_context": ambiguous,
         "candidate_counts_changed": False,
         "canonical_dispositions_changed": False,
         "score_effect": "none",

@@ -152,3 +152,36 @@ def test_full_technical_triage_never_authorizes_human_assurance_or_delivery() ->
     assert projection["client_delivery_allowed"] is False
     assert record["human_review_completed"] is False
     assert record["client_delivery_allowed"] is False
+
+
+@pytest.mark.parametrize("label, expected, qc_population", [("high", 0.9, 1), ("medium", 0.72, 0), ("low", 0.45, 0), ("unknown", 0.0, 0)])
+def test_canonical_confidence_labels_preserve_existing_scale_and_qc_eligibility(label, expected, qc_population):
+    from nico.comprehensive_review_work_safe_v1 import review_work_projection as safe_projection
+
+    candidate = _candidate("stable", confidence=label)
+    candidate.update({"review_routing_class": "STABLE_CARRY_FORWARD", "lineage_status": "carried_forward_exact", "grouped_review_eligible": False})
+    candidate.pop("evidence_change_state")
+    record = _record(candidate)
+    cluster = record["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]["assessment"]["canonical_scanner_finding_register"]["review_workload_clusters"][0]
+    cluster.update({"grouped_review_eligible": False, "grouped_human_review_cluster": False})
+    before = deepcopy(record)
+    projection = safe_projection(record)
+    row = projection["candidates"][0]
+    assert row["technical_triage_confidence"] == expected
+    assert projection["quality_control_sampling"]["population_size"] == qc_population
+    assert row["human_disposition_state"] == "automated_triage_complete"
+    assert row["primary_review_queue"] == "stable_carry_forward"
+    assert projection["queue_counts"]["stable_carry_forward"] == 1
+    assert projection["queue_counts"]["human_technical_review"] == 0
+    assert projection["required_human_disposition_count"] == 0
+    assert projection["client_delivery_allowed"] is False
+    assert record == before
+
+
+def test_legacy_primary_queue_recognizes_canonical_exact_carry_forward_alias():
+    candidate = _candidate("stable", confidence=0.98)
+    candidate.pop("evidence_change_state")
+    candidate["lineage_status"] = "carried_forward_exact"
+    projection = review_work_projection(_record(candidate))
+    assert projection["candidates"][0]["primary_review_queue"] == "stable_carry_forward"
+    assert projection["queue_counts"]["stable_carry_forward"] == 1

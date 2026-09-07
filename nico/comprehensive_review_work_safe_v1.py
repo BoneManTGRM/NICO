@@ -131,6 +131,16 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
             if candidate_id in required_ids
             else "automated_triage_complete"
         )
+        # The base projection's confidence heuristic must not label a retained
+        # automated candidate as pending human work after exception-first routing.
+        # This changes presentation only; required IDs and QC gates above stand.
+        if row["human_disposition_state"] == "automated_triage_complete":
+            row["primary_review_queue"] = (
+                "stable_carry_forward"
+                if route == "STABLE_CARRY_FORWARD"
+                or phase2._evidence_change(source) in {"stable", "carried", "carried_forward", "carried_forward_exact", "unchanged"}
+                else "new_automated_triage_complete"
+            )
         candidate_rows.append(row)
         row_by_id[candidate_id] = row
 
@@ -177,6 +187,10 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     required_completed = len(required_ids) - len(pending_ids)
     actual_dispositions = len(disposition_ids & set(raw))
 
+    queue_counts = dict(base.get("queue_counts") or {})
+    for queue in ("critical_material", "human_technical_review", "new_automated_triage_complete", "stable_carry_forward", "human_disposition_completed"):
+        queue_counts[queue] = sum(row.get("primary_review_queue") == queue for row in candidate_rows)
+
     workload = deepcopy(dict(base.get("workload_metrics") or {}))
     workload.update(
         {
@@ -200,6 +214,7 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         {
             "artifact_schema": "nico.comprehensive_review_work_projection.v2.exception_first",
             "candidates": candidate_rows,
+            "queue_counts": queue_counts,
             "clusters": clusters,
             "required_human_disposition_candidate_ids": sorted(required_ids),
             "required_human_disposition_count": len(required_ids),

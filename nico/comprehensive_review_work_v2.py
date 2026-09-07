@@ -120,6 +120,11 @@ def _confidence(candidate: Mapping[str, Any]) -> float:
         "confidence",
         candidate.get("technical_triage_confidence", candidate.get("triage_confidence", 0.0)),
     )
+    # Match the established report_repair_intelligence confidence scale. Unknown
+    # labels remain unverified; numeric inputs retain the existing threshold.
+    labels = {"high": 0.9, "medium": 0.72, "low": 0.45}
+    if isinstance(value, str) and value.strip().casefold() in labels:
+        return labels[value.strip().casefold()]
     try:
         return max(0.0, min(1.0, float(value)))
     except (TypeError, ValueError):
@@ -505,7 +510,7 @@ def _primary_queue(candidate: Mapping[str, Any], disposition: Mapping[str, Any] 
     if _needs_individual_attention(candidate):
         return "human_technical_review"
     lineage = _evidence_change(candidate)
-    if lineage in {"stable", "carried", "carried_forward", "unchanged"}:
+    if lineage in {"stable", "carried", "carried_forward", "carried_forward_exact", "unchanged"}:
         return "stable_carry_forward"
     return "new_automated_triage_complete"
 
