@@ -503,11 +503,11 @@ def apply_review_work_action(
 
 
 def _primary_queue(candidate: Mapping[str, Any], disposition: Mapping[str, Any] | None) -> str:
-    if isinstance(disposition, Mapping):
+    if legacy.is_terminal_disposition(disposition):
         return "human_disposition_completed"
     if _is_material(candidate):
         return "critical_material"
-    if _needs_individual_attention(candidate):
+    if isinstance(disposition, Mapping) or _needs_individual_attention(candidate):
         return "human_technical_review"
     lineage = _evidence_change(candidate)
     if lineage in {"stable", "carried", "carried_forward", "carried_forward_exact", "unchanged"}:
@@ -553,8 +553,12 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
                     else ""
                 ),
                 "human_disposition": deepcopy(disposition) if isinstance(disposition, Mapping) else None,
-                "human_disposition_state": "completed" if isinstance(disposition, Mapping) else "pending",
-                "individual_attention_required": _needs_individual_attention(candidate),
+                "human_disposition_state": "completed" if legacy.is_terminal_disposition(disposition) else "pending",
+                "individual_attention_required": _needs_individual_attention(candidate) or (
+                    isinstance(disposition, Mapping)
+                    and not legacy.is_terminal_disposition(disposition)
+                    and not _grouped_eligible(candidate)
+                ),
                 "grouped_review_eligible": _grouped_eligible(candidate),
                 "technical_triage_verdict": _verdict(candidate),
                 "technical_triage_confidence": _confidence(candidate),
@@ -563,7 +567,7 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         )
         candidate_rows.append(row)
 
-    pending_ids = sorted(candidate_id for candidate_id in candidates if candidate_id not in dispositions)
+    pending_ids = sorted(candidate_id for candidate_id in candidates if not legacy.is_terminal_disposition(dispositions.get(candidate_id)))
     missing_qc = sorted(
         candidate_id
         for candidate_id in effective_qc
@@ -581,7 +585,7 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     unresolved_high = sorted(
         candidate_id
         for candidate_id in high_impact
-        if not isinstance(dispositions.get(candidate_id), Mapping)
+        if not legacy.is_terminal_disposition(dispositions.get(candidate_id))
         or not _text(dispositions[candidate_id].get("escalation_resolution"))
         or not _text(dispositions[candidate_id].get("escalation_owner"))
     )
@@ -590,7 +594,7 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     pending_grouped = {
         candidate_id
         for candidate_id, candidate in candidates.items()
-        if candidate_id not in dispositions and _grouped_eligible(candidate)
+        if not legacy.is_terminal_disposition(dispositions.get(candidate_id)) and _grouped_eligible(candidate)
     }
     clusters_remaining = sum(
         1
@@ -606,8 +610,8 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     workload = {
         "individual_attention_count": sum(
             1
-            for candidate_id, candidate in candidates.items()
-            if candidate_id not in dispositions and _needs_individual_attention(candidate)
+            for candidate in candidate_rows
+            if candidate["human_disposition_state"] == "pending" and candidate["individual_attention_required"]
         ),
         "grouped_review_eligible_count": len(pending_grouped),
         "quality_control_sample_size": len(effective_qc),

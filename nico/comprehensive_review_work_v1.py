@@ -28,6 +28,14 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def is_terminal_disposition(value: Any) -> bool:
+    """Only resolved human decisions complete candidate review."""
+
+    return isinstance(value, Mapping) and _text(value.get("disposition")).casefold() in {
+        "confirmed", "false_positive", "not_applicable", "accepted_risk",
+    }
+
+
 def _now(value: datetime | None = None) -> datetime:
     return (value or datetime.now(UTC)).astimezone(UTC)
 
@@ -578,7 +586,7 @@ def review_work_projection(
     unresolved_high = [
         candidate_id
         for candidate_id in high_impact
-        if not isinstance(dispositions.get(candidate_id), Mapping)
+        if not is_terminal_disposition(dispositions.get(candidate_id))
         or not _text(dispositions[candidate_id].get("escalation_resolution"))
         or not _text(dispositions[candidate_id].get("escalation_owner"))
     ]
@@ -593,7 +601,7 @@ def review_work_projection(
         if isinstance(qc.get(candidate_id), Mapping)
         and qc[candidate_id].get("independent_reviewer_verified") is True
     ]
-    completed_dispositions = [candidate_id for candidate_id in candidates if isinstance(dispositions.get(candidate_id), Mapping)]
+    completed_dispositions = [candidate_id for candidate_id in candidates if is_terminal_disposition(dispositions.get(candidate_id))]
     ready = (
         len(completed_dispositions) == len(candidates)
         and len(qc_complete_ids) == len(required_qc)
