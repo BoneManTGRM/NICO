@@ -33,10 +33,15 @@ from nico.specialist_review_session_bridge_v1 import (  # noqa: E402
     install_specialist_review_session_bridge,
 )
 
+from nico.comprehensive_scanner_inventory_v1 import (
+    install_comprehensive_scanner_inventory,
+)
+
 SPECIALIST_READINESS_ROUTE = "/diagnostics/specialist-readiness"
 app = production_app
 SPECIALIST_ACCESS = install_specialist_access(app)
 REVIEW_SESSION_BRIDGE = install_specialist_review_session_bridge(app)
+SCANNER_EVIDENCE_INVENTORY = install_comprehensive_scanner_inventory(app)
 
 if APPROVED_LIFECYCLE_CONSISTENCY.get("installed") is not True:
     raise RuntimeError("NICO approved lifecycle consistency binding was not installed")
