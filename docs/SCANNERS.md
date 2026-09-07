@@ -8,23 +8,24 @@ NICO combines built-in evidence checks with controlled external scanners. A scan
 |---|---|---:|---|
 | `pip-audit` | Python dependency vulnerability evidence | `2.10.1` | Python dependency |
 | `bandit` | Python static-security evidence | `1.9.4` | Python dependency |
-| `semgrep` | Multi-language static-analysis evidence | `1.169.0` | Python dependency |
-| `osv-scanner` | Lockfile and dependency vulnerability evidence | `v2.4.0` | Pinned GitHub release asset |
+| `npm-audit` | npm lockfile vulnerability evidence | npm supplied by the worker image; record actual version | Worker npm installation |
+| `semgrep` | Bounded Python/JavaScript/TypeScript pattern evidence | `1.170.0` | Isolated Python environment in Docker image |
+| `osv-scanner` | Source dependency vulnerability evidence | `v2.3.8` | Pinned GitHub release asset |
 | `gitleaks` | Secret-pattern repository evidence | `v8.30.1` | Pinned GitHub release asset |
-| `trufflehog` | Secret-verification and history evidence | `v3.95.9` | Pinned GitHub release asset |
-| `eslint` | JavaScript/TypeScript quality evidence | Image-resolved npm package | Global npm installation |
-| `tsc` | TypeScript compile evidence | Image-resolved npm package | Global npm installation |
+| `trufflehog` | Secret-detector and history evidence; active verification disabled | `v3.95.0` | Pinned GitHub release asset |
+| `eslint` | Bounded JavaScript/TypeScript quality evidence | `9.39.3` image default | Global npm installation |
+| `tsc` | Project-configured TypeScript compile evidence | Project-local compiler; image default `6.0.3` | Prepared project dependencies; image also includes a global compiler |
 
-The Python versions above are pinned in `requirements.txt`. Binary release tags are pinned in `scripts/install_hosted_scanner_binaries.py`.
+`pip-audit` and `bandit` versions are pinned in `requirements.txt`. Semgrep and image Node-tool versions are pinned through `Dockerfile` build arguments. Binary release defaults are declared in `Dockerfile` and `scripts/install_hosted_scanner_binaries.py`. The hosted TypeScript runner uses the prepared project-local compiler and project configuration, so record its actual version rather than infer it from the global image compiler.
 
 ## Binary version overrides
 
 The pinned defaults may be overridden deliberately at image-build time:
 
 ```bash
-NICO_OSV_SCANNER_VERSION=v2.4.0
+NICO_OSV_SCANNER_VERSION=v2.3.8
 NICO_GITLEAKS_VERSION=v8.30.1
-NICO_TRUFFLEHOG_VERSION=v3.95.9
+NICO_TRUFFLEHOG_VERSION=v3.95.0
 ```
 
 Overrides must be valid release tags. The installer requests the exact GitHub release tag, verifies the returned tag, restricts downloads to allowlisted GitHub hosts, bounds download size, and blocks unsafe archive paths, symlinks, and non-regular archive members.
@@ -37,6 +38,19 @@ Do not use unreviewed `latest` resolution in a production image. Version changes
 4. Docker build proof;
 5. scanner parsing and report-truth regression tests;
 6. an authorized deployed smoke assessment before claiming production behavior.
+
+## Hosted execution scope and qualification limits
+
+- **Dependencies:** `pip-audit` selects a `requirements.txt`; it does not establish complete coverage of every Python declaration or deployed installation. `npm-audit` checks discovered `package-lock.json` files with adjacent `package.json` using `--package-lock-only --ignore-scripts`. OSV recursively scans source dependencies; source-resolved package versions require corroboration before being described as installed or runtime-applicable versions.
+- **Bandit:** the JSON runner excludes generated, dependency, test, fixture, example, sample and vendor paths using the explicit list in `nico/bandit_json_execution_v61.py`. A directory name does not prove its contents are irrelevant to the authorized scope. Review exclusion applicability before claiming coverage.
+- **Semgrep:** the hosted profile is `config/nico-semgrep-standard.yml`: six rules for Python `eval`, `exec`, subprocess `shell=True`, requests `verify=False`, and JavaScript/TypeScript `eval` and `new Function`. It is distinct from the broader bundled `nico/semgrep_rules_v1.yml` and CI `--config auto`; execution of one does not establish coverage of the others. The source recipe excludes `node_modules`, `.next`, `dist` and `build` and uses bounded rule timeouts.
+- **ESLint:** the canonical hosted runner uses a generated flat configuration with `--no-config-lookup`, basic correctness rules and generated/dependency exclusions. It does not execute the repository's own ESLint configuration or establish general security coverage. The configuration recipe is in `nico/scanner_evidence_pipeline_v1.py`; the canonical runner is in `nico/phase6_final_remediation_v1.py`.
+- **TypeScript:** compilation follows the selected project's `tsconfig.json` and its checking/exclusion settings. A successful compile is not evidence of runtime behavior or security testing.
+- **Secrets:** Gitleaks and TruffleHog retain detector evidence and history metadata. TruffleHog uses `--no-verification` and is bound to `HEAD`; no active credential-validity check is implied. The `full_history_verified` metadata checks that the local repository is non-shallow. It does not independently prove that every remote branch, tag or unreachable object was fetched and scanned. When only snapshot coverage is available, history limitations must remain explicit.
+
+These descriptions document current behavior; they do not reduce agreed assessment or specialist-qualification requirements. A completed tool execution, retained output hash, zero findings or configuration hash is not a full-coverage PASS. Required rule breadth, effective configuration, included/excluded targets and applicability must be reconciled with the authorized scope. Unverified coverage remains unresolved until that evidence and review are complete.
+
+The retained `command_intent` currently includes only the first ten command arguments. A source recipe can explain intended arguments but cannot replace a complete historical execution receipt. Do not claim complete effective-configuration verification from this abbreviated field alone.
 
 ## Execution outcomes
 
