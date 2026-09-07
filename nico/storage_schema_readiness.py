@@ -50,6 +50,11 @@ EXPECTED_TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "created_at",
         "updated_at",
     ),
+    "scanner_raw_artifacts": (
+        "artifact_id", "run_id", "scan_id", "customer_id", "project_id",
+        "repository", "commit_sha", "scanner_name", "raw_sha256",
+        "gzip_sha256", "gzip_blob", "created_at",
+    ),
     "evidence_items": (
         "evidence_id",
         "customer_id",

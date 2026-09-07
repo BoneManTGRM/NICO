@@ -70,6 +70,39 @@ const receipt = {operation: 'operator_provider_intake_started', run_id: run, rep
   }
   const mismatch = await submitIntake(source, 'credential', storage(), async () => Response.json({...receipt, repository_snapshot: {...receipt.repository_snapshot, commit_sha: 'c'.repeat(40)}}));
   assert.equal(mismatch.runId, run, 'retain a syntactically valid run ID for recovery even when the source receipt conflicts');
+  const rejectedStore = storage();
+  const rejected = await submitIntake(source, 'credential', rejectedStore, async () => Response.json({detail: {code: 'provider_credential_reference_missing', phase: 'provider_preflight', assessment_started: false}}, {status: 409, headers: {'X-NICO-Correlation-ID': 'corr_12345678'}}));
+  assert.equal(rejected.httpStatus, 409, 'retain rejection status for reconciliation');
+  assert.equal(rejected.failureCode, 'provider_credential_reference_missing');
+  assert.equal(rejected.correlationId, 'corr_12345678');
+  assert.deepEqual(readAttempt(rejectedStore), rejected);
+  assert.equal(rejected.state, 'uncertain', 'diagnostic evidence must not silently unlock resubmission');
+  await assert.rejects(submitIntake(source, 'credential', rejectedStore, send), /existing_attempt/);
+  const unsafe = await submitIntake(source, 'credential', storage(), async () => Response.json({detail: {code: 'secret-token-must-not-retain', message: 'private response text'}}, {status: 422, headers: {'X-NICO-Correlation-ID': 'unsafe value'}}));
+  assert.equal(unsafe.httpStatus, 422);
+  assert.equal(unsafe.failureCode, undefined);
+  assert.equal(unsafe.correlationId, undefined);
+  const proxy = require(path.resolve('apps/web/app/api/nico/providers/operator/comprehensive-intake/route.ts'));
+  const originalFetch = global.fetch;
+  const previousEnv = Object.fromEntries(['NICO_API_URL', 'NICO_BACKEND_URL', 'NEXT_PUBLIC_NICO_API_URL'].map(key => [key, process.env[key]]));
+  try {
+    process.env.NICO_API_URL = 'https://nico.synthetic.invalid';
+    delete process.env.NICO_BACKEND_URL; delete process.env.NEXT_PUBLIC_NICO_API_URL;
+    global.fetch = async (url, init) => {
+      assert.equal(init.headers['X-NICO-Correlation-ID'], '9901e29d-a7fc-4a14-b1cb-dab6a0fcf945');
+      assert.equal(init.headers['X-Request-ID'], init.headers['X-NICO-Correlation-ID']);
+      return Response.json({detail: {code: 'provider_credential_reference_missing'}}, {status: 409, headers: {'X-NICO-Correlation-ID': init.headers['X-NICO-Correlation-ID']}});
+    };
+    const req = new Request('https://app.synthetic.invalid/api/nico/providers/operator/comprehensive-intake', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-NICO-Admin-Token': 'synthetic-only', 'X-Request-ID': '9901e29d-a7fc-4a14-b1cb-dab6a0fcf945'}, body: JSON.stringify(source)});
+    req.nextUrl = new URL(req.url);
+    const response = await proxy.POST(req);
+    assert.equal(response.status, 409);
+    assert.equal(response.headers.get('X-NICO-Correlation-ID'), '9901e29d-a7fc-4a14-b1cb-dab6a0fcf945');
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  } finally {
+    global.fetch = originalFetch;
+    for (const [key, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
   const denied = storage();
   await assert.rejects(submitIntake(source, 'credential', denied, async () => Response.json({detail:{code:'authorized_nico_operator_required'}}, {status:403})), /admin_required/);
   assert.equal(readAttempt(denied), null);

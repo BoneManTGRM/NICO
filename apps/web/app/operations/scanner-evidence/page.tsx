@@ -1,6 +1,7 @@
 "use client";
 
 import {FormEvent, useEffect, useState} from "react";
+import {localePreservingHref} from "../../assessment/assessmentLocale";
 
 type ScannerRecord = {
   scanner_name: string;
@@ -33,8 +34,19 @@ export default function ScannerEvidencePage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setRunId(params.get("run_id") || "");
-    setSpanish(params.get("language") === "es-MX");
+    const locale = (params.get("lang") ?? params.get("language") ?? "").toLowerCase();
+    setSpanish(locale === "es-mx" || locale === "es");
   }, []);
+
+  function switchLanguage() {
+    const url = new URL(window.location.href);
+    // Keep the current recovery identity and retire the legacy locale alias.
+    if (runId.trim()) url.searchParams.set("run_id", runId.trim());
+    url.searchParams.delete("language");
+    window.location.assign(localePreservingHref(
+      url.pathname, url.search, url.hash, spanish ? "en-US" : "es-MX",
+    ));
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -91,7 +103,7 @@ export default function ScannerEvidencePage() {
       <h1>{tr("Retained scanner evidence", "Evidencia conservada de los analizadores")}</h1>
       <p>{tr("Owner administrators can inspect metadata and verify that the retained scanner bytes still match their recorded checksums. Missing or mismatched evidence remains explicit.", "Los administradores propietarios pueden consultar metadatos y verificar que los bytes conservados de los analizadores coincidan con sus sumas de verificación registradas. La evidencia faltante o que no coincide permanece explícita.")}</p>
       <p>{tr("This read does not evaluate coverage, resolve findings, rebuild the assessment, approve a report or authorize delivery.", "Esta lectura no evalúa la cobertura, resuelve hallazgos, reconstruye la evaluación, aprueba informes ni autoriza la entrega.")}</p>
-      <button type="button" onClick={() => setSpanish(!spanish)}>{spanish ? "English" : "Español (México)"}</button>
+      <button type="button" onClick={switchLanguage}>{spanish ? "English" : "Español (México)"}</button>
       <form onSubmit={submit} className="result-card">
         <label htmlFor="scanner-evidence-run"><b>{tr("Saved assessment run ID", "ID de la evaluación guardada")}</b></label>
         <input id="scanner-evidence-run" disabled={loading} value={runId} onChange={event => {setRunId(event.target.value); setInventory(null);}} required pattern="comprun_[A-Za-z0-9_-]{1,120}" maxLength={128} autoComplete="off" />

@@ -311,3 +311,80 @@ def test_fresh_heartbeat_cannot_keep_final_report_running_past_deadline(
     assert store.load_final_report_job(first_lease_id)["status"] == "expired"
     assert calls == 2
     reset_final_report_publication_tasks_for_tests()
+
+
+def test_canonical_final_report_and_lease_commit_before_worker_finalizer(tmp_path, monkeypatch):
+    """Force the scheduling gap observed in CI instead of hoping a poll hits it."""
+    reset_final_report_publication_tasks_for_tests()
+    store = _store(tmp_path)
+    record = _record("comprun_atomic_publication")
+    store.create(record)
+    coordinator = FinalReportPublicationCoordinator(store)
+    published = threading.Event()
+    release_finalizer = threading.Event()
+    publication_threads = []
+    publish = coordinator._publish_result
+
+    def pause_after_publish(**kwargs):
+        outcome = publish(**kwargs)
+        publication_threads.append(threading.current_thread())
+        published.set()
+        assert release_finalizer.wait(3.0)
+        return outcome
+
+    monkeypatch.setattr(coordinator, "_publish_result", pause_after_publish)
+    try:
+        claimed = coordinator.advance(record, _valid_result, _context(record))
+        lease_id = claimed["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
+        assert published.wait(2.0)
+        completed = store.load(record["identity"]["run_id"])
+        assert FINAL_REPORT_STAGE_ID in completed["completed_stages"]
+        assert store.load_final_report_job(lease_id)["status"] == "complete", (
+            "Canonical publication committed while its durable lease still claimed rendering"
+        )
+    finally:
+        release_finalizer.set()
+        for thread in publication_threads:
+            thread.join(2.0)
+        reset_final_report_publication_tasks_for_tests()
+
+
+def test_publication_rolls_back_run_and_lease_when_projection_write_fails(tmp_path, monkeypatch):
+    import pytest
+    store = _store(tmp_path)
+    record = _record("comprun_atomic_rollback")
+    store.create(record)
+    lease_id = "lease_atomic_rollback"
+    store.create_final_report_job(lease_id=lease_id, run_id=record["identity"]["run_id"], status="rendering",
+                                 started_epoch=time.time(), heartbeat_epoch=time.time(), updated_at=record["updated_at"])
+    result = _valid_result(_context(record))
+    result["stage_execution"] = {"publication_lease_id": lease_id}
+    updated = apply_comprehensive_stage_result(record, stage_id=FINAL_REPORT_STAGE_ID, result=result)
+    def fail_projection(*args):
+        raise RuntimeError("synthetic projection failure")
+    monkeypatch.setattr(store, "_write_browser_projection", fail_projection)
+    with pytest.raises(RuntimeError, match="synthetic projection failure"):
+        store.save(updated, expected_revision=record["revision"], publication_lease_id=lease_id)
+    assert store.load(record["identity"]["run_id"])["revision"] == record["revision"]
+    assert store.load_final_report_job(lease_id)["status"] == "rendering"
+
+
+def test_expired_or_wrong_run_lease_cannot_publish_canonical_result(tmp_path):
+    import pytest
+    from nico.comprehensive_run_store import ComprehensiveRunConflict
+    store = _store(tmp_path)
+    for failure in ("expired", "wrong_run"):
+        record = _record("comprun_atomic_" + failure)
+        store.create(record)
+        lease_id = "lease_atomic_" + failure
+        store.create_final_report_job(lease_id=lease_id,
+                                     run_id="another_synthetic_run" if failure == "wrong_run" else record["identity"]["run_id"],
+                                     status="expired" if failure == "expired" else "rendering",
+                                     started_epoch=time.time(), heartbeat_epoch=time.time(), updated_at=record["updated_at"])
+        result = _valid_result(_context(record))
+        result["stage_execution"] = {"publication_lease_id": lease_id}
+        updated = apply_comprehensive_stage_result(record, stage_id=FINAL_REPORT_STAGE_ID, result=result)
+        with pytest.raises(ComprehensiveRunConflict, match="final_report_publication_lease_inactive"):
+            store.save(updated, expected_revision=record["revision"], publication_lease_id=lease_id)
+        assert store.load(record["identity"]["run_id"])["revision"] == record["revision"]
+        assert store.load_final_report_job(lease_id)["status"] == ("expired" if failure == "expired" else "rendering")

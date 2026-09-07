@@ -741,7 +741,11 @@ class FinalReportPublicationCoordinator:
                 result=dict(result),
             )
             try:
-                self._store.save(updated, expected_revision=expected_revision)
+                self._store.save(
+                    updated,
+                    expected_revision=expected_revision,
+                    publication_lease_id=lease_id,
+                )
             except ComprehensiveRunConflict:
                 continue
             return (

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from nico.postgres_timeout_patch import postgres_connect_kwargs
+from nico.scanner_raw_artifact_storage_v1 import SCANNER_ARTIFACT_SCHEMA
 
 POSTGRES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS customers (
@@ -139,6 +140,9 @@ CREATE INDEX IF NOT EXISTS audit_log_action_scope_created_idx
 CREATE INDEX IF NOT EXISTS audit_log_action_created_idx
   ON audit_log (action, created_at DESC);
 """
+
+# Private binary evidence is excluded from the generic JSON storage API.
+POSTGRES_SCHEMA += SCANNER_ARTIFACT_SCHEMA
 
 JSONB_TABLE_MAP = {
     "repositories": ("authorized_repositories", "repository_id"),

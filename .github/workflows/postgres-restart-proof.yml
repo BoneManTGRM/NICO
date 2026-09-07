@@ -61,10 +61,13 @@ jobs:
             --database-url "$NICO_TEST_DATABASE_URL" \
             --output audit-results/postgres-intake-reservation-proof.json
 
+      - name: Prove original scanner BYTEA survives filesystem loss and reconnect
+        run: python scripts/postgres_scanner_artifact_proof.py --output audit-results/postgres-scanner-artifact-proof.json
       - name: Verify evidence is bounded and passing
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           path = Path("audit-results/postgres-restart-proof.json")
@@ -90,6 +93,18 @@ jobs:
           reservation_serialized = json.dumps(reservation)
           assert "postgresql://" not in reservation_serialized
           assert "NICO_TEST_DATABASE_URL" not in reservation_serialized
+          scanner = json.loads(Path("audit-results/postgres-scanner-artifact-proof.json").read_text(encoding="utf-8"))
+          assert scanner["status"] == "passed"
+          assert scanner["synthetic"] is True
+          assert scanner["live_production_claim"] is False
+          assert scanner["application_commit"] == os.environ["GITHUB_SHA"]
+          for key in ("fresh_adapter_reconnected", "original_bytes_preserved", "filesystem_removed", "source_binding_enforced", "checksum_binding_enforced", "conflicting_overwrite_rejected", "bounded_bytea_read"):
+              assert scanner["proof"][key] is True
+          assert scanner["proof"]["human_approval"] is False
+          assert scanner["proof"]["client_delivery_allowed"] is False
+          scanner_serialized = json.dumps(scanner)
+          assert "postgresql://" not in scanner_serialized
+          assert "NICO_TEST_DATABASE_URL" not in scanner_serialized
           PY
 
       - name: Upload restart proof evidence
@@ -100,5 +115,6 @@ jobs:
           path: |
             audit-results/postgres-restart-proof.json
             audit-results/postgres-intake-reservation-proof.json
+            audit-results/postgres-scanner-artifact-proof.json
           if-no-files-found: error
           retention-days: 30

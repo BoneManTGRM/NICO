@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         "X-NICO-Admin-Token": adminToken,
         "X-Request-ID": requestId,
+        "X-NICO-Correlation-ID": requestId,
       },
       body,
       cache: "no-store",
@@ -95,6 +96,8 @@ export async function POST(request: NextRequest) {
       "X-Request-ID": requestId,
     });
     const responseContentType = response.headers.get("content-type");
+    const correlationId = response.headers.get("x-nico-correlation-id");
+    if (correlationId && /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(correlationId)) responseHeaders.set("X-NICO-Correlation-ID", correlationId);
     if (responseContentType) responseHeaders.set("Content-Type", responseContentType);
     const runId = response.headers.get("x-nico-run-id");
     if (runId) responseHeaders.set("X-NICO-Run-ID", runId);

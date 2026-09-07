@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gzip
 import hashlib
 import json
 import os
@@ -127,33 +126,16 @@ def _walk_osv(value: Any, context: Mapping[str, Any], output: list[dict[str, Any
 
 
 def _retained_raw_json(payload: Mapping[str, Any]) -> Any:
-    artifact = payload.get("raw_artifact")
-    if not isinstance(artifact, Mapping):
-        return None
-    storage_key = _text(artifact.get("storage_key"))
-    if not storage_key:
-        return None
-    root = Path(DEFAULT_RAW_ROOT).resolve()
-    path = (root / storage_key).resolve()
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return None
-    if not path.is_file():
-        return None
-    compressed = path.read_bytes()
-    expected_gzip = _text(artifact.get("gzip_sha256"))
-    if expected_gzip and _sha256(compressed) != expected_gzip:
+    from nico.scanner_raw_artifact_storage_v1 import (
+        binding_from_record, read_scanner_artifact,
+    )
+    retained = read_scanner_artifact(
+        payload, binding=binding_from_record(payload), raw_root=DEFAULT_RAW_ROOT,
+    )
+    if retained.raw is None:
         return None
     try:
-        raw = gzip.decompress(compressed)
-    except (OSError, gzip.BadGzipFile):
-        return None
-    expected_raw = _text(artifact.get("sha256"))
-    if expected_raw and _sha256(raw) != expected_raw:
-        return None
-    try:
-        return json.loads(raw.decode("utf-8", errors="strict"))
+        return json.loads(retained.raw.decode("utf-8", errors="strict"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
 

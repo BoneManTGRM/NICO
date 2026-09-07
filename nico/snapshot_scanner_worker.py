@@ -310,6 +310,18 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
                             "current_run": True,
                             "scans_git_history": spec.scans_git_history,
                         }
+                    # Commit original compressed bytes before this tool result
+                    # can be retained or published as successfully captured.
+                    from nico.scanner_raw_artifact_storage_v1 import persist_scanner_result
+                    result = persist_scanner_result(result, binding={
+                        "run_id": str(payload.get("run_id") or ""),
+                        "scan_id": scan_id,
+                        "customer_id": customer_id,
+                        "project_id": project_id,
+                        "repository": str(payload.get("repository") or ""),
+                        "commit_sha": actual_commit_sha,
+                        "scanner_name": spec.name,
+                    })
                     redaction_applied = redaction_applied or "[REDACTED]" in str(result)
                     results.append(result)
         except Exception as exc:  # pragma: no cover - defensive worker boundary
