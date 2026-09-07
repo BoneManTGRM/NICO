@@ -684,6 +684,7 @@ export function OperationsControlCenter() {
   const controller = useOperationsControlCenter();
   return (
     <main className={styles.shell}>
+      <nav aria-label="Operator tools"><a href="/operations/provider-intake">GitHub operator intake</a>{" · "}<a href="/operations/scanner-evidence">Retained scanner evidence</a></nav>
       <OperationsHero controller={controller} />
       <AuthenticationPanel controller={controller} />
       <PrimaryStatusPanel controller={controller} />
