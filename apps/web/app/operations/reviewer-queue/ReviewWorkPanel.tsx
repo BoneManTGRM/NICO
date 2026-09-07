@@ -1,6 +1,7 @@
 "use client";
 
 import {FormEvent, useEffect, useMemo, useState} from "react";
+import ReviewSessionNotice from "./ReviewSessionNotice";
 import styles from "./review-work.module.css";
 
 type Locale = "en" | "es-MX";
@@ -39,7 +40,6 @@ const COPY = {
     lead: "Record authorized specialist decisions against the exact canonical candidate register. Every group action still writes one decision per underlying candidate. Nothing here approves client delivery.",
     language: "Español",
     run: "Exact run ID",
-    token: "Operator admin token",
     reviewer: "Authorized reviewer",
     role: "Reviewer / specialist role",
     load: "Load review work",
@@ -72,7 +72,7 @@ const COPY = {
     sessionStart: "Start measured specialist session",
     sessionStop: "Stop measured specialist session",
     completeStudy: "Complete empirical study",
-    warning: "Reviewer identity, role, and explicit authorization are persisted with every action. The admin token stays only in this open page.",
+    warning: "Reviewer identity, role, and explicit authorization are persisted with every action. Your signed-in specialist session protects each exact-run request.",
     status: "Status",
     combinedHours: "Combined specialist hours",
     fourHoursVerified: "≤ 4 hours verified",
@@ -85,7 +85,6 @@ const COPY = {
     lead: "Registra decisiones autorizadas de especialistas con base en el registro canónico exacto. Cada acción grupal conserva una decisión por candidato subyacente. Nada aquí autoriza la entrega al cliente.",
     language: "English",
     run: "ID de ejecución exacta",
-    token: "Token de administrador",
     reviewer: "Revisor autorizado",
     role: "Función del revisor / especialista",
     load: "Cargar trabajo de revisión",
@@ -118,7 +117,7 @@ const COPY = {
     sessionStart: "Iniciar sesión medida de especialista",
     sessionStop: "Detener sesión medida de especialista",
     completeStudy: "Completar estudio empírico",
-    warning: "La identidad, función y autorización explícita del revisor se conservan con cada acción. El token administrativo permanece únicamente en esta página abierta.",
+    warning: "La identidad, función y autorización explícita del revisor se conservan con cada acción. Su sesión de especialista protege cada solicitud de la ejecución exacta.",
     status: "Estado",
     combinedHours: "Horas combinadas de especialistas",
     fourHoursVerified: "≤ 4 horas verificadas",
@@ -205,7 +204,6 @@ export default function ReviewWorkPanel() {
   const [locale, setLocale] = useState<Locale>("en");
   const copy = COPY[locale];
   const [runId, setRunId] = useState("");
-  const [adminToken, setAdminToken] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [reviewerRole, setReviewerRole] = useState("");
   const [action, setAction] = useState<Action>("disposition_candidate");
@@ -251,14 +249,16 @@ export default function ReviewWorkPanel() {
   );
 
   async function load(): Promise<void> {
-    if (!runId.trim() || !adminToken.trim()) return;
+    if (!runId.trim()) return;
     setBusy(true);
     setError("");
+    setProjection(null);
     try {
       const response = await fetch(url, {
         method: "GET",
         cache: "no-store",
-        headers: {Accept: "application/json", "X-NICO-Admin-Token": adminToken},
+        credentials: "same-origin",
+        headers: {Accept: "application/json"},
       });
       setProjection(await parseResponse(response, locale));
     } catch (caught) {
@@ -298,14 +298,16 @@ export default function ReviewWorkPanel() {
 
   async function submit(event?: FormEvent): Promise<void> {
     event?.preventDefault();
-    if (!runId.trim() || !adminToken.trim() || !reviewer.trim() || !reviewerRole.trim()) return;
+    if (!runId.trim() || !reviewer.trim() || !reviewerRole.trim()) return;
     setBusy(true);
     setError("");
+    setProjection(null);
     try {
       const response = await fetch(url, {
         method: "POST",
         cache: "no-store",
-        headers: {"Content-Type": "application/json", Accept: "application/json", "X-NICO-Admin-Token": adminToken},
+        credentials: "same-origin",
+        headers: {"Content-Type": "application/json", Accept: "application/json"},
         body: JSON.stringify(actionPayload()),
       });
       setProjection(await parseResponse(response, locale));
@@ -328,14 +330,14 @@ export default function ReviewWorkPanel() {
     <p>{copy.lead}</p>
     <p className={styles.boundary}>{copy.noDelivery}</p>
 
+    <ReviewSessionNotice runId={runId} locale={locale} />
     <div className={styles.identityGrid}>
-      <label>{copy.run}<input value={runId} onChange={(event) => setRunId(event.target.value)} autoComplete="off" /></label>
-      <label>{copy.token}<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="off" /></label>
+      <label>{copy.run}<input disabled={busy} value={runId} onChange={(event) => {setRunId(event.target.value); setProjection(null);}} autoComplete="off" /></label>
       <label>{copy.reviewer}<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} autoComplete="off" /></label>
       <label>{copy.role}<input value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)} autoComplete="off" /></label>
     </div>
     <p className={styles.security}>{copy.warning}</p>
-    <div className={styles.actions}><button type="button" onClick={load} disabled={busy || !runId.trim() || !adminToken.trim()}>{projection ? copy.refresh : copy.load}</button></div>
+    <div className={styles.actions}><button type="button" onClick={load} disabled={busy || !runId.trim()}>{projection ? copy.refresh : copy.load}</button></div>
 
     {projection ? <div className={styles.summary}>
       <article><b>{projection.dispositioned_candidate_count ?? 0}/{projection.candidate_count ?? 0}</b><span>{locale === "es-MX" ? "candidatos con disposición" : "candidates dispositioned"}</span></article>
