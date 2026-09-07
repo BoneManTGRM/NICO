@@ -198,12 +198,12 @@ def _specific_correction(item: Mapping[str, Any], family: str) -> str:
             return (
                 f"Extract state transitions, data loading, and side-effect orchestration from `{symbol}` into typed hooks or services; "
                 "split independent rendering branches into bounded child components; add characterization and Playwright coverage; "
-                "then enforce cyclomatic complexity at or below 30 for the durable source anchor."
+                "then enforce cyclomatic complexity below 30 for the durable source anchor."
             )
         if "report" in path or "spanish" in path:
             return (
                 f"Separate canonical-data preparation, translation selection, layout construction, and artifact validation in `{symbol}`; "
-                "retain snapshot-based report fixtures and cross-format truth tests; target complexity at or below 30."
+                "retain snapshot-based report fixtures and cross-format truth tests; target complexity below 30."
             )
         if any(token in path for token in ("scanner", "evidence", "snapshot")):
             return (
@@ -217,7 +217,7 @@ def _specific_correction(item: Mapping[str, Any], family: str) -> str:
             )
         return (
             f"Decompose `{symbol}` around cohesive branch groups, preserve behavior with characterization tests, "
-            "and enforce cyclomatic complexity at or below 30 on the exact remediation commit."
+            "and enforce cyclomatic complexity below 30 on the exact remediation commit."
         )
     if family == "tls_verify_disabled":
         return (

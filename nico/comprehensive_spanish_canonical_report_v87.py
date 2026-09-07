@@ -792,6 +792,10 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "into typed hooks or services; split independent rendering branches into bounded child components; add characterization and Playwright coverage; then enforce cyclomatic complexity at or below 30 for the durable source anchor.",
         "hacia hooks o servicios tipados; separar las ramas de renderizado independientes en componentes hijos acotados; agregar pruebas de caracterización y cobertura de Playwright; después exigir una complejidad ciclomática de 30 o menos para el anclaje de código fuente duradero.",
     ),
+    (
+        "into typed hooks or services; split independent rendering branches into bounded child components; add characterization and Playwright coverage; then enforce cyclomatic complexity below 30 for the durable source anchor.",
+        "hacia hooks o servicios tipados; separar las ramas de renderizado independientes en componentes hijos acotados; agregar pruebas de caracterización y cobertura de Playwright; después exigir una complejidad ciclomática inferior a 30 para el anclaje de código fuente duradero.",
+    ),
     ("into typed hooks or service", "hacia hooks o servicios tipados"),
     ("1 of 1 applicable scanner executions completed.", "Se completó 1 de 1 ejecución de analizador aplicable."),
     ("No scanner execution remains incomplete.", "No queda ninguna ejecución de analizador incompleta."),

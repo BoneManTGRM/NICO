@@ -87,8 +87,9 @@ _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD = {
 # to the existing fail-closed renderer instead of silently publishing mixed-language
 # prose.
 _COMPLEXITY_ACCEPTANCE_RE = re.compile(
-    r"^The exact-SHA rerun no longer reports cyclomatic complexity above "
-    r"(?P<threshold>\d+) at (?P<location>[A-Za-z0-9_.\-/]+:\d+)\.$"
+    r"^The exact-SHA rerun no longer reports cyclomatic complexity "
+    r"(?:above (?P<legacy_threshold>\d+)|of (?P<threshold>\d+) or greater) "
+    r"at (?P<location>[A-Za-z0-9_.\-/]+:\d+)\.$"
 )
 _COMPLEXITY_TITLE_RE = re.compile(
     r"^Reduce complexity in (?P<name>[^\r\n]+)$"
@@ -107,7 +108,7 @@ _COMPLEXITY_EVIDENCE_RE = re.compile(
 _COMPLEXITY_REPORT_RECOMMENDATION_RE = re.compile(
     r"^Separate canonical-data preparation, translation selection, layout construction, "
     r"and artifact validation in `(?P<name>[^`\r\n]+)`; preserve snapshot report "
-    r"fixtures and cross-format truth tests; target cyclomatic complexity at or below "
+    r"fixtures and cross-format truth tests; target cyclomatic complexity (?P<inclusive>at or )?below "
     r"(?P<threshold>\d+)\.$"
 )
 _COMPLEXITY_COLLECTION_RECOMMENDATION_RE = re.compile(
@@ -122,7 +123,7 @@ _COMPLEXITY_COMMAND_RECOMMENDATION_RE = re.compile(
 )
 _COMPLEXITY_DEFAULT_RECOMMENDATION_RE = re.compile(
     r"^Decompose `(?P<name>[^`\r\n]+)` around cohesive branch groups, preserve behavior "
-    r"with characterization tests, and enforce cyclomatic complexity at or below "
+    r"with characterization tests, and enforce cyclomatic complexity (?P<inclusive>at or )?below "
     r"(?P<threshold>\d+) on the exact remediation commit\.$"
 )
 _COMPLEXITY_DEFAULT_METHOD = "retained exact-SHA complexity evidence"
@@ -176,9 +177,11 @@ def _translate_generated_complexity_contract(value: Any) -> str | None:
 
     match = _COMPLEXITY_ACCEPTANCE_RE.fullmatch(text)
     if match is not None:
+        threshold = match.group("threshold") or match.group("legacy_threshold")
+        comparison = "igual o superior" if match.group("threshold") else "superior"
         return (
             "La nueva ejecución sobre el SHA exacto ya no informa una complejidad "
-            f"ciclomática superior a {match.group('threshold')} en "
+            f"ciclomática {comparison} a {threshold} en "
             f"{match.group('location')}."
         )
 
@@ -212,12 +215,13 @@ def _translate_generated_complexity_contract(value: Any) -> str | None:
 
     match = _COMPLEXITY_REPORT_RECOMMENDATION_RE.fullmatch(text)
     if match is not None:
+        comparison = "igual o inferior" if match.group("inclusive") else "inferior"
         return (
             "Separar la preparación de datos canónicos, la selección de traducción, la "
             "construcción del diseño y la validación de artefactos en "
             f"`{match.group('name')}`; conservar fixtures de informes de instantáneas y "
             "pruebas de coherencia entre formatos; fijar como objetivo una complejidad "
-            f"ciclomática igual o inferior a {match.group('threshold')}."
+            f"ciclomática {comparison} a {match.group('threshold')}."
         )
 
     match = _COMPLEXITY_COLLECTION_RECOMMENDATION_RE.fullmatch(text)
@@ -239,10 +243,11 @@ def _translate_generated_complexity_contract(value: Any) -> str | None:
 
     match = _COMPLEXITY_DEFAULT_RECOMMENDATION_RE.fullmatch(text)
     if match is not None:
+        comparison = "igual o inferior" if match.group("inclusive") else "inferior"
         return (
             f"Descomponer `{match.group('name')}` alrededor de grupos cohesivos de ramas, "
             "preservar el comportamiento con pruebas de caracterización y aplicar una "
-            f"complejidad ciclomática igual o inferior a {match.group('threshold')} en el "
+            f"complejidad ciclomática {comparison} a {match.group('threshold')} en el "
             "commit exacto de remediación."
         )
 
