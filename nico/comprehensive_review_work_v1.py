@@ -241,7 +241,10 @@ def ledger_for_record(record: Mapping[str, Any], register: Mapping[str, Any] | N
         return expected
     if sorted(_text(value) for value in ledger.get("candidate_ids") or []) != expected["candidate_ids"]:
         raise ValueError("review_work_ledger_candidate_identity_mismatch")
-    if sorted(_text(value) for value in ledger.get("qc_required_candidate_ids") or []) != expected["qc_required_candidate_ids"]:
+    # Representatives are generated in cluster-ID order, which need not match
+    # candidate-ID order. Compare both multisets without rewriting the ledger;
+    # missing, substituted, additional, or duplicate representatives still fail.
+    if sorted(_text(value) for value in ledger.get("qc_required_candidate_ids") or []) != sorted(expected["qc_required_candidate_ids"]):
         raise ValueError("review_work_ledger_qc_sample_drift")
     if sorted(_text(value) for value in ledger.get("high_impact_candidate_ids") or []) != expected["high_impact_candidate_ids"]:
         raise ValueError("review_work_ledger_escalation_drift")
