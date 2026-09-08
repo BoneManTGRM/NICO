@@ -443,9 +443,27 @@ export function scannerStatusFor(
   result: Result | null,
   running: boolean,
 ): unknown {
+  const execution = scannerExecutionSummaryFor(result);
+  if (execution) return execution.status;
+  // Finished automation does not establish that native scanners completed.
+  if (result?.terminal) return "unknown";
   return (
     stage(result, "dependency_security_static_analysis")?.status ||
     stage(result, "deep_scanner_triage")?.status ||
     (running ? "running" : "pending")
   );
+}
+
+export function scannerExecutionSummaryFor(result: Result | null): {
+  status: "complete" | "partial" | "unknown"; percent: number | null;
+  completed_count: number; applicable_count: number;
+} | null {
+  const value = evidenceRecord(result?.scanner_execution_summary as Evidence | undefined);
+  if (value.schema !== "nico.scanner-execution-ui-summary.v1"
+    || value.run_id !== result?.run_id || value.commit_sha !== immutableCommitFor(result)
+    || !["complete", "partial", "unknown"].includes(String(value.status))) return null;
+  return value as {
+    status: "complete" | "partial" | "unknown"; percent: number | null;
+    completed_count: number; applicable_count: number;
+  };
 }

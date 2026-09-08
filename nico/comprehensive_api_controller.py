@@ -1355,6 +1355,11 @@ class ComprehensiveApiController:
         }
         if terminal:
             if report:
+                from nico.complete_assessment_gate_v1 import scanner_execution_summary
+                response["scanner_execution_summary"] = scanner_execution_summary(
+                    report.get("json") or {}, expected_commit=identity["commit_sha"],
+                    expected_run=identity["run_id"],
+                )
                 response["reports"] = (
                     _project_report_manifest(report)
                     if browser_projection
