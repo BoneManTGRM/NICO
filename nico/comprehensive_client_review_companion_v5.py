@@ -519,6 +519,31 @@ def _verified(value: Any) -> bool:
     }
 
 
+def _runtime_observation_lines(canonical: Mapping[str, Any], module_id: str, field: str) -> list[str]:
+    from nico.comprehensive_human_evidence_report_v1 import _FIELD_LABELS
+
+    labels = set(_FIELD_LABELS[field])
+    lines = []
+    for stage_id, stage in _stage_map(canonical).items():
+        if not stage_id.startswith(f"client_human_evidence_{module_id}"):
+            continue
+        if "excluded" in str(stage.get("status") or "").casefold():
+            continue
+        for raw in _values(stage.get("evidence"), limit=100):
+            # Only the renderer-owned field label establishes an observation.
+            # A reviewer, source reference, test plan, or exclusion rationale may
+            # contain PASS/device words without observing an execution.
+            for prefix in ("Client-supplied data · ", "Dato aportado por el cliente · "):
+                if not raw.startswith(prefix):
+                    continue
+                label, separator, value = raw[len(prefix):].partition(":")
+                root_label = label.split("[", 1)[0].split(".", 1)[0]
+                if separator and root_label in labels and value.strip():
+                    lines.append(value.strip())
+                break
+    return list(dict.fromkeys(lines))
+
+
 def _functional_runtime_truth(
     canonical: Mapping[str, Any],
     details: dict[str, Any],
@@ -527,9 +552,13 @@ def _functional_runtime_truth(
     spanish: bool,
 ) -> tuple[dict[str, Any], list[str]]:
     human_stage = _human_runtime_stage(canonical, "functional_qa")
-    if "excluded" in str(human_stage.get("status") or "").casefold():
-        return details, evidence
-    supplied = _values(human_stage.get("evidence"), limit=6)
+    dimensions = (_stage_map(canonical).get("functional_qa") or {}).get("assessment_dimensions") or {}
+    if (
+        dimensions.get("substantive_coverage") in {"not_assessed", "excluded"}
+        or "excluded" in str(human_stage.get("status") or "").casefold()
+    ):
+        return _human_input_truth(canonical, "functional_qa", details, spanish=spanish), evidence
+    supplied = _runtime_observation_lines(canonical, "functional_qa", "observed_results")
     if not supplied:
         return details, evidence
     joined = " ".join(supplied).casefold()
@@ -586,9 +615,13 @@ def _platform_runtime_truth(
     spanish: bool,
 ) -> tuple[dict[str, Any], list[str]]:
     human_stage = _human_runtime_stage(canonical, "platform_parity")
-    if "excluded" in str(human_stage.get("status") or "").casefold():
-        return details, evidence
-    supplied = _values(human_stage.get("evidence"), limit=8)
+    dimensions = (_stage_map(canonical).get("platform_parity") or {}).get("assessment_dimensions") or {}
+    if (
+        dimensions.get("substantive_coverage") in {"not_assessed", "excluded"}
+        or "excluded" in str(human_stage.get("status") or "").casefold()
+    ):
+        return _human_input_truth(canonical, "platform_parity", details, spanish=spanish), evidence
+    supplied = _runtime_observation_lines(canonical, "platform_parity", "matrix")
     if not supplied:
         return details, evidence
     joined = " ".join(supplied).casefold()
@@ -663,7 +696,11 @@ def _human_input_truth(
     ) or {}
     dimensions = stage.get("assessment_dimensions")
     if not isinstance(dimensions, Mapping):
-        return details
+        human = _human_runtime_stage(canonical, section_id)
+        if section_id in {"functional_qa", "platform_parity"} and "excluded" in str(human.get("status") or "").casefold():
+            dimensions = {"substantive_coverage": "excluded"}
+        else:
+            return details
     state = dimensions.get("substantive_coverage")
     if state not in {"excluded", "not_assessed", "partial"}:
         return details
@@ -704,7 +741,7 @@ def _human_input_truth(
             if spanish else
             "Requirements traceability was not assessed because no requirements were supplied; authority metadata alone does not establish requirements or conformance."
         )
-    else:
+    elif section_id == "stakeholder_and_business_alignment":
         result["summary"] = (
             "La alineación con las partes interesadas no fue evaluada porque no se aportaron objetivos, restricciones ni medidas de éxito."
             if spanish else

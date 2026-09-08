@@ -52,27 +52,35 @@ def _state(context: Mapping[str, Any], module_id: str) -> str:
     return "not_supplied"
 
 
-def _input_state(context: Mapping[str, Any], fields: tuple[tuple[str, str], ...]) -> str:
-    """Classify usable observations, never metadata-only or explicitly excluded input."""
-    observed_modules = {
-        module_id for module_id, field in fields if _field(context, module_id, field)
-    }
-    if observed_modules:
-        return (
-            "retained_verified"
-            if all(_state(context, module_id) == "retained_verified" for module_id in observed_modules)
-            else "supplied_unverified"
+def _input_module_states(context: Mapping[str, Any], fields: tuple[tuple[str, str], ...]) -> dict[str, str]:
+    states = {}
+    for module_id in sorted({module_id for module_id, _ in fields}):
+        supplied = any(_field(context, module_id, field) for candidate, field in fields if candidate == module_id)
+        states[module_id] = (
+            _state(context, module_id) if supplied
+            else "excluded" if _excluded(context, module_id)
+            else "not_assessed"
         )
-    return "excluded" if any(_excluded(context, module_id) for module_id, _ in fields) else "not_assessed"
+    return states
 
 
-def _assessment_dimensions(evidence_state: str) -> dict[str, Any]:
+def _input_state(context: Mapping[str, Any], fields: tuple[tuple[str, str], ...]) -> str:
+    """Classify the whole scope without letting one exclusion hide absent inputs."""
+    states = list(_input_module_states(context, fields).values())
+    supplied = [state for state in states if state in {"retained_verified", "supplied_unverified"}]
+    if supplied:
+        return "retained_verified" if all(state == "retained_verified" for state in supplied) else "supplied_unverified"
+    return "excluded" if states and all(state == "excluded" for state in states) else "not_assessed"
+
+
+def _assessment_dimensions(evidence_state: str, input_module_states: dict[str, str]) -> dict[str, Any]:
     return {
         "execution_status": "complete",
         "substantive_coverage": (
             evidence_state if evidence_state in {"not_assessed", "excluded"} else "partial"
         ),
         "evidence_availability": evidence_state,
+        "input_module_states": dict(input_module_states),
         "human_review_status": "required",
         "approval_status": "not_established",
         "full_coverage_claim": False,
@@ -196,7 +204,8 @@ def functional_qa_provider(context: dict[str, Any]) -> dict[str, Any]:
     cases = _field(context, "functional_qa", "test_cases")
     observed = _field(context, "functional_qa", "observed_results")
     supplied = bool(cases or observed)
-    input_state = _input_state(context, (("functional_qa", "test_cases"), ("functional_qa", "observed_results")))
+    input_fields = (("functional_qa", "test_cases"), ("functional_qa", "observed_results"))
+    input_state = _input_state(context, input_fields)
     synthesis = _qa_result_synthesis(cases, observed)
     missing = [] if supplied or input_state == "excluded" else [
         _missing(
@@ -231,7 +240,7 @@ def functional_qa_provider(context: dict[str, Any]) -> dict[str, Any]:
         context,
         summary="Repository test inventory, supplied journey evidence, parsed results, coverage gaps, and draft QA conclusions were reconciled without treating repository tests or model synthesis as runtime acceptance.",
         functional_qa=evidence,
-        assessment_dimensions=_assessment_dimensions(input_state),
+        assessment_dimensions=_assessment_dimensions(input_state, _input_module_states(context, input_fields)),
         missing_evidence=missing,
         evidence=evidence,
         unavailable_data_notes=[item["cannot_conclude"] for item in missing],
@@ -244,7 +253,8 @@ def platform_parity_provider(context: dict[str, Any]) -> dict[str, Any]:
     sampled = [str(item) for item in files.get("sampled_paths") or []]
     matrix = _field(context, "platform_parity", "matrix")
     supplied = bool(matrix)
-    input_state = _input_state(context, (("platform_parity", "matrix"),))
+    input_fields = (("platform_parity", "matrix"),)
+    input_state = _input_state(context, input_fields)
     synthesis = _parity_matrix_synthesis(matrix)
     missing = [] if supplied or input_state == "excluded" else [
         _missing(
@@ -269,7 +279,7 @@ def platform_parity_provider(context: dict[str, Any]) -> dict[str, Any]:
         context,
         summary="Repository platform indicators and supplied feature/device observations were reconciled and divergence candidates surfaced without promoting source indicators or an unapproved matrix to runtime/device parity.",
         platform_parity=evidence,
-        assessment_dimensions=_assessment_dimensions(input_state),
+        assessment_dimensions=_assessment_dimensions(input_state, _input_module_states(context, input_fields)),
         missing_evidence=missing,
         evidence=evidence,
         unavailable_data_notes=[item["cannot_conclude"] for item in missing],
@@ -281,11 +291,12 @@ def stakeholder_alignment_provider(context: dict[str, Any]) -> dict[str, Any]:
     constraints = _field(context, "stakeholder_context", "constraints") + _field(context, "release_constraints", "constraints")
     success = _field(context, "product_objectives", "success_measures")
     supplied = bool(objectives or constraints or success)
-    input_state = _input_state(context, (
+    input_fields = (
         ("stakeholder_context", "objectives"), ("product_objectives", "objectives"),
         ("stakeholder_context", "constraints"), ("release_constraints", "constraints"),
         ("product_objectives", "success_measures"),
-    ))
+    )
+    input_state = _input_state(context, input_fields)
     missing = [] if supplied or input_state == "excluded" else [
         _missing(
             "stakeholder_business_authority",
@@ -328,7 +339,7 @@ def stakeholder_alignment_provider(context: dict[str, Any]) -> dict[str, Any]:
             else "Supplied stakeholder/business evidence was organized, linked to the engagement, and checked for conflicts while authority and disputed meaning remain human decisions."
         ),
         stakeholder_alignment=evidence,
-        assessment_dimensions=_assessment_dimensions(input_state),
+        assessment_dimensions=_assessment_dimensions(input_state, _input_module_states(context, input_fields)),
         missing_evidence=missing,
         evidence=evidence,
         unavailable_data_notes=[item["cannot_conclude"] for item in missing],
@@ -356,7 +367,8 @@ def requirements_traceability_provider(context: dict[str, Any]) -> dict[str, Any
     sampled = [str(item) for item in files.get("sampled_paths") or []]
     requirements = _field(context, "compliance_requirements", "requirements")
     authority = _field(context, "compliance_requirements", "authority_status")
-    input_state = _input_state(context, (("compliance_requirements", "requirements"),))
+    input_fields = (("compliance_requirements", "requirements"),)
+    input_state = _input_state(context, input_fields)
     mappings: list[dict[str, Any]] = []
     for index, requirement in enumerate(requirements):
         tokens = [
@@ -416,7 +428,7 @@ def requirements_traceability_provider(context: dict[str, Any]) -> dict[str, Any
             else "Supplied requirements were mapped to retained implementation paths where supportable, with authoritative, supplied-unverified, inferred, missing, and verification states explicit."
         ),
         requirements_traceability=evidence,
-        assessment_dimensions=_assessment_dimensions(input_state),
+        assessment_dimensions=_assessment_dimensions(input_state, _input_module_states(context, input_fields)),
         missing_evidence=missing,
         evidence=evidence,
         unavailable_data_notes=[item["cannot_conclude"] for item in missing],

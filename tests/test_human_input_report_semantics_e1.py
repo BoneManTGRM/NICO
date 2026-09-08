@@ -95,6 +95,10 @@ def test_excluded_populated_inputs_are_not_consumed_or_credited(marker):
             "exclusion_rationale": "Synthetic explicit scope exclusion",
         },
     }
+    # All three stakeholder contributors must be excluded to exclude the whole stage.
+    # The original one-module case remains separately covered as mixed scope below.
+    raw["product_objectives"] = {**_module(objectives=["EXCLUDED_SECRET_PRODUCT"], success_measures=["EXCLUDED_SECRET_MEASURE"]), **marker, "exclusion_rationale": "Synthetic explicit scope exclusion"}
+    raw["release_constraints"] = {**_module(constraints=["EXCLUDED_SECRET_RELEASE"]), **marker, "exclusion_rationale": "Synthetic explicit scope exclusion"}
     context = _context(raw)
     frozen = deepcopy(context)
     for provider, payload in (
@@ -149,6 +153,8 @@ def test_actual_report_and_final_companion_preserve_human_input_state(language, 
             "stakeholder_context": _module(objectives=["SOURCE_OBJECTIVE_LITERAL"], constraints=["SOURCE_CONSTRAINT_LITERAL"]),
         }
     if mode == "excluded":
+        modules["product_objectives"] = _module(objectives=["EXCLUDED_PRODUCT"], success_measures=["EXCLUDED_MEASURE"])
+        modules["release_constraints"] = _module(constraints=["EXCLUDED_RELEASE"])
         for module in modules.values():
             module.update(excluded=True, exclusion_rationale="Synthetic scope exclusion")
     context = _context(modules, language)
@@ -207,3 +213,83 @@ def test_actual_report_and_final_companion_preserve_human_input_state(language, 
     elif mode == "supplied":
         assert "SOURCE_REQUIREMENT_LITERAL" in str(canonical["stage_summaries"])
         assert "SOURCE_OBJECTIVE_LITERAL" in str(canonical["stage_summaries"])
+
+
+@pytest.mark.parametrize("language", ["en", "es-MX"])
+@pytest.mark.parametrize("mode", ["absent", "metadata_only", "test_plan_only", "excluded"])
+def test_final_runtime_sections_cannot_credit_metadata_or_exclusions(language, mode):
+    modules = {}
+    if mode != "absent":
+        # Deliberate PASS/device words in metadata are not runtime observations.
+        modules = {
+            "functional_qa": {**_module(), "reviewer": "SYNTHETIC PASS operator metadata"},
+            "platform_parity": {**_module(), "source_reference": "fixture://Desktop-iPhone-WebKit-English-es-MX-PASS"},
+        }
+    if mode == "test_plan_only":
+        modules["functional_qa"]["evidence"]["test_cases"] = ["Planned PASS checkout journey"]
+    if mode == "excluded":
+        for module in modules.values():
+            module.update(excluded=True, exclusion_rationale="Synthetic scope exclusion")
+    context = _context(modules, language)
+    registry = _providers()
+    results = {stage: registry[stage](context) for stage in ("functional_qa", "platform_parity")}
+    raw = build_report_package_with_human_context(
+        build_comprehensive_report_package,
+        context=context,
+        identity={key: context[key] for key in (
+            "run_id", "repository", "commit_sha", "evidence_ledger_id", "customer_id", "project_id", "report_language"
+        )},
+        stage_results=results,
+    )
+    assert raw["status"] == "complete"
+    canonical = raw["report_package"]["json"]
+    spanish = language == "es-MX"
+    sections = {section["id"]: section for section in substantive_review_sections(canonical, spanish=spanish)}
+    for stage_id in results:
+        section = sections[stage_id]
+        if mode == "excluded":
+            assert ("Excluido" if spanish else "Excluded") in section["status"]
+            assert section["required_input"] == []
+        else:
+            assert ("no evaluad" if spanish else "not assessed") in section["status"].casefold()
+        assert "Observed runtime evidence" not in section["status"]
+        assert "Evidencia de ejecución observada" not in section["status"]
+        assert "Platform observations supplied" not in section["status"]
+        assert "Observaciones de plataforma aportadas" not in section["status"]
+    markdown = merge_substantive_review_markdown("# Synthetic runtime semantics\n", canonical, spanish=spanish)
+    pdf = render_paired_substantive_review_pdf(canonical, spanish=spanish)
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    for surface in (markdown, text):
+        assert "Observed runtime evidence: PASS" not in surface
+        assert "Evidencia de ejecución observada: PASS" not in surface
+        if mode == "excluded":
+            assert ("Excluido del alcance" if spanish else "Excluded from scope") in surface
+
+
+@pytest.mark.parametrize("excluded_id", ["stakeholder_context", "product_objectives", "release_constraints"])
+def test_one_stakeholder_exclusion_cannot_hide_other_absent_scopes(excluded_id):
+    context = _context({excluded_id: {**_module(), "excluded": True, "exclusion_rationale": "Synthetic limited exclusion"}})
+    result = _providers()["stakeholder_alignment"](context)
+    dimensions = result["assessment_dimensions"]
+    assert dimensions["substantive_coverage"] == "not_assessed"
+    assert dimensions["input_module_states"][excluded_id] == "excluded"
+    assert list(dimensions["input_module_states"].values()).count("not_assessed") == 2
+    assert result["missing_evidence"]
+    assert result["stakeholder_alignment"]["evidence_state"] == "not_assessed"
+
+
+def test_supplied_stakeholder_scope_retains_other_excluded_and_absent_scopes():
+    context = _context({
+        "stakeholder_context": {**_module(objectives=["EXCLUDED_OBJECTIVE"]), "excluded": True, "exclusion_rationale": "Synthetic limited exclusion"},
+        "product_objectives": _module(objectives=["Retained product objective"], success_measures=["Retained success measure"]),
+    })
+    result = _providers()["stakeholder_alignment"](context)
+    dimensions = result["assessment_dimensions"]
+    assert dimensions["substantive_coverage"] == "partial"
+    assert dimensions["input_module_states"] == {
+        "product_objectives": "supplied_unverified",
+        "release_constraints": "not_assessed",
+        "stakeholder_context": "excluded",
+    }
+    assert "EXCLUDED_OBJECTIVE" not in str(result["stakeholder_alignment"])
+    assert dimensions["full_coverage_claim"] is False
