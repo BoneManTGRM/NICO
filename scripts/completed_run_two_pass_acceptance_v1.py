@@ -4,12 +4,20 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 import time
 import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+# Direct script execution places scripts/, rather than the checkout root, on
+# sys.path. Resolve the validator from this exact checkout before browser work.
+_REPOSITORY_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPOSITORY_ROOT not in sys.path:
+    sys.path.insert(0, _REPOSITORY_ROOT)
+
+from nico.complete_assessment_gate_v1 import require_retained_assessment, ScannerEvidenceBlocked
 from playwright.sync_api import Page, sync_playwright
 
 import mobile_restart_live_acceptance_v1 as recovery
@@ -73,7 +81,6 @@ def _read_final_canonical(
         if response.status != 200:
             raise RuntimeError("Complete-assessment evidence blocked: scanner retention status unavailable")
         status = json.loads(response.read().decode("utf-8"))
-    from nico.complete_assessment_gate_v1 import require_retained_assessment, ScannerEvidenceBlocked
     try:
         retention = require_retained_assessment(canonical, status, expected_commit=str((canonical.get('identity') or {}).get('commit_sha') or ''), expected_run=run_id)
     except ScannerEvidenceBlocked as exc:
