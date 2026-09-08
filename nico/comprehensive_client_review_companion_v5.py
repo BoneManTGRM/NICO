@@ -893,6 +893,16 @@ def merge_substantive_review_markdown(
 ) -> str:
     output = str(markdown or "")
     sections = substantive_review_sections(canonical, spanish=spanish)
+    from nico.comprehensive_report_package import _source_markdown, _source_presentation_stages
+    source_sections: list[str] = []
+    for stage in _source_presentation_stages(_stage_map(canonical).values()):
+        observation = stage.get("source_observation") or {}
+        digest = str(observation.get("observation_sha256") or "")
+        if digest and digest in output:
+            continue
+        source_sections += _source_markdown(stage, spanish=spanish)
+    if source_sections:
+        output += "\n\n## " + ("Observaciones del código y cobertura del perfil" if spanish else "Source Observations and Profile Coverage") + "\n" + "\n".join(source_sections) + "\n"
     for section in sections:
         heading = f"## {section['title']}"
         while heading in output:

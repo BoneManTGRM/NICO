@@ -95,6 +95,12 @@ def identities():
 
 
 def collect(kind, monkeypatch, tmp_path, files=None, *, truncated=False, missing=()):
+    # This fixture controls the bounded API/checkout input. The production
+    # archive extension has its own real-collector tests with retained ZIPs.
+    from nico import full_source_archive_profile_v1 as archive
+    def unavailable_archive(*args, **kwargs):
+        raise OSError("archive is outside this bounded fixture")
+    monkeypatch.setattr(archive, "_download_archive", unavailable_archive)
     files = dict(FILES if files is None else files)
     context, snapshot = identities()
     store = Store()
@@ -267,6 +273,9 @@ def test_excluded_source_cannot_satisfy_whole_source_coverage(monkeypatch, tmp_p
     ("app.js", "const cache={fetch(key){return key;}}; cache.fetch('local');"),
     ("app.py", "import requests\ndef local_read(requests):\n    return requests.get('key')\n"),
     ("app.js", "const fetch = localRead; fetch('key');"),
+    ("app.js", "const {fetch} = localCache; fetch('key');"),
+    ("app.js", "import {fetch} from './local'; fetch('key');"),
+    ("app.js", "function localRead(cache) { return cache . /* local */ fetch('local'); }"),
 ])
 def test_source_identifiers_do_not_invent_network_edges(path, source, monkeypatch, tmp_path):
     context, _, _, _ = collect("snapshot", monkeypatch, tmp_path, {path: source})
@@ -309,3 +318,10 @@ def test_hosted_inventory_keeps_safe_unavailable_directory_name(monkeypatch, tmp
     assert profile["unavailable_paths"] == ["unreadable-source"]
     assert any("unreadable-source" in note for note in profile["unavailable"])
     assert "outside-private-location" not in str(profile)
+
+
+def test_legitimate_bare_fetch_inside_assignment_remains_observed(monkeypatch, tmp_path):
+    context, _, _, _ = collect("snapshot", monkeypatch, tmp_path, {
+        "app.js": "async function run() { const response = await fetch('/api'); return response; }"})
+    observed = architecture_data_flow_provider(context)["evidence"]["source_observation"]
+    assert [(row["kind"], row["target"]) for row in observed["interactions"]] == [("http_call", "fetch")]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import zipfile
@@ -163,6 +164,33 @@ def _record_template() -> dict:
         },
         "human_review_required": True,
         "client_delivery_allowed": False,
+    }
+    # Isolated deployment evidence for this synthetic lifecycle fixture. Keep
+    # the production provenance gate active while testing approval and delivery.
+    observed = json.dumps({
+        "status": "ok", "release_sha": "c" * 40,
+        "deployment_id": "dpl_synthetic_phase4",
+        "deployment_id_source": "VERCEL_DEPLOYMENT_ID",
+    }, sort_keys=True).encode()
+    canonical["assessment"]["nico_release_provenance"] = {
+        "backend_build_commit": "b" * 40,
+        "backend_identity_source": "RAILWAY_GIT_COMMIT_SHA",
+        "deployment_identity_conflict": False,
+        "railway_deployment_id": "synthetic-phase4-deployment",
+        "frontend_build_commit": "c" * 40,
+        "frontend_deployment_id": "dpl_synthetic_phase4",
+        "assessment_run_id": identity["run_id"],
+        "assessed_repository_commit": identity["commit_sha"],
+        "frontend_runtime_observation": {
+            "status": "verified", "deployment_identity_verified": True,
+            "source_url": "https://app.nicoaudit.com/api/release",
+            "release_sha": "c" * 40,
+            "deployment_id": "dpl_synthetic_phase4",
+            "deployment_id_source": "VERCEL_DEPLOYMENT_ID",
+            "observation_bytes_base64": base64.b64encode(observed).decode(),
+            "observation_sha256": hashlib.sha256(observed).hexdigest(),
+            "observation_size_bytes": len(observed),
+        },
     }
     package = {
         "report_id": "report-phase4-delivery",

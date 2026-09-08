@@ -455,6 +455,7 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
         "scope": "Authorized repository text-file sample; test, build, distribution, dependency, and minified paths are excluded.",
         "files_considered": len(source_files),
         "files_analyzed": len(analyses),
+        "analyzed_source_paths": sorted(str(item["path"]) for item in analyses),
         "python_files_analyzed": python_files,
         "javascript_typescript_files_analyzed": js_files,
         "python_parse_failures": len(parse_notes),

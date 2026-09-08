@@ -1098,9 +1098,11 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # E2 replaces unsupported empty-control 0/0 text with explicitly unmeasured
 # evidence. Fixed-fixture before/after exports differ only in that CI boundary
 # and its derived artifact digests; page and semantic parity checks stay active.
+# Source-table CSS changes HTML bytes and their printed manifest hash only.
+# Fixed-fixture Markdown, PDF body text and page counts remain unchanged.
 SMALL_ENGLISH_GOLDEN = {
     "markdown": ("fa2043d3b8bc6bf4eb214c310bbad89f7a05e1f776e05eb4bbb59b8a93750287", 18828),
-    "html": ("165ad9dee5f8b024a9520ab65165ff8b279155ec81da886a37a7e79a36d82733", 22703),
+    "html": ("24d7d8541dad0a0b32798afb60a92aeba3e6371220ab1933d6f9647a24319760", 23157),
     # The authoritative separately rendered CI/CD boundary replaces the base
     # copy, so one semantic section now produces one physical body page.
     # PDF evidence-integrity repair preserves numeric zero cells and reserves
@@ -1109,22 +1111,22 @@ SMALL_ENGLISH_GOLDEN = {
     # The inclusive complexity threshold repair changes closure wording from
     # "at or below 30" to "below 30" in small/phase9 and their derived manifest
     # hashes. Rich output is unchanged; findings, limits, and counters are retained.
-    "pdf_base64": ("c4d136f9eb752bd4b461cdb8523ea45a2e28efae25b1c4d75dda4efa0f8cbcfb", 177348),
-    "pdf_sha256": "9e0cc5ea2a0ec76de704d5a4d113be7b7cdf47cdb8914fc09a4f4c92b6b90ed4",
+    "pdf_base64": ("c5bfe4731e39a80f45d34fb7f57c495b48934ec8eadcf69c919916dbd72afcc7", 177348),
+    "pdf_sha256": "0231bb7aa94ff95c9c6de19a7bbb867a4cfbc752cab1ac1daa722a93f94c6614",
     "page_count": 21,
 }
 RICH_ENGLISH_GOLDEN = {
     "markdown": ("3d3dda9753d54f53ffbe27932eb1a3b56ec77246116f79dac6761dbd8577044b", 20557),
-    "html": ("ff75fb725f3fed9c0e732d57ab3dde355fd8821943aaa163292c5c3d4f585b9f", 24738),
-    "pdf_base64": ("c21b67a8f557d063562a5e9ebc23381ea6d7c2a9f9dfaf608519639a321cfebc", 257576),
-    "pdf_sha256": "0e35d648ba43c60cf6084631852a9fc4d103420de60dbc301739b022a3e7670c",
+    "html": ("03372a03c7e301726c83b4507dbe9ce471a9fb7db3cb625e1d27f4d107eb1108", 25192),
+    "pdf_base64": ("cad7816dcc8a01f10d3beba5b9814b6680eef9b3899575f8c8412c3262a2f402", 257576),
+    "pdf_sha256": "2a82da35d5d603ba7cdcd83c0263259bb7613f5258feff7b54a068721cee361a",
     "page_count": 39,
 }
 PHASE9_ENGLISH_GOLDEN = {
     "markdown": ("2d31dc7ebc346489db8540acae2340c65055176bee94d50c445d4eed3aec2f13", 19558),
-    "html": ("ec9fdffd0089f625b8c4549b7a225ad3fb5f02a45a2130aa76fc502885d0c5ce", 23757),
-    "pdf_base64": ("0fd0cfd3cb9fd8bf68567eac7bd3fdb131de10eeaf776f7e938a64a870b9a74e", 173880),
-    "pdf_sha256": "0c975cc34df8d786e66480cca60097ada8f863a0f047f513294dd9d7cb94ac60",
+    "html": ("c95e4a5498e0cf50071e5fc71301e10e7ff8ace4d0fa4ec7b4e344238b2b9c12", 24211),
+    "pdf_base64": ("e137087c17513edf7ff52d9b0a352b22e9a08651a5d948d762762512d2b463a7", 173880),
+    "pdf_sha256": "cf60a5c6e9ba33a012fc654ced3ddf6ae90931f0c782321a94bc673e6422ac9e",
     "page_count": 20,
 }
 

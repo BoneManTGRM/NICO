@@ -1678,6 +1678,9 @@ _PRESENTATION_PROSE_FIELDS = {
     "why_it_matters",
 }
 _RAW_CANONICAL_SUBTREES = {
+    "source_observation",
+    "structured_tables",
+    "profile_coverage",
     "candidate_register",
     "canonical_findings",
     "canonical_scanner_finding_register",
@@ -1686,6 +1689,26 @@ _RAW_CANONICAL_SUBTREES = {
     "scanner",
     "scanner_execution_records",
 }
+_CANONICAL_PARITY_EXACT.update({
+    "Bounded source-supported components, interactions, and potential trust boundaries are retained with exact source and run identity; runtime behavior remains unverified.":
+        "Se conservan componentes, interacciones y límites potenciales respaldados por el código acotado y vinculados a la fuente y la ejecución exactas; el comportamiento en ejecución sigue sin verificarse.",
+    "Potential trust boundaries identify static call sites for review; endpoints, privileges, and protections remain unverified.":
+        "Los límites potenciales de confianza identifican llamadas estáticas para revisión; los destinos, privilegios y protecciones siguen sin verificarse.",
+    "Shadowed or locally bound call names are conservatively omitted; source observations do not resolve every language scope or method dispatch.":
+        "Los nombres de llamadas redefinidos o vinculados localmente se omiten de forma conservadora; las observaciones no resuelven todos los ámbitos del lenguaje ni la selección de métodos.",
+    "Source observations do not verify deployed services, active network routes, storage contents, or runtime authorization.":
+        "Las observaciones del código no verifican servicios desplegados, rutas de red activas, contenido del almacenamiento ni autorización en ejecución.",
+    "Source-declared infrastructure is separated from provider operational deployment history; active runtime topology remains unverified.":
+        "La infraestructura declarada en el código se separa del historial operativo de despliegues del proveedor; la topología activa sigue sin verificarse.",
+    "The sampled source text is hashed after decoding; these hashes do not assert retention of original repository file bytes.":
+        "El hash del texto muestreado se calcula después de decodificarlo; estos hashes no acreditan la conservación de los bytes originales de los archivos del repositorio.",
+    "Source-supported architecture is unavailable for this exact run and snapshot; no data-flow topology is credited.":
+        "La arquitectura respaldada por el código no está disponible para esta ejecución e instantánea exactas; no se acredita una topología de flujo de datos.",
+    "Source architecture observation is missing, corrupt, or does not match this run's exact repository, source revision, and snapshot; directories and file counts do not establish a data-flow topology.":
+        "La observación de arquitectura del código falta, está dañada o no coincide con el repositorio, revisión e instantánea exactos de esta ejecución; los directorios y conteos de archivos no establecen una topología de flujo de datos.",
+    "Source architecture observation is missing, corrupt, or does not match this run's exact repository, source revision, and snapshot; no source-supported topology is credited.":
+        "La observación de arquitectura del código falta, está dañada o no coincide con el repositorio, revisión e instantánea exactos de esta ejecución; no se acredita una topología respaldada por el código.",
+})
 _ENGLISH_PRESENTATION_SIGNAL = re.compile(
     r"\b(?:the|and|or|is|are|was|were|with|without|from|at|before|after|until|while|"
     r"remain|remains|required|requires|require|reviewed|verified|analyzed|completed|"
@@ -2617,6 +2640,18 @@ def _translate_presentation(value: Any) -> str:
     )
     if exact is not None:
         return text.replace(stripped, exact, 1)
+    configuration_failure = re.fullmatch(
+        r"(eslint): \1 produced ([0-9]+) configuration error\(s\); the analyzer result is not valid source-code evidence\.",
+        stripped,
+    )
+    if configuration_failure:
+        return (
+            f"{configuration_failure.group(1)}: {configuration_failure.group(1)} produjo "
+            f"{configuration_failure.group(2)} error(es) de configuración; el resultado del analizador no es evidencia válida del código fuente."
+        )
+    complexity_verification = re.fullmatch(r"Complexity is at or below ([0-9]+)\.", stripped)
+    if complexity_verification:
+        return f"La complejidad es igual o inferior a {complexity_verification.group(1)}."
     structured = _structured_presentation_es(stripped)
     if structured is not None:
         return text.replace(stripped, structured, 1)
@@ -3087,6 +3122,14 @@ def _translate_presentation(value: Any) -> str:
     text = text.replace("artifact=retained", "artefacto=conservado")
     text = text.replace("artifact=missing", "artefacto=faltante")
     text = text.replace("retained finding count=", "conteo de hallazgos conservados=")
+    text = text.replace(
+        "operations page has concentrated branching and elevated change risk",
+        "la página de operaciones concentra ramificaciones y presenta un riesgo elevado al cambiar",
+    )
+    text = text.replace(
+        "Concentrated branching increases regression risk.",
+        "La concentración de ramificaciones aumenta el riesgo de regresiones.",
+    )
     # These labels also occur inside generated bullets and stage-detail lines,
     # where the exact-value translations above do not see the whole string.
     text = text.replace("PROCESSING COMPLETE", "PROCESAMIENTO COMPLETO")

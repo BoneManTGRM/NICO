@@ -107,7 +107,11 @@ def _conflicts_with_scanner_truth(value: str, completed: set[str]) -> bool:
 
 def _sanitize_container(value: Any, completed: set[str]) -> Any:
     if isinstance(value, Mapping):
-        return {str(key): _sanitize_container(item, completed) for key, item in value.items()}
+        # Source observations and table coordinates are canonical evidence,
+        # including empty cells. Prose cleanup must not shift later columns or
+        # rewrite a source path that resembles a scanner-status sentence.
+        return {str(key): deepcopy(item) if key in {"source_observation", "structured_tables", "profile_coverage"}
+                else _sanitize_container(item, completed) for key, item in value.items()}
     if isinstance(value, list):
         output = []
         for item in value:
