@@ -280,7 +280,19 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    evidence_lines = flatten(result.get("evidence"), maximum=80)
+    structured_fields = {"source_observation", "structured_tables", "profile_coverage"}
+    def without_structured(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}
+        if isinstance(value, list):
+            return [without_structured(item) for item in value]
+        return value
+    evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
+    retained_structure = {key: deepcopy(evidence[key]) for key in structured_fields if key in evidence}
+    complexity = result.get("complexity_evidence")
+    if isinstance(complexity, dict) and isinstance(complexity.get("profile_coverage"), dict):
+        retained_structure.setdefault("profile_coverage", deepcopy(complexity["profile_coverage"]))
+    evidence_lines = flatten(without_structured(result.get("evidence")), maximum=80)
     provider_access_lines = (
         _dedupe(result.get("provider_access_evidence") or [], 80)
         if stage_id == "repository_and_delivery_evidence"
@@ -288,7 +300,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     structured_details = flatten(
         {
-            key: value
+            key: without_structured(value)
             for key, value in result.items()
             if key not in _IGNORED_DETAIL_KEYS and key not in {"evidence", "findings", "unavailable", "unavailable_data_notes", "assessment_dimensions"}
         },
@@ -310,11 +322,156 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         "evidence": dedupe([*provider_access_lines, *evidence_lines, *structured_details], 140),
         "findings": findings,
         "unavailable": unavailable,
+        **retained_structure,
         **(
             {"assessment_dimensions": deepcopy(result["assessment_dimensions"])}
             if isinstance(result.get("assessment_dimensions"), dict) else {}
         ),
     }
+
+
+_SOURCE_COPY_ES = {
+    "Known file paths in configured priority order, then sorted eligible paths, within unchanged file and byte limits.": "Rutas conocidas en el orden de prioridad configurado y después rutas elegibles ordenadas, dentro de los límites existentes de archivos y bytes.",
+    "Bounded API priority paths followed by sorted eligible paths; exact-SHA archive sources in sorted path order within existing archive file and byte limits. Overlapping paths are counted once.": "Rutas prioritarias de la API acotada seguidas de rutas elegibles ordenadas; código del archivo del SHA exacto en orden de ruta dentro de sus límites existentes de archivos y bytes. Cada ruta coincidente se cuenta una vez.",
+    "Observed source components": "Componentes observados en el código",
+    "Source interactions and potential boundaries": "Interacciones del código y límites potenciales",
+    "Declared infrastructure": "Infraestructura declarada",
+    "Source": "Fuente", "Kind": "Tipo", "Language": "Lenguaje",
+    "Operation": "Operación", "Target": "Destino", "Potential boundary": "Límite potencial", "Line": "Línea",
+    "Declaration": "Declaración", "Runtime verified": "Ejecución verificada",
+    "Bounded profile coverage": "Cobertura del perfil acotado", "Measure": "Medida", "Value": "Valor",
+    "Inventory complete": "Inventario completo", "Observed source files": "Archivos de código observados",
+    "Eligible source files": "Archivos de código elegibles", "Sampled eligible source files": "Archivos elegibles muestreados",
+    "Analyzed source files": "Archivos de código analizados", "Excluded source files": "Archivos de código excluidos",
+    "Unsampled eligible source files": "Archivos elegibles sin muestrear", "Unavailable profile files": "Archivos del perfil no disponibles",
+    "Whole supported-source coverage (%)": "Cobertura de todo el código de lenguajes admitidos (%)",
+    "File limit": "Límite de archivos", "Per-file byte limit": "Límite de bytes por archivo",
+    "Selection method": "Método de selección", "Archive total byte limit": "Límite total de bytes del archivo de código",
+    "Unavailable source paths": "Rutas de código no disponibles", "Unanalyzed sampled source paths": "Rutas muestreadas sin analizar",
+    "source_module": "módulo de código", "import": "importación", "http_call": "llamada HTTP",
+    "storage_call": "llamada de almacenamiento", "process_call": "llamada de proceso", "route_declaration": "declaración de ruta",
+    "declared_container_configuration": "configuración declarada de contenedor",
+    "declared_provider_configuration": "configuración declarada de proveedor", "declared_deployment_manifest": "manifiesto declarado de despliegue",
+    "outbound_network_destination_unresolved": "destino de red saliente sin resolver",
+    "storage_target_and_access_policy_unresolved": "destino y permisos de almacenamiento sin resolver",
+    "child_process_privilege_boundary_unresolved": "privilegios del proceso hijo sin resolver",
+    "incoming_request_authorization_unverified": "autorización de solicitudes entrantes sin verificar",
+}
+
+
+def _source_cell(value: Any, *, spanish: bool) -> str:
+    if value is None:
+        return "No evaluado" if spanish else "Not assessed"
+    if isinstance(value, bool):
+        return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
+    text = str(value)
+    return _SOURCE_COPY_ES.get(text, text) if spanish else text
+
+
+def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
+    tables = deepcopy(stage.get("structured_tables") or [])
+    coverage = stage.get("profile_coverage")
+    if isinstance(coverage, dict) and coverage:
+        fields = [
+            ("Inventory complete", "inventory_complete"), ("Observed source files", "observed_source_files"),
+            ("Eligible source files", "eligible_source_files"), ("Sampled eligible source files", "sampled_eligible_source_files"),
+            ("Analyzed source files", "analyzed_source_files"), ("Excluded source files", "complexity_excluded_source_files"),
+            ("Unsampled eligible source files", "unsampled_eligible_source_files"), ("Unavailable profile files", "unavailable_profile_files"),
+            ("Whole supported-source coverage (%)", "whole_repository_coverage_percent"),
+            ("File limit", "file_limit"), ("Per-file byte limit", "per_file_byte_limit"),
+            ("Selection method", "selection_method"),
+        ]
+        tables.append({"title": "Bounded profile coverage", "columns": ["Measure", "Value"],
+                       "rows": [[label, coverage.get(key)] for label, key in fields]})
+        archive_limits = (coverage.get("collection_limits") or {}).get("exact_sha_archive") or {}
+        if archive_limits:
+            tables[-1]["rows"].append(["Archive total byte limit", archive_limits.get("total_byte_limit")])
+        for title, key in [("Unavailable source paths", "unavailable_paths"), ("Unanalyzed sampled source paths", "sampled_unanalyzed_source_paths")]:
+            if coverage.get(key):
+                tables.append({"title": title, "columns": ["Source"], "rows": [[path] for path in coverage[key]]})
+    return [table for table in tables if isinstance(table, dict) and table.get("columns") and isinstance(table.get("rows"), list)]
+
+
+
+def _source_presentation_stages(stages: Any) -> list[dict[str, Any]]:
+    """Keep the complete source projection independent of native stage order.
+
+    Deployment repeats a subset of the same hash-bound architecture observation.
+    Select the richer projection before deduplication so an earlier deployment
+    stage cannot erase components, interactions, or profile coverage.
+    """
+    result: list[dict[str, Any]] = []
+    indices: dict[str, int] = {}
+    for stage in stages:
+        if not isinstance(stage, dict) or not _source_tables(stage):
+            continue
+        observation = stage.get("source_observation") or {}
+        digest = str(observation.get("observation_sha256") or "")
+        if digest and digest in indices:
+            index = indices[digest]
+            if len(_source_tables(stage)) > len(_source_tables(result[index])):
+                result[index] = stage
+            continue
+        if digest:
+            indices[digest] = len(result)
+        result.append(stage)
+    return result
+
+
+def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
+    lines: list[str] = []
+    for table in _source_tables(stage):
+        columns = table["columns"]
+        rows = table["rows"]
+        def cell(value: Any, literal: bool = False) -> str:
+            return html.escape(str(value) if literal else _source_cell(value, spanish=spanish), quote=False).replace("|", "&#124;").replace("\n", " ")
+        lines += ["", "#### " + cell(table["title"]), "", "| " + " | ".join(cell(value) for value in columns) + " |",
+                  "| " + " | ".join("---" for _ in columns) + " |"]
+        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)) + " |" for row in rows[:24]]
+        lines += [
+            (f"Se muestran {min(24, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa." if spanish else
+             f"Showing {min(24, len(rows))} of {len(rows)} rows; JSON retains the complete observation.")]
+    observed = stage.get("source_observation")
+    if isinstance(observed, dict):
+        label = "SHA-256 de la observación" if spanish else "Observation SHA-256"
+        lines += ["", f"{label}: {observed.get('observation_sha256', '')}",
+                  ("Las declaraciones del código no verifican la topología en ejecución. Los hashes corresponden al texto observado, no a bytes originales conservados." if spanish else
+                   "Source declarations do not verify runtime topology. Hashes identify observed text, not retained original file bytes.")]
+    return lines
+
+
+def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, row_limit: int = 24) -> list[Any]:
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+
+    cell_style = ParagraphStyle("SourceEvidenceCell", fontName="Helvetica", fontSize=7.1, leading=9.0)
+    title_style = ParagraphStyle("SourceEvidenceTitle", parent=cell_style, fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, spaceBefore=5, spaceAfter=3)
+    def cell(value: Any, heading: bool = False, literal: bool = False) -> Any:
+        return Paragraph(html.escape(str(value) if literal else _source_cell(value, spanish=spanish)), title_style if heading else cell_style)
+    flowables: list[Any] = []
+    for table in _source_tables(stage):
+        rows = table["rows"]
+        columns = table["columns"]
+        flowables.append(cell(table["title"], True))
+        values = [[cell(value) for value in columns]] + [[cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)] for row in rows[:row_limit]]
+        rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1, hAlign="LEFT")
+        rendered.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
+            ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#94a3b8")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        flowables += [rendered, cell(
+            f"Se muestran {min(row_limit, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa."
+            if spanish else f"Showing {min(row_limit, len(rows))} of {len(rows)} rows; JSON retains the complete observation."
+        ), Spacer(1, 5)]
+    observed = stage.get("source_observation")
+    if isinstance(observed, dict):
+        label = "SHA-256 de la observación" if spanish else "Observation SHA-256"
+        flowables.append(cell(f"{label}: {observed.get('observation_sha256', '')}"))
+    return flowables
 
 
 def _assessment(stage_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -516,6 +673,7 @@ def _markdown(
             )
             if not stage["evidence"]:
                 lines.append(f"- {localized('No structured evidence line was retained for this stage.')}")
+            lines.extend(_source_markdown(stage, spanish=localize_presentation is not None))
             if stage["findings"]:
                 lines += ["", f"{localized('Findings')}:"] + [f"- {item}" for item in stage["findings"]]
             if stage["unavailable"]:
@@ -554,6 +712,7 @@ def _markdown(
                 )
                 for item in stage["evidence"]
             )
+            lines.extend(_source_markdown(stage, spanish=localize_presentation is not None))
 
     unavailable = _dedupe(assessment.get("unavailable_data_notes") or [], 50)
     lines += [
@@ -581,6 +740,7 @@ def _markdown(
 def _semantic_html(markdown: str, title: str) -> str:
     blocks: list[str] = []
     list_items: list[str] = []
+    table_lines: list[str] = []
     lifecycle_boundary: str | None = None
     literal_span = re.compile(
         r'<span data-nico-client-literal="true">.*?</span>'
@@ -613,12 +773,34 @@ def _semantic_html(markdown: str, title: str) -> str:
             blocks.append("<ul>" + "".join(list_items) + "</ul>")
             list_items = []
 
+    def flush_table() -> None:
+        nonlocal table_lines
+        if not table_lines:
+            return
+        rows = [[cell.strip() for cell in line.strip("|").split("|")] for line in table_lines]
+        if len(rows) >= 2 and all(re.fullmatch(r":?-{3,}:?", cell) for cell in rows[1]):
+            escaped = lambda cell: html.escape(html.unescape(cell))
+            header = "".join(f'<th scope="col">{escaped(cell)}</th>' for cell in rows[0])
+            body_rows = "".join("<tr>" + "".join(f"<td>{escaped(cell)}</td>" for cell in row) + "</tr>" for row in rows[2:])
+            blocks.append(f'<div class="source-table"><table><thead><tr>{header}</tr></thead><tbody>{body_rows}</tbody></table></div>')
+        else:
+            blocks.extend(f"<p>{html.escape(line)}</p>" for line in table_lines)
+        table_lines = []
+
     for raw in markdown.splitlines():
         line = raw.strip()
+        if line.startswith("|") and line.endswith("|"):
+            flush_list()
+            table_lines.append(line)
+            continue
+        flush_table()
         if not line:
             flush_list()
             continue
-        if line.startswith("### "):
+        if line.startswith("#### "):
+            flush_list()
+            blocks.append(f"<h4>{inline(line[5:])}</h4>")
+        elif line.startswith("### "):
             flush_list()
             blocks.append(f"<h3>{inline(line[4:])}</h3>")
         elif line.startswith("## "):
@@ -641,6 +823,7 @@ def _semantic_html(markdown: str, title: str) -> str:
             flush_list()
             blocks.append(f"<p>{inline(line)}</p>")
     flush_list()
+    flush_table()
     body = "".join(blocks)
     badge = (
         f'<span class="badge">{html.escape(lifecycle_boundary)}</span>'
@@ -651,7 +834,7 @@ def _semantic_html(markdown: str, title: str) -> str:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
 <style>
 :root{{color-scheme:dark}}body{{margin:0;background:#071124;color:#dbeafe;font:16px/1.6 Inter,system-ui,sans-serif}}main{{max-width:1080px;margin:0 auto;padding:42px 22px 80px}}header{{padding:30px;border:1px solid #274060;border-radius:24px;background:#0d1a31;margin-bottom:24px}}header h1{{margin:0;color:#fff;font-size:clamp(28px,5vw,48px)}}.badge{{display:inline-block;margin-top:14px;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;color:#fde68a;background:#4a2406;font-weight:800}}article{{padding:26px;border:1px solid #274060;border-radius:24px;background:#0b172c}}h1{{color:#fff;line-height:1.08}}h2{{margin-top:34px;padding-top:24px;border-top:1px solid #274060;color:#7dd3fc}}h3{{margin-top:26px;color:#e0f2fe}}p{{color:#cbd5e1}}ul{{padding-left:24px}}li{{margin:7px 0;color:#cbd5e1}}p,li{{white-space:break-spaces;overflow-wrap:anywhere}}.check{{list-style:none;margin-left:-22px}}.warning{{padding:16px;border:1px solid #f59e0b;border-radius:14px;background:#4a2406;color:#fde68a;font-weight:800;letter-spacing:.02em}}
-</style></head><body><main><header><h1>{html.escape(title)}</h1>{badge}</header><article>{body}</article></main></body></html>"""
+.source-table{{overflow-x:auto;max-width:100%}}table{{width:100%;border-collapse:collapse;table-layout:fixed}}th,td{{border:1px solid #475569;padding:6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}}th{{background:#0c4a6e}}</style></head><body><main><header><h1>{html.escape(title)}</h1>{badge}</header><article>{body}</article></main></body></html>"""
 
 
 def _pdf(
@@ -1051,6 +1234,10 @@ def _pdf(
                 block.extend([p(localized("Evidence Limitations"), h3), *bullets(stage["unavailable"], limit=12)])
             story.append(KeepTogether(block))
             story.append(Spacer(1, 0.12 * inch))
+
+    for stage in _source_presentation_stages(stages):
+        story += [PageBreak(), p("Observaciones del código y cobertura del perfil" if localize_presentation else "Source Observations and Profile Coverage", h1)]
+        story += _source_pdf_tables(stage, spanish=localize_presentation is not None, width=doc.width)
 
     story += [PageBreak(), p(localized("Evidence Appendix"), h1), p(localized("The appendix preserves full bounded stage evidence for the immutable run. It is intentionally separate from the decision-oriented body."), body)]
     for stage in stages:

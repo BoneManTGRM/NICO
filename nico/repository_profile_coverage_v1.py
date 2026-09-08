@@ -31,6 +31,17 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
             except (SyntaxError, ValueError):
                 analyzed_paths.discard(path)
                 named_parser_notes.append(f"{path}: Python parsing failed; excluded from complexity measurements.")
+    reported_paths = measured.get("analyzed_source_paths")
+    if reported_paths is not None:
+        if not isinstance(reported_paths, list) or len(set(reported_paths)) != len(reported_paths):
+            raise ValueError("profile_analysis_membership_invalid")
+        reported = set(reported_paths)
+        if not reported <= analyzed_paths:
+            raise ValueError("profile_analysis_path_outside_sample")
+        # The installed TypeScript AST analyzer may omit files it could not
+        # parse. Use the actual analyzer's membership, never credit a lexical
+        # substitute that did not execute.
+        analyzed_paths = reported
     if analyzed != len(analyzed_paths):
         raise ValueError("profile_analyzed_membership_mismatch")
     for row in measured.get("top_coupled_files") or []:
@@ -39,6 +50,7 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
     complete = (profile.get("tree_collection_succeeded") is True
                 and profile.get("tree_truncated") is False)
     unavailable = sorted(set(profile.get("unavailable_paths") or []))
+    limits = profile.get("profile_limits") or {}
     return {
         "version": "nico.repository_profile_coverage.v1",
         "inventory_complete": complete,
@@ -60,9 +72,10 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
         "unavailable_item_notes": list(profile.get("unavailable") or []),
         "size_excluded_paths": sorted(set(profile.get("size_excluded_paths") or [])),
         "parser_notes": named_parser_notes + list(measured.get("parse_notes") or []),
-        "file_limit": MAX_TEXT_FILES,
-        "per_file_byte_limit": MAX_FILE_BYTES,
-        "selection_method": "Known file paths in configured priority order, then sorted eligible paths, within unchanged file and byte limits.",
+        "file_limit": limits.get("file_limit", MAX_TEXT_FILES),
+        "per_file_byte_limit": limits.get("per_file_byte_limit", MAX_FILE_BYTES),
+        "collection_limits": dict(limits),
+        "selection_method": limits.get("selection_method", "Known file paths in configured priority order, then sorted eligible paths, within unchanged file and byte limits."),
         "eligible_source_coverage_percent": (
             round(100 * analyzed / len(eligible), 2) if complete and eligible else None
         ),

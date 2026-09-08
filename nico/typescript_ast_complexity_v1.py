@@ -247,6 +247,7 @@ def _complexity_summary_payload(context: dict[str, Any]) -> dict[str, Any]:
         "files_considered": eligible_count,
         "eligible_source_files": eligible_count,
         "files_analyzed": analyzed_count,
+        "analyzed_source_paths": sorted(str(item["path"]) for item in analyses),
         "source_coverage_percent": round(100 * analyzed_count / eligible_count, 1) if eligible_count else 0.0,
         "python_files_analyzed": sum(item.get("language") == "python" for item in analyses),
         "javascript_typescript_files_analyzed": sum(item.get("language") == "javascript-typescript" for item in analyses),

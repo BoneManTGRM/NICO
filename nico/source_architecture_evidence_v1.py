@@ -43,6 +43,8 @@ def _javascript_call_site(cleaned: str, start: int, opening: int) -> bool:
     """Reject member names and method/type declarations before call credit."""
     if start and (cleaned[start - 1].isalnum() or cleaned[start - 1] in "_.$"):
         return False
+    if cleaned[:start].rstrip().endswith("."):
+        return False
     depth = 1
     closing = opening + 1
     while closing < len(cleaned) and depth:
@@ -138,7 +140,10 @@ def analyze_source_architecture(
                 root = call.split(".")[0]
                 # Locally declared or parameter-bound names are unresolved by
                 # this bounded lexer. Prefer omission to an invented network edge.
-                if re.search(r"\b(?:const|let|var|function|class|import)\s+[^;\n]*\b" + re.escape(root) + r"\b", cleaned) or re.search(r"(?:\(|,)\s*" + re.escape(root) + r"\s*(?:[:,)=])", cleaned):
+                binding = (r"\b(?:const|let|var)\s+[^=;\n]*\b" + re.escape(root) + r"\b|"
+                           r"\b(?:function|class)\s+" + re.escape(root) + r"\b|"
+                           r"\bimport\s+[^;\n]*\b" + re.escape(root) + r"\b")
+                if re.search(binding, cleaned) or re.search(r"(?:\(|,)\s*" + re.escape(root) + r"\s*(?:[:,)=])", cleaned):
                     continue
                 if root != "fetch":
                     continue

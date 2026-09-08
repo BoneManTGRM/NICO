@@ -51,18 +51,26 @@ def _archive_sources(data: bytes) -> tuple[dict[str, str], dict[str, Any]]:
     total_bytes = 0
     skipped_large = 0
     skipped_limit = 0
+    inventory: set[str] = set()
+    size_excluded: list[str] = []
+    limit_excluded: list[str] = []
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        members = [item for item in archive.infolist() if not item.is_dir()]
+        members = sorted((item for item in archive.infolist() if not item.is_dir()), key=lambda item: item.filename)
         for member in members:
             parts = PurePosixPath(member.filename).parts
             relative = PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else ""
             if not relative or not _eligible(relative):
                 continue
+            if ".." in parts or member.filename.startswith("/") or relative in inventory:
+                raise ValueError("unsafe or duplicate source archive path")
+            inventory.add(relative)
             if member.file_size > MAX_SOURCE_FILE_BYTES:
                 skipped_large += 1
+                size_excluded.append(relative)
                 continue
             if len(files) >= MAX_SOURCE_FILES or total_bytes + member.file_size > MAX_TOTAL_SOURCE_BYTES:
                 skipped_limit += 1
+                limit_excluded.append(relative)
                 continue
             raw = archive.read(member)
             files[relative] = raw.decode("utf-8", errors="replace")
@@ -73,7 +81,11 @@ def _archive_sources(data: bytes) -> tuple[dict[str, str], dict[str, Any]]:
         "source_files_skipped_large": skipped_large,
         "source_files_skipped_limit": skipped_limit,
         "source_file_limit": MAX_SOURCE_FILES,
+        "source_per_file_byte_limit": MAX_SOURCE_FILE_BYTES,
         "source_total_byte_limit": MAX_TOTAL_SOURCE_BYTES,
+        "source_inventory_paths": sorted(inventory),
+        "source_size_excluded_paths": size_excluded,
+        "source_limit_excluded_paths": limit_excluded,
         "exact_sha_archive": True,
     }
 
@@ -110,6 +122,21 @@ def install_full_source_archive_profile_v1() -> dict[str, Any]:
         existing = result.get("files") if isinstance(result.get("files"), dict) else {}
         existing.update(source_files)
         result["files"] = existing
+        # Archive sampling can extend a truncated API inventory. Retain the
+        # observed paths before coverage validates membership, without claiming
+        # that an incomplete API inventory became a complete repository tree.
+        result["tree_paths"] = sorted(set(result.get("tree_paths") or []) | set(metadata["source_inventory_paths"]))
+        result["unavailable_paths"] = sorted(set(result.get("unavailable_paths") or []) - set(source_files))
+        result["size_excluded_paths"] = sorted((set(result.get("size_excluded_paths") or []) | set(metadata["source_size_excluded_paths"])) - set(existing))
+        from nico.hosted_assessment import MAX_FILE_BYTES, MAX_TEXT_FILES
+        result["profile_limits"] = {
+            "file_limit": MAX_TEXT_FILES + MAX_SOURCE_FILES,
+            "per_file_byte_limit": max(MAX_FILE_BYTES, MAX_SOURCE_FILE_BYTES),
+            "bounded_api": {"file_limit": MAX_TEXT_FILES, "per_file_byte_limit": MAX_FILE_BYTES},
+            "exact_sha_archive": {"file_limit": MAX_SOURCE_FILES, "per_file_byte_limit": MAX_SOURCE_FILE_BYTES,
+                                  "total_byte_limit": MAX_TOTAL_SOURCE_BYTES, "archive_byte_limit": MAX_ARCHIVE_BYTES},
+            "selection_method": "Bounded API priority paths followed by sorted eligible paths; exact-SHA archive sources in sorted path order within existing archive file and byte limits. Overlapping paths are counted once.",
+        }
         result["archive_source_profile"] = {
             "status": "attached",
             "version": VERSION,
