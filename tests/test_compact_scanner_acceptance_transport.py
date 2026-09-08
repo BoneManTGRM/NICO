@@ -168,6 +168,27 @@ for record in raw:
                           applicability_reason='No TypeScript project, source tree, or tsconfig exists at the assessed commit; TypeScript compilation is not applicable to this repository snapshot.')
 report = f['reconcile_authoritative_scanner_truth'](f['canonical'](f['compact'](raw)))
 proof = f['complete_assessment_evidence'](report, expected_commit=f['SHA'], expected_run=f['RUN'])
+assert proof['passed'] is False
+assert set(proof['failures']) == {'npm-audit:node_input_inventory_unverified', 'typescript:node_input_inventory_unverified'}
+
+# The historical reason-only input above remains incomplete. Only adding actual
+# retained inventory evidence may justify these two technology exclusions.
+import hashlib, tempfile
+from pathlib import Path
+from nico.node_scanner_applicability_v1 import inspect_node_inputs, observation_bytes, REASONS
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    (root / 'README.md').write_text('Explicit test checkout without Node inputs.')
+    inventory = inspect_node_inputs(root, f['SHA'])
+for record in raw:
+    if record['tool'] in REASONS:
+        record.update(status='not_applicable', applicable=False,
+                      applicability_reason=REASONS[record['tool']],
+                      applicability_evidence=inventory,
+                      raw_artifact_retention_complete=True,
+                      raw_artifact_sha256=hashlib.sha256(observation_bytes(inventory, record['tool'])).hexdigest())
+report = f['reconcile_authoritative_scanner_truth'](f['canonical'](f['compact'](raw)))
+proof = f['complete_assessment_evidence'](report, expected_commit=f['SHA'], expected_run=f['RUN'])
 assert proof['passed'], proof['failures']
 assert set(proof['not_applicable_tools']) == {'osv-scanner', 'pip-audit', 'npm-audit', 'typescript'}
 assert len(proof['completed_tools']) == 5

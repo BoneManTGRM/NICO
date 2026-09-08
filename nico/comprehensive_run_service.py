@@ -497,7 +497,22 @@ class ComprehensiveRunService:
     def load_browser_projection(self, run_id: str) -> dict[str, Any] | None:
         """Load transaction-bound browser status without materializing full evidence."""
 
-        return self._store.load_browser_projection(run_id)
+        projection = self._store.load_browser_projection(run_id)
+        from nico.complete_assessment_gate_v1 import SCANNER_SUMMARY_POLICY
+
+        summary = (projection or {}).get("scanner_execution_summary")
+        summary_is_current = isinstance(summary, dict) and summary.get("evaluation_policy") == SCANNER_SUMMARY_POLICY
+        if (
+            projection
+            and projection.get("terminal") is True
+            and projection.get("reports")
+            and not summary_is_current
+        ):
+            # Legacy terminal projections are valid historical transport data.
+            # Refresh only that derived row, once, from the validated exact run.
+            # Do not call load()/resume(), regenerate reports, or advance revision.
+            return self._store.refresh_browser_projection(run_id, projection)
+        return projection
 
     def resume(
         self,

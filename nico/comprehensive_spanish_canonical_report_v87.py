@@ -172,6 +172,10 @@ _CANONICAL_PARITY_EXACT.update({
 # Whole-field renderer contracts for Node applicability. Preserve the distinction
 # between inapplicable tools and applicable tools lacking execution evidence.
 _NODE_APPLICABILITY_ES = {
+    "The complete assessed checkout contains no JavaScript dependency manifest or lockfile; npm-audit is not applicable. Standalone JavaScript remains in ESLint scope.":
+        "La copia evaluada e inspeccionada por completo no contiene manifiestos de dependencias JavaScript ni archivos de bloqueo; npm-audit no es aplicable. El código JavaScript independiente sigue incluido en el alcance de ESLint.",
+    "The complete assessed checkout contains no TypeScript source, configuration, or declared compiler input; TypeScript compilation is not applicable. JavaScript remains in ESLint scope.":
+        "La copia evaluada e inspeccionada por completo no contiene código fuente TypeScript, configuración ni entradas declaradas para el compilador; la compilación TypeScript no es aplicable. JavaScript sigue incluido en el alcance de ESLint.",
     "Canonical scoring is reconciled to retained evidence without recomputing or inflating either score; evidence limitations remain explicit.":
         "La puntuación canónica se concilia con la evidencia conservada sin recalcular ni inflar ninguna puntuación; las limitaciones de evidencia permanecen explícitas.",
     "No supported JavaScript package manifest, lockfile, or source tree exists at the assessed commit; npm-audit is not applicable to this repository snapshot.":
