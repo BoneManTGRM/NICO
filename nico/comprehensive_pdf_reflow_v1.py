@@ -275,7 +275,19 @@ def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]
     }
     replacements: dict[int, tuple[int, bytes]] = {}
 
-    for start, end in _groups(texts):
+    # Extracted text cannot retain table columns, empty cells, or chart geometry.
+    # Treat pages with structured drawing operators as hard group boundaries,
+    # including continuation pages that no longer repeat their section heading.
+    grouping_texts = list(texts)
+    for index, page in enumerate(reader.pages):
+        contents = page.get_contents()
+        operations = contents.operations if contents is not None else []
+        if any(operator == b"re" for _, operator in operations) or sum(
+            operator == b"l" for _, operator in operations
+        ) >= 4:
+            grouping_texts[index] = ""
+
+    for start, end in _groups(grouping_texts):
         original_texts = texts[start:end]
         replacement = _render_group(original_texts)
         replacement_reader = PdfReader(io.BytesIO(replacement))

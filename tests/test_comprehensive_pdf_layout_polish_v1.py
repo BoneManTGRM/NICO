@@ -269,3 +269,29 @@ def test_review_companion_uses_readable_typography_without_adding_pages() -> Non
         assert section["title"] in full_text
     assert full_text.count("Decision record") == 8
     assert full_text.count("CLIENT DELIVERY BLOCKED") == 8
+
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_final_reflow_preserves_source_table_geometry(spanish):
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+    from nico.comprehensive_final_worker_pdf_reflow_v1 import install_comprehensive_final_worker_pdf_reflow_v1
+    from nico.comprehensive_pdf_reflow_v1 import compact_sparse_stage_pages
+
+    install_comprehensive_final_worker_pdf_reflow_v1()
+    output = io.BytesIO()
+    pdf = canvas.Canvas(output, pagesize=letter, invariant=1)
+    for index in range(2):
+        pdf.drawString(48, 750, 'NICO Comprehensive | BORRADOR AUTOMATIZADO' if spanish else 'NICO Comprehensive | AUTOMATED DRAFT')
+        pdf.drawString(48, 710, 'Observaciones del código y cobertura del perfil' if spanish else 'Source Observations and Profile Coverage')
+        table = Table([['Source', 'Boundary', 'Line'], [f'endpoint_{index}.py', '', '17'], ['worker.py', 'declared only', '31']], colWidths=[180, 180, 100])
+        table.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey)]))
+        table.wrapOn(pdf, 460, 300)
+        table.drawOn(pdf, 48, 580)
+        pdf.drawString(48, 550, 'Source declarations are observations, not verified runtime topology.')
+        pdf.showPage()
+    pdf.save()
+    original = output.getvalue()
+    result, manifest = compact_sparse_stage_pages(original)
+    assert result == original, 'Text preservation alone must not flatten cell coordinates or empty cells'
+    assert manifest['pages_removed'] == 0

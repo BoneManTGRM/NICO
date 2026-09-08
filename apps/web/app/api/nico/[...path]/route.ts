@@ -251,7 +251,7 @@ async function proxyNico(
         "x-nico-accepted-edition-language",
         "x-nico-accepted-edition-manifest-sha256",
         "x-nico-canonical-truth-sha256",
-        "x-nico-human-review-required",
+        "x-nico-human-review-required", "x-nico-human-review-completed",
         "x-nico-approval-status",
         "x-nico-delivery-status",
         "x-nico-client-delivery-allowed",
