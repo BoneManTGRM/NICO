@@ -16,6 +16,8 @@ export async function GET(): Promise<Response> {
     {
       status: "ok",
       release_sha: releaseSha(),
+      deployment_id: String(process.env.VERCEL_DEPLOYMENT_ID || "unavailable").trim(),
+      deployment_id_source: process.env.VERCEL_DEPLOYMENT_ID ? "VERCEL_DEPLOYMENT_ID" : "unavailable",
       ui_contract: UI_CONTRACT,
       git_ref: String(process.env.VERCEL_GIT_COMMIT_REF || "").trim(),
       deployment_environment: String(process.env.VERCEL_ENV || process.env.NODE_ENV || "unknown").trim(),
