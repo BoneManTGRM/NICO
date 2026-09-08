@@ -20,6 +20,7 @@ import {
   progressPercent,
   reportFor,
   scannerStatusFor,
+  scannerExecutionSummaryFor,
   sectionPresentation,
   statusClass,
 } from "./assessmentModel";
@@ -424,7 +425,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const coverage = assessment?.evidence_coverage;
     const evidenceCompletion = evidenceCompletionFor(assessment, copy);
     const primaryCoverage = evidenceCompletion?.automatable.percent;
-    const coverageLabel = primaryCoverage != null
+    const scannerExecution = scannerExecutionSummaryFor(result);
+    const coverageLabel = result?.terminal
+      ? scannerExecution?.percent != null
+        ? `${copy.analyzerCompletion}: ${scannerExecution.completed_count}/${scannerExecution.applicable_count} (${scannerExecution.percent}%)`
+        : `${copy.analyzerCompletion}: ${copy.notVerified}`
+      : primaryCoverage != null
       ? `${copy.automatableEvidence}: ${primaryCoverage}%`
       : coverage?.calculated && Number.isFinite(Number(coverage.percent))
         ? `${locale === "es-MX" ? copy.evidence : coverage.label || copy.evidence}: ${Math.max(0, Math.min(100, Number(coverage.percent)))}%`
@@ -451,7 +457,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const immutableCommit = immutableCommitFor(result);
     const scannerRawStatus = scannerStatusFor(service, result, running);
     const scannerUnavailable = String(scannerRawStatus || "").toLowerCase().includes("unavailable");
-    const scannerStatus = running && scannerUnavailable ? copy.awaitingScanner : formatStatus(scannerRawStatus, copy);
+    const scannerStatus = scannerRawStatus === "unknown" ? copy.notVerified
+      : running && scannerUnavailable ? copy.awaitingScanner : formatStatus(scannerRawStatus, copy);
     const markdownAvailable = Boolean(report?.markdown || report?.markdown_available);
     const pdfAvailable = Boolean(report?.pdf_base64 || report?.pdf_available);
     const reportReady = Boolean(markdownAvailable || pdfAvailable || report?.html || report?.html_available || report?.json || report?.json_available || report?.report_id);
