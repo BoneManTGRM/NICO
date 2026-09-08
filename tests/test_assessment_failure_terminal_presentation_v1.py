@@ -26,9 +26,9 @@ def test_failure_panel_reconciles_duplicate_and_contradictory_state() -> None:
     assert 'section[data-assessment-run-state="true"]' in source
     assert 'main.dataset.assessmentTerminalFailure = "true"' in source
     assert 'state.dataset.assessmentFailureReconciled = "true"' in source
-    assert 'packageValue: "Blocked during final report generation"' in source
+    assert 'packageValue: "Blocked · See failed stage"' in source
     assert 'reviewValue: "Not reached"' in source
-    assert 'packageValue: "Bloqueado durante la generación del informe final"' in source
+    assert 'packageValue: "Bloqueado · Consulte la etapa que falló"' in source
     assert 'reviewValue: "No alcanzada"' in source
     assert "new MutationObserver(apply)" in source
 
@@ -37,7 +37,10 @@ def test_failure_panel_keeps_raw_diagnostics_collapsed() -> None:
     source = PANEL.read_text(encoding="utf-8")
 
     assert 'title: "The assessment stopped"' in source
-    assert 'summary: "Completed analysis and the exact run identity remain preserved' in source
+    assert 'summary: "The assessment stopped. Its recorded run identity and any collected evidence remain preserved' in source
+    assert "Completed analysis and the exact run identity remain preserved" not in source
+    assert "final assessment package could not be published" not in source
+    assert "pero el paquete final no pudo publicarse" not in source
     assert '<details className="help-details nico-failure-evidence__details">' in source
     assert '<summary>{copy.details}</summary>' in source
     assert '<div><dt>{copy.code}</dt><dd><code>{failure.code}</code></dd></div>' in source
