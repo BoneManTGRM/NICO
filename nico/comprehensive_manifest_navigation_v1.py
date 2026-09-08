@@ -19,6 +19,10 @@ _CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_manifest_navigation_context", default={}
 )
 _PAGE = re.compile(r"^(?:Page|Página)\s+\d+$", re.IGNORECASE)
+_DOCUMENT_PAGE = re.compile(
+    r"^(?:Document page \d+ of \d+|Página del documento \d+ de \d+)$",
+    re.IGNORECASE,
+)
 _SECTION_PAGE = re.compile(
     r"^(Section\s+\d+\s+of\s+\d+\s*\|\s*)Page(\s+\d+\s+of\s+\d+)$",
     re.IGNORECASE,
@@ -78,7 +82,7 @@ def _identity(canonical: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
-def _replacement(value: Any) -> tuple[Any, bool]:
+def _replacement(value: Any, *, generated_footer: bool = False) -> tuple[Any, bool]:
     raw: str
     as_bytes = isinstance(value, ByteStringObject)
     if isinstance(value, TextStringObject):
@@ -97,7 +101,9 @@ def _replacement(value: Any) -> tuple[Any, bool]:
         replaced = f"{section.group(1)}Sheet{section.group(2)}"
     elif integrity:
         replaced = f"Integrity sheet {integrity.group(1)}"
-    elif _PAGE.fullmatch(raw.strip()):
+    elif _PAGE.fullmatch(raw.strip()) or (
+        generated_footer and _DOCUMENT_PAGE.fullmatch(raw.strip())
+    ):
         replaced = ""
     else:
         return value, False
@@ -112,16 +118,23 @@ def _rewrite_local_page_labels(page: Any, writer: PdfWriter) -> None:
         return
     stream = ContentStream(contents, writer)
     changed = False
+    generated_footer = False
     for operands, operator in stream.operations:
+        if operator in {b"BT", b"ET", b"Td", b"TD", b"T*"}:
+            generated_footer = False
+        elif operator == b"Tm" and len(operands) == 6:
+            # Owned physical-page labels are emitted at y=16. Limit removal to
+            # that footer band so identical text in source evidence survives.
+            generated_footer = 0 <= float(operands[5]) <= 24
         if operator == b"Tj" and operands:
-            operands[0], replaced = _replacement(operands[0])
+            operands[0], replaced = _replacement(operands[0], generated_footer=generated_footer)
             changed = changed or replaced
         elif operator == b"TJ" and operands:
             for index, item in enumerate(operands[0]):
-                operands[0][index], replaced = _replacement(item)
+                operands[0][index], replaced = _replacement(item, generated_footer=generated_footer)
                 changed = changed or replaced
         elif operator in {b"'", b'"'} and operands:
-            operands[-1], replaced = _replacement(operands[-1])
+            operands[-1], replaced = _replacement(operands[-1], generated_footer=generated_footer)
             changed = changed or replaced
     if changed:
         page.replace_contents(stream)
