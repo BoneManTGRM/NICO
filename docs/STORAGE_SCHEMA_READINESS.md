@@ -13,10 +13,12 @@ This control does not validate the contents of individual workflow records and d
 The current contract is identified by:
 
 - schema: `nico.storage_schema_readiness.v1`
-- contract version: `2026.07.13.1`
+- contract version: `2026.09.08.1`
 - deterministic contract SHA-256
 
-The contract enumerates every required base storage table and required column, including the `nico_schema_migrations` ledger.
+The contract enumerates all 14 required storage tables and their required columns, including retained scanner bytes in `scanner_raw_artifacts` and the `nico_schema_migrations` ledger.
+
+The historical `2026.07.13.1` contract covered 13 tables before scanner artifact storage was added. Its existing ledger hash and application timestamp remain unchanged. A changed table contract requires a new version; the current contract is recorded separately after deployment. A new version does not make missing tables or columns ready.
 
 The migration ledger stores:
 
@@ -34,7 +36,7 @@ The production application verifies storage schema state while installing produc
 For Postgres, NICO:
 
 1. Creates the migration-ledger table if it does not exist.
-2. Records or refreshes the current contract version and hash.
+2. Records a new current contract version and hash, or refreshes only the existing version's verification timestamp. It never replaces an existing version's hash.
 3. Reads `information_schema.columns` for the active schema.
 4. Compares the observed catalog to the version-controlled expected table and column set.
 5. Reads the bounded migration ledger.
