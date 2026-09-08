@@ -35,6 +35,7 @@ from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_pending_artifact_metadata_repair_v1 import (
     repair_pending_findings_csv_alias,
 )
+from nico.comprehensive_private_checkout_continuation_v1 import resume_recovered_private_checkout
 from nico.comprehensive_approved_report_v1 import build_approved_report_package
 from nico.comprehensive_pre_render_scanner_truth_v65 import (
     install_pre_render_authoritative_scanner_truth,
@@ -515,6 +516,8 @@ class ComprehensiveRunService:
             recovered = rewind_blocked_run_for_final_artifact_recovery(record)
             if recovered == record:
                 recovered = rewind_stalled_stage_for_retry(record)
+            if recovered == record:
+                recovered = resume_recovered_private_checkout(record)
             if recovered == record:
                 return record
             record = self._store.save(
