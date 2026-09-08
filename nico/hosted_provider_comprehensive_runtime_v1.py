@@ -855,6 +855,13 @@ def _profile_checkout(repo_path: Path) -> dict[str, Any]:
 
     def walk_error(error: OSError) -> None:
         inventory_errors.append(type(error).__name__)
+        if error.filename:
+            try:
+                relative = Path(error.filename).relative_to(repo_path).as_posix()
+            except ValueError:
+                return
+            unavailable_paths.append(relative)
+            unavailable.append(f"Exact provider snapshot directory {relative} could not be inventoried.")
 
     for directory, directories, names in os.walk(repo_path, onerror=walk_error, followlinks=False):
         directories[:] = sorted(name for name in directories if name != ".git")

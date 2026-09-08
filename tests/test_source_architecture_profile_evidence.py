@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 from types import SimpleNamespace
 from urllib.parse import unquote
 
@@ -258,3 +260,52 @@ def test_excluded_source_cannot_satisfy_whole_source_coverage(monkeypatch, tmp_p
     assert coverage["eligible_source_coverage_percent"] == 100
     assert coverage["whole_repository_coverage_percent"] == 50
     assert coverage["complexity_excluded_source_files"] == 1
+
+
+@pytest.mark.parametrize("path,source", [
+    ("app.ts", "interface LocalCache { fetch(key: string): string; }"),
+    ("app.js", "const cache={fetch(key){return key;}}; cache.fetch('local');"),
+    ("app.py", "import requests\ndef local_read(requests):\n    return requests.get('key')\n"),
+    ("app.js", "const fetch = localRead; fetch('key');"),
+])
+def test_source_identifiers_do_not_invent_network_edges(path, source, monkeypatch, tmp_path):
+    context, _, _, _ = collect("snapshot", monkeypatch, tmp_path, {path: source})
+    observed = architecture_data_flow_provider(context)["evidence"]["source_observation"]
+    assert not [row for row in observed["interactions"] if row["kind"] == "http_call"]
+
+
+@pytest.mark.parametrize("damage", ["component_path", "component_id", "interaction_source", "evidence_none", "line_string", "line_outside_source"])
+def test_self_consistent_corrupt_row_metadata_is_rejected(damage, monkeypatch, tmp_path):
+    context, repository, _, _ = collect("snapshot", monkeypatch, tmp_path)
+    observed = repository["architecture_evidence"]["source_observation"]
+    if damage == "component_path":
+        observed["components"][0]["path"] = "never-collected.py"
+    elif damage == "component_id":
+        observed["components"][0]["id"] = "never-collected.py"
+    elif damage == "interaction_source":
+        observed["interactions"][0]["source"] = "never-collected.py"
+    elif damage == "evidence_none":
+        observed["components"][0]["evidence"] = None
+    elif damage == "line_string":
+        observed["interactions"][0]["evidence"]["line"] = "line one"
+    else:
+        observed["interactions"][0]["evidence"]["line"] = 999999
+    payload = {key: value for key, value in observed.items() if key != "observation_sha256"}
+    observed["observation_sha256"] = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    for provider in (architecture_data_flow_provider, deployment_review_provider):
+        result = provider(context)
+        assert result["evidence"]["source_observation_status"] == "unavailable"
+        assert not result["evidence"].get("structured_tables")
+
+
+def test_hosted_inventory_keeps_safe_unavailable_directory_name(monkeypatch, tmp_path):
+    def incomplete_walk(root, *, onerror, followlinks):
+        onerror(PermissionError(13, "denied", str(tmp_path / "unreadable-source")))
+        onerror(PermissionError(13, "denied", "/outside-private-location"))
+        return iter(())
+    monkeypatch.setattr("os.walk", incomplete_walk)
+    profile = hosted_collector._profile_checkout(tmp_path)
+    assert profile["tree_collection_succeeded"] is False
+    assert profile["unavailable_paths"] == ["unreadable-source"]
+    assert any("unreadable-source" in note for note in profile["unavailable"])
+    assert "outside-private-location" not in str(profile)
