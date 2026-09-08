@@ -120,10 +120,26 @@ def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str,
     for original in inventory.get("scanner_records") or []:
         row = deepcopy(original)
         receipt = _mapping(_mapping(row.get("execution_provenance")).get("execution_receipt"))
-        bytes_verified = population_valid and row.get("source_identity_verified") is True and _mapping(row.get("raw_artifact")).get("availability") == "verified"
+        retained_provenance = _mapping(row.get("execution_provenance"))
+        invocations = retained_provenance.get("invocation_receipts") or []
+        invocation_count = retained_provenance.get("invocation_receipt_count")
+        invocations_verified = (
+            invocation_count is None and not invocations
+        ) or (
+            type(invocation_count) is int and invocation_count == len(invocations)
+            and all(_mapping(item).get("status") == "retained_receipt_integrity_verified" for item in invocations)
+        )
+        row["declared_invocation_status"] = (
+            "not_declared" if invocation_count is None and not invocations
+            else "verified" if invocations_verified else "unverified"
+        )
+        bytes_verified = (population_valid and row.get("source_identity_verified") is True
+            and row.get("source_checkout_verified") is True
+            and _mapping(row.get("raw_artifact")).get("availability") == "verified")
         # A failed/timed-out invocation can have valid provenance. Its status is
         # preserved, and provenance is never a completed or clean-scan assertion.
         row["execution_evidence_verified"] = bool(bytes_verified
+            and invocations_verified
             and row.get("execution_observed") is True
             and receipt.get("status") == "retained_receipt_integrity_verified")
         row["inapplicability_evidence_verified"] = bool(bytes_verified
@@ -131,7 +147,8 @@ def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str,
             and row.get("applicability_observation_verified") is True)
         result["scanner_records"].append(row)
     rows = result["scanner_records"]
-    if rows and all(row["execution_evidence_verified"] or row["inapplicability_evidence_verified"] for row in rows):
+    if rows and all(row["declared_invocation_status"] != "unverified"
+            and (row["execution_evidence_verified"] or row["inapplicability_evidence_verified"]) for row in rows):
         result["verification_status"] = "verified"
     return result
 

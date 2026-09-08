@@ -152,6 +152,53 @@ def test_reordering_and_changed_evidence_have_truthful_report_identity(evidence)
     assert changed["report_package"]["canonical_truth_sha256"] != reordered["report_package"]["canonical_truth_sha256"]
 
 
+def test_actual_builder_rejects_source_changed_by_dependency_preparation(evidence):
+    from nico.scanner_execution_receipt_v1 import invocation_receipt
+    before = [{"path": "package-lock.json", "status": "hashed", "sha256": "a" * 64}]
+    after = [{"path": "package-lock.json", "status": "hashed", "sha256": "b" * 64}]
+    evidence.scanner["scanner_execution_receipt"] = invocation_receipt(
+        ["npm", "install", "--ignore-scripts"], cwd=None, before=before, after=after,
+        returncode=0, timed_out=False)
+    evidence.scanner["source_checkout_verified"] = False
+    result = build(evidence)
+    execution = provenance(result)["scanner_execution_evidence"]
+    row = execution["scanner_records"][0]
+    assert row["source_checkout_verified"] is False
+    assert row["execution_provenance"]["execution_receipt"]["input_identity_status"] == "changed_unavailable_or_not_observed"
+    assert row["execution_evidence_verified"] is False
+    assert execution["verification_status"] == "unverified"
+    assert result["client_delivery_allowed"] is False
+
+
+@pytest.mark.parametrize("change", ["corrupt", "missing", "truncated"])
+def test_actual_builder_requires_every_declared_invocation_receipt(evidence, change):
+    first = deepcopy(evidence.receipt)
+    if change == "corrupt": first["exit_code"] = 99
+    if change == "missing": first = None
+    evidence.scanner["scanner_invocation_receipts"] = [first, deepcopy(evidence.receipt)]
+    if change == "truncated":
+        evidence.scanner["scanner_invocation_receipts"] = [deepcopy(evidence.receipt)] * 1025
+    result = build(evidence)
+    execution = provenance(result)["scanner_execution_evidence"]
+    row = execution["scanner_records"][0]
+    assert row["execution_provenance"]["execution_receipt"]["status"] == "retained_receipt_integrity_verified"
+    assert row["execution_evidence_verified"] is False
+    assert execution["verification_status"] == "unverified"
+
+
+def test_valid_failed_attempt_receipts_remain_provenance_without_clean_credit(evidence):
+    from nico.scanner_execution_receipt_v1 import invocation_receipt
+    failed = invocation_receipt(["tsc", "--noEmit"], cwd=None, before=[], after=[],
+        returncode=1, timed_out=False)
+    evidence.scanner["scanner_invocation_receipts"] = [failed, deepcopy(evidence.receipt)]
+    result = build(evidence)
+    execution = provenance(result)["scanner_execution_evidence"]
+    row = execution["scanner_records"][0]
+    assert row["execution_evidence_verified"] is True
+    assert row["execution_status"] == "completed_with_findings"
+    assert execution["coverage_status"] == "not_evaluated_by_inventory"
+
+
 @pytest.mark.parametrize("change", [None, "wrong_sha", "wrong_deployment", "configured_source", "redirect", "oversize"])
 def test_fixed_frontend_observation_does_not_credit_labels_alone(monkeypatch, change):
     import requests
