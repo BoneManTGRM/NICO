@@ -46,6 +46,13 @@ def _identity_mismatch(record: Mapping[str, Any], binding: Mapping[str, str]) ->
     return any(value and value != binding[key] for key, value in declared.items())
 
 
+def _has_projected_field(line: Any, fields: set[str]) -> bool:
+    # _stage_summary retains structured-field paths before the first colon.
+    # Match the path only; supplied prose must never be filtered by its content.
+    path = str(line).partition(":")[0]
+    return any(part.partition("[")[0] in fields for part in path.split("."))
+
+
 def _role(finding: Mapping[str, Any]) -> str:
     category = _text(finding.get("category") or finding.get("finding_family")).casefold()
     if any(word in category for word in ("architecture", "complexity", "maintainability")):
@@ -246,9 +253,16 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
         if not isinstance(stage, dict):
             continue
         if stage.get("stage_id") == "six_month_roadmap":
-            stage.update({"summary": boundary, "evidence": details or [no_work], "roadmap": deepcopy(packages), "roadmap_truth": deepcopy(truth)})
+            planning_inputs = [line for line in stage.get("evidence") or [] if _has_projected_field(line, {"constraints", "requirements"})]
+            stage.update({"summary": boundary, "evidence": [*(details or [no_work]), *planning_inputs], "roadmap": deepcopy(packages), "roadmap_truth": deepcopy(truth)})
         elif stage.get("stage_id") == "staffing_sequencing_and_cost":
-            stage.update({"summary": boundary, "evidence": [_copy("Suggested role types", "Tipos de función sugeridos", spanish) + ": " + ", ".join(_copy(*role_names[role], spanish) for role in roles)] if roles else [no_work], "suggested_role_types": roles, "source_package_ids": [item["package_id"] for item in packages]})
+            capacity_inputs = [line for line in stage.get("evidence") or [] if _has_projected_field(line, {"client_capacity_inputs_state", "supplied_capacity_constraints"})]
+            role_lines = [_copy("Suggested role types", "Tipos de función sugeridos", spanish) + ": " + ", ".join(_copy(*role_names[role], spanish) for role in roles)] if roles else [no_work]
+            stage.update({"summary": boundary, "evidence": [*role_lines, *capacity_inputs], "suggested_role_types": roles, "source_package_ids": [item["package_id"] for item in packages]})
+        elif stage.get("stage_id") == "risk_reduction_and_executive_briefing":
+            retained = [line for line in stage.get("evidence") or [] if not _has_projected_field(line, {"quick_wins", "medium_term_actions", "recommended_roles"})]
+            package_line = _copy("Proposed work packages", "Paquetes de trabajo propuestos", spanish) + ": " + ", ".join(item["package_id"] for item in packages)
+            stage.update({"evidence": [*retained, package_line if packages else no_work, boundary], "source_package_ids": [item["package_id"] for item in packages], "suggested_role_types": roles})
     return output
 
 

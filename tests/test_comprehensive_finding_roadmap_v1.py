@@ -212,3 +212,34 @@ def test_wrong_run_gap_or_parent_cannot_acquire_current_report_binding(wrong_lay
     result = bind_final_finding_roadmap(_canonical(), raw_stages={"functional_qa": stage})
     assert not any(row["kind"] == "evidence_gap_resolution" for row in result["roadmap"])
     assert result["roadmap_truth"]["omitted_gap_refs"][0]["reason"] == "gap_source_identity_mismatch"
+
+
+def test_final_executive_plan_does_not_retain_unbound_quick_wins_or_generic_windows():
+    context = _context()
+    context["prior_stage_results"]["risk_reduction_and_executive_briefing"] = {
+        "status": "complete", "summary": "Stage evidence was recorded.",
+        "executive_briefing": {
+            "quick_wins": ["Unverified effortless fix"],
+            "medium_term_actions": ["Generic ninety-day work"],
+            "recommended_roles": 4,
+            "technical_score": 75,
+        },
+    }
+    report = source.build_canonical_report_source(context)["canonical_report"]
+    stage = next(row for row in report["stage_summaries"] if row["stage_id"] == "risk_reduction_and_executive_briefing")
+    assert "Unverified effortless fix" not in json.dumps(stage)
+    assert "Generic ninety-day work" not in json.dumps(stage)
+    assert "technical_score: 75" in "\n".join(stage["evidence"])
+    assert stage["source_package_ids"] == [row["package_id"] for row in report["roadmap"]]
+
+
+def test_final_staffing_preserves_supplied_capacity_constraints_without_invented_effort():
+    context = _context()
+    context["prior_stage_results"]["staffing_sequencing_and_cost"]["evidence"] = {
+        "supplied_capacity_constraints": ["Release freeze in December"],
+        "client_capacity_inputs_state": "supplied_unverified",
+    }
+    report = source.build_canonical_report_source(context)["canonical_report"]
+    stage = next(row for row in report["stage_summaries"] if row["stage_id"] == "staffing_sequencing_and_cost")
+    assert "Release freeze in December" in "\n".join(stage["evidence"])
+    assert "medium_to_large" not in json.dumps(stage)
