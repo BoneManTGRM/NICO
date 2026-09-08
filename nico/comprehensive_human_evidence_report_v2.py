@@ -108,7 +108,7 @@ def _canonical_injection_specs(snapshot: Mapping[str, Any]) -> list[dict[str, An
                     "evidence": chunk,
                     "findings": [],
                     "unavailable": [],
-                    "status": "complete",
+                    "status": str(first.get("status") or "partial"),
                 }
             )
     return output
@@ -185,7 +185,9 @@ def _install_english_retained_titles() -> dict[str, bool]:
                 label = module_id.replace("_", " ").title()
             output["title"] = f"Client Human Evidence — {label}"
             output["summary"] = (
-                "These observations were explicitly supplied by people and are retained "
+                "This module was excluded from scope; its retained inputs provide no assessment coverage or approval."
+                if str(output.get("status") or "").casefold() == "excluded"
+                else "These observations were explicitly supplied by people and are retained "
                 "without repository inference. They do not automatically change technical "
                 "scores or grant approval or delivery authority."
             )
