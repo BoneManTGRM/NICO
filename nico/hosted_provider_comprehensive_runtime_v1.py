@@ -45,6 +45,8 @@ from nico.provider_platform_contract_v1 import ProviderKind
 from nico.provider_rollout_control_v1 import ProviderRolloutError, ProviderRolloutRegistry, STATE_KEY as ROLLOUT_STATE_KEY
 from nico.repository_snapshot import capture_repository_snapshot, repository_snapshot_id
 from nico.source_signal_analysis_v2 import analyze_source_signals
+from nico.source_architecture_evidence_v1 import analyze_source_architecture
+from nico.repository_profile_coverage_v1 import profile_coverage
 from nico.storage import STORE, StorageAdapter
 
 VERSION = "nico.hosted-provider-comprehensive-runtime.v1"
@@ -840,33 +842,71 @@ def checkout_hosted_provider_snapshot(
 
 
 def _profile_checkout(repo_path: Path) -> dict[str, Any]:
+    # Enumerate before any dependency preparation. Preserve the existing read
+    # limits and make incomplete traversal/stat/read observations explicit.
+    import os
+
     tree_paths: list[str] = []
     sizes: dict[str, int] = {}
     root_items: set[str] = set()
-    for item in repo_path.rglob("*"):
-        if not item.is_file():
-            continue
-        relative = item.relative_to(repo_path).as_posix()
-        if relative == ".git" or relative.startswith(".git/"):
-            continue
-        tree_paths.append(relative)
-        root_items.add(relative.split("/", 1)[0])
-        try:
-            sizes[relative] = item.stat().st_size
-        except OSError:
-            sizes[relative] = 0
+    unavailable: list[str] = []
+    unavailable_paths: list[str] = []
+    inventory_errors: list[str] = []
+
+    def walk_error(error: OSError) -> None:
+        inventory_errors.append(type(error).__name__)
+
+    for directory, directories, names in os.walk(repo_path, onerror=walk_error, followlinks=False):
+        directories[:] = sorted(name for name in directories if name != ".git")
+        for name in directories:
+            item = Path(directory) / name
+            if item.is_symlink():
+                relative = item.relative_to(repo_path).as_posix()
+                tree_paths.append(relative)
+                root_items.add(relative.split("/", 1)[0])
+                unavailable_paths.append(relative)
+                unavailable.append(f"Exact provider snapshot symlink {relative} was not dereferenced.")
+        for name in sorted(names):
+            item = Path(directory) / name
+            relative = item.relative_to(repo_path).as_posix()
+            if relative == ".git":
+                continue
+            tree_paths.append(relative)
+            root_items.add(relative.split("/", 1)[0])
+            if item.is_symlink():
+                unavailable_paths.append(relative)
+                unavailable.append(f"Exact provider snapshot symlink {relative} was not dereferenced.")
+                continue
+            try:
+                sizes[relative] = item.stat().st_size
+            except OSError:
+                unavailable_paths.append(relative)
+                unavailable.append(f"Exact provider snapshot file {relative} size was unavailable.")
     candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
     candidates.extend(path for path in sorted(sizes) if path not in candidates and should_fetch_path(path, sizes[path]))
     files: dict[str, str] = {}
-    unavailable: list[str] = []
     for path in candidates[:MAX_TEXT_FILES]:
         if sizes.get(path, 0) > MAX_FILE_BYTES:
             continue
         try:
-            files[path] = (repo_path / path).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            unavailable.append(f"Exact provider snapshot file {path} could not be read by the isolated worker.")
-    return {"files": files, "tree_paths": sorted(tree_paths), "root_items": sorted(root_items), "unavailable": unavailable}
+            # Bound bytes at the actual read, including a concurrently changed
+            # file. Never credit a truncated file as the full observed input.
+            with (repo_path / path).open("rb") as handle:
+                raw = handle.read(MAX_FILE_BYTES + 1)
+            if len(raw) > MAX_FILE_BYTES:
+                raise ValueError("file_size_changed")
+            files[path] = raw.decode("utf-8", errors="replace")
+        except (OSError, ValueError):
+            unavailable_paths.append(path)
+            unavailable.append(f"Exact provider snapshot file {path} could not be read within the profile limits.")
+    if inventory_errors:
+        unavailable.append("Exact provider snapshot traversal was incomplete: " + ", ".join(sorted(set(inventory_errors))))
+    return {
+        "files": files, "tree_paths": sorted(tree_paths), "root_items": sorted(root_items),
+        "unavailable": sorted(set(unavailable)), "unavailable_paths": sorted(set(unavailable_paths)),
+        "size_excluded_paths": sorted(path for path, size in sizes.items() if size > MAX_FILE_BYTES),
+        "tree_collection_succeeded": not inventory_errors, "tree_truncated": False,
+    }
 
 
 def _workflow_paths(provider: str, paths: list[str]) -> list[str]:
@@ -1377,9 +1417,15 @@ def collect_hosted_provider_repository_evidence(
         "human_review_required": True,
         "client_delivery_allowed": False,
     }
+    bundle["architecture_evidence"]["source_observation"] = analyze_source_architecture(
+        files, run_id=run_id, repository=repository, commit_sha=snapshot_sha, snapshot_id=snapshot_id,
+    )
     measured = collect_complexity_evidence(files)
+    coverage = profile_coverage(profile, measured)
+    bundle["file_evidence"]["profile_coverage"] = coverage
     complexity = {
         **measured,
+        "profile_coverage": coverage,
         "evidence_id": complexity_id,
         "run_id": run_id,
         "repository": repository,

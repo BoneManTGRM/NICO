@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import base64
-import copy
-from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import unquote
 
@@ -137,6 +135,7 @@ def test_actual_collectors_and_providers_use_source_bound_observations(kind, mon
     assert any(row["kind"] == "http_call" for row in observation["interactions"])
     assert any(row["kind"] == "storage_call" for row in observation["interactions"])
     assert any(row["kind"] == "process_call" for row in observation["interactions"])
+    assert any(row["kind"] == "import" and row["target"] == "./client" for row in observation["interactions"])
     assert all("retained_text_sha256" not in row for row in observation["input_inventory"])
     assert all(len(row["observed_text_sha256"]) == 64 for row in observation["input_inventory"])
     assert store.get("evidence_items", repository["evidence_id"])["evidence"]["architecture_evidence"] == repository["architecture_evidence"]
@@ -226,3 +225,36 @@ def test_coverage_refuses_foreign_or_overcounted_analysis():
     profile["files"] = {"app.py": "x = 1"}
     with pytest.raises(ValueError, match="profile_analyzed_exceeds_sample"):
         profile_coverage(profile, {"files_analyzed": 2, "parse_notes": []})
+
+
+def test_snapshot_profile_enforces_actual_observed_byte_limit():
+    client = SnapshotClient({"app.py": "x" * 240_001})
+    original = client.get_json
+
+    def false_size(url, params=None):
+        payload, error = original(url, params)
+        if isinstance(payload, dict) and payload.get("type") == "file":
+            payload["size"] = 10
+        return payload, error
+
+    client.get_json = false_size
+    text, error = snapshot_collector._text_file(client, "owner/repository", "app.py", SHA)
+    assert text is None
+    assert "limit" in error
+
+
+def test_hosted_profile_does_not_follow_symlink_source(tmp_path):
+    (tmp_path / "app.py").symlink_to(tmp_path / "absent.py")
+    profile = hosted_collector._profile_checkout(tmp_path)
+    assert profile["files"] == {}
+    assert "app.py" in profile["unavailable_paths"]
+    assert "app.py" in profile["tree_paths"]
+
+
+def test_excluded_source_cannot_satisfy_whole_source_coverage(monkeypatch, tmp_path):
+    _, _, complexity, _ = collect("snapshot", monkeypatch, tmp_path, {
+        "app.py": "x = 1\n", "tests/test_app.py": "def test_app():\n    pass\n"})
+    coverage = complexity["profile_coverage"]
+    assert coverage["eligible_source_coverage_percent"] == 100
+    assert coverage["whole_repository_coverage_percent"] == 50
+    assert coverage["complexity_excluded_source_files"] == 1
