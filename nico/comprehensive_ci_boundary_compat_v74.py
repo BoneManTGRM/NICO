@@ -174,32 +174,9 @@ def _looks_comprehensive(markdown: str, canonical: Mapping[str, Any]) -> bool:
 
 
 def _configuration_line(canonical: Mapping[str, Any], *, spanish: bool) -> str:
-    section = _ci_section(canonical)
-    contract = _mapping(section.get("score_contract"))
-    inputs = _mapping(contract.get("score_inputs"))
-    controls = _mapping(inputs.get("configuration_controls"))
-    score = section.get("presented_score", section.get("score"))
-    score_label = (
-        f"{_integer(score)}/100"
-        if isinstance(score, (int, float)) and not isinstance(score, bool)
-        else ("Sin puntuación" if spanish else "Not scored")
-    )
-    exact = contract.get("exact_configuration_match") is True
-    permissions = inputs.get("explicit_permissions_present") is True
-    immutable = sum(value is True for value in controls.values())
-    total = len(controls)
-    if spanish:
-        return (
-            "A. Madurez de configuración de CI/CD: "
-            f"{score_label}; coincidencia con SHA exacto={'sí' if exact else 'no'}; "
-            f"permisos explícitos={'sí' if permissions else 'no'}; "
-            f"controles inmutables={immutable}/{total}."
-        )
-    return (
-        "A. CI/CD configuration maturity: "
-        f"{score_label}; exact-SHA match={exact}; explicit permissions={permissions}; "
-        f"immutable controls={immutable}/{total}."
-    )
+    from nico.comprehensive_ci_operational_truth_v71 import _configuration_line as project
+
+    return project(canonical, spanish=spanish)
 
 
 def _current_readiness_line(canonical: Mapping[str, Any], *, spanish: bool) -> str:

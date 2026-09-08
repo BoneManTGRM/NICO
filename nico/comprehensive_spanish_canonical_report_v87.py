@@ -22,6 +22,8 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "Workflow configuration exact-SHA match: not assessed.": "Coincidencia de SHA exacto de la configuración de flujos de trabajo: sin evaluar.",
+    "Delivery capacity is not scored because immutable CI configuration was not assessed.": "La capacidad de entrega no se puntúa porque no se evaluó la configuración inmutable de CI.",
     "Comprehensive": "Integral",
     "DRAFT": "BORRADOR AUTOMATIZADO",
     "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED": (
