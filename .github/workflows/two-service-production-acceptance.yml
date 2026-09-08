@@ -43,6 +43,13 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install and exercise the actual acceptance runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            -e . "playwright==1.61.0" "pypdf==6.15.0" "pytest==9.1.1"
+          python -m pytest -q tests/test_production_cli_scanner_validator_import.py tests/test_release_acceptance_scanner_retention.py
+
       - name: Compile acceptance runner and verify bounded contract
         run: |
           set -euo pipefail
@@ -368,7 +375,10 @@ jobs:
       - name: Install pinned browser proof dependencies
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-cache-dir "playwright==1.61.0" "pypdf>=5,<7"
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            -e . "playwright==1.61.0" "pypdf==6.15.0"
+          python scripts/completed_run_two_pass_acceptance_v1.py --help >/dev/null
+          python scripts/completed_run_authenticated_two_pass_acceptance_v1.py --help >/dev/null
           python -m playwright install --with-deps chromium
 
       - name: Validate sole Comprehensive run handoff
