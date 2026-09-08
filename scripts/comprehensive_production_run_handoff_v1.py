@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 VERSION = "nico.comprehensive-production-run-handoff.v1"
-SOURCE_SCHEMA = "nico.spanish_comprehensive_live_acceptance.v3.2"
+SOURCE_SCHEMA = "nico.spanish_comprehensive_live_acceptance.v3.3"
 RECOVERED_SOURCE_SCHEMA = "nico.spanish_comprehensive_existing_run_recovery.v1"
 TERMINAL_PHASES = {"Se requiere revisión experta", "Revisión interna requerida"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")

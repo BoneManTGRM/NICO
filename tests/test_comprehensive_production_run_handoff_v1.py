@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -38,9 +39,21 @@ def test_canonical_json_digest_uses_server_serialization_and_fails_on_tampering(
         )
 
 
+def _producer_schema() -> str:
+    tree = ast.parse(Path("scripts/spanish_comprehensive_live_acceptance_v3.py").read_text())
+    return next(ast.literal_eval(node.value) for node in tree.body
+                if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in node.targets))
+
+
+def test_workflow_uses_the_shared_current_source_schema() -> None:
+    workflow = Path(".github/workflows/spanish-comprehensive-production-proof.yml").read_text()
+    assert "from scripts.comprehensive_production_run_handoff_v1 import SOURCE_SCHEMA, load_source_proof" in workflow
+    assert "fresh_schema = SOURCE_SCHEMA" in workflow
+
+
 def _proof() -> dict:
     return {
-        "artifact_schema": "nico.spanish_comprehensive_live_acceptance.v3.2",
+        "artifact_schema": _producer_schema(),
         "status": "passed",
         "expected_sha": SHA,
         "assessed_commit_sha": ASSESSED_SHA,
