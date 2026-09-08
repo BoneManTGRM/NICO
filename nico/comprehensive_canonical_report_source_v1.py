@@ -12,6 +12,7 @@ from nico.comprehensive_engagement_metadata_v1 import (
     normalize_comprehensive_engagement_metadata,
     verify_comprehensive_engagement_metadata,
 )
+from nico.comprehensive_finding_roadmap_v1 import bind_final_finding_roadmap
 from nico.comprehensive_finding_count_truth_v66 import (
     reconcile_finding_count_truth,
 )
@@ -55,7 +56,7 @@ ZERO_FINDING_FINALITY_TRUTH = (
     install_comprehensive_zero_finding_finality_truth_v1()
 )
 
-VERSION = "nico.comprehensive_canonical_report_source.v7"
+VERSION = "nico.comprehensive_canonical_report_source.v8"
 _REQUIRED_IDENTITY_FIELDS = (
     "run_id",
     "repository",
@@ -235,6 +236,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     # Installation is explicit at the post-restoration canonical boundary so tests can
     # inspect the scanner independently and later v88 rebinds keep the fallback helper.
     spanish_preflight_installation = install_spanish_publication_preflight_v93()
+    canonical = bind_final_finding_roadmap(canonical, raw_stages=stages)
     spanish_preflight = assert_spanish_canonical_publication_preflight(canonical)
 
     assessment = dict(canonical.get("assessment") or {})
@@ -245,7 +247,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     truth_sha = _canonical_hash(canonical)
     report_id = (
         "comprehensive_report_"
-        + _canonical_hash({"identity": identity, "stages": ordered})[:20]
+        + _canonical_hash({"identity": identity, "stages": ordered, "roadmap": canonical["roadmap"], "roadmap_truth": canonical["roadmap_truth"]})[:20]
     )
     package = {
         "service_id": _SERVICE_ID,
