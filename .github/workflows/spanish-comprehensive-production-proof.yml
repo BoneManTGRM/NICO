@@ -333,6 +333,7 @@ jobs:
             audit-results/spanish-comprehensive-source-proof.log
             audit-results/spanish-comprehensive-source-proof.exit-code
             audit-results/scanner-retention-acceptance.json
+            audit-results/export-retention/**
             audit-results/spanish-comprehensive-failed-source-proof.json
             audit-results/spanish-comprehensive-existing-run-recovery-proof.json
             audit-results/spanish-comprehensive-existing-run-recovery-proof.png
