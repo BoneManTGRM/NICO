@@ -37,6 +37,15 @@ def _display(value: Any, field: str, spanish: bool) -> str:
     return text
 
 
+def _identity_mismatch(record: Mapping[str, Any], binding: Mapping[str, str]) -> bool:
+    declared = {
+        "commit_sha": _text(record.get("source_commit_sha") or record.get("commit_sha")),
+        "run_id": _text(record.get("run_id")),
+        "repository": _text(record.get("repository")),
+    }
+    return any(value and value != binding[key] for key, value in declared.items())
+
+
 def _role(finding: Mapping[str, Any]) -> str:
     category = _text(finding.get("category") or finding.get("finding_family")).casefold()
     if any(word in category for word in ("architecture", "complexity", "maintainability")):
@@ -122,6 +131,7 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
 
     # Only explicit retained gap records are inputs. Do not infer gaps from scores.
     gap_groups: dict[str, dict[str, Any]] = {}
+    omitted_gaps: list[dict[str, Any]] = []
     for stage_id, stage in sorted(raw_stages.items()):
         if not isinstance(stage, Mapping) or _text(stage.get("status")).casefold() in {"excluded", "not_applicable"}:
             continue
@@ -133,6 +143,9 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
                 continue
             digest = _hash(gap)
             ref = {"surface": "prior_stage_results", "stage_id": str(stage_id), "field": "missing_evidence", "evidence_type": kind, "record_sha256": digest}
+            if _identity_mismatch(stage, binding) or _identity_mismatch(gap, binding):
+                omitted_gaps.append({**ref, "reason": "gap_source_identity_mismatch"})
+                continue
             group = gap_groups.setdefault(digest, {"gap": gap, "refs": []})
             group["refs"].append(ref)
     for digest in sorted(gap_groups):
@@ -188,6 +201,7 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
         "commercial_values_generated": False,
         "confirmed_defects_inferred_from_candidates_or_gaps": False,
         "omitted_finding_refs": sorted(omitted, key=lambda row: (row.get("finding_id", ""), row["record_sha256"])),
+        "omitted_gap_refs": sorted(omitted_gaps, key=lambda row: (row["stage_id"], row["evidence_type"], row["record_sha256"])),
     }
     output["roadmap"] = deepcopy(packages)
     output["roadmap_truth"] = deepcopy(truth)
@@ -196,6 +210,21 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
     assessment["roadmap_truth"] = deepcopy(truth)
     output["assessment"] = assessment
 
+    role_names = {
+        "architecture_engineering": ("Architecture / engineering", "Arquitectura / ingeniería"),
+        "cybersecurity_specialist": ("Cybersecurity specialist", "Especialista en ciberseguridad"),
+        "platform_engineering": ("Platform engineering", "Ingeniería de plataforma"),
+        "authorized_technical_specialist": ("Authorized technical specialist", "Especialista técnico autorizado"),
+        "authorized_evidence_custodian": ("Authorized evidence custodian", "Custodio autorizado de evidencia"),
+    }
+    dependency_names = {
+        "qualified_specialist_disposition": ("Qualified specialist disposition", "Disposición de un especialista cualificado"),
+        "authorized_change_scope": ("Authorized change scope", "Alcance autorizado del cambio"),
+        "authorized_input_scope": ("Authorized input scope", "Alcance autorizado del insumo"),
+        "evidence_source_availability": ("Evidence source availability", "Disponibilidad de la fuente de evidencia"),
+        "retained_scanner_artifact_availability": ("Retained scanner artifact availability", "Disponibilidad del artefacto conservado del analizador"),
+        "qualified_specialist_review": ("Qualified specialist review", "Revisión de un especialista cualificado"),
+    }
     details: list[str] = []
     for item in packages:
         label = item.get("finding_id") or item.get("evidence_type") or "review_candidate_summary"
@@ -209,7 +238,7 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
         details.append(prefix + " | " + item["verification"])
         if item.get("retained_verification"):
             details.append(prefix + " | " + _display(item["retained_verification"], "verification", spanish))
-        details.append(prefix + " | " + _copy("Suggested role type", "Tipo de función sugerida", spanish) + ": " + item["suggested_role_type"] + " | " + _copy("Dependencies", "Dependencias", spanish) + ": " + ", ".join(dep["gate"] for dep in item["dependencies"]))
+        details.append(prefix + " | " + _copy("Suggested role type", "Tipo de función sugerida", spanish) + ": " + _copy(*role_names[item["suggested_role_type"]], spanish) + " | " + _copy("Dependencies", "Dependencias", spanish) + ": " + ", ".join(_copy(*dependency_names[dep["gate"]], spanish) for dep in item["dependencies"]))
     boundary = _copy("Work packages are provisional and bound to retained findings or evidence gaps. The 0-30/31-90/91-180 windows are illustrative; no owner, capacity, cost, date, approval, or delivery commitment is created.", "Los paquetes de trabajo son provisionales y están vinculados a hallazgos conservados o brechas de evidencia. Las ventanas 0-30/31-90/91-180 son ilustrativas; no se crea compromiso de responsable, capacidad, costo, fecha, aprobación ni entrega.", spanish)
     no_work = _copy("No retained finding or explicit evidence gap supports a work package; an empty planning window does not establish a clean assessment.", "Ningún hallazgo conservado ni brecha de evidencia explícita sustenta un paquete de trabajo; una ventana de planificación vacía no establece una evaluación sin hallazgos.", spanish)
     roles = sorted({item["suggested_role_type"] for item in packages})
@@ -219,7 +248,7 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
         if stage.get("stage_id") == "six_month_roadmap":
             stage.update({"summary": boundary, "evidence": details or [no_work], "roadmap": deepcopy(packages), "roadmap_truth": deepcopy(truth)})
         elif stage.get("stage_id") == "staffing_sequencing_and_cost":
-            stage.update({"summary": boundary, "evidence": [_copy("Suggested role types", "Tipos de función sugeridos", spanish) + ": " + ", ".join(roles)] if roles else [no_work], "suggested_role_types": roles, "source_package_ids": [item["package_id"] for item in packages]})
+            stage.update({"summary": boundary, "evidence": [_copy("Suggested role types", "Tipos de función sugeridos", spanish) + ": " + ", ".join(_copy(*role_names[role], spanish) for role in roles)] if roles else [no_work], "suggested_role_types": roles, "source_package_ids": [item["package_id"] for item in packages]})
     return output
 
 

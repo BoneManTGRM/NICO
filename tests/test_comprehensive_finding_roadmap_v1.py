@@ -202,3 +202,13 @@ def test_actual_canonical_builder_binds_retained_gap_records():
     assert package["source_refs"] == [{"surface": "prior_stage_results", "stage_id": "functional_qa", "field": "missing_evidence", "evidence_type": "runtime_functional_qa", "record_sha256": _hash(gap)}]
     assert package["retained_required_input"] == gap["evidence_to_resolve"]
     assert result["canonical_truth_sha256"] == source._canonical_hash(result["canonical_report"])
+
+
+@pytest.mark.parametrize("wrong_layer", ["stage", "gap"])
+def test_wrong_run_gap_or_parent_cannot_acquire_current_report_binding(wrong_layer):
+    gap = {"evidence_type": "runtime_functional_qa", "state": "not_supplied", "evidence_to_resolve": "Retain runtime observations."}
+    stage = {"status": "complete", "missing_evidence": [gap]}
+    (stage if wrong_layer == "stage" else gap)["run_id"] = "unrelated-run"
+    result = bind_final_finding_roadmap(_canonical(), raw_stages={"functional_qa": stage})
+    assert not any(row["kind"] == "evidence_gap_resolution" for row in result["roadmap"])
+    assert result["roadmap_truth"]["omitted_gap_refs"][0]["reason"] == "gap_source_identity_mismatch"
