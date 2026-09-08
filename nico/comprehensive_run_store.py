@@ -859,6 +859,49 @@ class ComprehensiveRunStore:
             raise ValueError("browser_projection_durability_contract_missing")
         return deepcopy(projection)
 
+    def refresh_browser_projection(
+        self,
+        run_id: str,
+        expected_projection: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        """Refresh derived transport only, without changing the canonical run.
+
+        The caller first validates the saved projection. Compare-and-swap its
+        digest and exact run revision so a concurrent review cannot be overwritten
+        by an older response. Re-read through the normal integrity boundary even
+        when another writer wins; corrupted projections still fail closed.
+        """
+
+        record = self.load(run_id)
+        projection = self._build_browser_projection(record)
+        if projection is None:
+            return None
+        p = self.placeholder
+        with self._connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"""
+                UPDATE nico_comprehensive_browser_projections
+                SET projection = {p}, projection_sha256 = {p}
+                WHERE run_id = {p} AND projection_sha256 = {p}
+                  AND revision = {p} AND run_integrity_sha256 = {p}
+                  AND EXISTS (
+                    SELECT 1 FROM nico_comprehensive_runs AS runs
+                    WHERE runs.run_id = {p} AND runs.revision = {p}
+                      AND runs.integrity_sha256 = {p}
+                  )
+                """,
+                (
+                    _browser_projection_json(projection),
+                    _browser_projection_sha256(projection),
+                    run_id, _browser_projection_sha256(expected_projection),
+                    int(record["revision"]), str(record["integrity_sha256"]),
+                    run_id, int(record["revision"]), str(record["integrity_sha256"]),
+                ),
+            )
+            connection.commit()
+        return self.load_browser_projection(run_id)
+
     def save(
         self,
         record: dict[str, Any],

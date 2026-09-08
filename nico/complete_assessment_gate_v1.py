@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from collections.abc import Mapping
 from typing import Any
 
 REQUIRED_TOOLS = ("pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog")
+SCANNER_SUMMARY_POLICY = "node-input-inventory-v1"
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _COMPLETE = {"completed", "complete", "completed_clean", "completed_with_findings"}
@@ -64,6 +66,17 @@ def complete_assessment_evidence(canonical: Mapping[str, Any], *, expected_commi
                 inventory = record.get("applicability_evidence") or {}
                 if not isinstance(inventory, Mapping) or inventory.get("schema") != "nico.osv-package-inventory.v1" or inventory.get("inventory_complete") is not True or inventory.get("no_declared_package_sources") is not True or inventory.get("package_source_paths") != [] or not _DIGEST.fullmatch(str(inventory.get("inventory_sha256") or "")):
                     failures.append(name + ":no_package_inventory_unverified")
+            if name in {"npm-audit", "typescript"}:
+                from nico.node_scanner_applicability_v1 import justified_inapplicability, observation_bytes
+                inventory = record.get("applicability_evidence") or {}
+                if not justified_inapplicability(inventory, name, expected_commit):
+                    failures.append(name + ":node_input_inventory_unverified")
+                else:
+                    expected_raw = hashlib.sha256(observation_bytes(inventory, name)).hexdigest()
+                    raw = record.get("raw_artifact") or {}
+                    digest = record.get("raw_artifact_sha256") or (raw.get("sha256") if isinstance(raw, Mapping) else "")
+                    if record.get("raw_artifact_retention_complete") is not True or digest != expected_raw:
+                        failures.append(name + ":node_input_inventory_bytes_unverified")
             not_applicable.append(name)
             continue
         if record.get("applicable") is False:
@@ -140,6 +153,7 @@ def scanner_execution_summary(canonical: Mapping[str, Any], *, expected_commit: 
     applicable_count = len(REQUIRED_TOOLS) - len(not_applicable)
     return {
         'schema': 'nico.scanner-execution-ui-summary.v1',
+        'evaluation_policy': SCANNER_SUMMARY_POLICY,
         'run_id': expected_run, 'commit_sha': expected_commit,
         'status': 'complete' if gate['passed'] else 'partial' if identity_valid else 'unknown',
         'completed_count': len(completed), 'applicable_count': applicable_count,

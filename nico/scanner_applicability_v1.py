@@ -253,9 +253,16 @@ def _normalize_record(
         state in {_NOT_APPLICABLE, "not_required", "inapplicable"}
         or record.get("applicable") is False
     )
+    # A complete, source-bound input inventory outranks generic ESLint targets.
+    # Keep historical records without that evidence under the existing policy.
+    from nico.node_scanner_applicability_v1 import justified_inapplicability
+    inventory_not_applicable = justified_inapplicability(
+        record.get("applicability_evidence"), scanner,
+        str(record.get("commit_sha") or record.get("target_commit_sha") or ""),
+    )
     node_contradiction = scanner in {"npm-audit", "eslint", "typescript"} and (
         signals.get("node_manifest") or signals.get("node_source")
-    )
+    ) and not inventory_not_applicable
     if already_not_applicable and node_contradiction:
         # Correct only this presentation classification; retain its prior claim
         # and do not grant execution, verification, or score credit.

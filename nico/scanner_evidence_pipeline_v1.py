@@ -887,12 +887,36 @@ def run_canonical_scanner_tools(
     if not workspace.repo_dir.is_dir():
         raise ValueError("workspace repo directory must exist before scanner tools run")
     selected = tuple(specs)
+    from nico.node_scanner_applicability_v1 import (
+        REASONS, inspect_node_inputs, justified_inapplicability, observation_bytes,
+    )
+    # Observe source before npm preparation can introduce dependency inputs.
+    target_commit = _git_text(workspace, "rev-parse", "HEAD").lower()
+    node_inventory = inspect_node_inputs(workspace.repo_dir, target_commit) if any(
+        spec.name in REASONS for spec in selected
+    ) else {}
     needs_node = any(spec.name in {"eslint", "typescript"} for spec in selected)
     preparation = prepare_project_commands(workspace, runner=runner) if needs_node else None
     tool_results: list[dict[str, Any]] = []
     raw_blobs: dict[str, Any] = {}
     for spec in selected:
-        if spec.name in REQUIRED_EVIDENCE_TOOLS:
+        if justified_inapplicability(node_inventory, spec.name, target_commit):
+            raw = workspace.root / "scanner-raw" / f"{spec.name}-applicability.json"
+            raw.parent.mkdir(parents=True, exist_ok=True)
+            raw.write_bytes(observation_bytes(node_inventory, spec.name))
+            blob = _raw_blob(spec.name, raw, "json")
+            payload = _unavailable(spec, REASONS[spec.name], source="complete_node_input_inventory")
+            payload.update({
+                "status": "not_applicable", "applicable": False, "evidence_required": False,
+                "completed": False, "verified": False, "verified_for_this_report": False,
+                "execution_observed_for_this_report": False,
+                "applicability_reason": REASONS[spec.name], "applicability_evidence": node_inventory,
+                "failure_or_unavailable_reason": "", "no_vulnerabilities_claimed": False,
+                "raw_artifact_capture_complete": True, "raw_artifact_sha256": blob["sha256"],
+                "raw_artifact_format": "json", "raw_artifact_bytes": blob["retained_bytes"],
+                "_raw_artifact_blob": blob,
+            })
+        elif spec.name in REQUIRED_EVIDENCE_TOOLS:
             payload = _run_problem_tool(spec, workspace, runner, preparation)
         elif fallback_runner is not None:
             payload = fallback_runner(spec, workspace, runner=runner)
