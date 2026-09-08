@@ -33,6 +33,7 @@ def scanner_result(tool):
 
 
 def no_packages():
+    from tests.test_scanner_completion_gate import observed_no_packages
     record = scanner_result("osv-scanner")
     record.update({
         "status": "not_applicable", "applicable": False,
@@ -41,11 +42,7 @@ def no_packages():
         "returncode": 128, "returncode_valid": False,
         "reason": REASON, "applicability_reason": REASON,
         "native_json_output": False, "no_vulnerabilities_claimed": False,
-        "applicability_evidence": {
-            "schema": "nico.osv-package-inventory.v1", "inventory_complete": True,
-            "no_declared_package_sources": True, "package_source_paths": [],
-            "inventory_sha256": "e" * 64,
-        },
+        "applicability_evidence": observed_no_packages(SHA),
     })
     return record
 
@@ -169,13 +166,14 @@ for record in raw:
 report = f['reconcile_authoritative_scanner_truth'](f['canonical'](f['compact'](raw)))
 proof = f['complete_assessment_evidence'](report, expected_commit=f['SHA'], expected_run=f['RUN'])
 assert proof['passed'] is False
-assert set(proof['failures']) == {'npm-audit:node_input_inventory_unverified', 'typescript:node_input_inventory_unverified'}
+assert {'npm-audit:node_input_inventory_unverified', 'typescript:node_input_inventory_unverified'} <= set(proof['failures'])
+assert any(failure.startswith('pip-audit:') for failure in proof['failures'])
 
 # The historical reason-only input above remains incomplete. Only adding actual
 # retained inventory evidence may justify these two technology exclusions.
 import hashlib, tempfile
 from pathlib import Path
-from nico.node_scanner_applicability_v1 import inspect_node_inputs, observation_bytes, REASONS
+from nico.node_scanner_applicability_v1 import inspect_node_inputs, observation_bytes, SOURCE_REASONS as REASONS
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     (root / 'README.md').write_text('Explicit test checkout without Node inputs.')

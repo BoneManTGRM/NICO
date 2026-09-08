@@ -170,7 +170,7 @@ def test_node_repository_does_not_hide_missing_applicable_analyzers() -> None:
     assert all(item["applicable"] is True for item in result["scanner_execution_records"])
 
 
-def test_node_only_repository_marks_pip_audit_not_applicable() -> None:
+def test_sampled_node_paths_do_not_prove_python_inapplicability() -> None:
     canonical = {
         "identity": {"commit_sha": SHA},
         "repository_evidence": {
@@ -185,12 +185,12 @@ def test_node_only_repository_marks_pip_audit_not_applicable() -> None:
 
     result = normalize_scanner_applicability_canonical(canonical)
 
-    assert result["scanner_execution_records"] == []
-    assert result["not_applicable_scanner_records"][0]["scanner_name"] == "pip-audit"
-    assert result["assessment"]["scanner_applicability_summary"]["incomplete_applicable_scanners"] == 0
+    assert result['scanner_execution_records'][0]['state'] == 'unavailable'
+    assert result['not_applicable_scanner_records'] == []
+    assert result['assessment']['scanner_applicability_summary']['incomplete_applicable_scanners'] == 1
 
 
-def test_node_only_repository_accepts_exact_pipeline_pip_audit_wording() -> None:
+def test_node_only_repository_requires_complete_retained_python_inventory(tmp_path) -> None:
     canonical = {
         "identity": {"commit_sha": SHA},
         "repository_evidence": {
@@ -203,6 +203,14 @@ def test_node_only_repository_accepts_exact_pipeline_pip_audit_wording() -> None
         "assessment": {},
     }
 
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs, observation_bytes, SOURCE_REASONS
+    import hashlib
+    (tmp_path / 'package.json').write_text('{}')
+    observation = inspect_node_inputs(tmp_path, SHA)
+    canonical['scanner_execution_records'][0].update(
+        applicability_evidence=observation, applicability_reason=SOURCE_REASONS['pip-audit'],
+        raw_artifact_retention_complete=True,
+        raw_artifact_sha256=hashlib.sha256(observation_bytes(observation, 'pip-audit')).hexdigest())
     result = normalize_scanner_applicability_canonical(canonical)
 
     assert result["scanner_execution_records"] == []

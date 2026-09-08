@@ -204,7 +204,7 @@ def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator()
     )
 
 
-def test_node_only_run_rebuilds_phase14_without_inapplicable_or_contract_blockers() -> None:
+def test_node_only_run_requires_observed_inventory_before_removing_applicable_blockers(tmp_path) -> None:
     records = [_record(name) for name in TOOLS]
     bandit_record = next(item for item in records if item["scanner_name"] == "bandit")
     bandit_record["status"] = "completed_with_findings"
@@ -291,6 +291,16 @@ def test_node_only_run_rebuilds_phase14_without_inapplicable_or_contract_blocker
         },
     }
 
+    unverified = reconcile_authoritative_scanner_truth(canonical)
+    unverified_pip = next(item for item in unverified['evidence_health_summary']['phase14_analyzer_evidence']['analyzers'] if item['scanner'] == 'pip-audit')
+    assert unverified_pip['status'] != 'not_applicable'
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs, observation_bytes, SOURCE_REASONS
+    (tmp_path / 'package.json').write_text('{}')
+    inventory = inspect_node_inputs(tmp_path, 'a' * 40)
+    pip_record.update(commit_sha='a' * 40, applicability_evidence=inventory,
+                      applicability_reason=SOURCE_REASONS['pip-audit'],
+                      raw_artifact_retention_complete=True,
+                      raw_artifact_sha256=hashlib.sha256(observation_bytes(inventory, 'pip-audit')).hexdigest())
     result = reconcile_authoritative_scanner_truth(canonical)
     phase14 = result["evidence_health_summary"]["phase14_analyzer_evidence"]
     pip_summary = next(

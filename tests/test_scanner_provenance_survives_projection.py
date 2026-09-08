@@ -16,6 +16,7 @@ NO_SOURCES = ('No declared package source exists in the completely inspected sna
               'Undeclared dependencies were not assessed.')
 
 def source_records():
+    from tests.test_scanner_completion_gate import observed_no_packages
     records = []
     for tool in REQUIRED_TOOLS:
         record = {
@@ -35,11 +36,8 @@ def source_records():
                 completed=False, verified=False, verified_complete=False,
                 verified_for_this_report=False, returncode=128, returncode_valid=False,
                 applicability_reason=NO_SOURCES, reason=NO_SOURCES,
-                applicability_evidence={
-                    'schema': 'nico.osv-package-inventory.v1', 'inventory_complete': True,
-                    'no_declared_package_sources': True, 'package_source_paths': [],
-                    'inventory_sha256': 'c' * 64,
-                }, native_json_output=False, no_vulnerabilities_claimed=False)
+                applicability_evidence=observed_no_packages(SHA),
+                native_json_output=False, no_vulnerabilities_claimed=False)
         records.append(record)
     return records
 

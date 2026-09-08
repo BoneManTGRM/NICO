@@ -1381,6 +1381,8 @@ def register_comprehensive_api_routes(
                     run_id=run_id,
                     response=response,
                 )
+            from nico.comprehensive_scanner_inventory_v1 import verify_status_scanner_evidence
+            response = await run_in_threadpool(verify_status_scanner_evidence, response)
             return _with_runtime_truth(request, response)
         except HTTPException:
             raise
@@ -1448,6 +1450,8 @@ def register_comprehensive_api_routes(
                     browser_projection,
                     "continued",
                 )
+            from nico.comprehensive_scanner_inventory_v1 import verify_status_scanner_evidence
+            response = await run_in_threadpool(verify_status_scanner_evidence, response)
             return _with_runtime_truth(request, response)
         except HTTPException:
             raise

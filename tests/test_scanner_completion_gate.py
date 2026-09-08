@@ -6,6 +6,15 @@ SHA = 'a' * 40
 RUN = 'comprun_scanner_gate_test'
 
 
+def observed_no_packages(commit=SHA):
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from nico.scanner_package_inventory_v1 import inspect_package_sources
+    with TemporaryDirectory() as directory:
+        (Path(directory) / 'standalone.js').write_text('console.log(1)')
+        return inspect_package_sources(Path(directory), commit)
+
+
 def good():
     return {'identity': {'commit_sha': SHA, 'run_id': RUN}, 'requested_scanner_records': [
         {'scanner_name': name, 'commit_sha': SHA, 'run_id': RUN, 'state': 'completed',
@@ -56,9 +65,7 @@ def test_observed_no_package_sources_is_not_completed():
     data = good(); rec = next(r for r in data['requested_scanner_records'] if r['scanner_name'] == 'osv-scanner')
     rec.update(state='not_applicable', applicable=False, completed=False, verified=False,
                applicability_reason='No declared package sources at the inspected revision.',
-               applicability_evidence={'schema': 'nico.osv-package-inventory.v1',
-                  'inventory_complete': True, 'no_declared_package_sources': True,
-                  'package_source_paths': [], 'inventory_sha256': 'c'*64})
+               applicability_evidence=observed_no_packages())
     result = check(data)
     assert result['passed'] and len(result['completed_tools']) == 8
     assert result['not_applicable_tools'] == ['osv-scanner']

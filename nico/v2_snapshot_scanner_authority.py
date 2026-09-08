@@ -215,7 +215,7 @@ def canonical_snapshot_tool_runner(
     commit_sha = _commit_sha(workspace)
     from nico.node_scanner_applicability_v1 import inspect_node_inputs
     inventory = workspace.node_input_inventory
-    if inventory is None and spec.name in {"npm-audit", "typescript"}:
+    if inventory is None and spec.name in {"npm-audit", "typescript", "pip-audit"}:
         inventory = inspect_node_inputs(workspace.repo_dir, commit_sha)
     payload = scanner_pipeline.node_inapplicability_result(spec, workspace, inventory or {}, commit_sha)
     prepared = preparation
@@ -236,6 +236,7 @@ def canonical_snapshot_tool_runner(
         raise TypeError(f"canonical scanner payload must be an object: {spec.name}")
     raw_blob = payload.get("_raw_artifact_blob")
     payload = reconcile_scanner_payload(spec.name, payload, raw_blob, workspace)
+    payload = scanner_pipeline.verify_source_checkout(payload, workspace, commit_sha)
     blob = payload.pop("_raw_artifact_blob", None)
     if isinstance(blob, dict):
         try:

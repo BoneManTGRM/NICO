@@ -125,27 +125,31 @@ def test_report_credentials_are_rejected_before_untrusted_request(monkeypatch, c
 
 
 def test_fresh_canonical_read_is_authenticated_and_digest_validated(monkeypatch, consumer):
-    canonical = {"identity": {"run_id": "comprun_test", "commit_sha": "b" * 40}}
+    from tests.test_release_acceptance_scanner_retention import evidence
+    canonical, status = evidence()
     from scripts.comprehensive_production_run_handoff_v1 import canonical_json_sha256
     digest = canonical_json_sha256(canonical)
-    response = io.BytesIO(json.dumps(canonical).encode())
-    response.status = 200
-    response.headers = {"x-nico-canonical-truth-sha256": digest}
     calls = []
 
     def open_request(req, **kw):
         calls.append((req, kw))
+        response = io.BytesIO(json.dumps(canonical if req.full_url.endswith('/report/json') else status).encode())
+        response.status = 200
+        response.headers = {"x-nico-canonical-truth-sha256": digest}
         return response
 
     handlers = []
     monkeypatch.setattr(consumer, "build_opener", lambda *items: (handlers.extend(items) or SimpleNamespace(open=open_request)))
     open_report = consumer.authenticated_report_opener("https://app.nicoaudit.com", "test-proof-session")
     parsed, observed = consumer.proof._read_final_canonical(
-        "https://app.nicoaudit.com", "comprun_test", open_request=open_report,
+        "https://app.nicoaudit.com", canonical['identity']['run_id'], open_request=open_report,
     )
     assert parsed == canonical
     assert observed == digest
     assert calls[0][0].get_header(SESSION_HEADER.capitalize()) == "test-proof-session"
+    assert len(calls) == 2
+    assert calls[1][0].get_header(SESSION_HEADER.capitalize()) == 'test-proof-session'
+    assert calls[1][0].full_url.endswith('/' + canonical['identity']['run_id'])
     assert calls[0][1]["timeout"] >= 300
     assert any(isinstance(item, consumer._RejectRedirects) for item in handlers)
     assert handlers[0].redirect_request(None, None, 302, "found", {}, "https://attacker.invalid") is None

@@ -130,6 +130,6 @@ def test_observations_are_logged_without_replacing_acceptance_gates():
     assert 'print("NICO_INDEPENDENT_OBSERVER "' in helper
     assert 'print("NICO_INDEPENDENT_SCANNER_GATE "' in helper
     assert "faulthandler.dump_traceback(file=sys.stderr" in helper
-    assert "require_complete_assessment(" in wrapper
+    assert "require_retained_assessment(" in wrapper
     assert "observer.watch_browser_wait(True)" in wrapper
     assert "proof.base.recovery._wait_for_terminal = previous_wait" in wrapper

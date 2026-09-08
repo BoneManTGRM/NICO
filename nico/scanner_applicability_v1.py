@@ -260,6 +260,20 @@ def _normalize_record(
         record.get("applicability_evidence"), scanner,
         str(record.get("commit_sha") or record.get("target_commit_sha") or ""),
     )
+    if scanner == "pip-audit" and not inventory_not_applicable:
+        # Missing preparation inputs and reason text cannot establish absence.
+        # Keep the original record intact; this is a derived presentation only.
+        if already_not_applicable:
+            record["prior_applicability_reason"] = reason
+            record.update(state="unavailable", status="unavailable", completed=False,
+                          verified=False, verified_complete=False, verified_for_this_report=False,
+                          applicable=True, evidence_required=True, applicability_reason="",
+                          failure_reason="Python applicability is unverified: complete source inventory and retained observation evidence are required.",
+                          failure_or_unavailable_reason="Python applicability is unverified: complete source inventory and retained observation evidence are required.")
+        else:
+            record.setdefault("applicable", True)
+            record.setdefault("evidence_required", True)
+        return record
     node_contradiction = scanner in {"npm-audit", "eslint", "typescript"} and (
         signals.get("node_manifest") or signals.get("node_source")
     ) and not inventory_not_applicable
@@ -277,7 +291,7 @@ def _normalize_record(
         })
         return record
     inferred, inferred_reason = _explicitly_not_applicable(scanner, reason, signals)
-    if already_not_applicable or (
+    if already_not_applicable or inventory_not_applicable or (
         state
         in {
             "unavailable",

@@ -1360,6 +1360,8 @@ class ComprehensiveApiController:
                     report.get("json") or {}, expected_commit=identity["commit_sha"],
                     expected_run=identity["run_id"],
                 )
+                from nico.comprehensive_scanner_inventory_v1 import scanner_evidence_binding
+                response["scanner_evidence_binding"] = scanner_evidence_binding(canonical_record, report.get("json") or {})
                 response["reports"] = (
                     _project_report_manifest(report)
                     if browser_projection

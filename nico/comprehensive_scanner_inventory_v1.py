@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping
+from copy import deepcopy
 from datetime import UTC, datetime
 import hashlib
+import json
 import re
 from typing import Any
 
@@ -58,10 +60,33 @@ def _error(status: int, code: str) -> JSONResponse:
 
 def _raw_metadata(record: Mapping[str, Any], *, binding: Mapping[str, Any]) -> dict[str, Any]:
     from nico.scanner_raw_artifact_storage_v1 import read_scanner_artifact
-    return read_scanner_artifact(
+    read = read_scanner_artifact(
         record, binding=binding, raw_root=DEFAULT_RAW_ROOT,
         limit=MAX_SCANNER_PARSE_BYTES,
-    ).metadata
+    )
+    metadata = dict(read.metadata)
+    if record.get('status') == 'not_applicable':
+        verified = False
+        inventory = _mapping(record.get('applicability_evidence'))
+        name = _scanner_name(record)
+        if metadata.get('availability') == 'verified' and read.raw:
+            try:
+                observation = json.loads(read.raw)
+                if name == 'osv-scanner':
+                    from nico.scanner_package_inventory_v1 import justified_no_packages
+                    verified = (observation.get('schema') == 'nico.osv-applicability-observation.v1'
+                                and observation.get('inventory') == inventory
+                                and justified_no_packages(inventory, binding['commit_sha'])
+                                and observation.get('native_exit_code') == 128
+                                and 'no package sources found' in str(observation.get('native_stderr') or '').casefold()
+                                and observation.get('native_json_output') is False)
+                else:
+                    from nico.node_scanner_applicability_v1 import justified_inapplicability, observation_bytes
+                    verified = justified_inapplicability(inventory, name, binding['commit_sha']) and read.raw == observation_bytes(inventory, name)
+            except (ValueError, TypeError, AttributeError):
+                verified = False
+        metadata['applicability_observation_verified'] = verified
+    return metadata
 
 
 def _scanner_name(record: Mapping[str, Any]) -> str | None:
@@ -89,6 +114,7 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
         "execution_status": state if state in _STATES else "unknown",
         "exit_code": record.get("exit_code", record.get("returncode")) if type(record.get("exit_code", record.get("returncode"))) is int else None,
         "source_identity_verified": source_matches,
+        "source_checkout_verified": record.get('source_checkout_verified') if type(record.get('source_checkout_verified')) is bool else None,
         "commit_sha": commit if source_matches else None,
         "scanner_version": version.group(1) if version else None,
         "version_evidence": "parsed_from_retained_version_line" if version else "unavailable",
@@ -107,6 +133,9 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
         "timed_out": record.get("timed_out") if type(record.get("timed_out")) is bool else None,
         "applicable": record.get("applicable") if type(record.get("applicable")) is bool else None,
         "applicability_evidence_retained": bool(record.get("applicability_evidence")),
+        "applicability_inventory_sha256": _digest(_mapping(record.get('applicability_evidence')).get('inventory_sha256')),
+        "applicability_observation_verified": raw.get('applicability_observation_verified') is True,
+        "returncode_valid": record.get('returncode_valid') if type(record.get('returncode_valid')) is bool else None,
         "scanner_error_count": _number(record.get("scanner_error_count")),
         "coverage_status": "not_evaluated_by_inventory",
         "execution_provenance": provenance_summary(record),
@@ -114,13 +143,13 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
     }
 
 
-def _inventory(request: Request, run_id: str) -> JSONResponse:
-    controller = getattr(request.app.state, "comprehensive_api_controller", None)
-    service = getattr(controller, "_service", None)
-    if not callable(getattr(service, "load_read_only", None)):
-        return _error(503, "scanner_evidence_service_unavailable")
+def inventory_for_record(record: Mapping[str, Any], *, run_id: str) -> JSONResponse:
+    """Verify stored run-selected scanner bytes without granting route authority.
+
+    Callers must supply an integrity-validated run record or its integrity-bound
+    status projection. No caller-supplied scanner ID or storage path is accepted.
+    """
     try:
-        record = service.load_read_only(run_id)
         identity = _mapping(record.get("identity"))
         commit = identity.get("commit_sha")
         if identity.get("run_id") != run_id or not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
@@ -184,6 +213,112 @@ def _inventory(request: Request, run_id: str) -> JSONResponse:
         # This boundary intentionally conceals exception strings: storage and
         # scanner exceptions may embed private paths, findings or credentials.
         return _error(503, "scanner_evidence_inventory_unavailable")
+
+
+def _inventory(request: Request, run_id: str) -> JSONResponse:
+    controller = getattr(request.app.state, "comprehensive_api_controller", None)
+    service = getattr(controller, "_service", None)
+    if not callable(getattr(service, "load_read_only", None)):
+        return _error(503, "scanner_evidence_service_unavailable")
+    try:
+        record = service.load_read_only(run_id)
+    except ComprehensiveRunNotFound:
+        return _error(404, "scanner_evidence_unavailable")
+    except Exception:
+        return _error(503, "scanner_evidence_inventory_unavailable")
+    return inventory_for_record(record, run_id=run_id)
+
+
+def scanner_evidence_binding(record: Mapping[str, Any], canonical: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain only the identity and expected artifact hashes in the small projection."""
+    from nico.complete_assessment_gate_v1 import REQUIRED_TOOLS
+
+    identity = _mapping(record.get("identity"))
+    stages = _mapping(record.get("stage_results"))
+    selected = {}
+    for name in ("dependency_security_static_analysis", "deep_scanner_triage"):
+        stage = _mapping(stages.get(name))
+        selected[name] = {key: {"scan_id": _mapping(stage.get(key)).get('scan_id')}
+                          for key in ('scanner', 'scanner_triage') if _mapping(stage.get(key)).get('scan_id')}
+        if stage.get('scan_id'):
+            selected[name]['scan_id'] = stage['scan_id']
+    records = canonical.get("requested_scanner_records") or _mapping(canonical.get("assessment")).get("requested_scanner_records") or []
+    hashes = {}
+    for item in records:
+        if isinstance(item, Mapping) and item.get("scanner_name") in REQUIRED_TOOLS:
+            hashes[item["scanner_name"]] = _digest(item.get("raw_artifact_sha256") or _mapping(item.get("raw_artifact")).get("sha256"))
+    return {"identity": {key: identity.get(key) for key in ("run_id", "customer_id", "project_id", "repository", "commit_sha")},
+            "revision": record.get("revision"), "stage_results": selected,
+            "scanner_artifact_sha256s": hashes}
+
+
+def verify_status_scanner_evidence(response: Mapping[str, Any]) -> dict[str, Any]:
+    """Recheck retained bytes after either cached or freshly assembled status reads.
+
+    The response remains a readable technical draft when evidence is unavailable.
+    Only derived execution credit changes; historical reports and approvals do not.
+    """
+    import json
+    from nico.complete_assessment_gate_v1 import REQUIRED_TOOLS
+
+    result = deepcopy(dict(response))
+    if result.get("terminal") is not True or not isinstance(result.get("scanner_execution_summary"), Mapping):
+        return result
+    binding = _mapping(result.get("scanner_evidence_binding"))
+    identity = _mapping(binding.get("identity"))
+    expected = _mapping(binding.get("scanner_artifact_sha256s"))
+    failures = []
+    if not binding or any(not identity.get(key) or identity[key] != result.get(key) for key in ("run_id", "customer_id", "project_id", "repository", "commit_sha")) or binding.get("revision") != result.get("revision"):
+        inventory = {}
+        failures.append("scanner_status_binding_unverified")
+    else:
+        inspected = inventory_for_record(binding, run_id=identity["run_id"])
+        inventory = json.loads(inspected.body)
+        if inspected.status_code != 200:
+            failures.append("scanner_retention_authority_unavailable")
+    records = inventory.get("scanner_records") or []
+    valid = set()
+    for item in records:
+        name = item.get("scanner_name")
+        raw = _mapping(item.get("raw_artifact"))
+        state_valid = (
+            item.get('execution_status') == 'not_applicable' and item.get('applicable') is False
+            and item.get('applicability_observation_verified') is True
+        ) or (
+            item.get('execution_status') in {'complete', 'completed', 'completed_clean', 'completed_with_findings'}
+            and item.get('execution_observed') is True and item.get('output_capture_complete') is True
+            and item.get('output_truncated') is not True and item.get('timed_out') is not True
+            and item.get('returncode_valid') is not False and item.get('applicable') is not False
+            and item.get('source_checkout_verified') is not False
+        )
+        if state_valid and item.get("source_identity_verified") is True and raw.get("availability") == "verified" and expected.get(name) and expected[name] == raw.get("sha256"):
+            valid.add(name)
+        else:
+            failures.append(str(name) + ":retained_bytes_unverified")
+    if any(inventory.get(key) for key in ("duplicate_scanner_record_count", "unknown_scanner_record_count", "unknown_requested_scanner_count")):
+        valid.clear()
+        failures.append("scanner_population_invalid")
+    summary = dict(result["scanner_execution_summary"])
+    states = {item['scanner_name']: item.get('execution_status') for item in records}
+    completed = [name for name in summary.get("completed_tools", []) if name in valid and states.get(name) != 'not_applicable']
+    not_applicable = [name for name in summary.get("not_applicable_tools", []) if name in valid and states.get(name) == 'not_applicable']
+    incomplete = [name for name in REQUIRED_TOOLS if name not in completed and name not in not_applicable]
+    applicable_count = len(REQUIRED_TOOLS) - len(not_applicable)
+    summary.update(completed_count=len(completed), completed_tools=completed,
+                   not_applicable_tools=not_applicable, incomplete_tools=incomplete,
+                   applicable_count=applicable_count,
+                   percent=round(100 * len(completed) / applicable_count) if applicable_count else None,
+                   status="partial" if incomplete or failures else "complete",
+                   verification_scope="current_source_run_bound_retained_bytes")
+    result["scanner_execution_summary"] = summary
+    result["scanner_evidence_verification"] = {
+        "schema": "nico.scanner-retention-verification.v1", "read_only": True,
+        "run_id": result.get("run_id"), "commit_sha": result.get("commit_sha"),
+        "run_revision": result.get("revision"), "scan_id": inventory.get("scan_id"),
+        "scanner_records": records, "failures": sorted(set(failures)),
+        "verified_tools": sorted(valid), "assessment_mutated": False,
+    }
+    return result
 
 
 def install_comprehensive_scanner_inventory(app: FastAPI) -> dict[str, Any]:

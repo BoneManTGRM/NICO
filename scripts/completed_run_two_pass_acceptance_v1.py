@@ -40,6 +40,7 @@ def _read_final_canonical(
     run_id: str,
     *,
     open_request: Any = None,
+    retention_output: Path | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Read final immutable truth without Playwright's shorter socket idle limit."""
 
@@ -64,6 +65,23 @@ def _read_final_canonical(
         canonical,
         canonical_digest_header,
     )
+    status_request = urllib.request.Request(
+        f"{frontend_url.rstrip('/')}/api/nico/assessment/comprehensive-run/{run_id}",
+        headers={"Accept": "application/json", "Cache-Control": "no-store", "X-NICO-Browser-Projection": "terminal-manifest-v1"}, method="GET",
+    )
+    with open_request(status_request, timeout=FINAL_CANONICAL_READ_TIMEOUT_SECONDS) as response:
+        if response.status != 200:
+            raise RuntimeError("Complete-assessment evidence blocked: scanner retention status unavailable")
+        status = json.loads(response.read().decode("utf-8"))
+    from nico.complete_assessment_gate_v1 import require_retained_assessment, ScannerEvidenceBlocked
+    try:
+        retention = require_retained_assessment(canonical, status, expected_commit=str((canonical.get('identity') or {}).get('commit_sha') or ''), expected_run=run_id)
+    except ScannerEvidenceBlocked as exc:
+        if retention_output is not None:
+            _write(retention_output, exc.evidence)
+        raise
+    if retention_output is not None:
+        _write(retention_output, retention)
     return canonical, canonical_digest
 
 
@@ -634,6 +652,7 @@ def main(
         args.frontend_url,
         handoff["run_id"],
         open_request=open_request,
+        retention_output=args.artifact_dir / "scanner-retention-acceptance.json",
     )
     identity = canonical.get("identity") if isinstance(canonical, dict) else {}
     assert identity.get("run_id") == handoff["run_id"]

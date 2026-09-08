@@ -165,6 +165,50 @@ def test_inventory_is_get_only_and_rejects_caller_supplied_storage_selection(inv
     assert inventory.calls == {"run": [], "scan": []}
 
 
+@pytest.mark.parametrize('cached', [False, True])
+@pytest.mark.parametrize("change", [None, "missing", "corrupt", "wrong_run", "wrong_digest", 'failed', 'timed_out', 'missing_capture'])
+def test_existing_status_route_rechecks_bytes_before_crediting_cached_scanner(inventory, monkeypatch, change, cached):
+    """A persisted green summary cannot hide a now-invalid retained artifact."""
+    from nico import comprehensive_api_routes as routes
+    from nico.comprehensive_api_controller import ComprehensiveApiController
+
+    response = {
+        **inventory.record["identity"], "revision": 7, "terminal": True,
+        "human_review_completed": False, "client_delivery_allowed": False,
+        "scanner_execution_summary": {"status": "partial", "completed_count": 1,
+            "applicable_count": 9, "percent": 11, "completed_tools": ["semgrep"],
+            "not_applicable_tools": [], "incomplete_tools": []},
+        "scanner_evidence_binding": {
+            **deepcopy(inventory.record),
+            "scanner_artifact_sha256s": {"semgrep": inventory.scan["scanner_results"][0]["raw_artifact_sha256"]},
+        },
+    }
+    if change == "missing": inventory.blob.unlink()
+    if change == "corrupt": inventory.blob.write_bytes(b"corrupt retained scanner bytes")
+    if change == "wrong_run": inventory.scan["run_id"] = "comprun_other_owner"
+    if change == "wrong_digest": response["scanner_evidence_binding"]["scanner_artifact_sha256s"]["semgrep"] = "0" * 64
+    if change == 'failed': inventory.scan['scanner_results'][0]['status'] = 'failed'
+    if change == 'timed_out': inventory.scan['scanner_results'][0]['timed_out'] = True
+    if change == 'missing_capture': inventory.scan['scanner_results'][0].pop('output_capture_complete')
+    before = deepcopy(response)
+    controller = ComprehensiveApiController(SimpleNamespace())
+    routes.register_comprehensive_api_routes(inventory.client.app, controller=controller)
+    monkeypatch.setattr(routes, "_load_durable_browser_projection", lambda *args: deepcopy(response) if cached else None)
+    monkeypatch.setattr(routes, '_status_projection', lambda *args: deepcopy(response))
+    monkeypatch.setattr(routes, "_reconcile_public_intake_after_run_recovery", lambda *args, **kwargs: None)
+    got = inventory.client.get(f"/assessment/comprehensive-run/{RUN}",
+        headers={**inventory.owner, "X-NICO-Browser-Projection": "terminal-manifest-v1"})
+    assert got.status_code == 200
+    value = got.json()
+    expected = 1 if change is None else 0
+    assert value["scanner_execution_summary"]["completed_count"] == expected
+    assert "scanner_evidence_verification" in value
+    assert value["scanner_evidence_verification"]["read_only"] is True
+    assert value["client_delivery_allowed"] is False
+    assert response == before  # Neither immutable evidence nor persisted projection rewritten.
+    assert "DO-NOT-DISCLOSE" not in got.text and "storage_key" not in got.text
+
+
 def test_missing_metadata_stays_unknown_and_decompression_is_bounded(inventory, monkeypatch):
     result = inventory.scan["scanner_results"][0]
     result.pop("scanner_tool_version")
@@ -208,6 +252,16 @@ def test_ambiguous_run_scanner_reference_blocks_lookup(inventory):
     assert inventory.calls["scan"] == []
 
 
+def test_projection_preserves_ambiguous_stage_reference(inventory):
+    stages = inventory.record['stage_results']
+    stages['dependency_security_static_analysis']['scanner'] = {'scan_id': 'scan_snapshot_contradiction'}
+    stages['deep_scanner_triage'] = {'scanner': {'scan_id': inventory.scan['scan_id']}}
+    binding = inventory.module.scanner_evidence_binding(inventory.record, {})
+    response = inventory.module.inventory_for_record(binding, run_id=RUN)
+    assert response.status_code == 409
+    assert inventory.calls['scan'] == []
+
+
 def test_unavailable_without_a_process_exit_is_not_native_execution(inventory):
     record = inventory.scan['scanner_results'][0]
     record.update(status='unavailable', execution_observed_for_this_report=True)
@@ -217,3 +271,37 @@ def test_unavailable_without_a_process_exit_is_not_native_execution(inventory):
     assert value['execution_observed'] is False
     assert value['retained_execution_observed_claim'] is True
     assert record == before
+
+
+@pytest.mark.parametrize('scanner', ['npm-audit', 'pip-audit', 'osv-scanner'])
+@pytest.mark.parametrize('change', [None, 'record_inventory', 'missing_inventory', 'wrong_commit', 'observation'])
+def test_native_inventory_requires_retained_matching_observation(inventory, scanner, change):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs, observation_bytes
+    from nico.scanner_package_inventory_v1 import inspect_package_sources
+    source = inventory.tmp_path / 'source'
+    source.mkdir()
+    (source / 'standalone.js').write_text('console.log(1)')
+    observation = inspect_package_sources(source, COMMIT) if scanner == 'osv-scanner' else inspect_node_inputs(source, COMMIT)
+    if change == 'wrong_commit':
+        observation['commit_sha'] = 'b' * 40
+    if scanner == 'osv-scanner':
+        raw = json.dumps({'schema': 'nico.osv-applicability-observation.v1', 'inventory': observation,
+            'native_exit_code': 128, 'native_stderr': 'No package sources found', 'native_json_output': False}).encode()
+    else:
+        raw = observation_bytes(observation, scanner)
+    if change == 'observation': raw = b'{}'
+    compressed = gzip.compress(raw, mtime=0)
+    inventory.blob.write_bytes(compressed)
+    record = inventory.scan['scanner_results'][0]
+    record.update(tool=scanner, status='not_applicable', applicable=False,
+                  applicability_evidence=deepcopy(observation), raw_artifact_sha256=digest(raw),
+                  returncode=128 if scanner == 'osv-scanner' else None,
+                  execution_observed_for_this_report=scanner == 'osv-scanner')
+    record['raw_artifact'].update(sha256=digest(raw), gzip_sha256=digest(compressed), retained_bytes=len(raw), gzip_bytes=len(compressed))
+    if change == 'record_inventory': record['applicability_evidence']['inventory_sha256'] = '0' * 64
+    if change == 'missing_inventory': record.pop('applicability_evidence')
+    inventory.scan['tools_requested'] = [scanner]
+    value = inventory.client.get(PATH, headers=inventory.owner).json()['scanner_records'][0]
+    assert value['raw_artifact']['availability'] == 'verified'  # Valid bytes alone are insufficient.
+    assert value['applicability_observation_verified'] is (change is None)
+    assert value['coverage_status'] == 'not_evaluated_by_inventory'

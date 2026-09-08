@@ -23,6 +23,13 @@ def scan(tmp_path, monkeypatch, files):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
     monkeypatch.setattr('nico.scanner_evidence_pipeline_v1._git_text', lambda _workspace, *args: SHA if args == ('rev-parse', 'HEAD') else '')
+    # This applicability unit fixture supplies a synthetic fixed checkout. Real
+    # Git/changed-input rejection is exercised by test_preparation_source_integrity.
+    from nico import scanner_evidence_pipeline_v1 as pipeline
+    from nico.worker_execution import WorkerCommandResult
+    original_command = pipeline.run_command
+    monkeypatch.setattr(pipeline, 'run_command', lambda args, **kwargs:
+        WorkerCommandResult(tuple(args), 0, '', '') if args[0] == 'git' and 'diff' in args else original_command(args, **kwargs))
     specs = tuple(spec for spec in TOOL_SPECS if spec.name in {'npm-audit', 'typescript'})
     return run_canonical_scanner_tools(workspace, specs)
 

@@ -75,7 +75,7 @@ def legacy_run(tmp_path, *, partial=False, stale_summary=False):
     return database, store, app, before
 
 
-@pytest.mark.parametrize('partial, status, percent', [(False, 'complete', 100), (True, 'partial', 78)])
+@pytest.mark.parametrize('partial, status, percent', [(False, 'partial', 0), (True, 'partial', 0)])
 def test_legacy_terminal_projection_refreshes_once_without_changing_run(tmp_path, monkeypatch, partial, status, percent):
     database, store, app, before = legacy_run(tmp_path, partial=partial)
     loads = []
@@ -124,8 +124,8 @@ def test_old_policy_projection_is_refreshed_without_rewriting_history(tmp_path):
     _, store, app, before = legacy_run(tmp_path, partial=True, stale_summary=True)
     response = TestClient(app).get(f'/assessment/comprehensive-run/{RUN}', headers=HEADERS)
     assert response.status_code == 200
-    assert response.json()['scanner_execution_summary']['percent'] == 78
-    assert response.json()['scanner_execution_summary']['evaluation_policy'] == 'node-input-inventory-v1'
+    assert response.json()['scanner_execution_summary']['percent'] == 0  # No native bytes exist in this metadata-only fixture.
+    assert response.json()['scanner_execution_summary']['evaluation_policy'] == 'source-input-retention-v2'
     assert store.load(RUN) == before
 
 
@@ -150,5 +150,5 @@ def test_refresh_cannot_overwrite_a_concurrent_new_revision(tmp_path):
     response = TestClient(app).get(f'/assessment/comprehensive-run/{RUN}', headers=HEADERS)
     assert response.status_code == 200
     assert response.json()['revision'] == before['revision'] + 1
-    assert response.json()['scanner_execution_summary']['percent'] == 100
+    assert response.json()['scanner_execution_summary']['percent'] == 0
     assert store.load_browser_projection(RUN)['revision'] == before['revision'] + 1

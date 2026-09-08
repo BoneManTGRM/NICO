@@ -289,9 +289,11 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             if repo_path:
                 repo_size = base.directory_size(repo_path)
                 from nico.node_scanner_applicability_v1 import inspect_node_inputs
+                from nico.scanner_package_inventory_v1 import inspect_package_sources
                 workspace = WorkerWorkspace(
                     root=workspace_root,
                     node_input_inventory=inspect_node_inputs(repo_path, actual_commit_sha),
+                    package_input_inventory=inspect_package_sources(repo_path, actual_commit_sha),
                 )
                 base.SCAN_JOBS[scan_id]["current_stage"] = "scanner_suite"
                 base.SCAN_JOBS[scan_id]["progress_percent"] = 20

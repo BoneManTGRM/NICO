@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 from typing import Any
 
 from production_proof_observer_v1 import ProofObserver
@@ -30,18 +32,37 @@ def main(argv: list[str] | None = None) -> int:
     install_authenticated_httpx_client(proof, session)
     original_run = proof.base.run_proof
     original_fetch = proof._fetch_canonical_json
+    retention_receipts: dict[str, Any] = {}
+    retention_output: Path | None = None
 
     def checked_canonical_json(*, frontend_origin: str, run_id: str):
-        from nico.complete_assessment_gate_v1 import require_complete_assessment
+        from nico.complete_assessment_gate_v1 import require_retained_assessment, ScannerEvidenceBlocked
 
         canonical, header, digest = original_fetch(frontend_origin=frontend_origin, run_id=run_id)
         identity = canonical.get("identity") or {}
-        require_complete_assessment(canonical, expected_commit=str(identity.get("commit_sha") or ""), expected_run=run_id)
+        with proof.httpx.Client(timeout=300.0, follow_redirects=False, trust_env=False) as client:
+            response = client.get(
+                f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
+                headers={"Accept": "application/json", "Cache-Control": "no-store", "X-NICO-Browser-Projection": "terminal-manifest-v1"},
+            )
+        if response.status_code != 200:
+            raise RuntimeError("Complete-assessment evidence blocked: scanner retention status unavailable")
+        try:
+            retention_receipts[run_id] = require_retained_assessment(canonical, response.json(), expected_commit=str(identity.get("commit_sha") or ""), expected_run=run_id)
+        except ScannerEvidenceBlocked as exc:
+            retention_receipts[run_id] = exc.evidence
+            raise
+        finally:
+            if retention_output is not None and retention_receipts:
+                retention_output.parent.mkdir(parents=True, exist_ok=True)
+                retention_output.write_text(json.dumps(retention_receipts, indent=2, sort_keys=True) + '\n', encoding='utf-8')
         return canonical, header, digest
 
     proof._fetch_canonical_json = checked_canonical_json
 
     def authenticated_run(browser: Any, args: Any) -> dict[str, Any]:
+        nonlocal retention_output
+        retention_output = Path(args.output).parent / 'scanner-retention-acceptance.json'
         original_wait = proof.telemetry._wait_for_terminal_with_telemetry
         original_emit = proof.telemetry._emit
         with ProofObserver(origin=frontend_url, session=session, output=args.output,
@@ -78,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         result["production_proof_session_run_id"] = retained["run_id"]
         result["production_proof_session_run_attempt"] = retained["run_attempt"]
         result["production_proof_session_token_retained"] = False
+        result["scanner_retention_acceptance"] = retention_receipts
         return result
 
     proof.base.run_proof = authenticated_run
