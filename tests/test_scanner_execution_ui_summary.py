@@ -58,13 +58,12 @@ def test_empty_or_wrong_source_never_claims_complete():
 
 
 def test_verified_inapplicability_is_separate_from_completed():
+    from tests.test_scanner_completion_gate import observed_no_packages
     data = good()
     item = next(r for r in data['requested_scanner_records'] if r['scanner_name'] == 'osv-scanner')
     item.update(state='not_applicable', applicable=False, completed=False, verified=False,
                 applicability_reason='Complete exact-source package inventory has no inputs.',
-                applicability_evidence={'schema': 'nico.osv-package-inventory.v1',
-                    'inventory_complete': True, 'no_declared_package_sources': True,
-                    'package_source_paths': [], 'inventory_sha256': 'c'*64})
+                applicability_evidence=observed_no_packages())
     result = summary(data)
     assert result['status'] == 'complete'
     assert result['completed_count'] == result['applicable_count'] == 8
@@ -96,7 +95,9 @@ def test_terminal_browser_response_uses_gate_and_preserves_record():
     assert response.status_code == 200
     result = response.json()['scanner_execution_summary']
     assert result['status'] == 'partial'
-    assert result['completed_count'] == 8
+    # This fixture retains report metadata only, without any native scan or bytes.
+    assert result['completed_count'] == 0
+    assert len(result['incomplete_tools']) == 9
     assert result['run_id'] == record['identity']['run_id']
     assert result['commit_sha'] == record['identity']['commit_sha']
     assert record == before

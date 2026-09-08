@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 from urllib.parse import urlsplit
+import re
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import completed_run_two_pass_acceptance_v1 as proof
@@ -33,8 +34,7 @@ def authenticated_report_opener(frontend_url: str, session: str):
             observed_origin != origin
             or parsed.username or parsed.password or parsed.query or parsed.fragment
             or request.get_method() != "GET"
-            or not parsed.path.startswith("/api/nico/assessment/comprehensive-run/")
-            or not parsed.path.endswith("/report/json")
+            or not re.fullmatch(r"/api/nico/assessment/comprehensive-run/comprun_[A-Za-z0-9_-]{1,120}(?:/report/json)?", parsed.path)
         ):
             raise ValueError("production_proof_report_origin_or_path_rejected")
         protected = Request(

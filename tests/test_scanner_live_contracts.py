@@ -117,12 +117,48 @@ def test_inventory_is_bounded_and_does_not_follow_symlinks(tmp_path):
     assert not inspect_package_sources(tmp_path)['inventory_complete']
 
 
+def test_osv_inventory_retains_reproducible_source_bound_inputs_before_preparation(tmp_path, monkeypatch):
+    from nico import scanner_evidence_pipeline_v1 as pipeline
+    from nico.scanner_tool_runners import TOOL_SPECS, ProjectCommandPreparation
+    workspace = WorkerWorkspace(tmp_path)
+    workspace.repo_dir.mkdir()
+    (workspace.repo_dir / 'standalone.js').write_text('console.log(1)')
+    _git(workspace.repo_dir, 'init', '-q')
+    _git(workspace.repo_dir, 'add', '.')
+    _git(workspace.repo_dir, '-c', 'user.name=OpenAI Codex test', '-c', 'user.email=codex-test@example.invalid', 'commit', '-qm', 'Labeled OSV ordering fixture')
+    commit = _git(workspace.repo_dir, 'rev-parse', 'HEAD')
+    def prepare(workspace, **kwargs):
+        (workspace.repo_dir / 'package.json').write_text('{}')
+        return ProjectCommandPreparation('unavailable', workspace.repo_dir, False, 'labeled preparation')
+    monkeypatch.setattr(pipeline, 'prepare_project_commands', prepare)
+    monkeypatch.setattr(pipeline.shutil, 'which', lambda _: '/tools/osv-scanner')
+    monkeypatch.setattr(pipeline, '_scanner_version', lambda *a: 'osv-scanner 2.3.8')
+    original = pipeline._run_problem_tool
+    monkeypatch.setattr(pipeline, '_run_problem_tool', lambda spec, workspace, runner, prep:
+        original(spec, workspace, runner, prep) if spec.name == 'osv-scanner' else pipeline._unavailable(spec, 'labeled control', source='test'))
+    def runner(args, **kwargs):
+        return WorkerCommandResult(tuple(args), 128, '', 'No package sources found')
+    result = pipeline.run_canonical_scanner_tools(workspace, tuple(s for s in TOOL_SPECS if s.name in {'eslint', 'osv-scanner'}), runner=runner)
+    record = result['tools']['osv-scanner']
+    assert record['status'] == 'not_applicable'
+    inventory = record['applicability_evidence']
+    assert inventory['commit_sha'] == commit
+    assert inventory['scope'] == 'complete_checkout_before_dependency_preparation'
+    assert inventory['inspected_paths'] == ['standalone.js']
+    from nico.scanner_package_inventory_v1 import justified_no_packages
+    assert justified_no_packages(inventory, commit)
+    assert not justified_no_packages({**inventory, 'inspected_paths': []}, commit)
+
+
 @pytest.mark.parametrize('declared,exit_code,expected', [(False,128,'not_applicable'),(True,128,'failed'),(False,127,'failed')])
 def test_osv_observed_no_packages_never_becomes_clean(monkeypatch, tmp_path, declared, exit_code, expected):
     from nico import scanner_evidence_pipeline_v1 as pipeline
     from nico.scanner_tool_runners import TOOL_SPECS
     workspace = WorkerWorkspace(tmp_path); workspace.repo_dir.mkdir()
     (workspace.repo_dir / ('package.json' if declared else 'README.md')).write_text('{}')
+    _git(workspace.repo_dir, 'init', '-q')
+    _git(workspace.repo_dir, 'add', '.')
+    _git(workspace.repo_dir, '-c', 'user.name=OpenAI Codex test', '-c', 'user.email=codex-test@example.invalid', 'commit', '-qm', 'Labeled OSV native fixture')
     monkeypatch.setattr(pipeline.shutil, 'which', lambda _: '/usr/bin/osv-scanner')
     monkeypatch.setattr(pipeline, '_scanner_version', lambda *args: 'osv-scanner version: 2.3.8')
     def runner(args, **kwargs):

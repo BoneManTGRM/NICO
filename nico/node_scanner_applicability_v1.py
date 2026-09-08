@@ -6,6 +6,7 @@ that npm dependency auditing or TypeScript project compilation has inputs.
 from __future__ import annotations
 
 import hashlib
+import fnmatch
 import json
 import os
 import re
@@ -24,6 +25,12 @@ REASONS = {
     'npm-audit': 'The complete assessed checkout contains no JavaScript dependency manifest or lockfile; npm-audit is not applicable. Standalone JavaScript remains in ESLint scope.',
     'typescript': 'The complete assessed checkout contains no TypeScript source, configuration, or declared compiler input; TypeScript compilation is not applicable. JavaScript remains in ESLint scope.',
 }
+PYTHON_INPUT_NAMES = frozenset({
+    'pyproject.toml', 'poetry.lock', 'pipfile', 'pipfile.lock', 'uv.lock',
+    'pdm.lock', 'setup.py', 'setup.cfg', 'environment.yml', 'environment.yaml',
+})
+SOURCE_REASONS = {**REASONS, 'pip-audit':
+    'The complete assessed checkout contains no Python source, dependency manifest, or lockfile; pip-audit is not applicable. Other applicable scanners remain in scope.'}
 
 
 def inventory_digest(inventory: Mapping[str, Any]) -> str:
@@ -35,6 +42,7 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
     paths: list[str] = []
     dependencies: list[str] = []
     typescript: list[str] = []
+    python: list[str] = []
     manifests: list[dict[str, str]] = []
     errors: list[str] = []
     root = repo.resolve()
@@ -59,6 +67,10 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
                 errors.append('checkout_symlink_not_inspected')
                 continue
             lower = name.casefold()
+            if lower.endswith(('.py', '.pyi', '.pyx')) or lower in PYTHON_INPUT_NAMES or any(
+                fnmatch.fnmatchcase(lower, pattern) for pattern in ('requirements*.txt', 'requirements*.in')
+            ):
+                python.append(relative)
             if lower in NODE_DEPENDENCY_NAMES:
                 dependencies.append(relative)
             if lower.endswith(('.ts', '.tsx', '.mts', '.cts')) or (
@@ -100,6 +112,7 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
         'inspected_paths_sha256': hashlib.sha256(json.dumps(sorted(paths), ensure_ascii=False, separators=(',', ':')).encode()).hexdigest(),
         'node_dependency_paths': sorted(set(dependencies)),
         'typescript_input_paths': sorted(set(typescript)),
+        'python_input_paths': sorted(set(python)),
         'package_manifests': sorted(manifests, key=lambda item: item['path']),
         'errors': sorted(set(errors)),
         'submodule_content_scope': 'only_content_present_in_the_assessed_checkout',
@@ -109,7 +122,7 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
 
 
 def justified_inapplicability(value: Any, scanner: str, expected_commit: str) -> bool:
-    if not isinstance(value, Mapping) or scanner not in REASONS:
+    if not isinstance(value, Mapping) or scanner not in SOURCE_REASONS:
         return False
     if (
         value.get('schema') != VERSION or value.get('scope') != SCOPE
@@ -121,7 +134,8 @@ def justified_inapplicability(value: Any, scanner: str, expected_commit: str) ->
         or value.get('inventory_sha256') != inventory_digest(value)
     ):
         return False
-    field = 'node_dependency_paths' if scanner == 'npm-audit' else 'typescript_input_paths'
+    field = {'npm-audit': 'node_dependency_paths', 'typescript': 'typescript_input_paths',
+             'pip-audit': 'python_input_paths'}[scanner]
     return value.get(field) == []
 
 

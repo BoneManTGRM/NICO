@@ -16,6 +16,7 @@ from nico import scanner_worker, scanner_tool_runners as runners
 from nico import v2_snapshot_scanner_authority as authority
 from nico import scanner_raw_artifact_storage_v1 as storage
 from nico import scanner_evidence_pipeline_v1 as pipeline
+from nico.worker_execution import WorkerCommandResult
 from nico.storage import MemoryAdapter
 
 order, applicable = json.loads(sys.argv[1])
@@ -27,6 +28,7 @@ with TemporaryDirectory() as directory:
     if applicable:
         (source / "package.json").write_text('{"devDependencies":{"typescript":"6.0.3"}}')
         (source / "index.ts").write_text('export const n: number = 1;')
+        (source / "app.py").write_text('print("applicable Python without preparation inputs")')
     def git(*args):
         return subprocess.check_output(["git", "-C", str(source), *args], text=True).strip()
     git("init", "-q")
@@ -52,11 +54,18 @@ with TemporaryDirectory() as directory:
         generated.mkdir(parents=True, exist_ok=True)
         (generated / "package.json").write_text('{"name":"typescript"}')
         (generated / "generated.d.ts").write_text("declare const generated: string;")
+        (generated / "generated.py").write_text('print("dependency preparation output")')
         return runners.ProjectCommandPreparation("unavailable", workspace.repo_dir, False, "labeled test preparation")
     authority.prepare_project_commands = prepare
     original_problem = authority._run_problem_tool
     def problem(spec, workspace, runner, preparation):
         called.append(spec.name)
+        if spec.name == 'osv-scanner' and not applicable:
+            pipeline.shutil.which = lambda name: '/tools/' + name
+            pipeline._scanner_version = lambda *args: 'osv-scanner 2.3.8'
+            def no_packages(args, **kwargs):
+                return WorkerCommandResult(tuple(args), 128, '', 'No package sources found')
+            return original_problem(spec, workspace, no_packages, preparation)
         if spec.name == "eslint" or applicable:
             return pipeline._unavailable(spec, "labeled delegated scanner test", source="test")
         return original_problem(spec, workspace, runner, preparation)
@@ -68,18 +77,23 @@ with TemporaryDirectory() as directory:
     scanner_worker.SCAN_JOBS[scan] = dict(binding)
     worker._run_snapshot_scan(scan, binding)
     records = {r["tool"]: r for r in scanner_worker.SCAN_JOBS[scan]["scanner_results"]}
-    for name in ("npm-audit", "typescript"):
+    for name in ("npm-audit", "typescript", "pip-audit", 'osv-scanner'):
         record = records[name]
         if applicable:
             assert name in called and record["status"] != "not_applicable", record
             continue
         assert record["status"] == "not_applicable", record
-        assert name not in called
+        assert (name in called) == (name == 'osv-scanner')
         assert not record["completed"] and not record["verified"]
-        assert record["execution_observed_for_this_report"] is False
+        if name != 'osv-scanner':
+            assert record["execution_observed_for_this_report"] is False
         assert not record.get("failure_reason"), record
         assert record["applicability_evidence"]["commit_sha"] == commit
-        assert record["applicability_evidence"]["typescript_input_paths"] == []
+        if name == 'osv-scanner':
+            assert record['applicability_evidence']['package_source_paths'] == []
+            assert all('node_modules' not in path for path in record['applicability_evidence']['inspected_paths'])
+        else:
+            assert record["applicability_evidence"]["typescript_input_paths"] == []
         read_binding = {key: record[key] for key in storage.BINDING_FIELDS}
         result = storage.read_scanner_artifact(record, binding=read_binding)
         assert result.metadata["availability"] == "verified", result.metadata
@@ -91,8 +105,8 @@ with TemporaryDirectory() as directory:
 
 
 @pytest.mark.parametrize("order", [
-    ["eslint", "npm-audit", "typescript"],
-    ["typescript", "npm-audit", "eslint"],
+    ["eslint", "npm-audit", "typescript", "pip-audit", 'osv-scanner'],
+    ['osv-scanner', "pip-audit", "typescript", "npm-audit", "eslint"],
 ])
 @pytest.mark.parametrize("applicable", [False, True])
 def test_installed_snapshot_worker_retains_applicability_before_preparation(order, applicable):

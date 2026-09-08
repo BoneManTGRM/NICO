@@ -219,6 +219,7 @@ def compact_scanner_records(
                 "returncode_valid": raw.get("returncode_valid") is True,
                 "timed_out": raw.get("timed_out") is True,
                 "output_truncated": raw.get("output_truncated") is True,
+                "source_checkout_verified": raw.get('source_checkout_verified') if type(raw.get('source_checkout_verified')) is bool else None,
                 "scans_git_history": raw.get("scans_git_history") is True,
                 "full_history_verified": raw.get("full_history_verified") is True,
                 "required": raw.get("required") is not False,

@@ -449,6 +449,11 @@ def _osv_schema_error(payload: Any) -> str:
 
 
 def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult]) -> dict[str, Any]:
+    from nico.scanner_package_inventory_v1 import inspect_package_sources, justified_no_packages
+    commit = _git_text(workspace, "rev-parse", "HEAD").lower()
+    inventory = workspace.package_input_inventory
+    if inventory is None:
+        inventory = inspect_package_sources(workspace.repo_dir, commit)
     binary = shutil.which("osv-scanner")
     if binary is None:
         return _unavailable(spec, "osv-scanner is not installed in the worker image.", source="canonical_osv_scanner")
@@ -467,11 +472,8 @@ def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable
         invocation_receipts.append(result.scanner_execution_receipt)
         payload, reason = _read_json(raw)
         if result.returncode == 128 and not result.timed_out and not result.output_truncated:
-            from nico.scanner_package_inventory_v1 import inspect_package_sources
-
-            inventory = inspect_package_sources(workspace.repo_dir)
             no_sources = "no package sources found" in (result.stderr or "").casefold()
-            if no_sources and inventory["no_declared_package_sources"] is True:
+            if no_sources and justified_no_packages(inventory, commit):
                 # OSV emits no native JSON for exit 128. Retain its actual
                 # diagnostic plus independent inventory, not a fake clean scan.
                 reason = (
@@ -844,6 +846,33 @@ def _git_text(workspace: WorkerWorkspace, *args: str) -> str:
     return (result.stdout or "").strip() if result.ok else ""
 
 
+def verify_source_checkout(payload: dict[str, Any], workspace: WorkerWorkspace, commit_sha: str) -> dict[str, Any]:
+    """Fail closed when preparation or execution changes the assessed source.
+
+    Installed untracked dependencies may be added. Changes to committed inputs
+    cannot acquire exact-source credit simply because the HEAD label is intact.
+    """
+    if len(commit_sha) != 40 or any(character not in '0123456789abcdef' for character in commit_sha):
+        # Low-level unbound tool results remain unbound; the complete gate already
+        # rejects them. Production workers supply an exact snapshot commit.
+        return payload
+    try:
+        result = run_command(
+            ('git', '-c', 'core.fsmonitor=false', 'diff', '--quiet', '--no-ext-diff', '--no-textconv', commit_sha, '--'),
+            cwd=workspace.repo_dir, limits=WorkerLimits(30, 4000),
+        )
+        unchanged = result.ok and _git_text(workspace, 'rev-parse', 'HEAD').lower() == commit_sha
+    except Exception:
+        unchanged = False
+    payload['source_checkout_verified'] = unchanged
+    if not unchanged:
+        reason = 'Assessed source changed or became unverifiable during dependency preparation or scanner execution; exact-source coverage is unverified.'
+        payload.update(status='failed', completed=False, verified=False, verified_complete=False,
+                       verified_for_this_report=False, applicable=True, evidence_required=True,
+                       reason=reason, failure_reason=reason, failure_or_unavailable_reason=reason)
+    return payload
+
+
 def _target_repository(workspace: WorkerWorkspace) -> str:
     remote = _git_text(workspace, "config", "--get", "remote.origin.url")
     value = remote.replace("https://github.com/", "").replace("git@github.com:", "").removesuffix(".git").strip("/")
@@ -884,7 +913,7 @@ def node_inapplicability_result(
     target_commit: str,
 ) -> dict[str, Any] | None:
     """Shared hosted/snapshot decision, with retained observation bytes, not a scan."""
-    from nico.node_scanner_applicability_v1 import REASONS, justified_inapplicability, observation_bytes
+    from nico.node_scanner_applicability_v1 import SOURCE_REASONS, justified_inapplicability, observation_bytes
 
     if not justified_inapplicability(inventory, spec.name, target_commit):
         return None
@@ -892,12 +921,12 @@ def node_inapplicability_result(
     raw.parent.mkdir(parents=True, exist_ok=True)
     raw.write_bytes(observation_bytes(inventory, spec.name))
     blob = _raw_blob(spec.name, raw, "json")
-    payload = _unavailable(spec, REASONS[spec.name], source="complete_node_input_inventory")
+    payload = _unavailable(spec, SOURCE_REASONS[spec.name], source="complete_source_input_inventory")
     payload.update({
         "status": "not_applicable", "applicable": False, "evidence_required": False,
         "completed": False, "verified": False, "verified_for_this_report": False,
         "execution_observed_for_this_report": False,
-        "applicability_reason": REASONS[spec.name], "applicability_evidence": inventory,
+        "applicability_reason": SOURCE_REASONS[spec.name], "applicability_evidence": inventory,
         "failure_or_unavailable_reason": "", "no_vulnerabilities_claimed": False,
         "raw_artifact_capture_complete": True, "raw_artifact_sha256": blob["sha256"],
         "raw_artifact_format": "json", "raw_artifact_bytes": blob["retained_bytes"],
@@ -917,12 +946,14 @@ def run_canonical_scanner_tools(
         raise ValueError("workspace repo directory must exist before scanner tools run")
     selected = tuple(specs)
     from nico.node_scanner_applicability_v1 import (
-        REASONS, inspect_node_inputs,
+        SOURCE_REASONS, inspect_node_inputs,
     )
     # Observe source before npm preparation can introduce dependency inputs.
     target_commit = _git_text(workspace, "rev-parse", "HEAD").lower()
+    from nico.scanner_package_inventory_v1 import inspect_package_sources
+    workspace = replace(workspace, package_input_inventory=inspect_package_sources(workspace.repo_dir, target_commit))
     node_inventory = inspect_node_inputs(workspace.repo_dir, target_commit) if any(
-        spec.name in REASONS for spec in selected
+        spec.name in SOURCE_REASONS for spec in selected
     ) else {}
     needs_node = any(spec.name in {"eslint", "typescript"} for spec in selected)
     preparation = prepare_project_commands(workspace, runner=runner) if needs_node else None
@@ -937,6 +968,7 @@ def run_canonical_scanner_tools(
                 payload = fallback_runner(spec, workspace, runner=runner)
             else:
                 continue
+        payload = verify_source_checkout(payload, workspace, target_commit)
         blob = payload.pop("_raw_artifact_blob", None) if isinstance(payload, dict) else None
         if isinstance(blob, dict):
             raw_blobs[spec.name] = blob

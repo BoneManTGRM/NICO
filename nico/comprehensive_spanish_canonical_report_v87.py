@@ -172,6 +172,12 @@ _CANONICAL_PARITY_EXACT.update({
 # Whole-field renderer contracts for Node applicability. Preserve the distinction
 # between inapplicable tools and applicable tools lacking execution evidence.
 _NODE_APPLICABILITY_ES = {
+    "Assessed source changed or became unverifiable during dependency preparation or scanner execution; exact-source coverage is unverified.":
+        "El código fuente evaluado cambió o dejó de ser verificable durante la preparación de dependencias o la ejecución del analizador; la cobertura del código fuente exacto no está verificada.",
+    "The complete assessed checkout contains no Python source, dependency manifest, or lockfile; pip-audit is not applicable. Other applicable scanners remain in scope.":
+        "La copia evaluada e inspeccionada por completo no contiene código fuente Python, manifiestos de dependencias ni archivos de bloqueo; pip-audit no es aplicable. Los demás analizadores aplicables siguen incluidos en el alcance.",
+    "Python applicability is unverified: complete source inventory and retained observation evidence are required.":
+        "La aplicabilidad de Python no está verificada: se requiere un inventario completo del código fuente y evidencia de observación conservada.",
     "The complete assessed checkout contains no JavaScript dependency manifest or lockfile; npm-audit is not applicable. Standalone JavaScript remains in ESLint scope.":
         "La copia evaluada e inspeccionada por completo no contiene manifiestos de dependencias JavaScript ni archivos de bloqueo; npm-audit no es aplicable. El código JavaScript independiente sigue incluido en el alcance de ESLint.",
     "The complete assessed checkout contains no TypeScript source, configuration, or declared compiler input; TypeScript compilation is not applicable. JavaScript remains in ESLint scope.":
@@ -191,7 +197,7 @@ _CANONICAL_PARITY_EXACT.update(_NODE_APPLICABILITY_ES)
 _CANONICAL_PARITY_EXACT.update({
     prefix + source: translated_prefix + translated
     for source, translated in _NODE_APPLICABILITY_ES.items()
-    for scanner in ("npm-audit", "eslint", "typescript")
+    for scanner in ("npm-audit", "eslint", "typescript", "pip-audit")
     for prefix, translated_prefix in (
         (f"{scanner}: ", f"{scanner}: "),
         (f"{scanner}: not applicable; ", f"{scanner}: no aplicable; "),

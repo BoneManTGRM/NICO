@@ -47,6 +47,7 @@ class WorkerWorkspace:
     root: Path
     # Captured once by the snapshot worker before any tool prepares dependencies.
     node_input_inventory: dict | None = None
+    package_input_inventory: dict | None = None
 
     @property
     def repo_dir(self) -> Path:
