@@ -323,13 +323,15 @@ def _human_module_stage_specs(
             else source_label
         )
         lines: list[str] = []
+        excluded = module.get("excluded") is True or str(module.get("status") or "").casefold() == "excluded"
 
         evidence = (
             module.get("evidence")
             if isinstance(module.get("evidence"), Mapping)
             else {}
         )
-        for field, raw in evidence.items():
+        # Preserve excluded bytes in the retained package, but never project them as assessed observations.
+        for field, raw in ({} if excluded else evidence).items():
             if (
                 module_id == "stakeholder_context"
                 and str(field) in _CANONICAL_ENGAGEMENT_FIELDS
@@ -359,7 +361,7 @@ def _human_module_stage_specs(
                     )
                 )
 
-        if module.get("excluded") is True:
+        if excluded:
             lines.extend(
                 _literal_lines(
                     "Excluido del alcance"
@@ -411,6 +413,8 @@ def _human_module_stage_specs(
                         f"{module_label}{chunk_suffix}"
                     ),
                     "summary": (
+                        ("Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación." if spanish else "This module was excluded from scope; its retained inputs provide no assessment coverage or approval.")
+                        if excluded else
                         "Estas observaciones fueron aportadas explícitamente por "
                         "personas y se conservan sin inferencias del repositorio. "
                         "No modifican automáticamente las puntuaciones técnicas ni "
@@ -424,7 +428,7 @@ def _human_module_stage_specs(
                     "evidence": chunk,
                     "findings": [],
                     "unavailable": [],
-                    "status": "complete",
+                    "status": "excluded" if excluded else str(module.get("status") or "partial"),
                 }
             )
     return specs
@@ -565,7 +569,9 @@ def _localize_retained_stage(
             f"{label}{chunk_suffix}"
         )
         output["summary"] = (
-            "Estas observaciones fueron aportadas explícitamente por personas "
+            "Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación."
+            if str(output.get("status") or "").casefold() == "excluded"
+            else "Estas observaciones fueron aportadas explícitamente por personas "
             "y se conservan sin inferencias del repositorio. No modifican "
             "automáticamente las puntuaciones técnicas ni conceden aprobación "
             "o autoridad de entrega."

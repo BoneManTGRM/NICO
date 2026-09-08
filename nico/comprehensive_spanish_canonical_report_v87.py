@@ -1511,6 +1511,26 @@ _PRESENTATION_REPLACEMENTS += (
         "Se conciliaron los indicadores de plataforma del repositorio y las observaciones aportadas de funciones y dispositivos, y se identificaron candidatos de divergencia sin convertir indicadores de código fuente ni una matriz no aprobada en paridad de ejecución o dispositivos.",
     ),
     (
+        "Stakeholder alignment was explicitly excluded; excluded inputs provide no substantive assessment coverage or approval.",
+        "La alineación con las partes interesadas fue excluida explícitamente; los insumos excluidos no aportan cobertura sustantiva de evaluación ni aprobación.",
+    ),
+    (
+        "Stakeholder alignment was not assessed because no objectives, constraints, or success measures were supplied.",
+        "La alineación con las partes interesadas no fue evaluada porque no se aportaron objetivos, restricciones ni medidas de éxito.",
+    ),
+    (
+        "Requirements traceability was explicitly excluded; excluded inputs provide no substantive assessment coverage or approval.",
+        "La trazabilidad de requisitos fue excluida explícitamente; los insumos excluidos no aportan cobertura sustantiva de evaluación ni aprobación.",
+    ),
+    (
+        "Requirements traceability was not assessed because no requirements were supplied; authority metadata alone does not establish requirements or conformance.",
+        "La trazabilidad de requisitos no fue evaluada porque no se aportaron requisitos; los metadatos de autoridad por sí solos no establecen requisitos ni conformidad.",
+    ),
+    (
+        "This module was excluded from scope; its retained inputs provide no assessment coverage or approval.",
+        "Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación.",
+    ),
+    (
         "Supplied stakeholder/business evidence was organized, linked to the engagement, and checked for conflicts while authority and disputed meaning remain human decisions.",
         "La evidencia comercial y de las partes interesadas aportada se organizó, se vinculó al encargo y se comprobó en busca de conflictos, mientras que la autoridad y los significados controvertidos siguen siendo decisiones humanas.",
     ),

@@ -12,6 +12,7 @@ from nico.comprehensive_client_review_companion_v2 import (
     MAX_CLIENT_REVIEW_PAGES,
     MIN_CLIENT_REVIEW_PAGES,
     review_sections as _legacy_review_sections,
+    _stage_map,
 )
 
 VERSION = "nico.comprehensive-client-review-companion.v5"
@@ -518,6 +519,41 @@ def _verified(value: Any) -> bool:
     }
 
 
+def _runtime_observation_lines(canonical: Mapping[str, Any], module_id: str, field: str) -> list[str]:
+    from nico.comprehensive_human_evidence_report_v1 import _FIELD_LABELS
+
+    labels = set(_FIELD_LABELS[field])
+    lines = []
+    for stage_id, stage in _stage_map(canonical).items():
+        if not stage_id.startswith(f"client_human_evidence_{module_id}"):
+            continue
+        if "excluded" in str(stage.get("status") or "").casefold():
+            continue
+        for raw in _values(stage.get("evidence"), limit=100):
+            # Only the renderer-owned field label establishes an observation.
+            # A reviewer, source reference, test plan, or exclusion rationale may
+            # contain PASS/device words without observing an execution.
+            for prefix in ("Client-supplied data · ", "Dato aportado por el cliente · "):
+                if not raw.startswith(prefix):
+                    continue
+                label, separator, value = raw[len(prefix):].partition(":")
+                root_label = label.split("[", 1)[0].split(".", 1)[0]
+                if separator and root_label in labels and value.strip():
+                    lines.append(value.strip())
+                break
+    return list(dict.fromkeys(lines))
+
+
+def _platform_input_truth_is_explicit(canonical: Mapping[str, Any]) -> bool:
+    dimensions = (_stage_map(canonical).get("platform_parity") or {}).get("assessment_dimensions")
+    return bool(
+        isinstance(dimensions, Mapping)
+        and dimensions.get("substantive_coverage") in {"not_assessed", "excluded", "partial"}
+    ) or "excluded" in str(_human_runtime_stage(canonical, "platform_parity").get("status") or "").casefold() or bool(
+        _runtime_observation_lines(canonical, "platform_parity", "matrix")
+    )
+
+
 def _functional_runtime_truth(
     canonical: Mapping[str, Any],
     details: dict[str, Any],
@@ -526,9 +562,13 @@ def _functional_runtime_truth(
     spanish: bool,
 ) -> tuple[dict[str, Any], list[str]]:
     human_stage = _human_runtime_stage(canonical, "functional_qa")
-    if "excluded" in str(human_stage.get("status") or "").casefold():
-        return details, evidence
-    supplied = _values(human_stage.get("evidence"), limit=6)
+    dimensions = (_stage_map(canonical).get("functional_qa") or {}).get("assessment_dimensions") or {}
+    if (
+        dimensions.get("substantive_coverage") in {"not_assessed", "excluded"}
+        or "excluded" in str(human_stage.get("status") or "").casefold()
+    ):
+        return _human_input_truth(canonical, "functional_qa", details, spanish=spanish), evidence
+    supplied = _runtime_observation_lines(canonical, "functional_qa", "observed_results")
     if not supplied:
         return details, evidence
     joined = " ".join(supplied).casefold()
@@ -585,9 +625,13 @@ def _platform_runtime_truth(
     spanish: bool,
 ) -> tuple[dict[str, Any], list[str]]:
     human_stage = _human_runtime_stage(canonical, "platform_parity")
-    if "excluded" in str(human_stage.get("status") or "").casefold():
-        return details, evidence
-    supplied = _values(human_stage.get("evidence"), limit=8)
+    dimensions = (_stage_map(canonical).get("platform_parity") or {}).get("assessment_dimensions") or {}
+    if (
+        dimensions.get("substantive_coverage") in {"not_assessed", "excluded"}
+        or "excluded" in str(human_stage.get("status") or "").casefold()
+    ):
+        return _human_input_truth(canonical, "platform_parity", details, spanish=spanish), evidence
+    supplied = _runtime_observation_lines(canonical, "platform_parity", "matrix")
     if not supplied:
         return details, evidence
     joined = " ".join(supplied).casefold()
@@ -647,6 +691,75 @@ def _platform_runtime_truth(
     return details, [*truth, *evidence]
 
 
+def _human_input_truth(
+    canonical: Mapping[str, Any],
+    section_id: str,
+    details: dict[str, Any],
+    *,
+    spanish: bool,
+) -> dict[str, Any]:
+    # The retained provider dimensions are authoritative. Never infer coverage from
+    # terminal execution status or rewrite historical stage records during rendering.
+    stages = _stage_map(canonical)
+    stage = stages.get(section_id) or (
+        stages.get("stakeholder_alignment") if section_id == "stakeholder_and_business_alignment" else {}
+    ) or {}
+    dimensions = stage.get("assessment_dimensions")
+    if not isinstance(dimensions, Mapping):
+        human = _human_runtime_stage(canonical, section_id)
+        if section_id in {"functional_qa", "platform_parity"} and "excluded" in str(human.get("status") or "").casefold():
+            dimensions = {"substantive_coverage": "excluded"}
+        else:
+            return details
+    state = dimensions.get("substantive_coverage")
+    if state not in {"excluded", "not_assessed", "partial"}:
+        return details
+    result = deepcopy(details)
+    if state == "excluded":
+        result.update({
+            "status": "Excluido del alcance — sin cobertura de evaluación" if spanish else "Excluded from scope — no assessment coverage",
+            "summary": (
+                "La exclusión explícita se conserva. Los datos excluidos no aportan cobertura de evaluación ni aprobación."
+                if spanish else
+                "The explicit exclusion is retained. Excluded inputs provide no assessment coverage or approval."
+            ),
+            "can_conclude": ["Se conserva la decisión de exclusión." if spanish else "The exclusion decision is retained."],
+            "cannot_conclude": ["No se evaluó la conformidad ni la aceptación de este alcance excluido." if spanish else "Conformance or acceptance of this excluded scope was not assessed."],
+            "required_input": [],
+            "recommended_decision": (
+                "Conservar la exclusión; cualquier ampliación del alcance requiere una decisión autorizada y nueva evidencia."
+                if spanish else
+                "Preserve the exclusion; any scope expansion requires an authorized decision and new evidence."
+            ),
+        })
+    elif state == "partial":
+        result.update({
+            "status": "Evidencia aportada — evaluación parcial y revisión requerida" if spanish else "Evidence supplied — partial assessment and review required",
+            "summary": (
+                "Se organizaron las observaciones aportadas para revisión. Su disponibilidad no establece cobertura completa, conformidad, aceptación ni aprobación."
+                if spanish else
+                "Supplied observations were organized for review. Their availability does not establish full coverage, conformance, acceptance, or approval."
+            ),
+            "can_conclude": ["Las observaciones aportadas están disponibles para revisión." if spanish else "Supplied observations are available for review."],
+            "cannot_conclude": ["No se establecen automáticamente la conformidad, la autoridad ni la aceptación." if spanish else "Conformance, authority, and acceptance are not established automatically."],
+            "required_input": ["Resolver los vínculos de evidencia, la autoridad y las decisiones de revisión pendientes." if spanish else "Resolve evidence links, authority, and pending review decisions."],
+            "recommended_decision": "Revisar las observaciones aportadas y resolver las brechas antes de aceptar las conclusiones." if spanish else "Review the supplied observations and resolve gaps before accepting conclusions.",
+        })
+    elif section_id == "requirements_traceability":
+        result["summary"] = (
+            "La trazabilidad de requisitos no fue evaluada porque no se aportaron requisitos; los metadatos de autoridad por sí solos no establecen requisitos ni conformidad."
+            if spanish else
+            "Requirements traceability was not assessed because no requirements were supplied; authority metadata alone does not establish requirements or conformance."
+        )
+    elif section_id == "stakeholder_and_business_alignment":
+        result["summary"] = (
+            "La alineación con las partes interesadas no fue evaluada porque no se aportaron objetivos, restricciones ni medidas de éxito."
+            if spanish else
+            "Stakeholder alignment was not assessed because no objectives, constraints, or success measures were supplied."
+        )
+    return result
+
+
 def substantive_review_sections(
     canonical: Mapping[str, Any],
     *,
@@ -660,6 +773,8 @@ def substantive_review_sections(
     for index, raw in enumerate(legacy, start=1):
         section = deepcopy(dict(raw))
         details = _base_section_details(str(section["id"]), spanish=spanish)
+        if section["id"] in {"requirements_traceability", "stakeholder_and_business_alignment"}:
+            details = _human_input_truth(canonical, str(section["id"]), details, spanish=spanish)
         evidence = _values(section.get("evidence"), limit=6)
         findings = _values(section.get("findings"), limit=5)
         limitations = _values(section.get("limitations"), limit=6)
