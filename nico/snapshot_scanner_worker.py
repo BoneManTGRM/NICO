@@ -288,7 +288,11 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             unavailable_notes.extend(clone_notes)
             if repo_path:
                 repo_size = base.directory_size(repo_path)
-                workspace = WorkerWorkspace(root=workspace_root)
+                from nico.node_scanner_applicability_v1 import inspect_node_inputs
+                workspace = WorkerWorkspace(
+                    root=workspace_root,
+                    node_input_inventory=inspect_node_inputs(repo_path, actual_commit_sha),
+                )
                 base.SCAN_JOBS[scan_id]["current_stage"] = "scanner_suite"
                 base.SCAN_JOBS[scan_id]["progress_percent"] = 20
                 STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
