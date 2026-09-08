@@ -290,7 +290,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         {
             key: value
             for key, value in result.items()
-            if key not in _IGNORED_DETAIL_KEYS and key not in {"evidence", "findings", "unavailable", "unavailable_data_notes"}
+            if key not in _IGNORED_DETAIL_KEYS and key not in {"evidence", "findings", "unavailable", "unavailable_data_notes", "assessment_dimensions"}
         },
         maximum=80,
     )
@@ -310,6 +310,10 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         "evidence": dedupe([*provider_access_lines, *evidence_lines, *structured_details], 140),
         "findings": findings,
         "unavailable": unavailable,
+        **(
+            {"assessment_dimensions": deepcopy(result["assessment_dimensions"])}
+            if isinstance(result.get("assessment_dimensions"), dict) else {}
+        ),
     }
 
 
