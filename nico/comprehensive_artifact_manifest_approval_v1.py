@@ -778,13 +778,60 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _refresh_visible_manifest(pdf: bytes, canonical: Mapping[str, Any], entries: list[dict[str, Any]]) -> bytes:
+    """Replace the owned manifest page before binding a changed pending draft.
+
+    The supplement is independent of its own PDF/JSON digests, but its table
+    contains Markdown/HTML/CSV digests and must follow changes to those bytes.
+    Replace page contents in place so existing bookmark destinations survive.
+    """
+    from pypdf.generic import NameObject
+    from nico.comprehensive_manifest_navigation_v1 import _page_overlay
+
+    reader = PdfReader(io.BytesIO(pdf))
+    texts = [page.extract_text() or "" for page in reader.pages]
+    manifest_titles = ("Client Artifact Manifest", "Manifiesto de artefactos del cliente")
+    table_titles = ("Retained structured artifacts", "Artefactos estructurados preservados",
+                    "Artefactos estructurados conservados")
+    approval_titles = ("Human Review and Exact-Artifact Approval Record",
+                       "Registro de revisión humana y aprobación de artefactos exactos")
+    normalized = [" ".join(text.split()) for text in texts]
+    candidates = [i for i, text in enumerate(normalized)
+                  if any(title in text for title in manifest_titles)
+                  and any(title in text for title in table_titles)
+                  and "SHA-256" in text]
+    if len(candidates) != 1:
+        raise ValueError("Pending PDF manifest page cannot be identified uniquely; regenerate this draft first.")
+    index = candidates[0]
+    if index + 1 >= len(texts) or not any(title in normalized[index + 1] for title in approval_titles):
+        raise ValueError("Pending PDF manifest supplement boundary is invalid; regenerate this draft first.")
+    compact = "".join(texts[index].split())
+    if all(item.get("sha256") and item["sha256"] in compact for item in entries):
+        return pdf
+    supplement = PdfReader(io.BytesIO(_render_manifest_approval_supplement(canonical, entries)))
+    if len(supplement.pages) != 2:
+        raise ValueError("Pending PDF manifest pagination changed; regenerate this draft first.")
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+    writer.pdf_header = reader.pdf_header
+    target = writer.pages[index]
+    replacement = supplement.pages[0]
+    if list(target.mediabox) != list(replacement.mediabox):
+        raise ValueError("Pending PDF manifest page dimensions changed; regenerate this draft first.")
+    for key in ("/Contents", "/Resources"):
+        target[NameObject(key)] = replacement[key].clone(writer)
+    target.merge_page(PdfReader(io.BytesIO(_page_overlay(index + 1, len(reader.pages)))).pages[0])
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     """Recompute a pending draft manifest after a pre-approval artifact update.
 
-    The manifest/approval supplement already retained in the PDF is deliberately
-    digest-independent. Re-rendering it would duplicate pages and navigation. This
-    path therefore keeps the current report bytes, rebuilds every retained digest
-    from those bytes, and resets the exact-artifact lifecycle to pending.
+    Refresh the visible artifact digest table in its existing PDF page, preserving
+    report pages and navigation. Then bind all final bytes and reset the exact
+    artifact lifecycle to pending. Approved editions are never changed here.
     """
 
     output = deepcopy(dict(package))
@@ -931,6 +978,7 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
                 identity=identity,
             ),
         ]
+        pdf = _refresh_visible_manifest(pdf, canonical, entries)
         pdf_entry = _artifact_entry(
             artifact_type="comprehensive_pdf",
             filename=f"nico-{run}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf",
@@ -1040,6 +1088,7 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
             "evidence_manifest_json": manifest_json.decode("utf-8"),
             "evidence_manifest_sha256": manifest_sha256,
             "draft_artifact_identity": draft_identity,
+            "pdf_base64": base64.b64encode(pdf).decode("ascii"),
             "pdf_sha256": pdf_sha256,
             "pdf_size_bytes": len(pdf),
             "pdf_page_count": page_count,
