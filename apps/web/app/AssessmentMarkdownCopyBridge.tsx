@@ -115,7 +115,13 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
       cache: "no-store",
       headers: {Accept: "application/json"},
     });
-    if (!response.ok) throw new Error(`markdown_http_${response.status}`);
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({})) as {detail?: {reason?: unknown}};
+      const reason = String(failure.detail?.reason || "");
+      // Show only bounded machine codes, never arbitrary backend exception text.
+      const code = /^[a-z][a-z0-9_]{0,119}$/.test(reason) ? ` · ${reason}` : "";
+      throw new Error(`HTTP ${response.status}${code}`);
+    }
     const payload = await response.json() as {
       run_id?: unknown;
       commit_sha?: unknown;
@@ -224,13 +230,15 @@ export default function AssessmentMarkdownCopyBridge() {
               spanish() ? "Markdown listo. Pulsa Copiar Markdown." : "Markdown ready. Click Copy Markdown.",
             );
           })
-          .catch(() => {
+          .catch((failure: unknown) => {
             guardedUntil.current = 0;
+            const message = failure instanceof Error ? failure.message : "";
+            const code = /^HTTP [0-9]{3}(?: · [a-z][a-z0-9_]{0,119})?$/.test(message) ? ` (${message})` : "";
             showStatus(
               actions,
-              spanish()
-                ? "No se pudo preparar Markdown. Vuelve a intentarlo."
-                : "Markdown could not be prepared. Try again.",
+              (spanish()
+                ? "No se pudo preparar Markdown"
+                : "Markdown could not be prepared") + code + ".",
               true,
             );
           });
