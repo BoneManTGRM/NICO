@@ -458,10 +458,10 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "snapshot_id": snapshot_id,
         "snapshot_commit_sha": commit_sha,
         "provider_access_mode": (
-            str(payload.get("provider_access_mode") or "") if hosted_provider else ""
+            str(payload.get("provider_access_mode") or "")
         ),
         "provider_credential_used": (
-            payload.get("provider_credential_used") if hosted_provider else False
+            payload.get("provider_credential_used") is True
         ),
         "actual_commit_sha": "",
         "snapshot_match": False,
