@@ -345,7 +345,9 @@ def _normalized_record(
         "occurrence_count": 1,
         "exact_commit_sha": commit_sha,
         **({"source_commit_sha": source_commit} if source_commit else {}),
-        "human_review_required": disposition == "review_required",
+        # A scanner's material/nonblocking classification is a technical proposal,
+        # never evidence that a human has reviewed this candidate.
+        "human_review_required": True,
     }
 
 
@@ -387,7 +389,7 @@ def _aggregate_record(
         "evidence_quality": "count_only",
         "occurrence_count": occurrence_count,
         "exact_commit_sha": commit_sha,
-        "human_review_required": disposition == "review_required",
+        "human_review_required": True,
     }
 
 

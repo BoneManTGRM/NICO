@@ -23,6 +23,7 @@ _LOCALE_MARKER = "__nico_commercial_ship_locale_projection_v3__"
 _RESPONSE_MARKER = "__nico_commercial_ship_pdf_response_v3__"
 _FROZEN_SOURCE_MARKER = "__nico_commercial_ship_frozen_source_v3__"
 _REPORT_MARKER = "__nico_commercial_ship_report_v3__"
+_MARKDOWN_REPORT_MARKER = "__nico_commercial_ship_markdown_report_v3__"
 _RENDER_TARGET_MARKER = "__nico_commercial_ship_render_target_v3__"
 _INSTALLED = False
 _VISIBLE_MANIFEST_TYPES = frozenset(
@@ -845,6 +846,21 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         setattr(frozen_source_with_integrity_gate, _FROZEN_SOURCE_MARKER, True)
         setattr(frozen_source_with_integrity_gate, "_nico_previous", current_frozen_source)
         locale_report._frozen_source_pdf_response = frozen_source_with_integrity_gate
+
+    current_markdown_report = locale_report.build_same_run_locale_markdown_projection
+    if not getattr(current_markdown_report, _MARKDOWN_REPORT_MARKER, False):
+
+        @wraps(current_markdown_report)
+        def markdown_with_integrity_gate(status: Mapping[str, Any], report_language: str) -> dict[str, Any]:
+            source = status
+            if _source_pdf_requires_integrity_reprojection(status, report_language):
+                source = dict(status)
+                source["_nico_force_pending_draft_artifact_regeneration"] = True
+            return current_markdown_report(source, report_language)
+
+        setattr(markdown_with_integrity_gate, _MARKDOWN_REPORT_MARKER, True)
+        setattr(markdown_with_integrity_gate, "_nico_previous", current_markdown_report)
+        locale_report.build_same_run_locale_markdown_projection = markdown_with_integrity_gate
 
     current_report = locale_report.build_same_run_locale_report
     if not getattr(current_report, _REPORT_MARKER, False):
