@@ -188,7 +188,7 @@ def test_reordered_inputs_preserve_observation_and_sampling(kind, monkeypatch, t
 
 def test_observation_does_not_invent_edges_from_comments_or_directory_names(monkeypatch, tmp_path):
     files = {"app.py": "# requests.get('fake')\ntext = 'sqlite3.connect(fake)'\n",
-             "web.ts": "// fetch('/fake')\nconst text = 'fetch(fake)';\n",
+             "web.ts": "// fetch('/fake')\nconst text = 'fetch(fake)';\nconst regex = /fetch(fake)/;\n",
              "database/README.md": "# This directory is not deployment evidence\n"}
     _, repository, _, _ = collect("snapshot", monkeypatch, tmp_path, files)
     observation = repository["architecture_evidence"]["source_observation"]

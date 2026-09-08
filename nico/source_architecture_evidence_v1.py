@@ -33,7 +33,7 @@ def _masked_javascript(source: str) -> str:
     # Keep offsets and line numbers while excluding comments and literal text.
     # Template expressions are deliberately unobserved by this bounded lexer.
     pattern = re.compile(
-        r"/\*.*?\*/|//[^\n]*|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\x60(?:\\.|[^\x60\\])*\x60",
+        r"/\*.*?\*/|//[^\n]*|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|\x60(?:\\.|[^\x60\\])*\x60|/(?![/*])(?:\\.|[^/\\\n])+/[dgimsuvy]*",
         re.DOTALL,
     )
     return pattern.sub(lambda match: "".join("\n" if char == "\n" else " " for char in match.group()), source)

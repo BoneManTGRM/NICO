@@ -23,12 +23,14 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
     # Confirm member identities, not only the numerical inequality. This mirrors
     # the existing analyzer's Python parse rejection; JS/TS remains lexical.
     analyzed_paths = set(sampled_eligible)
+    named_parser_notes: list[str] = []
     for path in sorted(sampled_eligible):
         if path.lower().endswith(".py"):
             try:
                 ast.parse(files[path])
             except (SyntaxError, ValueError):
                 analyzed_paths.discard(path)
+                named_parser_notes.append(f"{path}: Python parsing failed; excluded from complexity measurements.")
     if analyzed != len(analyzed_paths):
         raise ValueError("profile_analyzed_membership_mismatch")
     for row in measured.get("top_coupled_files") or []:
@@ -57,7 +59,7 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
         "unavailable_profile_files": len(unavailable),
         "unavailable_item_notes": list(profile.get("unavailable") or []),
         "size_excluded_paths": sorted(set(profile.get("size_excluded_paths") or [])),
-        "parser_notes": list(measured.get("parse_notes") or []),
+        "parser_notes": named_parser_notes + list(measured.get("parse_notes") or []),
         "file_limit": MAX_TEXT_FILES,
         "per_file_byte_limit": MAX_FILE_BYTES,
         "selection_method": "Known file paths in configured priority order, then sorted eligible paths, within unchanged file and byte limits.",
