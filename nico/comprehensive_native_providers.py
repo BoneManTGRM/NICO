@@ -12,6 +12,7 @@ from nico.repository_snapshot import capture_repository_snapshot
 from nico.scanner_worker import get_scan
 from nico.snapshot_repository_evidence import collect_snapshot_repository_evidence
 from nico.snapshot_scanner_worker import start_snapshot_scan
+from nico.source_architecture_evidence_v1 import verified_observation, structured_tables
 
 VERSION = "nico.comprehensive_native_providers.v1"
 Provider = Callable[[dict[str, Any]], dict[str, Any]]
@@ -363,16 +364,60 @@ def platform_parity_provider(context: dict[str, Any]) -> dict[str, Any]:
 
 def deployment_review_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = _repo(context)
-    architecture = repo.get("architecture_evidence") if isinstance(repo.get("architecture_evidence"), dict) else {}
     workflow = repo.get("workflow_evidence") if isinstance(repo.get("workflow_evidence"), dict) else {}
-    return _result(context, summary="Deployment manifests, workflow deployment evidence, and runtime configuration controls were reviewed.", evidence={"deployment_manifests": architecture.get("deployment_manifests") or [], "deployments_observed": workflow.get("deployments_observed", 0), "successful_deployments": workflow.get("successful_deployments", 0), "non_success_deployments": workflow.get("non_success_deployments", 0), "configuration_controls": workflow.get("configuration_controls") or {}})
+    observation = verified_observation(repo, context)
+    evidence = {
+        "source_observation_status": "verified_static_observation" if observation is not None else "unavailable",
+        "declared_infrastructure": observation["declared_infrastructure"] if observation else [],
+        "deployment_manifests": [row["path"] for row in observation["declared_infrastructure"]] if observation else [],
+        "deployments_observed": workflow.get("deployments_observed"),
+        "successful_deployments": workflow.get("successful_deployments"),
+        "non_success_deployments": workflow.get("non_success_deployments"),
+        "configuration_controls": workflow.get("configuration_controls") or {},
+        "runtime_topology_verified": False,
+        "operational_history_is_runtime_topology_proof": False,
+    }
+    if observation is not None:
+        evidence["source_observation"] = observation
+        evidence["structured_tables"] = [structured_tables(observation)[2]]
+    return _result(
+        context,
+        summary="Source-declared infrastructure is separated from provider operational deployment history; active runtime topology remains unverified.",
+        evidence=evidence,
+        unavailable_data_notes=(
+            observation["unknowns"] + observation["parser_notes"] if observation is not None else
+            ["Source architecture observation is missing, corrupt, or does not match this run's exact repository, source revision, and snapshot; no source-supported topology is credited."]
+        ),
+    )
 
 
 def architecture_data_flow_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = _repo(context)
     complexity = _complexity(context)
-    architecture = repo.get("architecture_evidence") if isinstance(repo.get("architecture_evidence"), dict) else {}
-    return _result(context, summary="Architecture, top-level modules, deployment boundaries, source footprint, and measured complexity were synthesized into a data-flow review boundary.", evidence={"top_level_directories": architecture.get("top_level_directories") or [], "source_file_count": architecture.get("source_file_count", 0), "deployment_manifests": architecture.get("deployment_manifests") or [], "complexity_files_analyzed": complexity.get("files_analyzed", 0), "complexity_risk": complexity.get("risk_level", complexity.get("risk"))}, unavailable_data_notes=complexity.get("unavailable_data_notes") or [])
+    observation = verified_observation(repo, context)
+    evidence = {
+        "source_observation_status": "verified_static_observation" if observation is not None else "unavailable",
+        "runtime_topology_verified": False,
+        "complexity_files_analyzed": complexity.get("files_analyzed", 0),
+        "complexity_risk": complexity.get("risk_level", complexity.get("risk")),
+        "profile_coverage": complexity.get("profile_coverage") or {},
+    }
+    if observation is not None:
+        evidence["source_observation"] = observation
+        evidence["structured_tables"] = structured_tables(observation)
+    return _result(
+        context,
+        summary=(
+            "Bounded source-supported components, interactions, and potential trust boundaries are retained with exact source and run identity; runtime behavior remains unverified."
+            if observation is not None else
+            "Source-supported architecture is unavailable for this exact run and snapshot; no data-flow topology is credited."
+        ),
+        evidence=evidence,
+        unavailable_data_notes=list(complexity.get("unavailable_data_notes") or []) + (
+            observation["unknowns"] + observation["parser_notes"] if observation is not None else
+            ["Source architecture observation is missing, corrupt, or does not match this run's exact repository, source revision, and snapshot; directories and file counts do not establish a data-flow topology."]
+        ),
+    )
 
 
 def delivery_process_provider(context: dict[str, Any]) -> dict[str, Any]:

@@ -22,6 +22,8 @@ from nico.hosted_assessment import (
     should_fetch_path,
 )
 from nico.source_signal_analysis_v2 import analyze_source_signals
+from nico.source_architecture_evidence_v1 import analyze_source_architecture
+from nico.repository_profile_coverage_v1 import profile_coverage
 from nico.storage import STORE, StorageAdapter
 
 DEFAULT_TIMEFRAME_DAYS = 180
@@ -200,7 +202,10 @@ def _text_file(client: Any, repository: str, path: str, ref: str) -> tuple[str |
     if int(value.get("size") or 0) > MAX_FILE_BYTES:
         return None, f"{path} exceeds the hosted text-inspection limit."
     try:
-        return base64.b64decode(value.get("content") or "").decode("utf-8", errors="replace"), None
+        raw = base64.b64decode(value.get("content") or "")
+        if len(raw) > MAX_FILE_BYTES:
+            return None, f"{path} exceeds the hosted text-inspection limit."
+        return raw.decode("utf-8", errors="replace"), None
     except Exception:
         return None, f"{path} could not be decoded at the captured commit."
 
@@ -221,19 +226,23 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
     blobs = [item for item in tree if isinstance(item, dict) and item.get("type") == "blob" and item.get("path")]
     sizes = {str(item["path"]): int(item.get("size") or 0) for item in blobs}
     candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
-    candidates.extend(path for path in sizes if path not in candidates and should_fetch_path(path, sizes[path]))
+    candidates.extend(path for path in sorted(sizes) if path not in candidates and should_fetch_path(path, sizes[path]))
     files: dict[str, str] = {}
+    unavailable_paths: list[str] = []
     for path in candidates[:MAX_TEXT_FILES]:
         text, error = _text_file(client, repository, path, commit_sha)
         if text is not None:
             files[path] = text
-        elif path in KNOWN_FILE_PATHS:
+        else:
+            unavailable_paths.append(path)
             unavailable.append(_safe_note(f"Captured-commit file {path}", error))
     return {
         "files": files,
         "tree_paths": list(sizes),
         "root_items": root_items,
         "unavailable": sorted(set(unavailable)),
+        "unavailable_paths": sorted(unavailable_paths),
+        "size_excluded_paths": sorted(path for path, size in sizes.items() if size > MAX_FILE_BYTES),
         "tree_sha": (
             str(tree_value.get("sha") or "").strip().lower()
             if isinstance(tree_value, dict)
@@ -332,17 +341,25 @@ def _public_git_profile(
                 return None, "public_git_tree_listing_failed"
 
             sizes: dict[str, int] = {}
+            inventory_complete = True
             for raw_record in listing.stdout.split(b"\x00"):
-                if not raw_record or b"\t" not in raw_record:
+                if not raw_record:
+                    continue
+                if b"\t" not in raw_record:
+                    inventory_complete = False
                     continue
                 metadata, raw_path = raw_record.split(b"\t", 1)
                 fields = metadata.split()
-                if len(fields) != 4 or fields[1] != b"blob":
+                if len(fields) != 4:
+                    inventory_complete = False
+                    continue
+                if fields[1] != b"blob":
                     continue
                 try:
                     path = raw_path.decode("utf-8", errors="strict")
                     size = int(fields[3])
                 except (UnicodeDecodeError, ValueError):
+                    inventory_complete = False
                     continue
                 if path and "\x00" not in path and size >= 0:
                     sizes[path] = size
@@ -355,6 +372,7 @@ def _public_git_profile(
             )
             files: dict[str, str] = {}
             unavailable: list[str] = []
+            unavailable_paths: list[str] = []
             for path in candidates[:MAX_TEXT_FILES]:
                 if sizes[path] > MAX_FILE_BYTES:
                     continue
@@ -375,7 +393,8 @@ def _public_git_profile(
                 )
                 if blob.returncode == 0 and len(blob.stdout) <= MAX_FILE_BYTES:
                     files[path] = blob.stdout.decode("utf-8", errors="replace")
-                elif path in KNOWN_FILE_PATHS:
+                else:
+                    unavailable_paths.append(path)
                     unavailable.append(
                         f"Exact public Git snapshot file {path} could not be read."
                     )
@@ -386,9 +405,11 @@ def _public_git_profile(
                 "tree_paths": paths,
                 "root_items": sorted({path.split("/", 1)[0] for path in paths}),
                 "unavailable": unavailable,
+                "unavailable_paths": unavailable_paths,
+                "size_excluded_paths": sorted(path for path, size in sizes.items() if size > MAX_FILE_BYTES),
                 "tree_sha": actual_tree,
                 "tree_truncated": False,
-                "tree_collection_succeeded": bool(paths),
+                "tree_collection_succeeded": inventory_complete,
                 "public_git_fallback_used": True,
             }, ""
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -876,9 +897,14 @@ def collect_snapshot_repository_evidence(
         "retention_note": "Only summarized repository evidence and bounded sampled-file analysis are retained; credentials and raw CI logs are not retained.",
         "idempotent_reuse": False, "human_review_required": True,
     }
+    bundle["architecture_evidence"]["source_observation"] = analyze_source_architecture(
+        files, run_id=run_id, repository=repository, commit_sha=snapshot_sha, snapshot_id=snapshot_id,
+    )
     measured = collect_complexity_evidence(files)
+    coverage = profile_coverage(profile, measured)
+    bundle["file_evidence"]["profile_coverage"] = coverage
     complexity = {
-        **measured, "evidence_id": complexity_id, "run_id": run_id, "repository": repository,
+        **measured, "profile_coverage": coverage, "evidence_id": complexity_id, "run_id": run_id, "repository": repository,
         "customer_id": bundle["customer_id"], "project_id": bundle["project_id"], "source": "github_api_snapshot_bound_complexity",
         "authorization_scope": bundle["authorization_scope"], "snapshot_id": snapshot_id, "snapshot_commit_sha": snapshot_sha,
         "snapshot_tree_sha": snapshot.get("tree_sha") or "", "profiled_file_count": len(files), "profile_unavailable_count": len(profile["unavailable"]),
