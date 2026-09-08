@@ -694,6 +694,11 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         disabled={!pdfAvailable || artifactAction !== null}
         onClick={downloadPdf}
       >{draftPdfLabel}</button> : null}
+      {reportReady && result?.run_id ? <a
+        href={`/api/nico/assessment/comprehensive-run/${encodeURIComponent(result.run_id)}/report/evidence-package`}
+        download
+        data-assessment-retained-export="true"
+      >{locale === "es-MX" ? "Descargar archivos originales y manifiesto" : "Download retained files and manifest"}</a> : null}
       {copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}
     </div>;
   }
