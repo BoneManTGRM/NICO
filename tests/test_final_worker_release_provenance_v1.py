@@ -77,7 +77,7 @@ def test_fresh_worker_captures_and_renders_its_own_release_provenance(tmp_path, 
             title = 'Procedencia de la versión de NICO'
             backend_label = 'Commit del código del backend'
             frontend_label = 'Commit del código del frontend'
-            scanner_boundary = 'Las versiones de los analizadores son declaraciones de configuración o valores predeterminados'
+            scanner_boundary = 'Las versiones configuradas son declaraciones, no evidencia de ejecución de cada evaluación'
         else:
             markdown = premium._markdown(identity, assessment, stages, identity['generated_at'])
             encoded, error, pages = premium._pdf(identity, assessment, stages, identity['generated_at'])
@@ -86,7 +86,7 @@ def test_fresh_worker_captures_and_renders_its_own_release_provenance(tmp_path, 
             title = 'NICO Release Provenance'
             backend_label = 'Backend source commit'
             frontend_label = 'Frontend source commit'
-            scanner_boundary = 'Scanner versions are configured or default declarations'
+            scanner_boundary = 'Configured versions are declarations, not per-run execution evidence'
         text = '\\n'.join(page.extract_text() for page in PdfReader(io.BytesIO(pdf)).pages)
         for surface in (markdown, text):
             assert title in surface, (language, 'missing localized provenance title')

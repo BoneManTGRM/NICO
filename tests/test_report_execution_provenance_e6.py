@@ -129,6 +129,7 @@ def test_production_composition_exports_same_frozen_execution_evidence(evidence,
     package = rebuild_client_artifacts(result["report_package"])
     assert package["json"]["assessment"]["nico_release_provenance"] == original
     pdf = PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"])))
+    (evidence.blob.parent / f"synthetic-e6-{language}.pdf").write_bytes(base64.b64decode(package["pdf_base64"]))
     text = "\n".join(page.extract_text() for page in pdf.pages)
     for rendered in (package["markdown"], package["html"], text):
         assert "5.9.3" in rendered
@@ -149,3 +150,42 @@ def test_reordering_and_changed_evidence_have_truthful_report_identity(evidence)
     changed = build(evidence)
     assert changed["report_id"] != reordered["report_id"]
     assert changed["report_package"]["canonical_truth_sha256"] != reordered["report_package"]["canonical_truth_sha256"]
+
+
+@pytest.mark.parametrize("change", [None, "wrong_sha", "wrong_deployment", "configured_source", "redirect", "oversize"])
+def test_fixed_frontend_observation_does_not_credit_labels_alone(monkeypatch, change):
+    import requests
+    from nico.report_execution_provenance_e6 import capture_frontend_release, verify_frontend_release
+    value = {"status": "ok", "release_sha": "b" * 40, "deployment_id": "dpl_synthetic_e6",
+        "deployment_id_source": "VERCEL_DEPLOYMENT_ID"}
+    if change == "wrong_sha": value["release_sha"] = "f" * 40
+    if change == "wrong_deployment": value["deployment_id"] = "dpl_other"
+    if change == "configured_source": value["deployment_id_source"] = "configured_label"
+    raw = json.dumps(value).encode() if change != "oversize" else b"x" * 20000
+    calls = []
+    class Response:
+        status_code = 302 if change == "redirect" else 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def iter_content(self, chunk_size): yield raw
+    class Session:
+        trust_env = True
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def get(self, url, **kwargs):
+            assert self.trust_env is False
+            assert url == "https://app.nicoaudit.com/api/release"
+            assert kwargs["allow_redirects"] is False
+            assert kwargs["timeout"] == (3, 5)
+            assert "auth" not in kwargs and "cookies" not in kwargs
+            calls.append(url)
+            return Response()
+    monkeypatch.setattr(requests, "Session", Session)
+    assert capture_frontend_release("b" * 40, "")["deployment_identity_verified"] is False
+    assert calls == []
+    result = capture_frontend_release("b" * 40, "dpl_synthetic_e6")
+    assert verify_frontend_release(result, "b" * 40, "dpl_synthetic_e6") is (change is None)
+    if change is None:
+        assert base64.b64decode(result["observation_bytes_base64"]) == raw
+        result["observation_sha256"] = "0" * 64
+        assert verify_frontend_release(result, "b" * 40, "dpl_synthetic_e6") is False

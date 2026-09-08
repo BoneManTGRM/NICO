@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import io
+import hashlib
+import json
 from copy import deepcopy
 from datetime import UTC, datetime
 
@@ -103,6 +105,22 @@ def _record(ecosystem: str = "python") -> dict:
         },
         "human_review_required": True,
         "client_delivery_allowed": False,
+    }
+    # Synthetic native-runtime observation for isolated contract tests. This is
+    # test data, not an actual deployment record or professional attestation.
+    observed = json.dumps({"status": "ok", "release_sha": "e" * 40,
+        "deployment_id": "dpl_synthetic_contract",
+        "deployment_id_source": "VERCEL_DEPLOYMENT_ID"}, sort_keys=True).encode()
+    canonical["assessment"]["nico_release_provenance"] = {
+        "backend_build_commit": "d" * 40, "backend_identity_source": "RAILWAY_GIT_COMMIT_SHA",
+        "deployment_identity_conflict": False, "railway_deployment_id": "synthetic-contract-deployment",
+        "frontend_build_commit": "e" * 40, "frontend_deployment_id": "dpl_synthetic_contract",
+        "assessment_run_id": run_id, "assessed_repository_commit": commit,
+        "frontend_runtime_observation": {"status": "verified", "deployment_identity_verified": True,
+            "source_url": "https://app.nicoaudit.com/api/release", "release_sha": "e" * 40,
+            "deployment_id": "dpl_synthetic_contract", "deployment_id_source": "VERCEL_DEPLOYMENT_ID",
+            "observation_bytes_base64": base64.b64encode(observed).decode(),
+            "observation_sha256": hashlib.sha256(observed).hexdigest(), "observation_size_bytes": len(observed)},
     }
     package = {
         "artifact_schema": "nico.comprehensive_report.v1",
@@ -247,6 +265,42 @@ def test_outside_structure_fixtures_prove_complete_preapproval_contract(ecosyste
     assert result["one_client_report"] is True
     assert result["client_delivery_authorized"] is False
     assert result["version_truth"]["deployment_identity_established"] is True
+
+
+@pytest.mark.parametrize("change", ["missing", "label_only", "wrong_run", "wrong_source", "corrupt_observation", "wrong_frontend", "missing_railway"])
+def test_real_final_approval_entrypoints_reject_unverified_native_identity(change):
+    record = _record()
+    canonical = record["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]
+    release = canonical["assessment"]["nico_release_provenance"]
+    if change == "missing": canonical["assessment"].pop("nico_release_provenance")
+    if change == "label_only": release["backend_identity_source"] = "configured_release_label"
+    if change == "wrong_run": release["assessment_run_id"] = "comprun_other"
+    if change == "wrong_source": release["assessed_repository_commit"] = "f" * 40
+    if change == "corrupt_observation": release["frontend_runtime_observation"]["observation_sha256"] = "0" * 64
+    if change == "wrong_frontend": release["frontend_deployment_id"] = "dpl_other"
+    if change == "missing_railway": release["railway_deployment_id"] = "unavailable"
+    result = validate_full_lifecycle(record)
+    assert "report_native_deployment_identity_unverified" in result["validation_errors"]
+    assert result["status"] == "blocked"
+    with pytest.raises(ClientDeliveryContractError, match="report_native_deployment_identity_unverified"):
+        build_approval_receipt(record, _manifest(record), reviewer="Alice Security",
+            reviewer_role="Cybersecurity specialist", decision="approved",
+            decided_at="2026-08-21T15:00:00+00:00", decision_reason="Synthetic contract test only.")
+
+
+def test_retained_approval_cannot_follow_materially_changed_release_identity():
+    record = _record()
+    manifest = _manifest(record)
+    receipt = build_approval_receipt(record, manifest, reviewer="Alice Security",
+        reviewer_role="Cybersecurity specialist", decision="approved",
+        decided_at="2026-08-21T15:00:00+00:00",
+        decision_reason="Exact evidence and residual risk were reviewed and accepted.")
+    canonical = record["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]
+    canonical["assessment"]["nico_release_provenance"]["railway_deployment_id"] = "synthetic-new-deployment"
+    # Even a new matching manifest must not rescue the old exact-report receipt.
+    checked = validate_approval_receipt(record, _manifest(record), receipt)
+    assert checked["status"] == "invalid"
+    assert checked["client_delivery_authorized"] is False
 
 
 def test_explicit_human_approval_receipt_binds_exact_client_project_run_and_artifacts() -> None:

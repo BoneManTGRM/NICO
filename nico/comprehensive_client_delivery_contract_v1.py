@@ -163,22 +163,48 @@ def version_truth(record: Mapping[str, Any]) -> dict[str, Any]:
     identity, package, canonical, register = _identity(record), _report(record), _canonical(record), _register(record)
     metadata = _mapping(record.get("generator_versions")) or _mapping(canonical.get("generator_versions")) or _mapping(package.get("generator_versions"))
     triage = _mapping(register.get("technical_triage"))
-    backend = _text(metadata.get("nico_backend_build_commit") or metadata.get("backend_build_commit") or record.get("nico_build_commit"))
-    frontend = _text(metadata.get("frontend_build_commit") or record.get("frontend_build_commit"))
+    provenance = _mapping(_mapping(canonical.get("assessment")).get("nico_release_provenance"))
+    backend = _text(provenance.get("backend_build_commit") or metadata.get("nico_backend_build_commit") or metadata.get("backend_build_commit") or record.get("nico_build_commit"))
+    frontend = _text(provenance.get("frontend_build_commit") or metadata.get("frontend_build_commit") or record.get("frontend_build_commit"))
+    from nico.report_execution_provenance_e6 import verify_frontend_release
+    deployment_verified = (
+        bool(re.fullmatch(r"[0-9a-f]{40}", backend))
+        and provenance.get("backend_identity_source") == "RAILWAY_GIT_COMMIT_SHA"
+        and provenance.get("deployment_identity_conflict") is False
+        and bool(_text(provenance.get("railway_deployment_id")))
+        and provenance.get("railway_deployment_id") != "unavailable"
+        and verify_frontend_release(provenance.get("frontend_runtime_observation"), frontend,
+            _text(provenance.get("frontend_deployment_id")))
+        and provenance.get("assessment_run_id") == identity.get("run_id")
+        and provenance.get("assessed_repository_commit") == identity.get("commit_sha")
+    )
+    actual_scanners = _mapping(provenance.get("scanner_execution_evidence")).get("scanner_records")
+    actual_versions = {row["scanner_name"]: row.get("scanner_version") for row in actual_scanners
+        if isinstance(row, Mapping) and row.get("scanner_name")} if isinstance(actual_scanners, list) else {}
     return {
         "assessed_repository_commit": _text(identity.get("commit_sha")),
         "nico_backend_build_commit": backend or "unavailable",
         "frontend_build_commit": frontend or "unavailable",
         "assessment_engine_version": _text(metadata.get("assessment_engine_version") or record.get("artifact_schema")) or "unavailable",
         "scoring_model_version": _text(metadata.get("scoring_model_version")) or "unavailable",
-        "scanner_versions": dict(_mapping(register.get("scanner_versions")) or _mapping(metadata.get("scanner_versions"))),
+        "scanner_versions": actual_versions,
+        "scanner_version_evidence": "retained_per_run_record" if actual_versions else "unavailable",
         "candidate_lineage_version": _text(register.get("candidate_lineage_version") or metadata.get("candidate_lineage_version")) or "unavailable",
         "technical_triage_version": _text(triage.get("version") or metadata.get("technical_triage_version")) or "unavailable",
-        "report_renderer_version": _text(metadata.get("report_renderer_version")) or "unavailable",
+        "report_renderer_version": _text(provenance.get("report_renderer_version") or metadata.get("report_renderer_version")) or "unavailable",
         "artifact_generation_version": _text(metadata.get("artifact_generation_version") or package.get("artifact_schema")) or "unavailable",
         "mutable_operational_history_reference": _text(record.get("audit_chain_sha256") or record.get("integrity_sha256")) or f"run_revision:{int(record.get('revision') or 0)}",
-        "deployment_identity_established": bool(backend and frontend),
+        "railway_deployment_id": provenance.get("railway_deployment_id") or "unavailable",
+        "frontend_deployment_id": provenance.get("frontend_deployment_id") or "unavailable",
+        "deployment_identity_established": deployment_verified,
     }
+
+
+def _version_identity(record: Mapping[str, Any]) -> dict[str, Any]:
+    versions = version_truth(record)
+    _require(versions["deployment_identity_established"] is True,
+        "report_native_deployment_identity_unverified")
+    return versions
 
 
 def artifact_digests(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
@@ -498,6 +524,7 @@ def reviewer_binding(*, reviewer: str, reviewer_role: str, decision: str, decide
 def build_approval_receipt(record: Mapping[str, Any], manifest: Mapping[str, Any], *, reviewer: str, reviewer_role: str, decision: str, decided_at: str, decision_reason: str, authorization_basis: str = "protected_admin_write_and_explicit_review_authorization") -> dict[str, Any]:
     identity = _identity_scope(record)
     _assert_snapshot(record, identity)
+    _version_identity(record)
     candidates, ledger, artifacts = _candidate_contract(record), _review_contract(record, identity), _artifact_contract(record)
     review = reviewer_binding(reviewer=reviewer, reviewer_role=reviewer_role, decision=decision, decided_at=decided_at, decision_reason=decision_reason, authorization_basis=authorization_basis)
     manifest_review, manifest_artifacts = _mapping(manifest.get("review")), _mapping(manifest.get("artifact_digests"))
@@ -562,7 +589,7 @@ def build_approval_receipt(record: Mapping[str, Any], manifest: Mapping[str, Any
 def validate_full_lifecycle(record: Mapping[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
     identity: dict[str, Any] = {}
-    for operation in (lambda: _identity_scope(record), lambda: _scanner_contract(record), lambda: _candidate_contract(record), lambda: _artifact_contract(record)):
+    for operation in (lambda: _identity_scope(record), lambda: _scanner_contract(record), lambda: _candidate_contract(record), lambda: _artifact_contract(record), lambda: _version_identity(record)):
         try:
             value = operation()
             if not identity and isinstance(value, dict) and "run_id" in value:
