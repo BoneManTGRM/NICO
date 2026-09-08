@@ -376,12 +376,12 @@ jobs:
           from pathlib import Path
 
           from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
-          from scripts.comprehensive_production_run_handoff_v1 import load_source_proof
+          from scripts.comprehensive_production_run_handoff_v1 import SOURCE_SCHEMA, load_source_proof
 
           proof_path = Path("audit-results/spanish-comprehensive-live-proof.json")
           payload = json.loads(proof_path.read_text(encoding="utf-8"))
           mode = os.environ["NICO_SPANISH_PROOF_MODE"]
-          fresh_schema = "nico.spanish_comprehensive_live_acceptance.v3.2"
+          fresh_schema = SOURCE_SCHEMA
           recovered_schema = "nico.spanish_comprehensive_existing_run_recovery.v1"
           assert payload["artifact_schema"] == (
               fresh_schema if mode == "fresh" else recovered_schema
