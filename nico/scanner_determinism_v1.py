@@ -104,6 +104,31 @@ def clone_repository_at_snapshot(
     if not snapshot._COMMIT_SHA_RE.fullmatch(str(commit_sha or "")):
         return None, "", ["A valid full snapshot commit SHA is required."]
 
+    # The frozen provider binding, not the mere presence of a server token,
+    # authorizes private checkout. Older unbound calls remain anonymous.
+    mode = env.get("NICO_PROVIDER_ACCESS_MODE", "")
+    used = env.get("NICO_PROVIDER_CREDENTIAL_USED", "")
+    if (mode, used) not in {
+        ("", ""), ("anonymous_public", "false"),
+        ("authenticated_read_only", "true"),
+    }:
+        return None, "", ["github_snapshot_access_binding_invalid"]
+    private = mode == "authenticated_read_only"
+    fetch_env = dict(env)
+    if private:
+        from nico.github_app_auth import build_github_clone_auth_env
+
+        auth = build_github_clone_auth_env()
+        if auth.mode == "anonymous" or not auth.extra_env:
+            return None, "", ["github_snapshot_checkout_credential_unavailable"]
+        # Process-only Git config: never place credentials in argv, clone URLs,
+        # .git/config, the shared scanner environment, or retained diagnostics.
+        fetch_env.update(auth.extra_env)
+        fetch_env.update({
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_TERMINAL_PROMPT": "0", "GIT_ALLOW_PROTOCOL": "https",
+        })
+
     repo_dir = workspace / "repo"
     repo_dir.mkdir(parents=True, exist_ok=False)
 
@@ -123,9 +148,10 @@ def clone_repository_at_snapshot(
     if remote.returncode != 0:
         shutil.rmtree(repo_dir, ignore_errors=True)
         return None, "", ["Snapshot repository remote setup failed."]
-    fetched = run(
+    fetched = snapshot._git(
         [
             "git",
+            *(["-c", "credential.helper=", "-c", "http.followRedirects=false"] if private else []),
             "-c",
             "protocol.version=2",
             "fetch",
@@ -134,11 +160,15 @@ def clone_repository_at_snapshot(
             "origin",
             commit_sha,
         ],
-        300,
+        cwd=repo_dir,
+        env=fetch_env,
+        timeout=300,
     )
     if fetched.returncode != 0:
-        preview, _ = base.redact((fetched.stdout or "") + "\n" + (fetched.stderr or ""))
         shutil.rmtree(repo_dir, ignore_errors=True)
+        if private:
+            return None, "", ["github_authenticated_snapshot_fetch_failed"]
+        preview, _ = base.redact((fetched.stdout or "") + "\n" + (fetched.stderr or ""))
         return None, "", [f"Exact snapshot ancestry fetch failed: {preview[:800]}"]
     checked_out = run(["git", "checkout", "--detach", "--force", "FETCH_HEAD"])
     if checked_out.returncode != 0:

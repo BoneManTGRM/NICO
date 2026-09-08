@@ -209,6 +209,7 @@ def _postgres_atomic_transition(
     expected_statuses: set[str],
     new_status: str,
     patch: dict[str, Any],
+    require_absent_field: str | None = None,
 ) -> dict[str, Any] | None:
     adapter = getattr(active, "adapter", None)
     query = getattr(adapter, "_query", None)
@@ -221,24 +222,25 @@ def _postgres_atomic_transition(
     merged_patch = deepcopy(patch)
     merged_patch["status"] = new_status
     merged_patch["updated_at"] = patch.get("updated_at") or utc_now()
-    rows = query(
-        """
+    statement = """
         UPDATE scanner_runs
         SET status=%s,
             payload=payload || %s,
             updated_at=%s
         WHERE scan_id=%s
           AND status = ANY(%s)
-        RETURNING *
-        """,
-        (
+        """
+    parameters = (
             new_status,
             jsonb(merged_patch),
             merged_patch["updated_at"],
             scan_id,
             expected,
-        ),
     )
+    if require_absent_field is not None:
+        statement += " AND NOT (payload ? %s)"
+        parameters += (require_absent_field,)
+    rows = query(statement + " RETURNING *", parameters)
     if not rows:
         return None
     return _normalize_postgres_row(adapter, rows[0])
@@ -251,16 +253,19 @@ def atomic_scanner_transition(
     patch: dict[str, Any],
     *,
     store: StorageAdapter | None = None,
+    require_absent_field: str | None = None,
 ) -> dict[str, Any] | None:
     active = _store(store)
     if _adapter_name(active) == "postgres" and _persistence_available(active):
-        return _postgres_atomic_transition(active, scan_id, expected_statuses, new_status, patch)
+        return _postgres_atomic_transition(active, scan_id, expected_statuses, new_status, patch, require_absent_field)
 
     with _MEMORY_TRANSITION_LOCK:
         current = active.get("scanner_runs", scan_id)
         if not isinstance(current, dict):
             return None
         if str(current.get("status") or "") not in expected_statuses:
+            return None
+        if require_absent_field is not None and require_absent_field in current:
             return None
         updated = deepcopy(current)
         updated.update(deepcopy(patch))

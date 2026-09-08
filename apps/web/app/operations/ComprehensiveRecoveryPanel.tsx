@@ -3,6 +3,7 @@
 import {useEffect, useMemo, useState} from "react";
 import {copyFor} from "../assessment/assessmentCopy";
 import styles from "./operations.module.css";
+import PrivateCheckoutRecovery from "./PrivateCheckoutRecovery";
 
 type RecoveryLocale = "en" | "es-MX";
 const ARTIFACT_INTEGRITY_STAGE = "final_report_artifact_integrity";
@@ -355,6 +356,8 @@ export default function ComprehensiveRecoveryPanel({
       </div>
 
       <p className={styles.helper}>{copy.helper}</p>
+      {recoverable(run) && stage === "dependency_security_static_analysis" ?
+        <PrivateCheckoutRecovery key={targetRunId} runId={targetRunId} spanish={spanish} returnPath={returnPath} /> : null}
     </section>
   );
 }

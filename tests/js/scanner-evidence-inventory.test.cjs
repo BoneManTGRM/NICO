@@ -140,3 +140,19 @@ test('inventory language navigation persists across remount and preserves recove
     assert.equal(spanish.runId, 'comprun_locale');
   }
 });
+
+test('private checkout recovery forwards exact owner-session request with origin enforcement', async () => {
+  const calls=[];
+  const api=load(async(url,init)=>{calls.push({url,init});return Response.json({same_run_and_scan_preserved:true},{status:202});});
+  const denied=await api.POST(request('POST'),context(['scanner-checkout-recovery']));
+  assert.equal(denied.status,403); assert.equal(calls.length,0);
+  const req=request('POST'); req.headers.set('origin',req.nextUrl.origin);
+  const body=Buffer.from(JSON.stringify({scan_id:'scan_snapshot_test',commit_sha:'a'.repeat(40),failure_fingerprint:'b'.repeat(64)}));
+  req.arrayBuffer=async()=>body;
+  assert.equal((await api.POST(req,context(['scanner-checkout-recovery']))).status,202);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url.pathname,'/assessment/comprehensive-run/comprun_test/scanner-checkout-recovery');
+  assert.equal(calls[0].init.body,body);
+  assert.equal(calls[0].init.headers.get('X-NICO-Operator-Session'),'synthetic-owner-session');
+  assert.equal(calls[0].init.redirect,'manual');
+});

@@ -79,3 +79,32 @@ for (const status of [401,403]) {
     assert.equal(p.find(n => n.type === 'button' && n.props.children === 'Resume same Comprehensive run ID')[0].props.disabled, true);
   });
 }
+
+for (const allowed of [true, false]) {
+  test(`private checkout requires explicit inspection and eligible exact identity (${allowed})`, async () => {
+    const calls=[];
+    const p=component('apps/web/app/operations/PrivateCheckoutRecovery.tsx', {runId:'comprun_saved',spanish:false,returnPath:'/assessment'}, async (url,init)=>{
+      calls.push({url,init});
+      return Response.json({run_id:'comprun_saved',scan_id:'scan_snapshot_saved',commit_sha:'a'.repeat(40),failure_fingerprint:'b'.repeat(64),retry_allowed:allowed});
+    });
+    assert.equal(calls.length,0);
+    assert.equal(p.find(n=>n.type==='button').length,1);
+    p.find(n=>n.type==='button')[0].props.onClick(); await settle();
+    assert.equal(calls[0].init.method,'GET');
+    assert.equal(calls[0].init.credentials,'same-origin');
+    const retry=p.find(n=>n.type==='button' && n.props.children==='Retry this private checkout once');
+    assert.equal(retry.length,allowed?1:0);
+    if(allowed){
+      retry[0].props.onClick(); await settle();
+      assert.equal(calls[1].init.method,'POST');
+      assert.deepEqual(JSON.parse(calls[1].init.body),{scan_id:'scan_snapshot_saved',commit_sha:'a'.repeat(40),failure_fingerprint:'b'.repeat(64)});
+    }
+  });
+}
+for (const response of [Response.json({retry_allowed:true},{status:403}),Response.json({run_id:'comprun_other',retry_allowed:true})]) {
+  test('denied or mismatched private checkout cannot offer retry',async()=>{
+    const p=component('apps/web/app/operations/PrivateCheckoutRecovery.tsx',{runId:'comprun_saved',spanish:false,returnPath:'/assessment'},async()=>response);
+    p.find(n=>n.type==='button')[0].props.onClick(); await settle();
+    assert.equal(p.find(n=>n.type==='button').length,1);
+  });
+}
