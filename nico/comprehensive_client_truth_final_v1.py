@@ -637,7 +637,7 @@ def install_comprehensive_client_truth_final_v1() -> dict[str, Any]:
             sections = current_sections(normalize_client_truth(canonical), spanish=spanish)
             for section in sections:
                 section["evidence"] = _clean_evidence(section.get("evidence"))
-                if _text(section.get("id")) == "platform_parity":
+                if _text(section.get("id")) == "platform_parity" and not v5._platform_input_truth_is_explicit(canonical):
                     section["status"] = (
                         "Indicadores del repositorio revisados; paridad de ejecución no evaluada"
                         if spanish

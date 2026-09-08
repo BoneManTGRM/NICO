@@ -264,6 +264,15 @@ def test_final_runtime_sections_cannot_credit_metadata_or_exclusions(language, m
         assert "Evidencia de ejecución observada: PASS" not in surface
         if mode == "excluded":
             assert ("Excluido del alcance" if spanish else "Excluded from scope") in surface
+    if mode == "excluded":
+        from nico.comprehensive_platform_parity_summary_v1 import install_comprehensive_platform_parity_summary
+        from nico import comprehensive_client_ready_projection_v1 as projection
+
+        install_comprehensive_platform_parity_summary()
+        gate_pdf = projection.render_evidence_review_gate_pdf(canonical, {}, spanish=spanish)
+        gate_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(gate_pdf)).pages)
+        assert ("excluida explícitamente" if spanish else "explicitly excluded") in gate_text
+        assert "human input required" not in gate_text.casefold()
 
 
 @pytest.mark.parametrize("excluded_id", ["stakeholder_context", "product_objectives", "release_constraints"])

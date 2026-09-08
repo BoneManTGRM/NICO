@@ -115,7 +115,7 @@ def _install_platform_parity_compat() -> bool:
     ) -> list[dict[str, Any]]:
         sections = current(canonical, spanish=spanish)
         for section in sections:
-            if _text(section.get("id")) != "platform_parity":
+            if _text(section.get("id")) != "platform_parity" or v5._platform_input_truth_is_explicit(canonical):
                 continue
             section["status"] = (
                 "Revisión de indicadores del repositorio completa; paridad de ejecución no evaluada"

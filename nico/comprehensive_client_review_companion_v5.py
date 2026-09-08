@@ -544,6 +544,16 @@ def _runtime_observation_lines(canonical: Mapping[str, Any], module_id: str, fie
     return list(dict.fromkeys(lines))
 
 
+def _platform_input_truth_is_explicit(canonical: Mapping[str, Any]) -> bool:
+    dimensions = (_stage_map(canonical).get("platform_parity") or {}).get("assessment_dimensions")
+    return bool(
+        isinstance(dimensions, Mapping)
+        and dimensions.get("substantive_coverage") in {"not_assessed", "excluded", "partial"}
+    ) or "excluded" in str(_human_runtime_stage(canonical, "platform_parity").get("status") or "").casefold() or bool(
+        _runtime_observation_lines(canonical, "platform_parity", "matrix")
+    )
+
+
 def _functional_runtime_truth(
     canonical: Mapping[str, Any],
     details: dict[str, Any],

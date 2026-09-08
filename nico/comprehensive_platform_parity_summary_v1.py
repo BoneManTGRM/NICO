@@ -6,6 +6,8 @@ from typing import Any, Iterator, Mapping
 
 VERSION = "nico.comprehensive-platform-parity-summary.v1.2"
 _PDF_MARKER = "_nico_platform_parity_pdf_v1"
+_EN_EXCLUDED = "Runtime platform parity explicitly excluded; excluded inputs provide no assessment coverage or approval."
+_ES_EXCLUDED = "Paridad de plataforma en ejecución excluida explícitamente; los insumos excluidos no aportan cobertura de evaluación ni aprobación."
 _EN_REPOSITORY_ONLY = (
     "Repository indicator review complete; runtime platform parity not assessed."
 )
@@ -59,7 +61,12 @@ def _iter_platform_records(value: Any) -> Iterator[Mapping[str, Any]]:
 def canonical_platform_parity_status(canonical: Mapping[str, Any]) -> str:
     """Return conservative client wording without implying runtime parity review."""
 
-    for record in _iter_platform_records(canonical):
+    records = list(_iter_platform_records(canonical))
+    for record in records:
+        dimensions = record.get("assessment_dimensions")
+        if isinstance(dimensions, Mapping) and dimensions.get("substantive_coverage") == "excluded":
+            return "excluded"
+    for record in records:
         status = _normalized(
             record.get("status")
             or record.get("state")
@@ -82,6 +89,8 @@ def canonical_platform_parity_line(
     spanish: bool,
 ) -> str:
     status = canonical_platform_parity_status(canonical)
+    if status == "excluded":
+        return _ES_EXCLUDED if spanish else _EN_EXCLUDED
     if status == "complete_repository_only":
         return _ES_REPOSITORY_ONLY if spanish else _EN_REPOSITORY_ONLY
     return _ES_NOT_ASSESSED if spanish else _EN_NOT_ASSESSED
