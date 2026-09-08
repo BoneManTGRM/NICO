@@ -5,12 +5,13 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const SESSION_COOKIE = "nico-specialist-session";
+const RETAINED_EVIDENCE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/report\/evidence-package$/;
 const STATUS_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const SCANNER_EVIDENCE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-evidence$/;
 const CHECKOUT_RECOVERY_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-checkout-recovery$/;
 const CONTINUE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
-const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf)|localized-report\/(?:en|es-MX)(?:\/pdf)?|approved-delivery-package)$/;
-const ALLOWED_PATH = /^\/assessment\/(?:comprehensive-intake|comprehensive-run(?:\/[^/?#]+(?:\/(?:continue|review-queue|review-work|review|authorize-delivery|approved-delivery-package|automated-delivery-package|report\/(?:markdown|html|json|pdf)|localized-report\/(?:en|es-MX)(?:\/pdf)?))?)?)$/;
+const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/pdf)?|approved-delivery-package)$/;
+const ALLOWED_PATH = /^\/assessment\/(?:comprehensive-intake|comprehensive-run(?:\/[^/?#]+(?:\/(?:continue|review-queue|review-work|review|authorize-delivery|approved-delivery-package|automated-delivery-package|report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/pdf)?))?)?)$/;
 const RESPONSE_HEADERS = [
   "content-type", "content-length", "content-disposition", "retry-after",
   "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id",
@@ -25,6 +26,7 @@ const RESPONSE_HEADERS = [
   "x-nico-certified-package-sha256", "x-nico-authorization-mode",
   "x-nico-human-reviewed", "x-nico-accepted-edition-sha256",
   "x-nico-delivery-certificate-sha256",
+  "x-nico-evidence-manifest-sha256", "x-nico-artifact-scope", "x-nico-run-revision",
 ] as const;
 
 function errorResponse(status: number, code: string, message: string, extra: Record<string, unknown> = {}) {
@@ -74,6 +76,9 @@ async function proxyAssessment(
     return errorResponse(404, "nico_assessment_route_not_allowed", "Only bounded NICO Comprehensive lifecycle routes are available.");
   }
 
+  if (RETAINED_EVIDENCE_PATH.test(path) && request.method !== "GET") {
+    return errorResponse(405, "retained_evidence_read_only", "Retained evidence download is read-only.");
+  }
   if (SCANNER_EVIDENCE_PATH.test(path) && request.method !== "GET") {
     return errorResponse(405, "scanner_evidence_read_only", "Scanner evidence inventory is read-only.");
   }

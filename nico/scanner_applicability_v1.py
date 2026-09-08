@@ -122,6 +122,22 @@ def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
     basenames = [path.rsplit("/", 1)[-1] for path in paths]
     node_manifest = any(name in _NODE_MANIFEST_NAMES for name in basenames)
     node_source = any(path.endswith((".js", ".jsx", ".ts", ".tsx")) for path in paths)
+    # Frozen report views can omit their source path inventory. A verified native
+    # ESLint target is positive Node source evidence even in that bounded view;
+    # absence of a lockfile must not erase it.
+    for record in _record_list(canonical):
+        provenance = record.get("execution_provenance") or {}
+        coverage = provenance.get("coverage") if isinstance(provenance, Mapping) else None
+        coverage = coverage if isinstance(coverage, Mapping) else {}
+        count = coverage.get("reported_target_count")
+        if (
+            _scanner_name(record.get("scanner_name") or record.get("tool")) == "eslint"
+            and record.get("completed") is True
+            and record.get("exact_commit_match") is True
+            and coverage.get("status") == "reported_native_targets"
+            and type(count) is int and count > 0
+        ):
+            node_source = True
     python_manifest = any(name in _PYTHON_MANIFEST_NAMES for name in basenames)
     python_source = any(path.endswith(".py") for path in paths)
     return {
@@ -237,6 +253,22 @@ def _normalize_record(
         state in {_NOT_APPLICABLE, "not_required", "inapplicable"}
         or record.get("applicable") is False
     )
+    node_contradiction = scanner in {"npm-audit", "eslint", "typescript"} and (
+        signals.get("node_manifest") or signals.get("node_source")
+    )
+    if already_not_applicable and node_contradiction:
+        # Correct only this presentation classification; retain its prior claim
+        # and do not grant execution, verification, or score credit.
+        record["prior_applicability_reason"] = reason
+        record.update({
+            "state": "unavailable", "status": "unavailable", "completed": False,
+            "verified": False, "verified_complete": False,
+            "verified_for_this_report": False, "applicable": True,
+            "evidence_required": True, "applicability_reason": "",
+            "failure_reason": "Applicable Node analyzer execution evidence is unavailable; retained source evidence contradicts the earlier not-applicable classification.",
+            "failure_or_unavailable_reason": "Applicable Node analyzer execution evidence is unavailable; retained source evidence contradicts the earlier not-applicable classification.",
+        })
+        return record
     inferred, inferred_reason = _explicitly_not_applicable(scanner, reason, signals)
     if already_not_applicable or (
         state

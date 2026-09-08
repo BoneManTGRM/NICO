@@ -102,3 +102,51 @@ def require_complete_assessment(canonical: Mapping[str, Any], *, expected_commit
     if not result["passed"]:
         raise RuntimeError("Complete-assessment evidence blocked: " + "; ".join(result["failures"]))
     return result
+
+
+def scanner_execution_summary(canonical: Mapping[str, Any], *, expected_commit: str, expected_run: str) -> dict[str, Any]:
+    """Bounded current execution projection; never change the retained report.
+
+    Reuse the independent gate. A completed orchestration stage is not a scanner
+    result, and a tool with failed evidence must not receive completion credit.
+    """
+    from nico.scanner_applicability_v1 import normalize_scanner_applicability_canonical
+
+    assessment = canonical.get('assessment')
+    assessment = assessment if isinstance(assessment, Mapping) else {}
+    # Only retained source inventories and native records establish applicability.
+    # Do not scan arbitrary report prose or multi-megabyte artifact strings for paths.
+    source = {key: canonical[key] for key in (
+        'identity', 'repository_evidence', 'file_evidence', 'dependency_evidence',
+        'requested_scanner_records', 'scanner_execution_records',
+    ) if key in canonical}
+    source['assessment'] = {key: assessment[key] for key in (
+        'repository_evidence', 'file_evidence', 'dependency_evidence',
+        'requested_scanner_records', 'scanner_execution_records',
+    ) if key in assessment}
+    gate = complete_assessment_evidence(
+        normalize_scanner_applicability_canonical(source),
+        expected_commit=expected_commit, expected_run=expected_run,
+    )
+    failures = gate['failures']
+    identity_valid = not any(value in failures for value in (
+        'expected_identity_missing', 'canonical_identity_mismatch',
+        'requested_scanner_records_missing',
+    ))
+    valid = lambda name: identity_valid and not any(value.startswith(name + ':') for value in failures)
+    completed = [name for name in REQUIRED_TOOLS if name in gate['completed_tools'] and valid(name)]
+    not_applicable = [name for name in REQUIRED_TOOLS if name in gate['not_applicable_tools'] and valid(name)]
+    incomplete = [name for name in REQUIRED_TOOLS if name not in completed and name not in not_applicable]
+    applicable_count = len(REQUIRED_TOOLS) - len(not_applicable)
+    return {
+        'schema': 'nico.scanner-execution-ui-summary.v1',
+        'run_id': expected_run, 'commit_sha': expected_commit,
+        'status': 'complete' if gate['passed'] else 'partial' if identity_valid else 'unknown',
+        'completed_count': len(completed), 'applicable_count': applicable_count,
+        'percent': round(100 * len(completed) / applicable_count) if identity_valid and applicable_count else None,
+        'completed_tools': completed, 'incomplete_tools': incomplete,
+        'not_applicable_tools': not_applicable,
+        'verification_scope': 'retained_canonical_execution_evidence',
+        'assessment_mutated': False, 'human_approval_proven': False,
+        'client_delivery_allowed': False,
+    }

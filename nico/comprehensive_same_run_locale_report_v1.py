@@ -809,9 +809,19 @@ def build_same_run_locale_markdown_projection(
             source_pdf,
         )
 
-    regenerated = target_language != source_language
+    regenerated = target_language != source_language or (
+        status.get("_nico_force_pending_draft_artifact_regeneration") is True
+        and source_lifecycle["approval_status"] != "approved_final"
+    )
     if regenerated:
-        localized_view = _localized_draft_view(canonical_copy, target_language)
+        # PDF presentation applies this same projection before preparation. Using
+        # the unprojected source here publishes a different Markdown byte set
+        # from the one identified by the PDF's manifest.
+        from nico.comprehensive_commercial_ship_projection_v3 import (
+            project_canonical_for_client_presentation,
+        )
+        presentation = project_canonical_for_client_presentation(canonical_copy)
+        localized_view = _localized_draft_view(presentation, target_language)
         from nico.phase17_canonical_artifact_rebuild_v1 import (
             build_localized_markdown_projection,
         )
@@ -825,7 +835,7 @@ def build_same_run_locale_markdown_projection(
         if not localized_json:
             raise ValueError("localized_markdown_prepared_canonical_required")
         if _assessment_truth_projection(localized_json) != _assessment_truth_projection(
-            canonical_copy
+            presentation
         ):
             raise ValueError("localized_assessment_truth_parity_mismatch")
         markdown_value = localized.get("markdown")
@@ -853,6 +863,7 @@ def build_same_run_locale_markdown_projection(
         "artifact_schema": VERSION,
         "service_id": "comprehensive",
         "projection_kind": "localized_markdown",
+        "artifact_scope": "client-facing-same-run-projection" if regenerated else "retained-canonical-artifact",
         "response_bounded": True,
         "run_id": identity_binding["run_id"],
         "repository": identity_binding["repository"],

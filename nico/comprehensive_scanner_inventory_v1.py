@@ -79,6 +79,10 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
     command = record.get("command_intent")
     command = command if isinstance(command, str) and len(command) <= 8000 else ""
     state = record.get("status")
+    observed = record.get("execution_observed_for_this_report")
+    observed = observed if type(observed) is bool else None
+    if state in {"unavailable", "not_applicable", "blocked"} and type(record.get("exit_code", record.get("returncode"))) is not int:
+        observed = False
     raw = _raw_metadata(record, binding={**{key: scan.get(key) for key in ("run_id", "scan_id", "customer_id", "project_id", "repository")}, "commit_sha": commit, "scanner_name": _scanner_name(record)}) if source_matches else {"availability": "source_mismatch"}
     return {
         "scanner_name": _scanner_name(record),
@@ -96,7 +100,8 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
             "retained_command_intent_sha256": _hash_bytes(command.encode()) if command else None,
             "full_configuration_verified": False,
         },
-        "execution_observed": record.get("execution_observed_for_this_report") if type(record.get("execution_observed_for_this_report")) is bool else None,
+        "execution_observed": observed,
+        "retained_execution_observed_claim": record.get("execution_observed_for_this_report") if type(record.get("execution_observed_for_this_report")) is bool else None,
         "output_capture_complete": record.get("output_capture_complete") if type(record.get("output_capture_complete")) is bool else None,
         "output_truncated": record.get("output_truncated") if type(record.get("output_truncated")) is bool else None,
         "timed_out": record.get("timed_out") if type(record.get("timed_out")) is bool else None,

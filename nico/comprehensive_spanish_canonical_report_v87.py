@@ -169,6 +169,31 @@ _CANONICAL_PARITY_EXACT.update({
     for source, translated in _OSV_APPLICABILITY_ES.items()
 })
 
+# Whole-field renderer contracts for Node applicability. Preserve the distinction
+# between inapplicable tools and applicable tools lacking execution evidence.
+_NODE_APPLICABILITY_ES = {
+    "Canonical scoring is reconciled to retained evidence without recomputing or inflating either score; evidence limitations remain explicit.":
+        "La puntuación canónica se concilia con la evidencia conservada sin recalcular ni inflar ninguna puntuación; las limitaciones de evidencia permanecen explícitas.",
+    "No supported JavaScript package manifest, lockfile, or source tree exists at the assessed commit; npm-audit is not applicable to this repository snapshot.":
+        "No existe un manifiesto de paquetes JavaScript compatible, archivo de bloqueo ni árbol de código fuente en el commit evaluado; npm-audit no es aplicable a esta instantánea del repositorio.",
+    "No JavaScript/TypeScript project or source tree exists at the assessed commit; ESLint is not applicable to this repository snapshot.":
+        "No existe un proyecto ni árbol de código fuente JavaScript/TypeScript en el commit evaluado; ESLint no es aplicable a esta instantánea del repositorio.",
+    "No TypeScript project, source tree, or tsconfig exists at the assessed commit; TypeScript compilation is not applicable to this repository snapshot.":
+        "No existe un proyecto TypeScript, árbol de código fuente ni tsconfig en el commit evaluado; la compilación TypeScript no es aplicable a esta instantánea del repositorio.",
+    "Applicable Node analyzer execution evidence is unavailable; retained source evidence contradicts the earlier not-applicable classification.":
+        "La evidencia de ejecución del analizador Node aplicable no está disponible; la evidencia de código fuente conservada contradice la clasificación anterior como no aplicable.",
+}
+_CANONICAL_PARITY_EXACT.update(_NODE_APPLICABILITY_ES)
+_CANONICAL_PARITY_EXACT.update({
+    prefix + source: translated_prefix + translated
+    for source, translated in _NODE_APPLICABILITY_ES.items()
+    for scanner in ("npm-audit", "eslint", "typescript")
+    for prefix, translated_prefix in (
+        (f"{scanner}: ", f"{scanner}: "),
+        (f"{scanner}: not applicable; ", f"{scanner}: no aplicable; "),
+    )
+})
+
 _STAGE_PHRASE_ES = {
     "authorization and scope": "autorización y alcance",
     "immutable repository snapshot": "instantánea inmutable del repositorio",
@@ -1935,6 +1960,15 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    lockfile = re.fullmatch(
+        r"(?P<tool>(?:typescript|eslint|npm-audit): )?(?P<path>[A-Za-z0-9_.@/+\-]+/package-lock\.json) "
+        r"is required for deterministic project-tool preparation\.", value,
+    )
+    if lockfile is not None:
+        return (
+            f"{lockfile.group('tool') or ''}{lockfile.group('path')} se requiere "
+            "para preparar las herramientas del proyecto de forma determinista."
+        )
     match = re.fullmatch(
         r"Provider: (?P<provider>GitHub|GitLab|Bitbucket Cloud|Azure DevOps)\.",
         value,

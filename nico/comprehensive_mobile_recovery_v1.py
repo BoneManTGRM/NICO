@@ -27,6 +27,7 @@ ARTIFACT_ROUTE_PATHS = {
     "/assessment/comprehensive-run/{run_id}/report/html",
     "/assessment/comprehensive-run/{run_id}/report/json",
     "/assessment/comprehensive-run/{run_id}/report/pdf",
+    "/assessment/comprehensive-run/{run_id}/report/evidence-package",
 }
 
 _BROWSER_PROJECTION: ContextVar[bool] = ContextVar(
@@ -324,6 +325,33 @@ def _install_artifact_routes(app: Any) -> None:
     existing = {str(getattr(route, "path", "")) for route in app.routes}
     if ARTIFACT_ROUTE_PATHS <= existing:
         return
+
+    @app.get("/assessment/comprehensive-run/{run_id}/report/evidence-package")
+    async def comprehensive_retained_evidence_package(run_id: str, request: Request) -> Response:
+        from nico.comprehensive_retained_report_export_v1 import retained_report_zip
+
+        try:
+            record, report = _artifact_record(request, run_id)
+            headers = _artifact_headers(run_id, record, report)
+            try:
+                data = retained_report_zip(report)
+            except (ValueError, TypeError, KeyError):
+                raise HTTPException(status_code=409, detail={
+                    "code": "retained_evidence_package_unavailable",
+                    "message": "The retained artifact set is missing or does not match its manifest.",
+                }) from None
+            return Response(data, media_type="application/zip", headers={
+                **headers,
+                "Content-Disposition": 'attachment; filename="nico-retained-evidence-package.zip"',
+                "X-NICO-Artifact-SHA256": hashlib.sha256(data).hexdigest(),
+                "X-NICO-Evidence-Manifest-SHA256": str(report["evidence_manifest_sha256"]),
+                "X-NICO-Artifact-Scope": "retained-canonical-artifact-set",
+                "X-NICO-Run-Revision": str(record.get("revision", "")),
+            })
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise routes_module._translate_error(exc) from exc
 
     @app.get("/assessment/comprehensive-run/{run_id}/report/markdown")
     async def comprehensive_report_markdown(run_id: str, request: Request) -> Response:
