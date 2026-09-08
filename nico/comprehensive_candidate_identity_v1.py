@@ -130,8 +130,7 @@ def expand_candidate_identities(register: Mapping[str, Any]) -> dict[str, Any]:
                     "evidence_quality": quality,
                     "raw_payload_retention_state": retention_state,
                     "candidate_identity_model": MODEL,
-                    "human_review_required": record.get("disposition")
-                    == "review_required",
+                    "human_review_required": True,
                 }
             )
             if quality == "count_only":
