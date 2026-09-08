@@ -331,7 +331,12 @@ def test_preapproval_artifact_update_rebinds_manifest_without_duplicating_pages(
 
     _validate_exact_artifact_hashes(rebound)
     assert rebound["pdf_page_count"] == first["pdf_page_count"]
-    assert rebound["pdf_base64"] == original_pdf
+    assert rebound["pdf_base64"] != original_pdf
+    before_pages = PdfReader(io.BytesIO(base64.b64decode(original_pdf))).pages
+    after_pages = PdfReader(io.BytesIO(base64.b64decode(rebound["pdf_base64"]))).pages
+    for before, after in zip(before_pages, after_pages, strict=True):
+        if "Retained structured artifacts" not in (before.extract_text() or ""):
+            assert after.extract_text() == before.extract_text()
     assert rebound["core_report_page_count"] == original_core_pages
     assert rebound["draft_artifact_identity"] != first["draft_artifact_identity"]
     assert rebound["findings_csv"] == changed["findings_csv"]
