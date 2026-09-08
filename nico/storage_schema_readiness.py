@@ -11,7 +11,9 @@ from nico.admin_security import require_admin_write
 from nico.storage import STORE
 
 STORAGE_SCHEMA_READINESS_SCHEMA = "nico.storage_schema_readiness.v1"
-STORAGE_SCHEMA_CONTRACT_VERSION = "2026.07.13.1"
+# The 14-table contract includes retained scanner bytes. The July version's
+# 13-table hash remains immutable in existing migration ledgers.
+STORAGE_SCHEMA_CONTRACT_VERSION = "2026.09.08.1"
 STORAGE_SCHEMA_MIGRATION_TABLE = "nico_schema_migrations"
 STORAGE_SCHEMA_READINESS_ROUTE = ("GET", "/operations/storage-schema")
 REQUIRED_STORAGE_SCHEMA_ROUTE = "GET /operations/storage-schema"
