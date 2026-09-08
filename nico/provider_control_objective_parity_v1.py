@@ -230,7 +230,7 @@ def _assessed_state(value: Any) -> bool:
 def provider_neutral_immutable_ci_score(
     workflow: dict[str, Any],
     commit_sha: str,
-) -> tuple[int, list[str], list[str], dict[str, Any]]:
+) -> tuple[int | None, list[str], list[str], dict[str, Any]]:
     """Score equivalent immutable CI objectives without converting unknowns to failures.
 
     Technical performance is normalized across the objective weight that was actually
@@ -344,7 +344,9 @@ def provider_neutral_immutable_ci_score(
     baseline_weight = 45.0
     denominator = baseline_weight + assessed_weight
     numerator = baseline_weight + passed_weight
-    score = scoring._bounded(100.0 * numerator / denominator) if denominator else 0
+    # The policy baseline is not observed evidence. With no evaluated objective
+    # it cannot manufacture a perfect maturity score.
+    score = scoring._bounded(100.0 * numerator / denominator) if assessed_weight else None
     coverage = round(
         100.0 * assessed_weight / total_objective_weight
     ) if total_objective_weight else 0
@@ -388,6 +390,29 @@ def provider_neutral_immutable_ci_score(
         "not_assessed_capability_treated_as_passed": False,
         "objective_states": objective_states,
         "score_inputs": objective_values,
+        "control_population": len(weighted),
+        "evaluated_control_count": sum(value is not None for _, _, value in weighted),
+        "passed_control_count": sum(value is True for _, _, value in weighted),
+        "failed_control_count": sum(value is False for _, _, value in weighted),
+        "excluded_control_objectives": [],
+        "rubric": {
+            "version": "nico.ci-rubric.v1",
+            "baseline_weight": baseline_weight,
+            "baseline_is_observed_control": False,
+            "passed_objective_weight": passed_weight,
+            "assessed_objective_weight": assessed_weight,
+            "total_objective_weight": total_objective_weight,
+            "score_numerator": numerator if assessed_weight else None,
+            "score_denominator": denominator if assessed_weight else None,
+            "rounding": "nearest_integer_ties_to_even",
+            "formula": "round(100*(baseline+passed_weight)/(baseline+assessed_weight)) when assessed_weight>0; otherwise null",
+            "objectives": [
+                {"id": name, "weight": weight, "state": objective_states[name]}
+                for name, weight, _ in weighted
+            ],
+            "commercial_readiness_percentage": False,
+            "unmeasured_objectives_affect": "assurance_coverage_only",
+        },
         "assessed_objective_weight": round(assessed_weight, 4),
         "total_objective_weight": round(total_objective_weight, 4),
         "control_objective_coverage_percent": coverage,

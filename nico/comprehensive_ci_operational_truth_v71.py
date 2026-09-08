@@ -120,13 +120,48 @@ def _configuration_line(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     inputs = _mapping(contract.get("score_inputs"))
     controls = _mapping(inputs.get("configuration_controls"))
     score = section.get("presented_score", section.get("score"))
-    score_label = f"{_integer(score)}/100" if isinstance(score, (int, float)) else (
+    score_label = f"{_integer(score)}/100" if isinstance(score, (int, float)) and not isinstance(score, bool) else (
         "Sin puntuación" if spanish else "Not scored"
     )
     exact = contract.get("exact_configuration_match") is True
     permissions = inputs.get("explicit_permissions_present") is True
     immutable = sum(value is True for value in controls.values())
     total = len(controls)
+    objectives = _mapping(contract.get("objective_states"))
+    if objectives:
+        evaluated = sum(value in {"passed", "failed"} for value in objectives.values())
+        passed = sum(value == "passed" for value in objectives.values())
+        unknown = sum(value == "not_assessed" for value in objectives.values())
+        coverage = contract.get("control_objective_coverage_percent")
+        rubric = _mapping(contract.get("rubric"))
+        formula = ""
+        if rubric and evaluated:
+            base = float(rubric.get("baseline_weight") or 0)
+            earned = float(rubric.get("passed_objective_weight") or 0)
+            measured = float(rubric.get("assessed_objective_weight") or 0)
+            formula = f" {rubric.get('version')}: 100*({base:g}+{earned:g})/({base:g}+{measured:g}); "
+            formula += "redondeo al entero más cercano, empates al par; la base no es evidencia observada." if spanish else "nearest integer, ties to even; baseline is not observed evidence."
+        if spanish:
+            return (
+                "A. Madurez de configuración de CI/CD: "
+                f"{score_label}; objetivos evaluados={evaluated}/{len(objectives)}; "
+                f"aprobados={passed}; sin medición={unknown}; cobertura ponderada={coverage}%."
+                + formula
+                + " No es un porcentaje de preparación comercial."
+            )
+        return (
+            "A. CI/CD configuration maturity: "
+            f"{score_label}; evaluated objectives={evaluated}/{len(objectives)}; "
+            f"passed={passed}; not measured={unknown}; weighted coverage={coverage}%."
+            + formula
+            + " This is not a commercial readiness percentage."
+        )
+    if not total:
+        return (
+            f"A. Madurez de configuración de CI/CD: {score_label}; población de controles sin medición; rúbrica de origen no disponible."
+            if spanish else
+            f"A. CI/CD configuration maturity: {score_label}; control population not measured; source rubric unavailable."
+        )
     if spanish:
         return (
             "A. Madurez de configuración de CI/CD: "

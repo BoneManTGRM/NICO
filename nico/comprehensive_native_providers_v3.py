@@ -224,16 +224,16 @@ def _immutable_ci_score(
 
 def _immutable_delivery_score(
     architecture_score: int,
-    ci_score: int,
+    ci_score: int | None,
     activity: dict[str, Any],
     workflow: dict[str, Any],
-) -> tuple[int, list[str], list[str], dict[str, Any]]:
+) -> tuple[int | None, list[str], list[str], dict[str, Any]]:
     """Measure sustainable delivery capacity without scoring mutable activity volume."""
 
-    score = _bounded(architecture_score * 0.60 + ci_score * 0.40)
+    score = _bounded(architecture_score * 0.60 + ci_score * 0.40) if ci_score is not None else None
     evidence = [
         f"Architecture and technical-debt score: {architecture_score}/100.",
-        f"Immutable CI configuration score: {ci_score}/100.",
+        f"Immutable CI configuration score: {str(ci_score) + '/100' if ci_score is not None else 'not scored'}.",
         (
             "The delivery-capacity score is 60% architecture maintainability "
             "and 40% immutable workflow automation."
@@ -244,6 +244,8 @@ def _immutable_delivery_score(
         ),
     ]
     findings: list[str] = []
+    if ci_score is None:
+        findings.append("Delivery capacity is not scored because immutable CI configuration was not assessed.")
     if architecture_score < 75:
         findings.append(
             "Concentrated architecture or complexity risk constrains sustainable delivery capacity."
