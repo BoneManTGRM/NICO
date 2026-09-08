@@ -408,6 +408,46 @@ def _run_npm_audit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Ca
     return _tool_payload(spec, last_result, findings=findings, capture_complete=valid, reason="" if valid else "one or more npm audit runs did not return complete JSON", raw_blob=blob, execution_source="canonical_npm_audit", workspace=workspace, valid_returncodes={0, 1}, extra={"lockfile_count_checked": len(directories), "scanner_invocation_receipts": invocation_receipts})
 
 
+def _osv_schema_error(payload: Any) -> str:
+    """Validate the native source-scan envelope before granting execution credit.
+
+    Pinned OSV 2.3.8 models/results.go emits a results array (including [] for
+    zero findings), with source/package objects. Arbitrary parseable JSON is
+    not scanner evidence. Optional advisory fields remain forward compatible.
+    """
+    prefix = "OSV JSON schema invalid: "
+    if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+        return prefix + "results must be an array in a native result object"
+    if payload.get("error") or payload.get("errors"):
+        return prefix + "output contains an execution error"
+    for source_result in payload["results"]:
+        if not isinstance(source_result, dict):
+            return prefix + "source result must be an object"
+        source = source_result.get("source")
+        if not isinstance(source, dict) or not all(
+            isinstance(source.get(key), str) and source[key].strip() for key in ("path", "type")
+        ):
+            return prefix + "source path and type are missing or malformed"
+        packages = source_result.get("packages")
+        if not isinstance(packages, list):
+            return prefix + "packages must be an array"
+        for package_result in packages:
+            if not isinstance(package_result, dict):
+                return prefix + "package result must be an object"
+            package = package_result.get("package")
+            if not isinstance(package, dict) or not all(
+                isinstance(package.get(key), str) for key in ("name", "version", "ecosystem")
+            ):
+                return prefix + "package identity is missing or malformed"
+            vulnerabilities = package_result.get("vulnerabilities", [])
+            if not isinstance(vulnerabilities, list) or any(
+                not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"].strip()
+                for item in vulnerabilities
+            ):
+                return prefix + "vulnerability records are malformed"
+    return ""
+
+
 def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult]) -> dict[str, Any]:
     binary = shutil.which("osv-scanner")
     if binary is None:
@@ -468,6 +508,15 @@ def _run_osv(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable
             return _tool_payload(spec, result, findings=[], capture_complete=False, reason=reason,
                 raw_blob=blob, execution_source="osv_no_package_sources_unverified", workspace=workspace,
                 valid_returncodes={0, 1}, extra={"applicability_evidence": inventory, "scanner_invocation_receipts": invocation_receipts})
+        schema_error = _osv_schema_error(payload) if not reason else ""
+        if schema_error:
+            # A successful CLI invocation with malformed native output is an
+            # evidence failure, not a reason to retry the legacy CLI and hide it.
+            blob = _raw_blob(spec.name, raw, "json")
+            return _tool_payload(spec, result, findings=[], capture_complete=False,
+                reason=schema_error, raw_blob=blob, execution_source="canonical_osv_scanner",
+                workspace=workspace, valid_returncodes={0, 1},
+                extra={"scanner_invocation_receipts": invocation_receipts})
         if payload is not None and result.returncode in {0, 1} and not result.timed_out:
             canonical = workspace.root / "scanner-raw" / "osv-scanner.json"
             shutil.copyfile(raw, canonical)

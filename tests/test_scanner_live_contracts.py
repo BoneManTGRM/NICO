@@ -1,10 +1,79 @@
 from __future__ import annotations
 import os
+import json
 import subprocess
 from pathlib import Path
 import pytest
 from nico.scanner_package_inventory_v1 import inspect_package_sources
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace
+
+
+def _osv_native_result(monkeypatch, tmp_path, payload, exit_code=0):
+    from nico import scanner_evidence_pipeline_v1 as pipeline
+    from nico.scanner_tool_runners import TOOL_SPECS
+    workspace = WorkerWorkspace(tmp_path)
+    workspace.repo_dir.mkdir()
+    (workspace.repo_dir / 'requirements.txt').write_text('idna==3.10\n')
+    monkeypatch.setattr(pipeline.shutil, 'which', lambda _: '/tools/osv-scanner')
+    monkeypatch.setattr(pipeline, '_scanner_version', lambda *args: 'osv-scanner version: 2.3.8')
+
+    def runner(args, **kwargs):
+        return WorkerCommandResult(tuple(args), exit_code, json.dumps(payload), '')
+
+    return pipeline._run_osv(next(s for s in TOOL_SPECS if s.name == 'osv-scanner'), workspace, runner)
+
+
+@pytest.mark.parametrize('payload', [
+    42, [], {}, {'error': 'lookup failed'}, {'results': 'malformed'},
+    {'results': None}, {'results': [None]}, {'results': [{}]},
+    {'results': [{'source': {'path': 'requirements.txt', 'type': 'lockfile'}, 'packages': {}}]},
+    {'results': [{'source': {'path': 'requirements.txt', 'type': 'lockfile'}, 'packages': [None]}]},
+    {'results': [{'source': {'path': 'requirements.txt', 'type': 'lockfile'}, 'packages': [
+        {'package': {'name': 'idna', 'version': '3.10', 'ecosystem': 'PyPI'}, 'vulnerabilities': [None]}]}]},
+    {'results': [], 'error': 'lookup failed'},
+])
+def test_malformed_osv_native_json_cannot_pass_report_completion(monkeypatch, tmp_path, payload):
+    from nico.complete_assessment_gate_v1 import REQUIRED_TOOLS, complete_assessment_evidence
+    from nico.comprehensive_retained_scanner_evidence_v1 import compact_scanner_records
+    from nico.comprehensive_authoritative_scanner_truth_v62 import reconcile_authoritative_scanner_truth
+
+    observed = _osv_native_result(monkeypatch, tmp_path, payload)
+    sha, run = 'a' * 40, 'comprun_osv_native_schema'
+    records = []
+    for name in REQUIRED_TOOLS:
+        record = {'tool': name, 'status': 'completed', 'returncode': 0,
+                  'returncode_valid': True, 'verified_for_this_report': True,
+                  'output_capture_complete': True, 'artifact_hash': 'b' * 64,
+                  'raw_artifact_sha256': 'c' * 64}
+        if name == 'osv-scanner':
+            record.update(observed)
+        record.update(commit_sha=sha, current_run=True, execution_observed_for_this_report=True,
+                      raw_artifact_retention_complete=True)
+        records.append(record)
+    compact = compact_scanner_records({'scan_id': 'scan_schema_fixture', 'snapshot_commit_sha': sha,
+        'actual_commit_sha': sha, 'snapshot_match': True, 'scanner_results': records}, commit_sha=sha)
+    canonical = reconcile_authoritative_scanner_truth({'identity': {'commit_sha': sha, 'run_id': run},
+        'requested_scanner_records': compact, 'pdf_available': True})
+    gate = complete_assessment_evidence(canonical, expected_commit=sha, expected_run=run)
+    assert not gate['passed'], gate
+    assert any(f.startswith('osv-scanner:') for f in gate['failures'])
+    assert observed['status'] == 'failed'
+    assert observed['verified_for_this_report'] is False
+    assert observed['output_capture_complete'] is False
+    assert 'OSV JSON schema invalid' in observed['reason']
+
+
+@pytest.mark.parametrize('findings,exit_code', [(False, 0), (True, 1)])
+def test_native_osv_valid_package_results_keep_zero_and_findings_distinct(monkeypatch, tmp_path, findings, exit_code):
+    package = {'package': {'name': 'idna', 'version': '3.10', 'ecosystem': 'PyPI'}}
+    if findings:
+        package['vulnerabilities'] = [{'id': 'TEST-OSV-1', 'summary': 'Synthetic regression fixture'}]
+    result = _osv_native_result(monkeypatch, tmp_path, {'results': [
+        {'source': {'path': 'requirements.txt', 'type': 'lockfile'}, 'packages': [package]}
+    ]}, exit_code)
+    assert result['status'] == 'completed'
+    assert result['findings_count'] == int(findings)
+    assert result['verified_for_this_report'] is True
 
 
 def test_history_selector_does_not_corrupt_nonhistory_subcommands():
