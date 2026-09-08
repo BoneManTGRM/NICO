@@ -206,3 +206,14 @@ def test_ambiguous_run_scanner_reference_blocks_lookup(inventory):
     response = inventory.client.get(PATH, headers=inventory.owner)
     assert response.status_code == 409
     assert inventory.calls["scan"] == []
+
+
+def test_unavailable_without_a_process_exit_is_not_native_execution(inventory):
+    record = inventory.scan['scanner_results'][0]
+    record.update(status='unavailable', execution_observed_for_this_report=True)
+    record.pop('returncode')
+    before = deepcopy(record)
+    value = inventory.client.get(PATH, headers=inventory.owner).json()['scanner_records'][0]
+    assert value['execution_observed'] is False
+    assert value['retained_execution_observed_claim'] is True
+    assert record == before

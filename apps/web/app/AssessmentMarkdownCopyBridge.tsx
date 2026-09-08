@@ -116,10 +116,12 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
       headers: {Accept: "application/json"},
     });
     if (!response.ok) {
-      const failure = await response.json().catch(() => ({})) as {detail?: {reason?: unknown}};
-      const reason = String(failure.detail?.reason || "");
+      const failure = await response.json().catch(() => ({})) as {detail?: {reason?: unknown; code?: unknown}};
+      const reason = String(failure.detail?.code || failure.detail?.reason || "");
       // Show only bounded machine codes, never arbitrary backend exception text.
-      const code = /^[a-z][a-z0-9_]{0,119}$/.test(reason) ? ` · ${reason}` : "";
+      const translation = /^missing Spanish presentation translation for ([a-z_]{1,60}):/.exec(reason);
+      const boundedReason = translation ? `spanish_translation_missing_${translation[1]}` : reason;
+      const code = /^[a-z][a-z0-9_]{0,119}$/.test(boundedReason) ? ` · ${boundedReason}` : "";
       throw new Error(`HTTP ${response.status}${code}`);
     }
     const payload = await response.json() as {
