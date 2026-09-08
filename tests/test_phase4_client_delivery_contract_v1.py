@@ -267,7 +267,7 @@ def test_outside_structure_fixtures_prove_complete_preapproval_contract(ecosyste
     assert result["version_truth"]["deployment_identity_established"] is True
 
 
-@pytest.mark.parametrize("change", ["missing", "label_only", "wrong_run", "wrong_source", "corrupt_observation", "wrong_frontend", "missing_railway"])
+@pytest.mark.parametrize("change", ["missing", "label_only", "wrong_run", "wrong_source", "corrupt_observation", "wrong_frontend", "missing_railway", "invalid_frontend_sha"])
 def test_real_final_approval_entrypoints_reject_unverified_native_identity(change):
     record = _record()
     canonical = record["stage_results"]["final_comprehensive_report_generation"]["report_package"]["json"]
@@ -279,6 +279,14 @@ def test_real_final_approval_entrypoints_reject_unverified_native_identity(chang
     if change == "corrupt_observation": release["frontend_runtime_observation"]["observation_sha256"] = "0" * 64
     if change == "wrong_frontend": release["frontend_deployment_id"] = "dpl_other"
     if change == "missing_railway": release["railway_deployment_id"] = "unavailable"
+    if change == "invalid_frontend_sha":
+        release["frontend_build_commit"] = "unavailable"
+        observation = release["frontend_runtime_observation"]
+        observed = json.loads(base64.b64decode(observation["observation_bytes_base64"]))
+        observed["release_sha"] = "unavailable"
+        raw = json.dumps(observed).encode()
+        observation.update(release_sha="unavailable", observation_bytes_base64=base64.b64encode(raw).decode(),
+            observation_sha256=hashlib.sha256(raw).hexdigest(), observation_size_bytes=len(raw))
     result = validate_full_lifecycle(record)
     assert "report_native_deployment_identity_unverified" in result["validation_errors"]
     assert result["status"] == "blocked"

@@ -10,6 +10,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 import hashlib
 import json
+import re
 import time
 from typing import Any, Mapping
 
@@ -33,7 +34,7 @@ def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> 
 
     result: dict[str, Any] = {"status": "unavailable", "source_url": FRONTEND_URL,
         "deployment_identity_verified": False, "native_provider_record_verified_by_this_code": False}
-    if not expected_deployment_id or expected_deployment_id == "unavailable" or expected_sha == "unavailable":
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha) or not re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", expected_deployment_id):
         return {**result, "reason": "expected_frontend_deployment_unavailable"}
     try:
         with requests.Session() as session:
@@ -76,6 +77,8 @@ def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> 
 def verify_frontend_release(value: Any, expected_sha: str, expected_deployment_id: str) -> bool:
     """Validate a retained observation without replacing it with current runtime data."""
     value = _mapping(value)
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha) or not re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", expected_deployment_id):
+        return False
     try:
         raw = base64.b64decode(value.get("observation_bytes_base64", ""), validate=True)
         if not 0 < len(raw) <= _MAX_FRONTEND_BYTES:
