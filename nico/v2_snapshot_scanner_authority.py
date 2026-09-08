@@ -24,7 +24,7 @@ from nico.scanner_evidence_pipeline_v1 import (
 from nico.scanner_result_truth_v1 import reconcile_scanner_payload
 from nico.worker_execution import WorkerCommandResult, WorkerWorkspace, run_command
 
-VERSION = "nico.v2.snapshot-scanner-authority.v4"
+VERSION = "nico.v2.snapshot-scanner-authority.v5"
 _TOOL_MARKER = "__nico_v2_snapshot_tool_authority_v2__"
 _CLONE_MARKER = "__nico_v2_full_history_clone_v2__"
 _HISTORY_COMMAND_MARKER = "__nico_v2_exact_sha_history_commands_v1__"
@@ -212,8 +212,14 @@ def canonical_snapshot_tool_runner(
         previous = getattr(canonical_snapshot_tool_runner, "_nico_previous")
         return previous(spec, workspace, runner=runner, preparation=preparation)
 
+    commit_sha = _commit_sha(workspace)
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+    inventory = workspace.node_input_inventory
+    if inventory is None and spec.name in {"npm-audit", "typescript"}:
+        inventory = inspect_node_inputs(workspace.repo_dir, commit_sha)
+    payload = scanner_pipeline.node_inapplicability_result(spec, workspace, inventory or {}, commit_sha)
     prepared = preparation
-    if spec.name in {"eslint", "typescript"} and prepared is None:
+    if payload is None and spec.name in {"eslint", "typescript"} and prepared is None:
         prepared = _preparation(workspace, runner)
 
     # Enforce immutable HEAD selection at the final runner boundary. This remains
@@ -224,7 +230,8 @@ def canonical_snapshot_tool_runner(
         if bool(spec.scans_git_history)
         else runner
     )
-    payload = _run_problem_tool(spec, workspace, effective_runner, prepared)
+    if payload is None:
+        payload = _run_problem_tool(spec, workspace, effective_runner, prepared)
     if not isinstance(payload, dict):
         raise TypeError(f"canonical scanner payload must be an object: {spec.name}")
     raw_blob = payload.get("_raw_artifact_blob")
@@ -242,7 +249,6 @@ def canonical_snapshot_tool_runner(
     else:
         payload["raw_artifact_retention_complete"] = False
 
-    commit_sha = _commit_sha(workspace)
     payload["scanner_name"] = spec.name
     payload["commit_sha"] = commit_sha
     payload["snapshot_commit_sha"] = commit_sha
@@ -252,7 +258,7 @@ def canonical_snapshot_tool_runner(
     payload["completed"] = completed
     payload["verified"] = completed and payload.get("verified_for_this_report") is True
     payload["verified_complete"] = payload["verified"]
-    if not completed and not payload.get("failure_reason"):
+    if not completed and payload.get("status") != "not_applicable" and not payload.get("failure_reason"):
         payload["failure_reason"] = str(
             payload.get("failure_or_unavailable_reason")
             or payload.get("reason")
