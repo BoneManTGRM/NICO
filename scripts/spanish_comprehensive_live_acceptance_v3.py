@@ -34,8 +34,13 @@ from nico.spanish_client_evidence_summary_contract_v1 import (
 import spanish_comprehensive_live_acceptance_v1 as base
 import spanish_comprehensive_live_acceptance_v2 as telemetry
 from provider_neutral_repository_locator_contract_v1 import SPANISH_REPOSITORY_LABEL
+from comprehensive_production_export_retention_v1 import (
+    capture_terminal_exports,
+    collect_supported_exports,
+    retain_response,
+)
 
-VERSION = "nico.spanish_comprehensive_live_acceptance.v3.2"
+VERSION = "nico.spanish_comprehensive_live_acceptance.v3.3"
 SPANISH_TERMINAL_PHASE = "Se requiere revisión experta"
 SPANISH_TERMINAL_REVIEW = "Revisión interna requerida"
 SPANISH_TERMINAL_REPORT = "Completa"
@@ -494,6 +499,11 @@ def _fetch_localized_pdf(
             },
         )
         pdf_bytes = response.content
+    retain_response(
+        "localized-pdf-" + report_language,
+        route=f"/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf",
+        status=response.status_code, headers=response.headers, content=pdf_bytes,
+    )
     assert response.status_code == 200, (
         f"Same-run localized {report_language} PDF returned HTTP {response.status_code}"
     )
@@ -612,6 +622,11 @@ def _fetch_canonical_json(
             },
         )
         canonical_bytes = response.content
+    retain_response(
+        "canonical-json",
+        route=f"/api/nico/assessment/comprehensive-run/{run_id}/report/json",
+        status=response.status_code, headers=response.headers, content=canonical_bytes,
+    )
     assert response.status_code == 200, (
         f"Exact-run canonical report JSON returned HTTP {response.status_code}"
     )
@@ -627,6 +642,7 @@ def _fetch_canonical_json(
     return canonical, canonical_digest_header, computed_digest
 
 
+@capture_terminal_exports
 def _verify_localized_spanish_terminal_artifacts(
     page: Any,
     *,
@@ -646,6 +662,11 @@ def _verify_localized_spanish_terminal_artifacts(
         timeout=60_000,
     )
     status_bytes = status.body()
+    retain_response(
+        "terminal-status-before",
+        route=f"/api/nico/assessment/comprehensive-run/{run_id}",
+        status=status.status, headers=status.headers, content=status_bytes,
+    )
     assert status.ok, f"Projected Spanish terminal status returned HTTP {status.status}"
     assert len(status_bytes) < 200_000, f"Projected terminal status was {len(status_bytes)} bytes"
     payload = status.json()
@@ -717,6 +738,23 @@ def _verify_localized_spanish_terminal_artifacts(
         run_id=run_id,
         report_language="en",
     )
+    transport = httpx.HTTPTransport(verify=True, trust_env=False, retries=0)
+    with httpx.Client(
+        transport=transport,
+        timeout=httpx.Timeout(connect=300.0, read=300.0, write=30.0, pool=30.0),
+        follow_redirects=False,
+        trust_env=False,
+    ) as client:
+        collect_supported_exports(
+            lambda route: client.get(
+                frontend_origin + route,
+                headers={"Accept": "*/*", "Accept-Encoding": "identity", "Cache-Control": "no-store"},
+            ),
+            run_id=run_id, commit_sha=expected_commit_sha,
+            canonical=canonical, terminal=payload,
+            terminal_snapshot=_terminal_mutation_snapshot,
+            require_pending=_assert_pending_human_review_state,
+        )
     (
         canonical_after_payload,
         _canonical_after_response_sha256,
@@ -737,6 +775,11 @@ def _verify_localized_spanish_terminal_artifacts(
             "Cache-Control": "no-store",
         },
         timeout=60_000,
+    )
+    retain_response(
+        "terminal-status-after",
+        route=f"/api/nico/assessment/comprehensive-run/{run_id}",
+        status=status_after.status, headers=status_after.headers, content=status_after.body(),
     )
     assert status_after.ok, (
         "Exact terminal status could not be refetched after localized report reads: "
