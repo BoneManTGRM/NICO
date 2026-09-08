@@ -194,3 +194,32 @@ test('conflicting cookie and header sessions still fail before upstream', async 
   const api = mutationProxy(async () => assert.fail('identity conflict reached upstream'));
   assert.equal((await api.POST(mutationRequest({session: 'different-session'}), mutationContext())).status, 409);
 });
+
+// Production 34288471305 retained the Markdown bytes but its same-origin response
+// lost this upstream lifecycle fact. Exercise both shipped forwarding handlers.
+for (const authenticated of [true, false]) {
+  for (const completed of ['false', 'true', null]) {
+    test(`report proxy preserves explicit review completion (${authenticated}, ${completed})`, async () => {
+      const filename = path.join(ROOT, 'apps/web/app/api/nico', authenticated ? 'assessment/[...path]/route.ts' : '[...path]/route.ts');
+      const module = {exports: {}};
+      const upstreamHeaders = {'x-nico-client-delivery-allowed': 'false', 'x-nico-approval-status': 'pending_human_approval'};
+      if (completed !== null) upstreamHeaders['x-nico-human-review-completed'] = completed;
+      let calls = 0;
+      vm.runInNewContext(compile(filename), {module, exports: module.exports, URL, Headers, Response, AbortSignal, DOMException,
+        crypto: require('node:crypto').webcrypto,
+        process: {env: {NODE_ENV: 'production', NICO_API_URL: 'https://backend.test'}},
+        fetch: async () => {calls++; return new Response('exact retained report bytes', {headers: upstreamHeaders});},
+      });
+      const segments = ['comprehensive-run', 'comprun_saved', 'report', 'markdown'];
+      const response = await module.exports.GET({method: 'GET', headers: new Headers(),
+        cookies: {get: () => ({value: 'synthetic-review-session'})}, nextUrl: new URL('https://nico.test')},
+        {params: Promise.resolve({path: authenticated ? segments : ['assessment', ...segments]})});
+      assert.equal(response.status, 200);
+      assert.equal(calls, 1);
+      assert.equal(response.headers.get('x-nico-human-review-completed'), completed);
+      assert.equal(response.headers.get('x-nico-client-delivery-allowed'), 'false');
+      assert.equal(response.headers.get('x-nico-approval-status'), 'pending_human_approval');
+      assert.equal(await response.text(), 'exact retained report bytes');
+    });
+  }
+}
