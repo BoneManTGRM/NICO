@@ -1034,6 +1034,35 @@ def _provider_access_report_evidence(
     return lines
 
 
+def _github_access_diagnostics(
+    snapshot: Mapping[str, Any],
+    repository_evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Expose bounded validation facts, never source bytes or credentials."""
+    locators = repository_evidence.get("exact_source_locators")
+    fingerprint = _text(repository_evidence.get("provider_source_fingerprint"))
+    mode = _text(repository_evidence.get("provider_access_mode"))
+    used = repository_evidence.get("provider_credential_used")
+    return {
+        "github_provider_identity_valid": (
+            repository_evidence.get("repository_provider") == "github"
+            and repository_evidence.get("repository_provider_instance") == "github.com"
+        ),
+        "provider_access_observed": repository_evidence.get("provider_access_observed") is True,
+        "provider_access_binding_consistent": repository_evidence.get("provider_access_binding_consistent") is True,
+        "provider_access_mode_valid": (
+            (mode == "anonymous_public" and used is False)
+            or (mode == "authenticated_read_only" and used is True)
+        ),
+        "required_source_evidence_complete": repository_evidence.get("required_source_evidence_complete") is True,
+        "repository_identity_matches": _text(repository_evidence.get("repository")) == _text(snapshot.get("repository")),
+        "commit_identity_matches": _text(repository_evidence.get("snapshot_commit_sha")) == _text(snapshot.get("commit_sha")),
+        "snapshot_identity_matches": _text(repository_evidence.get("assessment_snapshot_id")) == _text(snapshot.get("snapshot_id")),
+        "source_fingerprint_present": fingerprint.startswith("sha256:") and len(fingerprint) == 71,
+        "retained_source_locator_count": len(locators) if isinstance(locators, list) else 0,
+    }
+
+
 def _github_access_report_snapshot(
     snapshot: Mapping[str, Any],
     repository_evidence: Mapping[str, Any],
@@ -1567,6 +1596,7 @@ def install_hosted_provider_comprehensive_runtime(app: FastAPI) -> dict[str, Any
                     context,
                     "blocked",
                     reason="github_provider_access_evidence_unavailable",
+                    evidence=_github_access_diagnostics(snapshot, repository_evidence),
                     repository_evidence=repository_evidence,
                     complexity_evidence=original.get("complexity_evidence") or {},
                     unavailable_data_notes=sorted(

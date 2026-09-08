@@ -220,6 +220,21 @@ def _bounded_snapshot_profile(client: Any, repository: str, snapshot: dict[str, 
         "root_items": root_items,
         "unavailable": sorted(set(unavailable)),
         "collection_budget": budget,
+        "tree_sha": (
+            str(tree_value.get("sha") or "").strip().lower()
+            if isinstance(tree_value, dict)
+            else ""
+        ),
+        "tree_truncated": (
+            bool(tree_value.get("truncated"))
+            if isinstance(tree_value, dict)
+            else False
+        ),
+        "tree_collection_succeeded": (
+            tree_error is None
+            and isinstance(tree_value, dict)
+            and isinstance(tree_value.get("tree"), list)
+        ),
     }
 
 

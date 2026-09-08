@@ -230,6 +230,7 @@ export default function ComprehensiveRecoveryPanel({
         `${apiUrl}/assessment/comprehensive-run/${encodeURIComponent(targetRunId)}`,
         {
           cache: "no-store",
+          credentials: "same-origin",
           headers: {
             "Accept": "application/json",
             "Cache-Control": "no-store",
@@ -265,6 +266,7 @@ export default function ComprehensiveRecoveryPanel({
         {
           method: "POST",
           cache: "no-store",
+          credentials: "same-origin",
           headers: {
             "Accept": "application/json",
             "Content-Type": "application/json",

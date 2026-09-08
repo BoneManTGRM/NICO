@@ -33,6 +33,7 @@ export default function RecoveryPage() {
   }, []);
 
   const comprehensiveTarget = targetRunId.startsWith("comprun_");
+  const recoveryApiUrl = comprehensiveTarget ? "/api/nico" : API_URL;
   const spanish = locale === "es-MX";
   const returnPath = spanish ? "/es/assessment" : "/assessment";
   const operationsHref = spanish ? "/operations?lang=es-MX" : "/operations";
@@ -82,7 +83,7 @@ export default function RecoveryPage() {
 
   function load(event: FormEvent) {
     event.preventDefault();
-    if (!API_URL || (!comprehensiveTarget && !adminToken.trim())) return;
+    if (!recoveryApiUrl || (!comprehensiveTarget && !adminToken.trim())) return;
     setRefreshKey(new Date().toISOString());
   }
 
@@ -112,13 +113,13 @@ export default function RecoveryPage() {
             {copy.token} {comprehensiveTarget ? copy.tokenOptional : ""}
             <input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="off" spellCheck={false} placeholder={copy.tokenPlaceholder} disabled={comprehensiveTarget} />
           </label>
-          <button type="submit" disabled={!API_URL || (!comprehensiveTarget && !adminToken.trim())}>{copy.load}</button>
+          <button type="submit" disabled={!recoveryApiUrl || (!comprehensiveTarget && !adminToken.trim())}>{copy.load}</button>
         </form>
-        {!API_URL ? <div className={styles.error}>{copy.apiMissing}</div> : null}
+        {!recoveryApiUrl ? <div className={styles.error}>{copy.apiMissing}</div> : null}
       </section>
 
       {comprehensiveTarget ? <ComprehensiveRecoveryPanel
-        apiUrl={API_URL}
+        apiUrl={recoveryApiUrl}
         locale={locale}
         refreshKey={refreshKey}
         targetRunId={targetRunId}
