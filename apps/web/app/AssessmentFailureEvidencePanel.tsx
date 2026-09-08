@@ -111,12 +111,12 @@ function reconcileFailureWorkspace(spanish: boolean) {
   const cardCopy = spanish ? {
     packageLabels: ["paquete de evaluación", "informe"],
     reviewLabels: ["revisión interna", "revisión humana", "revisión experta"],
-    packageValue: "Bloqueado durante la generación del informe final",
+    packageValue: "Bloqueado · Consulte la etapa que falló",
     reviewValue: "No alcanzada",
   } : {
     packageLabels: ["assessment package", "report"],
     reviewLabels: ["internal review", "human review", "expert review"],
-    packageValue: "Blocked during final report generation",
+    packageValue: "Blocked · See failed stage",
     reviewValue: "Not reached",
   };
 
@@ -221,7 +221,7 @@ export default function AssessmentFailureEvidencePanel() {
   const copy = spanish ? {
     eyebrow: "EVIDENCIA DEL FALLO",
     title: "La evaluación se detuvo",
-    summary: "El análisis completado y la identidad exacta de la ejecución permanecen preservados, pero el paquete final no pudo publicarse.",
+    summary: "La evaluación se detuvo. La identidad registrada de la ejecución y cualquier evidencia recopilada permanecen conservadas para su revisión.",
     blocked: "BLOQUEADA",
     failedStage: "Etapa que falló",
     artifactIntegrityGate: "Control de integridad del artefacto",
@@ -249,7 +249,7 @@ export default function AssessmentFailureEvidencePanel() {
   } : {
     eyebrow: "ASSESSMENT FAILURE",
     title: "The assessment stopped",
-    summary: "Completed analysis and the exact run identity remain preserved, but the final assessment package could not be published.",
+    summary: "The assessment stopped. Its recorded run identity and any collected evidence remain preserved for review.",
     blocked: "BLOCKED",
     failedStage: "Failed stage",
     artifactIntegrityGate: "Artifact integrity gate",
