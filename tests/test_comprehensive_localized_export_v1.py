@@ -19,8 +19,12 @@ from nico.comprehensive_same_run_locale_report_v1 import (
 def source_status():
     from tests.test_v2_premium_report_renderer import _package
     from nico.comprehensive_report_review_integrity_v1 import install_comprehensive_report_review_integrity_v1
+    from nico.comprehensive_commercial_ship_projection_v3 import install_comprehensive_commercial_ship_projection_v3
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
     install_comprehensive_report_review_integrity_v1()
+    # Exercise the native web-process navigation wrapper, which rewrites the PDF
+    # after the assembler has created its detached manifest.
+    install_comprehensive_commercial_ship_projection_v3()
     package = _package("en")
     package["json"]["identity"]["assessment_depth"] = "strategic"
     reports = rebuild_client_artifacts(package)
@@ -75,6 +79,22 @@ def test_refuses_incomplete_or_corrupt_source(source_status, mutation):
         status["reports"]["html"] += "tampered"
     with pytest.raises(ValueError):
         localized_evidence_package(status, "es-MX")
+
+
+@pytest.mark.parametrize("language", ["en", "es-MX"])
+def test_pdf_before_and_after_zip_keeps_same_exact_identity(source_status, language):
+    from nico.comprehensive_same_run_locale_report_v1 import build_same_run_locale_pdf_response
+
+    before = deepcopy(source_status)
+    direct = build_same_run_locale_pdf_response(source_status, language)
+    for _ in range(2):
+        response = localized_evidence_package(source_status, language)
+        with zipfile.ZipFile(io.BytesIO(response.body)) as archive:
+            manifest = json.loads(archive.read("evidence-manifest.json"))
+            pdf = next(e for e in manifest["artifacts"] if e["artifact_type"] == "comprehensive_pdf")
+            assert archive.read(pdf["filename"]) == direct.body
+    assert build_same_run_locale_pdf_response(source_status, language).body == direct.body
+    assert source_status == before
 
 
 def test_route_is_read_only_and_rejects_invalid_locale(source_status):
