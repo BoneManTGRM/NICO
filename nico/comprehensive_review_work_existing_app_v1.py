@@ -9,6 +9,9 @@ import nico.comprehensive_run_service as service_module
 from nico.comprehensive_report_review_integrity_v1 import (
     install_comprehensive_report_review_integrity_v1,
 )
+from nico.comprehensive_review_client_approval_v1 import (
+    project_client_delivery_approval_readiness,
+)
 from nico.comprehensive_review_work_runtime_v1 import (
     GET_ROUTE,
     POST_ROUTE,
@@ -18,7 +21,7 @@ from nico.comprehensive_review_work_safe_v1 import review_work_projection
 from nico.phase3_professional_assessment_v1 import install_phase3_professional_assessment_v1
 from nico.phase4_client_delivery_runtime_v1 import install_phase4_client_delivery_runtime_v1
 
-VERSION = "nico.comprehensive_review_work_existing_app.v5"
+VERSION = "nico.comprehensive_review_work_existing_app.v6"
 
 
 def _route_count(target: FastAPI, method: str, path: str) -> int:
@@ -41,6 +44,14 @@ def _review_action_record(record: dict[str, Any]) -> dict[str, Any]:
     ledger["candidate_count"] = "0"
     compatible["review_work_ledger"] = ledger
     return compatible
+
+
+def _review_projection_with_client_approval_truth(record: dict[str, Any]) -> dict[str, Any]:
+    compatible = _review_action_record(record)
+    return project_client_delivery_approval_readiness(
+        compatible,
+        review_work_projection(compatible),
+    )
 
 
 def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[str, Any]:
@@ -78,7 +89,7 @@ def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[s
                 service_module._require_exact_final_report_integrity(record)
                 return routes_module._with_runtime_truth(
                     request,
-                    review_work_projection(_review_action_record(record)),
+                    _review_projection_with_client_approval_truth(record),
                 )
             except Exception as exc:
                 if isinstance(exc, HTTPException):
@@ -100,7 +111,7 @@ def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[s
                 record = service.review_work(run_id, payload)
                 return routes_module._with_runtime_truth(
                     request,
-                    review_work_projection(_review_action_record(record)),
+                    _review_projection_with_client_approval_truth(record),
                 )
             except Exception as exc:
                 if isinstance(exc, HTTPException):
@@ -163,6 +174,8 @@ def install_comprehensive_review_work_existing_app_v1(target: FastAPI) -> dict[s
         "configurable_quality_control_sampling": runtime.get("configurable_quality_control_sampling") is True,
         "bulk_review_fails_closed_for_individual_attention": runtime.get("bulk_review_fails_closed_for_individual_attention") is True,
         "report_truth_synchronized_before_approval": runtime.get("report_truth_synchronized_before_approval") is True,
+        "client_delivery_approval_identity_projected": True,
+        "client_delivery_approval_identity_values_exposed": False,
         "final_human_decision_bound_into_accepted_edition": runtime.get("final_human_decision_bound_into_accepted_edition") is True,
         "approved_delivery_has_one_client_report": runtime.get("approved_delivery_has_one_client_report") is True,
         "approved_client_pdf_preserved_exactly": runtime.get("approved_client_pdf_preserved_exactly") is True,
