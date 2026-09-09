@@ -197,6 +197,16 @@ def _replace_finality_text(value: str) -> str:
     return output
 
 
+def _completed_briefing_text(value: str) -> str:
+    # One current-status label retained in older exact PDFs. Conditional scoring
+    # policy and historical scanner observations remain unchanged.
+    return re.sub(
+        r"(Complete automated briefing\s*[—–Š\x01-]\s*)human disposition pending",
+        r"\1candidate dispositions recorded",
+        value,
+    )
+
+
 def _approved_node(value: Any) -> Any:
     if isinstance(value, str):
         return _replace_finality_text(value)
@@ -339,6 +349,7 @@ def _rewrite_pdf(
     *,
     certificate_pdf: bytes,
     spanish: bool,
+    candidate_dispositions_completed: bool = False,
 ) -> bytes:
     if not source_pdf.startswith(b"%PDF") or not certificate_pdf.startswith(b"%PDF"):
         raise ValueError("comprehensive_approved_report_pdf_invalid")
@@ -383,6 +394,8 @@ def _rewrite_pdf(
                 if isinstance(operand, TextStringObject):
                     original = str(operand)
                     updated = _replace_finality_text(original)
+                    if candidate_dispositions_completed:
+                        updated = _completed_briefing_text(updated)
                     if review_truth_page:
                         normalized = original.strip().casefold()
                         if review_truth_value_label == "final human approval" and normalized == "pending":
@@ -416,6 +429,8 @@ def _rewrite_pdf(
                         except UnicodeDecodeError:
                             continue
                         rewritten = _replace_finality_text(decoded)
+                        if candidate_dispositions_completed:
+                            rewritten = _completed_briefing_text(rewritten)
                         if rewritten != decoded:
                             try:
                                 updated_bytes = rewritten.encode(encoding)
@@ -539,14 +554,21 @@ def build_approved_report_package(
         commit_sha=source_identity["commit_sha"],
         spanish=spanish,
     )
+    from nico.comprehensive_report_content_render_v66 import _candidate_dispositions_completed
+
+    dispositions_completed = _candidate_dispositions_completed(canonical)
     approved_pdf = _rewrite_pdf(
         source_pdf,
         certificate_pdf=certificate,
         spanish=spanish,
+        candidate_dispositions_completed=dispositions_completed,
     )
     approved_pdf_sha256 = hashlib.sha256(approved_pdf).hexdigest()
     markdown = _replace_finality_text(_text(output.get("markdown")))
     rendered_html = _replace_finality_text(_text(output.get("html")))
+    if dispositions_completed:
+        markdown = _completed_briefing_text(markdown)
+        rendered_html = _completed_briefing_text(rendered_html)
 
     for field in _MANIFEST_FAMILY_FIELDS:
         output.pop(field, None)

@@ -4,6 +4,8 @@ import csv
 import hashlib
 import io
 
+import pytest
+
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 
@@ -112,3 +114,32 @@ def test_spanish_pdf_wrapped_delivery_sentence_is_certificate_controlled():
     text = PdfReader(io.BytesIO(final)).pages[0].extract_text()
     assert 'bloqueada' not in text
     assert 'se controla\npor separado.' in text
+
+
+@pytest.mark.parametrize('completed', [False, True])
+def test_retained_briefing_status_uses_completed_dispositions_only(completed):
+    truth = {'raw_scanner_candidates': 15,
+             'authorized_human_disposition_completed': 15 if completed else 14,
+             'authorized_human_disposition_pending': 0 if completed else 1}
+    status = 'Complete automated briefing — human disposition pending'
+    policy = 'Score effect: assurance-only while authorized human disposition remains pending; NICO technical-triage status is reported separately.'
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer, invariant=1)
+    document.drawString(50, 750, status)
+    document.drawString(50, 735, policy)
+    document.save()
+    raw = buffer.getvalue()
+    package = {'json': {'identity': {'run_id': 'synthetic_briefing', 'commit_sha': 'a'*40},
+                        'human_review_truth': truth},
+               'human_review_truth': truth,
+               'markdown': status + '\n' + policy,
+               'html': '<p>' + status + '</p><p>' + policy + '</p>',
+               'pdf_base64': base64.b64encode(raw).decode(), 'pdf_sha256': hashlib.sha256(raw).hexdigest()}
+    final = approved.build_approved_report_package(package, reviewer='SYNTHETIC SOFTWARE-TEST',
+        reviewer_role='Security reviewer', decision_reason='SYNTHETIC SOFTWARE-TEST', decided_at='2026-09-09T00:00:00Z')
+    text = PdfReader(io.BytesIO(base64.b64decode(final['pdf_base64']))).pages[0].extract_text()
+    for surface in (text, final['markdown'], final['html']):
+        assert ('human disposition pending' not in surface) is completed
+        assert policy in surface
+        if completed:
+            assert 'candidate dispositions recorded' in surface
