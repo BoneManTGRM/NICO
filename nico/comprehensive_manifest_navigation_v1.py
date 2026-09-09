@@ -82,7 +82,7 @@ def _identity(canonical: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
-def _replacement(value: Any, *, generated_footer: bool = False) -> tuple[Any, bool]:
+def _replacement(value: Any, *, generated_footer: bool = False, font_map: Any = None) -> tuple[Any, bool]:
     raw: str
     as_bytes = isinstance(value, ByteStringObject)
     if isinstance(value, TextStringObject):
@@ -94,6 +94,19 @@ def _replacement(value: Any, *, generated_footer: bool = False) -> tuple[Any, bo
             return value, False
     else:
         return value, False
+    if font_map is not None:
+        # Embedded Spanish fonts use subset character codes (for example,
+        # P\x03gina), so matching the raw PDF string misses an actual page label.
+        # Decode only for recognition; preserve every non-label operand verbatim.
+        encoding, unicode_map = font_map
+        data = bytes(value) if as_bytes else value.original_bytes
+        decoded = (data.decode(encoding, errors="replace") if isinstance(encoding, str)
+                   else "".join(encoding.get(code, chr(code)) for code in data))
+        decoded = "".join(unicode_map.get(char, char) for char in decoded)
+        if _PAGE.fullmatch(decoded.strip()) or (
+            generated_footer and _DOCUMENT_PAGE.fullmatch(decoded.strip())
+        ):
+            return (ByteStringObject(b"") if as_bytes else TextStringObject("")), True
     replaced = ""
     section = _SECTION_PAGE.fullmatch(raw.strip())
     integrity = _INTEGRITY.fullmatch(raw.strip())
@@ -119,7 +132,17 @@ def _rewrite_local_page_labels(page: Any, writer: PdfWriter) -> None:
     stream = ContentStream(contents, writer)
     changed = False
     generated_footer = False
+    font_map = None
+    font_maps: dict[str, Any] = {}
     for operands, operator in stream.operations:
+        if operator == b"Tf" and operands:
+            from pypdf._cmap import get_encoding
+
+            font_name = str(operands[0])
+            if font_name not in font_maps:
+                font = page.get("/Resources", {}).get("/Font", {}).get(font_name)
+                font_maps[font_name] = get_encoding(font.get_object()) if font is not None else None
+            font_map = font_maps[font_name]
         if operator in {b"BT", b"ET", b"Td", b"TD", b"T*"}:
             generated_footer = False
         elif operator == b"Tm" and len(operands) == 6:
@@ -127,14 +150,14 @@ def _rewrite_local_page_labels(page: Any, writer: PdfWriter) -> None:
             # that footer band so identical text in source evidence survives.
             generated_footer = 0 <= float(operands[5]) <= 24
         if operator == b"Tj" and operands:
-            operands[0], replaced = _replacement(operands[0], generated_footer=generated_footer)
+            operands[0], replaced = _replacement(operands[0], generated_footer=generated_footer, font_map=font_map)
             changed = changed or replaced
         elif operator == b"TJ" and operands:
             for index, item in enumerate(operands[0]):
-                operands[0][index], replaced = _replacement(item, generated_footer=generated_footer)
+                operands[0][index], replaced = _replacement(item, generated_footer=generated_footer, font_map=font_map)
                 changed = changed or replaced
         elif operator in {b"'", b'"'} and operands:
-            operands[-1], replaced = _replacement(operands[-1], generated_footer=generated_footer)
+            operands[-1], replaced = _replacement(operands[-1], generated_footer=generated_footer, font_map=font_map)
             changed = changed or replaced
     if changed:
         page.replace_contents(stream)
