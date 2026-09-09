@@ -198,9 +198,7 @@ function installAction(): void {
   const context = contextFor(runId);
   if (context.service === "comprehensive" && !context.review_ready) {
     existing?.remove();
-    actions.dataset.nicoReviewGate = context.client_delivery_identity_ready
-      ? "blocked"
-      : "blocked_client_delivery_identity";
+    actions.dataset.nicoReviewGate = "blocked";
     actions.dataset.nicoClientDeliveryIdentity = context.client_delivery_identity_ready ? "ready" : "blocked";
     actions.dataset.nicoCrossFormatStatus = context.cross_format_status;
     actions.dataset.nicoCrossFormatFailedChecks = context.cross_format_failed_checks.join(",");
