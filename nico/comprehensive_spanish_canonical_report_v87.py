@@ -1692,6 +1692,8 @@ _RAW_CANONICAL_SUBTREES = {
 _CANONICAL_PARITY_EXACT.update({
     "Bounded source-supported components, interactions, and potential trust boundaries are retained with exact source and run identity; runtime behavior remains unverified.":
         "Se conservan componentes, interacciones y límites potenciales respaldados por el código acotado y vinculados a la fuente y la ejecución exactas; el comportamiento en ejecución sigue sin verificarse.",
+    "JavaScript/TypeScript observations use bounded lexical matching; dynamic imports, aliases, and computed calls can be absent.":
+        "Las observaciones de JavaScript/TypeScript usan coincidencias léxicas acotadas; pueden omitir importaciones dinámicas, alias y llamadas calculadas.",
     "Potential trust boundaries identify static call sites for review; endpoints, privileges, and protections remain unverified.":
         "Los límites potenciales de confianza identifican llamadas estáticas para revisión; los destinos, privilegios y protecciones siguen sin verificarse.",
     "Shadowed or locally bound call names are conservatively omitted; source observations do not resolve every language scope or method dispatch.":
