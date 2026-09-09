@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import io
 import re
@@ -150,6 +151,20 @@ def _replace_finality_text(value: str) -> str:
         ),
     ):
         output = re.sub(pattern, replacement, output, flags=re.IGNORECASE)
+    # The review-truth appendix uses a distinct approval label in Markdown/HTML.
+    # The immutable edition names the separate delivery certificate, never authorization.
+    output = re.sub(
+        r"(\bFinal human approval\s*:\s*(?:</strong>\s*)?)pending\b",
+        r"\1APPROVED",
+        output,
+        flags=re.IGNORECASE,
+    )
+    output = re.sub(
+        r"(\bClient-delivery authorization\s*:\s*(?:</strong>\s*)?)(?:blocked|pending_authorization)\b",
+        r"\1Controlled separately",
+        output,
+        flags=re.IGNORECASE,
+    )
     output = re.sub(
         r"\bthe report is an evidence-bound draft\b",
         "the report is an evidence-bound approved assessment",
@@ -186,6 +201,9 @@ def _approved_node(value: Any) -> Any:
         "human_review_completed": True,
         "client_delivery_allowed": False,
     }
+    if isinstance(output.get("human_review_truth"), dict):
+        output["human_review_truth"]["final_human_approval_status"] = "approved"
+        output["human_review_truth"]["client_delivery_authorization_status"] = "certificate_controlled"
     for key, replacement in authority.items():
         if key in output:
             output[key] = replacement
@@ -317,6 +335,8 @@ def _rewrite_pdf(
         cover_page = page_index == 0
         stream = ContentStream(page.get_contents(), writer)
         changed = False
+        review_truth_page = "HUMAN REVIEW AND APPROVAL TRUTH" in page_text
+        review_truth_value_label = ""
         for operands, operator in stream.operations:
             if operator in {b"Tj", b"'", b'"'}:
                 targets = operands
@@ -328,6 +348,17 @@ def _rewrite_pdf(
                 if isinstance(operand, TextStringObject):
                     original = str(operand)
                     updated = _replace_finality_text(original)
+                    if review_truth_page:
+                        normalized = original.strip().casefold()
+                        if review_truth_value_label == "final human approval" and normalized == "pending":
+                            updated = "APPROVED"
+                        elif review_truth_value_label == "client-delivery authorization" and normalized in {
+                            "blocked", "pending_authorization"
+                        }:
+                            updated = "Controlled separately"
+                        review_truth_value_label = normalized if normalized in {
+                            "final human approval", "client-delivery authorization"
+                        } else ""
                     if (cover_page or approval_record_page) and updated == original:
                         normalized = original.strip().casefold()
                         if normalized == "pending":
@@ -429,6 +460,28 @@ def build_approved_report_package(
         "pdf_sha256": source_pdf_sha256,
         "report_artifact_digest": current_report_artifact_digest(output),
     }
+    if isinstance(output.get("human_review_truth"), Mapping):
+        output["human_review_truth"] = deepcopy(dict(output["human_review_truth"]))
+        output["human_review_truth"]["final_human_approval_status"] = "approved"
+        output["human_review_truth"]["client_delivery_authorization_status"] = "certificate_controlled"
+        output["phase2_review_truth_sha256"] = canonical_sha256(output["human_review_truth"])
+    for key in ("findings_csv", "evidence_csv", "jira_csv", "linear_csv"):
+        text = output.get(key)
+        if not isinstance(text, str) or not text.strip():
+            continue
+        reader = csv.DictReader(io.StringIO(text))
+        if not reader.fieldnames or "final_human_approval_status" not in reader.fieldnames:
+            continue
+        finalized_csv = io.StringIO(newline="")
+        csv_writer = csv.DictWriter(finalized_csv, fieldnames=reader.fieldnames, lineterminator="\n")
+        csv_writer.writeheader()
+        for row in reader:
+            row["final_human_approval_status"] = "approved"
+            if "client_delivery_authorization_status" in row:
+                row["client_delivery_authorization_status"] = "certificate_controlled"
+            csv_writer.writerow(row)
+        output[key] = finalized_csv.getvalue()
+        output[f"{key}_sha256"] = hashlib.sha256(output[key].encode("utf-8")).hexdigest()
     canonical["approval_projection"] = {
         "artifact_schema": VERSION,
         "status": "approved_final",
