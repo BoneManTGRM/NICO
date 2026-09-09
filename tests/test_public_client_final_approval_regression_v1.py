@@ -101,5 +101,6 @@ def test_final_review_action_fails_closed_on_placeholder_scope_and_reads_nested_
     assert "const identity = canonicalIdentity(value);" in source
     assert "identity.customer_id" in source
     assert "identity.project_id" in source
-    assert "blocked_client_delivery_identity" in source
+    assert 'actions.dataset.nicoReviewGate = "blocked"' in source
+    assert "actions.dataset.nicoClientDeliveryIdentity" in source
     assert "&& identityReady" in source
