@@ -22,10 +22,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from nico.complete_assessment_gate_v1 import require_retained_assessment
-from comprehensive_production_run_handoff_v1 import (
+from scripts.comprehensive_production_run_handoff_v1 import (
     load_source_proof, require_canonical_json_digest, require_matching_canonical_truth_digest,
 )
-from github_actions_nico_proof_auth_v1 import AuthenticatedBrowser, acquire_production_proof_session
+from scripts.github_actions_nico_proof_auth_v1 import AuthenticatedBrowser, acquire_production_proof_session
 
 VERSION = "nico.comprehensive_fresh_browser_matrix.v1"
 CELLS = (

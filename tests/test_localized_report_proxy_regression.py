@@ -15,7 +15,7 @@ def test_same_run_localized_report_routes_are_reachable_through_same_origin_prox
     assert 'SUPPORTED_REPORT_LANGUAGES = ("en", "es-MX")' in backend
 
     assert 'const COMPREHENSIVE_LOCALIZED_REPORT' in proxy
-    assert 'localized-report\\/(?:en|es-MX)(?:\\/pdf)?$/' in proxy
+    assert 'localized-report\\/(?:en|es-MX)(?:\\/(?:pdf|evidence-package))?$/' in proxy
     assert 'if (method === "GET" && COMPREHENSIVE_LOCALIZED_REPORT.test(path)) return true;' in proxy
     assert 'method === "POST" && COMPREHENSIVE_LOCALIZED_REPORT.test(path)' not in proxy
 
