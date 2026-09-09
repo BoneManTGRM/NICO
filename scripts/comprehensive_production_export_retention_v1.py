@@ -2,16 +2,18 @@
 
 The proof credential permits the existing full-status and four report routes.
 The full-status response contains the stored artifact family and detached manifest.
-The localized route exposes Markdown and PDF only: this collector records that
-remaining bilingual export gap, rather than inventing a JSON/HTML export route.
+The localized package route returns the assembler's complete file family. Every
+downloaded member is verified against its detached manifest before acceptance.
 """
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
 import tempfile
+import zipfile
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
@@ -72,7 +74,9 @@ class Capture:
     def retain(self, label: str, content: bytes, **metadata: Any) -> dict[str, Any]:
         _require(_SAFE_NAME.fullmatch(label), "unsafe export receipt artifact label")
         suffix = ".json"
-        if "pdf" in label:
+        if label.endswith("-zip"):
+            suffix = ".zip"
+        elif "pdf" in label:
             suffix = ".pdf"
         elif "html" in label:
             suffix = ".html"
@@ -99,6 +103,7 @@ class Capture:
             "source-markdown": 1, "source-html": 1, "source-pdf": 1,
             "localized-markdown-envelope-en": 1,
             "localized-markdown-envelope-es-MX": 1,
+            "localized-family-en-zip": 1, "localized-family-es-MX-zip": 1,
         }
         for label, count in expected.items():
             _require(sum(item["label"] == label for item in self.receipt["files"]) == count,
@@ -127,7 +132,10 @@ class Capture:
             if headers.get("x-nico-frozen-source-artifact") == "true":
                 _require(item["sha256"] == bindings["draft_artifact_identity"]["pdf_sha256"],
                          "frozen localized PDF differs from retained source artifact")
-        self.receipt["status"] = "VERIFIED_SUPPORTED_EXPORTS_WITH_GAPS"
+        _require(self.receipt.get("localized_families_verified") == ["en", "es-MX"],
+                 "both complete localized families must be verified")
+        self.receipt["full_bilingual_export_acceptance"] = True
+        self.receipt["status"] = "VERIFIED_BILINGUAL_EXPORTS"
 
     def write_receipt(self) -> Path:
         path = self.directory / "download-manifest.json"
@@ -150,7 +158,7 @@ def capture_terminal_exports(function: Callable[..., dict[str, Any]]) -> Callabl
                 "export_download_manifest_path": path.as_posix(),
                 "export_download_manifest_sha256": _sha(path.read_bytes()),
                 "supported_export_bytes_and_bindings_verified": True,
-                "full_bilingual_export_acceptance": False,
+                "full_bilingual_export_acceptance": capture.receipt["full_bilingual_export_acceptance"],
                 "export_acceptance_gaps": capture.receipt["gaps"],
             }
         except Exception as exc:
@@ -307,12 +315,91 @@ def collect_supported_exports(
         if scope == "retained-canonical-artifact":
             _require(markdown_bytes == _artifact_bytes(report, "markdown_report"),
                      "localized retained Markdown differs from source bytes")
-    alternate = "en" if language == "es-MX" else "es-MX"
-    capture.receipt["gaps"] = [{
-        "status": "BLOCKED_BY_HARD_GATE",
-        "report_language": alternate,
-        "formats": ["canonical_json", "html", "artifact_manifest", "evidence_manifest_json"],
-        "reason": "Existing localized-report route exposes Markdown and PDF only; no alternate-language artifact-family download is installed.",
-    }]
+    from nico.comprehensive_same_run_locale_report_v1 import _assessment_truth_projection
+    verified_locales = []
+    for locale in ("en", "es-MX"):
+        content, headers = download(f"/localized-report/{locale}/evidence-package", f"localized-family-{locale}-zip")
+        for key, value in {
+            "x-nico-run-id": run_id, "x-nico-commit-sha": commit_sha,
+            "x-nico-report-id": report_id, "x-nico-report-language": locale,
+            "x-nico-canonical-truth-sha256": canonical_digest,
+            "x-nico-artifact-sha256": _sha(content),
+            "x-nico-assessment-rerun": "false",
+            "x-nico-client-delivery-allowed": "false",
+            "x-nico-approval-status": "pending_human_approval",
+            "x-nico-delivery-status": "blocked_pending_human_approval",
+        }.items():
+            _require(headers.get(key) == value, f"localized package header mismatch: {key}")
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = archive.namelist()
+            _require(len(names) == 10 and len(set(names)) == 10, "localized package file set invalid")
+            manifest_bytes = archive.read("evidence-manifest.json")
+            manifest = json.loads(manifest_bytes)
+            manifest_identity = manifest.get("identity", {})
+            for key, value in {"run_id": run_id, "commit_sha": commit_sha, "report_language": locale}.items():
+                _require(manifest_identity.get(key) == value, f"localized manifest identity mismatch: {key}")
+            local_entries = {entry["artifact_type"]: entry for entry in manifest.get("artifacts", [])}
+            _require(set(local_entries) == set(entries) and len(manifest["artifacts"]) == len(entries),
+                     "localized manifest artifact set invalid")
+            _require(set(names) == {"evidence-manifest.json", "artifact-identity.json", *[e["filename"] for e in local_entries.values()]},
+                     "localized package contains undeclared files")
+            downloaded_family = {
+                "artifact_manifest": manifest,
+                "evidence_manifest_json": manifest_bytes.decode("utf-8"),
+                "evidence_manifest_sha256": _sha(manifest_bytes),
+                "draft_artifact_identity": json.loads(archive.read("artifact-identity.json")),
+            }
+            family_fields = {
+                "markdown_report": ("markdown", "markdown_sha256"),
+                "html_report": ("html", "html_sha256"),
+                "canonical_json": ("canonical_json", "canonical_json_sha256"),
+                "findings_csv": ("findings_csv", "findings_csv_sha256"),
+                "evidence_csv": ("evidence_csv", "evidence_csv_sha256"),
+                "candidate_register_json": ("candidate_register_json", "candidate_register_sha256"),
+                "remediation_backlog_json": ("remediation_backlog_json", "remediation_backlog_sha256"),
+            }
+            for artifact_type, entry in local_entries.items():
+                data = archive.read(entry["filename"])
+                _require(_sha(data) == entry["sha256"] and len(data) == entry["size_bytes"],
+                         f"localized package bytes mismatch: {artifact_type}")
+                capture.retain(f"localized-family-{locale}-" + artifact_type.replace("_", "-"), data,
+                               origin="exact_member_of_downloaded_localized_package", declared_artifact=entry)
+                if artifact_type == "comprehensive_pdf":
+                    import base64
+                    downloaded_family["pdf_base64"] = base64.b64encode(data).decode("ascii")
+                    downloaded_family["pdf_sha256"] = entry["sha256"]
+                else:
+                    field, digest_field = family_fields[artifact_type]
+                    downloaded_family[field] = data.decode("utf-8")
+                    downloaded_family[digest_field] = entry["sha256"]
+                if artifact_type == "canonical_json":
+                    local_canonical = json.loads(data)
+                    downloaded_family["json"] = local_canonical
+                    _require(local_canonical.get("identity", {}).get("report_language") == locale,
+                             "localized canonical language mismatch")
+                    _require(_assessment_truth_projection(local_canonical) == _assessment_truth_projection(canonical),
+                             "localized canonical assessment truth differs")
+                if artifact_type in ("comprehensive_pdf", "markdown_report"):
+                    label = f"localized-{'pdf' if artifact_type == 'comprehensive_pdf' else 'markdown'}-{locale}"
+                    observed = next(item for item in capture.receipt["files"] if item["label"] == label)
+                    _require(observed["sha256"] == _sha(data), "localized ZIP and direct download differ")
+                if locale == language:
+                    _require(data == _artifact_bytes(report, artifact_type), "source-locale ZIP regenerated retained files")
+            # Validate lifecycle, cross-manifest identity and all declared digests,
+            # not just individually self-consistent downloaded file hashes.
+            _validate_exact_artifact_hashes(downloaded_family)
+            if locale == language:
+                _require(manifest_bytes == report["evidence_manifest_json"].encode("utf-8"),
+                         "source-locale ZIP changed its retained manifest")
+            capture.retain(f"localized-family-{locale}-evidence-manifest", manifest_bytes,
+                           origin="exact_member_of_downloaded_localized_package")
+            artifact_identity = archive.read("artifact-identity.json")
+            _require(json.loads(artifact_identity).get("evidence_manifest_sha256") == _sha(manifest_bytes),
+                     "localized identity does not bind detached manifest")
+            capture.retain(f"localized-family-{locale}-artifact-identity", artifact_identity,
+                           origin="exact_member_of_downloaded_localized_package")
+        verified_locales.append(locale)
+    capture.receipt["localized_families_verified"] = verified_locales
+    capture.receipt["gaps"] = []
     capture.receipt["format_hash_policy"] = "Each exact byte stream has its own SHA-256; canonical JSON semantic digest is distinct from transport-byte digest. Localized projections may have different bytes."
     capture.receipt["supported_export_bindings_verified"] = True

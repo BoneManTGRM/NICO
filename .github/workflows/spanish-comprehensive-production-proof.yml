@@ -177,7 +177,7 @@ jobs:
             'Acquire::http::Timeout "20";' \
             'Acquire::https::Timeout "20";' \
             | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
-          timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium
+          timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium webkit
 
       - name: Verify Spanish proof entrypoint before assessment
         run: |
@@ -187,7 +187,8 @@ jobs:
             tests/test_mobile_visibility_lifecycle_proof_v1.py \
             tests/test_github_actions_production_proof_auth_v1.py \
             tests/test_production_frontend_specialist_gate_v2.py \
-            tests/test_production_proof_frontend_proxy_contract_v1.py
+            tests/test_production_proof_frontend_proxy_contract_v1.py \
+            tests/test_comprehensive_fresh_browser_matrix_v1.py
           python - <<'PY'
           import runpy
           import sys
@@ -320,6 +321,21 @@ jobs:
           fi
           exit "${EXCLUSION_PROOF_EXIT}"
 
+      - name: Prove fresh intake and execution in missing mobile browser cells
+        id: fresh_browser_matrix
+        if: steps.exclusion_proof.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 65
+        run: |
+          set -euo pipefail
+          python scripts/comprehensive_fresh_browser_matrix_v1.py \
+            --expected-sha "${RELEASE_SHA}" \
+            --source-proof audit-results/spanish-comprehensive-live-proof.json \
+            --source-workflow-run-id "${SOURCE_RUN_ID}" \
+            --source-workflow-run-attempt "${SOURCE_RUN_ATTEMPT}" \
+            --timeout-seconds 900 \
+            --output audit-results/fresh-browser-matrix/matrix.json
+
       - name: Upload immutable Spanish proof
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -334,6 +350,7 @@ jobs:
             audit-results/spanish-comprehensive-source-proof.exit-code
             audit-results/scanner-retention-acceptance.json
             audit-results/export-retention/**
+            audit-results/fresh-browser-matrix/**
             audit-results/spanish-comprehensive-failed-source-proof.json
             audit-results/spanish-comprehensive-existing-run-recovery-proof.json
             audit-results/spanish-comprehensive-existing-run-recovery-proof.png
@@ -358,6 +375,7 @@ jobs:
           RECOVERY_OUTCOME="${{ steps.spanish_recovery.outcome }}"
           EXCLUSION_PROOF_OUTCOME="${{ steps.exclusion_proof.outcome }}"
           test "${EXCLUSION_PROOF_OUTCOME}" = "success"
+          test "${{ steps.fresh_browser_matrix.outcome }}" = "success"
           if [ "${SOURCE_PROOF_OUTCOME}" = "success" ]; then
             test "${RECOVERY_OUTCOME}" = "skipped"
             export NICO_SPANISH_PROOF_MODE="fresh"
@@ -378,6 +396,15 @@ jobs:
           from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
           from scripts.comprehensive_production_run_handoff_v1 import SOURCE_SCHEMA, load_source_proof
 
+          matrix = json.loads(Path("audit-results/fresh-browser-matrix/matrix.json").read_text())
+          assert matrix["status"] == "passed"
+          assert matrix["application_revision"] == os.environ["RELEASE_SHA"]
+          assert {cell["cell"] for cell in matrix["cells"]} == {
+              "mobile-chromium-en", "iphone-webkit-en", "iphone-webkit-es-MX",
+          }
+          assert all(cell["status"] == "passed" and cell["intake_request_count"] == 1
+                     for cell in matrix["cells"])
+          assert len({cell["run_id"] for cell in matrix["cells"]}) == 3
           proof_path = Path("audit-results/spanish-comprehensive-live-proof.json")
           payload = json.loads(proof_path.read_text(encoding="utf-8"))
           mode = os.environ["NICO_SPANISH_PROOF_MODE"]

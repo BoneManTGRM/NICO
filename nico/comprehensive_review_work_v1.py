@@ -36,6 +36,31 @@ def is_terminal_disposition(value: Any) -> bool:
     }
 
 
+def quality_control_blocker(qc: Any, disposition: Any) -> str:
+    """QC clears only the exact completed disposition independently agreed to.
+
+    Historical records remain readable but cannot be silently rebound to a later
+    decision. The reviewer must issue a new QC event for any unbound/stale record.
+    """
+    if not isinstance(qc, Mapping):
+        return "quality_control_missing"
+    if not is_terminal_disposition(disposition):
+        return "candidate_disposition_incomplete"
+    if _text(qc.get("qc_outcome")).casefold() != "agree":
+        return "quality_control_disagreement"
+    reviewer = _text(qc.get("reviewer")).casefold()
+    decision_reviewer = _text(disposition.get("reviewer")).casefold()
+    if (qc.get("independent_reviewer_verified") is not True
+            or not reviewer or not decision_reviewer or reviewer == decision_reviewer):
+        return "independent_quality_control_required"
+    digest = _text(qc.get("reviewed_disposition_sha256"))
+    if not digest:
+        return "quality_control_disposition_binding_missing"
+    if digest != _canonical_hash(disposition):
+        return "quality_control_disposition_changed"
+    return ""
+
+
 def _now(value: datetime | None = None) -> datetime:
     return (value or datetime.now(UTC)).astimezone(UTC)
 
@@ -435,6 +460,7 @@ def apply_review_work_action(
             "reviewer_role": reviewer_role,
             "reviewed_at": _iso(timestamp),
             "independent_reviewer_verified": True,
+            "reviewed_disposition_sha256": _canonical_hash(disposition),
         }
         ledger["quality_control"] = quality_control
 
@@ -556,12 +582,16 @@ def apply_review_work_action(
     else:
         raise ValueError(f"review_work_action_unsupported:{action}")
 
+    audit_payload = {key: value for key, value in payload.items() if key not in {"operator_token"}}
+    if action == "quality_control":
+        audit_payload["reviewed_disposition_sha256"] = quality_control[candidate_id]["reviewed_disposition_sha256"]
+        audit_payload["reviewed_disposition"] = deepcopy(disposition)
     _append_event(
         ledger,
         action=action,
         reviewer=reviewer,
         reviewer_role=reviewer_role,
-        payload={key: value for key, value in payload.items() if key not in {"operator_token"}},
+        payload=audit_payload,
         now=timestamp,
     )
     ledger["updated_at"] = _iso(timestamp)
@@ -598,8 +628,7 @@ def review_work_projection(
     qc_complete_ids = [
         candidate_id
         for candidate_id in required_qc
-        if isinstance(qc.get(candidate_id), Mapping)
-        and qc[candidate_id].get("independent_reviewer_verified") is True
+        if not quality_control_blocker(qc.get(candidate_id), dispositions.get(candidate_id))
     ]
     completed_dispositions = [candidate_id for candidate_id in candidates if is_terminal_disposition(dispositions.get(candidate_id))]
     ready = (
@@ -638,6 +667,10 @@ def review_work_projection(
         "quality_control_required_count": len(required_qc),
         "quality_control_completed_count": len(qc_complete_ids),
         "quality_control_required_candidate_ids": required_qc,
+        "quality_control_blockers": {
+            candidate_id: quality_control_blocker(qc.get(candidate_id), dispositions.get(candidate_id))
+            for candidate_id in required_qc if candidate_id not in qc_complete_ids
+        },
         "high_impact_candidate_ids": high_impact,
         "unresolved_high_impact_candidate_ids": unresolved_high,
         "open_evidence_request_count": len(open_requests),

@@ -8,6 +8,8 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import importlib
+import io
+import zipfile
 import json
 from pathlib import Path
 import sys
@@ -16,9 +18,8 @@ from types import ModuleType, SimpleNamespace
 import httpx
 import pytest
 
-from nico.comprehensive_artifact_manifest_approval_v1 import attach_artifact_manifest
 from nico.comprehensive_exact_artifact_hash_binding_v1 import _artifact_bytes
-from test_comprehensive_artifact_manifest_approval_v1 import _package
+from tests.test_v2_premium_report_renderer import _package
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN = "comprun_export_retention"
@@ -48,7 +49,7 @@ def acceptance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     retention = importlib.import_module("comprehensive_production_export_retention_v1")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(proof.ENGAGEMENT_PROOF_FIXTURE_ENV, "supplied")
-    package = _package()
+    package = _package("es-MX")
     package["report_id"] = REPORT
     package["json"]["identity"].update(
         run_id=RUN, commit_sha=SHA, report_language="es-MX",
@@ -57,8 +58,15 @@ def acceptance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     metadata = {**proof._expected_engagement_metadata(),
                 "repository_inference_prohibited": True, "directly_scored": False}
     package["json"]["engagement_metadata"] = deepcopy(metadata)
-    package = attach_artifact_manifest(package)
+    from nico.comprehensive_report_review_integrity_v1 import install_comprehensive_report_review_integrity_v1
+    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    install_comprehensive_report_review_integrity_v1()
+    package = rebuild_client_artifacts(package)
+    package["report_id"] = REPORT
     canonical = package["json"]
+    from nico.comprehensive_same_run_locale_report_v1 import _render_target
+    english = _render_target(canonical, "en")
+    localized_packages = {"es-MX": package, "en": english}
     # The API's canonical truth digest uses stable object serialization; the
     # detached manifest separately binds the stored canonical_json byte stream.
     from comprehensive_production_run_handoff_v1 import canonical_json_sha256
@@ -142,13 +150,46 @@ def acceptance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         if suffix.startswith("/localized-report/"):
             locale = suffix.split("/")[2]
             current_headers["x-nico-report-language"] = locale
+            if suffix.endswith("/evidence-package"):
+                from nico.comprehensive_retained_report_export_v1 import retained_report_zip
+                body = retained_report_zip(localized_packages[locale])
+                if control["kind"] == "corrupt_zip_member":
+                    source_zip = zipfile.ZipFile(io.BytesIO(body))
+                    output = io.BytesIO()
+                    with zipfile.ZipFile(output, "w") as target:
+                        for name in source_zip.namelist():
+                            data = source_zip.read(name)
+                            if name.endswith(".html"):
+                                data += b"tampered"
+                            target.writestr(name, data)
+                    body = output.getvalue()
+                if control["kind"] == "invented_manifest_approval":
+                    source_zip = zipfile.ZipFile(io.BytesIO(body))
+                    members = {name: source_zip.read(name) for name in source_zip.namelist()}
+                    forged = json.loads(members["evidence-manifest.json"])
+                    forged["approval"]["decision"] = "approved"
+                    members["evidence-manifest.json"] = json.dumps(forged).encode()
+                    identity = json.loads(members["artifact-identity.json"])
+                    identity["evidence_manifest_sha256"] = sha(members["evidence-manifest.json"])
+                    members["artifact-identity.json"] = json.dumps(identity).encode()
+                    output = io.BytesIO()
+                    with zipfile.ZipFile(output, "w") as target:
+                        for name, data in members.items():
+                            target.writestr(name, data)
+                    body = output.getvalue()
+                current_headers["x-nico-artifact-sha256"] = sha(body)
+                if control["kind"] == "wrong_locale_zip":
+                    current_headers["x-nico-report-language"] = "fr"
+                if control["kind"] == "invented_zip_approval":
+                    current_headers["x-nico-client-delivery-allowed"] = "true"
+                return httpx.Response(200, content=body, headers=current_headers)
             if suffix.endswith("/pdf"):
-                body = _artifact_bytes(package, "comprehensive_pdf")
+                body = _artifact_bytes(localized_packages[locale], "comprehensive_pdf")
                 current_headers["x-nico-artifact-sha256"] = sha(body)
                 if control["kind"] == "wrong_source_localized_pdf":
                     current_headers["x-nico-commit-sha"] = "c" * 40
                 return httpx.Response(200, content=body, headers=current_headers)
-            markdown = package["markdown"] if locale == "es-MX" else "# English operational draft\n"
+            markdown = localized_packages[locale]["markdown"]
             value = {
                 "run_id": RUN, "commit_sha": SHA, "repository": canonical["identity"]["repository"],
                 "evidence_ledger_id": canonical["identity"]["evidence_ledger_id"],
@@ -209,15 +250,15 @@ def acceptance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
                            root=tmp_path, route_root=route_root)
 
 
-def test_actual_release_entrypoint_retains_exact_downloads_and_declares_language_gap(acceptance):
+def test_actual_release_entrypoint_retains_and_verifies_complete_bilingual_downloads(acceptance):
     result = acceptance.run()
     path = Path(result["export_download_manifest_path"])
     receipt = json.loads(path.read_bytes())
     assert result["export_download_manifest_sha256"] == sha(path.read_bytes())
     assert result["supported_export_bytes_and_bindings_verified"] is True
-    assert result["full_bilingual_export_acceptance"] is False
-    assert receipt["gaps"][0]["report_language"] == "en"
-    assert receipt["status"] == "VERIFIED_SUPPORTED_EXPORTS_WITH_GAPS"
+    assert result["full_bilingual_export_acceptance"] is True
+    assert receipt["gaps"] == []
+    assert receipt["status"] == "VERIFIED_BILINGUAL_EXPORTS"
     assert receipt["bindings"]["terminal_snapshot"]["revision"] == 7
     assert receipt["bindings"]["source_report_id"] == REPORT
     for item in receipt["files"]:
@@ -229,7 +270,7 @@ def test_actual_release_entrypoint_retains_exact_downloads_and_declares_language
     assert by_label["localized-markdown-en"]["sha256"] != by_label["localized-markdown-es-MX"]["sha256"]
     assert by_label["source-html"]["sha256"] == acceptance.package["html_sha256"]
     assert acceptance.requests.count(acceptance.route_root + "/report/json") == 2
-    assert all("evidence-package" not in route for route in acceptance.requests)
+    assert sum(route.endswith("/evidence-package") for route in acceptance.requests) == 2
     assert all(not route.endswith(("/localized-report/en/html", "/localized-report/en/json")) for route in acceptance.requests)
 
 
@@ -238,6 +279,7 @@ def test_actual_release_entrypoint_retains_exact_downloads_and_declares_language
     "corrupt_retained_html", "corrupt_download", "rehashed_wrong_download",
     "wrong_run_header", "failed_applicable_export", "localized_markdown_hash",
     "invented_approval", "wrong_source_localized_pdf", "post_read_mutation",
+    "corrupt_zip_member", "wrong_locale_zip", "invented_zip_approval", "invented_manifest_approval",
 ])
 def test_isolated_negative_controls_fail_actual_release_entrypoint(acceptance, control):
     acceptance.control["kind"] = control

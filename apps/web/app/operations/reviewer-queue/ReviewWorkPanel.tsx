@@ -3,6 +3,7 @@
 import {FormEvent, useEffect, useMemo, useState} from "react";
 import ReviewSessionNotice from "./ReviewSessionNotice";
 import EvidenceRequests from "./EvidenceRequests";
+import QualityControlRecords from "./QualityControlRecords";
 import styles from "./review-work.module.css";
 
 type Locale = "en" | "es-MX";
@@ -28,6 +29,7 @@ type Projection = {
   remaining_candidate_count?: number;
   quality_control_required_count?: number;
   quality_control_completed_count?: number;
+  quality_control_blockers?: Record<string, string>;
   open_evidence_request_count?: number;
   unresolved_high_impact_candidate_ids?: string[];
   ready_for_final_approval?: boolean;
@@ -348,6 +350,9 @@ export default function ReviewWorkPanel() {
       <article className={styles.wide}><b>{projection.ready_for_final_approval ? copy.ready : copy.notReady}</b><span>{locale === "es-MX" ? "La aprobación final sigue siendo una decisión humana separada." : "Final approval remains a separate human decision."}</span></article>
     </div> : null}
 
+    {projection ? <QualityControlRecords records={ledger.quality_control} blockers={projection.quality_control_blockers} events={ledger.audit_events} locale={locale} busy={busy} onSelect={(candidateId) => {
+      setAction("quality_control"); setTargetId(candidateId); setQcNote(""); setQcOutcome("agree");
+    }} /> : null}
     {projection ? <EvidenceRequests requests={ledger.evidence_requests} locale={locale} busy={busy} onResolve={(requestId) => {
       setAction("resolve_evidence_request");
       setTargetId(requestId);

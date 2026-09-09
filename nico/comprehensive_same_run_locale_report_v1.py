@@ -28,6 +28,7 @@ from nico.decision_grade_accepted_edition_guard_v1 import validate_accepted_edit
 VERSION = "nico.comprehensive_same_run_locale_report.v3"
 ROUTE = "/assessment/comprehensive-run/{run_id}/localized-report/{report_language}"
 PDF_ROUTE = f"{ROUTE}/pdf"
+EVIDENCE_PACKAGE_ROUTE = f"{ROUTE}/evidence-package"
 SUPPORTED_REPORT_LANGUAGES = ("en", "es-MX")
 MAX_LOCALIZED_MARKDOWN_BYTES = 4 * 1024 * 1024
 
@@ -1404,6 +1405,8 @@ def build_same_run_locale_report(
             artifacts.get("canonical_json") or ""
         )
     for field in (
+        "markdown_sha256",
+        "html_sha256",
         "findings_csv",
         "findings_csv_sha256",
         "evidence_csv",
@@ -1553,6 +1556,20 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
             methods=["GET"],
             tags=["comprehensive"],
             response_class=Response,
+        )
+        target.openapi_schema = None
+
+    if _route_count(target, "GET", EVIDENCE_PACKAGE_ROUTE) == 0:
+        def localized_evidence_package(run_id: str, report_language: str) -> Response:
+            from nico.comprehensive_localized_export_v1 import localized_evidence_package as download
+            try:
+                return download(_controller_status(target, run_id), report_language)
+            except ValueError as exc:
+                raise _projection_http_error(exc) from exc
+
+        target.add_api_route(
+            EVIDENCE_PACKAGE_ROUTE, localized_evidence_package,
+            methods=["GET"], tags=["comprehensive"], response_class=Response,
         )
         target.openapi_schema = None
 

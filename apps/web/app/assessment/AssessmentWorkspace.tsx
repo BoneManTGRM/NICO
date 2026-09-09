@@ -706,6 +706,11 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         download
         data-assessment-retained-export="true"
       >{locale === "es-MX" ? "Descargar archivos originales y manifiesto" : "Download retained files and manifest"}</a> : null}
+      {reportReady && result?.run_id ? <a
+        href={`/api/nico/assessment/comprehensive-run/${encodeURIComponent(result.run_id)}/localized-report/${encodeURIComponent(requestedReportLanguage)}/evidence-package`}
+        download
+        data-assessment-localized-export="true"
+      >{locale === "es-MX" ? "Descargar archivos del idioma seleccionado" : "Download files in selected language"} · {requestedReportLanguage}</a> : null}
       {copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}
     </div>;
   }

@@ -424,6 +424,12 @@ def _configured_qc_ids(ledger: Mapping[str, Any]) -> list[str]:
 def _effective_qc_ids(ledger: Mapping[str, Any]) -> list[str]:
     required = {_text(value) for value in ledger.get("qc_required_candidate_ids") or [] if _text(value)}
     required.update(_configured_qc_ids(ledger))
+    # Changing the sample does not resolve an already observed disagreement or
+    # invalidate the obligation to recheck a changed disposition.
+    dispositions = ledger.get("dispositions") or {}
+    for candidate_id, qc in (ledger.get("quality_control") or {}).items():
+        if legacy.quality_control_blocker(qc, dispositions.get(candidate_id)):
+            required.add(_text(candidate_id))
     return sorted(required)
 
 
@@ -437,8 +443,8 @@ def _additional_quality_control(
     reviewer, reviewer_role = _require_human(payload)
     timestamp = _now(now)
     candidate_id = _text(payload.get("candidate_id"))
-    configured = set(_configured_qc_ids(ledger))
-    if candidate_id not in configured:
+    required = set(_effective_qc_ids(ledger))
+    if candidate_id not in required:
         raise ValueError("review_work_qc_candidate_not_required")
     candidates, _ = _catalog(record)
     if candidate_id not in candidates:
@@ -462,6 +468,7 @@ def _additional_quality_control(
         "reviewer_role": reviewer_role,
         "reviewed_at": _iso(timestamp),
         "independent_reviewer_verified": True,
+        "reviewed_disposition_sha256": legacy._canonical_hash(disposition),
     }
     ledger["quality_control"] = quality_control
     _record_reviewer_identity(ledger, reviewer, reviewer_role, timestamp)
@@ -470,7 +477,9 @@ def _additional_quality_control(
         action="quality_control",
         reviewer=reviewer,
         reviewer_role=reviewer_role,
-        payload={"candidate_id": candidate_id, "qc_outcome": outcome, "qc_note": note},
+        payload={"candidate_id": candidate_id, "qc_outcome": outcome, "qc_note": note,
+                 "reviewed_disposition_sha256": quality_control[candidate_id]["reviewed_disposition_sha256"],
+                 "reviewed_disposition": deepcopy(disposition)},
         timestamp=timestamp,
     )
     return ledger
@@ -492,7 +501,7 @@ def apply_review_work_action(
         legacy_required = {
             _text(value) for value in ledger.get("qc_required_candidate_ids") or [] if _text(value)
         }
-        if candidate_id in set(_configured_qc_ids(ledger)) and candidate_id not in legacy_required:
+        if candidate_id in set(_effective_qc_ids(ledger)) and candidate_id not in legacy_required:
             return _additional_quality_control(prepared_record, ledger, payload, now=now)
     updated = legacy.apply_review_work_action(prepared_record, payload, now=now)
     updated["review_source_sha256"] = _source_fingerprint(record)
@@ -550,6 +559,8 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
                     if candidate_id in configured_qc
                     else "canonical_cluster_representative"
                     if candidate_id in baseline_qc
+                    else "retained_unresolved_quality_control"
+                    if candidate_id in effective_qc
                     else ""
                 ),
                 "human_disposition": deepcopy(disposition) if isinstance(disposition, Mapping) else None,
@@ -571,10 +582,7 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     missing_qc = sorted(
         candidate_id
         for candidate_id in effective_qc
-        if not (
-            isinstance(quality_control.get(candidate_id), Mapping)
-            and quality_control[candidate_id].get("independent_reviewer_verified") is True
-        )
+        if legacy.quality_control_blocker(quality_control.get(candidate_id), dispositions.get(candidate_id))
     )
     open_requests = [
         dict(item)
@@ -635,6 +643,10 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         "quality_control_required_count": len(effective_qc),
         "quality_control_completed_count": len(effective_qc) - len(missing_qc),
         "missing_quality_control_candidate_ids": missing_qc,
+        "quality_control_blockers": {
+            candidate_id: legacy.quality_control_blocker(quality_control.get(candidate_id), dispositions.get(candidate_id))
+            for candidate_id in missing_qc
+        },
         "dispositioned_candidate_count": len(candidates) - len(pending_ids),
         "remaining_candidate_count": len(pending_ids),
         "open_evidence_request_count": len(open_requests),
