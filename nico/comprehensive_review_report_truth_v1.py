@@ -296,8 +296,7 @@ def _synchronize_pdf(package: dict[str, Any], truth: Mapping[str, Any]) -> None:
         raise ValueError("phase2_review_truth_pdf_base_page_count_invalid")
     appendix = PdfReader(io.BytesIO(_review_pdf_page(truth)))
     writer = PdfWriter()
-    for index in range(base_count):
-        writer.add_page(reader.pages[index])
+    writer.append(reader, pages=(0, base_count), import_outline=True)
     for page in appendix.pages:
         writer.add_page(page)
     writer.add_metadata(
@@ -310,11 +309,21 @@ def _synchronize_pdf(package: dict[str, Any], truth: Mapping[str, Any]) -> None:
     output = io.BytesIO()
     writer.write(output)
     pdf = output.getvalue()
-    package["phase2_review_base_pdf_page_count"] = base_count
+    canonical = package.get("json") or {}
+    if isinstance(canonical.get("four_phase_program"), Mapping):
+        from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
+        from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
+
+        # Review work appends/replaces a page after the original renderer ran.
+        # Rebuild the owned TOC and labels only after assembly, then publish the
+        # current phase matrix. Reusing the old TOC would retain stale statuses.
+        pdf = apply_four_phase_pdf(semantic_renumber_and_outline(pdf), canonical)
+    page_count = len(PdfReader(io.BytesIO(pdf)).pages)
+    package["phase2_review_base_pdf_page_count"] = page_count - len(appendix.pages)
     package["pdf_base64"] = base64.b64encode(pdf).decode("ascii")
     package["pdf_sha256"] = hashlib.sha256(pdf).hexdigest()
     package["pdf_size_bytes"] = len(pdf)
-    package["pdf_page_count"] = base_count + len(appendix.pages)
+    package["pdf_page_count"] = page_count
 
 
 def _candidate_csv(truth: Mapping[str, Any]) -> str:
@@ -410,6 +419,12 @@ def _synchronize_package(package: dict[str, Any], truth: Mapping[str, Any]) -> N
     canonical["authorized_human_review_candidate_register"] = deepcopy(truth.get("candidate_review") or [])
     canonical["human_review_required"] = True
     canonical["client_delivery_allowed"] = False
+    has_phase_program = isinstance(canonical.get("four_phase_program"), Mapping)
+    if has_phase_program:
+        from nico.comprehensive_four_phase_model_v1 import apply_four_phase_program
+
+        canonical = apply_four_phase_program(canonical)
+        package["four_phase_program"] = deepcopy(canonical["four_phase_program"])
     package["json"] = canonical
     package["human_review_truth"] = deepcopy(dict(truth))
     package["candidate_register_csv"] = _candidate_csv(truth)
@@ -419,6 +434,13 @@ def _synchronize_package(package: dict[str, Any], truth: Mapping[str, Any]) -> N
 
     markdown = str(package.get("markdown") or "")
     if markdown:
+        if has_phase_program:
+            from nico.comprehensive_four_phase_model_v1 import repair_four_phase_markdown
+
+            # Remove the owned appendix first: its start marker may immediately
+            # follow the old phase table and otherwise be consumed with it.
+            markdown = _replace_marked_text(markdown, "", _MARKDOWN_START, _MARKDOWN_END)
+            markdown = repair_four_phase_markdown(markdown, canonical)
         package["markdown"] = _replace_marked_text(
             markdown,
             _markdown_section(truth),
@@ -427,6 +449,11 @@ def _synchronize_package(package: dict[str, Any], truth: Mapping[str, Any]) -> N
         )
     rendered_html = str(package.get("html") or "")
     if rendered_html:
+        if has_phase_program and package.get("markdown"):
+            from nico.comprehensive_four_phase_model_v1 import _spanish
+            from nico.comprehensive_four_phase_report_v1 import _html
+
+            rendered_html = _html(package["markdown"], canonical, _spanish(canonical))
         package["html"] = _replace_html(rendered_html, _html_section(truth))
     if package.get("pdf_base64"):
         _synchronize_pdf(package, truth)

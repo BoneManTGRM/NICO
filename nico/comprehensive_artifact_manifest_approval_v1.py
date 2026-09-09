@@ -818,9 +818,12 @@ def _refresh_visible_manifest(pdf: bytes, canonical: Mapping[str, Any], entries:
     replacement = supplement.pages[0]
     if list(target.mediabox) != list(replacement.mediabox):
         raise ValueError("Pending PDF manifest page dimensions changed; regenerate this draft first.")
-    for key in ("/Contents", "/Resources"):
-        target[NameObject(key)] = replacement[key].clone(writer)
-    target.merge_page(PdfReader(io.BytesIO(_page_overlay(index + 1, len(reader.pages)))).pages[0])
+    target[NameObject("/Resources")] = replacement["/Resources"].clone(writer)
+    # Update the writer-owned content object as well as the page reference;
+    # assigning /Contents directly can discard the subsequently merged footer.
+    target.replace_contents(replacement.get_contents().clone(writer))
+    page_label = PdfReader(io.BytesIO(_page_overlay(index + 1, len(reader.pages))))
+    target.merge_page(page_label.pages[0])
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()

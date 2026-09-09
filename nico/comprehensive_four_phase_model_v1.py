@@ -67,6 +67,17 @@ def build_four_phase_program(canonical: Mapping[str, Any]) -> dict[str, Any]:
     )
     lifecycle = source.get("lifecycle") if isinstance(source.get("lifecycle"), Mapping) else {}
     reviewed = source.get("human_review_completed") is True
+    review_truth = source.get("human_review_truth")
+    review_truth = review_truth if isinstance(review_truth, Mapping) else {}
+    pending_dispositions = review_truth.get("authorized_human_disposition_pending")
+    # Completed dispositions and independent QC finish Phase 2, while exact
+    # package approval remains a separate Phase 4 action. A zero count alone
+    # cannot establish completion when QC, evidence, or escalation gates remain.
+    review_complete = reviewed or (
+        review_truth.get("review_ready_for_final_approval") is True
+        and type(pending_dispositions) is int
+        and pending_dispositions == 0
+    )
     delivery = source.get("client_delivery_allowed") is True
     state = _text(source.get("assessment_state") or "review_required").casefold()
     human_review_required = source.get("human_review_required") is not False
@@ -103,7 +114,7 @@ def build_four_phase_program(canonical: Mapping[str, Any]) -> dict[str, Any]:
             "id": "human_review_by_exception",
             "title_en": "Human Review by Exception",
             "title_es": "Revisión humana por excepción",
-            "status": "complete" if reviewed else "ready_pending_human_decision" if review_ready else "not_ready",
+            "status": "complete" if review_complete else "ready_pending_human_decision" if review_ready else "not_ready",
             "evidence_boundary_en": "Individual review, homogeneous grouped work, quality-control sampling, and explicit authorized human dispositions.",
             "evidence_boundary_es": "Revisión individual, trabajo homogéneo agrupado, muestreo de control de calidad y disposiciones humanas autorizadas explícitas.",
         },
