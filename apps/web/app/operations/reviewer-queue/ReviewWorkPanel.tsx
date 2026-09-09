@@ -2,6 +2,7 @@
 
 import {FormEvent, useEffect, useMemo, useState} from "react";
 import ReviewSessionNotice from "./ReviewSessionNotice";
+import EvidenceRequests from "./EvidenceRequests";
 import styles from "./review-work.module.css";
 
 type Locale = "en" | "es-MX";
@@ -346,6 +347,13 @@ export default function ReviewWorkPanel() {
       <article><b>{Array.isArray(projection.unresolved_high_impact_candidate_ids) ? projection.unresolved_high_impact_candidate_ids.length : 0}</b><span>{locale === "es-MX" ? "escalamientos abiertos" : "open high-impact escalations"}</span></article>
       <article className={styles.wide}><b>{projection.ready_for_final_approval ? copy.ready : copy.notReady}</b><span>{locale === "es-MX" ? "La aprobación final sigue siendo una decisión humana separada." : "Final approval remains a separate human decision."}</span></article>
     </div> : null}
+
+    {projection ? <EvidenceRequests requests={ledger.evidence_requests} locale={locale} busy={busy} onResolve={(requestId) => {
+      setAction("resolve_evidence_request");
+      setTargetId(requestId);
+      setResolutionNote("");
+      setEvidenceReferences("");
+    }} /> : null}
 
     <form className={styles.form} onSubmit={submit}>
       <label>{copy.action}<select value={action} onChange={(event) => setAction(event.target.value as Action)}>{ACTIONS.map((item) => <option key={item.value} value={item.value}>{locale === "es-MX" ? item.es : item.en}</option>)}</select></label>
