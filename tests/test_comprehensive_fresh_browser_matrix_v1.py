@@ -2,11 +2,65 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from nico.complete_assessment_gate_v1 import ScannerEvidenceBlocked
 
 from scripts import comprehensive_fresh_browser_matrix_v1 as proof
+
+
+def visibility_page(monkeypatch, responses):
+    clock = [0.0]
+    seen = []
+    values = iter(responses)
+    def get(url, **kwargs):
+        seen.append(url.rsplit("/", 1)[-1])
+        status, payload = next(values)
+        return SimpleNamespace(status=status, ok=status < 400, json=lambda: payload)
+    monkeypatch.syspath_prepend(str(proof.ROOT / "scripts"))
+    monkeypatch.setattr(proof.time, "monotonic", lambda: clock[0])
+    return SimpleNamespace(request=SimpleNamespace(get=get),
+                           wait_for_timeout=lambda ms: clock.__setitem__(0, clock[0] + ms / 1000)), seen
+
+
+def test_async_intake_visibility_wait_preserves_same_run_and_commit(monkeypatch):
+    page, seen = visibility_page(monkeypatch, [
+        (404, {}), (202, {"intake_reserved": True, "operation": "intake_pending", "terminal": False}),
+        (200, {"run_id": "run-a", "commit_sha": "a" * 40}),
+    ])
+    evidence = proof.wait_for_immutable_capture(page, "run-a", "a" * 40)
+    assert seen == ["run-a"] * 3
+    assert evidence == {"visibility_read_attempts": 3, "visibility_404_reads": 1,
+                        "visibility_reserved_reads": 1}
+
+
+@pytest.mark.parametrize("status,payload", [
+    (403, {}), (500, {}),
+    (200, {"run_id": "wrong", "commit_sha": "a" * 40}),
+    (200, {"run_id": "run-a", "commit_sha": "b" * 40}),
+    (200, {"intake_reserved": True, "operation": "failed", "terminal": True}),
+    (200, {"run_id": "run-a", "terminal": True}),
+])
+def test_visibility_wait_does_not_retry_denial_or_wrong_identity(monkeypatch, status, payload):
+    page, seen = visibility_page(monkeypatch, [(status, payload)])
+    with pytest.raises(AssertionError):
+        proof.wait_for_immutable_capture(page, "run-a", "a" * 40)
+    assert seen == ["run-a"]
+
+
+def test_visibility_wait_is_bounded_without_replacement_intake(monkeypatch):
+    page, seen = visibility_page(monkeypatch, [(404, {})] * 360)
+    with pytest.raises(AssertionError, match="within 180 seconds"):
+        proof.wait_for_immutable_capture(page, "run-a", "a" * 40)
+    assert seen == ["run-a"] * 360
+
+
+def test_fresh_continuations_must_target_the_original_run():
+    request = {"method": "POST", "path": "/api/nico/assessment/comprehensive-run/run-a/continue"}
+    assert proof.verify_continuations([request, request], "run-a") == 2
+    with pytest.raises(AssertionError, match="different run"):
+        proof.verify_continuations([request], "run-b")
 
 
 def intake(language="en", project="TEST — matrix"):

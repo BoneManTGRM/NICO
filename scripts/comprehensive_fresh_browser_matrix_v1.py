@@ -81,17 +81,56 @@ def retain(path: Path, body: bytes, *, response=None) -> dict:
     return result
 
 
-def read_status(page, run_id: str):
-    import mobile_restart_live_acceptance_v1 as recovery
+def read_status(page, run_id: str, *, allow_visibility_pending: bool = False):
+    from nico.comprehensive_mobile_recovery_v1 import (
+        BROWSER_PROJECTION_HEADER, BROWSER_PROJECTION_VALUE,
+    )
 
     response = page.request.get(
         f"{ORIGIN}/api/nico/assessment/comprehensive-run/{run_id}",
         headers={"Accept": "application/json", "Cache-Control": "no-store",
-                 recovery.BROWSER_PROJECTION_HEADER: recovery.BROWSER_PROJECTION_VALUE},
+                 BROWSER_PROJECTION_HEADER: BROWSER_PROJECTION_VALUE},
         timeout=60_000,
     )
-    assert response.ok, f"Run status returned HTTP {response.status}"
+    assert response.ok or (allow_visibility_pending and response.status == 404), (
+        f"Run status returned HTTP {response.status}"
+    )
     return response
+
+
+def wait_for_immutable_capture(page, run_id: str, commit: str) -> dict:
+    """Wait for this accepted intake to become visible; never submit another one."""
+    deadline = time.monotonic() + 180
+    counts = {"visibility_read_attempts": 0, "visibility_404_reads": 0,
+              "visibility_reserved_reads": 0}
+    while time.monotonic() < deadline:
+        response = read_status(page, run_id, allow_visibility_pending=True)
+        counts["visibility_read_attempts"] += 1
+        if response.status == 404:
+            counts["visibility_404_reads"] += 1
+        else:
+            captured = response.json()
+            assert isinstance(captured, dict)
+            if captured.get("intake_reserved") is True:
+                assert captured.get("operation") == "intake_pending" and not captured.get("terminal"), (
+                    "Intake failed before immutable source capture"
+                )
+                counts["visibility_reserved_reads"] += 1
+            else:
+                assert captured.get("run_id") == run_id, "Wrong visible run identity"
+                if captured.get("commit_sha"):
+                    assert captured["commit_sha"] == commit, "Assessed source changed from fixed producer commit"
+                    return counts
+                assert not captured.get("terminal"), "Source acquisition failed before immutable capture"
+        page.wait_for_timeout(500)
+    raise AssertionError("Immutable source capture was not retained within 180 seconds")
+
+
+def verify_continuations(requests: list[dict], run_id: str) -> int:
+    continuations = [x for x in requests if x["method"] == "POST" and x["path"].endswith("/continue")]
+    assert all(x["path"] == f"/api/nico/assessment/comprehensive-run/{run_id}/continue"
+               for x in continuations), "Continuation targeted a different run"
+    return len(continuations)
 
 
 def verify_terminal(payload: dict, canonical: dict, run_id: str, commit: str) -> dict:
@@ -153,16 +192,8 @@ def run_cell(playwright, session: str, cell: tuple, args, commit: str, evidence:
         evidence["run_id"] = run_id
         evidence.update(verify_intake(requests, language, project))
         evidence["stages_exercised"].append("fresh browser intake")
-        scope._verify_proof_scope(page, ORIGIN, run_id)
-        capture_deadline = time.monotonic() + 180
-        while True:
-            captured = read_status(page, run_id).json()
-            if captured.get("commit_sha"):
-                assert captured["commit_sha"] == commit, "Assessed source changed from fixed producer commit"
-                break
-            assert not captured.get("terminal"), "Source acquisition failed before immutable capture"
-            assert time.monotonic() < capture_deadline, "Immutable source capture was not retained"
-            page.wait_for_timeout(500)
+        evidence.update(wait_for_immutable_capture(page, run_id, commit))
+        evidence.update(scope._verify_proof_scope(page, ORIGIN, run_id))
         evidence["source_commit_verified_before_reload"] = True
         # Reload the actual new run; never submit a replacement if restoration fails.
         evidence["reload"] = recovery._reload_and_restore(page, run_id, 120_000, expect_active_storage=True)
@@ -204,8 +235,9 @@ def run_cell(playwright, session: str, cell: tuple, args, commit: str, evidence:
         evidence["files"].append(retain(folder / "localized-rendering.json", markdown.body(), response=markdown))
         evidence["stages_exercised"].append("authenticated canonical JSON, localized PDF and Markdown byte retrieval")
         evidence.update(verify_intake(requests, language, project))
-        assert recovery._continuation_count(requests) == 0
-        evidence["continuation_request_count"] = 0
+        # Fresh execution legitimately continues its own run. The zero-mutation
+        # assertion belongs to reopening-only consumers, not this intake test.
+        evidence["continuation_request_count"] = verify_continuations(requests, run_id)
         after = read_status(page, run_id).json()
         assert (after.get("revision"), after.get("integrity_sha256"), after.get("status")) == (
             payload.get("revision"), payload.get("integrity_sha256"), payload.get("status"))
