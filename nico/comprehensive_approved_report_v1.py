@@ -96,6 +96,23 @@ def _replace_finality_text(value: str) -> str:
     for previous, replacement in _TEXT_REPLACEMENTS:
         output = output.replace(previous, replacement)
     for pattern, replacement in (
+        (
+            r"(?m)(^|>|&gt;)(-\s*)?estado de (revisi[oó]n|aprobaci[oó]n)\s*:\s*(?:aprobaci[oó]n humana )?pendiente\b",
+            r"\1\2Estado de \3: Aprobada",
+        ),
+        (
+            r"(?m)(^|>|&gt;)(-\s*)?(identidad|rol|autorizaci[oó]n) del revisor\s*:\s*pendiente\b",
+            r"\1\2\3 del revisor: Registrado en el certificado de revisión",
+        ),
+        (r"(?m)(^|>|&gt;)(-\s*)?decisi[oó]n\s*:\s*pendiente\b", r"\1\2Decisión: Aprobada"),
+        (
+            r"\bla aprobaci[oó]n humana autorizada sigue pendiente\b",
+            "La aprobación autorizada está registrada",
+        ),
+        (
+            r"\bla entrega al cliente est[aá] bloqueada\b",
+            "La entrega se controla por separado",
+        ),
         (r"\bborrador automatizado\b", "FINAL APROBADO"),
         (
             r"\baprobaci[oó]n humana\s*:\s*pendiente\b",
@@ -335,6 +352,24 @@ def _rewrite_pdf(
         cover_page = page_index == 0
         stream = ContentStream(page.get_contents(), writer)
         changed = False
+        # ReportLab can wrap this exact lifecycle sentence across text operators.
+        # Require both adjacent fragments; never rewrite an isolated technical status.
+        fragments = []
+        for operands, operator in stream.operations:
+            targets = operands[0] if operator == b"TJ" and operands else operands
+            if operator not in {b"Tj", b"'", b'"', b"TJ"}:
+                continue
+            fragments.extend((targets, index) for index, item in enumerate(targets)
+                             if isinstance(item, TextStringObject))
+        for (left, left_index), (right, right_index) in zip(fragments, fragments[1:]):
+            if (re.search(r"la entrega al cliente permanece$", str(left[left_index]), re.IGNORECASE)
+                    and str(right[right_index]).strip().casefold() == "bloqueada."):
+                left[left_index] = TextStringObject(re.sub(
+                    r"la entrega al cliente permanece$", "la entrega se controla",
+                    str(left[left_index]), flags=re.IGNORECASE,
+                ))
+                right[right_index] = TextStringObject("por separado.")
+                changed = True
         review_truth_page = "HUMAN REVIEW AND APPROVAL TRUTH" in page_text
         review_truth_value_label = ""
         for operands, operator in stream.operations:

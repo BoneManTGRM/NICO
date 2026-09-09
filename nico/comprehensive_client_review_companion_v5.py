@@ -795,6 +795,13 @@ def substantive_review_sections(
             )
 
         if section["id"] == "risk_reduction_and_executive_briefing":
+            from nico.comprehensive_report_content_render_v66 import _candidate_dispositions_completed
+
+            if _candidate_dispositions_completed(canonical):
+                details["status"] = (
+                    "Resumen automatizado completo — disposiciones de candidatos registradas"
+                    if spanish else "Automated briefing complete — candidate dispositions recorded"
+                )
             findings = top_findings or findings
             evidence = _values(
                 (

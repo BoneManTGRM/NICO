@@ -12,6 +12,7 @@ const CHECKOUT_RECOVERY_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scann
 const CONTINUE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
 const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?|approved-delivery-package)$/;
 const ALLOWED_PATH = /^\/assessment\/(?:comprehensive-intake|comprehensive-run(?:\/[^/?#]+(?:\/(?:continue|review-queue|review-work|review|authorize-delivery|approved-delivery-package|automated-delivery-package|report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?))?)?)$/;
+const LOCALIZED_EDITION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-editions\/es-MX(?:\/(?:review|authorize-delivery|approved-delivery-package))?$/;
 const RESPONSE_HEADERS = [
   "content-type", "content-length", "content-disposition", "retry-after",
   "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id",
@@ -57,7 +58,7 @@ function backendOrigin(): URL | null {
 }
 
 function timeoutFor(method: string, path: string): number {
-  if (method === "GET" && ARTIFACT_PATH.test(path)) return 240_000;
+  if (method === "GET" && (ARTIFACT_PATH.test(path) || LOCALIZED_EDITION_PATH.test(path))) return 240_000;
   if (method === "GET" && STATUS_PATH.test(path)) return 60_000;
   if (method === "POST" && CONTINUE_PATH.test(path)) return 240_000;
   return method === "GET" ? 30_000 : 240_000;
@@ -72,7 +73,7 @@ async function proxyAssessment(
     return errorResponse(404, "nico_assessment_route_not_allowed", "The requested assessment route is unavailable.");
   }
   const path = `/assessment/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
-  if (!ALLOWED_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path)) {
+  if (!ALLOWED_PATH.test(path) && !LOCALIZED_EDITION_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path)) {
     return errorResponse(404, "nico_assessment_route_not_allowed", "Only bounded NICO Comprehensive lifecycle routes are available.");
   }
 

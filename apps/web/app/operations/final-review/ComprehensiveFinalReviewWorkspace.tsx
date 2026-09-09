@@ -355,6 +355,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const [notice, setNotice] = useState("");
   const [downloadedArtifactDigest, setDownloadedArtifactDigest] = useState("");
   const [deliveryConfirmed, setDeliveryConfirmed] = useState(false);
+  const [artifactEdition, setArtifactEdition] = useState<"source" | "es-MX">("source");
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -362,6 +363,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     setLocale(requestedLocale);
     document.documentElement.lang = requestedLocale;
     setRunId(query.get("run_id") || "");
+    setArtifactEdition(query.get("edition") === "es-MX" ? "es-MX" : "source");
   }, []);
 
   const copy = COPY[locale];
@@ -410,20 +412,25 @@ export default function ComprehensiveFinalReviewWorkspace() {
     return new URL(`/api/nico${path}`, window.location.origin).href;
   }
 
+  function editionPath(): string {
+    const source = `/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}`;
+    return artifactEdition === "source" ? source : `${source}/localized-editions/${artifactEdition}`;
+  }
+
   function statusUrl(): string {
-    return canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}`);
+    return canonicalUrl(editionPath());
   }
 
   function reviewUrl(): string {
-    return canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/review`);
+    return canonicalUrl(`${editionPath()}/review`);
   }
 
   function deliveryUrl(): string {
-    return canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/approved-delivery-package`);
+    return canonicalUrl(`${editionPath()}/approved-delivery-package`);
   }
 
   function deliveryAuthorizationUrl(): string {
-    return canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/authorize-delivery`);
+    return canonicalUrl(`${editionPath()}/authorize-delivery`);
   }
 
   function headers(json = false): HeadersInit {
@@ -484,6 +491,37 @@ export default function ComprehensiveFinalReviewWorkspace() {
         expected_artifact_identity: reviewArtifactIdentity,
       }),
     });
+  }
+
+  async function prepareLocalizedEdition(): Promise<void> {
+    if (!ready || artifactEdition === "source") return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    setResult(null);
+    setConfirmed(false);
+    setDeliveryConfirmed(false);
+    setDownloadedArtifactDigest("");
+    try {
+      const source = await requestJson(canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}`), {headers: headers()});
+      const prepared = await requestJson(statusUrl(), {
+        method: "POST",
+        headers: headers(true),
+        body: JSON.stringify({
+          preparation_authorized: true,
+          authorization_confirmed: true,
+          expected_artifact_identity: asRecord(source.review_artifact_identity),
+        }),
+      });
+      setResult(prepared);
+      setNotice(locale === "es-MX"
+        ? "Edición en español conservada. Descargue y revise sus archivos exactos antes de aprobarla; la entrega requiere una autorización independiente."
+        : "Spanish edition retained. Download and inspect its exact files before approval; delivery requires separate authorization.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.loadFailed);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function downloadApprovedPdf(source: ReviewResponse): Promise<string> {
@@ -662,6 +700,13 @@ export default function ComprehensiveFinalReviewWorkspace() {
     <section className={styles.panel}>
       <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
       <form className={styles.form} onSubmit={loadStatus}>
+        <label>{locale === "es-MX" ? "Edición del informe" : "Report edition"}<select value={artifactEdition} disabled={loading} onChange={(event) => {
+          setArtifactEdition(event.target.value === "es-MX" ? "es-MX" : "source");
+          setResult(null); setConfirmed(false); setDeliveryConfirmed(false); setDownloadedArtifactDigest(""); setError(""); setNotice("");
+        }}>
+          <option value="source">{locale === "es-MX" ? "Edición original" : "Source edition"}</option>
+          <option value="es-MX">Español (México) — es-MX</option>
+        </select></label>
         <label className={styles.reviewerField}>{copy.reviewer}<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} placeholder={copy.reviewerPlaceholder} autoComplete="name" /></label>
         <label className={styles.tokenField}>{copy.reviewerRole}<select value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)}>
           <option value="">{copy.reviewerRolePlaceholder}</option>
@@ -674,6 +719,10 @@ export default function ComprehensiveFinalReviewWorkspace() {
           <label>{copy.exactRunId}<input value={runId} onChange={(event) => {setRunId(event.target.value); setResult(null); setConfirmed(false); setDeliveryConfirmed(false); setDownloadedArtifactDigest("");}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
         </div></details>
       </form>
+      {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
+        <p>{locale === "es-MX" ? "Primero apruebe la edición original. Después prepare y revise por separado la edición en español." : "Approve the source edition first. Then prepare and separately review the Spanish edition."}</p>
+        <button className={styles.secondary} type="button" disabled={loading || !ready || Boolean(result)} onClick={prepareLocalizedEdition}>{locale === "es-MX" ? "Preparar edición en español para revisión" : "Prepare Spanish edition for review"}</button>
+      </div> : null}
       <p className={styles.securityNote}>{copy.security}</p>
       {runId.trim() ? <p className={styles.securityNote}><a href={reviewerQueueHref}>{copy.reviewerQueue}</a></p> : null}
       <div className={styles.feedback} aria-live="polite">{error ? <div className={styles.error} role="alert">{error}</div> : null}{!error && notice ? <div className={styles.success}>{notice}</div> : null}</div>

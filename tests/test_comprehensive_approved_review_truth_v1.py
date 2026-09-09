@@ -69,3 +69,46 @@ def test_approved_edition_finalizes_review_truth_without_authorizing_delivery():
     assert result['json']['approval_projection']['delivery_authority'] == 'separate_certificate_required'
     assert result['client_delivery_allowed'] is False
     assert package['human_review_truth']['final_human_approval_status'] == 'pending'
+
+
+def test_spanish_approved_labels_preserve_stakeholder_pending_evidence():
+    # These lines are emitted by the actual es-MX renderer for revision 72.
+    text = '\n'.join((
+        'Estado de revisión: aprobación humana pendiente',
+        'Estado de aprobación: aprobación humana pendiente',
+        'Identidad del revisor: Pendiente',
+        'Rol del revisor: Pendiente',
+        'Autorización del revisor: Pendiente',
+        'Decisión: Pendiente',
+        'La aprobación humana autorizada sigue pendiente y la entrega al cliente permanece bloqueada.',
+        'La entrega al cliente está bloqueada.',
+        'Estado: Solo marco — pendiente de validación de las partes interesadas',
+    ))
+    result = approved._replace_finality_text(text)
+    for stale in ('aprobación humana pendiente', 'del revisor: Pendiente',
+                  'Decisión: Pendiente', 'humana autorizada sigue pendiente',
+                  'cliente está bloqueada'):
+        assert stale.casefold() not in result.casefold()
+    assert 'Estado: Solo marco — pendiente de validación de las partes interesadas' in result
+    escaped = '<li>&lt;span data-nico-client-literal=&quot;true&quot;&gt;Estado de revisión: aprobación humana pendiente&lt;/span&gt;</li>'
+    assert 'aprobación humana pendiente' not in approved._replace_finality_text(escaped)
+    evidence = 'Evidencia técnica: Decisión: Pendiente; identidad del revisor: Pendiente'
+    assert approved._replace_finality_text(evidence) == evidence
+
+
+def test_spanish_pdf_wrapped_delivery_sentence_is_certificate_controlled():
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer, invariant=1)
+    document.drawString(50, 750, 'La aprobación humana autorizada sigue pendiente y la entrega al cliente permanece')
+    document.drawString(50, 735, 'bloqueada.')
+    document.save()
+    source = buffer.getvalue()
+    certificate = approved._certificate_pdf(reviewer='SYNTHETIC SOFTWARE-TEST',
+        reviewer_role='Security reviewer', decision_reason='SYNTHETIC SOFTWARE-TEST',
+        decided_at='2026-09-09T00:00:00Z', source_pdf_sha256=hashlib.sha256(source).hexdigest(),
+        run_id='synthetic_generator_test', repository='synthetic/fixture', commit_sha='a'*40,
+        spanish=True)
+    final = approved._rewrite_pdf(source, certificate_pdf=certificate, spanish=True)
+    text = PdfReader(io.BytesIO(final)).pages[0].extract_text()
+    assert 'bloqueada' not in text
+    assert 'se controla\npor separado.' in text

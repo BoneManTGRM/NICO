@@ -35,8 +35,8 @@ def test_final_review_uses_protected_exact_run_comprehensive_endpoints() -> None
         "{copy.operatorToken}", 1
     )[1].split("</label>", 1)[0]
     assert "/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}" in workspace
-    assert "/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/review" in workspace
-    assert "/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}/approved-delivery-package" in workspace
+    assert "${editionPath()}/review" in workspace
+    assert "${editionPath()}/approved-delivery-package" in workspace
     assert 'review_authorized: true' in workspace
     assert 'authorization_confirmed: true' in workspace
     assert 'reviewer: reviewer.trim()' in workspace

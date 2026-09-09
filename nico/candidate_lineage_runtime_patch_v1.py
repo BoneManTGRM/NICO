@@ -71,7 +71,7 @@ def _find_lineage(node: Any, depth: int = 0) -> Mapping[str, Any]:
     return _find_named_mapping(node, "candidate_lineage", depth)
 
 
-def _rewrite_candidate_language(value: Any) -> str:
+def _rewrite_candidate_language(value: Any, *, recorded_text: str = "") -> str:
     text = str(value)
     replacements = {
         "Score effect: assurance-only until triaged.": (
@@ -87,7 +87,16 @@ def _rewrite_candidate_language(value: Any) -> str:
         ),
     }
     for old, new in replacements.items():
-        text = text.replace(old, new)
+        if not recorded_text:
+            text = text.replace(old, new)
+            continue
+        # Update only the generated complete sentence or finding suffix. A
+        # quoted source/title containing the same words is retained verbatim.
+        for generated in (old, new):
+            if text == generated:
+                text = recorded_text
+            elif text.endswith(" · " + generated):
+                text = text[:-len(generated)] + recorded_text
     return text
 
 
@@ -111,8 +120,12 @@ def _patch_candidate_stage() -> bool:
             canonical, "assessment_subject_normalization"
         )
         output = deepcopy(stage)
+        recorded_text = (
+            content._recorded_candidate_disposition_text(canonical)
+            if content._candidate_dispositions_completed(canonical) else ""
+        )
         evidence = [
-            _rewrite_candidate_language(item)
+            _rewrite_candidate_language(item, recorded_text=recorded_text)
             for item in output.get("evidence") or []
         ]
         evidence.extend(
@@ -234,7 +247,7 @@ def _patch_candidate_stage() -> bool:
             )
 
         output["findings"] = [
-            _rewrite_candidate_language(item)
+            _rewrite_candidate_language(item, recorded_text=recorded_text)
             for item in output.get("findings") or []
         ]
         output["evidence"] = evidence
