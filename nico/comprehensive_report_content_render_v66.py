@@ -59,6 +59,28 @@ def _scanner_count(
     return 0, "no retained finding count"
 
 
+def _candidate_dispositions_completed(canonical: Mapping[str, Any]) -> bool:
+    truth = canonical.get("human_review_truth")
+    if not isinstance(truth, Mapping):
+        return False
+    pending = truth.get("authorized_human_disposition_pending")
+    completed = truth.get("authorized_human_disposition_completed")
+    total = truth.get("raw_scanner_candidates")
+    return (
+        type(pending) is int and pending == 0
+        and type(completed) is int and type(total) is int
+        and completed == total and total >= 0
+    )
+
+
+def _recorded_candidate_disposition_text(canonical: Mapping[str, Any]) -> str:
+    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+    language = str(canonical.get("report_language") or identity.get("report_language") or "en")
+    if language.casefold().startswith("es"):
+        return "Disposiciones de candidatos registradas; la aprobación del informe se controla por separado."
+    return "Candidate dispositions recorded; report approval is controlled separately."
+
+
 def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, Any] | None:
     summary = (
         canonical.get("review_candidate_summary")
@@ -68,6 +90,13 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
     review_total = _integer(summary.get("review_required_total"))
     raw_total = _integer(summary.get("raw_total"))
     material_total = _integer(summary.get("verified_material_total"))
+    review_completed = _candidate_dispositions_completed(canonical)
+    if review_completed:
+        truth = canonical["human_review_truth"]
+        review_total = 0
+        raw_total = truth["raw_scanner_candidates"]
+        material_total = _integer(truth.get("confirmed_material_findings"))
+    recorded_text = _recorded_candidate_disposition_text(canonical)
     register = [
         item
         for item in canonical.get("review_candidate_register") or []
@@ -78,6 +107,7 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
         f"Confirmed material findings: {material_total}.",
         f"Review-required candidates: {review_total}.",
         (
+            recorded_text if review_completed else
             "Score effect: assurance-only while authorized human disposition remains "
             "pending; NICO technical-triage status is reported separately."
         ),
@@ -122,7 +152,7 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
             f"{category} · {candidate_id}"
             + (f" · {title}" if title else "")
             + (f" · {'; '.join(details)}" if details else "")
-            + " · Human review required; assurance-only until triaged."
+            + (" · " + recorded_text if review_completed else " · Human review required; assurance-only until triaged.")
         )
 
     unavailable = [
@@ -134,6 +164,7 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
         "review_required_candidate_register",
         "Review-Required Candidate Register",
         (
+            recorded_text if review_completed else
             "Scanner candidates are separated from confirmed material findings. "
             "They remain human-review work and affect assurance only until disposition."
         ),

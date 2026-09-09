@@ -1296,6 +1296,9 @@ def register_comprehensive_api_routes(
     *,
     controller: ComprehensiveApiController | None = None,
 ) -> FastAPI:
+    from nico.comprehensive_localized_edition_v1 import register_localized_edition_routes
+
+    register_localized_edition_routes(app)
     if controller is not None:
         app.state.comprehensive_api_controller = controller
         service = _service(controller)

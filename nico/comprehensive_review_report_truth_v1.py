@@ -439,6 +439,7 @@ def _synchronize_package(package: dict[str, Any], truth: Mapping[str, Any]) -> N
         counts["material"] += int(candidate.get("confirmed_material_finding") is True)
         counts["review_required"] += int(not candidate.get("human_disposition"))
     current_summary = {
+        "raw_total": truth["raw_scanner_candidates"],
         "review_required_total": truth["authorized_human_disposition_pending"],
         "verified_material_total": truth["confirmed_material_findings"],
         "by_category": categories,

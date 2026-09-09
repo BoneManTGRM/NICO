@@ -96,6 +96,23 @@ def _replace_finality_text(value: str) -> str:
     for previous, replacement in _TEXT_REPLACEMENTS:
         output = output.replace(previous, replacement)
     for pattern, replacement in (
+        (
+            r"(?m)(^|>|&gt;)(-\s*)?estado de (revisi[oó]n|aprobaci[oó]n)\s*:\s*(?:aprobaci[oó]n humana )?pendiente\b",
+            r"\1\2Estado de \3: Aprobada",
+        ),
+        (
+            r"(?m)(^|>|&gt;)(-\s*)?(identidad|rol|autorizaci[oó]n) del revisor\s*:\s*pendiente\b",
+            r"\1\2\3 del revisor: Registrado en el certificado de revisión",
+        ),
+        (r"(?m)(^|>|&gt;)(-\s*)?decisi[oó]n\s*:\s*pendiente\b", r"\1\2Decisión: Aprobada"),
+        (
+            r"\bla aprobaci[oó]n humana autorizada sigue pendiente\b",
+            "La aprobación autorizada está registrada",
+        ),
+        (
+            r"\bla entrega al cliente est[aá] bloqueada\b",
+            "La entrega se controla por separado",
+        ),
         (r"\bborrador automatizado\b", "FINAL APROBADO"),
         (
             r"\baprobaci[oó]n humana\s*:\s*pendiente\b",
@@ -178,6 +195,16 @@ def _replace_finality_text(value: str) -> str:
         flags=re.IGNORECASE,
     )
     return output
+
+
+def _completed_briefing_text(value: str) -> str:
+    # One current-status label retained in older exact PDFs. Conditional scoring
+    # policy and historical scanner observations remain unchanged.
+    return re.sub(
+        r"(Complete automated briefing\s*[—–Š\x01-]\s*)human disposition pending",
+        r"\1candidate dispositions recorded",
+        value,
+    )
 
 
 def _approved_node(value: Any) -> Any:
@@ -322,6 +349,7 @@ def _rewrite_pdf(
     *,
     certificate_pdf: bytes,
     spanish: bool,
+    candidate_dispositions_completed: bool = False,
 ) -> bytes:
     if not source_pdf.startswith(b"%PDF") or not certificate_pdf.startswith(b"%PDF"):
         raise ValueError("comprehensive_approved_report_pdf_invalid")
@@ -335,6 +363,24 @@ def _rewrite_pdf(
         cover_page = page_index == 0
         stream = ContentStream(page.get_contents(), writer)
         changed = False
+        # ReportLab can wrap this exact lifecycle sentence across text operators.
+        # Require both adjacent fragments; never rewrite an isolated technical status.
+        fragments = []
+        for operands, operator in stream.operations:
+            targets = operands[0] if operator == b"TJ" and operands else operands
+            if operator not in {b"Tj", b"'", b'"', b"TJ"}:
+                continue
+            fragments.extend((targets, index) for index, item in enumerate(targets)
+                             if isinstance(item, TextStringObject))
+        for (left, left_index), (right, right_index) in zip(fragments, fragments[1:]):
+            if (re.search(r"la entrega al cliente permanece$", str(left[left_index]), re.IGNORECASE)
+                    and str(right[right_index]).strip().casefold() == "bloqueada."):
+                left[left_index] = TextStringObject(re.sub(
+                    r"la entrega al cliente permanece$", "la entrega se controla",
+                    str(left[left_index]), flags=re.IGNORECASE,
+                ))
+                right[right_index] = TextStringObject("por separado.")
+                changed = True
         review_truth_page = "HUMAN REVIEW AND APPROVAL TRUTH" in page_text
         review_truth_value_label = ""
         for operands, operator in stream.operations:
@@ -348,6 +394,8 @@ def _rewrite_pdf(
                 if isinstance(operand, TextStringObject):
                     original = str(operand)
                     updated = _replace_finality_text(original)
+                    if candidate_dispositions_completed:
+                        updated = _completed_briefing_text(updated)
                     if review_truth_page:
                         normalized = original.strip().casefold()
                         if review_truth_value_label == "final human approval" and normalized == "pending":
@@ -381,6 +429,8 @@ def _rewrite_pdf(
                         except UnicodeDecodeError:
                             continue
                         rewritten = _replace_finality_text(decoded)
+                        if candidate_dispositions_completed:
+                            rewritten = _completed_briefing_text(rewritten)
                         if rewritten != decoded:
                             try:
                                 updated_bytes = rewritten.encode(encoding)
@@ -504,14 +554,21 @@ def build_approved_report_package(
         commit_sha=source_identity["commit_sha"],
         spanish=spanish,
     )
+    from nico.comprehensive_report_content_render_v66 import _candidate_dispositions_completed
+
+    dispositions_completed = _candidate_dispositions_completed(canonical)
     approved_pdf = _rewrite_pdf(
         source_pdf,
         certificate_pdf=certificate,
         spanish=spanish,
+        candidate_dispositions_completed=dispositions_completed,
     )
     approved_pdf_sha256 = hashlib.sha256(approved_pdf).hexdigest()
     markdown = _replace_finality_text(_text(output.get("markdown")))
     rendered_html = _replace_finality_text(_text(output.get("html")))
+    if dispositions_completed:
+        markdown = _completed_briefing_text(markdown)
+        rendered_html = _completed_briefing_text(rendered_html)
 
     for field in _MANIFEST_FAMILY_FIELDS:
         output.pop(field, None)
