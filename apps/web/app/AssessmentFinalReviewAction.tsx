@@ -5,6 +5,8 @@ import {useEffect} from "react";
 const CONTEXT_PREFIX = "nico:review-context:";
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const SUCCESS_STATUSES = new Set(["complete", "completed", "passed", "verified", "review_required"]);
+const NON_CLIENT_CUSTOMERS = new Set(["", "default_customer", "internal", "internal_customer", "nico_production_proof"]);
+const NON_CLIENT_PROJECTS = new Set(["", "default_project", "internal", "internal_project", "spanish_comprehensive_production"]);
 
 type ReviewContext = {
   run_id: string;
@@ -12,6 +14,7 @@ type ReviewContext = {
   customer_id: string;
   project_id: string;
   review_ready: boolean;
+  client_delivery_identity_ready: boolean;
   cross_format_status: string;
   cross_format_failed_checks: string[];
 };
@@ -28,7 +31,9 @@ function normalizedStatus(value: unknown): string {
 
 function serviceFrom(value: Record<string, unknown>): "express" | "comprehensive" {
   const raw = String(value.service_id || value.service_tier || value.assessment_type || value.workflow || "").toLowerCase();
-  return raw.includes("comprehensive") || String(value.run_id || "").startsWith("comprun_")
+  const identity = asRecord(asRecord(value.record).identity);
+  return raw.includes("comprehensive")
+    || String(value.run_id || identity.run_id || "").startsWith("comprun_")
     ? "comprehensive"
     : "express";
 }
@@ -39,13 +44,42 @@ function stageResults(value: Record<string, unknown>): Record<string, unknown> {
   return asRecord(asRecord(value.record).stage_results);
 }
 
+function canonicalIdentity(value: Record<string, unknown>): Record<string, unknown> {
+  return asRecord(asRecord(value.record).identity);
+}
+
+function engagementMetadata(value: Record<string, unknown>): Record<string, unknown> {
+  const direct = asRecord(value.engagement_metadata);
+  if (Object.keys(direct).length) return direct;
+  return asRecord(asRecord(value.record).engagement_metadata);
+}
+
+function clientDeliveryIdentityReady(value: Record<string, unknown>): boolean {
+  const record = asRecord(value.record);
+  const identity = canonicalIdentity(value);
+  const customerId = String(value.customer_id || record.customer_id || identity.customer_id || "").trim().toLowerCase();
+  const projectId = String(value.project_id || record.project_id || identity.project_id || "").trim().toLowerCase();
+  const metadata = engagementMetadata(value);
+  const engagementComplete = [
+    "client_name",
+    "project_name",
+    "primary_technical_contact",
+    "access_method",
+    "authorized_scope",
+  ].every((field) => String(metadata[field] || "").trim().length > 0);
+  return engagementComplete
+    && !NON_CLIENT_CUSTOMERS.has(customerId)
+    && !NON_CLIENT_PROJECTS.has(projectId);
+}
+
 export function finalReviewReadiness(value: Record<string, unknown>): {
   ready: boolean;
   status: string;
   failedChecks: string[];
+  clientDeliveryIdentityReady: boolean;
 } {
   if (serviceFrom(value) !== "comprehensive") {
-    return {ready: true, status: "legacy", failedChecks: []};
+    return {ready: true, status: "legacy", failedChecks: [], clientDeliveryIdentityReady: true};
   }
   const stage = asRecord(stageResults(value).cross_format_truth_verification);
   const status = normalizedStatus(stage.status);
@@ -57,30 +91,35 @@ export function finalReviewReadiness(value: Record<string, unknown>): {
   const reviewRequired = runStatus === "review_required" || runStatus === "approved";
   const deliveryBlocked = value.client_delivery_allowed !== true
     && asRecord(value.record).client_delivery_allowed !== true;
+  const identityReady = clientDeliveryIdentityReady(value);
   return {
-    ready: passed && reviewRequired && deliveryBlocked,
+    ready: passed && reviewRequired && deliveryBlocked && identityReady,
     status: status || "missing",
     failedChecks,
+    clientDeliveryIdentityReady: identityReady,
   };
 }
 
 function storeContext(value: Record<string, unknown>): void {
-  const runId = String(value.run_id || asRecord(value.record).run_id || "").trim();
+  const record = asRecord(value.record);
+  const identity = canonicalIdentity(value);
+  const runId = String(value.run_id || record.run_id || identity.run_id || "").trim();
   if (!runId) return;
   const readiness = finalReviewReadiness(value);
   const context: ReviewContext = {
     run_id: runId,
     service: serviceFrom(value),
-    customer_id: String(value.customer_id || asRecord(value.record).customer_id || "default_customer"),
-    project_id: String(value.project_id || asRecord(value.record).project_id || "default_project"),
+    customer_id: String(value.customer_id || record.customer_id || identity.customer_id || "default_customer"),
+    project_id: String(value.project_id || record.project_id || identity.project_id || "default_project"),
     review_ready: readiness.ready,
+    client_delivery_identity_ready: readiness.clientDeliveryIdentityReady,
     cross_format_status: readiness.status,
     cross_format_failed_checks: readiness.failedChecks,
   };
   try {
     window.sessionStorage.setItem(`${CONTEXT_PREFIX}${runId}`, JSON.stringify(context));
   } catch {
-    // The visible exact run ID still supports the default-scope fallback.
+    // The visible exact run ID still supports the fail-closed route fallback.
   }
 }
 
@@ -94,6 +133,7 @@ function contextFor(runId: string): ReviewContext {
         customer_id: stored.customer_id || "default_customer",
         project_id: stored.project_id || "default_project",
         review_ready: stored.review_ready === true,
+        client_delivery_identity_ready: stored.client_delivery_identity_ready === true,
         cross_format_status: stored.cross_format_status || "missing",
         cross_format_failed_checks: Array.isArray(stored.cross_format_failed_checks)
           ? stored.cross_format_failed_checks.map((item) => String(item))
@@ -101,7 +141,7 @@ function contextFor(runId: string): ReviewContext {
       };
     }
   } catch {
-    // Use the route-derived fallback below.
+    // Use the route-derived fail-closed fallback below.
   }
   const tier = new URLSearchParams(window.location.search).get("tier") || "";
   return {
@@ -110,6 +150,7 @@ function contextFor(runId: string): ReviewContext {
     customer_id: "default_customer",
     project_id: "default_project",
     review_ready: false,
+    client_delivery_identity_ready: false,
     cross_format_status: "missing",
     cross_format_failed_checks: [],
   };
@@ -158,12 +199,14 @@ function installAction(): void {
   if (context.service === "comprehensive" && !context.review_ready) {
     existing?.remove();
     actions.dataset.nicoReviewGate = "blocked";
+    actions.dataset.nicoClientDeliveryIdentity = context.client_delivery_identity_ready ? "ready" : "blocked";
     actions.dataset.nicoCrossFormatStatus = context.cross_format_status;
     actions.dataset.nicoCrossFormatFailedChecks = context.cross_format_failed_checks.join(",");
     return;
   }
 
   actions.dataset.nicoReviewGate = "ready";
+  actions.dataset.nicoClientDeliveryIdentity = "ready";
   delete actions.dataset.nicoCrossFormatFailedChecks;
   const path = window.location.pathname.toLowerCase();
   const queryLocale = new URLSearchParams(window.location.search).get("lang")?.toLowerCase();

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from copy import deepcopy
 from functools import wraps
@@ -9,7 +10,7 @@ from fastapi import FastAPI
 
 from nico import comprehensive_api_routes as api_routes
 
-VERSION = "nico.phase3_engagement_intake.v6"
+VERSION = "nico.phase3_engagement_intake.v7"
 INTAKE_PATCH = "_nico_phase3_engagement_intake_v1"
 REVIEW_PATCH = "_nico_phase3_review_identity_v1"
 RECOVERY_PATCH = "_nico_phase3_recovery_identity_v1"
@@ -22,6 +23,7 @@ _ENGAGEMENT_LITERAL_LIMITS = {
     "access_method": 1200,
     "authorized_scope": 4000,
 }
+_PUBLIC_CLIENT_RUN_RE = re.compile(r"^comprun_([a-f0-9]{32})$", re.I)
 # These scopes are explicitly non-client. The reserved production-proof pair exists only
 # for isolated release verification and is protected independently by the proof lifecycle.
 PLACEHOLDER_CUSTOMERS = {
@@ -70,16 +72,63 @@ def _module(payload: Mapping[str, Any]) -> dict[str, Any]:
     return deepcopy(dict(raw)) if isinstance(raw, Mapping) else {}
 
 
+def _promote_authorized_public_client_scope(
+    body: dict[str, Any],
+    client: str,
+    project: str,
+) -> bool:
+    """Mint run-local canonical scope only for an explicit complete client intake.
+
+    The ordinary browser form historically sends the reserved public placeholder scope
+    so optional display labels cannot impersonate an existing tenant. That is correct
+    for partial/internal assessments, but a fully supplied, explicitly authorized
+    client engagement must not reach final review still carrying that non-deliverable
+    scope. Mint opaque run-local identifiers from the already reserved cryptographic run
+    identity instead of deriving tenant authority from human-entered client/project
+    labels. This creates no cross-run tenant claim and happens before canonical
+    persistence or provider acquisition.
+    """
+
+    customer = _text(body.get("customer_id"), 240).casefold()
+    project_id = _text(body.get("project_id"), 240).casefold()
+    if customer != "default_customer" or project_id != "default_project":
+        return False
+    if body.get("authorized") is not True or body.get("authorization_confirmed") is not True:
+        return False
+    if not client or not project:
+        return False
+
+    engagement = _module(body)
+    evidence = engagement.get("evidence") if isinstance(engagement.get("evidence"), Mapping) else {}
+    if any(
+        not _literal_values(
+            evidence.get(field),
+            limit=_ENGAGEMENT_LITERAL_LIMITS[field],
+        )
+        for field in ENGAGEMENT_FIELDS
+    ):
+        return False
+
+    match = _PUBLIC_CLIENT_RUN_RE.fullmatch(_text(body.get("run_id"), 120))
+    if match is None:
+        return False
+    run_token = match.group(1).casefold()
+    body["customer_id"] = f"customer_engagement_{run_token}"
+    body["project_id"] = f"project_engagement_{run_token}"
+    body["phase3_scope_source"] = "authorized_public_client_engagement"
+    return True
+
+
 def _client_mode(payload: Mapping[str, Any], client: str, project: str) -> bool:
     """Resolve client mode from authoritative scope when the caller supplied it.
 
-    Public Comprehensive intake now keeps optional client/project labels as display
-    metadata while sending the canonical default scope explicitly. Those labels must
-    therefore never escalate the request into a client-final engagement or make the
-    three lightweight context fields mandatory. Explicit non-placeholder scope remains
-    the authority for real client mode. The reserved synthetic production-proof scope
-    is also explicitly non-client. Legacy callers that omit scope keys retain the
-    original label-driven behavior for compatibility.
+    Optional client/project labels remain presentation metadata and do not themselves
+    mint or select tenant identities. A complete explicitly authorized browser intake
+    may receive an opaque run-local client scope before this function executes; all
+    partial/default-scope requests remain internal. Explicit non-placeholder scope
+    remains the authority for reusable/operator client mode. The reserved synthetic
+    production-proof scope is also explicitly non-client. Legacy callers that omit
+    scope keys retain the original label-driven behavior for compatibility.
     """
 
     scope_supplied = "customer_id" in payload or "project_id" in payload
@@ -101,6 +150,7 @@ def validate_and_enrich_intake(payload: Mapping[str, Any]) -> dict[str, Any]:
     body = deepcopy(dict(payload))
     client = (_literal_values(body.get("client_name"), limit=180) or [""])[0]
     project = (_literal_values(body.get("project_name"), limit=180) or [""])[0]
+    _promote_authorized_public_client_scope(body, client, project)
     client_mode = _client_mode(body, client, project)
     human = (
         deepcopy(dict(body.get("human_evidence") or {}))
@@ -318,6 +368,9 @@ def install_phase3_engagement_intake_v1(app: FastAPI | None = None) -> dict[str,
         "client_and_project_required_for_client_mode": True,
         "primary_contact_access_scope_required": True,
         "client_mode_requires_authoritative_non_placeholder_scope": True,
+        "authorized_public_client_scope_promoted_before_persistence": True,
+        "public_client_scope_derived_from_reserved_run_identity_not_display_labels": True,
+        "partial_or_unconfirmed_public_intake_remains_internal": True,
         "optional_display_labels_do_not_enable_client_mode": True,
         "reserved_production_proof_scope_is_non_client": True,
         "internal_assessment_allowed": True,
