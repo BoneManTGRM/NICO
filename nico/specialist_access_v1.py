@@ -39,7 +39,7 @@ _PROOF_STATUS = re.compile(r"^/assessment/comprehensive-run/[^/]+$")
 _PROOF_CONTINUE = re.compile(r"^/assessment/comprehensive-run/[^/]+/continue$")
 _PROOF_ARTIFACT = re.compile(
     r"^/assessment/comprehensive-run/[^/]+/"
-    r"(?:report/(?:markdown|html|json|pdf)|localized-report/(?:en|es-MX)(?:/pdf)?)$"
+    r"(?:report/(?:markdown|html|json|pdf)|localized-report/(?:en|es-MX)(?:/(?:pdf|evidence-package))?)$"
 )
 
 
