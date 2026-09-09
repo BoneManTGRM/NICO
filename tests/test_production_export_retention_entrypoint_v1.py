@@ -6,6 +6,7 @@ the resulting bytes over its production-route HTTP transport, never regenerate t
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import lru_cache
 import hashlib
 import importlib
 import io
@@ -31,6 +32,32 @@ def sha(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+@lru_cache(maxsize=1)
+def _render_fixed_families(metadata_json: str, client_name: str, project_name: str):
+    """Render real immutable fixture bytes once; each case receives a deep copy.
+
+    The negative controls vary transport, identity or retained bytes, not rendering
+    inputs. Repeating the full renderer for every control exhausts the bounded CI
+    file timeout without adding evidence. Renderer coverage remains real here.
+    """
+    package = _package("es-MX")
+    package["report_id"] = REPORT
+    package["json"]["identity"].update(
+        run_id=RUN, commit_sha=SHA, report_language="es-MX",
+        customer_name=client_name, project_name=project_name,
+    )
+    package["json"]["engagement_metadata"] = json.loads(metadata_json)
+    from nico.comprehensive_report_review_integrity_v1 import install_comprehensive_report_review_integrity_v1
+    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    install_comprehensive_report_review_integrity_v1()
+    package = rebuild_client_artifacts(package)
+    package["report_id"] = REPORT
+    canonical = package["json"]
+    from nico.comprehensive_same_run_locale_report_v1 import _render_target
+    english = _render_target(canonical, "en")
+    return package, english
+
+
 @pytest.fixture
 def acceptance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
@@ -49,23 +76,12 @@ def acceptance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     retention = importlib.import_module("comprehensive_production_export_retention_v1")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(proof.ENGAGEMENT_PROOF_FIXTURE_ENV, "supplied")
-    package = _package("es-MX")
-    package["report_id"] = REPORT
-    package["json"]["identity"].update(
-        run_id=RUN, commit_sha=SHA, report_language="es-MX",
-        customer_name=proof.PROOF_CLIENT_NAME, project_name=proof.PROOF_PROJECT_NAME,
-    )
     metadata = {**proof._expected_engagement_metadata(),
                 "repository_inference_prohibited": True, "directly_scored": False}
-    package["json"]["engagement_metadata"] = deepcopy(metadata)
-    from nico.comprehensive_report_review_integrity_v1 import install_comprehensive_report_review_integrity_v1
-    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
-    install_comprehensive_report_review_integrity_v1()
-    package = rebuild_client_artifacts(package)
-    package["report_id"] = REPORT
+    package, english = deepcopy(_render_fixed_families(
+        json.dumps(metadata, sort_keys=True), proof.PROOF_CLIENT_NAME, proof.PROOF_PROJECT_NAME,
+    ))
     canonical = package["json"]
-    from nico.comprehensive_same_run_locale_report_v1 import _render_target
-    english = _render_target(canonical, "en")
     localized_packages = {"es-MX": package, "en": english}
     # The API's canonical truth digest uses stable object serialization; the
     # detached manifest separately binds the stored canonical_json byte stream.

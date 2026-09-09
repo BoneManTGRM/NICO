@@ -518,6 +518,20 @@ def _finalize_artifact_navigation(
     )
     pagination["final_pages"] = final_pages
     output["pagination_compaction"] = pagination
+    if "artifact_manifest" in output:
+        # The full locale assembler has already bound its PDF before this final
+        # navigation pass. Bind the resulting bytes again through the guarded
+        # pending-draft path; never leave the old PDF digest in the manifest.
+        # Legacy thin renderers do not have a detached artifact family to rebind.
+        from nico.comprehensive_artifact_manifest_approval_v1 import (
+            rebind_artifact_manifest,
+        )
+        from nico.comprehensive_exact_artifact_hash_binding_v1 import (
+            _validate_exact_artifact_hashes,
+        )
+
+        output = rebind_artifact_manifest(output)
+        _validate_exact_artifact_hashes(output)
     return output
 
 
