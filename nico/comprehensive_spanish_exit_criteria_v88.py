@@ -37,6 +37,23 @@ _EXIT_CRITERIA_TRANSLATIONS: dict[str, str] = {
 # the approved production vocabulary here so all report surfaces share one bounded
 # contract. Unknown prose still delegates to the canonical fail-closed translator.
 _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
+    'Review the retained scanner candidates and record evidence-linked dispositions; candidate counts are not confirmed defect counts.': 'Revisar los candidatos conservados de los analizadores y registrar disposiciones vinculadas a evidencia; los recuentos de candidatos no son recuentos de defectos confirmados.',
+    'Obtain the specified missing input within authorized scope and assess the limitation again; absence is not a confirmed vulnerability.': 'Obtener el insumo faltante especificado dentro del alcance autorizado y reevaluar la limitación; su ausencia no constituye una vulnerabilidad confirmada.',
+    'Suggested role type: Cybersecurity specialist | Dependencies: Retained scanner artifact availability, Qualified specialist review': 'Tipo de función sugerida: Especialista en ciberseguridad | Dependencias: Disponibilidad del artefacto conservado del analizador, Revisión de un especialista cualificado',
+    'Suggested role type: Authorized evidence custodian | Dependencies: Authorized input scope, Evidence source availability': 'Tipo de función sugerida: Custodio autorizado de evidencia | Dependencias: Alcance autorizado del insumo, Disponibilidad de la fuente de evidencia',
+    'Suggested role types: Authorized evidence custodian, Cybersecurity specialist': 'Tipos de función sugeridos: Custodio autorizado de evidencia, Especialista en ciberseguridad',
+    "Work packages are provisional and bound to retained findings or evidence gaps. The 0-30/31-90/91-180 windows are illustrative; no owner, capacity, cost, date, approval, or delivery commitment is created.": (
+        "Los paquetes de trabajo son provisionales y están vinculados a hallazgos conservados o brechas de evidencia. "
+        "Las ventanas 0-30/31-90/91-180 son ilustrativas; no se crea compromiso de responsable, capacidad, costo, fecha, aprobación ni entrega."
+    ),
+    "Bind the supplied evidence to its source and run, check its adequacy, and retain the revised limitation and review decision.": (
+        "Vincular la evidencia aportada con su fuente y ejecución, comprobar su suficiencia "
+        "y conservar la limitación revisada y la decisión de revisión."
+    ),
+    "Reconcile each required disposition with the retained candidate population and preserve independent QC where required.": (
+        "Conciliar cada disposición requerida con la población de candidatos conservada "
+        "y mantener el control de calidad independiente donde corresponda."
+    ),
     (
         "Revert the isolated remediation change if targeted or full verification fails; "
         "retain the failed evidence and keep client delivery blocked."
@@ -355,6 +372,12 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
     original = _ORIGINAL_CANONICAL_TRANSLATE_FIELD
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 canonical translator is not installed")
+
+    # Roadmap generator emits an immutable package ID and evidence label before
+    # presentation prose. Validate/localize only the prose; preserve both anchors.
+    roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16} \| [A-Za-z0-9_.-]+ \| )([^\r\n]+)", str(value))
+    if roadmap is not None:
+        return roadmap.group(1) + _translate_canonical_field_v88(roadmap.group(2), key)
 
     targeted = _translate_targeted_presentation_literal(value)
     if targeted is not None:

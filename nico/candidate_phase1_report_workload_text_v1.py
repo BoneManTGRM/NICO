@@ -36,7 +36,29 @@ def _find(node: Any, name: str, depth: int = 0) -> Mapping[str, Any]:
     return {}
 
 
+def current_review_lines(truth: Mapping[str, Any], *, spanish: bool) -> list[str]:
+    completed = _integer(truth.get("authorized_human_disposition_completed"))
+    pending = _integer(truth.get("authorized_human_disposition_pending"))
+    qc_completed = _integer(truth.get("quality_control_completed_count"))
+    qc_required = _integer(truth.get("quality_control_required_count"))
+    if spanish:
+        return [
+            f"Disposiciones registradas: {completed}; pendientes: {pending}.",
+            f"Control de calidad: {qc_completed}/{qc_required} registros vigentes.",
+            "La disposición registrada no constituye aprobación final. La aprobación y la autorización de entrega son controles independientes.",
+        ]
+    return [
+        f"Recorded dispositions: {completed}; pending: {pending}.",
+        f"Quality control: {qc_completed}/{qc_required} current records.",
+        "Recorded disposition does not constitute final approval. Approval and delivery authorization are separate controls.",
+    ]
+
+
 def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
+    truth = canonical.get("human_review_truth")
+    if isinstance(truth, Mapping):
+        heading = "## Triage técnico automatizado y carga de revisión" if spanish else "## Automated Technical Triage and Reviewer Workload"
+        return heading + "\n\n" + "\n".join("- " + line for line in current_review_lines(truth, spanish=spanish))
     from nico.review_workload_truth_v1 import review_workload_summary
 
     triage = _find(canonical, "technical_triage")

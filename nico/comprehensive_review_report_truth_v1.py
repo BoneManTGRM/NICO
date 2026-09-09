@@ -6,6 +6,7 @@ import hashlib
 import html
 import io
 import json
+import re
 from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
@@ -137,6 +138,8 @@ def build_review_truth(record: Mapping[str, Any]) -> dict[str, Any]:
         "final_approval_is_not_implicit_client_delivery": True,
         "review_ready_for_final_approval": projection.get("ready_for_final_approval") is True,
         "quality_control_sampling": deepcopy(projection.get("quality_control_sampling") or {}),
+        "quality_control_required_count": int(projection.get("quality_control_required_count") or 0),
+        "quality_control_completed_count": int(projection.get("quality_control_completed_count") or 0),
         "workload_metrics": deepcopy(projection.get("workload_metrics") or {}),
         "queue_counts": deepcopy(projection.get("queue_counts") or {}),
         "review_source_sha256": _text(projection.get("review_source_sha256")),
@@ -296,7 +299,36 @@ def _synchronize_pdf(package: dict[str, Any], truth: Mapping[str, Any]) -> None:
         raise ValueError("phase2_review_truth_pdf_base_page_count_invalid")
     appendix = PdfReader(io.BytesIO(_review_pdf_page(truth)))
     writer = PdfWriter()
-    writer.append(reader, pages=(0, base_count), import_outline=True)
+    canonical = package.get("json") or {}
+    # Replace only the renderer-owned evidence/review gate. Keep technical pages
+    # and the independent exact-artifact approval/manifest sheets intact.
+    starts = [index for index in range(base_count) if (reader.pages[index].extract_text() or "").strip().startswith(("Client Evidence Summary\n", "Resumen de evidencia del cliente\n"))]
+    if len(starts) == 1:
+        start = starts[0]
+        end = start + 1
+        while end < base_count:
+            text = reader.pages[end].extract_text() or ""
+            owned_continuation = text.strip().startswith((
+                "Client package boundary", "Límite del paquete del cliente",
+                "Human Review and Acceptance Gate", "Puerta de revisión humana y aceptación",
+            ))
+            if not owned_continuation:
+                break
+            end += 1
+        from nico.candidate_phase1_report_workload_pdf_v1 import render_phase1_evidence_review_gate_pdf
+        from nico.comprehensive_four_phase_model_v1 import _spanish
+
+        replacement = PdfReader(io.BytesIO(render_phase1_evidence_review_gate_pdf(
+            canonical, canonical.get("client_finding_remediation_register") or {}, spanish=_spanish(canonical),
+        )))
+        if start:
+            writer.append(reader, pages=(0, start), import_outline=True)
+        for page in replacement.pages:
+            writer.add_page(page)
+        if end < base_count:
+            writer.append(reader, pages=(end, base_count), import_outline=True)
+    else:
+        writer.append(reader, pages=(0, base_count), import_outline=True)
     for page in appendix.pages:
         writer.add_page(page)
     writer.add_metadata(
@@ -399,9 +431,24 @@ def _synchronize_package(package: dict[str, Any], truth: Mapping[str, Any]) -> N
     canonical = package.get("json") if isinstance(package.get("json"), Mapping) else {}
     canonical = deepcopy(dict(canonical))
     canonical["human_review_truth"] = deepcopy(dict(truth))
+    categories: dict[str, dict[str, int]] = {}
+    for candidate in truth.get("candidate_review") or []:
+        category = _text(candidate.get("category")) or "unknown"
+        counts = categories.setdefault(category, {"raw": 0, "material": 0, "review_required": 0})
+        counts["raw"] += 1
+        counts["material"] += int(candidate.get("confirmed_material_finding") is True)
+        counts["review_required"] += int(not candidate.get("human_disposition"))
+    current_summary = {
+        "review_required_total": truth["authorized_human_disposition_pending"],
+        "verified_material_total": truth["confirmed_material_findings"],
+        "by_category": categories,
+        "basis": "current_recorded_dispositions",
+    }
+    canonical["review_candidate_summary"] = deepcopy(current_summary)
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
     assessment = deepcopy(dict(assessment))
     assessment["human_review_truth"] = deepcopy(dict(truth))
+    assessment["review_candidate_summary"] = deepcopy(current_summary)
     assessment["human_review_required"] = True
     assessment["client_delivery_allowed"] = False
     canonical["assessment"] = assessment
@@ -434,6 +481,42 @@ def _synchronize_package(package: dict[str, Any], truth: Mapping[str, Any]) -> N
 
     markdown = str(package.get("markdown") or "")
     if markdown:
+        from nico.candidate_phase1_report_workload_text_v1 import workload_markdown
+        from nico.comprehensive_client_ready_projection_v1 import _remove_heading_section
+        from nico.comprehensive_four_phase_model_v1 import _spanish
+
+        # Preserve the evidence section and all limitations. Only its owned
+        # current-review counts and obsolete pending-review score sentence change.
+        for heading in ("## Evidence Package Summary", "## Resumen del paquete de evidencia"):
+            pattern = re.compile(r"(?ms)^" + re.escape(heading) + r"\s*\n.*?(?=^#{1,2} |\Z)")
+            def refresh_evidence_summary(match: re.Match[str]) -> str:
+                section = re.sub(
+                    r"(?m)^(- (?:Review-required candidates|Candidatos pendientes de revisión): )\d+",
+                    lambda item: item[1] + str(truth["authorized_human_disposition_pending"]),
+                    match[0],
+                )
+                section = re.sub(
+                    r"(?m)^(- (?:Confirmed material findings|Hallazgos materiales confirmados): )\d+",
+                    lambda item: item[1] + str(truth["confirmed_material_findings"]),
+                    section,
+                )
+                if truth["authorized_human_disposition_pending"] == 0:
+                    section = re.sub(
+                        r"(?m)^- Score effect: assurance-only (?:until triaged|while [^\n]*disposition[^\n]*pending[^\n]*)\.?$",
+                        "- Recorded dispositions do not alter automated technical scores or constitute final approval.",
+                        section,
+                    )
+                    section = re.sub(
+                        r"(?m)^- Efecto en puntuación: solo aseguramiento (?:hasta completar la revisión|mientras la disposición humana siga pendiente[^\n]*)\.?$",
+                        "- Las disposiciones registradas no modifican las puntuaciones técnicas automatizadas ni constituyen aprobación final.",
+                        section,
+                    )
+                return section
+            markdown = pattern.sub(refresh_evidence_summary, markdown)
+        for heading in ("## Automated Technical Triage and Reviewer Workload", "## Triage técnico automatizado y carga de revisión"):
+            if heading in markdown:
+                markdown = _remove_heading_section(markdown, heading)
+                markdown = markdown.rstrip() + "\n\n" + workload_markdown(canonical, spanish=_spanish(canonical)) + "\n"
         if has_phase_program:
             from nico.comprehensive_four_phase_model_v1 import repair_four_phase_markdown
 

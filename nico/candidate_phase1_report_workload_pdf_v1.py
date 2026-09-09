@@ -329,7 +329,23 @@ def render_phase1_evidence_review_gate_pdf(
             [5.75 * inch, 1.65 * inch],
         ),
     ]
-    if categories and has_end_to_end_queue_metrics:
+    current_truth = canonical.get("human_review_truth")
+    if isinstance(current_truth, Mapping):
+        # Scanner triage is immutable history. The review summary is a current
+        # projection of recorded decisions, not that initial routing workload.
+        from nico.candidate_phase1_report_workload_text_v1 import current_review_lines
+
+        story[3:] = [p(line) for line in current_review_lines(current_truth, spanish=spanish)]
+        categories = {}
+        for candidate in current_truth.get("candidate_review") or []:
+            if not isinstance(candidate, Mapping):
+                continue
+            category = str(candidate.get("category") or "unknown")
+            counts = categories.setdefault(category, {"raw": 0, "material": 0, "review_required": 0})
+            counts["raw"] += 1
+            counts["material"] += int(candidate.get("confirmed_material_finding") is True)
+            counts["review_required"] += int(not candidate.get("human_disposition"))
+    if categories and has_end_to_end_queue_metrics and not isinstance(current_truth, Mapping):
         story.append(
             p(
                 "Las disposiciones canónicas pendientes no son la cola activa del operador. La carga activa es la tabla de revisión por excepción anterior; los recuentos canónicos permanecen sin cambios hasta que una persona autorizada registre las disposiciones."
@@ -356,9 +372,11 @@ def render_phase1_evidence_review_gate_pdf(
                 _integer(counts.get("raw")),
                 _integer(counts.get("material")),
                 _integer(counts.get("review_required")),
-                "Disposición humana pendiente; triaje técnico de NICO completo"
-                if spanish
-                else "Human disposition pending; NICO technical triage complete",
+                (
+                    ("Disposiciones registradas" if spanish else "Dispositions recorded")
+                    if isinstance(current_truth, Mapping) and not counts.get("review_required")
+                    else ("Disposición pendiente" if spanish else "Disposition pending")
+                ),
             ])
         story.extend([p(labels["candidate_state"], h2), table(rows, [1.05 * inch, .55 * inch, .75 * inch, .9 * inch, 4.15 * inch])])
     story.append(KeepTogether([
