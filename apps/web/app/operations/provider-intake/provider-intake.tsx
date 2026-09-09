@@ -12,7 +12,8 @@ export function ProviderIntake() {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [error, setError] = useState('');
   const [input, setInput] = useState<IntakeInput>({repository: '', expected_commit_sha: '', customer_id: '', project_id: '',
-    authorized_by: '', authorization_scope: '', authorization_confirmed: false, report_language: 'en', execution_mode: 'internal_test'});
+    authorized_by: '', authorization_scope: '', authorization_confirmed: false, report_language: 'en', execution_mode: 'internal_test',
+    client_name: '', project_name: '', primary_technical_contact: '', access_method: ''});
   const t = (en: string, mx: string) => es ? mx : en;
   useEffect(() => {
     const spanish = new URLSearchParams(window.location.search).get('lang') === 'es-MX';
@@ -52,6 +53,16 @@ export function ProviderIntake() {
         {field('project_id', 'Authorized project ID', 'ID del proyecto autorizado')}
         {field('authorized_by', 'Actual operator / authorization attribution', 'Operador real / atribución de autorización')}
         {field('authorization_scope', 'Authorized assessment scope', 'Alcance autorizado de la evaluación')}
+        <p>{t('For final approval and protected delivery, complete all four engagement fields below. Identity-free internal diagnostics cannot be approved for delivery. Use clearly labeled synthetic information for software tests.',
+          'Para la aprobación final y la entrega protegida, complete los cuatro campos del encargo. Los diagnósticos internos sin identidad no pueden aprobarse para entrega. Use información sintética claramente identificada en las pruebas de software.')}</p>
+        {([
+          ['client_name', 'Client name', 'Nombre del cliente', 180],
+          ['project_name', 'Project name', 'Nombre del proyecto', 180],
+          ['primary_technical_contact', 'Primary technical contact', 'Contacto técnico principal', 600],
+          ['access_method', 'Access method', 'Método de acceso', 1200],
+        ] as const).map(([key, en, mx, maxLength]) => <label key={key}>{t(en, mx)}
+          <input name={key} value={input[key] || ''} maxLength={maxLength}
+            onChange={event => setInput({...input, [key]: event.target.value})}/></label>)}
         <label>{t('Execution mode', 'Modo de ejecución')}<select value={input.execution_mode} onChange={e => setInput({...input, execution_mode: e.target.value as IntakeInput['execution_mode']})}>
           <option value="internal_test">{t('Internal test', 'Prueba interna')}</option>
           <option value="controlled_pilot">{t('Controlled pilot', 'Piloto controlado')}</option>

@@ -24,6 +24,14 @@ const form = renderToStaticMarkup(React.createElement(Intake));
 assert.match(form, /type="password"/);
 assert.match(form, /name="expected_commit_sha"/);
 const source = {repository: 'owner/private-fixture', expected_commit_sha: 'a'.repeat(40), customer_id: 'fixture-customer', project_id: 'fixture-project', authorized_by: 'AI test operator', authorization_scope: 'Synthetic test only', authorization_confirmed: true, report_language: 'en', execution_mode: 'internal_test'};
+for (const field of ['client_name', 'project_name', 'primary_technical_contact', 'access_method']) assert.ok(form.includes(`name="${field}"`));
+const finalInput = {...source, client_name: 'SYNTHETIC SOFTWARE-TEST INFORMATION client', project_name: 'SYNTHETIC SOFTWARE-TEST INFORMATION project', primary_technical_contact: 'Synthetic contact, no real person', access_method: 'Server-held read-only GitHub access'};
+const finalPayload = payloadFor(finalInput);
+assert.equal(finalPayload.client_name, finalInput.client_name);
+assert.deepEqual(finalPayload.human_evidence.stakeholder_context.evidence.authorized_scope, [source.authorization_scope]);
+assert.deepEqual(finalPayload.human_evidence.stakeholder_context.evidence.primary_technical_contact, [finalInput.primary_technical_contact]);
+for (const field of ['client_name', 'project_name', 'primary_technical_contact', 'access_method']) assert.throws(() => payloadFor({...finalInput, [field]: ''}), /engagement_identity_required/);
+assert.throws(() => payloadFor({...source, execution_mode: 'production_engagement'}), /engagement_identity_required/);
 function storage() {
   const records = new Map();
   return {getItem: key => records.get(key) ?? null, setItem: (key,value) => records.set(key,value), removeItem: key => records.delete(key)};

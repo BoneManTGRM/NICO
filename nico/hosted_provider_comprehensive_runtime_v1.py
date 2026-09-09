@@ -1475,6 +1475,19 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
         raise ValueError("explicit_authorization_required")
     assert_no_raw_provider_credentials(payload)
 
+    # Final-report engagement identity belongs to authoritative intake, not a
+    # later review note. Validate before rollout, acquisition, or run creation.
+    # Legacy identity-free internal diagnostic runs retain their existing scope.
+    if "client_name" in payload or "project_name" in payload or _text(payload.get("execution_mode")).casefold() == "production_engagement":
+        from nico.phase3_engagement_intake_v1 import validate_and_enrich_intake, client_delivery_identity_valid
+
+        payload = validate_and_enrich_intake(payload)
+        if not client_delivery_identity_valid({
+            "identity": {"customer_id": payload.get("customer_id"), "project_id": payload.get("project_id")},
+            "human_evidence": {"modules": payload.get("human_evidence") or {}},
+        }):
+            raise ValueError("client_delivery_identity_required_for_final_approval")
+
     provider = _provider(payload.get("provider") or "github")
     provider_repository = _required(payload.get("repository"), "repository")
     customer_id = _required(payload.get("customer_id") or "default_customer", "customer_id")
@@ -1558,6 +1571,8 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
             "assessment_depth": assessment_depth,
             "report_language": report_language,
             "human_evidence": payload.get("human_evidence"),
+            "client_name": payload.get("client_name"),
+            "project_name": payload.get("project_name"),
             "authorized": True,
             "authorization_confirmed": True,
         }

@@ -2,6 +2,7 @@ export type IntakeInput = {
   repository: string; expected_commit_sha: string; customer_id: string; project_id: string;
   authorized_by: string; authorization_scope: string; authorization_confirmed: boolean;
   report_language: 'en' | 'es-MX'; execution_mode: 'internal_test' | 'controlled_pilot' | 'production_engagement';
+  client_name?: string; project_name?: string; primary_technical_contact?: string; access_method?: string;
 };
 export type Attempt = {
   requestId: string; submittedAt: string; repository: string; commitSha: string;
@@ -36,12 +37,24 @@ export function payloadFor(input: IntakeInput) {
   if (!input.authorization_confirmed || !input.authorized_by.trim() || !input.authorization_scope.trim() ||
       !input.customer_id.trim() || !input.project_id.trim()) throw new Error('authorization_required');
   if (!['en', 'es-MX'].includes(input.report_language) || !['internal_test', 'controlled_pilot', 'production_engagement'].includes(input.execution_mode)) throw new Error('invalid_mode');
+  const identity = [input.client_name, input.project_name, input.primary_technical_contact, input.access_method].map(value => (value || '').trim());
+  const finalEngagement = identity.some(Boolean) || input.execution_mode === 'production_engagement';
+  if (finalEngagement && !identity.every(Boolean)) throw new Error('engagement_identity_required');
+  const engagement = finalEngagement ? {
+    client_name: identity[0], project_name: identity[1],
+    human_evidence: {stakeholder_context: {
+      reviewer: input.authorized_by.trim(),
+      source_reference: `Authorized operator intake: ${repository}@${commit}`,
+      evidence: {access_method: [identity[3]], primary_technical_contact: [identity[2]],
+        authorized_scope: [input.authorization_scope.trim()]},
+    }},
+  } : {};
   // Explicit allowlist: credentials and arbitrary provider controls cannot enter the JSON body.
   return {provider: 'github', repository, expected_commit_sha: commit,
     customer_id: input.customer_id.trim(), project_id: input.project_id.trim(),
     authorized_by: input.authorized_by.trim(), authorization_scope: input.authorization_scope.trim(),
     authorized: true, authorization_confirmed: true, assessment_depth: 'strategic',
-    report_language: input.report_language, execution_mode: input.execution_mode};
+    report_language: input.report_language, execution_mode: input.execution_mode, ...engagement};
 }
 
 export function readAttempt(store: Store): Attempt | null {
