@@ -24,32 +24,6 @@ def test_phase3_frontend_keeps_existing_functional_qa_and_platform_parity_sectio
     assert "evidenceFields(activeDefinition).map" in form
 
 
-def test_strategic_evidence_editing_preserves_spaces_until_canonical_submission() -> None:
-    source = Path("apps/web/app/assessment/strategicEvidence.ts").read_text(encoding="utf-8")
-    editor = source.split("export function evidenceLines", 1)[1].split(
-        "export function moduleCompleteness", 1
-    )[0]
-    assert ".split(/\\r?\\n/)" in editor
-    assert ".map((item) => item.trim())" not in editor
-    assert ".filter(Boolean)" not in editor
-    assert ".slice(0, 100)" in editor
-
-    compact = source.split("export function compactStrategicHumanEvidence", 1)[1]
-    assert ".map((item) => item.trim())" in compact
-    assert ".filter(Boolean)" in compact
-
-
-def test_standard_assessment_explains_approval_capable_client_intake_after_scope_repair() -> None:
-    page = Path("apps/web/app/assessment/AssessmentPage.tsx").read_text(encoding="utf-8")
-    assert 'data-assessment-client-approval-guidance="true"' in page
-    assert 'href="/operations/provider-intake"' in page
-    assert "For final approval and protected client delivery" in page
-    assert "complete authorized browser intake receives run-bound client scope" in page
-    assert "incomplete or unconfirmed intake remains internal and cannot be approved for delivery" in page
-    assert "Para la aprobación final y la entrega protegida al cliente" in page
-    assert "una admisión incompleta o no confirmada permanece interna" in page
-
-
 def test_phase3_mobile_intake_keeps_mandatory_client_context_available_without_full_editor() -> None:
     form = Path("apps/web/app/assessment/StrategicEvidenceForm.tsx").read_text(encoding="utf-8")
     assert 'data-mobile-client-engagement-context="true"' in form

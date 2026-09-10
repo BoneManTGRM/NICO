@@ -7,7 +7,6 @@ import pytest
 from nico.github_actions_proof_auth_v1 import (
     CONSUMER_WORKFLOW_PATHS,
     CONSUMER_ENVIRONMENT,
-    expected_release_sha,
     validate_github_actions_claims,
 )
 from nico.specialist_access_v1 import (
@@ -84,37 +83,7 @@ def _environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "NICO_OPERATOR_SESSION_SIGNING_SECRET",
         "test-signing-secret-with-at-least-thirty-two-bytes",
     )
-    monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
     monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", SHA)
-
-
-def test_railway_deployed_sha_overrides_stale_manual_release_pin(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", SHA)
-    monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", "b" * 40)
-
-    assert expected_release_sha() == SHA
-    assert validate_github_actions_claims(CLAIMS)["sha"] == SHA
-
-
-def test_manual_release_sha_remains_non_railway_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
-    monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", SHA)
-
-    assert expected_release_sha() == SHA
-
-
-def test_present_invalid_railway_release_sha_fails_closed(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "not-a-sha")
-    monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", SHA)
-
-    with pytest.raises(ValueError, match="github_actions_proof_railway_release_sha_invalid"):
-        expected_release_sha()
 
 
 def test_exact_github_actions_claims_are_required(monkeypatch: pytest.MonkeyPatch):

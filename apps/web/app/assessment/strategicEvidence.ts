@@ -139,11 +139,11 @@ export function emptyStrategicEvidenceModule(): StrategicEvidenceModuleInput {
   };
 }
 
-// Preserve the operator's exact in-progress textarea value. Canonical submission
-// normalization remains in compactStrategicHumanEvidence() after editing is complete.
 export function evidenceLines(value: string): string[] {
   return value
     .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
     .slice(0, 100);
 }
 
