@@ -8,6 +8,7 @@ type PendingPdf = {
 };
 
 const REVOKE_DELAY_MS = 5 * 60 * 1000;
+const RESERVED_WINDOW_TIMEOUT_MS = 60 * 1000;
 const PDF_ACTION_LABELS = new Set([
   "Download exact PDF to review",
   "Approve and download final PDF",
@@ -74,7 +75,7 @@ export default function FinalReviewDownloadHandoff() {
       }
       reservedPdfWindowTimer = window.setTimeout(() => {
         if (reservedPdfWindow === popup) clearReservedPdfWindow(true);
-      }, REVOKE_DELAY_MS);
+      }, RESERVED_WINDOW_TIMEOUT_MS);
     }
 
     function guardedClick(this: HTMLAnchorElement): void {
@@ -142,6 +143,7 @@ export default function FinalReviewDownloadHandoff() {
     <aside
       role="status"
       aria-live="polite"
+      data-final-review-pdf-handoff="ready"
       style={{
         position: "fixed",
         left: "max(16px, env(safe-area-inset-left))",
@@ -159,18 +161,19 @@ export default function FinalReviewDownloadHandoff() {
       }}
     >
       <strong style={{display: "block", marginBottom: 6}}>
-        {isSpanish ? "El PDF está listo" : "PDF ready"}
+        {isSpanish ? "El PDF está listo" : "PDF is ready"}
       </strong>
       <span style={{display: "block", marginBottom: 12, lineHeight: 1.45}}>
         {isSpanish
-          ? "Si el navegador no abrió o guardó el informe automáticamente, usa este enlace explícito."
-          : "If the browser did not open or save the report automatically, use this explicit link."}
+          ? "Si iPhone o el navegador no abrió el informe automáticamente, toca el enlace de abajo."
+          : "If iPhone or the browser did not open the report automatically, tap the link below."}
       </span>
       <a
         href={pendingPdf.url}
         download={pendingPdf.filename}
         target="_blank"
         rel="noopener noreferrer"
+        data-final-review-pdf-open="true"
         style={{
           display: "inline-block",
           padding: "10px 14px",
@@ -181,7 +184,7 @@ export default function FinalReviewDownloadHandoff() {
           textDecoration: "none",
         }}
       >
-        {isSpanish ? "Abrir / descargar PDF" : "Open / download PDF"}
+        {isSpanish ? "Abrir PDF" : "Open PDF"}
       </a>
     </aside>
   );
