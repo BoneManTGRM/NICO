@@ -8,6 +8,20 @@ type PendingPdf = {
 };
 
 const REVOKE_DELAY_MS = 5 * 60 * 1000;
+const PDF_ACTION_LABELS = new Set([
+  "Download exact PDF to review",
+  "Approve and download final PDF",
+  "Download approved PDF again",
+  "Descargar PDF exacto para revisión",
+  "Aprobar y descargar PDF final",
+  "Descargar nuevamente el PDF aprobado",
+]);
+
+function isIOSFamilyWebKit(): boolean {
+  const userAgent = navigator.userAgent || "";
+  return /iPad|iPhone|iPod/i.test(userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
 
 export default function FinalReviewDownloadHandoff() {
   const [pendingPdf, setPendingPdf] = useState<PendingPdf | null>(null);
@@ -15,17 +29,73 @@ export default function FinalReviewDownloadHandoff() {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    setLocale(query.get("lang") === "es-MX" ? "es-MX" : "en");
+    const requestedLocale = query.get("lang") === "es-MX" ? "es-MX" : "en";
+    setLocale(requestedLocale);
 
     const originalClick = HTMLAnchorElement.prototype.click;
     const originalRevokeObjectURL = URL.revokeObjectURL;
     const delayedRevocations = new Map<string, number>();
+    let reservedPdfWindow: Window | null = null;
+    let reservedPdfWindowTimer = 0;
+
+    function clearReservedPdfWindow(close = false): void {
+      if (reservedPdfWindowTimer) {
+        window.clearTimeout(reservedPdfWindowTimer);
+        reservedPdfWindowTimer = 0;
+      }
+      if (close && reservedPdfWindow && !reservedPdfWindow.closed) {
+        reservedPdfWindow.close();
+      }
+      reservedPdfWindow = null;
+    }
+
+    function reservePdfWindow(event: MouseEvent): void {
+      if (!isIOSFamilyWebKit()) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("button");
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+      const label = String(button.textContent || "").replace(/\s+/g, " ").trim();
+      if (!PDF_ACTION_LABELS.has(label)) return;
+
+      clearReservedPdfWindow(true);
+      const popup = window.open("about:blank", "nico-comprehensive-pdf");
+      if (!popup) return;
+      reservedPdfWindow = popup;
+      try {
+        popup.document.title = requestedLocale === "es-MX"
+          ? "NICO — preparando PDF verificado"
+          : "NICO — preparing verified PDF";
+        popup.document.body.textContent = requestedLocale === "es-MX"
+          ? "NICO está verificando el PDF exacto. Esta pestaña mostrará el informe cuando esté listo."
+          : "NICO is verifying the exact PDF. This tab will show the report when it is ready.";
+      } catch {
+        // A reserved browsing context is still useful even when its placeholder cannot be edited.
+      }
+      reservedPdfWindowTimer = window.setTimeout(() => {
+        if (reservedPdfWindow === popup) clearReservedPdfWindow(true);
+      }, REVOKE_DELAY_MS);
+    }
 
     function guardedClick(this: HTMLAnchorElement): void {
       const href = this.href || "";
       const filename = this.download || "nico-comprehensive-report.pdf";
       if (href.startsWith("blob:") && filename.toLowerCase().endsWith(".pdf")) {
         setPendingPdf({url: href, filename});
+        if (reservedPdfWindow && !reservedPdfWindow.closed) {
+          const targetWindow = reservedPdfWindow;
+          clearReservedPdfWindow(false);
+          try {
+            // iPhone/iPad WebKit can discard a programmatic download that occurs only
+            // after awaited approval/hash work. The browsing context was synchronously
+            // reserved by the original user click, so navigating it now preserves that
+            // user activation and presents the verified PDF instead of silently losing it.
+            targetWindow.location.replace(href);
+            return;
+          } catch {
+            targetWindow.close();
+          }
+        }
       }
       originalClick.call(this);
     }
@@ -44,10 +114,13 @@ export default function FinalReviewDownloadHandoff() {
       delayedRevocations.set(url, timer);
     }
 
+    document.addEventListener("click", reservePdfWindow, true);
     HTMLAnchorElement.prototype.click = guardedClick;
     URL.revokeObjectURL = delayedRevoke;
 
     return () => {
+      document.removeEventListener("click", reservePdfWindow, true);
+      clearReservedPdfWindow(true);
       if (HTMLAnchorElement.prototype.click === guardedClick) {
         HTMLAnchorElement.prototype.click = originalClick;
       }
