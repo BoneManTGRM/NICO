@@ -10,8 +10,12 @@ def test_final_review_reserves_pdf_window_inside_original_user_gesture() -> None
 
     assert 'document.addEventListener("click", reservePdfWindow, true)' in source
     assert 'window.open("about:blank", "_blank")' in source
+    assert '"Download exact PDF to review"' in source
+    assert '"Descargar PDF exacto para revisión"' in source
     assert '"Approve and download final PDF"' in source
     assert '"Aprobar y descargar PDF final"' in source
+    assert '"Download approved PDF again"' in source
+    assert '"Descargar nuevamente el PDF aprobado"' in source
     assert "reservedPdfWindow.location.href = href" in source
 
 
@@ -24,8 +28,8 @@ def test_final_review_exposes_explicit_fallback_for_generated_pdf() -> None:
     assert 'download={pendingPdf.filename}' in source
     assert 'target="_blank"' in source
     assert 'data-final-review-pdf-open="true"' in source
-    assert "Open approved final PDF" in source
-    assert "Abrir PDF final aprobado" in source
+    assert '"Open PDF"' in source
+    assert '"Abrir PDF"' in source
 
 
 def test_final_review_keeps_blob_alive_for_webkit_fallback() -> None:
