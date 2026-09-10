@@ -9,9 +9,13 @@ type PendingPdf = {
 
 const REVOKE_DELAY_MS = 5 * 60 * 1000;
 const RESERVED_WINDOW_TIMEOUT_MS = 60 * 1000;
-const APPROVE_LABELS = new Set([
+const PDF_ACTION_LABELS = new Set([
+  "Download exact PDF to review",
+  "Descargar PDF exacto para revisión",
   "Approve and download final PDF",
   "Aprobar y descargar PDF final",
+  "Download approved PDF again",
+  "Descargar nuevamente el PDF aprobado",
 ]);
 
 export default function FinalReviewDownloadHandoff() {
@@ -20,7 +24,8 @@ export default function FinalReviewDownloadHandoff() {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    setLocale(query.get("lang") === "es-MX" ? "es-MX" : "en");
+    const requestedLocale = query.get("lang") === "es-MX" ? "es-MX" : "en";
+    setLocale(requestedLocale);
 
     const originalClick = HTMLAnchorElement.prototype.click;
     const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -48,28 +53,32 @@ export default function FinalReviewDownloadHandoff() {
       const button = target?.closest("button");
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
       const label = String(button.textContent || "").trim();
-      if (!APPROVE_LABELS.has(label)) return;
+      if (!PDF_ACTION_LABELS.has(label)) return;
 
       clearReservedWindow(true);
       try {
-        // iPhone/WebKit will often reject a new tab created after the asynchronous
-        // approval request finishes. Reserve the tab while the original user gesture
-        // is still active, then navigate that already-open tab when the verified PDF
-        // Blob is produced.
+        // iPhone/WebKit can reject a new tab created only after the asynchronous
+        // request/hash work finishes. Reserve the tab while the original user gesture
+        // is still active, then navigate that already-open tab to the verified PDF.
         reservedPdfWindow = window.open("about:blank", "_blank");
-        if (reservedPdfWindow) {
-          reservedPdfWindow.document.title = "NICO approved final PDF";
-          reservedPdfWindow.document.body.textContent =
-            query.get("lang") === "es-MX"
-              ? "NICO está preparando el PDF final aprobado…"
-              : "NICO is preparing the approved final PDF…";
-          reservedPdfWindowTimeout = window.setTimeout(() => {
-            clearReservedWindow(true);
-          }, RESERVED_WINDOW_TIMEOUT_MS);
-        }
       } catch {
         reservedPdfWindow = null;
       }
+      if (!reservedPdfWindow) return;
+
+      try {
+        reservedPdfWindow.document.title = "NICO PDF";
+        if (reservedPdfWindow.document.body) {
+          reservedPdfWindow.document.body.textContent = requestedLocale === "es-MX"
+            ? "NICO está preparando el PDF…"
+            : "NICO is preparing the PDF…";
+        }
+      } catch {
+        // The reserved window itself is still usable even if its placeholder cannot be styled.
+      }
+      reservedPdfWindowTimeout = window.setTimeout(() => {
+        clearReservedWindow(true);
+      }, RESERVED_WINDOW_TIMEOUT_MS);
     }
 
     function guardedClick(this: HTMLAnchorElement): void {
@@ -149,7 +158,7 @@ export default function FinalReviewDownloadHandoff() {
       }}
     >
       <strong style={{display: "block", marginBottom: 6}}>
-        {isSpanish ? "El PDF final aprobado está listo" : "Approved final PDF is ready"}
+        {isSpanish ? "El PDF está listo" : "PDF is ready"}
       </strong>
       <span style={{display: "block", marginBottom: 12, lineHeight: 1.45}}>
         {isSpanish
@@ -172,7 +181,7 @@ export default function FinalReviewDownloadHandoff() {
           textDecoration: "none",
         }}
       >
-        {isSpanish ? "Abrir PDF final aprobado" : "Open approved final PDF"}
+        {isSpanish ? "Abrir PDF" : "Open PDF"}
       </a>
     </aside>
   );
