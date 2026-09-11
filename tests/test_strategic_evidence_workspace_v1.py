@@ -31,7 +31,8 @@ def test_intake_is_bilingual_fail_closed_and_uses_one_focused_editor() -> None:
     assert "Los módulos faltantes permanecen como No evaluados y nunca se infieren del repositorio" in source
     assert "moduleCompleteness" in source
     assert "exclusion_rationale" in source
-    assert "evidenceLines(event.target.value)" in source
+    assert "const rawValue = event.target.value" in source
+    assert "evidenceLines(rawValue)" in source
     assert "moduleList" in source
     assert "moduleEditor" in source
     assert "mobileChooser" in source
