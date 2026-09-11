@@ -19,6 +19,8 @@ import {
 } from "./strategicEvidence";
 
 const MOBILE_CLIENT_ENGAGEMENT_FIELDS = ["access_method", "primary_technical_contact", "authorized_scope"] as const;
+const EXACT_DRAFT_MODULE = "functional_qa";
+const EXACT_DRAFT_FIELDS = new Set(["test_cases", "observed_results"]);
 
 const EVIDENCE_FIELD_LABELS = {
   en: {
@@ -156,6 +158,10 @@ function useRichEvidenceEditor(): boolean {
   return enabled;
 }
 
+function exactDraftField(moduleId: string, field: string): boolean {
+  return moduleId === EXACT_DRAFT_MODULE && EXACT_DRAFT_FIELDS.has(field);
+}
+
 export default function StrategicEvidenceForm({
   locale,
   value,
@@ -184,7 +190,15 @@ export default function StrategicEvidenceForm({
   const [activeModuleId, setActiveModuleId] = useState(
     STRATEGIC_EVIDENCE_DEFINITIONS[0]?.moduleId || "",
   );
+  const [structuredDrafts, setStructuredDrafts] = useState<Record<string, string>>({});
   const addedCount = Object.keys(value).length;
+
+  function clearModuleDrafts(moduleId: string): void {
+    const prefix = `${moduleId}:`;
+    setStructuredDrafts((current) => Object.fromEntries(
+      Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
+    ));
+  }
 
   function setModule(
     moduleId: string,
@@ -289,6 +303,7 @@ export default function StrategicEvidenceForm({
 
   function addModule(excluded = false): void {
     if (!activeDefinition) return;
+    clearModuleDrafts(activeDefinition.moduleId);
     setModule(activeDefinition.moduleId, {
       ...emptyStrategicEvidenceModule(),
       excluded,
@@ -429,9 +444,18 @@ export default function StrategicEvidenceForm({
           </label> : <div className={styles.requiredEvidence}>
             {evidenceFields(activeDefinition).map((field) => {
               const isEngagementField = CLIENT_ENGAGEMENT_FIELDS.has(field);
+              const preserveExactDraft = exactDraftField(activeDefinition.moduleId, field);
+              const draftKey = `${activeDefinition.moduleId}:${field}`;
+              const modelValue = (activeModule.evidence[field] || []).join("\n");
+              const displayValue = preserveExactDraft
+                && Object.prototype.hasOwnProperty.call(structuredDrafts, draftKey)
+                ? structuredDrafts[draftKey]
+                : modelValue;
               return <label
                 key={field}
                 className={styles.evidenceTextareaLabel}
+                data-evidence-field={field}
+                data-exact-editing-draft={preserveExactDraft ? "true" : undefined}
                 {...(isEngagementField
                   ? {
                       "data-engagement-field": field,
@@ -445,21 +469,33 @@ export default function StrategicEvidenceForm({
                 <small>{copy.onePerLine}</small>
                 <textarea
                   rows={4}
-                  value={(activeModule.evidence[field] || []).join("\n")}
+                  value={displayValue}
                   disabled={disabled}
                   onChange={(event) => {
+                    const rawValue = event.target.value;
+                    if (preserveExactDraft) {
+                      setStructuredDrafts((current) => ({...current, [draftKey]: rawValue}));
+                    }
                     if (isEngagementField) {
                       onEngagementFieldValueChange(
                         field as EngagementFieldKey,
-                        event.target.value,
+                        rawValue,
                       );
                     } else {
                       setEvidenceField(
                         activeDefinition.moduleId,
                         field,
-                        evidenceLines(event.target.value),
+                        evidenceLines(rawValue),
                       );
                     }
+                  }}
+                  onBlur={() => {
+                    if (!preserveExactDraft) return;
+                    setStructuredDrafts((current) => {
+                      const next = {...current};
+                      delete next[draftKey];
+                      return next;
+                    });
                   }}
                 />
               </label>;
@@ -491,6 +527,7 @@ export default function StrategicEvidenceForm({
               className={styles.ghostAction}
               disabled={disabled}
               onClick={() => {
+                clearModuleDrafts(activeDefinition.moduleId);
                 setModule(activeDefinition.moduleId, null);
                 if (activeDefinition.moduleId === "stakeholder_context") {
                   for (const field of MOBILE_CLIENT_ENGAGEMENT_FIELDS) {
