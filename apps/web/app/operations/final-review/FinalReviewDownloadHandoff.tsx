@@ -5,14 +5,10 @@ import {useEffect} from "react";
 const REVOKE_DELAY_MS = 5 * 60 * 1000;
 const RESERVED_WINDOW_TIMEOUT_MS = 60 * 1000;
 const PDF_ACTION_LABELS = new Set([
-  "Download exact PDF to review",
-  "Approve and download final PDF",
-  "Generate owner test final PDF",
-  "Download approved PDF again",
-  "Descargar PDF exacto para revisión",
-  "Aprobar y descargar PDF final",
-  "Generar PDF final de prueba del propietario",
-  "Descargar nuevamente el PDF aprobado",
+  "Download final assessment PDF",
+  "Approve exact downloaded report",
+  "Descargar PDF final de la evaluación",
+  "Aprobar informe exacto descargado",
 ]);
 
 function isIOSFamilyWebKit(): boolean {
