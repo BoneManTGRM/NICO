@@ -17,7 +17,7 @@ def function_body(name: str, next_name: str) -> str:
 
 def test_final_report_download_is_one_normal_path_independent_of_reviewer_metadata() -> None:
     report_download = function_body("downloadFinalReport", "approveExactReport")
-    assert "downloadApprovedPdf(result" in report_download
+    assert "downloadExactPdf(result" in report_download
     assert "canonicalApprovalReady" not in report_download
     assert "submitDecision" not in report_download
     assert "reviewUrl()" not in report_download
@@ -35,7 +35,7 @@ def test_human_approval_is_separate_and_preserves_exact_artifact_gate() -> None:
 
 
 def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplied() -> None:
-    actions = WORKSPACE.split('className={styles.downloadActions}', 1)[1]
+    actions = WORKSPACE.rsplit('className={styles.downloadActions}', 1)[1]
     assert "copy.downloadFinalReport" in actions
     assert "onClick={downloadFinalReport}" in actions
     assert "canonicalApprovalReady ? copy.approveDownload" not in actions
@@ -63,6 +63,8 @@ def test_report_download_preserves_exact_pdf_integrity_verification() -> None:
 def test_ios_handoff_recognizes_normal_final_report_action_without_owner_test_path() -> None:
     assert '"Download final assessment PDF"' in HANDOFF
     assert '"Descargar PDF final de la evaluación"' in HANDOFF
+    assert '"Approve exact downloaded report"' in HANDOFF
+    assert '"Aprobar informe exacto descargado"' in HANDOFF
     assert "owner test" not in HANDOFF.lower()
     assert 'window.open("about:blank", "nico-comprehensive-pdf")' in HANDOFF
     assert "targetWindow.location.replace(href)" in HANDOFF
