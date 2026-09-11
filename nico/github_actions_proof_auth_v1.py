@@ -52,6 +52,20 @@ def expected_workflow_path() -> str:
 
 
 def expected_release_sha() -> str:
+    """Return the exact commit SHA for the running backend release.
+
+    Railway injects RAILWAY_GIT_COMMIT_SHA for GitHub-triggered deployments, so it
+    is the authoritative release identity there. Other runtimes retain the explicit
+    NICO_RELEASE_COMMIT_SHA pin. A present but malformed Railway value fails closed
+    instead of silently falling back to a potentially stale manual pin.
+    """
+
+    railway_value = _configured("RAILWAY_GIT_COMMIT_SHA", "").lower()
+    if railway_value:
+        if not _GIT_SHA.fullmatch(railway_value):
+            raise ValueError("github_actions_proof_railway_release_sha_invalid")
+        return railway_value
+
     value = _configured("NICO_RELEASE_COMMIT_SHA", "").lower()
     if not _GIT_SHA.fullmatch(value):
         raise ValueError("github_actions_proof_release_sha_unavailable")
@@ -207,6 +221,7 @@ __all__ = [
     "CONSUMER_WORKFLOW_PATHS",
     "CONSUMER_ENVIRONMENT",
     "proof_audience",
+    "expected_release_sha",
     "validate_github_actions_claims",
     "verify_github_actions_oidc_token",
 ]
