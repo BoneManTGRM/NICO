@@ -93,13 +93,26 @@ def test_review_ui_requires_download_of_the_current_digest_before_approval() -> 
     assert 'window.crypto.subtle.digest("SHA-256", buffer)' in source
     assert "reviewArtifactIdentity.artifact_digests" in source
 
-    download_boundary = source[
-        source.index("async function downloadReviewPdf") :
-        source.index("async function downloadApprovedPackage")
+    report_boundary = source[
+        source.index("async function downloadFinalReport") :
+        source.index("async function approveExactReport")
     ]
-    assert download_boundary.index("await downloadApprovedPdf(result)") < (
-        download_boundary.index("setDownloadedArtifactDigest(verifiedPdfDigest)")
+    assert report_boundary.index(
+        "const finalReportDigest = await downloadExactPdf(result, finalFilename);"
+    ) < report_boundary.index("setDownloadedArtifactDigest(finalReportDigest)")
+
+    approval_boundary = source[
+        source.index("async function approveExactReport") :
+        source.index("async function recordOtherDecision")
+    ]
+    assert "!canonicalApprovalReady || !confirmed || !exactEditionDownloaded" in approval_boundary
+    assert 'const reviewed = await submitDecision("approved");' in approval_boundary
+    assert approval_boundary.index("setResult(reviewed);") < approval_boundary.index(
+        "const approvedPdfDigest = await downloadExactPdf(reviewed);"
     )
+    assert approval_boundary.index(
+        "const approvedPdfDigest = await downloadExactPdf(reviewed);"
+    ) < approval_boundary.index("setDownloadedArtifactDigest(approvedPdfDigest);")
 
 
 def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() -> None:
@@ -116,11 +129,15 @@ def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() 
         "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize "
         "client delivery of that exact edition and its certified package."
     ) in source
+    assert "async function downloadFinalReport" in source
+    assert "async function approveExactReport" in source
+    assert source.index("async function downloadFinalReport") < source.index(
+        "async function approveExactReport"
+    )
     assert "setResult(reviewed);" in source
     assert source.index("setResult(reviewed);") < source.index(
-        "await downloadApprovedPdf(reviewed);"
+        "const approvedPdfDigest = await downloadExactPdf(reviewed);"
     )
-    assert "const approvedPdfDigest = await downloadApprovedPdf(reviewed);" in source
     assert "setDownloadedArtifactDigest(approvedPdfDigest);" in source
     assert "downloadedArtifactDigest !== currentReviewPdfDigest" in source
     assert 'if (locale === "es-MX") return new Error(`${fallback} (${response.status}).`);' in source

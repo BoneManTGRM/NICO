@@ -36,14 +36,11 @@ def test_ios_final_review_reserves_user_activated_pdf_window_before_async_work()
     assert "function isIOSFamilyWebKit" in source
     assert 'document.addEventListener("click", reservePdfWindow, true)' in source
     assert 'window.open("about:blank", "nico-comprehensive-pdf")' in source
-    assert '"Approve and download final PDF"' in source
-    assert '"Aprobar y descargar PDF final"' in source
-    assert '"Generate owner test final PDF"' in source
-    assert '"Generar PDF final de prueba del propietario"' in source
-    assert '"Download exact PDF to review"' in source
-    assert '"Descargar PDF exacto para revisión"' in source
-    assert '"Download approved PDF again"' in source
-    assert '"Descargar nuevamente el PDF aprobado"' in source
+    assert '"Download final assessment PDF"' in source
+    assert '"Descargar PDF final de la evaluación"' in source
+    assert '"Approve exact downloaded report"' in source
+    assert '"Aprobar informe exacto descargado"' in source
+    assert "owner test" not in source.lower()
 
 
 def test_ios_reserved_window_receives_verified_blob_without_second_tap() -> None:

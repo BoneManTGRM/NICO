@@ -37,8 +37,8 @@ type ReviewResponse = {
 const COPY = {
   en: {
     eyebrow: "NICO COMPREHENSIVE · INTERNAL QUALITY GATE",
-    title: "Internal final review and client-ready authorization.",
-    lead: "Review the exact immutable NICO Comprehensive report, confirm its evidence boundary, and authorize only the artifact set your team actually examined.",
+    title: "Final assessment report, human review, and client-ready authorization.",
+    lead: "A completed assessment can always produce its exact final assessment report. Human review, approval, and client delivery remain separate controlled states.",
     assessment: "Assessment",
     comprehensive: "Comprehensive",
     exactRun: "Exact run",
@@ -47,12 +47,12 @@ const COPY = {
     missing: "Missing",
     directRun: "Open this page from a completed Comprehensive assessment",
     secureAccess: "SECURE ACCESS",
-    identifyReviewer: "Identify the authorized reviewer",
-    identityAttached: "The exact run is attached automatically when this page is opened from a completed assessment. You can also paste an exact Comprehensive run ID below.",
+    identifyReviewer: "Open the exact completed assessment",
+    identityAttached: "The exact run is attached automatically when this page is opened from a completed assessment. Reviewer identity is optional for report generation and is used only for separate review/approval actions.",
     reviewer: "Authorized reviewer",
-    reviewerPlaceholder: "Full name or accountable identity",
+    reviewerPlaceholder: "Optional unless recording human approval",
     reviewerRole: "Reviewer role",
-    reviewerRolePlaceholder: "Select an authorized reviewer role",
+    reviewerRolePlaceholder: "Optional unless recording human approval",
     operatorToken: "Operator password",
     secureToken: "Enter your NICO operator password",
     opening: "Opening review…",
@@ -61,35 +61,32 @@ const COPY = {
     exactIdentity: "Confirm exact report identity",
     exactRunId: "Exact Comprehensive run ID",
     security: "Use the private operator password configured for NICO in Railway. It stays only in this open page and is never stored in the URL or browser storage.",
-    enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer identity is required only for real approval or a client-delivery decision.",
-    loaded: "The immutable Comprehensive review package is loaded. Confirm it below when ready.",
+    enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer identity is required only for separate human approval or a client-delivery decision.",
+    loaded: "The immutable Comprehensive review package is loaded. The final assessment report is available independently of optional reviewer/client metadata.",
     loadFailed: "Unable to load final review.",
-    finalDecision: "FINAL DECISION",
-    approveHeading: "Approve the exact accepted edition",
-    approveLead: "Download and review the immutable draft first. Approval creates the final PDF without changing its technical analysis. Review that downloaded final PDF before the separate delivery authorization.",
-    review: "Review",
+    finalDecision: "FINAL REPORT AND REVIEW STATE",
+    approveHeading: "Download the exact final assessment report",
+    approveLead: "The report is generated from the completed immutable assessment. Human approval and client delivery are recorded separately and never control whether the report exists.",
+    review: "Human review",
     delivery: "Client-ready",
     authorized: "Authorized",
     blocked: "Blocked",
     waiting: "Waiting for secure access",
     emptyTitle: "Nothing else to complete yet.",
-    emptyBody: "Enter the exact run and operator password above, then open the exact review package.",
-    reviewedExact: "I reviewed this exact report.",
-    reviewedDetail: "I confirm the scorecard, evidence limitations, immutable run identity, artifact digest, and delivery boundary.",
+    emptyBody: "Enter the exact run and operator password above, then open the exact completed assessment.",
+    reviewedExact: "I reviewed this exact downloaded report for human approval.",
+    reviewedDetail: "This acknowledgement is required only to record human approval; final-report availability does not depend on it.",
     approvalNote: "Add approval context",
     approvalNoteLabel: "Decision context",
     approvalPlaceholder: "Optional approval context. A clear note is required for rejection or a request for more evidence.",
     recording: "Recording approval…",
     alreadyApproved: "Approval already recorded",
-    approveDownload: "Approve and download final PDF",
-    ownerTestDownload: "Generate owner test final PDF",
-    ownerTestGenerating: "Generating owner test PDF…",
-    ownerTestNotice: "Owner test PDF generated from the exact report. Human approval was not recorded and client delivery remains blocked.",
-    downloadReview: "Download exact PDF to review",
-    downloadAgain: "Download approved PDF again",
+    downloadFinalReport: "Download final assessment PDF",
+    finalReportNotice: "Final assessment PDF downloaded from the exact completed run. Human approval state is unchanged and client delivery remains separately protected.",
+    approveExactReport: "Approve exact downloaded report",
     downloadPackage: "Download approved delivery package",
     readyDelivery: "This exact immutable edition and its certified delivery package are approved and client-ready.",
-    blockedDelivery: "Client-ready release remains blocked until a valid internal approval certificate matches the current artifact set.",
+    blockedDelivery: "Client-ready release remains blocked until its legitimate approval and delivery requirements are satisfied.",
     pendingAuthorization: "Human approval is recorded for this exact edition. Client delivery remains blocked until its delivery authorization package and certificate are valid.",
     authorizationConfirm: "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize client delivery of that exact edition and its certified package.",
     authorizeDelivery: "Authorize client delivery",
@@ -111,14 +108,13 @@ const COPY = {
     technicalRecord: "Technical review record",
     confirmFirst: "Confirm that you reviewed the exact report and its disclosed limitations.",
     decisionNoteRequired: "Add a clear review note before requesting more evidence or rejecting delivery.",
-    approvedNotice: "Human approval recorded and the APPROVED FINAL PDF downloaded. Review that exact PDF, then complete the separate delivery authorization.",
-    reviewDownloadNotice: "The exact pre-approval PDF was downloaded for review. Approval remains pending.",
+    approvedNotice: "Human approval recorded for the exact downloaded report. Client delivery remains a separate authorization.",
     evidenceNotice: "More evidence requested. Delivery remains blocked. Start a new assessment with the requested evidence; this unchanged report cannot later be approved.",
     rejectedNotice: "Report rejected. Delivery remains blocked.",
-    approvalFailed: "Unable to approve and download the final report.",
+    approvalFailed: "Unable to record human approval.",
     decisionFailed: "Unable to record the review decision.",
-    pdfMissing: "The reviewed response did not contain the exact PDF artifact.",
-    invalidPdf: "The approved PDF failed browser integrity validation.",
+    pdfMissing: "The completed assessment response did not contain the exact PDF artifact.",
+    invalidPdf: "The final assessment PDF failed browser integrity validation.",
     packageMissing: "The approved delivery package is unavailable for this exact run.",
     invalidPackage: "The approved delivery package failed ZIP integrity validation.",
     defaultApprovalReason: "Authorized reviewer confirmed the exact immutable report, scorecard, disclosed evidence limitations, artifact identity, and delivery boundary.",
@@ -126,8 +122,8 @@ const COPY = {
   },
   "es-MX": {
     eyebrow: "NICO COMPREHENSIVE · CONTROL INTERNO DE CALIDAD",
-    title: "Revisión final interna y autorización para el cliente.",
-    lead: "Revisa el informe NICO Comprehensive inmutable exacto, confirma su límite de evidencia y autoriza únicamente el conjunto de artefactos que examinó tu equipo.",
+    title: "Informe final de evaluación, revisión humana y autorización para el cliente.",
+    lead: "Una evaluación terminada siempre puede producir su informe final exacto. La revisión humana, la aprobación y la entrega al cliente permanecen como estados controlados separados.",
     assessment: "Evaluación",
     comprehensive: "Comprehensive",
     exactRun: "Ejecución exacta",
@@ -136,12 +132,12 @@ const COPY = {
     missing: "Faltante",
     directRun: "Abre esta página desde una evaluación Comprehensive terminada",
     secureAccess: "ACCESO SEGURO",
-    identifyReviewer: "Identifica al revisor autorizado",
-    identityAttached: "La ejecución exacta se vincula automáticamente cuando esta página se abre desde una evaluación terminada. También puedes pegar abajo un ID exacto de Comprehensive.",
+    identifyReviewer: "Abre la evaluación terminada exacta",
+    identityAttached: "La ejecución exacta se vincula automáticamente cuando esta página se abre desde una evaluación terminada. La identidad del revisor es opcional para generar el informe y solo se usa en acciones separadas de revisión/aprobación.",
     reviewer: "Revisor autorizado",
-    reviewerPlaceholder: "Nombre completo o identidad responsable",
+    reviewerPlaceholder: "Opcional salvo para registrar aprobación humana",
     reviewerRole: "Función del revisor",
-    reviewerRolePlaceholder: "Selecciona una función de revisor autorizada",
+    reviewerRolePlaceholder: "Opcional salvo para registrar aprobación humana",
     operatorToken: "Contraseña del operador",
     secureToken: "Ingresa tu contraseña de operador de NICO",
     opening: "Abriendo revisión…",
@@ -150,35 +146,32 @@ const COPY = {
     exactIdentity: "Confirmar identidad exacta del informe",
     exactRunId: "ID exacto de ejecución Comprehensive",
     security: "Usa la contraseña privada del operador configurada para NICO en Railway. Permanece únicamente en esta página abierta y nunca se guarda en la URL ni en el almacenamiento del navegador.",
-    enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. La identidad del revisor se requiere solo para una aprobación real o una decisión de entrega al cliente.",
-    loaded: "El paquete inmutable de revisión Comprehensive está cargado. Confírmalo abajo cuando estés listo.",
+    enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. La identidad del revisor se requiere solo para una aprobación humana separada o una decisión de entrega al cliente.",
+    loaded: "El paquete inmutable de Comprehensive está cargado. El informe final de evaluación está disponible independientemente de los metadatos opcionales del revisor/cliente.",
     loadFailed: "No fue posible cargar la revisión final.",
-    finalDecision: "DECISIÓN FINAL",
-    approveHeading: "Aprueba la edición aceptada exacta",
-    approveLead: "Primero descarga y revisa el PDF inmutable. Una acción controlada separada vincula después tu aprobación a esos bytes exactos.",
-    review: "Revisión",
+    finalDecision: "INFORME FINAL Y ESTADO DE REVISIÓN",
+    approveHeading: "Descarga el informe final exacto de la evaluación",
+    approveLead: "El informe se genera a partir de la evaluación inmutable terminada. La aprobación humana y la entrega al cliente se registran por separado y nunca controlan si el informe existe.",
+    review: "Revisión humana",
     delivery: "Lista para el cliente",
     authorized: "Autorizada",
     blocked: "Bloqueada",
     waiting: "Esperando acceso seguro",
     emptyTitle: "Todavía no hay nada más que completar.",
-    emptyBody: "Ingresa arriba la ejecución exacta y la contraseña del operador, y abre el paquete de revisión exacto.",
-    reviewedExact: "Revisé este informe exacto.",
-    reviewedDetail: "Confirmo la puntuación, las limitaciones de evidencia, la identidad inmutable, el hash del artefacto y el límite de entrega.",
+    emptyBody: "Ingresa arriba la ejecución exacta y la contraseña del operador, y abre la evaluación terminada exacta.",
+    reviewedExact: "Revisé este informe exacto descargado para aprobación humana.",
+    reviewedDetail: "Este reconocimiento se requiere solo para registrar la aprobación humana; la disponibilidad del informe final no depende de él.",
     approvalNote: "Agregar contexto de aprobación",
     approvalNoteLabel: "Contexto de la decisión",
     approvalPlaceholder: "Contexto opcional de aprobación. Se requiere una nota clara para rechazar o solicitar más evidencia.",
     recording: "Registrando aprobación…",
     alreadyApproved: "Aprobación ya registrada",
-    approveDownload: "Aprobar y descargar PDF final",
-    ownerTestDownload: "Generar PDF final de prueba del propietario",
-    ownerTestGenerating: "Generando PDF de prueba del propietario…",
-    ownerTestNotice: "Se generó el PDF de prueba del propietario a partir del informe exacto. No se registró aprobación humana y la entrega al cliente permanece bloqueada.",
-    downloadReview: "Descargar PDF exacto para revisión",
-    downloadAgain: "Descargar nuevamente el PDF aprobado",
+    downloadFinalReport: "Descargar PDF final de la evaluación",
+    finalReportNotice: "Se descargó el PDF final de la evaluación desde la ejecución terminada exacta. El estado de aprobación humana no cambió y la entrega al cliente sigue protegida por separado.",
+    approveExactReport: "Aprobar informe exacto descargado",
     downloadPackage: "Descargar paquete de entrega aprobado",
     readyDelivery: "Esta edición inmutable exacta y su paquete de entrega certificado están aprobados para entrega controlada al cliente.",
-    blockedDelivery: "La entrega permanece bloqueada hasta que un certificado válido coincida con el conjunto actual de artefactos.",
+    blockedDelivery: "La entrega al cliente permanece bloqueada hasta que se satisfagan sus requisitos legítimos de aprobación y entrega.",
     pendingAuthorization: "La aprobación humana está registrada para esta edición exacta. La entrega al cliente permanece bloqueada hasta que sean válidos el paquete y el certificado de autorización de entrega.",
     authorizationConfirm: "Revisé el PDF FINAL APROBADO descargado y autorizo explícitamente la entrega al cliente de esa edición exacta y su paquete certificado.",
     authorizeDelivery: "Autorizar entrega al cliente",
@@ -200,14 +193,13 @@ const COPY = {
     technicalRecord: "Registro técnico de revisión",
     confirmFirst: "Confirma que revisaste el informe exacto y sus limitaciones declaradas.",
     decisionNoteRequired: "Agrega una nota clara antes de solicitar más evidencia o rechazar la entrega.",
-    approvedNotice: "Se registró la aprobación humana y se descargó el PDF FINAL APROBADO. Revisa ese PDF exacto y luego completa la autorización de entrega separada.",
-    reviewDownloadNotice: "Se descargó el PDF exacto previo a la aprobación para revisión. La aprobación sigue pendiente.",
+    approvedNotice: "Se registró la aprobación humana del informe exacto descargado. La entrega al cliente sigue siendo una autorización separada.",
     evidenceNotice: "Se solicitó más evidencia. La entrega permanece bloqueada. Inicia una nueva evaluación con la evidencia solicitada; este informe sin cambios no podrá aprobarse después.",
     rejectedNotice: "Informe rechazado. La entrega permanece bloqueada.",
-    approvalFailed: "No fue posible aprobar y descargar el informe final.",
+    approvalFailed: "No fue posible registrar la aprobación humana.",
     decisionFailed: "No fue posible registrar la decisión de revisión.",
-    pdfMissing: "La respuesta revisada no contiene el artefacto PDF exacto.",
-    invalidPdf: "El PDF aprobado no superó la validación de integridad del navegador.",
+    pdfMissing: "La respuesta de la evaluación terminada no contiene el artefacto PDF exacto.",
+    invalidPdf: "El PDF final de la evaluación no superó la validación de integridad del navegador.",
     packageMissing: "El paquete de entrega aprobado no está disponible para esta ejecución exacta.",
     invalidPackage: "El paquete de entrega aprobado no superó la validación de integridad ZIP.",
     defaultApprovalReason: "El revisor autorizado confirmó el informe inmutable exacto, la puntuación, las limitaciones de evidencia declaradas, la identidad del artefacto y el límite de entrega.",
@@ -525,8 +517,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
       });
       setResult(prepared);
       setNotice(locale === "es-MX"
-        ? "Edición en español conservada. Descargue y revise sus archivos exactos antes de aprobarla; la entrega requiere una autorización independiente."
-        : "Spanish edition retained. Download and inspect its exact files before approval; delivery requires separate authorization.");
+        ? "Edición en español preparada desde la misma evaluación terminada. La revisión humana y la entrega permanecen separadas."
+        : "Spanish edition prepared from the same completed assessment. Human review and delivery remain separate.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.loadFailed);
     } finally {
@@ -534,7 +526,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     }
   }
 
-  async function downloadApprovedPdf(source: ReviewResponse, filenameOverride = ""): Promise<string> {
+  async function downloadExactPdf(source: ReviewResponse, filenameOverride = ""): Promise<string> {
     const exactReport = reportFrom(source);
     const encoded = String(exactReport.pdf_base64 || "");
     if (!encoded) throw new Error(copy.pdfMissing);
@@ -545,7 +537,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
         || asRecord(asRecord(sourceEdition.artifact_digests).pdf).sha256
         || "",
     ).toLowerCase();
-    const fallback = `nico-comprehensive-${runId.trim()}-accepted-edition.pdf`;
+    const editionLabel = artifactEdition === "es-MX" ? "es-MX" : "source";
+    const fallback = `nico-comprehensive-${runId.trim()}-${editionLabel}-FINAL-ASSESSMENT.pdf`;
     const filename = filenameOverride
       ? safeFilename(filenameOverride, fallback)
       : safeFilename(String(exactReport.pdf_filename || ""), fallback);
@@ -555,19 +548,6 @@ export default function ComprehensiveFinalReviewWorkspace() {
       copy.invalidPdf,
       expectedPdfSha256,
     );
-  }
-
-  async function downloadReviewPdf(): Promise<void> {
-    try {
-      setError("");
-      if (!result) throw new Error(copy.pdfMissing);
-      if (!currentReviewPdfDigest) throw new Error(copy.pdfMissing);
-      const verifiedPdfDigest = await downloadApprovedPdf(result);
-      setDownloadedArtifactDigest(verifiedPdfDigest);
-      setNotice(copy.reviewDownloadNotice);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.pdfMissing);
-    }
   }
 
   async function downloadApprovedPackage(): Promise<void> {
@@ -586,35 +566,33 @@ export default function ComprehensiveFinalReviewWorkspace() {
     );
   }
 
-  async function approveAndDownload(): Promise<void> {
+  async function downloadFinalReport(): Promise<void> {
+    if (!operatorReady || !currentReviewPdfDigest || !result) {
+      setError(copy.pdfMissing);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      const editionLabel = artifactEdition === "es-MX" ? "es-MX" : "source";
+      const finalFilename = `nico-comprehensive-${runId.trim()}-${editionLabel}-FINAL-ASSESSMENT.pdf`;
+      const finalReportDigest = await downloadExactPdf(result, finalFilename);
+      setDownloadedArtifactDigest(finalReportDigest);
+      setNotice(copy.finalReportNotice);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.pdfMissing);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function approveExactReport(): Promise<void> {
     if (approvalCompleted) {
       setError(copy.alreadyApproved);
       return;
     }
-    if (!operatorReady || !confirmed || !currentReviewPdfDigest || !result) {
-      setError(copy.confirmFirst);
-      return;
-    }
-
-    if (!canonicalApprovalReady) {
-      setLoading(true);
-      setError("");
-      setNotice("");
-      try {
-        const editionLabel = artifactEdition === "es-MX" ? "es-MX" : "source";
-        const ownerTestFilename = `nico-comprehensive-${runId.trim()}-${editionLabel}-OWNER-TEST-NON-DELIVERABLE.pdf`;
-        const ownerTestDigest = await downloadApprovedPdf(result, ownerTestFilename);
-        setDownloadedArtifactDigest(ownerTestDigest);
-        setNotice(copy.ownerTestNotice);
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : copy.approvalFailed);
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
-    if (!exactEditionDownloaded) {
+    if (!canonicalApprovalReady || !confirmed || !exactEditionDownloaded) {
       setError(copy.confirmFirst);
       return;
     }
@@ -626,7 +604,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       setResult(reviewed);
       setDeliveryConfirmed(false);
       setDownloadedArtifactDigest("");
-      const approvedPdfDigest = await downloadApprovedPdf(reviewed);
+      const approvedPdfDigest = await downloadExactPdf(reviewed);
       setDownloadedArtifactDigest(approvedPdfDigest);
       setNotice(copy.approvedNotice);
     } catch (caught) {
@@ -692,17 +670,6 @@ export default function ComprehensiveFinalReviewWorkspace() {
     }
   }
 
-  async function downloadAgain(): Promise<void> {
-    try {
-      setError("");
-      if (!result) throw new Error(copy.pdfMissing);
-      const approvedPdfDigest = await downloadApprovedPdf(result);
-      setDownloadedArtifactDigest(approvedPdfDigest);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.pdfMissing);
-    }
-  }
-
   async function downloadPackage(): Promise<void> {
     try {
       setError("");
@@ -715,7 +682,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
   const reviewerQueueHref = `/operations/reviewer-queue?run_id=${encodeURIComponent(runId.trim())}&lang=${encodeURIComponent(locale)}`;
 
-  return <main className={styles.shell} data-review-contract="accepted-edition-v2">
+  return <main className={styles.shell} data-review-contract="final-report-independent-v1">
     <section className={styles.hero}>
       <div className={styles.heroGlow} aria-hidden="true" />
       <p className={styles.eyebrow}>{copy.eyebrow}</p>
@@ -751,8 +718,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
         </div></details>
       </form>
       {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
-        <p>{locale === "es-MX" ? "Primero apruebe la edición original. Después prepare y revise por separado la edición en español." : "Approve the source edition first. Then prepare and separately review the Spanish edition."}</p>
-        <button className={styles.secondary} type="button" disabled={loading || !operatorReady || Boolean(result)} onClick={prepareLocalizedEdition}>{locale === "es-MX" ? "Preparar edición en español para revisión" : "Prepare Spanish edition for review"}</button>
+        <p>{locale === "es-MX" ? "Prepare la edición en español desde la misma evaluación terminada; no se requiere aprobación humana para generar el informe." : "Prepare the Spanish edition from the same completed assessment; human approval is not required to generate the report."}</p>
+        <button className={styles.secondary} type="button" disabled={loading || !operatorReady || Boolean(result)} onClick={prepareLocalizedEdition}>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
       </div> : null}
       <p className={styles.securityNote}>{copy.security}</p>
       {runId.trim() ? <p className={styles.securityNote}><a href={reviewerQueueHref}>{copy.reviewerQueue}</a></p> : null}
@@ -774,9 +741,14 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <article className={styles.statusCard}><span>PDF</span><strong>{report.pdf_filename ? String(report.pdf_filename) : copy.notIssued}</strong></article>
       </div> : null}
       {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
-        <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!currentReviewPdfDigest || loading || approvalCompleted || (canonicalApprovalReady && !exactEditionDownloaded)} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
+        <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!currentReviewPdfDigest || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
-        <div className={styles.downloadActions}>{!approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadReviewPdf}>{copy.downloadReview}</button> : null}<button className={styles.approve} type="button" disabled={!confirmed || loading || approvalCompleted || !currentReviewPdfDigest || (canonicalApprovalReady && !exactEditionDownloaded)} onClick={approveAndDownload}>{approvalCompleted ? copy.alreadyApproved : loading ? (canonicalApprovalReady ? copy.recording : copy.ownerTestGenerating) : canonicalApprovalReady ? copy.approveDownload : copy.ownerTestDownload}</button>{approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadAgain}>{copy.downloadAgain}</button> : null}{deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}</div>
+        <div className={styles.downloadActions}>
+          <button className={styles.approve} type="button" disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}>{copy.downloadFinalReport}</button>
+          {!approvalCompleted && canonicalApprovalReady ? <button className={styles.secondary} type="button" disabled={loading || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}>{copy.approveExactReport}</button> : null}
+          {approvalCompleted ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
+          {deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
+        </div>
         {approvalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
         {approvalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
         <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery}</div>
