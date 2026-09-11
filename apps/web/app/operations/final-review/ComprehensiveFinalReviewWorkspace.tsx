@@ -74,8 +74,8 @@ const COPY = {
     waiting: "Waiting for secure access",
     emptyTitle: "Nothing else to complete yet.",
     emptyBody: "Enter the exact run and operator password above, then open the exact completed assessment.",
-    reviewedExact: "I reviewed this exact report.",
-    reviewedDetail: "I confirm the scorecard, evidence limitations, immutable run identity, artifact digest, and delivery boundary.",
+    reviewedExact: "I reviewed this exact downloaded report for human approval.",
+    reviewedDetail: "This acknowledgement is required only to record human approval; final-report availability does not depend on it.",
     approvalNote: "Add approval context",
     approvalNoteLabel: "Decision context",
     approvalPlaceholder: "Optional approval context. A clear note is required for rejection or a request for more evidence.",
@@ -159,8 +159,8 @@ const COPY = {
     waiting: "Esperando acceso seguro",
     emptyTitle: "Todavía no hay nada más que completar.",
     emptyBody: "Ingresa arriba la ejecución exacta y la contraseña del operador, y abre la evaluación terminada exacta.",
-    reviewedExact: "Revisé este informe exacto.",
-    reviewedDetail: "Confirmo la puntuación, las limitaciones de evidencia, la identidad inmutable, el hash del artefacto y el límite de entrega.",
+    reviewedExact: "Revisé este informe exacto descargado para aprobación humana.",
+    reviewedDetail: "Este reconocimiento se requiere solo para registrar la aprobación humana; la disponibilidad del informe final no depende de él.",
     approvalNote: "Agregar contexto de aprobación",
     approvalNoteLabel: "Contexto de la decisión",
     approvalPlaceholder: "Contexto opcional de aprobación. Se requiere una nota clara para rechazar o solicitar más evidencia.",
@@ -567,8 +567,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
   }
 
   async function downloadFinalReport(): Promise<void> {
-    if (!operatorReady || !confirmed || !currentReviewPdfDigest || !result) {
-      setError(copy.confirmFirst);
+    if (!operatorReady || !currentReviewPdfDigest || !result) {
+      setError(copy.pdfMissing);
       return;
     }
     setLoading(true);
@@ -744,7 +744,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!currentReviewPdfDigest || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
         <div className={styles.downloadActions}>
-          <button className={styles.approve} type="button" disabled={!confirmed || loading || !currentReviewPdfDigest} onClick={downloadFinalReport}>{copy.downloadFinalReport}</button>
+          <button className={styles.approve} type="button" disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}>{copy.downloadFinalReport}</button>
           {!approvalCompleted && canonicalApprovalReady ? <button className={styles.secondary} type="button" disabled={loading || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}>{copy.approveExactReport}</button> : null}
           {approvalCompleted ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
           {deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
