@@ -1,20 +1,17 @@
 "use client";
 
-import {useEffect, useState} from "react";
-
-type PendingPdf = {
-  url: string;
-  filename: string;
-};
+import {useEffect} from "react";
 
 const REVOKE_DELAY_MS = 5 * 60 * 1000;
 const RESERVED_WINDOW_TIMEOUT_MS = 60 * 1000;
 const PDF_ACTION_LABELS = new Set([
   "Download exact PDF to review",
   "Approve and download final PDF",
+  "Generate owner test final PDF",
   "Download approved PDF again",
   "Descargar PDF exacto para revisión",
   "Aprobar y descargar PDF final",
+  "Generar PDF final de prueba del propietario",
   "Descargar nuevamente el PDF aprobado",
 ]);
 
@@ -25,13 +22,9 @@ function isIOSFamilyWebKit(): boolean {
 }
 
 export default function FinalReviewDownloadHandoff() {
-  const [pendingPdf, setPendingPdf] = useState<PendingPdf | null>(null);
-  const [locale, setLocale] = useState<"en" | "es-MX">("en");
-
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const requestedLocale = query.get("lang") === "es-MX" ? "es-MX" : "en";
-    setLocale(requestedLocale);
 
     const originalClick = HTMLAnchorElement.prototype.click;
     const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -71,7 +64,8 @@ export default function FinalReviewDownloadHandoff() {
           ? "NICO está verificando el PDF exacto. Esta pestaña mostrará el informe cuando esté listo."
           : "NICO is verifying the exact PDF. This tab will show the report when it is ready.";
       } catch {
-        // A reserved browsing context is still useful even when its placeholder cannot be edited.
+        // The synchronously reserved browsing context is still useful even if its
+        // short-lived placeholder cannot be edited.
       }
       reservedPdfWindowTimer = window.setTimeout(() => {
         if (reservedPdfWindow === popup) clearReservedPdfWindow(true);
@@ -82,15 +76,13 @@ export default function FinalReviewDownloadHandoff() {
       const href = this.href || "";
       const filename = this.download || "nico-comprehensive-report.pdf";
       if (href.startsWith("blob:") && filename.toLowerCase().endsWith(".pdf")) {
-        setPendingPdf({url: href, filename});
         if (reservedPdfWindow && !reservedPdfWindow.closed) {
           const targetWindow = reservedPdfWindow;
           clearReservedPdfWindow(false);
           try {
-            // iPhone/iPad WebKit can discard a programmatic download that occurs only
-            // after awaited approval/hash work. The browsing context was synchronously
-            // reserved by the original user click, so navigating it now preserves that
-            // user activation and presents the verified PDF instead of silently losing it.
+            // The browsing context was synchronously reserved by the original
+            // physical tap. Navigate it only after the PDF has passed the existing
+            // exact-artifact integrity checks. No second-tap handoff is rendered.
             targetWindow.location.replace(href);
             return;
           } catch {
@@ -136,56 +128,5 @@ export default function FinalReviewDownloadHandoff() {
     };
   }, []);
 
-  if (!pendingPdf) return null;
-
-  const isSpanish = locale === "es-MX";
-  return (
-    <aside
-      role="status"
-      aria-live="polite"
-      data-final-review-pdf-handoff="ready"
-      style={{
-        position: "fixed",
-        left: "max(16px, env(safe-area-inset-left))",
-        right: "max(16px, env(safe-area-inset-right))",
-        bottom: "max(16px, env(safe-area-inset-bottom))",
-        zIndex: 1000,
-        margin: "0 auto",
-        maxWidth: 760,
-        padding: 16,
-        borderRadius: 14,
-        border: "1px solid rgba(148, 163, 184, 0.45)",
-        background: "rgba(15, 23, 42, 0.97)",
-        boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)",
-        color: "#f8fafc",
-      }}
-    >
-      <strong style={{display: "block", marginBottom: 6}}>
-        {isSpanish ? "El PDF está listo" : "PDF is ready"}
-      </strong>
-      <span style={{display: "block", marginBottom: 12, lineHeight: 1.45}}>
-        {isSpanish
-          ? "Si iPhone o el navegador no abrió el informe automáticamente, toca el enlace de abajo."
-          : "If iPhone or the browser did not open the report automatically, tap the link below."}
-      </span>
-      <a
-        href={pendingPdf.url}
-        download={pendingPdf.filename}
-        target="_blank"
-        rel="noopener noreferrer"
-        data-final-review-pdf-open="true"
-        style={{
-          display: "inline-block",
-          padding: "10px 14px",
-          borderRadius: 10,
-          background: "#f8fafc",
-          color: "#0f172a",
-          fontWeight: 700,
-          textDecoration: "none",
-        }}
-      >
-        {isSpanish ? "Abrir PDF" : "Open PDF"}
-      </a>
-    </aside>
-  );
+  return null;
 }

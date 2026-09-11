@@ -5,20 +5,23 @@ HANDOFF = Path("apps/web/app/operations/final-review/FinalReviewDownloadHandoff.
 LAYOUT = Path("apps/web/app/operations/final-review/layout.tsx")
 
 
-def test_final_review_exposes_explicit_fallback_for_generated_pdf() -> None:
+def test_final_review_does_not_expose_secondary_pdf_fallback() -> None:
     source = HANDOFF.read_text(encoding="utf-8")
 
+    # The physical Final Review tap is the only user action. The verified PDF is
+    # presented through the synchronously reserved WebKit browsing context; the
+    # old second-tap "PDF is ready / Open PDF" fallback must stay removed.
     assert "HTMLAnchorElement.prototype.click" in source
-    assert 'data-final-review-pdf-handoff="ready"' in source
-    assert 'href={pendingPdf.url}' in source
-    assert 'download={pendingPdf.filename}' in source
-    assert 'target="_blank"' in source
-    assert 'data-final-review-pdf-open="true"' in source
-    assert '"Open PDF"' in source
-    assert '"Abrir PDF"' in source
+    assert 'data-final-review-pdf-handoff="ready"' not in source
+    assert "pendingPdf" not in source
+    assert 'data-final-review-pdf-open="true"' not in source
+    assert '"PDF is ready"' not in source
+    assert '"El PDF está listo"' not in source
+    assert '"Open PDF"' not in source
+    assert '"Abrir PDF"' not in source
 
 
-def test_final_review_keeps_blob_alive_for_webkit_fallback() -> None:
+def test_final_review_keeps_blob_alive_for_webkit_presentation() -> None:
     source = HANDOFF.read_text(encoding="utf-8")
 
     assert "REVOKE_DELAY_MS" in source
@@ -35,23 +38,26 @@ def test_ios_final_review_reserves_user_activated_pdf_window_before_async_work()
     assert 'window.open("about:blank", "nico-comprehensive-pdf")' in source
     assert '"Approve and download final PDF"' in source
     assert '"Aprobar y descargar PDF final"' in source
+    assert '"Generate owner test final PDF"' in source
+    assert '"Generar PDF final de prueba del propietario"' in source
     assert '"Download exact PDF to review"' in source
     assert '"Descargar PDF exacto para revisión"' in source
     assert '"Download approved PDF again"' in source
     assert '"Descargar nuevamente el PDF aprobado"' in source
 
 
-def test_ios_reserved_window_receives_verified_blob_instead_of_late_programmatic_click() -> None:
+def test_ios_reserved_window_receives_verified_blob_without_second_tap() -> None:
     source = HANDOFF.read_text(encoding="utf-8")
 
     reserved_path = source.split("if (reservedPdfWindow && !reservedPdfWindow.closed)", 1)[1]
     reserved_path = reserved_path.split("originalClick.call(this)", 1)[0]
     assert "targetWindow.location.replace(href)" in reserved_path
     assert "return;" in reserved_path
-    assert "setPendingPdf({url: href, filename})" in source
+    assert "setPendingPdf" not in source
+    assert "No second-tap handoff is rendered." in source
 
 
-def test_handoff_closes_stale_reserved_window_without_shortening_blob_fallback() -> None:
+def test_handoff_closes_stale_reserved_window_without_shortening_blob_lifetime() -> None:
     source = HANDOFF.read_text(encoding="utf-8")
 
     assert "RESERVED_WINDOW_TIMEOUT_MS = 60 * 1000" in source
