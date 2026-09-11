@@ -14,7 +14,7 @@ def test_visible_final_review_is_comprehensive_only_and_not_legacy_service_selec
 
     assert 'import ComprehensiveFinalReviewWorkspace from "./ComprehensiveFinalReviewWorkspace"' in page
     assert "<ComprehensiveFinalReviewWorkspace />" in page
-    assert 'data-review-contract="accepted-edition-v2"' in workspace
+    assert 'data-review-contract="final-report-independent-v1"' in workspace
     assert 'comprehensive: "Comprehensive"' in workspace
     assert 'value={copy.comprehensive} readOnly' in workspace
     assert "Strategic" not in workspace
