@@ -43,7 +43,8 @@ def test_human_evidence_intake_uses_one_focused_editor_on_mobile() -> None:
     assert "moduleList" in form
     assert "moduleEditor" in form
     assert "mobileChooser" in form
-    assert "evidenceLines(event.target.value)" in form
+    assert "const rawValue = event.target.value" in form
+    assert "evidenceLines(rawValue)" in form
     assert ".evidenceWorkspace" in style
     assert ".moduleList" in style
     assert ".moduleEditor" in style

@@ -61,7 +61,7 @@ const COPY = {
     exactIdentity: "Confirm exact report identity",
     exactRunId: "Exact Comprehensive run ID",
     security: "Use the private operator password configured for NICO in Railway. It stays only in this open page and is never stored in the URL or browser storage.",
-    enterReviewer: "Enter the exact Comprehensive run ID, operator password, authorized reviewer, and reviewer role.",
+    enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer identity is required only for real approval or a client-delivery decision.",
     loaded: "The immutable Comprehensive review package is loaded. Confirm it below when ready.",
     loadFailed: "Unable to load final review.",
     finalDecision: "FINAL DECISION",
@@ -73,7 +73,7 @@ const COPY = {
     blocked: "Blocked",
     waiting: "Waiting for secure access",
     emptyTitle: "Nothing else to complete yet.",
-    emptyBody: "Identify the reviewer above, then open the exact review package.",
+    emptyBody: "Enter the exact run and operator password above, then open the exact review package.",
     reviewedExact: "I reviewed this exact report.",
     reviewedDetail: "I confirm the scorecard, evidence limitations, immutable run identity, artifact digest, and delivery boundary.",
     approvalNote: "Add approval context",
@@ -82,6 +82,9 @@ const COPY = {
     recording: "Recording approval…",
     alreadyApproved: "Approval already recorded",
     approveDownload: "Approve and download final PDF",
+    ownerTestDownload: "Generate owner test final PDF",
+    ownerTestGenerating: "Generating owner test PDF…",
+    ownerTestNotice: "Owner test PDF generated from the exact report. Human approval was not recorded and client delivery remains blocked.",
     downloadReview: "Download exact PDF to review",
     downloadAgain: "Download approved PDF again",
     downloadPackage: "Download approved delivery package",
@@ -147,7 +150,7 @@ const COPY = {
     exactIdentity: "Confirmar identidad exacta del informe",
     exactRunId: "ID exacto de ejecución Comprehensive",
     security: "Usa la contraseña privada del operador configurada para NICO en Railway. Permanece únicamente en esta página abierta y nunca se guarda en la URL ni en el almacenamiento del navegador.",
-    enterReviewer: "Ingresa el ID exacto de Comprehensive, la contraseña del operador, el revisor autorizado y su función.",
+    enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. La identidad del revisor se requiere solo para una aprobación real o una decisión de entrega al cliente.",
     loaded: "El paquete inmutable de revisión Comprehensive está cargado. Confírmalo abajo cuando estés listo.",
     loadFailed: "No fue posible cargar la revisión final.",
     finalDecision: "DECISIÓN FINAL",
@@ -159,7 +162,7 @@ const COPY = {
     blocked: "Bloqueada",
     waiting: "Esperando acceso seguro",
     emptyTitle: "Todavía no hay nada más que completar.",
-    emptyBody: "Identifica al revisor arriba y abre el paquete de revisión exacto.",
+    emptyBody: "Ingresa arriba la ejecución exacta y la contraseña del operador, y abre el paquete de revisión exacto.",
     reviewedExact: "Revisé este informe exacto.",
     reviewedDetail: "Confirmo la puntuación, las limitaciones de evidencia, la identidad inmutable, el hash del artefacto y el límite de entrega.",
     approvalNote: "Agregar contexto de aprobación",
@@ -168,6 +171,9 @@ const COPY = {
     recording: "Registrando aprobación…",
     alreadyApproved: "Aprobación ya registrada",
     approveDownload: "Aprobar y descargar PDF final",
+    ownerTestDownload: "Generar PDF final de prueba del propietario",
+    ownerTestGenerating: "Generando PDF de prueba del propietario…",
+    ownerTestNotice: "Se generó el PDF de prueba del propietario a partir del informe exacto. No se registró aprobación humana y la entrega al cliente permanece bloqueada.",
     downloadReview: "Descargar PDF exacto para revisión",
     downloadAgain: "Descargar nuevamente el PDF aprobado",
     downloadPackage: "Descargar paquete de entrega aprobado",
@@ -367,7 +373,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
   }, []);
 
   const copy = COPY[locale];
-  const ready = Boolean(runId.trim() && adminToken.trim() && reviewer.trim() && reviewerRole.trim());
+  const operatorReady = Boolean(runId.trim() && adminToken.trim());
+  const canonicalApprovalReady = Boolean(operatorReady && reviewer.trim() && reviewerRole.trim());
   const identityReady = Boolean(runId.trim());
   const edition = useMemo(() => acceptedEditionFrom(result), [result]);
   const certificate = useMemo(() => reviewCertificateFrom(result), [result]);
@@ -379,6 +386,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const currentReviewPdfDigest = String(
     asRecord(asRecord(reviewArtifactIdentity.artifact_digests).pdf).sha256 || "",
   ).toLowerCase();
+  const exactEditionDownloaded = Boolean(
+    currentReviewPdfDigest && downloadedArtifactDigest === currentReviewPdfDigest,
+  );
   const approvedPackage = useMemo(() => approvedPackageFrom(result), [result]);
   const deliveryCertificate = asRecord(approvedPackage.certificate);
   const delivery = approvedDeliveryFrom(result);
@@ -453,7 +463,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
   async function loadStatus(event?: FormEvent): Promise<void> {
     event?.preventDefault();
-    if (!ready) {
+    if (!operatorReady) {
       setError(copy.enterReviewer);
       return;
     }
@@ -494,7 +504,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   }
 
   async function prepareLocalizedEdition(): Promise<void> {
-    if (!ready || artifactEdition === "source") return;
+    if (!operatorReady || artifactEdition === "source") return;
     setLoading(true);
     setError("");
     setNotice("");
@@ -524,7 +534,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     }
   }
 
-  async function downloadApprovedPdf(source: ReviewResponse): Promise<string> {
+  async function downloadApprovedPdf(source: ReviewResponse, filenameOverride = ""): Promise<string> {
     const exactReport = reportFrom(source);
     const encoded = String(exactReport.pdf_base64 || "");
     if (!encoded) throw new Error(copy.pdfMissing);
@@ -536,9 +546,12 @@ export default function ComprehensiveFinalReviewWorkspace() {
         || "",
     ).toLowerCase();
     const fallback = `nico-comprehensive-${runId.trim()}-accepted-edition.pdf`;
+    const filename = filenameOverride
+      ? safeFilename(filenameOverride, fallback)
+      : safeFilename(String(exactReport.pdf_filename || ""), fallback);
     return downloadBase64Pdf(
       encoded,
-      safeFilename(String(exactReport.pdf_filename || ""), fallback),
+      filename,
       copy.invalidPdf,
       expectedPdfSha256,
     );
@@ -578,12 +591,30 @@ export default function ComprehensiveFinalReviewWorkspace() {
       setError(copy.alreadyApproved);
       return;
     }
-    if (
-      !ready
-      || !confirmed
-      || !currentReviewPdfDigest
-      || downloadedArtifactDigest !== currentReviewPdfDigest
-    ) {
+    if (!operatorReady || !confirmed || !currentReviewPdfDigest || !result) {
+      setError(copy.confirmFirst);
+      return;
+    }
+
+    if (!canonicalApprovalReady) {
+      setLoading(true);
+      setError("");
+      setNotice("");
+      try {
+        const editionLabel = artifactEdition === "es-MX" ? "es-MX" : "source";
+        const ownerTestFilename = `nico-comprehensive-${runId.trim()}-${editionLabel}-OWNER-TEST-NON-DELIVERABLE.pdf`;
+        const ownerTestDigest = await downloadApprovedPdf(result, ownerTestFilename);
+        setDownloadedArtifactDigest(ownerTestDigest);
+        setNotice(copy.ownerTestNotice);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : copy.approvalFailed);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (!exactEditionDownloaded) {
       setError(copy.confirmFirst);
       return;
     }
@@ -606,7 +637,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   }
 
   async function recordOtherDecision(decision: Decision): Promise<void> {
-    if (!ready || !note.trim()) {
+    if (!canonicalApprovalReady || !note.trim()) {
       setError(copy.decisionNoteRequired);
       return;
     }
@@ -625,7 +656,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
   async function authorizeClientDelivery(): Promise<void> {
     if (
-      !ready
+      !canonicalApprovalReady
       || !approvalCompleted
       || deliveryAllowed
       || !deliveryConfirmed
@@ -713,7 +744,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
           {AUTHORIZED_REVIEWER_ROLES.map((role) => <option value={role.value} key={role.value}>{locale === "es-MX" ? role.es : role.en}</option>)}
         </select></label>
         <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder={copy.secureToken} autoComplete="current-password" spellCheck={false} /></label>
-        <button className={styles.primary} type="submit" disabled={loading || !ready}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
+        <button className={styles.primary} type="submit" disabled={loading || !operatorReady}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
         <details className={styles.advanced}><summary>{copy.exactIdentity}</summary><div className={styles.advancedGrid}>
           <label>{copy.assessment}<input value={copy.comprehensive} readOnly aria-readonly="true" /></label>
           <label>{copy.exactRunId}<input value={runId} onChange={(event) => {setRunId(event.target.value); setResult(null); setConfirmed(false); setDeliveryConfirmed(false); setDownloadedArtifactDigest("");}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
@@ -721,7 +752,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       </form>
       {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
         <p>{locale === "es-MX" ? "Primero apruebe la edición original. Después prepare y revise por separado la edición en español." : "Approve the source edition first. Then prepare and separately review the Spanish edition."}</p>
-        <button className={styles.secondary} type="button" disabled={loading || !ready || Boolean(result)} onClick={prepareLocalizedEdition}>{locale === "es-MX" ? "Preparar edición en español para revisión" : "Prepare Spanish edition for review"}</button>
+        <button className={styles.secondary} type="button" disabled={loading || !operatorReady || Boolean(result)} onClick={prepareLocalizedEdition}>{locale === "es-MX" ? "Preparar edición en español para revisión" : "Prepare Spanish edition for review"}</button>
       </div> : null}
       <p className={styles.securityNote}>{copy.security}</p>
       {runId.trim() ? <p className={styles.securityNote}><a href={reviewerQueueHref}>{copy.reviewerQueue}</a></p> : null}
@@ -743,9 +774,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <article className={styles.statusCard}><span>PDF</span><strong>{report.pdf_filename ? String(report.pdf_filename) : copy.notIssued}</strong></article>
       </div> : null}
       {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
-        <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
+        <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!currentReviewPdfDigest || loading || approvalCompleted || (canonicalApprovalReady && !exactEditionDownloaded)} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
-        <div className={styles.downloadActions}>{!approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadReviewPdf}>{copy.downloadReview}</button> : null}<button className={styles.approve} type="button" disabled={!confirmed || loading || approvalCompleted} onClick={approveAndDownload}>{approvalCompleted ? copy.alreadyApproved : loading ? copy.recording : copy.approveDownload}</button>{approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadAgain}>{copy.downloadAgain}</button> : null}{deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}</div>
+        <div className={styles.downloadActions}>{!approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadReviewPdf}>{copy.downloadReview}</button> : null}<button className={styles.approve} type="button" disabled={!confirmed || loading || approvalCompleted || !currentReviewPdfDigest || (canonicalApprovalReady && !exactEditionDownloaded)} onClick={approveAndDownload}>{approvalCompleted ? copy.alreadyApproved : loading ? (canonicalApprovalReady ? copy.recording : copy.ownerTestGenerating) : canonicalApprovalReady ? copy.approveDownload : copy.ownerTestDownload}</button>{approvalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadAgain}>{copy.downloadAgain}</button> : null}{deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}</div>
         {approvalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
         {approvalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
         <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery}</div>
