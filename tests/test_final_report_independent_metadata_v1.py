@@ -35,11 +35,10 @@ def test_human_approval_is_separate_and_preserves_exact_artifact_gate() -> None:
 
 
 def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplied() -> None:
-    actions = WORKSPACE.rsplit('className={styles.downloadActions}', 1)[1]
-    assert "copy.downloadFinalReport" in actions
-    assert "onClick={downloadFinalReport}" in actions
-    assert "canonicalApprovalReady ? copy.approveDownload" not in actions
-    assert "canonicalApprovalReady ? copy.recording" not in actions
+    assert "onClick={downloadFinalReport}>{copy.downloadFinalReport}</button>" in WORKSPACE
+    assert "onClick={approveExactReport}>{copy.approveExactReport}</button>" in WORKSPACE
+    assert "canonicalApprovalReady ? copy.approveDownload" not in WORKSPACE
+    assert "canonicalApprovalReady ? copy.recording" not in WORKSPACE
 
 
 def test_client_delivery_remains_separately_protected() -> None:
