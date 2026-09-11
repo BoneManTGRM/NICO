@@ -19,6 +19,7 @@ def test_final_report_download_is_one_normal_path_independent_of_reviewer_metada
     report_download = function_body("downloadFinalReport", "approveExactReport")
     assert "downloadExactPdf(result" in report_download
     assert "canonicalApprovalReady" not in report_download
+    assert "confirmed" not in report_download
     assert "submitDecision" not in report_download
     assert "reviewUrl()" not in report_download
     assert "deliveryAuthorizationUrl" not in report_download
@@ -29,6 +30,7 @@ def test_final_report_download_is_one_normal_path_independent_of_reviewer_metada
 def test_human_approval_is_separate_and_preserves_exact_artifact_gate() -> None:
     approval = function_body("approveExactReport", "recordOtherDecision")
     assert "canonicalApprovalReady" in approval
+    assert "confirmed" in approval
     assert "exactEditionDownloaded" in approval
     assert 'submitDecision("approved")' in approval
     assert "expected_artifact_identity: reviewArtifactIdentity" in WORKSPACE
@@ -39,6 +41,17 @@ def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplie
     assert "onClick={approveExactReport}>{copy.approveExactReport}</button>" in WORKSPACE
     assert "canonicalApprovalReady ? copy.approveDownload" not in WORKSPACE
     assert "canonicalApprovalReady ? copy.recording" not in WORKSPACE
+
+
+def test_report_action_does_not_require_human_review_acknowledgement() -> None:
+    assert (
+        'disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}'
+        in WORKSPACE
+    )
+    assert (
+        'disabled={loading || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}'
+        in WORKSPACE
+    )
 
 
 def test_client_delivery_remains_separately_protected() -> None:
