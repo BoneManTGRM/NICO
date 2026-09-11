@@ -148,7 +148,7 @@ export default function FinalReviewDownloadHandoff() {
         position: "fixed",
         left: "max(16px, env(safe-area-inset-left))",
         right: "max(16px, env(safe-area-inset-right))",
-        bottom: "max(16px, env(safe-area-inset-bottom))",
+        bottom: "max(8px, env(safe-area-inset-bottom))",
         zIndex: 1000,
         margin: "0 auto",
         maxWidth: 760,
