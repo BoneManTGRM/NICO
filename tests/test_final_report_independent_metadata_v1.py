@@ -48,10 +48,12 @@ def test_report_action_does_not_require_human_review_acknowledgement() -> None:
         'disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}'
         in WORKSPACE
     )
-    assert (
-        'disabled={loading || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}'
-        in WORKSPACE
-    )
+    approval_button = WORKSPACE.split("onClick={approveExactReport}", 1)[0].rsplit("<button", 1)[1]
+    for requirement in (
+        "loading", "!canonicalApprovalReady", "!confirmed", "!exactEditionDownloaded",
+        "approvalRequirements.length > 0",
+    ):
+        assert requirement in approval_button
 
 
 def test_client_delivery_remains_separately_protected() -> None:
@@ -80,3 +82,39 @@ def test_ios_handoff_recognizes_normal_final_report_action_without_owner_test_pa
     assert "owner test" not in HANDOFF.lower()
     assert 'window.open("about:blank", "nico-comprehensive-pdf")' in HANDOFF
     assert "targetWindow.location.replace(href)" in HANDOFF
+
+
+def test_missing_reviewer_disables_approval_instead_of_hiding_the_action() -> None:
+    assert "{!approvalCompleted && canonicalApprovalReady ? <button" not in WORKSPACE
+    assert "{!approvalCompleted ? <button" in WORKSPACE
+    assert 'aria-describedby="approval-requirements"' in WORKSPACE
+    assert 'id="approval-requirements"' in WORKSPACE
+    assert "unmetApprovalRequirements({" in WORKSPACE
+    assert "setError(approvalGuidance)" in function_body("approveExactReport", "recordOtherDecision")
+
+
+def test_download_preserves_recorded_pdf_filename_instead_of_renaming_a_draft_final() -> None:
+    report_download = function_body("downloadFinalReport", "approveExactReport")
+    assert "await downloadExactPdf(result);" in report_download
+    assert "finalFilename" not in report_download
+    assert "filenameOverride" not in report_download
+    assert "setDownloadedArtifactDigest(finalReportDigest)" in report_download
+
+
+def test_successful_approval_downloads_the_returned_edition_not_the_stale_draft() -> None:
+    approval = function_body("approveExactReport", "recordOtherDecision")
+    assert 'const reviewed = await submitDecision("approved")' in approval
+    assert "setResult(reviewed)" in approval
+    assert "await downloadExactPdf(reviewed)" in approval
+    assert "await downloadExactPdf(result" not in approval
+    assert "deliveryAuthorizationUrl" not in approval
+
+
+def test_each_approval_requirement_has_english_and_mexican_spanish_guidance() -> None:
+    english, spanish = WORKSPACE.split('  "es-MX": {', 1)
+    spanish = spanish.split("} as const;", 1)[0]
+    for key in ("secureAccess", "reviewer", "reviewerRole", "report", "download", "confirmation", "locked"):
+        assert f"      {key}:" in english
+        assert f"      {key}:" in spanish
+    assert "reviewCopyNotice:" in english and "reviewCopyNotice:" in spanish
+    assert "approvalReadyNotice:" in english and "approvalReadyNotice:" in spanish
