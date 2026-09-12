@@ -30,6 +30,7 @@ _STATE_FIELDS = (
     "client_delivery_allowed", "updated_at", "review_history", "review_decision",
     "accepted_edition", "review_context", "review_source_artifact_identity",
     "delivery_authorization", "approved_delivery_package", "review_work_status",
+    "operator_approved_edition", "operator_approval_history",
 )
 
 
@@ -46,6 +47,15 @@ def _valid(record: dict[str, Any]) -> None:
 
 def _parent_binding(record: dict[str, Any]) -> dict[str, Any]:
     _valid(record)
+    from nico.comprehensive_operator_approval_v1 import validated_operator_edition
+    operator = validated_operator_edition(record)
+    if operator:
+        return {
+            "source_identity": deepcopy(record["identity"]),
+            "source_report_artifact_digest": current_report_artifact_digest(report_package_from_record(record)),
+            "source_operator_approval_sha256": operator["accepted_edition_manifest_sha256"],
+            "review_work_ledger_sha256": canonical_sha256(record.get("review_work_ledger") or {}),
+        }
     if record.get("status") != "approved" or record.get("human_review_completed") is not True:
         raise ValueError("localized_edition_requires_approved_source")
     accepted = record.get("accepted_edition")
@@ -124,7 +134,13 @@ def prepare_localized_edition(service: Any, run_id: str, language: str, payload:
     root = service.load_read_only(run_id)
     language = _language(root, language)
     binding = _parent_binding(root)
-    assert_expected_review_artifact_identity(root, payload.get("expected_artifact_identity"))
+    from nico.comprehensive_operator_approval_v1 import presented_operator_identity, validated_operator_edition
+    operator = validated_operator_edition(root)
+    if operator:
+        if payload.get("expected_artifact_identity") != presented_operator_identity(root, operator):
+            raise ValueError("stale_review_artifact_identity")
+    else:
+        assert_expected_review_artifact_identity(root, payload.get("expected_artifact_identity"))
     if language in (root.get("localized_editions") or {}):
         # Preparation is idempotent and cannot overwrite an inspected/accepted edition.
         return read_localized_edition(service, run_id, language)
@@ -183,7 +199,12 @@ def mutate_localized_edition(service: Any, run_id: str, language: str, payload: 
             authorization_reason=str(payload.get("authorization_reason") or ""),
             expected_artifact_identity=payload.get("expected_artifact_identity"),
         )
+    elif payload.get("approval_kind") == "operator_report":
+        from nico.comprehensive_operator_approval_v1 import approve_operator_report
+        updated = approve_operator_report(selected, run_id, payload)
     else:
+        if payload.get("approval_kind"):
+            raise ValueError("unsupported_approval_kind")
         if payload.get("review_authorized") is not True or payload.get("authorization_confirmed") is not True:
             raise ValueError("explicit_review_authorization_required")
         # The installed service.review retains its Phase 2 readiness guard.
@@ -212,7 +233,7 @@ def register_localized_edition_routes(app: Any) -> None:
         controller = routes._controller(request)
         projected = routes._review_projection(controller._response(
             context, operation=operation, browser_projection=routes._browser_projection_requested(request),
-        ), context)
+        ), context, operator_reports_authorized=True)
         projected["localized_edition"] = {key: deepcopy(entry[key]) for key in (
             "edition_id", "report_language", "parent_binding", "prepared_at",
         )}

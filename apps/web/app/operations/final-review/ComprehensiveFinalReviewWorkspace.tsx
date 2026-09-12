@@ -18,6 +18,8 @@ type ReviewResponse = {
   status?: string;
   review_status?: string;
   acceptance_status?: string;
+  operator_approval_status?: string;
+  operator_approved_edition?: JsonRecord;
   human_review_completed?: boolean;
   approval_id?: string;
   client_delivery_allowed?: boolean;
@@ -37,7 +39,7 @@ type ReviewResponse = {
 const COPY = {
   en: {
     eyebrow: "NICO COMPREHENSIVE · INTERNAL QUALITY GATE",
-    title: "Final assessment report, human review, and client-ready authorization.",
+    title: "Approve the exact final assessment report.",
     lead: "A completed assessment can always produce its exact final assessment report. Human review, approval, and client delivery remain separate controlled states.",
     assessment: "Assessment",
     comprehensive: "Comprehensive",
@@ -67,15 +69,19 @@ const COPY = {
     finalDecision: "FINAL REPORT AND REVIEW STATE",
     approveHeading: "Review and approve the exact assessment report",
     approveLead: "Download and review the report, confirm that exact PDF, then approve and download the final PDF. Reviewer name and role are optional metadata. A download or checked box alone does not record approval. Client delivery is a separate authorization.",
-    review: "Human review",
+    review: "Report approval",
+    specialistReview: "Specialist review",
+    specialistIncomplete: "Not completed",
+    specialistComplete: "Completed",
+    operatorDisclosure: "Operator approval accepts this exact report with its disclosed limitations and outstanding specialist review, independent QC, and escalations. It does not mark that work complete or authorize client delivery.",
     delivery: "Client-ready",
     authorized: "Authorized",
     blocked: "Blocked",
     waiting: "Waiting for secure access",
     emptyTitle: "Nothing else to complete yet.",
     emptyBody: "Enter the exact run and operator password above, then open the exact completed assessment.",
-    reviewedExact: "I reviewed this exact downloaded report for human approval.",
-    reviewedDetail: "This acknowledgement is required only to record human approval; final-report availability does not depend on it.",
+    reviewedExact: "I reviewed this exact downloaded report and approve it with its disclosed limitations and outstanding review/QC.",
+    reviewedDetail: "This records operator approval of this edition. Specialist review, independent QC, and client delivery remain separate.",
     approvalNote: "Add approval context",
     approvalNoteLabel: "Decision context",
     approvalPlaceholder: "Optional approval context. A clear note is required for rejection or a request for more evidence.",
@@ -85,7 +91,7 @@ const COPY = {
     downloadApprovedReport: "Download approved final PDF",
     reviewerRequired: "Reviewer name and role are optional for approval. Blank values use authenticated-operator defaults; test is allowed as reviewer metadata.",
     reviewDownloadRequired: "Download and review this exact report before confirming your review.",
-    approvalReady: "Ready to submit your approval of this exact report. NICO will still verify the evidence, review, and independent QC requirements.",
+    approvalReady: "Ready to record your approval of this exact report and its disclosed limitations. Outstanding specialist review/QC remains accurately recorded.",
     approvedDownloadNotice: "The exact approved final PDF was downloaded. Client delivery remains separately protected.",
     approvalDownloadFailed: "Approval was recorded, but the approved PDF download failed. Refresh report status, then use Download approved final PDF to retry without approving again.",
     finalReportNotice: "The exact report was downloaded for review. Downloading does not record approval. After reviewing it, use Approve and download final PDF.",
@@ -93,7 +99,7 @@ const COPY = {
     downloadPackage: "Download approved delivery package",
     readyDelivery: "This exact immutable edition and its certified delivery package are approved and client-ready.",
     blockedDelivery: "Client-ready release remains blocked until its legitimate approval and delivery requirements are satisfied.",
-    pendingAuthorization: "Human approval is recorded for this exact edition. Client delivery remains blocked until its delivery authorization package and certificate are valid.",
+    pendingAuthorization: "Approval is recorded for this exact edition. Client delivery remains blocked until its separate requirements and authorization are satisfied.",
     authorizationConfirm: "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize client delivery of that exact edition and its certified package.",
     authorizeDelivery: "Authorize client delivery",
     authorizingDelivery: "Recording delivery authorization…",
@@ -114,10 +120,10 @@ const COPY = {
     technicalRecord: "Technical review record",
     confirmFirst: "Confirm that you reviewed the exact report and its disclosed limitations.",
     decisionNoteRequired: "Add a clear review note before requesting more evidence or rejecting delivery.",
-    approvedNotice: "Human approval recorded and the exact approved final PDF downloaded. Review that PDF before separately authorizing client delivery.",
+    approvedNotice: "Operator approval recorded and the exact approved final PDF downloaded. Specialist review/QC remains separate. Client delivery remains unauthorized.",
     evidenceNotice: "More evidence requested. Delivery remains blocked. Start a new assessment with the requested evidence; this unchanged report cannot later be approved.",
     rejectedNotice: "Report rejected. Delivery remains blocked.",
-    approvalFailed: "Unable to record human approval.",
+    approvalFailed: "Unable to record report approval.",
     decisionFailed: "Unable to record the review decision.",
     pdfMissing: "The completed assessment response did not contain the exact PDF artifact.",
     invalidPdf: "The final assessment PDF failed browser integrity validation.",
@@ -125,11 +131,11 @@ const COPY = {
     invalidPackage: "The approved delivery package failed ZIP integrity validation.",
     defaultApprovalReason: "Authorized reviewer confirmed the exact immutable report, scorecard, disclosed evidence limitations, artifact identity, and delivery boundary.",
     reviewerQueue: "Open the exception-first technical review queue for this exact run",
-    optionalReviewerMetadata: "Reviewer name and role are optional for approval. Leave them blank or use test while testing. The operator password must still be valid, the exact PDF must be downloaded and acknowledged, and all server-side review/QC gates still apply.",
+    optionalReviewerMetadata: "Reviewer name and role are optional for approval. Leave them blank or use TEST or test. Use the real operator password, download the exact PDF, and acknowledge its limitations. Optional metadata never counts as specialist review or QC evidence.",
   },
   "es-MX": {
     eyebrow: "NICO COMPREHENSIVE · CONTROL INTERNO DE CALIDAD",
-    title: "Informe final de evaluación, revisión humana y autorización para el cliente.",
+    title: "Aprueba el informe final exacto de la evaluación.",
     lead: "Una evaluación terminada siempre puede producir su informe final exacto. La revisión humana, la aprobación y la entrega al cliente permanecen como estados controlados separados.",
     assessment: "Evaluación",
     comprehensive: "Comprehensive",
@@ -159,15 +165,19 @@ const COPY = {
     finalDecision: "INFORME FINAL Y ESTADO DE REVISIÓN",
     approveHeading: "Revisa y aprueba el informe exacto de la evaluación",
     approveLead: "Descarga y revisa el informe, confirma ese PDF exacto y después aprueba y descarga el PDF final. El nombre y la función del revisor son metadatos opcionales. Descargar o marcar la casilla no registra la aprobación. La entrega al cliente requiere una autorización separada.",
-    review: "Revisión humana",
+    review: "Aprobación del informe",
+    specialistReview: "Revisión especializada",
+    specialistIncomplete: "Sin completar",
+    specialistComplete: "Completada",
+    operatorDisclosure: "La aprobación del operador acepta este informe exacto con sus limitaciones declaradas y la revisión especializada, el control de calidad independiente y los escalamientos pendientes. No marca ese trabajo como completado ni autoriza la entrega al cliente.",
     delivery: "Lista para el cliente",
     authorized: "Autorizada",
     blocked: "Bloqueada",
     waiting: "Esperando acceso seguro",
     emptyTitle: "Todavía no hay nada más que completar.",
     emptyBody: "Ingresa arriba la ejecución exacta y la contraseña del operador, y abre la evaluación terminada exacta.",
-    reviewedExact: "Revisé este informe exacto descargado para aprobación humana.",
-    reviewedDetail: "Este reconocimiento se requiere solo para registrar la aprobación humana; la disponibilidad del informe final no depende de él.",
+    reviewedExact: "Revisé este informe exacto descargado y lo apruebo con sus limitaciones declaradas y su revisión/QC pendiente.",
+    reviewedDetail: "Esto registra la aprobación del operador de esta edición. La revisión especializada, el control de calidad independiente y la entrega al cliente siguen separados.",
     approvalNote: "Agregar contexto de aprobación",
     approvalNoteLabel: "Contexto de la decisión",
     approvalPlaceholder: "Contexto opcional de aprobación. Se requiere una nota clara para rechazar o solicitar más evidencia.",
@@ -177,7 +187,7 @@ const COPY = {
     downloadApprovedReport: "Descargar PDF final aprobado",
     reviewerRequired: "El nombre y la función del revisor son opcionales para aprobar. Los valores vacíos usan valores del operador autenticado y test se acepta como metadato de prueba.",
     reviewDownloadRequired: "Descarga y revisa este informe exacto antes de confirmar tu revisión.",
-    approvalReady: "Puedes enviar la aprobación de este informe exacto. NICO todavía verificará la evidencia, la revisión y el control de calidad independiente.",
+    approvalReady: "Puedes aprobar este informe exacto y sus limitaciones declaradas. La revisión especializada y el control de calidad pendientes permanecerán registrados.",
     approvedDownloadNotice: "Se descargó el PDF final aprobado exacto. La entrega al cliente sigue protegida por separado.",
     approvalDownloadFailed: "La aprobación quedó registrada, pero falló la descarga del PDF aprobado. Actualiza el estado del informe y usa Descargar PDF final aprobado para reintentar sin volver a aprobar.",
     finalReportNotice: "Se descargó el informe exacto para revisión. Descargar no registra la aprobación. Después de revisarlo, usa Aprobar y descargar PDF final.",
@@ -185,7 +195,7 @@ const COPY = {
     downloadPackage: "Descargar paquete de entrega aprobado",
     readyDelivery: "Esta edición inmutable exacta y su paquete de entrega certificado están aprobados para entrega controlada al cliente.",
     blockedDelivery: "La entrega al cliente permanece bloqueada hasta que se satisfagan sus requisitos legítimos de aprobación y entrega.",
-    pendingAuthorization: "La aprobación humana está registrada para esta edición exacta. La entrega al cliente permanece bloqueada hasta que sean válidos el paquete y el certificado de autorización de entrega.",
+    pendingAuthorization: "La aprobación está registrada para esta edición exacta. La entrega al cliente permanece bloqueada hasta cumplir sus requisitos y autorización separados.",
     authorizationConfirm: "Revisé el PDF FINAL APROBADO descargado y autorizo explícitamente la entrega al cliente de esa edición exacta y su paquete certificado.",
     authorizeDelivery: "Autorizar entrega al cliente",
     authorizingDelivery: "Registrando autorización de entrega…",
@@ -206,10 +216,10 @@ const COPY = {
     technicalRecord: "Registro técnico de revisión",
     confirmFirst: "Confirma que revisaste el informe exacto y sus limitaciones declaradas.",
     decisionNoteRequired: "Agrega una nota clara antes de solicitar más evidencia o rechazar la entrega.",
-    approvedNotice: "Se registró la aprobación humana y se descargó el PDF final aprobado exacto. Revisa ese PDF antes de autorizar por separado la entrega al cliente.",
+    approvedNotice: "Se registró la aprobación del operador y se descargó el PDF final aprobado exacto. La revisión especializada/QC sigue separada. La entrega al cliente permanece sin autorización.",
     evidenceNotice: "Se solicitó más evidencia. La entrega permanece bloqueada. Inicia una nueva evaluación con la evidencia solicitada; este informe sin cambios no podrá aprobarse después.",
     rejectedNotice: "Informe rechazado. La entrega permanece bloqueada.",
-    approvalFailed: "No fue posible registrar la aprobación humana.",
+    approvalFailed: "No fue posible registrar la aprobación del informe.",
     decisionFailed: "No fue posible registrar la decisión de revisión.",
     pdfMissing: "La respuesta de la evaluación terminada no contiene el artefacto PDF exacto.",
     invalidPdf: "El PDF final de la evaluación no superó la validación de integridad del navegador.",
@@ -217,7 +227,7 @@ const COPY = {
     invalidPackage: "El paquete de entrega aprobado no superó la validación de integridad ZIP.",
     defaultApprovalReason: "El revisor autorizado confirmó el informe inmutable exacto, la puntuación, las limitaciones de evidencia declaradas, la identidad del artefacto y el límite de entrega.",
     reviewerQueue: "Abrir la cola técnica por excepción para esta ejecución exacta",
-    optionalReviewerMetadata: "El nombre y la función del revisor son opcionales para aprobar. Déjalos vacíos o usa test durante las pruebas. La contraseña del operador debe seguir siendo válida, debes descargar y reconocer el PDF exacto y todos los controles de revisión/QC del servidor siguen aplicando.",
+    optionalReviewerMetadata: "El nombre y la función del revisor son opcionales para aprobar. Déjalos vacíos o usa TEST o test. Usa la contraseña real del operador, descarga el PDF exacto y reconoce sus limitaciones. Los metadatos opcionales nunca cuentan como evidencia de revisión especializada o QC.",
   },
 } as const;
 
@@ -238,9 +248,20 @@ function approvedPackageFrom(value: ReviewResponse | null | undefined): JsonReco
   return asRecord(value?.approved_delivery_package);
 }
 
+function operatorEditionFrom(value: ReviewResponse | null | undefined): JsonRecord {
+  const edition = asRecord(value?.operator_approved_edition);
+  const review = asRecord(edition.review);
+  return value?.operator_approval_status === "approved"
+    && review.decision === "approved"
+    && review.approval_basis === "operator_report"
+    && /^[0-9a-f]{64}$/i.test(String(review.approval_certificate_sha256 || ""))
+    ? edition : {};
+}
+
 function acceptedEditionFrom(value: ReviewResponse | null | undefined): JsonRecord {
   if (!value) return {};
-  return asRecord(value.accepted_edition || value.review_decision);
+  const operatorEdition = operatorEditionFrom(value);
+  return Object.keys(operatorEdition).length ? operatorEdition : asRecord(value.accepted_edition || value.review_decision);
 }
 
 function reviewCertificateFrom(value: ReviewResponse | null | undefined): JsonRecord {
@@ -249,7 +270,17 @@ function reviewCertificateFrom(value: ReviewResponse | null | undefined): JsonRe
 }
 
 function reportFrom(value: ReviewResponse | null | undefined): JsonRecord {
-  return asRecord(value?.reports);
+  const operatorReports = asRecord(operatorEditionFrom(value).reports);
+  return Object.keys(operatorReports).length ? operatorReports : asRecord(value?.reports);
+}
+
+function stableIdentity(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableIdentity).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = asRecord(value);
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableIdentity(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
 }
 
 function safeFilename(value: string, fallback: string): string {
@@ -412,7 +443,10 @@ export default function ComprehensiveFinalReviewWorkspace() {
       || "",
   ).trim().toLowerCase();
   const runStatus = String(result?.status || "").trim().toLowerCase();
-  const approvalCompleted = rawStatus === "approved" || runStatus === "approved";
+  const operatorApprovalCompleted = Object.keys(operatorEditionFrom(result)).length > 0;
+  const approvalCompleted = operatorApprovalCompleted || rawStatus === "approved" || runStatus === "approved";
+  const specialistApprovalCompleted = !operatorApprovalCompleted
+    && result?.human_review_completed === true && approvalCompleted;
   const approvalNextStep = !approvalAuthorityReady ? copy.enterReviewer
     : !exactEditionDownloaded ? copy.reviewDownloadRequired
     : !confirmed ? copy.confirmFirst
@@ -496,33 +530,16 @@ export default function ComprehensiveFinalReviewWorkspace() {
     }
   }
 
-  function approvalReviewerMetadata(): {reviewer: string; reviewerRole: string} {
-    const suppliedReviewer = reviewer.trim();
-    const suppliedRole = reviewerRole.trim();
-    const canonicalRole = AUTHORIZED_REVIEWER_ROLES.find(
-      (role) => role.value.toLowerCase() === suppliedRole.toLowerCase(),
-    )?.value;
-    return {
-      reviewer: suppliedReviewer || "Authenticated NICO operator",
-      reviewerRole: canonicalRole || (!suppliedRole || suppliedRole.toLowerCase() === "test"
-        ? "Security reviewer"
-        : suppliedRole),
-    };
-  }
-
   async function submitDecision(decision: "approved" | Decision): Promise<ReviewResponse> {
-    const reason = decision === "approved"
-      ? note.trim() || copy.defaultApprovalReason
-      : note.trim();
-    const approvalMetadata = decision === "approved"
-      ? approvalReviewerMetadata()
-      : {reviewer: reviewer.trim(), reviewerRole: reviewerRole.trim()};
+    const reason = note;
+    const approvalMetadata = {reviewer, reviewerRole};
     return requestJson(reviewUrl(), {
       method: "POST",
       headers: headers(true),
       body: JSON.stringify({
         review_authorized: true,
         authorization_confirmed: true,
+        ...(decision === "approved" ? {approval_kind: "operator_report", exact_report_acknowledged: confirmed} : {}),
         reviewer: approvalMetadata.reviewer,
         reviewer_role: approvalMetadata.reviewerRole,
         decision,
@@ -639,6 +656,11 @@ export default function ComprehensiveFinalReviewWorkspace() {
     let approvalRecorded = false;
     try {
       const reviewed = await submitDecision("approved");
+      const operatorEdition = operatorEditionFrom(reviewed);
+      if (Object.keys(operatorEdition).length
+        && stableIdentity(operatorEdition.source_review_artifact_identity) !== stableIdentity(reviewArtifactIdentity)) {
+        throw new Error(copy.invalidPdf);
+      }
       setResult(reviewed);
       approvalRecorded = reviewCertificateFrom(reviewed).decision === "approved";
       if (!approvalRecorded) throw new Error(copy.approvalFailed);
@@ -677,7 +699,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   async function authorizeClientDelivery(): Promise<void> {
     if (
       !canonicalApprovalReady
-      || !approvalCompleted
+      || !specialistApprovalCompleted
       || deliveryAllowed
       || !deliveryConfirmed
       || !currentReviewPdfDigest
@@ -773,8 +795,10 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
     <section className={`${styles.panel} ${result ? styles.approvalActive : styles.approvalWaiting}`}>
       <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{copy.approveHeading}</h2><p>{copy.approveLead}</p></div></div>
+      <p className={styles.securityNote}>{copy.operatorDisclosure}</p>
       <div className={styles.statusGrid}>
         <article className={styles.statusCard}><span>{copy.review}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
+        <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{result?.human_review_completed === true ? copy.specialistComplete : copy.specialistIncomplete}</strong></article>
         <article className={deliveryAllowed ? styles.statusCardReady : styles.statusCardBlocked}><span>{copy.delivery}</span><strong>{deliveryAllowed ? copy.authorized : copy.blocked}</strong></article>
       </div>
       {result ? <div className={styles.statusGrid}>
@@ -795,13 +819,26 @@ export default function ComprehensiveFinalReviewWorkspace() {
           {deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
         </div>
         {!approvalCompleted ? <p id="approval-next-step" className={styles.securityNote} aria-live="polite">{approvalNextStep}</p> : null}
-        {approvalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
-        {approvalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed || !canonicalApprovalReady} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
+        {specialistApprovalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
+        {specialistApprovalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed || !canonicalApprovalReady} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
         <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery}</div>
         <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
       </>}
     </section>
 
-    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary><pre className={styles.code}>{JSON.stringify(result, null, 2)}</pre></details></section> : null}
+    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary><pre className={styles.code}>{JSON.stringify({
+      status: result.status,
+      operator_approval_status: result.operator_approval_status,
+      human_review_completed: result.human_review_completed,
+      client_delivery_allowed: result.client_delivery_allowed,
+      review_artifact_identity: result.review_artifact_identity,
+      approval_basis: certificate.approval_basis,
+      approval_certificate_sha256: certificateDigest,
+      accepted_edition_manifest_sha256: manifestDigest,
+      source_review_artifact_identity: edition.source_review_artifact_identity,
+      report_artifact_digest: reportDigest,
+      pdf_filename: report.pdf_filename,
+      pdf_sha256: currentReviewPdfDigest,
+    }, null, 2)}</pre></details></section> : null}
   </main>;
 }

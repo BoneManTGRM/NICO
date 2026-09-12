@@ -45,8 +45,11 @@ def test_final_review_uses_protected_exact_run_comprehensive_endpoints() -> None
     assert "${editionPath()}/approved-delivery-package" in workspace
     assert 'review_authorized: true' in workspace
     assert 'authorization_confirmed: true' in workspace
-    assert 'reviewer: reviewer.trim()' in workspace
-    assert 'reviewer_role: reviewerRole.trim()' in workspace
+    # Optional raw metadata is normalized by the operator API. Executable handler
+    # tests cover blank/test/whitespace values; it is not specialist evidence.
+    assert 'approval_kind: "operator_report"' in workspace
+    assert 'exact_report_acknowledged: confirmed' in workspace
+    assert 'expected_artifact_identity: reviewArtifactIdentity' in workspace
     assert 'decision_reason: reason' in workspace
 
 

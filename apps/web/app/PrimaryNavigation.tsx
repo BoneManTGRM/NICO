@@ -121,6 +121,21 @@ function assessmentHrefFor(
   return `${assessmentPath}${query ? `?${query}` : ""}${hash || "#assessment"}`;
 }
 
+export function finalReviewHref(href: string, search: string, visibleRunId = ""): string {
+  if (href.split("?")[0] !== "/operations/final-review") return href;
+  const current = new URLSearchParams(search);
+  const target = new URL(href, "https://nico.invalid");
+  const runId = visibleRunId || current.get("run_id") || "";
+  if (!/^(comprun_|express_run_)[A-Za-z0-9_-]+$/.test(runId)) return href;
+  target.searchParams.set("run_id", runId);
+  target.searchParams.set("service", runId.startsWith("comprun_") ? "comprehensive" : "express");
+  for (const field of ["edition", "customer_id", "project_id"]) {
+    const value = current.get(field);
+    if (value) target.searchParams.set(field, value);
+  }
+  return `${target.pathname}${target.search}`;
+}
+
 export default function PrimaryNavigation() {
   const pathname = usePathname();
   const [currentSearch, setCurrentSearch] = useState("");
@@ -136,6 +151,13 @@ export default function PrimaryNavigation() {
     window.addEventListener("popstate", synchronizeLocation);
     return () => window.removeEventListener("popstate", synchronizeLocation);
   }, [pathname]);
+
+  function refreshFinalReviewHref(event: {currentTarget: HTMLAnchorElement}) {
+    const link = event.currentTarget;
+    if (new URL(link.href, window.location.origin).pathname !== "/operations/final-review") return;
+    const visibleRunId = document.querySelector<HTMLElement>('[data-assessment-report-actions="true"]')?.dataset.runId || "";
+    link.setAttribute("href", finalReviewHref(link.getAttribute("href") || "", window.location.search, visibleRunId));
+  }
 
   const activeService = serviceForPath(pathname);
   const queryLocale = new URLSearchParams(currentSearch).get("lang")?.toLowerCase();
@@ -241,8 +263,8 @@ export default function PrimaryNavigation() {
                     <small>{group.description}</small>
                     {group.links.map((link) => {
                       const active = linkIsActive(pathname, link.href);
-                      const href = withLanguage(link.href, spanishActive);
-                      return <a href={href} key={link.href} aria-current={active ? "page" : undefined}>{link.label}</a>;
+                      const href = finalReviewHref(withLanguage(link.href, spanishActive), currentSearch);
+                      return <a href={href} key={link.href} onPointerDown={refreshFinalReviewHref} onFocus={refreshFinalReviewHref} onClick={refreshFinalReviewHref} aria-current={active ? "page" : undefined}>{link.label}</a>;
                     })}
                   </section>
                 ))}

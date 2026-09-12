@@ -94,7 +94,7 @@ def test_reserved_production_proof_scope_is_never_promoted() -> None:
     assert enriched["phase3_engagement_mode"] == "internal"
 
 
-def test_final_review_action_fails_closed_on_placeholder_scope_and_reads_nested_identity() -> None:
+def test_operator_review_action_keeps_delivery_scope_separate_and_reads_nested_identity() -> None:
     source = Path("apps/web/app/AssessmentFinalReviewAction.tsx").read_text(encoding="utf-8")
 
     assert "function clientDeliveryIdentityReady" in source
@@ -103,4 +103,5 @@ def test_final_review_action_fails_closed_on_placeholder_scope_and_reads_nested_
     assert "identity.project_id" in source
     assert 'actions.dataset.nicoReviewGate = "blocked"' in source
     assert "actions.dataset.nicoClientDeliveryIdentity" in source
-    assert "&& identityReady" in source
+    assert "ready: passed && reviewRequired && deliveryBlocked," in source
+    assert "clientDeliveryIdentityReady: identityReady" in source
