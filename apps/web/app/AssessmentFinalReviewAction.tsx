@@ -93,7 +93,7 @@ export function finalReviewReadiness(value: Record<string, unknown>): {
     && asRecord(value.record).client_delivery_allowed !== true;
   const identityReady = clientDeliveryIdentityReady(value);
   return {
-    ready: passed && reviewRequired && deliveryBlocked && identityReady,
+    ready: passed && reviewRequired && deliveryBlocked,
     status: status || "missing",
     failedChecks,
     clientDeliveryIdentityReady: identityReady,
@@ -206,7 +206,7 @@ function installAction(): void {
   }
 
   actions.dataset.nicoReviewGate = "ready";
-  actions.dataset.nicoClientDeliveryIdentity = "ready";
+  actions.dataset.nicoClientDeliveryIdentity = context.client_delivery_identity_ready ? "ready" : "blocked";
   delete actions.dataset.nicoCrossFormatFailedChecks;
   const path = window.location.pathname.toLowerCase();
   const queryLocale = new URLSearchParams(window.location.search).get("lang")?.toLowerCase();

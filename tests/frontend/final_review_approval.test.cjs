@@ -17,10 +17,11 @@ const compiled = ts.transpileModule(readFileSync(filename, 'utf8'), {
 });
 assert.equal((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error).length, 0);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-function fixture(approved = false) {
+function fixture(approved = false, operator = true) {
   const bytes = Buffer.from(`%PDF-1.7\nUNIT FIXTURE ONLY ${approved ? 'APPROVED' : 'PENDING'}\n%%EOF\n`);
-  return {
+  const value = {
     status: approved ? 'approved' : 'review_required',
+    human_review_completed: approved,
     client_delivery_allowed: false,
     ...(approved ? {accepted_edition: {review: {decision: 'approved', approval_certificate_sha256: 'c'.repeat(64)}}} : {}),
     review_artifact_identity: {
@@ -34,7 +35,25 @@ function fixture(approved = false) {
       pdf_filename: approved ? 'NICO-APPROVED-FINAL.pdf' : 'NICO-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf',
     },
   };
+  if (approved && operator) {
+    const approvedIdentity = value.review_artifact_identity;
+    value.status = 'review_required';
+    value.human_review_completed = false;
+    value.operator_approval_status = 'approved';
+    value.operator_approved_edition = {
+      review: {...value.accepted_edition.review, approval_basis: 'operator_report'},
+      artifact_digests: approvedIdentity.artifact_digests,
+      report_artifact_digest: approvedIdentity.report_artifact_digest,
+      accepted_edition_manifest_sha256: 'd'.repeat(64),
+      source_review_artifact_identity: fixture(false).review_artifact_identity,
+      reports: {...value.reports, json: {human_review_completed: false, pending_qc: 9}},
+    };
+    delete value.accepted_edition;
+    value.reports = fixture(false).reports; // Source report remains retained separately.
+  }
+  return value;
 }
+const finalReport = value => value.operator_approved_edition?.reports || value.reports;
 const text = value => value == null || typeof value === 'boolean' ? ''
   : typeof value !== 'object' ? String(value)
   : Array.isArray(value) ? value.map(text).join('') : text(value.props?.children);
@@ -43,7 +62,7 @@ function nodes(value) {
   if (Array.isArray(value)) return value.flatMap(nodes);
   return [value, ...nodes(value.props?.children)];
 }
-function harness({locale = 'en', edition = 'source', post} = {}) {
+function harness({locale = 'en', edition = 'source', post, get} = {}) {
   const slots = [], effects = [], requests = [], downloads = [], blobs = new Map();
   let cursor = 0, effectMounted = false, tree;
   const react = {
@@ -81,6 +100,7 @@ function harness({locale = 'en', edition = 'source', post} = {}) {
       const request = {url, method: options.method || 'GET', body: options.body && JSON.parse(options.body), headers: options.headers};
       requests.push(request);
       if (request.method === 'POST' && post) return post(request);
+      if (request.method === 'GET' && get) return get(request);
       return {ok: true, status: 200, json: async () => fixture(request.method === 'POST')};
     },
     require(name) {
@@ -143,13 +163,13 @@ test('blank reviewer metadata can approve and returns an approved final PDF', as
   await h.click(h.approveLabel);
   const posts = h.requests.filter(r => r.method === 'POST');
   assert.equal(posts.length, 1);
-  assert.equal(posts[0].body.reviewer, 'Authenticated NICO operator');
-  assert.equal(posts[0].body.reviewer_role, 'Security reviewer');
+  assert.equal(posts[0].body.reviewer, '');
+  assert.equal(posts[0].body.reviewer_role, '');
   assert.equal(posts[0].body.decision, 'approved');
   assert.equal(h.downloads.length, 2);
-  assert.equal(h.downloads[1].filename, fixture(true).reports.pdf_filename);
+  assert.equal(h.downloads[1].filename, finalReport(fixture(true)).pdf_filename);
   assert.equal(h.button(h.approveLabel), undefined);
-  assert.ok(h.button('Authorize client delivery').props.disabled);
+  assert.equal(h.button('Authorize client delivery'), undefined);
 });
 
 test('test reviewer metadata can exercise approval through an approved final PDF', async () => {
@@ -158,10 +178,10 @@ test('test reviewer metadata can exercise approval through an approved final PDF
   const posts = h.requests.filter(r => r.method === 'POST');
   assert.equal(posts.length, 1);
   assert.equal(posts[0].body.reviewer, 'test');
-  assert.equal(posts[0].body.reviewer_role, 'Security reviewer');
+  assert.equal(posts[0].body.reviewer_role, 'test');
   assert.equal(posts[0].body.decision, 'approved');
   assert.equal(h.downloads.length, 2);
-  assert.equal(h.downloads[1].filename, fixture(true).reports.pdf_filename);
+  assert.equal(h.downloads[1].filename, finalReport(fixture(true)).pdf_filename);
 });
 
 test('checkbox alone cannot approve without exact downloaded artifact', async () => {
@@ -180,10 +200,10 @@ for (const [locale, edition] of [['en', 'source'], ['es-MX', 'es-MX']]) {
     assert.ok(posts[0].url.endsWith(edition === 'source' ? '/comprun_unit_fixture/review' : '/comprun_unit_fixture/localized-editions/es-MX/review'));
     assert.deepEqual(posts[0].body.expected_artifact_identity, fixture().review_artifact_identity);
     assert.equal(posts[0].body.decision, 'approved');
-    assert.equal(h.downloads.length, 2); assert.equal(h.downloads[1].filename, fixture(true).reports.pdf_filename);
+    assert.equal(h.downloads.length, 2); assert.equal(h.downloads[1].filename, finalReport(fixture(true)).pdf_filename);
     assert.equal(digest(Buffer.from(await h.downloads[1].blob.arrayBuffer())), fixture(true).review_artifact_identity.artifact_digests.pdf.sha256);
     assert.equal(h.button(h.approveLabel), undefined);
-    assert.ok(h.button(locale === 'en' ? 'Authorize client delivery' : 'Autorizar entrega al cliente').props.disabled);
+    assert.equal(h.button(locale === 'en' ? 'Authorize client delivery' : 'Autorizar entrega al cliente'), undefined);
     assert.ok(h.elements().filter(n => n.type === 'button' && n.props['data-nico-pdf-action'] === 'true').length);
   });
 }
@@ -196,7 +216,7 @@ test('409 stale-artifact rejection does not produce an approved PDF or success',
 });
 
 test('approved PDF corruption preserves recorded approval and offers download-only retry', async () => {
-  const h = harness({post: async () => {const value = fixture(true); value.reports.pdf_base64 = fixture().reports.pdf_base64;
+  const h = harness({post: async () => {const value = fixture(true); value.operator_approved_edition.reports.pdf_base64 = fixture().reports.pdf_base64;
     return {ok: true, status: 200, json: async () => value};}});
   await h.ready(); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.equal(h.button(h.approveLabel), undefined);
@@ -205,7 +225,7 @@ test('approved PDF corruption preserves recorded approval and offers download-on
   await h.click('Download approved final PDF');
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 1);
   assert.equal(h.downloads.length, 1);
-  assert.equal(h.field('I reviewed the downloaded APPROVED FINAL PDF').props.disabled, true);
+  assert.equal(h.button('Authorize client delivery'), undefined);
 });
 
 test('rapid duplicate approval calls produce only one mutation', async () => {
@@ -231,7 +251,7 @@ test('changing the edition discards the previously reviewed report', async () =>
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
 
-test('legitimate review/QC rejection remains blocked with its server explanation', async () => {
+test('server rejection remains visible and never becomes false success', async () => {
   const h = harness({post: async () => ({ok: false, status: 422, json: async () => ({detail: {code: 'review_work_not_ready_for_approval', message: 'Independent quality control remains incomplete.'}})})});
   await h.ready({reviewer: 'test', role: 'test'}); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
@@ -242,5 +262,142 @@ test('HTTP 200 pending response never masquerades as an approved download', asyn
   const h = harness({post: async () => ({ok: true, status: 200, json: async () => fixture(false)})});
   await h.ready({reviewer: '', role: ''}); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
-  assert.match(h.text(), /Unable to record human approval/);
+  assert.match(h.text(), /Unable to record report approval/);
+});
+
+for (const value of ['', 'TEST', 'test', ' TeSt ']) {
+  test(`operator metadata ${JSON.stringify(value)} remains optional data and never completes QC`, async () => {
+    const h = harness(); await h.ready({reviewer: value, role: value});
+    h.change('Decision context', value);
+    await h.click(h.approveLabel);
+    const post = h.requests.find(r => r.method === 'POST');
+    assert.equal(post.body.reviewer, value);
+    assert.equal(post.body.reviewer_role, value);
+    assert.equal(post.body.decision_reason, value);
+    assert.equal(post.body.approval_kind, 'operator_report');
+    assert.equal(post.body.exact_report_acknowledged, true);
+    assert.equal(post.body.review_authorized, true);
+    assert.equal(post.body.authorization_confirmed, true);
+    assert.match(h.text(), /Specialist reviewNot completed/);
+    assert.match(h.text(), /does not mark that work complete or authorize client delivery/);
+    assert.match(h.text(), /"human_review_completed": false/);
+    assert.doesNotMatch(h.text(), /pdf_base64|UNIT FIXTURE ONLY/);
+    assert.equal(h.button('Authorize client delivery'), undefined);
+  });
+}
+
+test('approved operator reload downloads the operator edition without another approval', async () => {
+  const h = harness({get: async () => ({ok: true, status: 200, json: async () => fixture(true)})});
+  await h.load();
+  assert.equal(h.button(h.approveLabel), undefined);
+  await h.click('Download approved final PDF');
+  assert.equal(h.downloads.length, 1);
+  assert.equal(h.downloads[0].filename, finalReport(fixture(true)).pdf_filename);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+  assert.equal(digest(Buffer.from(await h.downloads[0].blob.arrayBuffer())), fixture(true).review_artifact_identity.artifact_digests.pdf.sha256);
+});
+
+test('operator status without its bound receipt never hides pending approval', async () => {
+  const h = harness({post: async () => {const value = fixture(false); value.operator_approval_status = 'approved';
+    return {ok: true, status: 200, json: async () => value};}});
+  await h.ready(); await h.click(h.approveLabel);
+  assert.equal(h.downloads.length, 1);
+  assert.ok(h.button(h.approveLabel));
+  assert.match(h.text(), /Unable to record report approval/);
+});
+
+test('legacy specialist approved edition retains its separate delivery controls', async () => {
+  const h = harness({get: async () => ({ok: true, status: 200, json: async () => fixture(true, false)})});
+  await h.load();
+  assert.equal(h.button(h.approveLabel), undefined);
+  assert.match(h.text(), /Specialist reviewCompleted/);
+  assert.ok(h.button('Authorize client delivery').props.disabled);
+  await h.click('Download approved final PDF');
+  assert.equal(h.downloads.length, 1);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+});
+
+function loadHelpers(relative, additions = {}) {
+  const location = path.resolve(relative);
+  const output = ts.transpileModule(readFileSync(location, 'utf8'), {
+    fileName: location,
+    compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX},
+  });
+  const context = {exports: {}, URL, URLSearchParams, ...additions};
+  context.require = additions.require || (() => ({}));
+  vm.runInNewContext(output.outputText, context, {filename: location});
+  return context.exports;
+}
+
+test('final review navigation preserves exact run and locale without copying credentials', () => {
+  const {finalReviewHref} = loadHelpers('apps/web/app/PrimaryNavigation.tsx');
+  const url = new URL(finalReviewHref('/operations/final-review?lang=es-MX',
+    '?run_id=comprun_unit_fixture&edition=es-MX&admin_token=never-forward&customer_id=internal'), 'https://unit.invalid');
+  assert.equal(url.searchParams.get('run_id'), 'comprun_unit_fixture');
+  assert.equal(url.searchParams.get('service'), 'comprehensive');
+  assert.equal(url.searchParams.get('lang'), 'es-MX');
+  assert.equal(url.searchParams.get('edition'), 'es-MX');
+  assert.equal(url.searchParams.has('admin_token'), false);
+  assert.equal(new URL(finalReviewHref('/operations/final-review', '', 'comprun_visible_fixture'), 'https://unit.invalid').searchParams.get('run_id'), 'comprun_visible_fixture');
+  assert.equal(finalReviewHref('/operations/final-review', '?run_id=invalid'), '/operations/final-review');
+  assert.equal(finalReviewHref('/operations', '?run_id=comprun_unit_fixture'), '/operations');
+});
+
+test('optional client metadata does not block owner review navigation but remains unready for delivery', () => {
+  const {finalReviewReadiness} = loadHelpers('apps/web/app/AssessmentFinalReviewAction.tsx');
+  const value = {run_id: 'comprun_unit_fixture', status: 'review_required', client_delivery_allowed: false,
+    record: {identity: {customer_id: 'internal', project_id: 'internal'}},
+    stage_results: {cross_format_truth_verification: {status: 'passed', failed_checks: []}}};
+  const readiness = finalReviewReadiness(value);
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.clientDeliveryIdentityReady, false);
+  value.stage_results.cross_format_truth_verification.failed_checks.push('artifact_mismatch');
+  assert.equal(finalReviewReadiness(value).ready, false);
+});
+
+async function hydrationHarness(mutation, status) {
+  const calls = [];
+  const originalFetch = async (input, init) => {
+    calls.push({url: String(input), method: init.method});
+    return Response.json(init.method === 'POST' ? mutation : status);
+  };
+  const window = {fetch: originalFetch, location: {href: 'https://unit.invalid/operations/final-review', origin: 'https://unit.invalid'}, setTimeout: fn => {fn(); return 0;}};
+  const helpers = loadHelpers('apps/web/app/operations/final-review/FinalReviewApprovedReportHydration.tsx', {
+    window, Request, require: name => name === 'react' ? {useEffect: fn => fn()} : {},
+  });
+  helpers.default();
+  const response = await window.fetch('https://unit.invalid/api/nico/assessment/comprehensive-run/comprun_unit_fixture/localized-editions/es-MX/review', {
+    method: 'POST', headers: {'X-NICO-Admin-Token': 'unit-fixture'},
+    body: JSON.stringify({decision: 'approved', approval_kind: 'operator_report', exact_report_acknowledged: true}),
+  });
+  return {calls, response: await response.json()};
+}
+
+test('operator mutation with approved bytes needs no redundant hydration read', async () => {
+  const h = await hydrationHarness(fixture(true), fixture(false));
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.response.operator_approval_status, 'approved');
+  assert.equal(h.response.human_review_completed, false);
+});
+
+test('operator hydration reads only the same exact locale and preserves specialist truth', async () => {
+  const missing = fixture(true); delete missing.operator_approved_edition.reports;
+  const h = await hydrationHarness(missing, fixture(true));
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls[1].method, 'GET');
+  assert.ok(h.calls[1].url.endsWith('/comprun_unit_fixture/localized-editions/es-MX'));
+  assert.equal(h.response.human_review_completed, false);
+  assert.equal(h.response.client_delivery_allowed, false);
+  assert.equal(finalReport(h.response).pdf_filename, finalReport(fixture(true)).pdf_filename);
+});
+
+
+test('operator approval for another reviewed identity is never accepted or downloaded', async () => {
+  const h = harness({post: async () => {const value = fixture(true);
+    value.operator_approved_edition.source_review_artifact_identity.run_id = 'comprun_other_fixture';
+    return {ok: true, status: 200, json: async () => value};}});
+  await h.ready(); await h.click(h.approveLabel);
+  assert.equal(h.downloads.length, 1);
+  assert.ok(h.button(h.approveLabel));
+  assert.match(h.text(), /failed browser integrity validation/);
 });

@@ -531,6 +531,7 @@ def _review_projection(
     record: dict[str, Any],
     *,
     include_review_artifact_identity: bool = True,
+    operator_reports_authorized: bool = False,
 ) -> dict[str, Any]:
     response_projection = (
         response.get("response_projection")
@@ -621,7 +622,8 @@ def _review_projection(
         public_record["human_review_completed"] = projected["human_review_completed"]
         public_record["client_delivery_allowed"] = allowed
         public_record["delivery_status"] = projected["delivery_status"]
-    return projected
+    from nico.comprehensive_operator_approval_v1 import project_operator_approval
+    return project_operator_approval(projected, record, include_reports=include_review_artifact_identity and operator_reports_authorized)
 
 
 def _status_projection(
@@ -629,6 +631,7 @@ def _status_projection(
     run_id: str,
     browser_projection: bool,
     operation: str = "status",
+    operator_reports_authorized: bool = False,
 ) -> dict[str, Any]:
     """Load and assemble an exact status response outside the ASGI event loop."""
 
@@ -644,6 +647,7 @@ def _status_projection(
         # Public terminal consumers cannot approve an artifact and do not consume this
         # expensive full-package digest. Reviewer/admin reads keep the exact identity.
         include_review_artifact_identity=not browser_projection,
+        operator_reports_authorized=operator_reports_authorized,
     )
 
 
@@ -1370,6 +1374,8 @@ def register_comprehensive_api_routes(
                         controller_value,
                         run_id,
                         browser_projection,
+                        "status",
+                        require_comprehensive_operator(request.headers.get("x-nico-admin-token", ""))[0],
                     )
                 except ComprehensiveRunNotFound:
                     response = await run_in_threadpool(
@@ -1497,27 +1503,35 @@ def register_comprehensive_api_routes(
             ):
                 raise ValueError("explicit_review_authorization_required")
             controller_value = _controller(request)
-            record = _service(controller_value).review(
-                run_id,
-                reviewer=_required(payload.get("reviewer"), "reviewer"),
-                reviewer_role=_required(
-                    payload.get("reviewer_role"),
-                    "reviewer_role",
-                ),
-                decision=_required(payload.get("decision"), "decision"),
-                decision_reason=_required(
-                    payload.get("decision_reason"),
-                    "decision_reason",
-                ),
-                decided_at=(
-                    str(payload.get("decided_at")).strip()
-                    if payload.get("decided_at")
-                    else None
-                ),
-                expected_artifact_identity=payload.get(
-                    "expected_artifact_identity"
-                ),
-            )
+            from nico.comprehensive_operator_approval_v1 import BASIS, approve_operator_report
+            if payload.get("approval_kind") == BASIS:
+                record = await run_in_threadpool(
+                    approve_operator_report, _service(controller_value), run_id, payload,
+                )
+            elif payload.get("approval_kind"):
+                raise ValueError("unsupported_approval_kind")
+            else:
+                record = _service(controller_value).review(
+                    run_id,
+                    reviewer=_required(payload.get("reviewer"), "reviewer"),
+                    reviewer_role=_required(
+                        payload.get("reviewer_role"),
+                        "reviewer_role",
+                    ),
+                    decision=_required(payload.get("decision"), "decision"),
+                    decision_reason=_required(
+                        payload.get("decision_reason"),
+                        "decision_reason",
+                    ),
+                    decided_at=(
+                        str(payload.get("decided_at")).strip()
+                        if payload.get("decided_at")
+                        else None
+                    ),
+                    expected_artifact_identity=payload.get(
+                        "expected_artifact_identity"
+                    ),
+                )
             response = controller_value._response(
                 record,
                 operation="reviewed",
@@ -1525,7 +1539,7 @@ def register_comprehensive_api_routes(
             )
             return _with_runtime_truth(
                 request,
-                _review_projection(response, record),
+                _review_projection(response, record, operator_reports_authorized=True),
             )
         except HTTPException:
             raise
@@ -1576,7 +1590,7 @@ def register_comprehensive_api_routes(
             )
             return _with_runtime_truth(
                 request,
-                _review_projection(response, record),
+                _review_projection(response, record, operator_reports_authorized=True),
             )
         except HTTPException:
             raise

@@ -38,17 +38,13 @@ def test_human_approval_is_separate_and_preserves_exact_artifact_gate() -> None:
     assert "expected_artifact_identity: reviewArtifactIdentity" in WORKSPACE
 
 
-def test_blank_and_test_reviewer_metadata_are_normalized_only_for_approval() -> None:
-    helper = WORKSPACE.split("function approvalReviewerMetadata", 1)[1].split(
-        "async function submitDecision", 1
-    )[0]
+def test_operator_approval_metadata_remains_optional_and_authority_is_explicit() -> None:
     submit = function_body("submitDecision", "prepareLocalizedEdition")
-    assert 'reviewer: suppliedReviewer || "Authenticated NICO operator"' in helper
-    assert 'suppliedRole.toLowerCase() === "test"' in helper
-    assert '? "Security reviewer"' in helper
-    assert 'decision === "approved"' in submit
-    assert "approvalReviewerMetadata()" in submit
-    assert '{reviewer: reviewer.trim(), reviewerRole: reviewerRole.trim()}' in submit
+    assert "const approvalMetadata = {reviewer, reviewerRole};" in submit
+    assert "const reason = note;" in submit
+    assert 'approval_kind: "operator_report"' in submit
+    assert "exact_report_acknowledged: confirmed" in submit
+    assert "approvalReviewerMetadata" not in WORKSPACE
 
 
 def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplied() -> None:
@@ -72,7 +68,7 @@ def test_report_action_does_not_require_human_review_acknowledgement() -> None:
 def test_client_delivery_remains_separately_protected() -> None:
     delivery = function_body("authorizeClientDelivery", "downloadPackage")
     assert "canonicalApprovalReady" in delivery
-    assert "approvalCompleted" in delivery
+    assert "specialistApprovalCompleted" in delivery
     assert "deliveryConfirmed" in delivery
     assert "downloadedArtifactDigest !== currentReviewPdfDigest" in delivery
     assert "delivery_authorized: true" in delivery

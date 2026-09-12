@@ -49,6 +49,14 @@ function objectRecord(value: unknown): Record<string, unknown> {
 async function containsApprovedPdf(response: Response): Promise<boolean> {
   try {
     const payload = await response.clone().json() as Record<string, unknown>;
+    const operatorEdition = objectRecord(payload.operator_approved_edition);
+    const operatorReview = objectRecord(operatorEdition.review);
+    if (payload.operator_approval_status === "approved"
+      && operatorReview.approval_basis === "operator_report"
+      && operatorReview.decision === "approved"
+      && /^[0-9a-f]{64}$/i.test(String(operatorReview.approval_certificate_sha256 || ""))) {
+      return Boolean(String(objectRecord(operatorEdition.reports).pdf_base64 || ""));
+    }
     const reports = objectRecord(payload.reports);
     if (!String(reports.pdf_base64 || "")) return false;
     const accepted = objectRecord(payload.accepted_edition);
@@ -91,6 +99,7 @@ export default function FinalReviewApprovedReportHydration() {
 
       const mutationResponse = await originalFetch.call(window, input, init);
       if (!mutationResponse.ok) return mutationResponse;
+      if (await containsApprovedPdf(mutationResponse)) return mutationResponse;
 
       const statusUrl = new URL(reviewUrl.href);
       statusUrl.pathname = statusUrl.pathname.replace(/\/review$/, "");
