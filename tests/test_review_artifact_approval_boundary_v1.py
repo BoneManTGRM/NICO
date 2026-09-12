@@ -98,7 +98,7 @@ def test_review_ui_requires_download_of_the_current_digest_before_approval() -> 
         source.index("async function approveExactReport")
     ]
     assert report_boundary.index(
-        "const finalReportDigest = await downloadExactPdf(result, finalFilename);"
+        "const finalReportDigest = await downloadExactPdf(result);"
     ) < report_boundary.index("setDownloadedArtifactDigest(finalReportDigest)")
 
     approval_boundary = source[

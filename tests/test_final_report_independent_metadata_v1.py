@@ -37,7 +37,7 @@ def test_human_approval_is_separate_and_preserves_exact_artifact_gate() -> None:
 
 
 def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplied() -> None:
-    assert "onClick={downloadFinalReport}>{copy.downloadFinalReport}</button>" in WORKSPACE
+    assert "onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>" in WORKSPACE
     assert "onClick={approveExactReport}>{copy.approveExactReport}</button>" in WORKSPACE
     assert "canonicalApprovalReady ? copy.approveDownload" not in WORKSPACE
     assert "canonicalApprovalReady ? copy.recording" not in WORKSPACE
@@ -49,7 +49,7 @@ def test_report_action_does_not_require_human_review_acknowledgement() -> None:
         in WORKSPACE
     )
     assert (
-        'disabled={loading || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}'
+        'disabled={loading || !canonicalApprovalReady || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}'
         in WORKSPACE
     )
 
@@ -80,3 +80,43 @@ def test_ios_handoff_recognizes_normal_final_report_action_without_owner_test_pa
     assert "owner test" not in HANDOFF.lower()
     assert 'window.open("about:blank", "nico-comprehensive-pdf")' in HANDOFF
     assert "targetWindow.location.replace(href)" in HANDOFF
+
+
+def test_pending_approval_action_is_visible_with_actionable_prerequisites() -> None:
+    assert "!approvalCompleted && canonicalApprovalReady ? <button" not in WORKSPACE
+    assert '!approvalCompleted ? <button className={styles.approve}' in WORKSPACE
+    assert 'aria-describedby="approval-next-step"' in WORKSPACE
+    assert 'id="approval-next-step"' in WORKSPACE
+    assert "copy.reviewerRequired" in WORKSPACE
+    assert "copy.reviewDownloadRequired" in WORKSPACE
+    assert "copy.approvalReady" in WORKSPACE
+
+
+def test_pending_download_does_not_claim_final_approval_in_filename() -> None:
+    download = function_body("downloadFinalReport", "approveExactReport")
+    assert "filenameOverride" not in WORKSPACE
+    assert "FINAL-ASSESSMENT.pdf" not in WORKSPACE
+    assert "downloadExactPdf(result);" in download
+    assert 'safeFilename(String(exactReport.pdf_filename || ""), fallback)' in WORKSPACE
+
+
+def test_approval_retries_do_not_silently_duplicate_or_authorize_delivery() -> None:
+    approval = function_body("approveExactReport", "recordOtherDecision")
+    assert "if (approvalInFlight.current) return;" in approval
+    assert "approvalInFlight.current = true;" in approval
+    assert "approvalInFlight.current = false;" in approval
+    assert "copy.approvalDownloadFailed" in approval
+    assert "deliveryAuthorizationUrl" not in approval
+    assert "authorizeClientDelivery" not in approval
+    assert "downloadExactPdf(reviewed)" in approval
+
+
+def test_ios_pdf_action_marker_survives_localized_label_changes() -> None:
+    assert 'data-nico-pdf-action="true"' in WORKSPACE
+    assert 'button.dataset.nicoPdfAction !== "true"' in HANDOFF
+    for label in (
+        "Download report for review", "Download approved final PDF",
+        "Approve and download final PDF", "Descargar informe para revisión",
+        "Descargar PDF final aprobado", "Aprobar y descargar PDF final",
+    ):
+        assert label in HANDOFF
