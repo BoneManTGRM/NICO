@@ -2,6 +2,7 @@
 
 import {FormEvent, useEffect, useMemo, useState} from "react";
 import styles from "./final-review.module.css";
+import {unmetApprovalRequirements} from "./finalReviewApprovalRequirements";
 
 type Decision = "request_more_evidence" | "rejected";
 type Locale = "en" | "es-MX";
@@ -82,8 +83,19 @@ const COPY = {
     recording: "Recording approval…",
     alreadyApproved: "Approval already recorded",
     downloadFinalReport: "Download final assessment PDF",
-    finalReportNotice: "Final assessment PDF downloaded from the exact completed run. Human approval state is unchanged and client delivery remains separately protected.",
+    finalReportNotice: "Exact assessment PDF downloaded with its recorded approval status unchanged. Downloading or checking the review acknowledgement does not approve the report; client delivery remains separately protected.",
     approveExactReport: "Approve exact downloaded report",
+    reviewCopyNotice: "This is not yet an approved final report. Download and review the current PDF, then use Approve exact downloaded report below. Successful approval automatically downloads the approved edition; client delivery still requires its separate authorization.",
+    approvalReadyNotice: "Local review requirements are complete. Use Approve exact downloaded report to submit approval; the server will verify the remaining evidence and approval requirements.",
+    approvalRequirements: {
+      secureAccess: "Enter the exact run and operator password above.",
+      reviewer: "Enter the authorized reviewer's name above.",
+      reviewerRole: "Select the authorized reviewer's role above.",
+      report: "Refresh review to load the exact PDF identity.",
+      download: "Download and review this exact PDF in this open page.",
+      confirmation: "Check the acknowledgement after reviewing the downloaded PDF.",
+      locked: "This edition was rejected or requires more evidence. It cannot be approved unchanged; resolve the evidence request through a new assessment.",
+    },
     downloadPackage: "Download approved delivery package",
     readyDelivery: "This exact immutable edition and its certified delivery package are approved and client-ready.",
     blockedDelivery: "Client-ready release remains blocked until its legitimate approval and delivery requirements are satisfied.",
@@ -167,8 +179,19 @@ const COPY = {
     recording: "Registrando aprobación…",
     alreadyApproved: "Aprobación ya registrada",
     downloadFinalReport: "Descargar PDF final de la evaluación",
-    finalReportNotice: "Se descargó el PDF final de la evaluación desde la ejecución terminada exacta. El estado de aprobación humana no cambió y la entrega al cliente sigue protegida por separado.",
+    finalReportNotice: "Se descargó el PDF exacto de la evaluación sin cambiar su estado de aprobación registrado. Descargarlo o marcar el reconocimiento de revisión no aprueba el informe; la entrega al cliente sigue protegida por separado.",
     approveExactReport: "Aprobar informe exacto descargado",
+    reviewCopyNotice: "Este todavía no es un informe final aprobado. Descarga y revisa el PDF actual y después usa Aprobar informe exacto descargado. Una aprobación exitosa descarga automáticamente la edición aprobada; la entrega al cliente aún requiere su autorización separada.",
+    approvalReadyNotice: "Los requisitos locales de revisión están completos. Usa Aprobar informe exacto descargado para enviar la aprobación; el servidor verificará los requisitos restantes de evidencia y aprobación.",
+    approvalRequirements: {
+      secureAccess: "Ingresa arriba la ejecución exacta y la contraseña del operador.",
+      reviewer: "Ingresa arriba el nombre del revisor autorizado.",
+      reviewerRole: "Selecciona arriba la función del revisor autorizado.",
+      report: "Actualiza la revisión para cargar la identidad exacta del PDF.",
+      download: "Descarga y revisa este PDF exacto en esta página abierta.",
+      confirmation: "Marca el reconocimiento después de revisar el PDF descargado.",
+      locked: "Esta edición fue rechazada o requiere más evidencia. No puede aprobarse sin cambios; resuelve la solicitud de evidencia mediante una nueva evaluación.",
+    },
     downloadPackage: "Descargar paquete de entrega aprobado",
     readyDelivery: "Esta edición inmutable exacta y su paquete de entrega certificado están aprobados para entrega controlada al cliente.",
     blockedDelivery: "La entrega al cliente permanece bloqueada hasta que se satisfagan sus requisitos legítimos de aprobación y entrega.",
@@ -237,7 +260,6 @@ function reviewCertificateFrom(value: ReviewResponse | null | undefined): JsonRe
 function reportFrom(value: ReviewResponse | null | undefined): JsonRecord {
   return asRecord(value?.reports);
 }
-
 function safeFilename(value: string, fallback: string): string {
   const normalized = value.replace(/[\r\n]/g, "").replace(/[\\/:*?\"<>|]/g, "-").trim();
   return normalized || fallback;
@@ -397,6 +419,15 @@ export default function ComprehensiveFinalReviewWorkspace() {
   ).trim().toLowerCase();
   const runStatus = String(result?.status || "").trim().toLowerCase();
   const approvalCompleted = rawStatus === "approved" || runStatus === "approved";
+  const approvalRequirements = unmetApprovalRequirements({
+    operatorReady, reviewer, reviewerRole,
+    pdfDigest: currentReviewPdfDigest,
+    downloadedDigest: downloadedArtifactDigest,
+    confirmed, reviewStatus: rawStatus,
+  });
+  const approvalGuidance = approvalRequirements.length
+    ? approvalRequirements.map((requirement) => copy.approvalRequirements[requirement]).join(" ")
+    : copy.approvalReadyNotice;
   const reportDigest = String(
     edition.report_artifact_digest
       || currentReviewDigest
@@ -575,9 +606,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
     setError("");
     setNotice("");
     try {
-      const editionLabel = artifactEdition === "es-MX" ? "es-MX" : "source";
-      const finalFilename = `nico-comprehensive-${runId.trim()}-${editionLabel}-FINAL-ASSESSMENT.pdf`;
-      const finalReportDigest = await downloadExactPdf(result, finalFilename);
+      // Keep the artifact's recorded classification; a download is not approval.
+      const finalReportDigest = await downloadExactPdf(result);
       setDownloadedArtifactDigest(finalReportDigest);
       setNotice(copy.finalReportNotice);
     } catch (caught) {
@@ -592,8 +622,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
       setError(copy.alreadyApproved);
       return;
     }
-    if (!canonicalApprovalReady || !confirmed || !exactEditionDownloaded) {
-      setError(copy.confirmFirst);
+    if (!canonicalApprovalReady || !confirmed || !exactEditionDownloaded || approvalRequirements.length > 0) {
+      setError(approvalGuidance);
       return;
     }
     setLoading(true);
@@ -741,11 +771,13 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <article className={styles.statusCard}><span>PDF</span><strong>{report.pdf_filename ? String(report.pdf_filename) : copy.notIssued}</strong></article>
       </div> : null}
       {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
+        {!approvalCompleted ? <p className={styles.securityNote}>{copy.reviewCopyNotice}</p> : null}
         <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!currentReviewPdfDigest || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
+        {!approvalCompleted ? <p id="approval-requirements" className={styles.securityNote} aria-live="polite">{approvalGuidance}</p> : null}
         <div className={styles.downloadActions}>
           <button className={styles.approve} type="button" disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}>{copy.downloadFinalReport}</button>
-          {!approvalCompleted && canonicalApprovalReady ? <button className={styles.secondary} type="button" disabled={loading || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}>{copy.approveExactReport}</button> : null}
+          {!approvalCompleted ? <button className={styles.secondary} type="button" aria-describedby="approval-requirements" disabled={loading || !canonicalApprovalReady || !confirmed || !exactEditionDownloaded || approvalRequirements.length > 0} onClick={approveExactReport}>{copy.approveExactReport}</button> : null}
           {approvalCompleted ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
           {deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
         </div>
