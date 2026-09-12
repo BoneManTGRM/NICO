@@ -30,7 +30,7 @@ _STATE_FIELDS = (
     "client_delivery_allowed", "updated_at", "review_history", "review_decision",
     "accepted_edition", "review_context", "review_source_artifact_identity",
     "delivery_authorization", "approved_delivery_package", "review_work_status",
-    "operator_approved_edition", "operator_approval_history",
+    "operator_approved_edition", "operator_approval_history", "operator_delivery_edition",
 )
 
 
@@ -190,7 +190,12 @@ def mutate_localized_edition(service: Any, run_id: str, language: str, payload: 
     root, entry, context = read_localized_edition(service, run_id, language)
     selected = copy(service)
     selected._store = _SelectedEditionStore(context)
-    if delivery:
+    if delivery and payload.get("delivery_kind") == "operator_report":
+        from nico.comprehensive_operator_delivery_v1 import authorize_operator_delivery
+        updated = authorize_operator_delivery(selected, run_id, payload)
+    elif delivery:
+        if payload.get("delivery_kind"):
+            raise ValueError("unsupported_delivery_kind")
         if payload.get("delivery_authorized") is not True or payload.get("authorization_confirmed") is not True:
             raise ValueError("explicit_delivery_authorization_required")
         updated = selected.authorize_delivery(

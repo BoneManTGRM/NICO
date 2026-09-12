@@ -1567,6 +1567,14 @@ def register_comprehensive_api_routes(
             ):
                 raise ValueError("explicit_delivery_authorization_required")
             controller_value = _controller(request)
+            if payload.get("delivery_kind") == "operator_report":
+                from nico.comprehensive_operator_delivery_v1 import authorize_operator_delivery
+                from starlette.concurrency import run_in_threadpool
+                record = await run_in_threadpool(authorize_operator_delivery, _service(controller_value), run_id, payload)
+                response = controller_value._response(record, operation="delivery_authorized", browser_projection=_browser_projection_requested(request))
+                return _with_runtime_truth(request, _review_projection(response, record, operator_reports_authorized=True))
+            if payload.get("delivery_kind"):
+                raise ValueError("unsupported_delivery_kind")
             record = _service(controller_value).authorize_delivery(
                 run_id,
                 authorizer=_required(payload.get("authorizer"), "authorizer"),

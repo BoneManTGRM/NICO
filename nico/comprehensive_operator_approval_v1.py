@@ -76,7 +76,8 @@ def review_disclosure(record: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _cover(statement: Mapping[str, Any], *, spanish: bool, corrected_presentation: bool = False) -> tuple[bytes, str]:
+def _cover(statement: Mapping[str, Any], *, spanish: bool, corrected_presentation: bool = False,
+           delivery_authorization: Mapping[str, Any] | None = None) -> tuple[bytes, str]:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
@@ -107,6 +108,14 @@ def _cover(statement: Mapping[str, Any], *, spanish: bool, corrected_presentatio
             "This presentation corrects approval labels only; findings, scores, and evidence are preserved. "
             "The reviewed source and original certified export remain retained under their verifiable identities."
         )
+    if delivery_authorization:
+        explanation = explanation.replace(
+            "Client delivery remains BLOCKED and requires separate authorization.",
+            "Client delivery is AUTHORIZED by the separate exact-edition permission below. This does not mean the report has been sent.",
+        ).replace(
+            "La entrega al cliente sigue BLOQUEADA y requiere autorización separada.",
+            "La entrega al cliente está AUTORIZADA mediante el permiso separado de esta edición. Esto no significa que se haya enviado el informe.",
+        )
     disclosure = statement["review_disclosure"]
     identity = statement["source_identity"]
     source = statement["source_review_artifact_identity"]
@@ -130,6 +139,12 @@ def _cover(statement: Mapping[str, Any], *, spanish: bool, corrected_presentatio
     else:
         labels.append(("Revisión/QC" if spanish else "Specialist review/QC", "No verificado" if spanish else "Not established"))
     labels.append(("Motivo" if spanish else "Approval reason", statement["reason"]))
+    if delivery_authorization:
+        labels.extend([
+            ("Entrega autorizada por" if spanish else "Delivery authorized by", delivery_authorization["authorizer"]),
+            ("Fecha de autorización" if spanish else "Delivery authorized at", delivery_authorization["authorized_at"]),
+            ("SHA-256 autorización" if spanish else "Delivery authorization SHA-256", delivery_authorization["delivery_authorization_certificate_sha256"]),
+        ])
     text = heading + "\n\n" + explanation + "\n\n" + "\n".join(f"{key}: {value}" for key, value in labels)
     styles = getSampleStyleSheet()
     stream = io.BytesIO()
@@ -208,7 +223,9 @@ def validated_operator_edition(record: Mapping[str, Any]) -> dict[str, Any] | No
         from nico.comprehensive_run_service import _require_exact_final_report_integrity
         if record.get("terminal") is not True or record.get("status") != "review_required":
             return None
-        _require_exact_final_report_integrity(record)
+        # Validate the retained source independently of the later delivery receipt.
+        # The caller validates that receipt separately; source bytes stay a draft.
+        _require_exact_final_report_integrity({**record, "client_delivery_allowed": False})
         manifest = dict(edition)
         claimed = manifest.pop("accepted_edition_manifest_sha256")
         if claimed != canonical_sha256(manifest) or edition["artifact_schema"] != VERSION:
@@ -261,6 +278,9 @@ def project_operator_approval(response: dict[str, Any], record: dict[str, Any], 
     if not edition:
         if record.get("operator_approved_edition"):
             response["operator_approval_status"] = "invalidated_source_or_artifact_changed"
+        if record.get("operator_delivery_edition"):
+            from nico.comprehensive_operator_delivery_v1 import project_operator_delivery
+            return project_operator_delivery(response, record, include_reports=include_reports)
         return response
     response["operator_approval_status"] = "approved"
     response["approval_basis"] = BASIS
@@ -273,7 +293,8 @@ def project_operator_approval(response: dict[str, Any], record: dict[str, Any], 
         response["review_artifact_identity"] = presented_operator_identity(record, edition)
     else:
         response["operator_approval"] = edition["review"]
-    return response
+    from nico.comprehensive_operator_delivery_v1 import project_operator_delivery
+    return project_operator_delivery(response, record, include_reports=include_reports)
 
 
 def presented_operator_identity(record: Mapping[str, Any], edition: Mapping[str, Any]) -> dict[str, Any]:

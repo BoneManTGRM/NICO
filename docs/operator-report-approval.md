@@ -144,3 +144,45 @@ approval was rerun. Final CI, deployment and live corrected-PDF verification rem
 pending at this checkpoint. The complete API rendering derivation is available in
 the authenticated response; a bounded identity summary is shown in Technical review
 record. No delivery authority is issued.
+
+
+## Explicit client permission extension (current work)
+
+The owner subsequently requested that tapping client approval change Blocked too.
+The new explicit `delivery_kind=operator_report` action permits client release of
+an intact, current operator-approved report with its disclosed unfinished work.
+It does not certify completed specialist review/QC and does not send any report.
+The previous specialist delivery path keeps its own rules. Operator report approval
+alone still cannot authorize delivery.
+
+The existing authenticated authorize-delivery endpoint accepts this bounded action
+for source and separately approved locale editions. It requires explicit delivery
+acknowledgement and the identity of the downloaded approved PDF. Optional metadata
+remains optional. A separate immutable permission receipt and authorized PDF are
+saved on the same run; optimistic revision protection prevents conflicting writes.
+Identical retries reuse the receipt. The original assessment, operator approval,
+source artifacts and specialist ledgers remain retained unchanged.
+
+Final Review exposes the delivery acknowledgement and action after operator approval.
+After a validated successful response, the screen shows Client delivery: Authorized
+and downloads the corresponding hash-verified PDF. Its blue cover and lifecycle
+headers also say Authorized. If downloading fails after permission persists, the
+screen preserves that status and provides download-only retry. A stale identity,
+invalid password, absent acknowledgement, corrupt artifact, or pending HTTP 200
+response cannot create an authorized report.
+
+Continuation: branch `fix/operator-client-authorization`, baseline
+`b1841478b0db880074481e83c1fd1a36322a44c1`. The owner run remains at the previously
+verified approval of source revision 64 (stored revision 65). This implementation
+work does not itself submit the owner's client-delivery acknowledgement. Complete
+CI/integration/deployment and inspect the real action before returning it to the
+owner. The PR description will record final SHA/deployment evidence and any remaining
+human action. Never rerun the assessment to test this transition.
+
+Local extension evidence: 9 new backend authorization checks passed, including
+authentication, optional metadata, stale identities, readback, idempotency, PDF
+integrity, bilingual cover labels and isolated Spanish permission. The 41 affected
+existing approval/presentation/controller/record/locale checks passed. All 29
+frontend checks and TypeScript passed. A clearly labeled local rendering of the
+retained source visually showed Approved / Authorized without changing scores.
+This rendering is synthetic verification, not a production delivery receipt.

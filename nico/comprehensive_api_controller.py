@@ -661,6 +661,9 @@ def _accepted_final_report_integrity_bound(
 
     status = str(record.get("status") or "").strip().casefold()
     if status != "approved":
+        if record.get("client_delivery_allowed") is True and record.get("operator_delivery_edition"):
+            from nico.comprehensive_operator_delivery_v1 import validated_operator_delivery
+            return validated_operator_delivery(record) is not None
         return record.get("client_delivery_allowed") is not True
     if record.get("human_review_completed") is not True:
         return False
@@ -729,6 +732,9 @@ def _client_delivery_integrity_bound(record: Mapping[str, Any]) -> bool:
 
     if record.get("client_delivery_allowed") is not True:
         return True
+    if record.get("operator_delivery_edition"):
+        from nico.comprehensive_operator_delivery_v1 import validated_operator_delivery
+        return validated_operator_delivery(record) is not None
     if (
         str(record.get("status") or "").strip().casefold() != "approved"
         or record.get("human_review_completed") is not True
@@ -1219,9 +1225,9 @@ class ComprehensiveApiController:
                 and not rejection_integrity_failed
             )
         )
+        operator_delivery_current = bool(canonical_record.get("operator_delivery_edition")) and not delivery_integrity_failed
         delivery_allowed = (
-            approved_status
-            and human_review_completed
+            (approved_status and human_review_completed or operator_delivery_current)
             and canonical_record.get("client_delivery_allowed") is True
             and not artifact_integrity_failed
             and not delivery_integrity_failed
