@@ -9,6 +9,12 @@ const PDF_ACTION_LABELS = new Set([
   "Approve exact downloaded report",
   "Descargar PDF final de la evaluación",
   "Aprobar informe exacto descargado",
+  "Download report for review",
+  "Download approved final PDF",
+  "Approve and download final PDF",
+  "Descargar informe para revisión",
+  "Descargar PDF final aprobado",
+  "Aprobar y descargar PDF final",
 ]);
 
 function isIOSFamilyWebKit(): boolean {
@@ -46,7 +52,8 @@ export default function FinalReviewDownloadHandoff() {
       const button = target.closest("button");
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
       const label = String(button.textContent || "").replace(/\s+/g, " ").trim();
-      if (!PDF_ACTION_LABELS.has(label)) return;
+      // Prefer the stable action marker; keep legacy labels for mixed cached builds.
+      if (button.dataset.nicoPdfAction !== "true" && !PDF_ACTION_LABELS.has(label)) return;
 
       clearReservedPdfWindow(true);
       const popup = window.open("about:blank", "nico-comprehensive-pdf");
