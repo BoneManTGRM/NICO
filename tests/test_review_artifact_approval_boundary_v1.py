@@ -105,7 +105,8 @@ def test_review_ui_requires_download_of_the_current_digest_before_approval() -> 
         source.index("async function approveExactReport") :
         source.index("async function recordOtherDecision")
     ]
-    assert "!canonicalApprovalReady || !confirmed || !exactEditionDownloaded" in approval_boundary
+    assert "!approvalAuthorityReady || !confirmed || !exactEditionDownloaded" in approval_boundary
+    assert "canonicalApprovalReady" not in approval_boundary
     assert 'const reviewed = await submitDecision("approved");' in approval_boundary
     assert approval_boundary.index("setResult(reviewed);") < approval_boundary.index(
         "const approvedPdfDigest = await downloadExactPdf(reviewed);"
