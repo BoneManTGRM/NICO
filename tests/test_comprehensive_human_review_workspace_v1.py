@@ -14,8 +14,13 @@ def test_visible_final_review_is_comprehensive_only_and_not_legacy_service_selec
 
     assert 'import ComprehensiveFinalReviewWorkspace from "./ComprehensiveFinalReviewWorkspace"' in page
     assert "<ComprehensiveFinalReviewWorkspace />" in page
-    assert 'onClick={downloadFinalReport}>{copy.downloadFinalReport}</button>' in workspace
+    # The ordinary download remains separate from approval and now identifies
+    # the actual lifecycle of the returned PDF instead of calling a draft final.
+    assert 'onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>' in workspace
     assert 'onClick={approveExactReport}>{copy.approveExactReport}</button>' in workspace
+    assert 'downloadFinalReport: "Download report for review"' in workspace
+    assert 'downloadApprovedReport: "Download approved final PDF"' in workspace
+    assert 'approveExactReport: "Approve and download final PDF"' in workspace
     assert 'comprehensive: "Comprehensive"' in workspace
     assert 'value={copy.comprehensive} readOnly' in workspace
     assert "Strategic" not in workspace
