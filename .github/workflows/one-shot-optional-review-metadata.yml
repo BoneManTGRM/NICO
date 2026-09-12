@@ -1,0 +1,45 @@
+name: One-shot optional Final Review metadata patch
+
+on:
+  push:
+    branches:
+      - fix/final-review-optional-test-metadata
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/final-review-optional-test-metadata
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply deterministic patch
+        run: python tools/one_shot_optional_review_metadata.py
+      - name: Sanity check structural contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('apps/web/app/operations/final-review/ComprehensiveFinalReviewWorkspace.tsx').read_text(encoding='utf-8')
+          assert 'const approvalAuthorityReady = operatorReady;' in source
+          assert 'reviewer: suppliedReviewer || "Authenticated NICO operator"' in source
+          assert 'suppliedRole.toLowerCase() === "test"' in source
+          assert 'disabled={loading || !approvalAuthorityReady || !confirmed || !exactEditionDownloaded}' in source
+          assert 'disabled={loading || !deliveryConfirmed || !canonicalApprovalReady}' in source
+          assert 'The operator password must still be valid' in source
+          print('optional approval metadata contract present')
+          PY
+      - name: Commit patched workspace
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/web/app/operations/final-review/ComprehensiveFinalReviewWorkspace.tsx
+          git commit -m 'Allow optional reviewer metadata while preserving operator auth'
+          git push origin HEAD:fix/final-review-optional-test-metadata
