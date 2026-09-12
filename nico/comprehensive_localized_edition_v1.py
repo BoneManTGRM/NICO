@@ -137,7 +137,11 @@ def prepare_localized_edition(service: Any, run_id: str, language: str, payload:
     from nico.comprehensive_operator_approval_v1 import presented_operator_identity, validated_operator_edition
     operator = validated_operator_edition(root)
     if operator:
-        if payload.get("expected_artifact_identity") != presented_operator_identity(root, operator):
+        from nico.comprehensive_operator_delivery_v1 import operator_delivery_identity, validated_operator_delivery
+        delivered = validated_operator_delivery(root)
+        current_identity = (operator_delivery_identity(root, delivered) if delivered
+                            else presented_operator_identity(root, operator))
+        if payload.get("expected_artifact_identity") != current_identity:
             raise ValueError("stale_review_artifact_identity")
     else:
         assert_expected_review_artifact_identity(root, payload.get("expected_artifact_identity"))

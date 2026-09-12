@@ -135,3 +135,21 @@ def test_delivery_requires_prior_approval_and_locale_permission_stays_isolated(s
     assert current(service)["client_delivery_allowed"] is False
     for key in ("identity", "stage_results", "operator_approved_edition", "review_work_ledger"):
         assert current(service).get(key) == root_before.get(key)
+
+
+def test_authorized_source_can_prepare_spanish_without_transferring_permission(service):
+    from nico import comprehensive_localized_edition_v1 as localized
+    from nico.comprehensive_operator_delivery_v1 import project_operator_delivery
+    approved, request = approved_request(service)
+    run = approved["identity"]["run_id"]
+    authorized = authorize_operator_delivery(service, run, request)
+    visible_identity = project_operator_delivery({}, authorized, include_reports=True)["review_artifact_identity"]
+    root, _, draft = localized.prepare_localized_edition(service, run, "es-MX", {
+        "preparation_authorized": True, "authorization_confirmed": True,
+        "expected_artifact_identity": visible_identity,
+    })
+    assert root["client_delivery_allowed"] is True
+    assert validated_operator_delivery(root) is not None
+    assert draft["client_delivery_allowed"] is False
+    assert "operator_delivery_edition" not in draft
+    assert draft["human_review_completed"] is False

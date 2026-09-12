@@ -139,6 +139,14 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     return service._store.save(updated, expected_revision=record["revision"])
 
 
+def operator_delivery_identity(record: Mapping[str, Any], edition: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_schema": "nico.comprehensive_review_artifact_identity.v1",
+        "run_id": record["identity"]["run_id"], "revision": record["revision"],
+        "report_artifact_digest": edition["report_artifact_digest"], "artifact_digests": edition["artifact_digests"],
+    }
+
+
 def project_operator_delivery(response: dict[str, Any], record: Mapping[str, Any], *, include_reports: bool) -> dict[str, Any]:
     if not record.get("operator_delivery_edition"):
         return response
@@ -154,9 +162,5 @@ def project_operator_delivery(response: dict[str, Any], record: Mapping[str, Any
         response["delivery_authorization"] = edition["delivery_authorization"]
         if include_reports:
             response["operator_approved_edition"] = edition
-            response["review_artifact_identity"] = {
-                "artifact_schema": "nico.comprehensive_review_artifact_identity.v1",
-                "run_id": record["identity"]["run_id"], "revision": record["revision"],
-                "report_artifact_digest": edition["report_artifact_digest"], "artifact_digests": edition["artifact_digests"],
-            }
+            response["review_artifact_identity"] = operator_delivery_identity(record, edition)
     return response
