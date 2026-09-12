@@ -2,6 +2,7 @@
 
 import {useEffect, useState} from "react";
 import {usePathname} from "next/navigation";
+import {finalReviewHref} from "./PrimaryNavigation";
 
 type WorkflowCopy = {
   eyebrow: string;
@@ -89,9 +90,9 @@ export default function WorkflowCallout() {
   const assessmentHref = spanish
     ? "/es/assessment?tier=comprehensive#assessment"
     : "/assessment?tier=comprehensive#assessment";
-  const reviewHref = spanish
+  const reviewHref = finalReviewHref(spanish
     ? "/operations/final-review?lang=es-MX"
-    : "/operations/final-review";
+    : "/operations/final-review", currentSearch);
 
   return (
     <section

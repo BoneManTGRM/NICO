@@ -343,6 +343,29 @@ test('final review navigation preserves exact run and locale without copying cre
   assert.equal(finalReviewHref('/operations', '?run_id=comprun_unit_fixture'), '/operations');
 });
 
+test('workflow banner retains the reviewed run and edition in both languages', () => {
+  const navigation = loadHelpers('apps/web/app/PrimaryNavigation.tsx');
+  for (const lang of ['en', 'es-MX']) {
+    const jsx = (type, props) => ({type, props});
+    const search = `?run_id=comprun_unit_fixture&edition=es-MX&lang=${lang}&admin_token=never-forward`;
+    const component = loadHelpers('apps/web/app/WorkflowCallout.tsx', {require: name => {
+      if (name === 'react') return {useEffect() {}, useState: () => [search, () => {}]};
+      if (name === 'react/jsx-runtime') return {jsx, jsxs: jsx};
+      if (name === 'next/navigation') return {usePathname: () => '/operations/final-review'};
+      if (name === './PrimaryNavigation') return navigation;
+      throw new Error(`Unexpected import ${name}`);
+    }});
+    const link = nodes(component.default()).find(n => n.type === 'a' && /Final Review|Revisión final/.test(text(n)));
+    const target = new URL(link.props.href, 'https://unit.invalid');
+    assert.equal(target.pathname, '/operations/final-review');
+    assert.equal(target.searchParams.get('run_id'), 'comprun_unit_fixture');
+    assert.equal(target.searchParams.get('edition'), 'es-MX');
+    assert.equal(target.searchParams.get('service'), 'comprehensive');
+    assert.equal(target.searchParams.has('admin_token'), false);
+    if (lang === 'es-MX') assert.equal(target.searchParams.get('lang'), lang);
+  }
+});
+
 test('optional client metadata does not block owner review navigation but remains unready for delivery', () => {
   const {finalReviewReadiness} = loadHelpers('apps/web/app/AssessmentFinalReviewAction.tsx');
   const value = {run_id: 'comprun_unit_fixture', status: 'review_required', client_delivery_allowed: false,
