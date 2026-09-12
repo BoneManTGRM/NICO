@@ -48,11 +48,11 @@ const COPY = {
     directRun: "Open this page from a completed Comprehensive assessment",
     secureAccess: "SECURE ACCESS",
     identifyReviewer: "Open the exact completed assessment",
-    identityAttached: "The exact run is attached automatically when this page is opened from a completed assessment. Reviewer identity is optional for report generation and is used only for separate review/approval actions.",
-    reviewer: "Authorized reviewer",
-    reviewerPlaceholder: "Optional unless recording human approval",
-    reviewerRole: "Reviewer role",
-    reviewerRolePlaceholder: "Optional unless recording human approval",
+    identityAttached: "The exact run is attached automatically when this page is opened from a completed assessment. Reviewer name and role are optional metadata; the authenticated operator credential is the approval authority.",
+    reviewer: "Reviewer name (optional)",
+    reviewerPlaceholder: "Optional — blank uses authenticated operator metadata",
+    reviewerRole: "Reviewer role (optional)",
+    reviewerRolePlaceholder: "Optional — type test when testing",
     operatorToken: "Operator password",
     secureToken: "Enter your NICO operator password",
     opening: "Opening review…",
@@ -61,12 +61,12 @@ const COPY = {
     exactIdentity: "Confirm exact report identity",
     exactRunId: "Exact Comprehensive run ID",
     security: "Use the private operator password configured for NICO in Railway. It stays only in this open page and is never stored in the URL or browser storage.",
-    enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer identity is required only for separate human approval or a client-delivery decision.",
+    enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer name and role may be blank for approval; client delivery remains a separate, stricter action.",
     loaded: "The immutable Comprehensive review package is loaded. The final assessment report is available independently of optional reviewer/client metadata.",
     loadFailed: "Unable to load final review.",
     finalDecision: "FINAL REPORT AND REVIEW STATE",
     approveHeading: "Review and approve the exact assessment report",
-    approveLead: "Download and review the report, enter your reviewer name and role in Step 1, then approve and download the final PDF. A download or checked box alone does not record approval. Client delivery is a separate authorization.",
+    approveLead: "Download and review the report, confirm that exact PDF, then approve and download the final PDF. Reviewer name and role are optional metadata. A download or checked box alone does not record approval. Client delivery is a separate authorization.",
     review: "Human review",
     delivery: "Client-ready",
     authorized: "Authorized",
@@ -83,7 +83,7 @@ const COPY = {
     alreadyApproved: "Approval already recorded",
     downloadFinalReport: "Download report for review",
     downloadApprovedReport: "Download approved final PDF",
-    reviewerRequired: "Enter your reviewer name and select your authorized role in Step 1. These are required for approval, not for downloading the report.",
+    reviewerRequired: "Reviewer name and role are optional for approval. Blank values use authenticated-operator defaults; test is allowed as reviewer metadata.",
     reviewDownloadRequired: "Download and review this exact report before confirming your review.",
     approvalReady: "Ready to submit your approval of this exact report. NICO will still verify the evidence, review, and independent QC requirements.",
     approvedDownloadNotice: "The exact approved final PDF was downloaded. Client delivery remains separately protected.",
@@ -125,6 +125,7 @@ const COPY = {
     invalidPackage: "The approved delivery package failed ZIP integrity validation.",
     defaultApprovalReason: "Authorized reviewer confirmed the exact immutable report, scorecard, disclosed evidence limitations, artifact identity, and delivery boundary.",
     reviewerQueue: "Open the exception-first technical review queue for this exact run",
+    optionalReviewerMetadata: "Reviewer name and role are optional for approval. Leave them blank or use test while testing. The operator password must still be valid, the exact PDF must be downloaded and acknowledged, and all server-side review/QC gates still apply.",
   },
   "es-MX": {
     eyebrow: "NICO COMPREHENSIVE · CONTROL INTERNO DE CALIDAD",
@@ -139,11 +140,11 @@ const COPY = {
     directRun: "Abre esta página desde una evaluación Comprehensive terminada",
     secureAccess: "ACCESO SEGURO",
     identifyReviewer: "Abre la evaluación terminada exacta",
-    identityAttached: "La ejecución exacta se vincula automáticamente cuando esta página se abre desde una evaluación terminada. La identidad del revisor es opcional para generar el informe y solo se usa en acciones separadas de revisión/aprobación.",
-    reviewer: "Revisor autorizado",
-    reviewerPlaceholder: "Opcional salvo para registrar aprobación humana",
-    reviewerRole: "Función del revisor",
-    reviewerRolePlaceholder: "Opcional salvo para registrar aprobación humana",
+    identityAttached: "La ejecución exacta se vincula automáticamente cuando esta página se abre desde una evaluación terminada. El nombre y la función del revisor son metadatos opcionales; la credencial autenticada del operador es la autoridad de aprobación.",
+    reviewer: "Nombre del revisor (opcional)",
+    reviewerPlaceholder: "Opcional — vacío usa metadatos del operador autenticado",
+    reviewerRole: "Función del revisor (opcional)",
+    reviewerRolePlaceholder: "Opcional — escribe test para probar",
     operatorToken: "Contraseña del operador",
     secureToken: "Ingresa tu contraseña de operador de NICO",
     opening: "Abriendo revisión…",
@@ -152,12 +153,12 @@ const COPY = {
     exactIdentity: "Confirmar identidad exacta del informe",
     exactRunId: "ID exacto de ejecución Comprehensive",
     security: "Usa la contraseña privada del operador configurada para NICO en Railway. Permanece únicamente en esta página abierta y nunca se guarda en la URL ni en el almacenamiento del navegador.",
-    enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. La identidad del revisor se requiere solo para una aprobación humana separada o una decisión de entrega al cliente.",
+    enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. El nombre y la función del revisor pueden quedar vacíos para aprobar; la entrega al cliente sigue siendo una acción separada y más estricta.",
     loaded: "El paquete inmutable de Comprehensive está cargado. El informe final de evaluación está disponible independientemente de los metadatos opcionales del revisor/cliente.",
     loadFailed: "No fue posible cargar la revisión final.",
     finalDecision: "INFORME FINAL Y ESTADO DE REVISIÓN",
     approveHeading: "Revisa y aprueba el informe exacto de la evaluación",
-    approveLead: "Descarga y revisa el informe, ingresa tu nombre y función de revisor en el paso 1 y después aprueba y descarga el PDF final. Descargar o marcar la casilla no registra la aprobación. La entrega al cliente requiere una autorización separada.",
+    approveLead: "Descarga y revisa el informe, confirma ese PDF exacto y después aprueba y descarga el PDF final. El nombre y la función del revisor son metadatos opcionales. Descargar o marcar la casilla no registra la aprobación. La entrega al cliente requiere una autorización separada.",
     review: "Revisión humana",
     delivery: "Lista para el cliente",
     authorized: "Autorizada",
@@ -174,7 +175,7 @@ const COPY = {
     alreadyApproved: "Aprobación ya registrada",
     downloadFinalReport: "Descargar informe para revisión",
     downloadApprovedReport: "Descargar PDF final aprobado",
-    reviewerRequired: "Ingresa tu nombre de revisor y selecciona tu función autorizada en el paso 1. Son necesarios para aprobar, no para descargar el informe.",
+    reviewerRequired: "El nombre y la función del revisor son opcionales para aprobar. Los valores vacíos usan valores del operador autenticado y test se acepta como metadato de prueba.",
     reviewDownloadRequired: "Descarga y revisa este informe exacto antes de confirmar tu revisión.",
     approvalReady: "Puedes enviar la aprobación de este informe exacto. NICO todavía verificará la evidencia, la revisión y el control de calidad independiente.",
     approvedDownloadNotice: "Se descargó el PDF final aprobado exacto. La entrega al cliente sigue protegida por separado.",
@@ -216,6 +217,7 @@ const COPY = {
     invalidPackage: "El paquete de entrega aprobado no superó la validación de integridad ZIP.",
     defaultApprovalReason: "El revisor autorizado confirmó el informe inmutable exacto, la puntuación, las limitaciones de evidencia declaradas, la identidad del artefacto y el límite de entrega.",
     reviewerQueue: "Abrir la cola técnica por excepción para esta ejecución exacta",
+    optionalReviewerMetadata: "El nombre y la función del revisor son opcionales para aprobar. Déjalos vacíos o usa test durante las pruebas. La contraseña del operador debe seguir siendo válida, debes descargar y reconocer el PDF exacto y todos los controles de revisión/QC del servidor siguen aplicando.",
   },
 } as const;
 
@@ -379,6 +381,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
   const copy = COPY[locale];
   const operatorReady = Boolean(runId.trim() && adminToken.trim());
+  const approvalAuthorityReady = operatorReady;
   const canonicalApprovalReady = Boolean(operatorReady && reviewer.trim() && reviewerRole.trim());
   const identityReady = Boolean(runId.trim());
   const edition = useMemo(() => acceptedEditionFrom(result), [result]);
@@ -410,8 +413,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   ).trim().toLowerCase();
   const runStatus = String(result?.status || "").trim().toLowerCase();
   const approvalCompleted = rawStatus === "approved" || runStatus === "approved";
-  const approvalNextStep = !operatorReady ? copy.enterReviewer
-    : !canonicalApprovalReady ? copy.reviewerRequired
+  const approvalNextStep = !approvalAuthorityReady ? copy.enterReviewer
     : !exactEditionDownloaded ? copy.reviewDownloadRequired
     : !confirmed ? copy.confirmFirst
     : copy.approvalReady;
@@ -494,18 +496,35 @@ export default function ComprehensiveFinalReviewWorkspace() {
     }
   }
 
+  function approvalReviewerMetadata(): {reviewer: string; reviewerRole: string} {
+    const suppliedReviewer = reviewer.trim();
+    const suppliedRole = reviewerRole.trim();
+    const canonicalRole = AUTHORIZED_REVIEWER_ROLES.find(
+      (role) => role.value.toLowerCase() === suppliedRole.toLowerCase(),
+    )?.value;
+    return {
+      reviewer: suppliedReviewer || "Authenticated NICO operator",
+      reviewerRole: canonicalRole || (!suppliedRole || suppliedRole.toLowerCase() === "test"
+        ? "Security reviewer"
+        : suppliedRole),
+    };
+  }
+
   async function submitDecision(decision: "approved" | Decision): Promise<ReviewResponse> {
     const reason = decision === "approved"
       ? note.trim() || copy.defaultApprovalReason
       : note.trim();
+    const approvalMetadata = decision === "approved"
+      ? approvalReviewerMetadata()
+      : {reviewer: reviewer.trim(), reviewerRole: reviewerRole.trim()};
     return requestJson(reviewUrl(), {
       method: "POST",
       headers: headers(true),
       body: JSON.stringify({
         review_authorized: true,
         authorization_confirmed: true,
-        reviewer: reviewer.trim(),
-        reviewer_role: reviewerRole.trim(),
+        reviewer: approvalMetadata.reviewer,
+        reviewer_role: approvalMetadata.reviewerRole,
         decision,
         decision_reason: reason,
         expected_artifact_identity: reviewArtifactIdentity,
@@ -609,7 +628,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       setError(copy.alreadyApproved);
       return;
     }
-    if (!canonicalApprovalReady || !confirmed || !exactEditionDownloaded) {
+    if (!approvalAuthorityReady || !confirmed || !exactEditionDownloaded) {
       setError(approvalNextStep);
       return;
     }
@@ -729,10 +748,12 @@ export default function ComprehensiveFinalReviewWorkspace() {
           <option value="es-MX">Español (México) — es-MX</option>
         </select></label>
         <label className={styles.reviewerField}>{copy.reviewer}<input value={reviewer} disabled={loading} onChange={(event) => setReviewer(event.target.value)} placeholder={copy.reviewerPlaceholder} autoComplete="name" /></label>
-        <label className={styles.tokenField}>{copy.reviewerRole}<select value={reviewerRole} disabled={loading} onChange={(event) => setReviewerRole(event.target.value)}>
-          <option value="">{copy.reviewerRolePlaceholder}</option>
-          {AUTHORIZED_REVIEWER_ROLES.map((role) => <option value={role.value} key={role.value}>{locale === "es-MX" ? role.es : role.en}</option>)}
-        </select></label>
+        <label className={styles.tokenField}>{copy.reviewerRole}<input list="nico-reviewer-roles" value={reviewerRole} disabled={loading} onChange={(event) => setReviewerRole(event.target.value)} placeholder={copy.reviewerRolePlaceholder} autoComplete="off" />
+          <datalist id="nico-reviewer-roles">
+            {AUTHORIZED_REVIEWER_ROLES.map((role) => <option value={role.value} key={role.value}>{locale === "es-MX" ? role.es : role.en}</option>)}
+            <option value="test">Test</option>
+          </datalist>
+        </label>
         <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} disabled={loading} onChange={(event) => setAdminToken(event.target.value)} placeholder={copy.secureToken} autoComplete="current-password" spellCheck={false} /></label>
         <button className={styles.primary} type="submit" disabled={loading || !operatorReady}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
         <details className={styles.advanced}><summary>{copy.exactIdentity}</summary><div className={styles.advancedGrid}>
@@ -745,6 +766,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <button className={styles.secondary} type="button" disabled={loading || !operatorReady || Boolean(result)} onClick={prepareLocalizedEdition}>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
       </div> : null}
       <p className={styles.securityNote}>{copy.security}</p>
+      <p className={styles.securityNote}>{copy.optionalReviewerMetadata}</p>
       {runId.trim() ? <p className={styles.securityNote}><a href={reviewerQueueHref}>{copy.reviewerQueue}</a></p> : null}
       <div className={styles.feedback} aria-live="polite">{error ? <div className={styles.error} role="alert">{error}</div> : null}{!error && notice ? <div className={styles.success}>{notice}</div> : null}</div>
     </section>
@@ -768,13 +790,13 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
         <div className={styles.downloadActions}>
           <button className={approvalCompleted ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
-          {!approvalCompleted ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !canonicalApprovalReady || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}>{copy.approveExactReport}</button> : null}
+          {!approvalCompleted ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !approvalAuthorityReady || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}>{copy.approveExactReport}</button> : null}
           {approvalCompleted ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
           {deliveryAllowed ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
         </div>
         {!approvalCompleted ? <p id="approval-next-step" className={styles.securityNote} aria-live="polite">{approvalNextStep}</p> : null}
         {approvalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
-        {approvalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
+        {approvalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed || !canonicalApprovalReady} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
         <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery}</div>
         <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
       </>}
