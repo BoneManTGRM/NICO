@@ -109,3 +109,38 @@ SHA-256 `5af1750787ce9d4fc637c0dfb8ac1f4f9534696f3006df34a1c9871b3f7983c6`.
 The browser's download-event observation timed out, but the actual downloaded file
 was present and independently hashed. Download enabled the unchecked report
 acknowledgement; the approval button stayed disabled. No approval was submitted.
+
+## Approved presentation correction
+
+The owner subsequently approved source revision 64, producing stored revision 65.
+The real certificate and approved PDF were verified in production; the complete
+identities and acceptance evidence are retained in PR #1589. That implementation
+preserved all source pages behind a certificate, leaving the blue cover and report
+headers visibly marked pending/draft. The owner's screenshots demonstrate this
+remaining presentation defect; the earlier successful byte-binding checks did
+not establish consistent lifecycle wording.
+
+Branch `fix/operator-pdf-lifecycle` corrects only the approved PDF presentation.
+The blue card becomes “Operator approval: Approved”; client delivery stays blocked.
+Headers and the exact-approval table identify the recorded operator decision.
+Specialist dispositions, QC, and risk acceptance stay incomplete where recorded.
+
+The stored source package, original approval receipt, certified export, ledger,
+revision, and audit history remain unchanged. An authenticated read derives a
+deterministic presentation with its own schema and manifest, explicitly bound to
+the original approval manifest, receipt, original approved PDF and reviewed source
+PDF. The original receipt's approved-artifact digests continue to identify the
+original certified export; the rendered manifest binds the corrected PDF. This is
+not a new human approval. Existing approvals need only refresh/download, and locale
+preparation uses the currently presented artifact identity while its parent binding
+continues to identify the immutable original source approval.
+
+Verification: 21 backend operator/presentation checks, 26 frontend checks and
+TypeScript passed. A local rendering of the preserved source PDF retained all 45
+pages and every non-text drawing operation, retained pending candidate-disposition
+mentions, and removed stale draft headers. The blue cover was visually inspected.
+Source/receipt tampering still invalidates operator approval. No scanner or owner
+approval was rerun. Final CI, deployment and live corrected-PDF verification remain
+pending at this checkpoint. The complete API rendering derivation is available in
+the authenticated response; a bounded identity summary is shown in Technical review
+record. No delivery authority is issued.

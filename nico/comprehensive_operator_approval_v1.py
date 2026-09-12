@@ -76,7 +76,7 @@ def review_disclosure(record: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _cover(statement: Mapping[str, Any], *, spanish: bool) -> tuple[bytes, str]:
+def _cover(statement: Mapping[str, Any], *, spanish: bool, corrected_presentation: bool = False) -> tuple[bytes, str]:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
@@ -93,6 +93,20 @@ def _cover(statement: Mapping[str, Any], *, spanish: bool) -> tuple[bytes, str]:
         "Client delivery remains BLOCKED and requires separate authorization. "
         "The following pages preserve the reviewed source report unchanged. Draft or pending-approval markers on those pages describe the source edition before this certificate."
     )
+    if corrected_presentation:
+        explanation = (
+            "El operador autenticado aprobó este informe exacto, incluidas sus limitaciones y el trabajo pendiente. "
+            "La revisión especializada y el control de calidad siguen registrados por separado. "
+            "La entrega al cliente sigue BLOQUEADA y requiere autorización separada. "
+            "Esta presentación corrige únicamente los rótulos de aprobación; conserva los hallazgos, las puntuaciones y la evidencia. "
+            "El informe fuente y el archivo aprobado original permanecen conservados con sus identidades verificables."
+            if spanish else
+            "The authenticated operator approved this exact report, including its limitations and outstanding work. "
+            "Specialist review and independent quality control remain recorded separately. "
+            "Client delivery remains BLOCKED and requires separate authorization. "
+            "This presentation corrects approval labels only; findings, scores, and evidence are preserved. "
+            "The reviewed source and original certified export remain retained under their verifiable identities."
+        )
     disclosure = statement["review_disclosure"]
     identity = statement["source_identity"]
     source = statement["source_review_artifact_identity"]
@@ -253,6 +267,8 @@ def project_operator_approval(response: dict[str, Any], record: dict[str, Any], 
     response["specialist_approval_status"] = response.get("approval_status")
     response["approval_status"] = "operator_approved_final"
     if include_reports:
+        from nico.comprehensive_operator_presentation_v1 import render_operator_presentation
+        edition = render_operator_presentation(record, edition)
         response["operator_approved_edition"] = edition
         response["review_artifact_identity"] = presented_operator_identity(record, edition)
     else:
@@ -261,6 +277,8 @@ def project_operator_approval(response: dict[str, Any], record: dict[str, Any], 
 
 
 def presented_operator_identity(record: Mapping[str, Any], edition: Mapping[str, Any]) -> dict[str, Any]:
+    from nico.comprehensive_operator_presentation_v1 import render_operator_presentation
+    edition = render_operator_presentation(record, edition)
     return {
         "artifact_schema": "nico.comprehensive_review_artifact_identity.v1",
         "run_id": record["identity"]["run_id"], "revision": record["revision"],

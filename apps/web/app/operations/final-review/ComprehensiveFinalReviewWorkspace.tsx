@@ -836,6 +836,13 @@ export default function ComprehensiveFinalReviewWorkspace() {
       approval_certificate_sha256: certificateDigest,
       accepted_edition_manifest_sha256: manifestDigest,
       source_review_artifact_identity: edition.source_review_artifact_identity,
+      rendering_derivation: edition.rendering_derivation ? {
+        version: asRecord(edition.rendering_derivation).version,
+        kind: asRecord(edition.rendering_derivation).kind,
+        new_human_approval: asRecord(edition.rendering_derivation).new_human_approval,
+        authoritative_approval_manifest_sha256: asRecord(edition.rendering_derivation).authoritative_approval_manifest_sha256,
+        original_approved_pdf_sha256: asRecord(edition.rendering_derivation).original_approved_pdf_sha256,
+      } : undefined,
       report_artifact_digest: reportDigest,
       pdf_filename: report.pdf_filename,
       pdf_sha256: currentReviewPdfDigest,

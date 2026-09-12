@@ -110,7 +110,10 @@ def test_optional_metadata_approves_exact_report_without_completing_specialist_w
     assert response["approval_status"] == "operator_approved_final"
     assert response["human_review_completed"] is False
     assert response["client_delivery_allowed"] is False
-    assert response["operator_approved_edition"] == edition
+    rendered = response["operator_approved_edition"]
+    assert rendered["review"] == edition["review"]
+    assert rendered["source_review_artifact_identity"] == edition["source_review_artifact_identity"]
+    assert rendered["rendering_derivation"]["new_human_approval"] is False
     with pytest.raises(ValueError):
         service.authorize_delivery(before["identity"]["run_id"], authorizer="TEST", authorizer_role="Security reviewer",
                                   authorization_reason="TEST", expected_artifact_identity=response["review_artifact_identity"])
