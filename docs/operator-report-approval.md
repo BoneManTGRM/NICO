@@ -72,3 +72,40 @@ Current branch: `fix/operator-approved-final-pdf`; PR #1588, not yet integrated.
 Next: CI, merge and verify
 the deployed frontend/backend identities, then prepare the owner's exact action.
 No passwords, cookies, or other credentials are recorded here.
+
+## Production iteration
+
+PR #1588 merged as `906daf806154aa64fb686f24bab11998a14be6f6` with the same
+verified tree `3ab8de9eaa1d877687bb20f1ec0518d19f39e52a`. Exact-head NICO CI run
+34697477247 passed; the duplicate PR run 34697478822 also completed successfully.
+Vercel deployment `dpl_FEvhn8jTuZzz8SY4oDatya1Dbuo2` is READY and serves
+`app.nicoaudit.com`; Railway deployment `82eb5f88-2e22-4fe1-a482-44700f464557`
+is SUCCESS. Both identify that merged commit.
+
+Live browser inspection showed the new operator/specialist distinction and the
+preserved run ID after hydration. It also reproduced one remaining identity loss:
+the workflow banner's “Open Final Review” link still omitted the run. The follow-up
+uses the existing safe navigation helper for that link, retaining run and edition
+without forwarding credential parameters. Its rendered-component regression and
+21 affected bilingual/navigation checks passed; TypeScript passed.
+
+Current follow-up branch: `fix/final-review-callout-identity`. Next: integrate this
+small navigation correction, verify the final deployments/link, refresh authenticated
+report evidence, and hand the exact final action to the owner. No acknowledgement,
+operator approval, or client delivery was performed on the preserved run.
+
+PR #1589 head `8df90b39427e511b6081b286928128ee11826b36` passed NICO CI
+34698179296. Security Audit 34698192550 found one unverified RailwayApp candidate:
+the deployment UUID recorded above. The raw candidate matched Railway's verified
+deployment metadata, not a credential. A classification restricted to that exact
+value hash, documentation path and detector retains the finding as a nonsecret
+deployment identifier; verified values and other candidates still block. Twelve
+security-gate tests passed, including those adversarial boundaries. Re-evaluating
+the original scanner artifacts with the corrected classification passed without
+rerunning scanners or changing their evidence. Final-head CI remains required.
+
+A fresh authenticated draft download after #1588 deployment was 1,777,625 bytes,
+SHA-256 `5af1750787ce9d4fc637c0dfb8ac1f4f9534696f3006df34a1c9871b3f7983c6`.
+The browser's download-event observation timed out, but the actual downloaded file
+was present and independently hashed. Download enabled the unchecked report
+acknowledgement; the approval button stayed disabled. No approval was submitted.
