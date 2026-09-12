@@ -1358,6 +1358,10 @@ def register_comprehensive_api_routes(
         request: Request,
     ) -> dict[str, Any]:
         try:
+            operator_token = request.headers.get("x-nico-admin-token", "")
+            if operator_token:
+                # A failed explicit login must not silently fall back to public status.
+                _authorize_review(operator_token)
             controller_value = _controller(request)
             browser_projection = _browser_projection_requested(request)
             response = None
@@ -1375,7 +1379,7 @@ def register_comprehensive_api_routes(
                         run_id,
                         browser_projection,
                         "status",
-                        require_comprehensive_operator(request.headers.get("x-nico-admin-token", ""))[0],
+                        require_comprehensive_operator(operator_token)[0],
                     )
                 except ComprehensiveRunNotFound:
                     response = await run_in_threadpool(

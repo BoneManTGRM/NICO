@@ -59,7 +59,11 @@ Valid local evidence:
 
 Independent audit corrected public operator-PDF exposure, localized preparation
 identity comparison, and suppression of receipts after canonical report failure.
-Current branch: `fix/operator-approved-final-pdf`; implementation not yet integrated.
-Next: finish existing specialist/API compatibility checks, PR/CI, merge and verify
+The existing API/specialist/localized suite also passed: 24 checks, exit 0.
+An additional regression reproduced an explicit invalid password falling back to
+public draft status (HTTP 200); the corrected authenticated-read boundary returns
+403. Its targeted API suite passed: 9 checks, exit 0. Anonymous polling remains available.
+Current branch: `fix/operator-approved-final-pdf`; PR #1588, not yet integrated.
+Next: CI, merge and verify
 the deployed frontend/backend identities, then prepare the owner's exact action.
 No passwords, cookies, or other credentials are recorded here.

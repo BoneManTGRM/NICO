@@ -162,6 +162,7 @@ def test_api_authentication_and_acknowledgement_then_read_only_download(service,
     assert client.post(url, json=request, headers={"x-nico-admin-token": "wrong"}).status_code == 403
     headers = {"x-nico-admin-token": "synthetic-test-operator-token"}
     read_url = url.removesuffix("/review")
+    assert client.get(read_url, headers={"x-nico-admin-token": "wrong"}).status_code == 403
     assert client.get(read_url, headers=headers).status_code == 200
     assert current(service) == before
     assert client.post(url, json={**request, "exact_report_acknowledged": False}, headers=headers).status_code >= 400
