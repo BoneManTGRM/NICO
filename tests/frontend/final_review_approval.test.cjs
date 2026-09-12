@@ -109,34 +109,63 @@ function harness({locale = 'en', edition = 'source', post} = {}) {
     change(locale === 'en' ? 'Operator password' : 'Contraseña del operador', 'unit-test-not-a-secret');
     await nodes(tree).find(n => n.type === 'form').props.onSubmit({preventDefault() {}}); render();
   }
+  const reviewerLabel = locale === 'en' ? 'Reviewer name (optional)' : 'Nombre del revisor (opcional)';
+  const roleLabel = locale === 'en' ? 'Reviewer role (optional)' : 'Función del revisor (opcional)';
   const reviewLabel = locale === 'en' ? 'Download report for review' : 'Descargar informe para revisión';
   const approveLabel = locale === 'en' ? 'Approve and download final PDF' : 'Aprobar y descargar PDF final';
-  async function ready() {
+  async function ready({reviewer = 'Unit Fixture Reviewer', role = 'Security reviewer'} = {}) {
     await load();
-    change(locale === 'en' ? 'Authorized reviewer' : 'Revisor autorizado', 'Unit Fixture Reviewer');
-    change(locale === 'en' ? 'Reviewer role' : 'Función del revisor', 'Security reviewer');
+    if (reviewer !== undefined) change(reviewerLabel, reviewer);
+    if (role !== undefined) change(roleLabel, role);
     await click(reviewLabel);
     change(locale === 'en' ? 'I reviewed this exact' : 'Revisé este informe', true);
   }
-  return {button, field, change, click, load, ready, render, requests, downloads, reviewLabel, approveLabel,
+  return {button, field, change, click, load, ready, render, requests, downloads, reviewerLabel, roleLabel, reviewLabel, approveLabel,
     text: () => text(tree), elements: () => nodes(tree)};
 }
 
-test('pending approval is visible and actionable, not hidden by missing reviewer metadata', async () => {
+test('pending approval remains actionable with blank reviewer metadata', async () => {
   const h = harness(); await h.load();
   assert.ok(h.button(h.approveLabel)); assert.equal(h.button(h.approveLabel).props.disabled, true);
-  assert.match(h.text(), /Enter your reviewer name and select your authorized role/);
+  assert.match(h.text(), /Reviewer name and role are optional for approval/);
   assert.equal(h.field('I reviewed this exact').props.disabled, true);
   assert.equal(h.button(h.reviewLabel).props.disabled, false);
   await h.click(h.reviewLabel);
   assert.equal(h.downloads[0].filename, fixture().reports.pdf_filename);
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
   assert.equal(h.field('I reviewed this exact').props.disabled, false);
+  h.change('I reviewed this exact', true);
+  assert.equal(h.button(h.approveLabel).props.disabled, false);
 });
 
-test('checkbox alone cannot approve without exact download and reviewer identity', async () => {
+test('blank reviewer metadata can approve and returns an approved final PDF', async () => {
+  const h = harness(); await h.ready({reviewer: '', role: ''});
+  await h.click(h.approveLabel);
+  const posts = h.requests.filter(r => r.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].body.reviewer, 'Authenticated NICO operator');
+  assert.equal(posts[0].body.reviewer_role, 'Security reviewer');
+  assert.equal(posts[0].body.decision, 'approved');
+  assert.equal(h.downloads.length, 2);
+  assert.equal(h.downloads[1].filename, fixture(true).reports.pdf_filename);
+  assert.equal(h.button(h.approveLabel), undefined);
+  assert.ok(h.button('Authorize client delivery').props.disabled);
+});
+
+test('test reviewer metadata can exercise approval through an approved final PDF', async () => {
+  const h = harness(); await h.ready({reviewer: 'test', role: 'test'});
+  await h.click(h.approveLabel);
+  const posts = h.requests.filter(r => r.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].body.reviewer, 'test');
+  assert.equal(posts[0].body.reviewer_role, 'Security reviewer');
+  assert.equal(posts[0].body.decision, 'approved');
+  assert.equal(h.downloads.length, 2);
+  assert.equal(h.downloads[1].filename, fixture(true).reports.pdf_filename);
+});
+
+test('checkbox alone cannot approve without exact downloaded artifact', async () => {
   const h = harness(); await h.load();
-  h.change('Authorized reviewer', 'Unit Fixture Reviewer'); h.change('Reviewer role', 'Security reviewer');
   h.change('I reviewed this exact', true); // Direct adversarial event, bypassing disabled UI.
   await h.button(h.approveLabel).props.onClick(); h.render();
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
@@ -196,7 +225,6 @@ test('changing the run discards downloaded identity and review acknowledgement',
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
 
-
 test('changing the edition discards the previously reviewed report', async () => {
   const h = harness(); await h.ready(); h.change('Report edition', 'es-MX');
   assert.equal(h.button(h.approveLabel), undefined);
@@ -205,14 +233,14 @@ test('changing the edition discards the previously reviewed report', async () =>
 
 test('legitimate review/QC rejection remains blocked with its server explanation', async () => {
   const h = harness({post: async () => ({ok: false, status: 422, json: async () => ({detail: {code: 'review_work_not_ready_for_approval', message: 'Independent quality control remains incomplete.'}})})});
-  await h.ready(); await h.click(h.approveLabel);
+  await h.ready({reviewer: 'test', role: 'test'}); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
   assert.match(h.text(), /Independent quality control remains incomplete/);
 });
 
 test('HTTP 200 pending response never masquerades as an approved download', async () => {
   const h = harness({post: async () => ({ok: true, status: 200, json: async () => fixture(false)})});
-  await h.ready(); await h.click(h.approveLabel);
+  await h.ready({reviewer: '', role: ''}); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
   assert.match(h.text(), /Unable to record human approval/);
 });
