@@ -63,6 +63,11 @@ The existing API/specialist/localized suite also passed: 24 checks, exit 0.
 An additional regression reproduced an explicit invalid password falling back to
 public draft status (HTTP 200); the corrected authenticated-read boundary returns
 403. Its targeted API suite passed: 9 checks, exit 0. Anonymous polling remains available.
+CI at `d25b1fe2183ef7aa9d05d42d35709a2803782be2` passed quality and ten test
+shards. Two shards each found one superseded frontend source assertion (browser
+metadata trimming and specialist-only approval detection). The corrected assertion
+files passed locally together: 11 checks, exit 0. No runtime code changed for this
+test correction; existing runtime/artifact evidence remains valid.
 Current branch: `fix/operator-approved-final-pdf`; PR #1588, not yet integrated.
 Next: CI, merge and verify
 the deployed frontend/backend identities, then prepare the owner's exact action.

@@ -119,8 +119,9 @@ def test_review_ui_requires_download_of_the_current_digest_before_approval() -> 
 def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() -> None:
     source = WORKSPACE.read_text(encoding="utf-8")
 
-    assert 'const approvalCompleted = rawStatus === "approved" || runStatus === "approved"' in source
-    assert "approvalCompleted && !deliveryAllowed" in source
+    assert 'const approvalCompleted = operatorApprovalCompleted || rawStatus === "approved" || runStatus === "approved"' in source
+    assert "const specialistApprovalCompleted = !operatorApprovalCompleted" in source
+    assert "specialistApprovalCompleted && !deliveryAllowed" in source
     assert "/authorize-delivery" in source
     assert "delivery_authorized: true" in source
     assert "authorization_confirmed: true" in source
