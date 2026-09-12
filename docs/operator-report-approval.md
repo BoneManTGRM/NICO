@@ -93,3 +93,19 @@ Current follow-up branch: `fix/final-review-callout-identity`. Next: integrate t
 small navigation correction, verify the final deployments/link, refresh authenticated
 report evidence, and hand the exact final action to the owner. No acknowledgement,
 operator approval, or client delivery was performed on the preserved run.
+
+PR #1589 head `8df90b39427e511b6081b286928128ee11826b36` passed NICO CI
+34698179296. Security Audit 34698192550 found one unverified RailwayApp candidate:
+the deployment UUID recorded above. The raw candidate matched Railway's verified
+deployment metadata, not a credential. A classification restricted to that exact
+value hash, documentation path and detector retains the finding as a nonsecret
+deployment identifier; verified values and other candidates still block. Twelve
+security-gate tests passed, including those adversarial boundaries. Re-evaluating
+the original scanner artifacts with the corrected classification passed without
+rerunning scanners or changing their evidence. Final-head CI remains required.
+
+A fresh authenticated draft download after #1588 deployment was 1,777,625 bytes,
+SHA-256 `5af1750787ce9d4fc637c0dfb8ac1f4f9534696f3006df34a1c9871b3f7983c6`.
+The browser's download-event observation timed out, but the actual downloaded file
+was present and independently hashed. Download enabled the unchecked report
+acknowledgement; the approval button stayed disabled. No approval was submitted.

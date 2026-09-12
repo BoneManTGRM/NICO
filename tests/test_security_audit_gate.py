@@ -263,3 +263,31 @@ def test_trufflehog_verified_or_non_fixture_finding_blocks(tmp_path: Path) -> No
     manifest = build_manifest(tmp_path)
     assert manifest["tools"]["trufflehog"]["blocking"] == 2
     assert any("trufflehog reported 2" in item for item in manifest["security_gate"]["blockers"])
+
+
+def test_documented_railway_deployment_id_is_retained_but_other_credentials_block(tmp_path: Path) -> None:
+    _clean_evidence(tmp_path)
+    known = {
+        "SourceMetadata": {"Data": {"Git": {"file": "docs/operator-report-approval.md"}}},
+        "DetectorName": "RailwayApp",
+        "Verified": False,
+        "Raw": "82eb5f88-2e22-4fe1-a482-44700f464557",
+    }
+    _write_json_lines(tmp_path, "trufflehog.json", [known])
+    manifest = build_manifest(tmp_path)
+    evidence = manifest["tools"]["trufflehog"]
+    assert manifest["security_gate"]["status"] == "passed"
+    assert evidence["finding_count"] == 1
+    assert evidence["approved_nonsecret_identifiers"] == 1
+    assert evidence["triage"][0]["disposition"] == "approved_nonsecret_deployment_identifier"
+    assert known["Raw"] not in json.dumps(evidence)
+    for changed in (
+        {"Verified": True},
+        {"Raw": "unknown-credential"},
+        {"DetectorName": "Other"},
+        {"SourceMetadata": {"Data": {"Git": {"file": "nico/settings.py"}}}},
+    ):
+        _write_json_lines(tmp_path, "trufflehog.json", [{**known, **changed}])
+        manifest = build_manifest(tmp_path)
+        assert manifest["security_gate"]["status"] == "blocked"
+        assert manifest["tools"]["trufflehog"]["blocking"] == 1

@@ -304,6 +304,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
     blocking = 0
     needs_review = 0
     approved_test_placeholders = 0
+    approved_nonsecret_identifiers = 0
     triage: list[dict[str, Any]] = []
     for finding in findings:
         path = _trufflehog_source_path(finding)
@@ -312,6 +313,17 @@ def _trufflehog(root: Path) -> dict[str, Any]:
         if verified:
             disposition = "blocking_verified_secret"
             blocking += 1
+        elif (
+            path == "docs/operator-report-approval.md"
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "baad0101f41fbbf2c15da26fee7ec21b0b5a069aa0763ffd267a155607a77b16"
+        ):
+            # PR #1589 evidence: Railway deployment metadata confirms this exact
+            # UUID is the deployment ID for 906daf8, not an authentication token.
+            # Retain the finding; never exempt verified values or other UUIDs.
+            disposition = "approved_nonsecret_deployment_identifier"
+            approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
             approved_test_placeholders += 1
@@ -334,6 +346,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
         blocking=blocking,
         needs_review=needs_review,
         approved_test_placeholders=approved_test_placeholders,
+        approved_nonsecret_identifiers=approved_nonsecret_identifiers,
         triage=triage[:200],
         summary_artifact_hash=_digest(root, "trufflehog-summary.json"),
     )
