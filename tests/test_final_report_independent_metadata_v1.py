@@ -19,6 +19,7 @@ def test_final_report_download_is_one_normal_path_independent_of_reviewer_metada
     report_download = function_body("downloadFinalReport", "approveExactReport")
     assert "downloadExactPdf(result" in report_download
     assert "canonicalApprovalReady" not in report_download
+    assert "approvalAuthorityReady" not in report_download
     assert "confirmed" not in report_download
     assert "submitDecision" not in report_download
     assert "reviewUrl()" not in report_download
@@ -29,11 +30,25 @@ def test_final_report_download_is_one_normal_path_independent_of_reviewer_metada
 
 def test_human_approval_is_separate_and_preserves_exact_artifact_gate() -> None:
     approval = function_body("approveExactReport", "recordOtherDecision")
-    assert "canonicalApprovalReady" in approval
+    assert "approvalAuthorityReady" in approval
+    assert "canonicalApprovalReady" not in approval
     assert "confirmed" in approval
     assert "exactEditionDownloaded" in approval
     assert 'submitDecision("approved")' in approval
     assert "expected_artifact_identity: reviewArtifactIdentity" in WORKSPACE
+
+
+def test_blank_and_test_reviewer_metadata_are_normalized_only_for_approval() -> None:
+    helper = WORKSPACE.split("function approvalReviewerMetadata", 1)[1].split(
+        "async function submitDecision", 1
+    )[0]
+    submit = function_body("submitDecision", "prepareLocalizedEdition")
+    assert 'reviewer: suppliedReviewer || "Authenticated NICO operator"' in helper
+    assert 'suppliedRole.toLowerCase() === "test"' in helper
+    assert '? "Security reviewer"' in helper
+    assert 'decision === "approved"' in submit
+    assert "approvalReviewerMetadata()" in submit
+    assert '{reviewer: reviewer.trim(), reviewerRole: reviewerRole.trim()}' in submit
 
 
 def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplied() -> None:
@@ -49,7 +64,7 @@ def test_report_action_does_not_require_human_review_acknowledgement() -> None:
         in WORKSPACE
     )
     assert (
-        'disabled={loading || !canonicalApprovalReady || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}'
+        'disabled={loading || !approvalAuthorityReady || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}'
         in WORKSPACE
     )
 
@@ -61,6 +76,15 @@ def test_client_delivery_remains_separately_protected() -> None:
     assert "deliveryConfirmed" in delivery
     assert "downloadedArtifactDigest !== currentReviewPdfDigest" in delivery
     assert "delivery_authorized: true" in delivery
+    assert "!deliveryConfirmed || !canonicalApprovalReady" in WORKSPACE
+
+
+def test_operator_password_remains_required_for_approval_authority() -> None:
+    assert "const operatorReady = Boolean(runId.trim() && adminToken.trim());" in WORKSPACE
+    assert "const approvalAuthorityReady = operatorReady;" in WORKSPACE
+    assert "approvalAuthorityReady = true" not in WORKSPACE
+    assert 'adminToken.trim()' in WORKSPACE
+    assert 'type="password"' in WORKSPACE
 
 
 def test_report_download_preserves_exact_pdf_integrity_verification() -> None:
@@ -82,14 +106,15 @@ def test_ios_handoff_recognizes_normal_final_report_action_without_owner_test_pa
     assert "targetWindow.location.replace(href)" in HANDOFF
 
 
-def test_pending_approval_action_is_visible_with_actionable_prerequisites() -> None:
+def test_pending_approval_action_is_visible_without_reviewer_metadata_gate() -> None:
     assert "!approvalCompleted && canonicalApprovalReady ? <button" not in WORKSPACE
     assert '!approvalCompleted ? <button className={styles.approve}' in WORKSPACE
     assert 'aria-describedby="approval-next-step"' in WORKSPACE
     assert 'id="approval-next-step"' in WORKSPACE
-    assert "copy.reviewerRequired" in WORKSPACE
+    assert "const approvalNextStep = !approvalAuthorityReady" in WORKSPACE
     assert "copy.reviewDownloadRequired" in WORKSPACE
     assert "copy.approvalReady" in WORKSPACE
+    assert 'optionalReviewerMetadata: "Reviewer name and role are optional for approval.' in WORKSPACE
 
 
 def test_pending_download_does_not_claim_final_approval_in_filename() -> None:
