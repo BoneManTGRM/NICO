@@ -1,0 +1,64 @@
+name: Final review approval regression
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/app/operations/final-review/**'
+      - 'tests/test_final_report_independent_metadata_v1.py'
+      - 'tests/final_review_approval_requirements.test.mjs'
+      - '.github/workflows/final-review-approval-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  approval-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Exact revision and counterfactual prerequisites
+        run: |
+          git rev-parse HEAD
+          node --experimental-strip-types tests/final_review_approval_requirements.test.mjs
+      - name: Patched contracts and original-defect falsification
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          path = Path('tests/test_final_report_independent_metadata_v1.py')
+          scope = {'__name__': 'final_review_contract_checks'}
+          exec(compile(path.read_text(encoding='utf-8'), str(path), 'exec'), scope)
+          tests = sorted(name for name in scope if name.startswith('test_'))
+          for name in tests:
+              scope[name]()
+              print(f'PASS {name}')
+          print(f'{len(tests)} exact-head contract tests passed.')
+
+          original = subprocess.run(
+              ['git', 'show', '1f9edfd50b4e754aa74649da3693b52539437ffa:apps/web/app/operations/final-review/ComprehensiveFinalReviewWorkspace.tsx'],
+              check=True, capture_output=True, text=True,
+          ).stdout
+          scope['WORKSPACE'] = original
+          regressions = (
+              'test_missing_reviewer_disables_approval_instead_of_hiding_the_action',
+              'test_download_preserves_recorded_pdf_filename_instead_of_renaming_a_draft_final',
+          )
+          for name in regressions:
+              try:
+                  scope[name]()
+              except AssertionError:
+                  print(f'EXPECTED ORIGINAL FAILURE {name}')
+              else:
+                  raise AssertionError(f'{name} failed to detect the original defect')
+          print('Both regressions fail on the observed production source and pass on the exact repair head.')
+          PY
