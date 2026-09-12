@@ -79,8 +79,29 @@ def lifecycle_text(value: str) -> str:
     return output
 
 
+def delivery_lifecycle_text(value: str) -> str:
+    for old, new in (
+        ("CLIENT DELIVERY BLOCKED", "CLIENT DELIVERY AUTHORIZED"),
+        ("ENTREGA AL CLIENTE BLOQUEADA", "ENTREGA AL CLIENTE AUTORIZADA"),
+        ("APPROVED - DELIVERY BLOCKED", "APPROVED - DELIVERY AUTHORIZED"),
+        ("SEPARATE AUTHORIZATION", "AUTHORIZATION RECORDED"),
+        ("Client delivery remains blocked pending separate delivery authorization", "Client delivery authorized; specialist review remains separate"),
+        ("La entrega al cliente sigue bloqueada; requiere autorización separada", "Entrega autorizada; revisión especializada separada"),
+        ("client delivery remains blocked", "client delivery is authorized"),
+        ("Client-delivery state: blocked", "Client-delivery state: authorized"),
+        ("Client delivery: Not authorized.", "Client delivery: Authorized."),
+        ("Client delivery: Blocked", "Client delivery: Authorized"),
+        ("Entrega al cliente: No autorizada.", "Entrega al cliente: Autorizada."),
+        ("Entrega al cliente: Bloqueada", "Entrega al cliente: Autorizada"),
+        ("delivery remains unauthorized", "delivery authorization is recorded"),
+        ("la entrega sigue sin autorización", "la entrega está autorizada"),
+    ):
+        value = value.replace(old, new)
+    return value
+
+
 @lru_cache(maxsize=4)
-def _render_source(pdf: bytes) -> tuple[bytes, tuple[tuple[int, str, str], ...]]:
+def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False) -> tuple[bytes, tuple[tuple[int, str, str], ...]]:
     writer = PdfWriter(clone_from=io.BytesIO(pdf))
     changes: list[tuple[int, str, str]] = []
     for page_index, page in enumerate(writer.pages):
@@ -140,6 +161,12 @@ def _render_source(pdf: bytes) -> tuple[bytes, tuple[tuple[int, str, str], ...]]
                          "Lifecycle-only presentation corrections retain the original decision and a separate artifact binding."),
                     ):
                         updated = updated.replace(old, new)
+                if client_delivery_authorized:
+                    updated = delivery_lifecycle_text(updated)
+                    if cover and previous == "CLIENT DELIVERY" and normalized == "Blocked":
+                        updated = "Authorized"
+                    elif cover and previous == "ENTREGA AL CLIENTE" and normalized == "Bloqueada":
+                        updated = "Autorizada"
                 if updated != original:
                     targets[index] = (TextStringObject(updated) if isinstance(operand, TextStringObject)
                                       else ByteStringObject(updated.encode("latin-1")))

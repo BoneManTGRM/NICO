@@ -30,7 +30,7 @@ _STATE_FIELDS = (
     "client_delivery_allowed", "updated_at", "review_history", "review_decision",
     "accepted_edition", "review_context", "review_source_artifact_identity",
     "delivery_authorization", "approved_delivery_package", "review_work_status",
-    "operator_approved_edition", "operator_approval_history",
+    "operator_approved_edition", "operator_approval_history", "operator_delivery_edition",
 )
 
 
@@ -137,7 +137,11 @@ def prepare_localized_edition(service: Any, run_id: str, language: str, payload:
     from nico.comprehensive_operator_approval_v1 import presented_operator_identity, validated_operator_edition
     operator = validated_operator_edition(root)
     if operator:
-        if payload.get("expected_artifact_identity") != presented_operator_identity(root, operator):
+        from nico.comprehensive_operator_delivery_v1 import operator_delivery_identity, validated_operator_delivery
+        delivered = validated_operator_delivery(root)
+        current_identity = (operator_delivery_identity(root, delivered) if delivered
+                            else presented_operator_identity(root, operator))
+        if payload.get("expected_artifact_identity") != current_identity:
             raise ValueError("stale_review_artifact_identity")
     else:
         assert_expected_review_artifact_identity(root, payload.get("expected_artifact_identity"))
@@ -190,7 +194,12 @@ def mutate_localized_edition(service: Any, run_id: str, language: str, payload: 
     root, entry, context = read_localized_edition(service, run_id, language)
     selected = copy(service)
     selected._store = _SelectedEditionStore(context)
-    if delivery:
+    if delivery and payload.get("delivery_kind") == "operator_report":
+        from nico.comprehensive_operator_delivery_v1 import authorize_operator_delivery
+        updated = authorize_operator_delivery(selected, run_id, payload)
+    elif delivery:
+        if payload.get("delivery_kind"):
+            raise ValueError("unsupported_delivery_kind")
         if payload.get("delivery_authorized") is not True or payload.get("authorization_confirmed") is not True:
             raise ValueError("explicit_delivery_authorization_required")
         updated = selected.authorize_delivery(

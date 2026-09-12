@@ -313,7 +313,9 @@ def _validate_record(
             if not isinstance(record.get("approved_delivery_package"), Mapping):
                 violations.append("approved_delivery_package_required")
     elif delivery_allowed:
-        violations.append("client_delivery_must_remain_blocked")
+        from nico.comprehensive_operator_delivery_v1 import validated_operator_delivery
+        if not validated_operator_delivery(record):
+            violations.append("client_delivery_must_remain_blocked")
 
     review_decision = record.get("review_decision")
     review_history_value = record.get("review_history")

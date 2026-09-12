@@ -121,7 +121,8 @@ def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() 
 
     assert 'const approvalCompleted = operatorApprovalCompleted || rawStatus === "approved" || runStatus === "approved"' in source
     assert "const specialistApprovalCompleted = !operatorApprovalCompleted" in source
-    assert "specialistApprovalCompleted && !deliveryAllowed" in source
+    assert "approvalCompleted && !deliveryAllowed" in source
+    assert 'delivery_kind: "operator_report"' in source
     assert "/authorize-delivery" in source
     assert "delivery_authorized: true" in source
     assert "authorization_confirmed: true" in source
@@ -129,7 +130,7 @@ def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() 
     assert "disabled={loading || approvalCompleted}" in source
     assert (
         "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize "
-        "client delivery of that exact edition and its certified package."
+        "client delivery of that exact edition including its disclosed limitations and outstanding review/QC."
     ) in source
     assert "async function downloadFinalReport" in source
     assert "async function approveExactReport" in source

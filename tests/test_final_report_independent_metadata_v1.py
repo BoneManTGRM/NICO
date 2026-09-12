@@ -68,11 +68,12 @@ def test_report_action_does_not_require_human_review_acknowledgement() -> None:
 def test_client_delivery_remains_separately_protected() -> None:
     delivery = function_body("authorizeClientDelivery", "downloadPackage")
     assert "canonicalApprovalReady" in delivery
-    assert "specialistApprovalCompleted" in delivery
+    assert "operatorApprovalCompleted ? operatorReady : canonicalApprovalReady" in delivery
+    assert "!approvalCompleted" in delivery
     assert "deliveryConfirmed" in delivery
     assert "downloadedArtifactDigest !== currentReviewPdfDigest" in delivery
     assert "delivery_authorized: true" in delivery
-    assert "!deliveryConfirmed || !canonicalApprovalReady" in WORKSPACE
+    assert "!deliveryConfirmed || !(operatorApprovalCompleted ? operatorReady : canonicalApprovalReady)" in WORKSPACE
 
 
 def test_operator_password_remains_required_for_approval_authority() -> None:
