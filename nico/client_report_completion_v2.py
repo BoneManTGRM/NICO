@@ -346,6 +346,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     )
 
     ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=spanish)
+    from nico.comprehensive_human_evidence_appendix import render_human_evidence_appendix
+    human_evidence_pdf = render_human_evidence_appendix(canonical, spanish=spanish)
     pdf = sanitize_client_pdf_status(
         compose_compact_client_pdf(
             base_pdf,
@@ -353,6 +355,7 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             gate_pdf,
             review_pdf=review_pdf,
             ci_boundary_pdf=ci_boundary_pdf,
+            human_evidence_pdf=human_evidence_pdf,
         )
     )
     validation = _validate_final_surfaces(

@@ -89,6 +89,7 @@ def compose_compact_client_pdf(
     *,
     review_pdf: bytes | None = None,
     ci_boundary_pdf: bytes | None = None,
+    human_evidence_pdf: bytes | None = None,
 ) -> bytes:
     """Retain one cover, the decision body, and every required client page.
 
@@ -109,6 +110,7 @@ def compose_compact_client_pdf(
     base = PdfReader(io.BytesIO(base_pdf))
     review = _optional_pdf_reader(review_pdf, label="review companion")
     ci_boundary = _optional_pdf_reader(ci_boundary_pdf, label="CI/CD boundary")
+    human_evidence = _optional_pdf_reader(human_evidence_pdf, label="human evidence")
     register = PdfReader(io.BytesIO(register_pdf))
     gate = PdfReader(io.BytesIO(gate_pdf))
 
@@ -172,6 +174,7 @@ def compose_compact_client_pdf(
         register_and_gate_count
         + required_review_count
         + required_ci_boundary_count
+        + (len(human_evidence.pages) if human_evidence is not None else 0)
     )
     if reserved_count > MAX_CLIENT_PDF_PAGES:
         raise ValueError(
@@ -209,6 +212,9 @@ def compose_compact_client_pdf(
         writer.add_page(page)
     for page in selected_review_pages:
         writer.add_page(page)
+    if human_evidence is not None:
+        for page in human_evidence.pages:
+            writer.add_page(page)
     for page in register.pages:
         writer.add_page(page)
     for page in gate.pages:

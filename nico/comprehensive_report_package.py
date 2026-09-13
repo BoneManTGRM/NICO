@@ -311,10 +311,18 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         result.get("unavailable_data_notes") or result.get("unavailable") or [],
         50,
     )
+    dimensions = result.get("assessment_dimensions")
+    status = _text(result.get("status") or "unknown", 40).lower()
+    if isinstance(dimensions, dict):
+        coverage = dimensions.get("substantive_coverage")
+        if coverage in {"not_assessed", "partial", "unavailable"}:
+            status = coverage
+        if dimensions.get("execution_status") == "complete":
+            evidence_lines.insert(0, "Processing complete; assessment coverage and specialist review are reported separately.")
     return {
         "stage_id": stage_id,
         "title": _STAGE_TITLES.get(stage_id, stage_id.replace("_", " ").title()),
-        "status": _text(result.get("status") or "unknown", 40).lower(),
+        "status": status,
         "summary": _text(
             result.get("summary") or result.get("message") or "Stage evidence was recorded.",
             1600,

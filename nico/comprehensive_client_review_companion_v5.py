@@ -130,7 +130,20 @@ def _values(value: Any, *, limit: int = 8, item_limit: int = 850) -> list[str]:
     output: list[str] = []
     seen: set[str] = set()
     for raw in values:
-        item = _text(raw, item_limit)
+        if isinstance(raw, Mapping):
+            # Summaries reference the retained canonical record. Never print its
+            # Python representation (which leaks None and cuts fields mid-value).
+            parts = []
+            for field in ("work_package_id", "finding_id", "title", "objective",
+                          "window", "location", "role_category", "status"):
+                value = raw.get(field)
+                if value is not None and not isinstance(value, (Mapping, list, tuple)):
+                    text = str(value).strip()
+                    if text:
+                        parts.append(text)
+            item = " · ".join(parts) or "Structured planning record; see canonical JSON."
+        else:
+            item = _text(raw, item_limit)
         key = item.casefold()
         if not item or key in seen:
             continue

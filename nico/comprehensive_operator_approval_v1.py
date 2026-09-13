@@ -204,6 +204,8 @@ def build_operator_edition(record: dict[str, Any], payload: Mapping[str, Any]) -
         "html": "<section><pre>" + escape(cover_text) + "</pre></section>" + str(source.get("html") or ""),
         "json": {**deepcopy(source["json"]), "operator_approval": deepcopy(statement)},
     }
+    from nico.comprehensive_operator_report_formats import project_operator_report_formats
+    project_operator_report_formats(reports)
     digests = _artifact_digests(reports)
     review = {**statement, "approved_artifact_digests": digests}
     review["approval_certificate_sha256"] = canonical_sha256(review)

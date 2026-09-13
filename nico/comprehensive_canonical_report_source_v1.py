@@ -190,11 +190,27 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         }
 
     stages, maturity_truth = synchronize_maturity_label_truth(raw_stages)
+    # This is the production final-publication path. The legacy builder's
+    # context wrapper is not called here, so retain the verified payload before
+    # any renderer or canonical digest consumes the source.
+    from nico.comprehensive_human_evidence_report_v2 import (
+        _strict_context_snapshot, _inject_human_review_stages,
+        install_comprehensive_human_evidence_report_v2,
+    )
+    install_comprehensive_human_evidence_report_v2()
+    human_snapshot = _strict_context_snapshot(context)
+    stages = _inject_human_review_stages(stages, human_snapshot)
     authorization_confirmed = _authorization_confirmed(stages)
     ordered = [
         _stage_summary(str(stage_id), result)
         for stage_id, result in stages.items()
         if isinstance(result, Mapping) and str(stage_id) != _FINAL_STAGE_ID
+    ]
+    from nico.comprehensive_human_evidence_report_v1 import _localize_retained_stage
+    ordered = [
+        _localize_retained_stage(stage, spanish=report_language == "es-MX")
+        if stage["stage_id"] == "client_evidence_summary" or stage["stage_id"].startswith("client_human_evidence_")
+        else stage for stage in ordered
     ]
     assessment = _assessment(dict(stages))
     assessment = dict(assessment)
@@ -207,6 +223,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     assessment["maturity_label_truth"] = deepcopy(maturity_truth)
 
     canonical = {
+        "human_report_export_schema": "nico.human_report_export.v1",
+        "supplied_human_evidence": deepcopy(human_snapshot["human_evidence"]),
         "service_id": _SERVICE_ID,
         "authorization_confirmed": authorization_confirmed,
         "identity": identity,
@@ -237,6 +255,9 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     # Installation is explicit at the post-restoration canonical boundary so tests can
     # inspect the scanner independently and later v88 rebinds keep the fallback helper.
     spanish_preflight_installation = install_spanish_publication_preflight_v93()
+    # Preflight rebinds the translator; reinstall the verified client-literal
+    # guard afterwards so supplied text is not translated as NICO-authored prose.
+    install_comprehensive_human_evidence_report_v2()
     canonical = bind_final_finding_roadmap(canonical, raw_stages=stages)
     canonical = bind_report_execution_provenance(canonical, raw_stages=stages)
     spanish_preflight = assert_spanish_canonical_publication_preflight(canonical)

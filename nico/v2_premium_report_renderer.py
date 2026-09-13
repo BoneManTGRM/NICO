@@ -297,7 +297,7 @@ def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
         _stage(
             "risk_reduction_and_executive_briefing",
             "Executive Risk Register and Decision Briefing",
-            "The automated executive briefing and bounded priority register are complete for review; finding acceptance, residual-risk ownership, remediation commitment, and delivery authorization remain pending human disposition.",
+            "The automated executive briefing and bounded priority register are complete for review; finding acceptance, residual-risk ownership, and remediation commitment remain pending human disposition.",
             evidence=briefing.get("evidence"),
             findings=_finding_lines(executive),
             unavailable=briefing.get("unavailable") or briefing.get("limitations"),
