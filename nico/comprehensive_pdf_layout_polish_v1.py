@@ -327,7 +327,7 @@ def _render_polished_review_pdf(
         borderColor=colors.HexColor("#cbd5e1"),
         borderWidth=.35,
         borderPadding=2.2,
-        spaceBefore=.5,
+        spaceBefore=4.0,
     )
 
     def paragraph(
