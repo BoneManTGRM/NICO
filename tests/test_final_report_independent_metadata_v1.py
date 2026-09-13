@@ -28,14 +28,14 @@ def test_final_report_download_is_one_normal_path_independent_of_reviewer_metada
     assert "ownerTest" not in WORKSPACE
 
 
-def test_human_approval_is_separate_and_preserves_exact_artifact_gate() -> None:
+def test_human_approval_is_explicit_and_preserves_exact_artifact_gate() -> None:
     approval = function_body("approveExactReport", "recordOtherDecision")
-    assert "approvalAuthorityReady" in approval
+    assert "!finalActionAuthorityReady" in approval
     assert "canonicalApprovalReady" not in approval
-    assert "confirmed" in approval
-    assert "exactEditionDownloaded" in approval
+    assert "(!approvalCompleted && (!confirmed || !exactEditionDownloaded))" in approval
     assert 'submitDecision("approved")' in approval
     assert "expected_artifact_identity: reviewArtifactIdentity" in WORKSPACE
+    assert "? canonicalApprovalReady : approvalAuthorityReady" in WORKSPACE
 
 
 def test_operator_approval_metadata_remains_optional_and_authority_is_explicit() -> None:
@@ -49,31 +49,36 @@ def test_operator_approval_metadata_remains_optional_and_authority_is_explicit()
 
 def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplied() -> None:
     assert "onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>" in WORKSPACE
-    assert "onClick={approveExactReport}>{copy.approveExactReport}</button>" in WORKSPACE
+    assert "onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button>" in WORKSPACE
     assert "canonicalApprovalReady ? copy.approveDownload" not in WORKSPACE
     assert "canonicalApprovalReady ? copy.recording" not in WORKSPACE
 
 
-def test_report_action_does_not_require_human_review_acknowledgement() -> None:
+def test_report_download_does_not_require_human_review_acknowledgement() -> None:
     assert (
         'disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}'
         in WORKSPACE
     )
     assert (
-        'disabled={loading || !approvalAuthorityReady || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}'
+        'disabled={loading || !finalActionAuthorityReady || !currentReviewPdfDigest || '
+        '(!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}'
         in WORKSPACE
     )
 
 
-def test_client_delivery_remains_separately_protected() -> None:
-    delivery = function_body("authorizeClientDelivery", "downloadPackage")
-    assert "canonicalApprovalReady" in delivery
-    assert "operatorApprovalCompleted ? operatorReady : canonicalApprovalReady" in delivery
-    assert "!approvalCompleted" in delivery
-    assert "deliveryConfirmed" in delivery
-    assert "downloadedArtifactDigest !== currentReviewPdfDigest" in delivery
-    assert "delivery_authorized: true" in delivery
-    assert "!deliveryConfirmed || !(operatorApprovalCompleted ? operatorReady : canonicalApprovalReady)" in WORKSPACE
+def test_client_delivery_keeps_exact_identity_protection_without_an_extra_user_step() -> None:
+    approval = function_body("approveExactReport", "recordOtherDecision")
+    assert 'delivery_kind: "operator_report"' in approval
+    assert "delivery_authorized: true" in approval
+    assert "authorization_confirmed: true" in approval
+    assert "expected_artifact_identity: approvedArtifactIdentity" in approval
+    assert "receipt.authorized_artifact_identity" in approval
+    assert "reviewCertificateFrom(authorized).approval_certificate_sha256" in approval
+    assert "authorized.client_delivery_allowed !== true" in approval
+    assert "deliveryConfirmed" not in WORKSPACE
+    assert "async function authorizeClientDelivery" not in WORKSPACE
+    assert "approve it, and authorize client delivery" in WORKSPACE
+    assert "lo apruebo y autorizo su entrega al cliente" in WORKSPACE
 
 
 def test_operator_password_remains_required_for_approval_authority() -> None:
@@ -91,6 +96,7 @@ def test_report_download_preserves_exact_pdf_integrity_verification() -> None:
     assert 'String.fromCharCode(...bytes.slice(0, 4)) !== "%PDF"' in verifier
     assert 'window.crypto.subtle.digest("SHA-256", buffer)' in WORKSPACE
     assert "actualSha256 !== expectedSha256.toLowerCase()" in verifier
+    assert "if (download) downloadBlob" in verifier
 
 
 def test_ios_handoff_recognizes_normal_final_report_action_without_owner_test_path() -> None:
@@ -103,9 +109,9 @@ def test_ios_handoff_recognizes_normal_final_report_action_without_owner_test_pa
     assert "targetWindow.location.replace(href)" in HANDOFF
 
 
-def test_pending_approval_action_is_visible_without_reviewer_metadata_gate() -> None:
+def test_final_action_is_visible_until_delivery_finishes_without_reviewer_metadata_gate() -> None:
     assert "!approvalCompleted && canonicalApprovalReady ? <button" not in WORKSPACE
-    assert '!approvalCompleted ? <button className={styles.approve}' in WORKSPACE
+    assert '!deliveryAllowed ? <button className={styles.approve}' in WORKSPACE
     assert 'aria-describedby="approval-next-step"' in WORKSPACE
     assert 'id="approval-next-step"' in WORKSPACE
     assert "const approvalNextStep = !approvalAuthorityReady" in WORKSPACE
@@ -122,15 +128,18 @@ def test_pending_download_does_not_claim_final_approval_in_filename() -> None:
     assert 'safeFilename(String(exactReport.pdf_filename || ""), fallback)' in WORKSPACE
 
 
-def test_approval_retries_do_not_silently_duplicate_or_authorize_delivery() -> None:
+def test_final_action_reuses_approval_and_opens_only_the_authorized_pdf() -> None:
     approval = function_body("approveExactReport", "recordOtherDecision")
     assert "if (approvalInFlight.current) return;" in approval
     assert "approvalInFlight.current = true;" in approval
     assert "approvalInFlight.current = false;" in approval
-    assert "copy.approvalDownloadFailed" in approval
-    assert "deliveryAuthorizationUrl" not in approval
-    assert "authorizeClientDelivery" not in approval
-    assert "downloadExactPdf(reviewed)" in approval
+    assert 'approvalCompleted ? result : await submitDecision("approved")' in approval
+    assert "copy.approvalDeliveryFailed" in approval
+    assert "copy.pdfRetry" in approval
+    assert approval.index("await downloadExactPdf(reviewed, false);") < approval.index("requestJson(deliveryAuthorizationUrl()")
+    assert approval.index("authorized.client_delivery_allowed !== true") < approval.index("setResult(authorized)")
+    assert approval.index("setResult(authorized)") < approval.index("await downloadExactPdf(authorized)")
+    assert "downloadExactPdf(reviewed);" not in approval
 
 
 def test_ios_pdf_action_marker_survives_localized_label_changes() -> None:
