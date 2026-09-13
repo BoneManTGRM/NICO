@@ -17,6 +17,7 @@ const compiled = ts.transpileModule(readFileSync(filename, 'utf8'), {
 });
 assert.equal((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error).length, 0);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+const response = value => ({ok: true, status: 200, json: async () => value});
 function fixture(approved = false, operator = true) {
   const bytes = Buffer.from(`%PDF-1.7\nUNIT FIXTURE ONLY ${approved ? 'APPROVED' : 'PENDING'}\n%%EOF\n`);
   const value = {
@@ -54,6 +55,23 @@ function fixture(approved = false, operator = true) {
   return value;
 }
 const finalReport = value => value.operator_approved_edition?.reports || value.reports;
+function authorizedFixture(request, corrupt = false, operator = true) {
+  const result = fixture(true, operator);
+  result.client_delivery_allowed = true;
+  result.delivery_authorization = {
+    delivery_authorization_certificate_sha256: 'f'.repeat(64),
+    authorized_artifact_identity: request.body.expected_artifact_identity,
+  };
+  const bytes = Buffer.from('%PDF-1.4\nclient-delivery-authorized fixture');
+  result.review_artifact_identity = {...result.review_artifact_identity, revision: 19,
+    artifact_digests: {pdf: {sha256: digest(bytes), size_bytes: bytes.length}}};
+  const reports = {...finalReport(result),
+    pdf_base64: (corrupt ? Buffer.from('broken') : bytes).toString('base64'),
+    pdf_filename: 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf'};
+  if (operator) result.operator_approved_edition.reports = reports;
+  else result.reports = reports;
+  return result;
+}
 const text = value => value == null || typeof value === 'boolean' ? ''
   : typeof value !== 'object' ? String(value)
   : Array.isArray(value) ? value.map(text).join('') : text(value.props?.children);
@@ -101,7 +119,9 @@ function harness({locale = 'en', edition = 'source', post, get} = {}) {
       requests.push(request);
       if (request.method === 'POST' && post) return post(request);
       if (request.method === 'GET' && get) return get(request);
-      return {ok: true, status: 200, json: async () => fixture(request.method === 'POST')};
+      return response(request.url.endsWith('/authorize-delivery')
+        ? authorizedFixture(request, false, request.body.delivery_kind === 'operator_report')
+        : fixture(request.method === 'POST'));
     },
     require(name) {
       if (name === 'react') return react;
@@ -158,31 +178,25 @@ test('pending approval remains actionable with blank reviewer metadata', async (
   assert.equal(h.button(h.approveLabel).props.disabled, false);
 });
 
-test('blank reviewer metadata can approve and returns an approved final PDF', async () => {
-  const h = harness(); await h.ready({reviewer: '', role: ''});
-  await h.click(h.approveLabel);
-  const posts = h.requests.filter(r => r.method === 'POST');
-  assert.equal(posts.length, 1);
-  assert.equal(posts[0].body.reviewer, '');
-  assert.equal(posts[0].body.reviewer_role, '');
-  assert.equal(posts[0].body.decision, 'approved');
-  assert.equal(h.downloads.length, 2);
-  assert.equal(h.downloads[1].filename, finalReport(fixture(true)).pdf_filename);
-  assert.equal(h.button(h.approveLabel), undefined);
-  assert.equal(h.button('Authorize client delivery').props.disabled, true);
-});
-
-test('test reviewer metadata can exercise approval through an approved final PDF', async () => {
-  const h = harness(); await h.ready({reviewer: 'test', role: 'test'});
-  await h.click(h.approveLabel);
-  const posts = h.requests.filter(r => r.method === 'POST');
-  assert.equal(posts.length, 1);
-  assert.equal(posts[0].body.reviewer, 'test');
-  assert.equal(posts[0].body.reviewer_role, 'test');
-  assert.equal(posts[0].body.decision, 'approved');
-  assert.equal(h.downloads.length, 2);
-  assert.equal(h.downloads[1].filename, finalReport(fixture(true)).pdf_filename);
-});
+for (const value of ['', 'test']) {
+  test(`metadata ${JSON.stringify(value)} can approve and authorize with one final action`, async () => {
+    const h = harness(); await h.ready({reviewer: value, role: value});
+    await h.click(h.approveLabel);
+    const posts = h.requests.filter(r => r.method === 'POST');
+    assert.equal(posts.length, 2);
+    assert.equal(posts[0].body.reviewer, value);
+    assert.equal(posts[0].body.reviewer_role, value);
+    assert.equal(posts[0].body.decision, 'approved');
+    assert.equal(posts[1].body.delivery_kind, 'operator_report');
+    assert.equal(posts[1].body.delivery_authorized, true);
+    assert.equal(posts[1].body.authorization_confirmed, true);
+    assert.equal(posts[1].body.authorizer, value);
+    assert.equal(h.downloads.length, 2);
+    assert.equal(h.downloads[1].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
+    assert.equal(h.button(h.approveLabel), undefined);
+    assert.equal(h.button('Authorize client delivery'), undefined);
+  });
+}
 
 test('checkbox alone cannot approve without exact downloaded artifact', async () => {
   const h = harness(); await h.load();
@@ -193,18 +207,29 @@ test('checkbox alone cannot approve without exact downloaded artifact', async ()
 });
 
 for (const [locale, edition] of [['en', 'source'], ['es-MX', 'es-MX']]) {
-  test(`${locale}: explicit approval downloads returned approved bytes, never authorizes delivery`, async () => {
+  test(`${locale}: one explicit final action binds both decisions and downloads only authorized bytes`, async () => {
     const h = harness({locale, edition}); await h.ready();
+    const checkboxes = h.elements().filter(n => n.type === 'input' && n.props.type === 'checkbox');
+    assert.equal(checkboxes.length, 1);
+    assert.match(h.text(), locale === 'en' ? /approve it, and authorize client delivery/ : /lo apruebo y autorizo su entrega/);
     await h.click(h.approveLabel);
-    const posts = h.requests.filter(r => r.method === 'POST'); assert.equal(posts.length, 1);
-    assert.ok(posts[0].url.endsWith(edition === 'source' ? '/comprun_unit_fixture/review' : '/comprun_unit_fixture/localized-editions/es-MX/review'));
+    const posts = h.requests.filter(r => r.method === 'POST'); assert.equal(posts.length, 2);
+    const prefix = edition === 'source' ? '/comprun_unit_fixture' : '/comprun_unit_fixture/localized-editions/es-MX';
+    assert.ok(posts[0].url.endsWith(`${prefix}/review`));
+    assert.ok(posts[1].url.endsWith(`${prefix}/authorize-delivery`));
     assert.deepEqual(posts[0].body.expected_artifact_identity, fixture().review_artifact_identity);
+    assert.deepEqual(posts[1].body.expected_artifact_identity, fixture(true).review_artifact_identity);
     assert.equal(posts[0].body.decision, 'approved');
-    assert.equal(h.downloads.length, 2); assert.equal(h.downloads[1].filename, finalReport(fixture(true)).pdf_filename);
-    assert.equal(digest(Buffer.from(await h.downloads[1].blob.arrayBuffer())), fixture(true).review_artifact_identity.artifact_digests.pdf.sha256);
+    assert.equal(posts[1].body.delivery_authorized, true);
+    assert.equal(h.downloads.length, 2);
+    assert.equal(h.downloads[1].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
+    assert.equal(digest(Buffer.from(await h.downloads[1].blob.arrayBuffer())), authorizedFixture(posts[1]).review_artifact_identity.artifact_digests.pdf.sha256);
+    assert.equal(h.downloads.some(d => d.filename === 'NICO-APPROVED-FINAL.pdf'), false);
     assert.equal(h.button(h.approveLabel), undefined);
-    assert.equal(h.button(locale === 'en' ? 'Authorize client delivery' : 'Autorizar entrega al cliente').props.disabled, true);
+    assert.equal(h.button(locale === 'en' ? 'Authorize client delivery' : 'Autorizar entrega al cliente'), undefined);
+    assert.equal(h.elements().filter(n => n.type === 'input' && n.props.type === 'checkbox').length, 0);
     assert.ok(h.elements().filter(n => n.type === 'button' && n.props['data-nico-pdf-action'] === 'true').length);
+    assert.match(h.text(), locale === 'en' ? /Client deliveryAuthorized/ : /Entrega al clienteAutorizada/);
   });
 }
 
@@ -212,30 +237,36 @@ test('409 stale-artifact rejection does not produce an approved PDF or success',
   const h = harness({post: async () => ({ok: false, status: 409, json: async () => ({detail: {code: 'stale_review_artifact_identity', message: 'Reload and review the current exact artifacts.'}})})});
   await h.ready(); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
+  assert.equal(h.requests.filter(r => r.url.endsWith('/authorize-delivery')).length, 0);
   assert.match(h.text(), /Reload and review the current exact artifacts/);
 });
 
-test('approved PDF corruption preserves recorded approval and offers download-only retry', async () => {
+test('corrupt intermediate approved bytes retain approval but never authorize or open that PDF', async () => {
   const h = harness({post: async () => {const value = fixture(true); value.operator_approved_edition.reports.pdf_base64 = fixture().reports.pdf_base64;
-    return {ok: true, status: 200, json: async () => value};}});
+    return response(value);}});
   await h.ready(); await h.click(h.approveLabel);
-  assert.equal(h.downloads.length, 1); assert.equal(h.button(h.approveLabel), undefined);
-  assert.match(h.text(), /Approval was recorded, but the approved PDF download failed/);
+  assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
+  assert.match(h.text(), /Approval is recorded, but finalization is incomplete/);
   assert.ok(h.button('Download approved final PDF'));
   await h.click('Download approved final PDF');
+  await h.click(h.approveLabel); // Reuses approval; revalidation still rejects corruption.
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 1);
+  assert.equal(h.requests.filter(r => r.url.endsWith('/authorize-delivery')).length, 0);
   assert.equal(h.downloads.length, 1);
-  assert.equal(h.button('Authorize client delivery').props.disabled, true);
 });
 
-test('rapid duplicate approval calls produce only one mutation', async () => {
+test('rapid duplicate final actions produce only one approval and one delivery permission', async () => {
   let resolvePost;
-  const h = harness({post: () => new Promise(resolve => {resolvePost = resolve;})}); await h.ready();
+  const h = harness({post: request => request.url.endsWith('/authorize-delivery')
+    ? Promise.resolve(response(authorizedFixture(request)))
+    : new Promise(resolve => {resolvePost = resolve;})}); await h.ready();
   const handler = h.button(h.approveLabel).props.onClick;
   const first = handler(); const duplicate = handler();
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 1);
-  resolvePost({ok: true, status: 200, json: async () => fixture(true)});
-  await Promise.all([first, duplicate]); h.render(); assert.equal(h.downloads.length, 2);
+  resolvePost(response(fixture(true)));
+  await Promise.all([first, duplicate]); h.render();
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 2);
+  assert.equal(h.downloads.length, 2);
 });
 
 test('changing the run discards downloaded identity and review acknowledgement', async () => {
@@ -255,13 +286,15 @@ test('server rejection remains visible and never becomes false success', async (
   const h = harness({post: async () => ({ok: false, status: 422, json: async () => ({detail: {code: 'review_work_not_ready_for_approval', message: 'Independent quality control remains incomplete.'}})})});
   await h.ready({reviewer: 'test', role: 'test'}); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
+  assert.equal(h.requests.filter(r => r.url.endsWith('/authorize-delivery')).length, 0);
   assert.match(h.text(), /Independent quality control remains incomplete/);
 });
 
 test('HTTP 200 pending response never masquerades as an approved download', async () => {
-  const h = harness({post: async () => ({ok: true, status: 200, json: async () => fixture(false)})});
+  const h = harness({post: async () => response(fixture(false))});
   await h.ready({reviewer: '', role: ''}); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1); assert.ok(h.button(h.approveLabel));
+  assert.equal(h.requests.filter(r => r.url.endsWith('/authorize-delivery')).length, 0);
   assert.match(h.text(), /Unable to record report approval/);
 });
 
@@ -270,7 +303,8 @@ for (const value of ['', 'TEST', 'test', ' TeSt ']) {
     const h = harness(); await h.ready({reviewer: value, role: value});
     h.change('Decision context', value);
     await h.click(h.approveLabel);
-    const post = h.requests.find(r => r.method === 'POST');
+    const posts = h.requests.filter(r => r.method === 'POST');
+    const post = posts[0];
     assert.equal(post.body.reviewer, value);
     assert.equal(post.body.reviewer_role, value);
     assert.equal(post.body.decision_reason, value);
@@ -278,18 +312,19 @@ for (const value of ['', 'TEST', 'test', ' TeSt ']) {
     assert.equal(post.body.exact_report_acknowledged, true);
     assert.equal(post.body.review_authorized, true);
     assert.equal(post.body.authorization_confirmed, true);
+    assert.equal(posts[1].body.authorizer, value.trim());
     assert.match(h.text(), /Specialist reviewNot completed/);
-    assert.match(h.text(), /does not mark that work complete or authorize client delivery/);
+    assert.match(h.text(), /does not mark that work complete or send the report/);
     assert.match(h.text(), /"human_review_completed": false/);
     assert.doesNotMatch(h.text(), /pdf_base64|UNIT FIXTURE ONLY/);
-    assert.equal(h.button('Authorize client delivery').props.disabled, true);
+    assert.equal(h.button('Authorize client delivery'), undefined);
   });
 }
 
-test('approved operator reload downloads the operator edition without another approval', async () => {
-  const h = harness({get: async () => ({ok: true, status: 200, json: async () => fixture(true)})});
+test('approved operator reload and download do not silently grant delivery permission', async () => {
+  const h = harness({get: async () => response(fixture(true))});
   await h.load();
-  assert.equal(h.button(h.approveLabel), undefined);
+  assert.equal(h.button(h.approveLabel).props.disabled, false);
   await h.click('Download approved final PDF');
   assert.equal(h.downloads.length, 1);
   assert.equal(h.downloads[0].filename, finalReport(fixture(true)).pdf_filename);
@@ -297,24 +332,43 @@ test('approved operator reload downloads the operator edition without another ap
   assert.equal(digest(Buffer.from(await h.downloads[0].blob.arrayBuffer())), fixture(true).review_artifact_identity.artifact_digests.pdf.sha256);
 });
 
+test('existing operator approval finishes through the same button without another acknowledgement', async () => {
+  const h = harness({get: async () => response(fixture(true))});
+  await h.load();
+  assert.equal(h.elements().filter(n => n.type === 'input' && n.props.type === 'checkbox').length, 0);
+  await h.click(h.approveLabel);
+  const posts = h.requests.filter(r => r.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.ok(posts[0].url.endsWith('/authorize-delivery'));
+  assert.deepEqual(posts[0].body.expected_artifact_identity, fixture(true).review_artifact_identity);
+  assert.equal(h.downloads.length, 1);
+  assert.equal(h.downloads[0].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
+});
+
 test('operator status without its bound receipt never hides pending approval', async () => {
   const h = harness({post: async () => {const value = fixture(false); value.operator_approval_status = 'approved';
-    return {ok: true, status: 200, json: async () => value};}});
+    return response(value);}});
   await h.ready(); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1);
   assert.ok(h.button(h.approveLabel));
   assert.match(h.text(), /Unable to record report approval/);
 });
 
-test('legacy specialist approved edition retains its separate delivery controls', async () => {
-  const h = harness({get: async () => ({ok: true, status: 200, json: async () => fixture(true, false)})});
+test('legacy specialist approved edition retains its stricter authority requirements', async () => {
+  const h = harness({get: async () => response(fixture(true, false))});
   await h.load();
-  assert.equal(h.button(h.approveLabel), undefined);
+  assert.equal(h.button(h.approveLabel).props.disabled, true);
   assert.match(h.text(), /Specialist reviewCompleted/);
-  assert.ok(h.button('Authorize client delivery').props.disabled);
+  assert.equal(h.button('Authorize client delivery'), undefined);
   await h.click('Download approved final PDF');
   assert.equal(h.downloads.length, 1);
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+  h.change(h.reviewerLabel, 'Unit Fixture Reviewer'); h.change(h.roleLabel, 'Security reviewer');
+  await h.click(h.approveLabel);
+  const posts = h.requests.filter(r => r.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].body.delivery_kind, undefined);
+  assert.equal(posts[0].body.authorizer_role, 'Security reviewer');
 });
 
 function loadHelpers(relative, additions = {}) {
@@ -389,11 +443,11 @@ async function hydrationHarness(mutation, status) {
     window, Request, require: name => name === 'react' ? {useEffect: fn => fn()} : {},
   });
   helpers.default();
-  const response = await window.fetch('https://unit.invalid/api/nico/assessment/comprehensive-run/comprun_unit_fixture/localized-editions/es-MX/review', {
+  const result = await window.fetch('https://unit.invalid/api/nico/assessment/comprehensive-run/comprun_unit_fixture/localized-editions/es-MX/review', {
     method: 'POST', headers: {'X-NICO-Admin-Token': 'unit-fixture'},
     body: JSON.stringify({decision: 'approved', approval_kind: 'operator_report', exact_report_acknowledged: true}),
   });
-  return {calls, response: await response.json()};
+  return {calls, response: await result.json()};
 }
 
 test('operator mutation with approved bytes needs no redundant hydration read', async () => {
@@ -414,80 +468,120 @@ test('operator hydration reads only the same exact locale and preserves speciali
   assert.equal(finalReport(h.response).pdf_filename, finalReport(fixture(true)).pdf_filename);
 });
 
-
 test('operator approval for another reviewed identity is never accepted or downloaded', async () => {
   const h = harness({post: async () => {const value = fixture(true);
     value.operator_approved_edition.source_review_artifact_identity.run_id = 'comprun_other_fixture';
-    return {ok: true, status: 200, json: async () => value};}});
+    return response(value);}});
   await h.ready(); await h.click(h.approveLabel);
   assert.equal(h.downloads.length, 1);
   assert.ok(h.button(h.approveLabel));
+  assert.equal(h.requests.filter(r => r.url.endsWith('/authorize-delivery')).length, 0);
   assert.match(h.text(), /failed browser integrity validation/);
 });
 
-
-function authorizedFixture(request, corrupt = false) {
-  const result = fixture(true);
-  result.client_delivery_allowed = true;
-  result.delivery_authorization = {
-    delivery_authorization_certificate_sha256: 'f'.repeat(64),
-    authorized_artifact_identity: request.body.expected_artifact_identity,
-  };
-  const bytes = Buffer.from('%PDF-1.4\nclient-delivery-authorized fixture');
-  result.review_artifact_identity = {...result.review_artifact_identity, revision: 19,
-    artifact_digests: {pdf: {sha256: digest(bytes), size_bytes: bytes.length}}};
-  result.operator_approved_edition.reports = {...result.operator_approved_edition.reports,
-    pdf_base64: (corrupt ? Buffer.from('broken') : bytes).toString('base64'),
-    pdf_filename: 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf'};
-  return result;
-}
-
-test('explicit client permission works with blank metadata and downloads authorized PDF once', async () => {
+test('existing approval double tap records only one client permission and opens one authorized PDF', async () => {
   let release;
-  const h = harness({get: async () => ({ok: true, json: async () => fixture(true)}),
-    post: async request => {await new Promise(resolve => {release = resolve;});
-      return {ok: true, json: async () => authorizedFixture(request)};}});
+  const started = new Promise(resolve => {release = resolve;});
+  let resolvePost;
+  const h = harness({get: async () => response(fixture(true)),
+    post: async request => {release(); await new Promise(resolve => {resolvePost = resolve;});
+      return response(authorizedFixture(request));}});
   await h.load();
-  assert.equal(h.button('Authorize client delivery').props.disabled, true);
-  await h.click('Download approved final PDF');
-  h.change('I reviewed the downloaded APPROVED FINAL PDF', true);
-  const button = h.button('Authorize client delivery');
+  assert.equal(h.button(h.approveLabel).props.disabled, false);
+  const button = h.button(h.approveLabel);
   const first = button.props.onClick();
   await button.props.onClick();
-  release(); await first; h.render();
+  await started; resolvePost(); await first; h.render();
   const posts = h.requests.filter(r => r.method === 'POST');
   assert.equal(posts.length, 1);
   assert.equal(posts[0].body.delivery_kind, 'operator_report');
   assert.equal(posts[0].body.authorizer, '');
-  assert.equal(h.downloads.at(-1).filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
+  assert.equal(h.downloads.length, 1);
+  assert.equal(h.downloads[0].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
   assert.match(h.text(), /Client delivery is authorized/);
   assert.match(h.text(), /Not completed/);
-  assert.equal(h.button('Authorize client delivery'), undefined);
+  assert.equal(h.button(h.approveLabel), undefined);
 });
 
-test('client permission rejects HTTP 200 pending and mismatched receipt without changing state', async () => {
-  for (const mismatch of [false, true]) {
-    const h = harness({get: async () => ({ok:true,json:async()=>fixture(true)}),
-      post: async request => {const r = mismatch ? authorizedFixture(request) : fixture(true);
-        if (mismatch) r.delivery_authorization.authorized_artifact_identity = {run_id:'wrong'};
-        return {ok:true,json:async()=>r};}});
-    await h.load(); await h.click('Download approved final PDF');
-    h.change('I reviewed the downloaded APPROVED FINAL PDF', true);
-    await h.click('Authorize client delivery');
+for (const mode of ['pending', 'wrong-identity', 'missing-receipt', 'different-approval']) {
+  test(`client permission rejects ${mode} without a false authorized result`, async () => {
+    const h = harness({get: async () => response(fixture(true)),
+      post: async request => {const value = mode === 'pending' ? fixture(true) : authorizedFixture(request);
+        if (mode === 'wrong-identity') value.delivery_authorization.authorized_artifact_identity = {run_id: 'wrong'};
+        if (mode === 'missing-receipt') delete value.delivery_authorization;
+        if (mode === 'different-approval') value.operator_approved_edition.review.approval_certificate_sha256 = 'e'.repeat(64);
+        return response(value);}});
+    await h.load(); await h.click(h.approveLabel);
     assert.match(h.text(), /Unable to authorize client delivery/);
-    assert.ok(h.button('Authorize client delivery'));
-    assert.equal(h.downloads.length, 1);
-  }
+    assert.ok(h.button(h.approveLabel));
+    assert.equal(h.downloads.length, 0);
+    assert.match(h.text(), /Client deliveryBlocked/);
+  });
+}
+
+test('delivery failure resumes through the same button without repeating approval or review', async () => {
+  let fail = true;
+  const h = harness({post: async request => {
+    if (!request.url.endsWith('/authorize-delivery')) return response(fixture(true));
+    if (fail) {fail = false; throw new Error('Unit network interruption');}
+    return response(authorizedFixture(request));
+  }});
+  await h.ready(); await h.click(h.approveLabel);
+  assert.match(h.text(), /Approval is recorded, but finalization is incomplete/);
+  assert.equal(h.downloads.length, 1);
+  assert.equal(h.button(h.approveLabel).props.disabled, false);
+  assert.equal(h.elements().filter(n => n.type === 'input' && n.props.type === 'checkbox').length, 0);
+  await h.click(h.approveLabel);
+  assert.equal(h.requests.filter(r => r.url.endsWith('/review')).length, 1);
+  const permissions = h.requests.filter(r => r.url.endsWith('/authorize-delivery'));
+  assert.equal(permissions.length, 2);
+  assert.deepEqual(permissions[0].body.expected_artifact_identity, permissions[1].body.expected_artifact_identity);
+  assert.equal(h.downloads.length, 2);
+  assert.equal(h.downloads[1].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
 });
 
-test('persisted client permission survives failed download and offers download-only retry', async () => {
-  const h = harness({get:async()=>({ok:true,json:async()=>fixture(true)}),
-    post:async request=>({ok:true,json:async()=>authorizedFixture(request,true)})});
-  await h.load(); await h.click('Download approved final PDF');
-  h.change('I reviewed the downloaded APPROVED FINAL PDF', true);
-  await h.click('Authorize client delivery');
+test('persisted client permission survives failed final download with download-only recovery', async () => {
+  let current = fixture(false);
+  const h = harness({get: async () => response(current), post: async request => {
+    if (!request.url.endsWith('/authorize-delivery')) return response(fixture(true));
+    current = authorizedFixture(request);
+    return response(authorizedFixture(request, true));
+  }});
+  await h.ready(); await h.click(h.approveLabel);
   assert.match(h.text(), /retry the download without authorizing again/);
-  assert.equal(h.button('Authorize client delivery'), undefined);
+  assert.equal(h.button(h.approveLabel), undefined);
   assert.ok(h.button('Download approved final PDF'));
-  assert.equal(h.requests.filter(r=>r.method==='POST').length,1);
+  assert.equal(h.downloads.length, 1);
+  await h.load(); await h.click('Download approved final PDF');
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 2);
+  assert.equal(h.downloads.length, 2);
+  assert.equal(h.downloads[1].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
+});
+
+test('already authorized reload and download never issue another decision', async () => {
+  const current = authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}});
+  const h = harness({get: async () => response(current)});
+  await h.load();
+  assert.equal(h.button(h.approveLabel), undefined);
+  await h.click('Download approved final PDF');
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+  assert.equal(h.downloads.length, 1);
+});
+
+test('missing operator credential prevents finalization of an existing approval', async () => {
+  const h = harness({get: async () => response(fixture(true))});
+  await h.load(); h.change('Operator password', '');
+  assert.equal(h.button(h.approveLabel).props.disabled, true);
+  await h.button(h.approveLabel).props.onClick(); h.render();
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+  assert.equal(h.downloads.length, 0);
+});
+
+test('delivery authentication rejection cannot become an authorized report', async () => {
+  const h = harness({get: async () => response(fixture(true)), post: async () => ({ok: false, status: 403,
+    json: async () => ({detail: {code: 'strategic_review_admin_authentication_required'}})})});
+  await h.load(); await h.click(h.approveLabel);
+  assert.match(h.text(), /The operator password is incorrect/);
+  assert.match(h.text(), /Client deliveryBlocked/);
+  assert.equal(h.downloads.length, 0);
 });
