@@ -56,7 +56,7 @@ def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplie
 
 def test_report_download_does_not_require_human_review_acknowledgement() -> None:
     assert (
-        'disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}'
+        'disabled={loading || !operatorReady || !currentReviewPdfDigest} onClick={downloadFinalReport}'
         in WORKSPACE
     )
     assert (
@@ -133,7 +133,9 @@ def test_final_action_reuses_approval_and_opens_only_the_authorized_pdf() -> Non
     assert "if (approvalInFlight.current) return;" in approval
     assert "approvalInFlight.current = true;" in approval
     assert "approvalInFlight.current = false;" in approval
-    assert 'approvalCompleted ? result : await submitDecision("approved")' in approval
+    assert 'reuseApproval ? resumed : await submitDecision("approved")' in approval
+    assert 'resumed = await reconcileFinalization(uncertainDecision.current)' in approval
+    assert approval.index('reconcileFinalization(uncertainDecision.current)') < approval.index('await submitDecision("approved")')
     assert "copy.approvalDeliveryFailed" in approval
     assert "copy.pdfRetry" in approval
     assert approval.index("await downloadExactPdf(reviewed, false);") < approval.index("requestJson(deliveryAuthorizationUrl()")

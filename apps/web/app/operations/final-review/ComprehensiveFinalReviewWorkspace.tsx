@@ -71,6 +71,7 @@ const COPY = {
     approveHeading: "Review and approve the exact assessment report",
     approveLead: "Download and review the report, confirm that exact PDF, then use Approve and download final PDF. That one action approves the report, authorizes client delivery, and downloads the authorized PDF. Existing approvals are reused. No separate delivery button or acknowledgement is required.",
     review: "Report approval",
+    operatorReview: "Operator approval",
     specialistReview: "Specialist review",
     specialistIncomplete: "Not completed",
     specialistComplete: "Completed",
@@ -165,6 +166,7 @@ const COPY = {
     approveHeading: "Revisa y aprueba el informe exacto de la evaluación",
     approveLead: "Descarga y revisa el informe, confirma ese PDF exacto y usa Aprobar y descargar PDF final. Esa única acción aprueba el informe, autoriza la entrega al cliente y descarga el PDF autorizado. Se reutilizan las aprobaciones existentes. No se requiere otro botón ni otra confirmación de entrega.",
     review: "Aprobación del informe",
+    operatorReview: "Aprobación del operador",
     specialistReview: "Revisión especializada",
     specialistIncomplete: "Sin completar",
     specialistComplete: "Completada",
@@ -304,9 +306,12 @@ function downloadBlob(blob: Blob, filename: string): void {
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -397,6 +402,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const [downloadedArtifactDigest, setDownloadedArtifactDigest] = useState("");
   const [artifactEdition, setArtifactEdition] = useState<"source" | "es-MX">("source");
   const approvalInFlight = useRef(false);
+  const selectionVersion = useRef(0);
+  const uncertainDecision = useRef<ReviewResponse | null>(null);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -429,9 +436,10 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const deliveryCertificate = asRecord(result?.delivery_authorization || approvedPackage.certificate);
   const delivery = approvedDeliveryFrom(result);
   const deliveryAllowed = result?.client_delivery_allowed === true
-    || asRecord(result?.acceptance).client_delivery_allowed === true
-    || delivery.client_delivery_allowed === true
-    || approvedPackage.client_delivery_allowed === true;
+    || (result?.operator_approval_status !== "approved" && (
+      asRecord(result?.acceptance).client_delivery_allowed === true
+      || delivery.client_delivery_allowed === true
+      || approvedPackage.client_delivery_allowed === true));
   const rawStatus = String(
     certificate.decision
       || result?.review_status
@@ -501,11 +509,72 @@ export default function ComprehensiveFinalReviewWorkspace() {
   async function requestJson(url: string, options: RequestInit = {}): Promise<ReviewResponse> {
     const response = await fetch(url, {cache: "no-store", ...options});
     if (!response.ok) throw await responseError(response, copy.loadFailed, locale);
+    let value: ReviewResponse;
     try {
-      return await response.json() as ReviewResponse;
+      value = await response.json() as ReviewResponse;
     } catch {
       throw new Error(copy.loadFailed);
     }
+      const identity = asRecord(value.review_artifact_identity);
+      if (identity.run_id && identity.run_id !== runId.trim()) throw new Error(copy.invalidPdf);
+      if (value.operator_approval_status === "approved") {
+        if (!Object.keys(operatorEditionFrom(value)).length) throw new Error(copy.approvalFailed);
+        const source = asRecord(reviewCertificateFrom(value).source_identity);
+        if (source.run_id !== runId.trim()
+          || (/\/localized-editions\/es-MX(?:\/|$)/.test(new URL(url).pathname) && source.report_language !== "es-MX")) {
+          throw new Error(copy.invalidPdf);
+        }
+      }
+      if (value.client_delivery_allowed === true && value.operator_approval_status === "approved") {
+        const receipt = asRecord(value.delivery_authorization);
+        const {delivery_authorization_certificate_sha256: claimed, ...statement} = receipt;
+        if (!operatorDeliveryBound(value)
+          || claimed !== await sha256Hex(new TextEncoder().encode(stableIdentity(statement)))) {
+          throw new Error(copy.authorizationFailed);
+        }
+      }
+    return value;
+  }
+
+  function operatorDeliveryBound(value: ReviewResponse): boolean {
+    const approved = operatorEditionFrom(value);
+    const receipt = asRecord(value.delivery_authorization);
+    const identity = asRecord(value.review_artifact_identity);
+    return Object.keys(approved).length > 0
+      && receipt.approval_certificate_sha256 === reviewCertificateFrom(value).approval_certificate_sha256
+      && receipt.client_delivery_allowed === true
+      && receipt.transmission_performed === false
+      && receipt.specialist_work_completed_by_this_authorization === false
+      && asRecord(receipt.authorized_artifact_identity).run_id === runId.trim()
+      && identity.run_id === runId.trim()
+      && identity.report_artifact_digest === approved.report_artifact_digest
+      && stableIdentity(identity.artifact_digests) === stableIdentity(approved.artifact_digests);
+  }
+
+  async function reconcileFinalization(basis: ReviewResponse): Promise<ReviewResponse> {
+    const current = await requestJson(statusUrl(), {headers: headers()});
+    const previous = operatorEditionFrom(basis);
+    const persisted = operatorEditionFrom(current);
+    if (Object.keys(previous).length) {
+      if (reviewCertificateFrom(current).approval_certificate_sha256 !== reviewCertificateFrom(basis).approval_certificate_sha256
+        || stableIdentity(persisted.source_review_artifact_identity) !== stableIdentity(previous.source_review_artifact_identity)) {
+        throw new Error(copy.invalidPdf);
+      }
+      if (current.client_delivery_allowed === true && basis.client_delivery_allowed !== true) {
+        const receipt = asRecord(current.delivery_authorization);
+        if (stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(basis.review_artifact_identity)
+          || receipt.original_approval_manifest_sha256 !== (asRecord(previous.rendering_derivation).authoritative_approval_manifest_sha256 || previous.accepted_edition_manifest_sha256)) {
+          throw new Error(copy.authorizationFailed);
+        }
+      }
+    } else if (Object.keys(persisted).length) {
+      if (stableIdentity(persisted.source_review_artifact_identity) !== stableIdentity(basis.review_artifact_identity)) {
+        throw new Error(copy.invalidPdf);
+      }
+    } else if (stableIdentity(current.review_artifact_identity) !== stableIdentity(basis.review_artifact_identity)) {
+      throw new Error(copy.invalidPdf);
+    }
+    return current;
   }
 
   async function loadStatus(event?: FormEvent): Promise<void> {
@@ -623,6 +692,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   async function downloadFinalReport(): Promise<void> {
     if (!operatorReady || !currentReviewPdfDigest || !result) {
       setError(copy.pdfMissing);
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       return;
     }
     setLoading(true);
@@ -635,6 +705,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.pdfMissing);
     } finally {
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       setLoading(false);
     }
   }
@@ -648,6 +719,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     if (!result || !finalActionAuthorityReady
       || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))) {
       setError(approvalNextStep);
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       return;
     }
     approvalInFlight.current = true;
@@ -656,10 +728,30 @@ export default function ComprehensiveFinalReviewWorkspace() {
     setNotice("");
     let approvalRecorded = approvalCompleted;
     let authorizationRecorded = false;
+    const version = selectionVersion.current;
+    const assertSelection = () => {
+      if (selectionVersion.current !== version) throw new Error(copy.invalidPdf);
+    };
     try {
       // One explicit owner action, two separately persisted and bound receipts.
       // Reuse an existing approval, including recovery after a delivery failure.
-      const reviewed = approvalCompleted ? result : await submitDecision("approved");
+      let resumed = result;
+      if (uncertainDecision.current) {
+        resumed = await reconcileFinalization(uncertainDecision.current);
+        assertSelection();
+        uncertainDecision.current = null;
+        setResult(resumed);
+      }
+      if (resumed.client_delivery_allowed === true) {
+        authorizationRecorded = true;
+        setDownloadedArtifactDigest(await downloadExactPdf(resumed));
+        setNotice(copy.approvedNotice);
+        return;
+      }
+      const reuseApproval = approvalCompleted || Object.keys(operatorEditionFrom(resumed)).length > 0;
+      uncertainDecision.current = resumed;
+      const reviewed = reuseApproval ? resumed : await submitDecision("approved");
+      assertSelection();
       const operatorEdition = operatorEditionFrom(reviewed);
       const operatorDecision = Object.keys(operatorEdition).length > 0;
       if (!approvalCompleted && operatorDecision
@@ -671,11 +763,14 @@ export default function ComprehensiveFinalReviewWorkspace() {
         throw new Error(copy.approvalFailed);
       }
       setResult(reviewed);
+      uncertainDecision.current = null;
       approvalRecorded = true;
       // Validate the intermediate approved bytes without opening another PDF or
       // recording a fictitious user download. Only the authorized PDF is opened.
       await downloadExactPdf(reviewed, false);
+      assertSelection();
       const approvedArtifactIdentity = asRecord(reviewed.review_artifact_identity);
+      uncertainDecision.current = reviewed;
       const authorized = await requestJson(deliveryAuthorizationUrl(), {
         method: "POST",
         headers: headers(true),
@@ -690,23 +785,43 @@ export default function ComprehensiveFinalReviewWorkspace() {
         }),
       });
       const receipt = asRecord(authorized.delivery_authorization);
+      assertSelection();
       if (authorized.client_delivery_allowed !== true
         || (operatorDecision && (!/^[0-9a-f]{64}$/i.test(String(receipt.delivery_authorization_certificate_sha256 || ""))
           || stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(approvedArtifactIdentity)
+          || receipt.approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256
+          || (operatorDecision && receipt.original_approval_manifest_sha256 !== (asRecord(operatorEdition.rendering_derivation).authoritative_approval_manifest_sha256 || operatorEdition.accepted_edition_manifest_sha256))
+          || stableIdentity(operatorEditionFrom(authorized).source_review_artifact_identity) !== stableIdentity(operatorEdition.source_review_artifact_identity)
+          || stableIdentity(reviewCertificateFrom(authorized).source_identity) !== stableIdentity(reviewCertificateFrom(reviewed).source_identity)
           || reviewCertificateFrom(authorized).approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256))) {
         throw new Error(copy.authorizationFailed);
       }
       setResult(authorized);
+      uncertainDecision.current = null;
       authorizationRecorded = true;
       setConfirmed(false);
       setDownloadedArtifactDigest("");
       setDownloadedArtifactDigest(await downloadExactPdf(authorized));
       setNotice(copy.approvedNotice);
     } catch (caught) {
+      if (selectionVersion.current !== version) return;
+      if (uncertainDecision.current) {
+        try {
+          const persisted = await reconcileFinalization(uncertainDecision.current);
+          assertSelection();
+          setResult(persisted);
+          approvalRecorded = Object.keys(operatorEditionFrom(persisted)).length > 0 || approvalRecorded;
+          authorizationRecorded = persisted.client_delivery_allowed === true;
+          uncertainDecision.current = null;
+        } catch {
+          // Keep the unresolved decision: a later tap must read before any POST.
+        }
+      }
       const message = caught instanceof Error ? caught.message : copy.approvalFailed;
       setError(authorizationRecorded ? `${copy.authorizationNotice} ${copy.pdfRetry} ${message}`
         : approvalRecorded ? `${copy.approvalDeliveryFailed} ${message}` : message);
     } finally {
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       approvalInFlight.current = false;
       setLoading(false);
     }
@@ -759,6 +874,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
       <form className={styles.form} onSubmit={loadStatus}>
         <label>{locale === "es-MX" ? "Edición del informe" : "Report edition"}<select value={artifactEdition} disabled={loading} onChange={(event) => {
+          selectionVersion.current += 1; uncertainDecision.current = null;
           setArtifactEdition(event.target.value === "es-MX" ? "es-MX" : "source");
           setResult(null); setConfirmed(false); setDownloadedArtifactDigest(""); setError(""); setNotice("");
         }}>
@@ -776,7 +892,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <button className={styles.primary} type="submit" disabled={loading || !operatorReady}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
         <details className={styles.advanced}><summary>{copy.exactIdentity}</summary><div className={styles.advancedGrid}>
           <label>{copy.assessment}<input value={copy.comprehensive} readOnly aria-readonly="true" /></label>
-          <label>{copy.exactRunId}<input value={runId} disabled={loading} onChange={(event) => {setRunId(event.target.value); setResult(null); setConfirmed(false); setDownloadedArtifactDigest("");}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+          <label>{copy.exactRunId}<input value={runId} disabled={loading} onChange={(event) => {selectionVersion.current += 1; uncertainDecision.current = null; setRunId(event.target.value); setResult(null); setConfirmed(false); setDownloadedArtifactDigest("");}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
         </div></details>
       </form>
       {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
@@ -793,7 +909,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{copy.approveHeading}</h2><p>{copy.approveLead}</p></div></div>
       <p className={styles.securityNote}>{copy.operatorDisclosure}</p>
       <div className={styles.statusGrid}>
-        <article className={styles.statusCard}><span>{copy.review}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
+        <article className={styles.statusCard}><span>{operatorApprovalCompleted ? copy.operatorReview : copy.review}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
         <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{result?.human_review_completed === true ? copy.specialistComplete : copy.specialistIncomplete}</strong></article>
         <article className={deliveryAllowed ? styles.statusCardReady : styles.statusCardBlocked}><span>{copy.delivery}</span><strong>{deliveryAllowed ? copy.authorized : copy.blocked}</strong></article>
       </div>
@@ -809,7 +925,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
         {!approvalCompleted ? <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!exactEditionDownloaded || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label> : null}
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
         <div className={styles.downloadActions}>
-          <button className={deliveryAllowed ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
+          <button className={deliveryAllowed ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !operatorReady || !currentReviewPdfDigest} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
           {!deliveryAllowed ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !finalActionAuthorityReady || !currentReviewPdfDigest || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button> : null}
           {approvalCompleted && !deliveryAllowed ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
           {deliveryAllowed && !operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}

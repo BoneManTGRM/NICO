@@ -17,7 +17,9 @@ def test_visible_final_review_is_comprehensive_only_and_not_legacy_service_selec
     # The ordinary download remains separate from approval and now identifies
     # the actual lifecycle of the returned PDF instead of calling a draft final.
     assert 'onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>' in workspace
-    assert 'onClick={approveExactReport}>{copy.approveExactReport}</button>' in workspace
+    assert 'onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button>' in workspace
+    assert 'data-nico-pdf-action="true"' in workspace
+    assert 'onClick={authorizeDelivery}' not in workspace
     assert 'downloadFinalReport: "Download report for review"' in workspace
     assert 'downloadApprovedReport: "Download approved final PDF"' in workspace
     assert 'approveExactReport: "Approve and download final PDF"' in workspace

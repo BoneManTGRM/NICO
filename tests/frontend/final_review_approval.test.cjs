@@ -17,8 +17,10 @@ const compiled = ts.transpileModule(readFileSync(filename, 'utf8'), {
 });
 assert.equal((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error).length, 0);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+const stable = value => Array.isArray(value) ? `[${value.map(stable).join(',')}]`
+  : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}` : JSON.stringify(value);
 const response = value => ({ok: true, status: 200, json: async () => value});
-function fixture(approved = false, operator = true) {
+function fixture(approved = false, operator = true, language = 'en') {
   const bytes = Buffer.from(`%PDF-1.7\nUNIT FIXTURE ONLY ${approved ? 'APPROVED' : 'PENDING'}\n%%EOF\n`);
   const value = {
     status: approved ? 'approved' : 'review_required',
@@ -42,7 +44,8 @@ function fixture(approved = false, operator = true) {
     value.human_review_completed = false;
     value.operator_approval_status = 'approved';
     value.operator_approved_edition = {
-      review: {...value.accepted_edition.review, approval_basis: 'operator_report'},
+      review: {...value.accepted_edition.review, approval_basis: 'operator_report',
+        source_identity: {run_id: 'comprun_unit_fixture', report_language: language}},
       artifact_digests: approvedIdentity.artifact_digests,
       report_artifact_digest: approvedIdentity.report_artifact_digest,
       accepted_edition_manifest_sha256: 'd'.repeat(64),
@@ -56,19 +59,29 @@ function fixture(approved = false, operator = true) {
 }
 const finalReport = value => value.operator_approved_edition?.reports || value.reports;
 function authorizedFixture(request, corrupt = false, operator = true) {
-  const result = fixture(true, operator);
+  const result = fixture(true, operator, request.url?.includes('/localized-editions/es-MX') ? 'es-MX' : 'en');
   result.client_delivery_allowed = true;
   result.delivery_authorization = {
     delivery_authorization_certificate_sha256: 'f'.repeat(64),
     authorized_artifact_identity: request.body.expected_artifact_identity,
+    approval_certificate_sha256: 'c'.repeat(64),
+    original_approval_manifest_sha256: 'd'.repeat(64),
+    client_delivery_allowed: true,
+    transmission_performed: false,
+    specialist_work_completed_by_this_authorization: false,
   };
   const bytes = Buffer.from('%PDF-1.4\nclient-delivery-authorized fixture');
   result.review_artifact_identity = {...result.review_artifact_identity, revision: 19,
     artifact_digests: {pdf: {sha256: digest(bytes), size_bytes: bytes.length}}};
+  delete result.delivery_authorization.delivery_authorization_certificate_sha256;
+  result.delivery_authorization.delivery_authorization_certificate_sha256 = digest(stable(result.delivery_authorization));
   const reports = {...finalReport(result),
     pdf_base64: (corrupt ? Buffer.from('broken') : bytes).toString('base64'),
     pdf_filename: 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf'};
-  if (operator) result.operator_approved_edition.reports = reports;
+  if (operator) {
+    result.operator_approved_edition.reports = reports;
+    result.operator_approved_edition.artifact_digests = result.review_artifact_identity.artifact_digests;
+  }
   else result.reports = reports;
   return result;
 }
@@ -80,8 +93,9 @@ function nodes(value) {
   if (Array.isArray(value)) return value.flatMap(nodes);
   return [value, ...nodes(value.props?.children)];
 }
-function harness({locale = 'en', edition = 'source', post, get} = {}) {
+function harness({locale = 'en', edition = 'source', post, get, ios = false, popupBlocked = false} = {}) {
   const slots = [], effects = [], requests = [], downloads = [], blobs = new Map();
+  const listeners = new Map(), popups = [];
   let cursor = 0, effectMounted = false, tree;
   const react = {
     useState(initial) {
@@ -102,17 +116,28 @@ function harness({locale = 'en', edition = 'source', post, get} = {}) {
     static createObjectURL(blob) {const id = `blob:unit-${blobs.size}`; blobs.set(id, blob); return id;}
     static revokeObjectURL() {}
   }
+  class Element {}
+  class Button extends Element {closest() {return this;}}
+  class Anchor {click() {downloads.push({filename: this.download, blob: blobs.get(this.href)});}}
   const context = {
-    exports: {}, console, URL: TestURL, URLSearchParams, Uint8Array, ArrayBuffer, Blob,
+    exports: {}, console, URL: TestURL, URLSearchParams, Uint8Array, ArrayBuffer, Blob, TextEncoder, Event,
     window: {
       location: {origin: 'https://unit.invalid', search: `?run_id=comprun_unit_fixture&lang=${locale}&edition=${edition}`},
       crypto: webcrypto, atob, setTimeout: () => 0,
+      clearTimeout() {},
+      open() {
+        if (popupBlocked) return null;
+        const popup = {closed: false, document: {body: {}}, close() {this.closed = true;},
+          location: {replace(url) {popup.url = url; downloads.push({filename: 'presented.pdf', blob: blobs.get(url)});}}};
+        popups.push(popup); return popup;
+      },
     },
     document: {
+      addEventListener(name, fn) {listeners.set(name, fn);},
+      removeEventListener(name) {listeners.delete(name);},
+      dispatchEvent(event) {listeners.get(event.type)?.(event);},
       documentElement: {}, body: {appendChild() {}},
-      createElement() {return {href: '', download: '', remove() {}, click() {
-        downloads.push({filename: this.download, blob: blobs.get(this.href)});
-      }};},
+      createElement() {return Object.assign(new Anchor(), {href: '', download: '', remove() {}});},
     },
     fetch: async (url, options = {}) => {
       const request = {url, method: options.method || 'GET', body: options.body && JSON.parse(options.body), headers: options.headers};
@@ -121,7 +146,7 @@ function harness({locale = 'en', edition = 'source', post, get} = {}) {
       if (request.method === 'GET' && get) return get(request);
       return response(request.url.endsWith('/authorize-delivery')
         ? authorizedFixture(request, false, request.body.delivery_kind === 'operator_report')
-        : fixture(request.method === 'POST'));
+        : fixture(request.method === 'POST', true, edition === 'es-MX' ? 'es-MX' : 'en'));
     },
     require(name) {
       if (name === 'react') return react;
@@ -130,6 +155,15 @@ function harness({locale = 'en', edition = 'source', post, get} = {}) {
       throw new Error(`Unexpected import ${name}`);
     },
   };
+  if (ios) {
+    loadHelpers('apps/web/app/operations/final-review/FinalReviewDownloadHandoff.tsx', {
+      window: context.window, document: context.document, URL: TestURL,
+      Error: vm.runInNewContext('Error', context),
+      navigator: {userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5},
+      Element, HTMLButtonElement: Button, HTMLAnchorElement: Anchor,
+      require: name => name === 'react' ? {useEffect: fn => fn()} : {},
+    }).default();
+  }
   vm.runInNewContext(compiled.outputText, context, {filename});
   function render() {cursor = 0; tree = context.exports.default(); return tree;}
   render(); effectMounted = true; effects.forEach(fn => fn()); render();
@@ -143,6 +177,9 @@ function harness({locale = 'en', edition = 'source', post, get} = {}) {
   async function click(label) {
     const item = button(label); assert.ok(item, `Missing button ${label}`);
     assert.ok(!item.props.disabled, `Disabled button ${label}`);
+    if (ios) context.document.dispatchEvent({type: 'click', target: Object.assign(new Button(), {
+      textContent: label, disabled: false, dataset: {nicoPdfAction: item.props['data-nico-pdf-action']},
+    })});
     await item.props.onClick(); render();
   }
   async function load() {
@@ -160,7 +197,7 @@ function harness({locale = 'en', edition = 'source', post, get} = {}) {
     await click(reviewLabel);
     change(locale === 'en' ? 'I reviewed this exact' : 'Revisé este informe', true);
   }
-  return {button, field, change, click, load, ready, render, requests, downloads, reviewerLabel, roleLabel, reviewLabel, approveLabel,
+  return {button, field, change, click, load, ready, render, requests, downloads, popups, reviewerLabel, roleLabel, reviewLabel, approveLabel,
     text: () => text(tree), elements: () => nodes(tree)};
 }
 
@@ -521,8 +558,9 @@ for (const mode of ['pending', 'wrong-identity', 'missing-receipt', 'different-a
 
 test('delivery failure resumes through the same button without repeating approval or review', async () => {
   let fail = true;
-  const h = harness({post: async request => {
-    if (!request.url.endsWith('/authorize-delivery')) return response(fixture(true));
+  let current = fixture(false);
+  const h = harness({get: async () => response(current), post: async request => {
+    if (!request.url.endsWith('/authorize-delivery')) {current = fixture(true); return response(current);}
     if (fail) {fail = false; throw new Error('Unit network interruption');}
     return response(authorizedFixture(request));
   }});
@@ -538,6 +576,59 @@ test('delivery failure resumes through the same button without repeating approva
   assert.deepEqual(permissions[0].body.expected_artifact_identity, permissions[1].body.expected_artifact_identity);
   assert.equal(h.downloads.length, 2);
   assert.equal(h.downloads[1].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
+});
+
+for (const stage of ['approval', 'delivery']) {
+  test(`lost ${stage} response reconciles persisted decisions before any retry`, async () => {
+    let current = fixture(false), lost = false;
+    const h = harness({get: async () => response(current), post: async request => {
+      const delivery = request.url.endsWith('/authorize-delivery');
+      current = delivery ? authorizedFixture(request) : fixture(true);
+      if (!lost && delivery === (stage === 'delivery')) {lost = true; throw new Error('response lost after persistence');}
+      return response(current);
+    }});
+    await h.ready(); await h.click(h.approveLabel);
+    assert.equal(h.requests.at(-1).method, 'GET');
+    assert.match(h.text(), /Operator approvalApproved/);
+    if (stage === 'delivery') {
+      assert.equal(h.button(h.approveLabel), undefined);
+      await h.click('Download approved final PDF');
+    } else {
+      assert.equal(h.elements().filter(n => n.type === 'input' && n.props.type === 'checkbox').length, 0);
+      await h.click(h.approveLabel);
+    }
+    assert.equal(h.requests.filter(r => r.method === 'POST' && r.url.endsWith('/review')).length, 1);
+    assert.equal(h.requests.filter(r => r.method === 'POST' && r.url.endsWith('/authorize-delivery')).length, 1);
+    assert.equal(h.downloads.length, 2);
+    assert.match(h.text(), /Client deliveryAuthorized/);
+  });
+}
+
+for (const mismatch of ['receipt-parent', 'returned-run']) {
+  test(`delivery rejects ${mismatch} even when the PDF hash matches`, async () => {
+    const h = harness({get: async () => response(fixture(true)), post: async request => {
+      const value = authorizedFixture(request);
+      if (mismatch === 'receipt-parent') value.delivery_authorization.approval_certificate_sha256 = '9'.repeat(64);
+      else value.review_artifact_identity.run_id = 'comprun_other';
+      return response(value);
+    }});
+    await h.load(); await h.click(h.approveLabel);
+    assert.match(h.text(), /Client deliveryBlocked/);
+    assert.equal(h.downloads.length, 0);
+    assert.ok(h.button(h.approveLabel));
+  });
+}
+
+test('selection change while approval is pending rejects its late response', async () => {
+  let resolvePost;
+  const h = harness({post: () => new Promise(resolve => {resolvePost = resolve;})});
+  await h.ready();
+  const pending = h.button(h.approveLabel).props.onClick();
+  h.change('Exact Comprehensive run ID', 'comprun_other');
+  resolvePost(response(fixture(true))); await pending; h.render();
+  assert.equal(h.requests.filter(r => r.url.endsWith('/authorize-delivery')).length, 0);
+  assert.equal(h.button(h.approveLabel), undefined);
+  assert.equal(h.downloads.length, 1);
 });
 
 test('persisted client permission survives failed final download with download-only recovery', async () => {
@@ -583,5 +674,100 @@ test('delivery authentication rejection cannot become an authorized report', asy
   await h.load(); await h.click(h.approveLabel);
   assert.match(h.text(), /The operator password is incorrect/);
   assert.match(h.text(), /Client deliveryBlocked/);
+  assert.equal(h.downloads.length, 0);
+});
+
+test('composed iPhone handler reserves synchronously and presents only authorized bytes', async () => {
+  let h;
+  h = harness({ios: true, get: async () => response(fixture(true)), post: async request => {
+    assert.equal(h.popups.length, 1);
+    assert.equal(h.popups[0].url, undefined);
+    return response(authorizedFixture(request));
+  }});
+  await h.load(); await h.click(h.approveLabel);
+  assert.equal(h.downloads.length, 1);
+  assert.ok(h.popups[0].url.startsWith('blob:'));
+  assert.equal(h.popups[0].closed, false);
+  assert.match(h.text(), /Client deliveryAuthorized/);
+});
+
+test('composed iPhone failure closes unused context and retains authorized download recovery', async () => {
+  const h = harness({ios: true, get: async () => response(fixture(true)),
+    post: async request => response(authorizedFixture(request, true))});
+  await h.load(); await h.click(h.approveLabel);
+  assert.equal(h.downloads.length, 0);
+  assert.equal(h.popups[0].closed, true);
+  assert.equal(h.button(h.approveLabel), undefined);
+  assert.match(h.text(), /retry the download without authorizing again/);
+});
+
+test('blocked iPhone popup is a presentation failure, never an authorized-success notice', async () => {
+  const h = harness({ios: true, popupBlocked: true, get: async () => response(fixture(true))});
+  await h.load(); await h.click(h.approveLabel);
+  assert.equal(h.downloads.length, 0);
+  assert.match(h.text(), /PDF could not be presented/);
+  assert.equal(h.button(h.approveLabel), undefined);
+  assert.match(h.text(), /Client deliveryAuthorized/);
+});
+
+test('iPhone download without credentials cannot reserve a stranded PDF tab', async () => {
+  const h = harness({ios: true, get: async () => response(fixture(true))});
+  await h.load(); h.change('Operator password', '');
+  assert.equal(h.button('Download approved final PDF').props.disabled, true);
+  await h.button('Download approved final PDF').props.onClick(); h.render();
+  assert.equal(h.downloads.length, 0);
+  assert.equal(h.popups.length, 0);
+});
+
+for (const corruption of ['missing', 'hash', 'parent', 'projection']) {
+  test(`authenticated reload rejects ${corruption} delivery evidence`, async () => {
+    const value = authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}});
+    if (corruption === 'missing') delete value.delivery_authorization;
+    if (corruption === 'hash') value.delivery_authorization.delivery_authorization_certificate_sha256 = '0'.repeat(64);
+    if (corruption === 'parent') value.delivery_authorization.approval_certificate_sha256 = '0'.repeat(64);
+    if (corruption === 'projection') value.review_artifact_identity.artifact_digests = fixture(false).review_artifact_identity.artifact_digests;
+    const h = harness({get: async () => response(value)}); await h.load();
+    assert.doesNotMatch(h.text(), /Client deliveryAuthorized/);
+    assert.equal(h.downloads.length, 0);
+    assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+  });
+}
+
+test('failed reconciliation prevents another mutation until the exact state is recovered', async () => {
+  let current = fixture(false), readFails = false;
+  const h = harness({get: async () => {if (readFails) throw new Error('read unavailable'); return response(current);},
+    post: async request => {
+      if (request.url.endsWith('/review')) {current = fixture(true); readFails = true; throw new Error('response lost');}
+      return response(authorizedFixture(request));
+    }});
+  await h.ready(); await h.click(h.approveLabel);
+  await h.click(h.approveLabel);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 1);
+  readFails = false;
+  await h.click(h.approveLabel);
+  assert.equal(h.requests.filter(r => r.url.endsWith('/review')).length, 1);
+  assert.equal(h.requests.filter(r => r.url.endsWith('/authorize-delivery')).length, 1);
+  assert.equal(h.downloads.length, 2);
+});
+
+test('Spanish edition cannot hydrate an English authorized report from the same run', async () => {
+  const current = authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}});
+  const h = harness({edition: 'es-MX', get: async () => response(current)});
+  await h.load();
+  assert.doesNotMatch(h.text(), /Client deliveryAuthorized/);
+  assert.equal(h.downloads.length, 0);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+});
+
+test('Spanish preparation may read its approved English source without granting either decision', async () => {
+  const h = harness({edition: 'es-MX', get: async () => response(fixture(true)), post: async () => response(fixture(false))});
+  h.change('Operator password', 'unit-test-not-a-secret');
+  await h.click('Prepare Spanish final assessment report');
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[0].method, 'GET');
+  assert.ok(h.requests[0].url.endsWith('/comprun_unit_fixture'));
+  assert.equal(h.requests[1].body.preparation_authorized, true);
+  assert.ok(h.requests[1].url.endsWith('/localized-editions/es-MX'));
+  assert.equal(h.requests[1].body.delivery_authorized, undefined);
   assert.equal(h.downloads.length, 0);
 });
