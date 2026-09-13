@@ -383,6 +383,11 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     canonical["assessment"] = assessment
     spanish = _is_spanish(canonical)
     score_summary = _score_summary_markdown(assessment, spanish=spanish)
+    # New human payloads have a complete, reserved PDF appendix. Keep their
+    # literal statements out of generic lifecycle-rewritten stage pages.
+    pdf_stages = [stage for stage in stages if not (
+        canonical.get('human_report_export_schema')
+        and str(stage.get('stage_id', '')).startswith('client_human_evidence_'))]
 
     if spanish:
         markdown = _spanish_markdown(canonical)
@@ -391,7 +396,10 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         if "CLIENT DELIVERY NOT AUTHORIZED" not in markdown:
             markdown += "\n<!-- CLIENT DELIVERY NOT AUTHORIZED -->\n"
         rendered_html = _spanish_html(markdown, "Evaluación Técnica Integral NICO")
-        pdf_bytes, original_page_count = _spanish_pdf(canonical)
+        pdf_canonical = deepcopy(canonical)
+        pdf_canonical['stage_summaries'] = pdf_stages
+        pdf_canonical['assessment']['stage_summaries'] = pdf_stages
+        pdf_bytes, original_page_count = _spanish_pdf(pdf_canonical)
         pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=True)
         page_count = original_page_count + 1
         pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
@@ -405,7 +413,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
         title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
         rendered_html = _semantic_html(markdown, title)
-        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), dict(assessment), stages, generated_at)
+        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), dict(assessment), pdf_stages, generated_at)
         pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
         if pdf_bytes.startswith(b"%PDF"):
             pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=False)

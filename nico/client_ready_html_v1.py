@@ -9,6 +9,20 @@ from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDA
 VERSION = "nico.client-ready-html.v1"
 
 
+def _literal_inline(value: str) -> str:
+    """Admit only the renderer's inert, already escaped evidence span."""
+    parts = re.split(r'(<span data-nico-client-literal="true">.*?</span>)', value)
+    output = []
+    for part in parts:
+        if part.startswith('<span data-nico-client-literal="true">'):
+            inner = part.split('>', 1)[1].removesuffix('</span>').replace('<br/>', '')
+            if '<' not in inner and '>' not in inner:
+                output.append(part)
+                continue
+        output.append(html.escape(part))
+    return ''.join(output)
+
+
 def render_client_html(markdown: str, title: str, *, spanish: bool) -> str:
     blocks: list[str] = []
     list_items: list[str] = []
@@ -56,7 +70,7 @@ def render_client_html(markdown: str, title: str, *, spanish: bool) -> str:
         elif line.startswith("- [ ] "):
             list_items.append(f"<li class='check'>☐ {html.escape(line[6:])}</li>")
         elif line.startswith("- ") or line.startswith("  - "):
-            list_items.append(f"<li>{html.escape(line.lstrip()[2:])}</li>")
+            list_items.append(f"<li>{_literal_inline(line.lstrip()[2:])}</li>")
         elif line.startswith("**") and line.endswith("**"):
             flush(); blocks.append(f"<p class='warning'>{html.escape(line.strip('*'))}</p>")
         else:

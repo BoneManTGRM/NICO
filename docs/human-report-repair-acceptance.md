@@ -35,6 +35,15 @@ No claim of completed specialist review, QC, accessibility, or runtime parity.
 5. A sparse canonical fixture failed an existing limited-review-count gate. Continued artifact verification using the existing finalizer fixture with valid report context; no gate was relaxed.
 6. Spanish canonical preflight treated verified literal lines as report prose after its translator rebind. Reinstalled the existing client-literal guard after preflight installation. Raw supplied payload is explicitly excluded from localization.
 7. An assembled Spanish test fixture initially omitted projected identity literals. Restored the canonical builder's supplied identity projection in that fixture; no fallback translations of client content were added. Full English and es-MX finalizer tests now pass, including all ten modules in PDF, exact canonical JSON, and CSV mapping (14 focused contract tests).
+8. Final syntax check caught a translation inserted into a dict comprehension. Moved the explicit entry into a separate update; all 14 contract tests passed before PR publication.
+9. Adversarial cross-format review found remaining draft banners and escaped literal span tags in the final HTML renderer. Added two failing language-path regressions; preserve inert evidence spans and project lifecycle prose outside them. Both now pass.
+10. A 70-line evidence value crossed a PDF page. The full-value comparison failed on inserted page decorations; inspection confirmed every line retained in sequence. Strip only known page headers/footers in the comparison. Exclude duplicate raw human stage pages from generic PDF lifecycle projection, retaining the complete protected appendix. Contract plus Spanish integrity suites: 21 passed.
+
+11. Initial CI completed: quality (including frontend/build/Docker) and nine shards passed; three shards failed in two stale separate-action-copy tests and the report golden/parity test. Updated copy assertions to the supported authenticated final action. The parity test additionally exposed missing nested work-package aliases in the readable roadmap summary; retain those references and assert nested mapping behavior. Refreshed only the changed artifact fingerprints after the remaining bilingual structural/reference assertions passed; page counts remain 21/39/20.
+12. New-source lifecycle test exercises actual approval, authorization, integrity validation, and fresh persisted read. Source package remains byte-for-byte unchanged; approval/authorization advance revisions while specialist review and actual transmission remain false. All 17 focused contract tests pass; related copy/contract suite passed 43 tests.
+
+PR: https://github.com/BoneManTGRM/NICO/pull/1593. Required CI will rerun on the revised commit. No merge or corrected production acceptance claimed yet.
+The prepared ten-module synthetic run is necessary to exercise the corrected intake-to-export path without modifying the already approved historical source edition. It has not yet been submitted.
 
 ## Export schema
 
