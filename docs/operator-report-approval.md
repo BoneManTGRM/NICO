@@ -12,15 +12,16 @@ PR #1592, branch `fix/one-action-approval-delivery`, was reconciled at head
 `f549dd2e4ed3f8be1ea2790e903d06f51b640538`. Runtime repair candidate:
 `288dba56557c362cb823a2c4faf037cc63d01a21`, exact verified tree
 `57361bdf173c306cb52bddd58d2b31b3e25f75c6` (matches locally tested commit
-`d7e5160901566b2ef8733f59367d6ffac929f397`). Keep the existing PR draft.
+`d7e5160901566b2ef8733f59367d6ffac929f397`). Continue the existing PR.
 
-**Not complete.** The prior tool-policy denial for modifying
-`tests/test_review_artifact_approval_boundary_v1.py` remains unresolved. No write to
-that file was attempted in this continuation. Its two obsolete source-contract
-tests still fail; its four API/immutable-artifact checks pass. An independent
-technical reviewer inspected the file and specified narrow replacement assertions
-in the PR continuation. That technical review does not override tool policy.
-No supported policy-resolution capability was exposed in this session.
+**Not complete; ready for final-candidate CI.** Following explicit owner approval
+of the prepared two-function replacement, the same test-file edit was submitted
+again and accepted by the tool on 2026-09-13. No alternate route was used to evade
+the earlier rejection. Both obsolete source contracts now test the combined action,
+identity checks and authorized-only PDF presentation. All six tests in
+`tests/test_review_artifact_approval_boundary_v1.py` pass (exit 0); the four
+API/immutable-artifact cases and all unrelated definitions remain byte-for-byte
+unchanged. The prior rejection and failed runs below remain historical evidence.
 
 The owner target is `comprun_490d6d5686053f9eb1036368f4c7fa21`, source edition / EN.
 Source revision 55 and assessed commit `f549dd2e4ed3f8be1ea2790e903d06f51b640538`
@@ -92,12 +93,12 @@ CI uses Python 3.11; no CI result is inferred from this local evidence.
 | 4 | Real SHA-256, exact run/digests, source and parent binding | Fixture/API pass; actual final PDF hash unknown |
 | 5 | Operator Approved / delivery Authorized; retained backend lifecycle rendering | Local pass; actual PDF/cover not inspected |
 | 6 | No backend/source/ledger edits; existing preservation tests | Backend pass; no production mutation or comparison |
-| 7 | Missing auth/ack, stale/corrupt/wrong-parent/run/edition responses rejected | Behavioral/API pass; two old contract tests unresolved |
+| 7 | Missing auth/ack, stale/corrupt/wrong-parent/run/edition responses rejected | Behavioral/API pass; updated boundary file 6 passed |
 | 8 | Duplicate ref, persisted-state reads after response loss; download recovery | Reordering fixtures pass; concurrent browser proof pending |
 | 9 | EN/es-MX actions, isolated edition identity, source-to-Spanish preparation | Behavioral/backend pass; production editions pending |
 | 10 | Synchronous handoff composed with handler; explicit failure cleanup | Mocked iPhone surface only; real Chromium/WebKit/iPhone unverified |
 | 11 | Existing authenticated endpoints; no transmission added; backend exposure tests | Local pass; no production mutation/transmission occurred |
-| 12 | Existing PR retained; current deployed identities read | Blocked before integration; no production acceptance |
+| 12 | Existing PR retained; current deployed identities read | Final-candidate CI/integration pending; no production acceptance |
 
 Iteration results: **minimal case** reproduced saved-approval/response-loss and
 wrong-parent/wrong-run false success; **fixed conditions** retained the same fixture
@@ -108,9 +109,12 @@ late selection, approved source then Spanish preparation, reload, and handoff ti
 The strongest browser results are composed fixture tests, not browser emulation
 or physical-device proof.
 
-Next unresolved action: resolve the denied test-edit boundary and replace only the
-two obsolete source-contract functions with the reviewed combined-action contract,
-leaving API and immutable-artifact tests unchanged. Then require final-head CI,
+Latest prior-head evidence: `e54de6d4` Security Audit 34765371288 passed; NICO CI
+34765368757 passed quality and 11/12 shards, with only the two now-repaired source
+assertions failing in shard 8. Runtime evidence remains valid because runtime
+files have not changed. Final-head CI is still required.
+
+Next unresolved action: accept final-candidate CI and independent test-diff review,
 merge/deploy through existing infrastructure, authenticate the exact target, and
 verify receipts, actual authorized PDF/provenance/cover, reload and real browsers.
 Do not reapprove a valid report or infer target receipt identities from fixtures.

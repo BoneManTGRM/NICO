@@ -85,38 +85,38 @@ def test_review_ui_requires_download_of_the_current_digest_before_approval() -> 
     assert "review_artifact_identity?: JsonRecord" in source
     assert "expected_artifact_identity: reviewArtifactIdentity" in source
     assert 'const [downloadedArtifactDigest, setDownloadedArtifactDigest] = useState("")' in source
-    assert "downloadedArtifactDigest !== currentReviewPdfDigest" in source
-    assert (
-        "disabled={downloadedArtifactDigest !== currentReviewPdfDigest || "
-        "!currentReviewPdfDigest}"
-    ) in source
+    assert "currentReviewPdfDigest && downloadedArtifactDigest === currentReviewPdfDigest" in source
+    assert "disabled={!exactEditionDownloaded || loading}" in source
     assert 'window.crypto.subtle.digest("SHA-256", buffer)' in source
     assert "reviewArtifactIdentity.artifact_digests" in source
 
-    report_boundary = source[
-        source.index("async function downloadFinalReport") :
-        source.index("async function approveExactReport")
-    ]
-    assert report_boundary.index(
-        "const finalReportDigest = await downloadExactPdf(result);"
-    ) < report_boundary.index("setDownloadedArtifactDigest(finalReportDigest)")
-
-    approval_boundary = source[
-        source.index("async function approveExactReport") :
-        source.index("async function recordOtherDecision")
-    ]
-    assert "!approvalAuthorityReady || !confirmed || !exactEditionDownloaded" in approval_boundary
-    assert "canonicalApprovalReady" not in approval_boundary
-    assert 'const reviewed = await submitDecision("approved");' in approval_boundary
-    assert approval_boundary.index("setResult(reviewed);") < approval_boundary.index(
-        "const approvedPdfDigest = await downloadExactPdf(reviewed);"
+    download = source.split("async function downloadFinalReport", 1)[1].split(
+        "async function approveExactReport", 1
+    )[0]
+    assert download.index("await downloadExactPdf(result)") < download.index(
+        "setDownloadedArtifactDigest(finalReportDigest)"
     )
-    assert approval_boundary.index(
-        "const approvedPdfDigest = await downloadExactPdf(reviewed);"
-    ) < approval_boundary.index("setDownloadedArtifactDigest(approvedPdfDigest);")
+    approval = source.split("async function approveExactReport", 1)[1].split(
+        "async function recordOtherDecision", 1
+    )[0]
+    assert "!finalActionAuthorityReady" in approval
+    assert "!approvalCompleted && (!confirmed || !exactEditionDownloaded)" in approval
+    assert "canonicalApprovalReady" not in approval
+    assert 'reuseApproval ? resumed : await submitDecision("approved")' in approval
+    assert "stableIdentity(operatorEdition.source_review_artifact_identity)" in approval
+    assert approval.index("await downloadExactPdf(reviewed, false)") < approval.index(
+        "requestJson(deliveryAuthorizationUrl()"
+    )
+    assert approval.index("authorized.client_delivery_allowed !== true") < approval.index(
+        "setResult(authorized)"
+    )
+    assert approval.index("setResult(authorized)") < approval.index(
+        "await downloadExactPdf(authorized)"
+    )
+    assert "downloadExactPdf(reviewed);" not in approval
 
 
-def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() -> None:
+def test_review_ui_combines_explicit_decisions_and_localizes_safe_errors() -> None:
     source = WORKSPACE.read_text(encoding="utf-8")
 
     assert 'const approvalCompleted = operatorApprovalCompleted || rawStatus === "approved" || runStatus === "approved"' in source
@@ -126,23 +126,17 @@ def test_review_ui_separates_approval_from_delivery_and_localizes_safe_errors() 
     assert "/authorize-delivery" in source
     assert "delivery_authorized: true" in source
     assert "authorization_confirmed: true" in source
-    assert "expected_artifact_identity: reviewArtifactIdentity" in source
+    assert "expected_artifact_identity: approvedArtifactIdentity" in source
+    assert "receipt.authorized_artifact_identity" in source
+    assert "receipt.approval_certificate_sha256" in source
+    assert "receipt.original_approval_manifest_sha256" in source
     assert "disabled={loading || approvalCompleted}" in source
-    assert (
-        "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize "
-        "client delivery of that exact edition including its disclosed limitations and outstanding review/QC."
-    ) in source
-    assert "async function downloadFinalReport" in source
-    assert "async function approveExactReport" in source
-    assert source.index("async function downloadFinalReport") < source.index(
-        "async function approveExactReport"
-    )
-    assert "setResult(reviewed);" in source
-    assert source.index("setResult(reviewed);") < source.index(
-        "const approvedPdfDigest = await downloadExactPdf(reviewed);"
-    )
-    assert "setDownloadedArtifactDigest(approvedPdfDigest);" in source
-    assert "downloadedArtifactDigest !== currentReviewPdfDigest" in source
+    assert "approve it, and authorize client delivery" in source
+    assert "lo apruebo y autorizo su entrega al cliente" in source
+    assert "onClick={approveExactReport}" in source
+    assert "onClick={authorizeDelivery}" not in source
+    assert "deliveryConfirmed" not in source
+    assert "await reconcileFinalization(uncertainDecision.current)" in source
     assert 'if (locale === "es-MX") return new Error(`${fallback} (${response.status}).`);' in source
 
 
