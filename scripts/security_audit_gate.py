@@ -329,6 +329,17 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             # Retain the finding; never exempt verified values or other UUIDs.
             disposition = "approved_nonsecret_deployment_identifier"
             approved_nonsecret_identifiers += 1
+        elif (
+            path == "docs/human-report-repair-acceptance.md"
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "c0bf88741ce6e66e63e896c5ceb8e4e882ed2049facd3a88cc1d6826cd6dd2e9"
+        ):
+            # PR #1593: owner authorized this exact disposition after fresh
+            # Railway metadata confirmed the successful 7fde559 deployment ID.
+            # Verified findings still block above; retain this finding as evidence.
+            disposition = "approved_nonsecret_deployment_identifier"
+            approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
             approved_test_placeholders += 1

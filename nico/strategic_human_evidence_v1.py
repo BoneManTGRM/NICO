@@ -31,7 +31,9 @@ def _safe(value: Any, *, depth: int = 0) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        return value.strip()[:4000]
+        if len(value) > 4000:
+            raise ValueError("human_evidence_value_exceeds_4000_characters")
+        return value
     if depth >= 5:
         return str(value)[:4000]
     if isinstance(value, Mapping):

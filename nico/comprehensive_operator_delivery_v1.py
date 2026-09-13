@@ -104,7 +104,8 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     receipt["delivery_authorization_certificate_sha256"] = canonical_sha256(receipt)
     edition = render_operator_presentation(record, approved)
     source_pdf = base64.b64decode(report_package_from_record(record)["pdf_base64"], validate=True)
-    corrected, _changes = _render_source(source_pdf, client_delivery_authorized=True)
+    corrected, _changes = _render_source(source_pdf, client_delivery_authorized=True,
+        repair_current_truth=bool(report_package_from_record(record).get("json", {}).get("human_report_export_schema")))
     certificate, _text = _cover(approved["review"], spanish=record["identity"]["report_language"] == "es-MX",
                                 corrected_presentation=True, delivery_authorization=receipt)
     writer = PdfWriter()
@@ -120,6 +121,8 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     edition["delivery_authorization"] = receipt
     edition["reports"]["pdf_base64"] = base64.b64encode(output.getvalue()).decode()
     edition["reports"]["pdf_filename"] = edition["reports"]["pdf_filename"].replace("OPERATOR-APPROVED-FINAL", "CLIENT-DELIVERY-AUTHORIZED")
+    from nico.comprehensive_operator_report_formats import project_operator_report_formats
+    project_operator_report_formats(edition["reports"], authorized=True)
     edition["artifact_digests"] = _artifact_digests(edition["reports"])
     edition["reports"]["pdf_sha256"] = edition["artifact_digests"]["pdf"]["sha256"]
     edition["report_artifact_digest"] = canonical_sha256(edition["artifact_digests"])

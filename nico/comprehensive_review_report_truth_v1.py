@@ -171,7 +171,7 @@ def _markdown_section(truth: Mapping[str, Any]) -> str:
             f"- Final human approval: {truth['final_human_approval_status'].upper()}",
             f"- Client-delivery authorization: {truth['client_delivery_authorization_status'].upper()}",
             "",
-            "Automated technical triage does not create human assurance. Human disposition does not itself approve the final package. Client delivery remains blocked until the separate protected approval and delivery gates succeed.",
+            "Automated technical triage does not create human assurance. Human disposition does not itself approve the final package. Operator approval, delivery authorization, and actual transmission are distinct recorded facts.",
             _MARKDOWN_END,
         ]
     )
@@ -209,7 +209,7 @@ def _html_section(truth: Mapping[str, Any]) -> str:
         f"{_HTML_START}<section id=\"nico-phase2-review-truth\"><h2>Human Review and Approval Truth</h2>"
         "<p>Scanner observations, NICO technical triage, authorized human disposition, confirmed material findings, final human approval, and client-delivery authorization are separate states.</p>"
         f"<ul>{items}</ul>"
-        "<p>Automated technical triage does not create human assurance. Human disposition does not itself approve the final package. Client delivery remains blocked until the separate protected gates succeed.</p>"
+        "<p>Automated technical triage does not create human assurance. Human disposition does not itself approve the final package. Operator approval, delivery authorization, and actual transmission are distinct recorded facts.</p>"
         f"</section>{_HTML_END}"
     )
 
@@ -276,7 +276,7 @@ def _review_pdf_page(truth: Mapping[str, Any]) -> bytes:
         table,
         Spacer(1, 12),
         Paragraph(
-            "Automated technical triage does not create human assurance. Human disposition does not itself approve the final package. Client delivery remains blocked until the separate protected approval and delivery gates succeed.",
+            "Automated technical triage does not create human assurance. Human disposition does not itself approve the final package. Operator approval, delivery authorization, and actual transmission are distinct recorded facts.",
             styles["BodyText"],
         ),
     ]

@@ -222,8 +222,8 @@ def test_spanish_evidence_gate_localizes_score_and_candidate_table_copy() -> Non
         "Secretos",
         "Análisis estático",
         "Solo aseguramiento mientras la disposición humana autorizada siga pendiente",
-        "Solo un revisor humano autorizado puede aprobar los artefactos inmutables exactos.",
-        "La entrega al cliente requiere una acción autorizada independiente.",
+        "La acción final autenticada registra la aprobación del operador y la autorización de entrega para la edición exacta.",
+        "La revisión especializada y la entrega real se registran por separado.",
     ):
         assert expected in normalized
     for leak in (
@@ -238,7 +238,7 @@ def test_spanish_evidence_gate_localizes_score_and_candidate_table_copy() -> Non
         assert leak not in normalized
 
 
-def test_english_evidence_gate_keeps_approval_and_delivery_as_separate_actions() -> None:
+def test_english_evidence_gate_describes_one_action_and_separate_specialist_review() -> None:
     register = _register(1)
     canonical = _canonical(register)
 
@@ -254,10 +254,11 @@ def test_english_evidence_gate_keeps_approval_and_delivery_as_separate_actions()
     )
 
     assert (
-        "Only an authorized human reviewer may approve the exact immutable artifacts."
+        "The authenticated final action records operator approval and delivery authorization for the exact edition."
         in normalized
     )
-    assert "Client delivery requires a separate authorized action." in normalized
+    assert "Specialist review and actual delivery are recorded separately." in normalized
+    assert "Client delivery requires a separate authorized action." not in normalized
     assert "APPROVED FINAL and CLIENT DELIVERY AUTHORIZED" not in normalized
 
 

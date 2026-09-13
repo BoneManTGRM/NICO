@@ -101,14 +101,24 @@ def delivery_lifecycle_text(value: str) -> str:
 
 
 @lru_cache(maxsize=4)
-def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False) -> tuple[bytes, tuple[tuple[int, str, str], ...]]:
+def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False,
+                   repair_current_truth: bool = False) -> tuple[bytes, tuple[tuple[int, str, str], ...]]:
     writer = PdfWriter(clone_from=io.BytesIO(pdf))
     changes: list[tuple[int, str, str]] = []
+    from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
     for page_index, page in enumerate(writer.pages):
         text = page.extract_text() or ""
+        if repair_current_truth and is_literal_evidence_page(page):
+            # These are source statements, including possibly quoted lifecycle
+            # labels. Finalization must not rewrite them as report authority.
+            continue
         cover = page_index == 0 and ("Executive posture" in text or "Postura ejecutiva" in text)
         approval_record = ("Human Review and Exact-Artifact Approval" in text and "Reviewer identity" in text
                            or "Identidad del revisor" in text and "Registro de aprobación requerido" in text)
+        review_truth = repair_current_truth and (
+            "Human Review and Approval Truth" in text
+            or "Verdad de revisión humana y aprobación" in text
+        )
         stream = ContentStream(page.get_contents(), writer)
         previous = ""
         phase_approval = False
@@ -122,6 +132,11 @@ def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False) -> t
                 original = str(operand) if isinstance(operand, TextStringObject) else bytes(operand).decode("latin-1")
                 updated = lifecycle_text(original)
                 normalized = original.strip()
+                if review_truth:
+                    if previous in {"Final human approval", "Aprobación humana final"} and normalized.upper() in {"PENDING", "PENDIENTE"}:
+                        updated = "APPROVED" if previous == "Final human approval" else "APROBADA"
+                    if client_delivery_authorized and previous in {"Client-delivery authorization", "Autorización de entrega al cliente"} and normalized.upper() in {"BLOCKED", "BLOQUEADA", "PENDING_AUTHORIZATION"}:
+                        updated = "AUTHORIZED" if previous == "Client-delivery authorization" else "AUTORIZADA"
                 if cover:
                     if normalized in {"HUMAN REVIEW", "REVISIÓN HUMANA"}:
                         updated = "OPERATOR APPROVAL" if normalized == "HUMAN REVIEW" else "APROBACIÓN OPERADOR"
@@ -190,7 +205,8 @@ def render_operator_presentation(record: Mapping[str, Any], edition: Mapping[str
     source_hash = hashlib.sha256(source_pdf).hexdigest()
     if source_hash != edition["source_review_artifact_identity"]["artifact_digests"]["pdf"]["sha256"]:
         raise ValueError("operator_presentation_source_mismatch")
-    corrected, changes = _render_source(source_pdf)
+    corrected, changes = _render_source(source_pdf, repair_current_truth=bool(
+        source.get("json", {}).get("human_report_export_schema")))
     certificate, _ = _cover(edition["review"], spanish=record["identity"]["report_language"] == "es-MX",
                             corrected_presentation=True)
     writer = PdfWriter()

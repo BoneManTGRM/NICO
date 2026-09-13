@@ -266,9 +266,12 @@ def _transform_pdf_text(pdf: bytes, translator: Callable[[str], str]) -> bytes:
         raise ValueError("Spanish client localization requires a valid PDF")
     reader = PdfReader(io.BytesIO(pdf))
     writer = PdfWriter()
+    from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
     for source_page in reader.pages:
         writer.add_page(source_page)
         page = writer.pages[-1]
+        if is_literal_evidence_page(page):
+            continue
         contents = page.get_contents()
         if contents is None:
             continue

@@ -684,9 +684,9 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
     story.extend([
         Spacer(1, .12 * inch),
         p(
-            "Only an authorized human reviewer may approve the exact immutable artifacts. Client delivery requires a separate authorized action."
+            "The authenticated final action records operator approval and delivery authorization for the exact edition. Specialist review and actual delivery are recorded separately."
             if not spanish
-            else "Solo un revisor humano autorizado puede aprobar los artefactos inmutables exactos. La entrega al cliente requiere una acción autorizada independiente.",
+            else "La acción final autenticada registra la aprobación del operador y la autorización de entrega para la edición exacta. La revisión especializada y la entrega real se registran por separado.",
             warning,
         ),
     ])

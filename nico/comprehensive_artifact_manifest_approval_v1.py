@@ -249,6 +249,25 @@ def _build_structured_exports(canonical: Mapping[str, Any]) -> dict[str, bytes]:
         "review_timestamp",
         "raw_payload_retention_state",
     ]
+    human = canonical.get("supplied_human_evidence")
+    from nico.strategic_human_evidence_v1 import verify_strategic_human_evidence
+    if verify_strategic_human_evidence(human):
+        evidence_fields += ["record_type", "module_id", "canonical_pointer", "supplier_identity",
+                            "observation_time", "source_reference", "evidence_status"]
+        candidates = [{**item, "record_type": "scanner_candidate"} for item in candidates]
+        for module_id in human.get("provided_module_ids") or []:
+            module = human["modules"][module_id]
+            candidates.append({
+                "record_type": "supplied_human_evidence", "module_id": module_id,
+                "canonical_pointer": f"/supplied_human_evidence/modules/{module_id}",
+                "supplier_identity": module.get("reviewer", ""),
+                "observation_time": module.get("observed_at", ""),
+                "source_reference": module.get("source_reference", ""),
+                "evidence_status": "excluded" if module.get("excluded") else "supplied_unverified",
+                "evidence_digest_sha256": module["module_sha256"],
+                "evidence": module.get("evidence", {}),
+                "raw_payload_retention_state": "retained_in_canonical_json",
+            })
     return {
         "findings_csv": _csv_bytes(findings, finding_fields),
         "evidence_csv": _csv_bytes(candidates, evidence_fields),
@@ -296,7 +315,7 @@ def _preliminary_entries(
             artifact_type="evidence_csv",
             filename=f"nico-{run}-evidence.csv",
             content=exports["evidence_csv"],
-            schema_version="nico.evidence-csv.v1",
+            schema_version=("nico.evidence-csv.v2" if canonical.get("supplied_human_evidence") else "nico.evidence-csv.v1"),
             identity=identity,
         ),
         _artifact_entry(

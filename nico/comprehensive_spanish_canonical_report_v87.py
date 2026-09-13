@@ -157,6 +157,10 @@ _OSV_APPLICABILITY_ES = {
     ),
 }
 _CANONICAL_PARITY_EXACT.update({
+    "Processing complete; assessment coverage and specialist review are reported separately.":
+        "Procesamiento completo; la cobertura de evaluación y la revisión especializada se informan por separado.",
+})
+_CANONICAL_PARITY_EXACT.update({
     prefix + source: prefix + translated
     for source, translated in _OSV_APPLICABILITY_ES.items()
     for prefix in ("", "osv-scanner: ")
@@ -553,6 +557,10 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (
         "Approve or reject the exact immutable report package before any client delivery.",
         "Aprobar o rechazar el paquete inmutable exacto del informe antes de cualquier entrega al cliente.",
+    ),
+    (
+        "The automated executive briefing and bounded priority register are complete for review; finding acceptance, residual-risk ownership, and remediation commitment remain pending human disposition.",
+        "El resumen ejecutivo automatizado y el registro acotado de prioridades están completos para revisión; la aceptación de hallazgos, la responsabilidad del riesgo residual y el compromiso de remediación siguen pendientes de disposición humana.",
     ),
     (
         "The automated executive briefing and bounded priority register are complete for review; finding acceptance, residual-risk ownership, remediation commitment, and delivery authorization remain pending human disposition.",
@@ -1678,6 +1686,7 @@ _PRESENTATION_PROSE_FIELDS = {
     "why_it_matters",
 }
 _RAW_CANONICAL_SUBTREES = {
+    "supplied_human_evidence",
     "source_observation",
     "structured_tables",
     "profile_coverage",

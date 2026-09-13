@@ -229,7 +229,7 @@ def _flatten_scalars(value: Any, path: str = "") -> list[tuple[str, str]]:
     if isinstance(value, str):
         normalized = value
     else:
-        normalized = _text(value, 100_000)
+        normalized = str(value) if value is not None else "Not supplied"
     return [(path, normalized)] if normalized else []
 
 
@@ -323,6 +323,10 @@ def _human_module_stage_specs(
             else source_label
         )
         lines: list[str] = []
+        lines.extend(_literal_lines(
+            "Estado de evidencia" if spanish else "Evidence status",
+            "supplied_unverified", spanish=spanish,
+        ))
         excluded = module.get("excluded") is True or str(module.get("status") or "").casefold() == "excluded"
 
         evidence = (

@@ -1099,36 +1099,24 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # evidence. Fixed-fixture before/after exports differ only in that CI boundary
 # and its derived artifact digests; page and semantic parity checks stay active.
 # Source-table CSS changes HTML bytes and their printed manifest hash only.
-# Fixed-fixture Markdown, PDF body text and page counts remain unchanged.
-SMALL_ENGLISH_GOLDEN = {
-    "markdown": ("fa2043d3b8bc6bf4eb214c310bbad89f7a05e1f776e05eb4bbb59b8a93750287", 18828),
-    "html": ("24d7d8541dad0a0b32798afb60a92aeba3e6371220ab1933d6f9647a24319760", 23157),
-    # The authoritative separately rendered CI/CD boundary replaces the base
-    # copy, so one semantic section now produces one physical body page.
-    # PDF evidence-integrity repair preserves numeric zero cells and reserves
-    # footer space. Across these three goldens the only extracted-text additions
-    # were those previously blank zeros; page totals remain unchanged.
-    # The inclusive complexity threshold repair changes closure wording from
-    # "at or below 30" to "below 30" in small/phase9 and their derived manifest
-    # hashes. Rich output is unchanged; findings, limits, and counters are retained.
-    "pdf_base64": ("c5bfe4731e39a80f45d34fb7f57c495b48934ec8eadcf69c919916dbd72afcc7", 177348),
-    "pdf_sha256": "0231bb7aa94ff95c9c6de19a7bbb867a4cfbc752cab1ac1daa722a93f94c6614",
-    "page_count": 21,
-}
-RICH_ENGLISH_GOLDEN = {
-    "markdown": ("3d3dda9753d54f53ffbe27932eb1a3b56ec77246116f79dac6761dbd8577044b", 20557),
-    "html": ("03372a03c7e301726c83b4507dbe9ce471a9fb7db3cb625e1d27f4d107eb1108", 25192),
-    "pdf_base64": ("cad7816dcc8a01f10d3beba5b9814b6680eef9b3899575f8c8412c3262a2f402", 257576),
-    "pdf_sha256": "2a82da35d5d603ba7cdcd83c0263259bb7613f5258feff7b54a068721cee361a",
-    "page_count": 39,
-}
-PHASE9_ENGLISH_GOLDEN = {
-    "markdown": ("2d31dc7ebc346489db8540acae2340c65055176bee94d50c445d4eed3aec2f13", 19558),
-    "html": ("c95e4a5498e0cf50071e5fc71301e10e7ff8ace4d0fa4ec7b4e344238b2b9c12", 24211),
-    "pdf_base64": ("e137087c17513edf7ff52d9b0a352b22e9a08651a5d948d762762512d2b463a7", 173880),
-    "pdf_sha256": "cf60a5c6e9ba33a012fc654ced3ddf6ae90931f0c782321a94bc673e6422ac9e",
-    "page_count": 20,
-}
+# Report-repair goldens include readable nested roadmap summaries/aliases and current
+# lifecycle guidance. Exact English before/after equality, bilingual semantic
+# parity, finding references, and all page-count gates remain active.
+SMALL_ENGLISH_GOLDEN = {'markdown': ('3c2ac09328c91aba1dc4361a2bdafdd7269b46272b3d4426785508e803d7eb56', 18751),
+ 'html': ('f5b522a0d24cf5346be2ac8540936632a401d6f0e48a33167754e0ced66f1d40', 23080),
+ 'pdf_base64': ('5c7230b4eca9bc42b3464bc49470246b46b4bc4db076865ce1a79675d1f777eb', 177288),
+ 'pdf_sha256': '5fa4b50ec2889d4e2253bc65c9b8845daa4d069ebc991ba6662d1ad858858012',
+ 'page_count': 21}
+RICH_ENGLISH_GOLDEN = {'markdown': ('3d3dda9753d54f53ffbe27932eb1a3b56ec77246116f79dac6761dbd8577044b', 20557),
+ 'html': ('03372a03c7e301726c83b4507dbe9ce471a9fb7db3cb625e1d27f4d107eb1108', 25192),
+ 'pdf_base64': ('82e19339466ca1005247b24801b236db9c7283fa8dba0f8afafb48e64b9aec67', 257600),
+ 'pdf_sha256': '3de93ccf5d62c3008e71d5c553c44a1f5d6e799474444b65e5467d1c401190ac',
+ 'page_count': 39}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('3cf6b30c9141be9f337ae68ec8371bab0876e6c72577f0c6f67df0963ea314e3', 18870),
+ 'html': ('3a363d60fa5f9605988451db641f30d7925ba3c95aad94045b6339983ce2424a', 23178),
+ 'pdf_base64': ('024247868b8a9ee8ce2cc1a93efe14be7d552a5c04a6d8578d64044387484cec', 172940),
+ 'pdf_sha256': '40a547d9cdcc99bfe19e9db87f93f1e75947686cb32d5224dd2165d67f626aed',
+ 'page_count': 20}
 
 SPANISH_OUTLINE = {
     "Four-Phase Assessment Program": "Programa de evaluación en cuatro fases",

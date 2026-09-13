@@ -115,7 +115,7 @@ def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
             stage["status"] = "review_required"
             stage["summary"] = (
                 "The automated executive briefing and bounded priority register are complete for review; "
-                "finding acceptance, residual-risk ownership, remediation commitment, and delivery authorization remain pending human disposition."
+                "finding acceptance, residual-risk ownership, and remediation commitment remain pending human disposition."
             )
         elif stage_id == "six_month_roadmap":
             stage["status"] = "framework_only"

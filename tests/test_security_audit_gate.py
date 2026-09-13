@@ -267,16 +267,17 @@ def test_trufflehog_verified_or_non_fixture_finding_blocks(tmp_path: Path) -> No
     assert any("trufflehog reported 2" in item for item in manifest["security_gate"]["blockers"])
 
 
-@pytest.mark.parametrize("deployment_id", [
-    "82eb5f88-2e22-4fe1-a482-44700f464557",
-    "4b198570-42a7-48e7-be91-4d93bd808923",
+@pytest.mark.parametrize("path,deployment_id", [
+    ("docs/operator-report-approval.md", "82eb5f88-2e22-4fe1-a482-44700f464557"),
+    ("docs/operator-report-approval.md", "4b198570-42a7-48e7-be91-4d93bd808923"),
+    ("docs/human-report-repair-acceptance.md", "57588a18-cd2e-43bf-a46d-4324a60d237a"),
 ])
 def test_documented_railway_deployment_id_is_retained_but_other_credentials_block(
-    tmp_path: Path, deployment_id: str,
+    tmp_path: Path, path: str, deployment_id: str,
 ) -> None:
     _clean_evidence(tmp_path)
     known = {
-        "SourceMetadata": {"Data": {"Git": {"file": "docs/operator-report-approval.md"}}},
+        "SourceMetadata": {"Data": {"Git": {"file": path}}},
         "DetectorName": "RailwayApp",
         "Verified": False,
         "Raw": deployment_id,
@@ -294,6 +295,10 @@ def test_documented_railway_deployment_id_is_retained_but_other_credentials_bloc
         {"Raw": "unknown-credential"},
         {"DetectorName": "Other"},
         {"SourceMetadata": {"Data": {"Git": {"file": "nico/settings.py"}}}},
+        {"SourceMetadata": {"Data": {"Git": {"file": (
+            "docs/operator-report-approval.md" if "human-report" in path
+            else "docs/human-report-repair-acceptance.md"
+        )}}}},
     ):
         _write_json_lines(tmp_path, "trufflehog.json", [{**known, **changed}])
         manifest = build_manifest(tmp_path)

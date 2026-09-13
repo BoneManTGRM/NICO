@@ -463,10 +463,11 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
     assert "620 (98.41%)" in text
     assert "until triaged" not in text.lower()
     assert (
-        "Only an authorized human reviewer may approve the exact immutable artifacts."
+        "The authenticated final action records operator approval and delivery authorization for the exact edition."
         in text
     )
-    assert "Client delivery requires a separate authorized action." in text
+    assert "Specialist review and actual delivery are recorded separately." in text
+    assert "Client delivery requires a separate authorized action." not in text
     assert "APPROVED FINAL and CLIENT DELIVERY AUTHORIZED" not in text
 
 
@@ -647,8 +648,8 @@ def test_spanish_phase1_review_gate_is_laid_out_from_spanish_copy() -> None:
         "Límite del paquete del cliente",
         "permanecen en JSON y CSV canónicos",
         "Dependencias",
-        "Solo un revisor humano autorizado puede aprobar los artefactos inmutables exactos.",
-        "La entrega al cliente requiere una acción autorizada independiente.",
+        "La acción final autenticada registra la aprobación del operador y la autorización de entrega para la edición exacta.",
+        "La revisión especializada y la entrega real se registran por separado.",
     ):
         assert expected in text
     for forbidden in (
