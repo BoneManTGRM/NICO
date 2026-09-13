@@ -37,6 +37,22 @@ permission or client transmission was performed by this continuation.
 
 ### Focused repairs and evidence
 
+CI reconciliation, 2026-09-13: at `a20d644`, NICO CI run 34757873382 passed
+quality and 11/12 shards. Shard 10 failed only the two unchanged obsolete
+approval-boundary assertions. Security Audit 34757874575 additionally blocked one
+unverified RailwayApp candidate: the deployment identifier documented above.
+Its raw-value SHA-256 `583d7cd14d26cb9df88cbd31b72a31873c25f050af9988d8190617889d46f9cb`
+matches fresh Railway deployment metadata for the successful `f549dd2` release.
+The existing classifier now recognizes that exact digest only for RailwayApp in
+this document; verified secrets and other values/paths/detectors still block.
+All 13 gate tests pass, including adversarial checks for both known identifiers.
+Re-evaluating the unchanged downloaded audit evidence passes with all 45
+TruffleHog findings retained (3 exact nonsecret-identifier occurrences). ZIP hash:
+`2a04ea877bbe393513727b853c50f59c5fd4e56ddeaceba90a85cf7cdb95c33a`.
+Independent scoped review found no blocking issue. This re-evaluation is not a new
+CI run or production proof; final-head checks remain required. The browser still
+showed sign-in, and no target-report mutation was performed.
+
 The workspace reconciles ambiguous mutation outcomes using the same authenticated
 run/edition before any repeat POST. Persisted approval is reused; persisted delivery
 permission leads to download-only recovery. Receipt canonical SHA-256, parent
