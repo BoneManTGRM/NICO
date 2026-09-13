@@ -132,7 +132,7 @@ def render_paired_substantive_review_pdf(
         borderColor=colors.HexColor("#cbd5e1"),
         borderWidth=.35,
         borderPadding=2,
-        spaceBefore=.8,
+        spaceBefore=3.5,
     )
 
     def p(value: Any, style: ParagraphStyle = body, limit: int = 700) -> Paragraph:
