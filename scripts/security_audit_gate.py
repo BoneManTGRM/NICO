@@ -317,10 +317,15 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             path == "docs/operator-report-approval.md"
             and finding.get("DetectorName") == "RailwayApp"
             and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
-            == "baad0101f41fbbf2c15da26fee7ec21b0b5a069aa0763ffd267a155607a77b16"
+            in {
+                "baad0101f41fbbf2c15da26fee7ec21b0b5a069aa0763ffd267a155607a77b16",
+                "583d7cd14d26cb9df88cbd31b72a31873c25f050af9988d8190617889d46f9cb",
+            }
         ):
             # PR #1589 evidence: Railway deployment metadata confirms this exact
             # UUID is the deployment ID for 906daf8, not an authentication token.
+            # PR #1592: fresh Railway metadata likewise confirms the second
+            # digest is the successful f549dd2 production deployment identifier.
             # Retain the finding; never exempt verified values or other UUIDs.
             disposition = "approved_nonsecret_deployment_identifier"
             approved_nonsecret_identifiers += 1

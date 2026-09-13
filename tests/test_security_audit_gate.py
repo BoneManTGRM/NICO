@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.security_audit_gate import build_manifest
 
 
@@ -265,13 +267,19 @@ def test_trufflehog_verified_or_non_fixture_finding_blocks(tmp_path: Path) -> No
     assert any("trufflehog reported 2" in item for item in manifest["security_gate"]["blockers"])
 
 
-def test_documented_railway_deployment_id_is_retained_but_other_credentials_block(tmp_path: Path) -> None:
+@pytest.mark.parametrize("deployment_id", [
+    "82eb5f88-2e22-4fe1-a482-44700f464557",
+    "4b198570-42a7-48e7-be91-4d93bd808923",
+])
+def test_documented_railway_deployment_id_is_retained_but_other_credentials_block(
+    tmp_path: Path, deployment_id: str,
+) -> None:
     _clean_evidence(tmp_path)
     known = {
         "SourceMetadata": {"Data": {"Git": {"file": "docs/operator-report-approval.md"}}},
         "DetectorName": "RailwayApp",
         "Verified": False,
-        "Raw": "82eb5f88-2e22-4fe1-a482-44700f464557",
+        "Raw": deployment_id,
     }
     _write_json_lines(tmp_path, "trufflehog.json", [known])
     manifest = build_manifest(tmp_path)

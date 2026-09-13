@@ -41,7 +41,7 @@ const COPY = {
   en: {
     eyebrow: "NICO COMPREHENSIVE · INTERNAL QUALITY GATE",
     title: "Approve the exact final assessment report.",
-    lead: "A completed assessment can always produce its exact final assessment report. Human review, approval, and client delivery remain separate controlled states.",
+    lead: "Approve and download records report approval and client-delivery permission in one action. Specialist review and independent QC remain accurately disclosed; no report is sent automatically.",
     assessment: "Assessment",
     comprehensive: "Comprehensive",
     exactRun: "Exact run",
@@ -64,51 +64,49 @@ const COPY = {
     exactIdentity: "Confirm exact report identity",
     exactRunId: "Exact Comprehensive run ID",
     security: "Use the private operator password configured for NICO in Railway. It stays only in this open page and is never stored in the URL or browser storage.",
-    enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer name and role may be blank for approval; client delivery requires its own explicit action.",
+    enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer name and role may be blank for operator approval and client-delivery permission.",
     loaded: "The immutable Comprehensive review package is loaded. The final assessment report is available independently of optional reviewer/client metadata.",
     loadFailed: "Unable to load final review.",
     finalDecision: "FINAL REPORT AND REVIEW STATE",
     approveHeading: "Review and approve the exact assessment report",
-    approveLead: "Download and review the report, confirm that exact PDF, then approve and download the final PDF. Reviewer name and role are optional metadata. A download or checked box alone does not record approval. Client delivery is a separate authorization.",
+    approveLead: "Download and review the report, confirm that exact PDF, then use Approve and download final PDF. That one action approves the report, authorizes client delivery, and downloads the authorized PDF. Existing approvals are reused. No separate delivery button or acknowledgement is required.",
     review: "Report approval",
+    operatorReview: "Operator approval",
     specialistReview: "Specialist review",
     specialistIncomplete: "Not completed",
     specialistComplete: "Completed",
-    operatorDisclosure: "Operator approval accepts this exact report with its disclosed limitations and outstanding specialist review, independent QC, and escalations. It does not mark that work complete or authorize client delivery.",
+    operatorDisclosure: "Approve and download accepts this exact report and authorizes client delivery with its disclosed limitations and outstanding specialist review, independent QC, and escalations. It does not mark that work complete or send the report.",
     delivery: "Client delivery",
     authorized: "Authorized",
     blocked: "Blocked",
     waiting: "Waiting for secure access",
     emptyTitle: "Nothing else to complete yet.",
     emptyBody: "Enter the exact run and operator password above, then open the exact completed assessment.",
-    reviewedExact: "I reviewed this exact downloaded report and approve it with its disclosed limitations and outstanding review/QC.",
-    reviewedDetail: "This records operator approval of this edition. Specialist review, independent QC, and client delivery remain separate.",
+    reviewedExact: "I reviewed this exact downloaded report, approve it, and authorize client delivery with its disclosed limitations and outstanding review/QC.",
+    reviewedDetail: "Approve and download records both decisions for this edition. Specialist review and independent QC remain separate. No report is sent automatically.",
     approvalNote: "Add approval context",
     approvalNoteLabel: "Decision context",
     approvalPlaceholder: "Optional approval context. A clear note is required for rejection or a request for more evidence.",
-    recording: "Recording approval…",
-    alreadyApproved: "Approval already recorded",
+    recording: "Approving and preparing the authorized PDF…",
+    alreadyApproved: "Existing approval will be reused",
     downloadFinalReport: "Download report for review",
     downloadApprovedReport: "Download approved final PDF",
     reviewerRequired: "Reviewer name and role are optional for approval. Blank values use authenticated-operator defaults; test is allowed as reviewer metadata.",
+    legacyDeliveryRequired: "Enter the reviewer name and role required for this existing specialist-approved edition.",
     reviewDownloadRequired: "Download and review this exact report before confirming your review.",
-    approvalReady: "Ready to record your approval of this exact report and its disclosed limitations. Outstanding specialist review/QC remains accurately recorded.",
-    approvedDownloadNotice: "The exact approved final PDF was downloaded. Client delivery remains separately protected.",
-    approvalDownloadFailed: "Approval was recorded, but the approved PDF download failed. Refresh report status, then use Download approved final PDF to retry without approving again.",
-    finalReportNotice: "The exact report was downloaded for review. Downloading does not record approval. After reviewing it, use Approve and download final PDF.",
+    approvalReady: "Ready to approve this exact report and authorize client delivery in one action. Outstanding specialist review/QC remains accurately recorded.",
+    approvedDownloadNotice: "The exact approved PDF was downloaded for review. Use Approve and download final PDF to authorize client delivery without recording another approval.",
+    approvalDeliveryFailed: "Approval is recorded, but finalization is incomplete. Use Approve and download final PDF to retry; the existing approval will be reused.",
+    finalReportNotice: "The exact report was downloaded for review. Downloading does not record approval or authorize delivery. After reviewing it, use Approve and download final PDF.",
     approveExactReport: "Approve and download final PDF",
     downloadPackage: "Download approved delivery package",
     readyDelivery: "Client delivery is authorized for this exact report. Specialist review/QC remains separate; no report has been sent.",
-    blockedDelivery: "Client-ready release remains blocked until its legitimate approval and delivery requirements are satisfied.",
-    pendingAuthorization: "Approval is recorded for this exact edition. Client delivery remains blocked until its separate requirements and authorization are satisfied.",
-    authorizationConfirm: "I reviewed the downloaded APPROVED FINAL PDF and explicitly authorize client delivery of that exact edition including its disclosed limitations and outstanding review/QC. This records permission without sending the report.",
-    authorizeDelivery: "Authorize client delivery",
-    authorizingDelivery: "Recording delivery authorization…",
+    blockedDelivery: "Client delivery is not yet authorized. Approve and download final PDF records approval and delivery permission together.",
+    pendingAuthorization: "This report is already approved. Use Approve and download final PDF to finish client authorization and download; the existing approval is reused.",
     authorizationNotice: "Client delivery is authorized for this exact report. Specialist review/QC remains separate. No report has been sent.",
     pdfRetry: "Use Download approved final PDF to retry the download without authorizing again.",
     authorizationFailed: "Unable to authorize client delivery.",
-    confirmAuthorizationFirst: "Confirm the separate client-delivery authorization action.",
-    defaultAuthorizationReason: "Authenticated operator explicitly authorized client delivery of this exact approved PDF, including disclosed limitations and outstanding review/QC.",
+    defaultAuthorizationReason: "Authenticated operator used Approve and download final PDF to authorize client delivery of this exact approved report, including disclosed limitations and outstanding review/QC. No transmission was requested.",
     otherDecision: "Need a different decision?",
     otherDecisionLead: "Use these only when the package cannot be approved. A clear decision reason is required.",
     requestEvidence: "Request more evidence",
@@ -120,9 +118,9 @@ const COPY = {
     deliveryCertificateDigest: "Delivery authorization certificate",
     notIssued: "Not issued",
     technicalRecord: "Technical review record",
-    confirmFirst: "Confirm that you reviewed the exact report and its disclosed limitations.",
+    confirmFirst: "Confirm that you reviewed the exact report and authorize its approval and client delivery with the disclosed limitations.",
     decisionNoteRequired: "Add a clear review note before requesting more evidence or rejecting delivery.",
-    approvedNotice: "Operator approval recorded and the exact approved final PDF downloaded. Specialist review/QC remains separate. Client delivery remains unauthorized.",
+    approvedNotice: "Report approved, client delivery authorized, and the exact authorized final PDF downloaded. Specialist review/QC remains separate. No report has been sent.",
     evidenceNotice: "More evidence requested. Delivery remains blocked. Start a new assessment with the requested evidence; this unchanged report cannot later be approved.",
     rejectedNotice: "Report rejected. Delivery remains blocked.",
     approvalFailed: "Unable to record report approval.",
@@ -138,7 +136,7 @@ const COPY = {
   "es-MX": {
     eyebrow: "NICO COMPREHENSIVE · CONTROL INTERNO DE CALIDAD",
     title: "Aprueba el informe final exacto de la evaluación.",
-    lead: "Una evaluación terminada siempre puede producir su informe final exacto. La revisión humana, la aprobación y la entrega al cliente permanecen como estados controlados separados.",
+    lead: "Aprobar y descargar registra la aprobación del informe y el permiso de entrega al cliente en una sola acción. La revisión especializada y el control de calidad independiente siguen declarados; no se envía ningún informe automáticamente.",
     assessment: "Evaluación",
     comprehensive: "Comprehensive",
     exactRun: "Ejecución exacta",
@@ -161,51 +159,49 @@ const COPY = {
     exactIdentity: "Confirmar identidad exacta del informe",
     exactRunId: "ID exacto de ejecución Comprehensive",
     security: "Usa la contraseña privada del operador configurada para NICO en Railway. Permanece únicamente en esta página abierta y nunca se guarda en la URL ni en el almacenamiento del navegador.",
-    enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. El nombre y la función del revisor pueden quedar vacíos para aprobar; la entrega al cliente sigue siendo una acción separada y más estricta.",
+    enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. El nombre y la función del revisor pueden quedar vacíos para la aprobación del operador y el permiso de entrega al cliente.",
     loaded: "El paquete inmutable de Comprehensive está cargado. El informe final de evaluación está disponible independientemente de los metadatos opcionales del revisor/cliente.",
     loadFailed: "No fue posible cargar la revisión final.",
     finalDecision: "INFORME FINAL Y ESTADO DE REVISIÓN",
     approveHeading: "Revisa y aprueba el informe exacto de la evaluación",
-    approveLead: "Descarga y revisa el informe, confirma ese PDF exacto y después aprueba y descarga el PDF final. El nombre y la función del revisor son metadatos opcionales. Descargar o marcar la casilla no registra la aprobación. La entrega al cliente requiere una autorización separada.",
+    approveLead: "Descarga y revisa el informe, confirma ese PDF exacto y usa Aprobar y descargar PDF final. Esa única acción aprueba el informe, autoriza la entrega al cliente y descarga el PDF autorizado. Se reutilizan las aprobaciones existentes. No se requiere otro botón ni otra confirmación de entrega.",
     review: "Aprobación del informe",
+    operatorReview: "Aprobación del operador",
     specialistReview: "Revisión especializada",
     specialistIncomplete: "Sin completar",
     specialistComplete: "Completada",
-    operatorDisclosure: "La aprobación del operador acepta este informe exacto con sus limitaciones declaradas y la revisión especializada, el control de calidad independiente y los escalamientos pendientes. No marca ese trabajo como completado ni autoriza la entrega al cliente.",
+    operatorDisclosure: "Aprobar y descargar acepta este informe exacto y autoriza su entrega al cliente con sus limitaciones declaradas y la revisión especializada, el control de calidad independiente y los escalamientos pendientes. No marca ese trabajo como completado ni envía el informe.",
     delivery: "Entrega al cliente",
     authorized: "Autorizada",
     blocked: "Bloqueada",
     waiting: "Esperando acceso seguro",
     emptyTitle: "Todavía no hay nada más que completar.",
     emptyBody: "Ingresa arriba la ejecución exacta y la contraseña del operador, y abre la evaluación terminada exacta.",
-    reviewedExact: "Revisé este informe exacto descargado y lo apruebo con sus limitaciones declaradas y su revisión/QC pendiente.",
-    reviewedDetail: "Esto registra la aprobación del operador de esta edición. La revisión especializada, el control de calidad independiente y la entrega al cliente siguen separados.",
+    reviewedExact: "Revisé este informe exacto descargado, lo apruebo y autorizo su entrega al cliente con sus limitaciones declaradas y su revisión/QC pendiente.",
+    reviewedDetail: "Aprobar y descargar registra ambas decisiones para esta edición. La revisión especializada y el control de calidad independiente siguen separados. No se envía ningún informe automáticamente.",
     approvalNote: "Agregar contexto de aprobación",
     approvalNoteLabel: "Contexto de la decisión",
     approvalPlaceholder: "Contexto opcional de aprobación. Se requiere una nota clara para rechazar o solicitar más evidencia.",
-    recording: "Registrando aprobación…",
-    alreadyApproved: "Aprobación ya registrada",
+    recording: "Aprobando y preparando el PDF autorizado…",
+    alreadyApproved: "Se reutilizará la aprobación existente",
     downloadFinalReport: "Descargar informe para revisión",
     downloadApprovedReport: "Descargar PDF final aprobado",
     reviewerRequired: "El nombre y la función del revisor son opcionales para aprobar. Los valores vacíos usan valores del operador autenticado y test se acepta como metadato de prueba.",
+    legacyDeliveryRequired: "Ingresa el nombre y la función del revisor requeridos para esta edición con aprobación especializada existente.",
     reviewDownloadRequired: "Descarga y revisa este informe exacto antes de confirmar tu revisión.",
-    approvalReady: "Puedes aprobar este informe exacto y sus limitaciones declaradas. La revisión especializada y el control de calidad pendientes permanecerán registrados.",
-    approvedDownloadNotice: "Se descargó el PDF final aprobado exacto. La entrega al cliente sigue protegida por separado.",
-    approvalDownloadFailed: "La aprobación quedó registrada, pero falló la descarga del PDF aprobado. Actualiza el estado del informe y usa Descargar PDF final aprobado para reintentar sin volver a aprobar.",
-    finalReportNotice: "Se descargó el informe exacto para revisión. Descargar no registra la aprobación. Después de revisarlo, usa Aprobar y descargar PDF final.",
+    approvalReady: "Puedes aprobar este informe exacto y autorizar su entrega al cliente en una sola acción. La revisión especializada y el control de calidad pendientes permanecerán registrados.",
+    approvedDownloadNotice: "Se descargó el PDF aprobado exacto para revisión. Usa Aprobar y descargar PDF final para autorizar la entrega al cliente sin registrar otra aprobación.",
+    approvalDeliveryFailed: "La aprobación está registrada, pero la finalización está incompleta. Usa Aprobar y descargar PDF final para reintentar; se reutilizará la aprobación existente.",
+    finalReportNotice: "Se descargó el informe exacto para revisión. Descargar no registra la aprobación ni autoriza la entrega. Después de revisarlo, usa Aprobar y descargar PDF final.",
     approveExactReport: "Aprobar y descargar PDF final",
     downloadPackage: "Descargar paquete de entrega aprobado",
     readyDelivery: "La entrega de este informe está autorizada. La revisión/QC sigue separada; no se ha enviado el informe.",
-    blockedDelivery: "La entrega al cliente permanece bloqueada hasta que se satisfagan sus requisitos legítimos de aprobación y entrega.",
-    pendingAuthorization: "La aprobación está registrada para esta edición exacta. La entrega al cliente permanece bloqueada hasta cumplir sus requisitos y autorización separados.",
-    authorizationConfirm: "Autorizo la entrega al cliente de este PDF exacto, incluidas sus limitaciones y la revisión/QC pendiente. Este permiso no envía el informe.",
-    authorizeDelivery: "Autorizar entrega al cliente",
-    authorizingDelivery: "Registrando autorización de entrega…",
-    authorizationNotice: "Se registró la autorización de entrega al cliente para la edición aceptada exacta.",
-    pdfRetry: "Use Descargar PDF final aprobado para reintentar sin volver a autorizar.",
+    blockedDelivery: "La entrega al cliente aún no está autorizada. Aprobar y descargar PDF final registra la aprobación y el permiso de entrega juntos.",
+    pendingAuthorization: "Este informe ya está aprobado. Usa Aprobar y descargar PDF final para completar la autorización y descargar; se reutiliza la aprobación existente.",
+    authorizationNotice: "La entrega de este informe está autorizada. La revisión/QC sigue separada. No se ha enviado el informe.",
+    pdfRetry: "Usa Descargar PDF final aprobado para reintentar sin volver a autorizar.",
     authorizationFailed: "No fue posible autorizar la entrega al cliente.",
-    confirmAuthorizationFirst: "Confirma la acción separada de autorización de entrega al cliente.",
-    defaultAuthorizationReason: "El operador autenticado autorizó la entrega al cliente de este PDF aprobado exacto, incluidas sus limitaciones y la revisión/QC pendiente.",
+    defaultAuthorizationReason: "El operador autenticado usó Aprobar y descargar PDF final para autorizar la entrega al cliente de este informe aprobado exacto, incluidas sus limitaciones y la revisión/QC pendiente. No se solicitó ningún envío.",
     otherDecision: "¿Necesitas una decisión diferente?",
     otherDecisionLead: "Usa estas opciones únicamente cuando el paquete no pueda aprobarse. Se requiere una razón clara.",
     requestEvidence: "Solicitar más evidencia",
@@ -217,9 +213,9 @@ const COPY = {
     deliveryCertificateDigest: "Certificado de autorización de entrega",
     notIssued: "No emitido",
     technicalRecord: "Registro técnico de revisión",
-    confirmFirst: "Confirma que revisaste el informe exacto y sus limitaciones declaradas.",
+    confirmFirst: "Confirma que revisaste el informe exacto y autorizas su aprobación y entrega al cliente con las limitaciones declaradas.",
     decisionNoteRequired: "Agrega una nota clara antes de solicitar más evidencia o rechazar la entrega.",
-    approvedNotice: "Se registró la aprobación del operador y se descargó el PDF final aprobado exacto. La revisión especializada/QC sigue separada. La entrega al cliente permanece sin autorización.",
+    approvedNotice: "Informe aprobado, entrega al cliente autorizada y PDF final autorizado exacto descargado. La revisión especializada/QC sigue separada. No se ha enviado el informe.",
     evidenceNotice: "Se solicitó más evidencia. La entrega permanece bloqueada. Inicia una nueva evaluación con la evidencia solicitada; este informe sin cambios no podrá aprobarse después.",
     rejectedNotice: "Informe rechazado. La entrega permanece bloqueada.",
     approvalFailed: "No fue posible registrar la aprobación del informe.",
@@ -310,9 +306,12 @@ function downloadBlob(blob: Blob, filename: string): void {
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -329,6 +328,7 @@ async function downloadBase64Pdf(
   filename: string,
   invalidMessage: string,
   expectedSha256: string,
+  download = true,
 ): Promise<string> {
   const clean = encoded.includes(",") ? encoded.slice(encoded.indexOf(",") + 1) : encoded;
   const binary = window.atob(clean);
@@ -341,7 +341,7 @@ async function downloadBase64Pdf(
   if (!/^[0-9a-f]{64}$/i.test(expectedSha256) || actualSha256 !== expectedSha256.toLowerCase()) {
     throw new Error(invalidMessage);
   }
-  downloadBlob(new Blob([bytes], {type: "application/pdf"}), filename);
+  if (download) downloadBlob(new Blob([bytes], {type: "application/pdf"}), filename);
   return actualSha256;
 }
 
@@ -400,10 +400,10 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [downloadedArtifactDigest, setDownloadedArtifactDigest] = useState("");
-  const [deliveryConfirmed, setDeliveryConfirmed] = useState(false);
   const [artifactEdition, setArtifactEdition] = useState<"source" | "es-MX">("source");
   const approvalInFlight = useRef(false);
-  const deliveryInFlight = useRef(false);
+  const selectionVersion = useRef(0);
+  const uncertainDecision = useRef<ReviewResponse | null>(null);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -436,9 +436,10 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const deliveryCertificate = asRecord(result?.delivery_authorization || approvedPackage.certificate);
   const delivery = approvedDeliveryFrom(result);
   const deliveryAllowed = result?.client_delivery_allowed === true
-    || asRecord(result?.acceptance).client_delivery_allowed === true
-    || delivery.client_delivery_allowed === true
-    || approvedPackage.client_delivery_allowed === true;
+    || (result?.operator_approval_status !== "approved" && (
+      asRecord(result?.acceptance).client_delivery_allowed === true
+      || delivery.client_delivery_allowed === true
+      || approvedPackage.client_delivery_allowed === true));
   const rawStatus = String(
     certificate.decision
       || result?.review_status
@@ -451,7 +452,11 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const approvalCompleted = operatorApprovalCompleted || rawStatus === "approved" || runStatus === "approved";
   const specialistApprovalCompleted = !operatorApprovalCompleted
     && result?.human_review_completed === true && approvalCompleted;
+  const finalActionAuthorityReady = approvalCompleted && !operatorApprovalCompleted
+    ? canonicalApprovalReady : approvalAuthorityReady;
   const approvalNextStep = !approvalAuthorityReady ? copy.enterReviewer
+    : !finalActionAuthorityReady ? copy.legacyDeliveryRequired
+    : approvalCompleted ? copy.approvalReady
     : !exactEditionDownloaded ? copy.reviewDownloadRequired
     : !confirmed ? copy.confirmFirst
     : copy.approvalReady;
@@ -504,11 +509,72 @@ export default function ComprehensiveFinalReviewWorkspace() {
   async function requestJson(url: string, options: RequestInit = {}): Promise<ReviewResponse> {
     const response = await fetch(url, {cache: "no-store", ...options});
     if (!response.ok) throw await responseError(response, copy.loadFailed, locale);
+    let value: ReviewResponse;
     try {
-      return await response.json() as ReviewResponse;
+      value = await response.json() as ReviewResponse;
     } catch {
       throw new Error(copy.loadFailed);
     }
+      const identity = asRecord(value.review_artifact_identity);
+      if (identity.run_id && identity.run_id !== runId.trim()) throw new Error(copy.invalidPdf);
+      if (value.operator_approval_status === "approved") {
+        if (!Object.keys(operatorEditionFrom(value)).length) throw new Error(copy.approvalFailed);
+        const source = asRecord(reviewCertificateFrom(value).source_identity);
+        if (source.run_id !== runId.trim()
+          || (/\/localized-editions\/es-MX(?:\/|$)/.test(new URL(url).pathname) && source.report_language !== "es-MX")) {
+          throw new Error(copy.invalidPdf);
+        }
+      }
+      if (value.client_delivery_allowed === true && value.operator_approval_status === "approved") {
+        const receipt = asRecord(value.delivery_authorization);
+        const {delivery_authorization_certificate_sha256: claimed, ...statement} = receipt;
+        if (!operatorDeliveryBound(value)
+          || claimed !== await sha256Hex(new TextEncoder().encode(stableIdentity(statement)))) {
+          throw new Error(copy.authorizationFailed);
+        }
+      }
+    return value;
+  }
+
+  function operatorDeliveryBound(value: ReviewResponse): boolean {
+    const approved = operatorEditionFrom(value);
+    const receipt = asRecord(value.delivery_authorization);
+    const identity = asRecord(value.review_artifact_identity);
+    return Object.keys(approved).length > 0
+      && receipt.approval_certificate_sha256 === reviewCertificateFrom(value).approval_certificate_sha256
+      && receipt.client_delivery_allowed === true
+      && receipt.transmission_performed === false
+      && receipt.specialist_work_completed_by_this_authorization === false
+      && asRecord(receipt.authorized_artifact_identity).run_id === runId.trim()
+      && identity.run_id === runId.trim()
+      && identity.report_artifact_digest === approved.report_artifact_digest
+      && stableIdentity(identity.artifact_digests) === stableIdentity(approved.artifact_digests);
+  }
+
+  async function reconcileFinalization(basis: ReviewResponse): Promise<ReviewResponse> {
+    const current = await requestJson(statusUrl(), {headers: headers()});
+    const previous = operatorEditionFrom(basis);
+    const persisted = operatorEditionFrom(current);
+    if (Object.keys(previous).length) {
+      if (reviewCertificateFrom(current).approval_certificate_sha256 !== reviewCertificateFrom(basis).approval_certificate_sha256
+        || stableIdentity(persisted.source_review_artifact_identity) !== stableIdentity(previous.source_review_artifact_identity)) {
+        throw new Error(copy.invalidPdf);
+      }
+      if (current.client_delivery_allowed === true && basis.client_delivery_allowed !== true) {
+        const receipt = asRecord(current.delivery_authorization);
+        if (stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(basis.review_artifact_identity)
+          || receipt.original_approval_manifest_sha256 !== (asRecord(previous.rendering_derivation).authoritative_approval_manifest_sha256 || previous.accepted_edition_manifest_sha256)) {
+          throw new Error(copy.authorizationFailed);
+        }
+      }
+    } else if (Object.keys(persisted).length) {
+      if (stableIdentity(persisted.source_review_artifact_identity) !== stableIdentity(basis.review_artifact_identity)) {
+        throw new Error(copy.invalidPdf);
+      }
+    } else if (stableIdentity(current.review_artifact_identity) !== stableIdentity(basis.review_artifact_identity)) {
+      throw new Error(copy.invalidPdf);
+    }
+    return current;
   }
 
   async function loadStatus(event?: FormEvent): Promise<void> {
@@ -521,7 +587,6 @@ export default function ComprehensiveFinalReviewWorkspace() {
     setError("");
     setNotice("");
     setDownloadedArtifactDigest("");
-    setDeliveryConfirmed(false);
     setConfirmed(false);
     try {
       setResult(await requestJson(statusUrl(), {headers: headers()}));
@@ -560,7 +625,6 @@ export default function ComprehensiveFinalReviewWorkspace() {
     setNotice("");
     setResult(null);
     setConfirmed(false);
-    setDeliveryConfirmed(false);
     setDownloadedArtifactDigest("");
     try {
       const source = await requestJson(canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}`), {headers: headers()});
@@ -584,7 +648,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     }
   }
 
-  async function downloadExactPdf(source: ReviewResponse): Promise<string> {
+  async function downloadExactPdf(source: ReviewResponse, download = true): Promise<string> {
     const exactReport = reportFrom(source);
     const encoded = String(exactReport.pdf_base64 || "");
     if (!encoded) throw new Error(copy.pdfMissing);
@@ -605,6 +669,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       filename,
       copy.invalidPdf,
       expectedPdfSha256,
+      download,
     );
   }
 
@@ -627,6 +692,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   async function downloadFinalReport(): Promise<void> {
     if (!operatorReady || !currentReviewPdfDigest || !result) {
       setError(copy.pdfMissing);
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       return;
     }
     setLoading(true);
@@ -639,44 +705,123 @@ export default function ComprehensiveFinalReviewWorkspace() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.pdfMissing);
     } finally {
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       setLoading(false);
     }
   }
 
   async function approveExactReport(): Promise<void> {
     if (approvalInFlight.current) return;
-    if (approvalCompleted) {
-      setError(copy.alreadyApproved);
+    if (deliveryAllowed) {
+      await downloadFinalReport();
       return;
     }
-    if (!approvalAuthorityReady || !confirmed || !exactEditionDownloaded) {
+    if (!result || !finalActionAuthorityReady
+      || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))) {
       setError(approvalNextStep);
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       return;
     }
     approvalInFlight.current = true;
     setLoading(true);
     setError("");
     setNotice("");
-    let approvalRecorded = false;
+    let approvalRecorded = approvalCompleted;
+    let authorizationRecorded = false;
+    const version = selectionVersion.current;
+    const assertSelection = () => {
+      if (selectionVersion.current !== version) throw new Error(copy.invalidPdf);
+    };
     try {
-      const reviewed = await submitDecision("approved");
+      // One explicit owner action, two separately persisted and bound receipts.
+      // Reuse an existing approval, including recovery after a delivery failure.
+      let resumed = result;
+      if (uncertainDecision.current) {
+        resumed = await reconcileFinalization(uncertainDecision.current);
+        assertSelection();
+        uncertainDecision.current = null;
+        setResult(resumed);
+      }
+      if (resumed.client_delivery_allowed === true) {
+        authorizationRecorded = true;
+        setDownloadedArtifactDigest(await downloadExactPdf(resumed));
+        setNotice(copy.approvedNotice);
+        return;
+      }
+      const reuseApproval = approvalCompleted || Object.keys(operatorEditionFrom(resumed)).length > 0;
+      uncertainDecision.current = resumed;
+      const reviewed = reuseApproval ? resumed : await submitDecision("approved");
+      assertSelection();
       const operatorEdition = operatorEditionFrom(reviewed);
-      if (Object.keys(operatorEdition).length
+      const operatorDecision = Object.keys(operatorEdition).length > 0;
+      if (!approvalCompleted && operatorDecision
         && stableIdentity(operatorEdition.source_review_artifact_identity) !== stableIdentity(reviewArtifactIdentity)) {
         throw new Error(copy.invalidPdf);
       }
+      if ((!approvalCompleted && !operatorDecision)
+        || reviewCertificateFrom(reviewed).decision !== "approved") {
+        throw new Error(copy.approvalFailed);
+      }
       setResult(reviewed);
-      approvalRecorded = reviewCertificateFrom(reviewed).decision === "approved";
-      if (!approvalRecorded) throw new Error(copy.approvalFailed);
-      setDeliveryConfirmed(false);
+      uncertainDecision.current = null;
+      approvalRecorded = true;
+      // Validate the intermediate approved bytes without opening another PDF or
+      // recording a fictitious user download. Only the authorized PDF is opened.
+      await downloadExactPdf(reviewed, false);
+      assertSelection();
+      const approvedArtifactIdentity = asRecord(reviewed.review_artifact_identity);
+      uncertainDecision.current = reviewed;
+      const authorized = await requestJson(deliveryAuthorizationUrl(), {
+        method: "POST",
+        headers: headers(true),
+        body: JSON.stringify({
+          ...(operatorDecision ? {delivery_kind: "operator_report"} : {}),
+          delivery_authorized: true,
+          authorization_confirmed: true,
+          authorizer: reviewer.trim(),
+          authorizer_role: reviewerRole.trim(),
+          authorization_reason: note.trim() || copy.defaultAuthorizationReason,
+          expected_artifact_identity: approvedArtifactIdentity,
+        }),
+      });
+      const receipt = asRecord(authorized.delivery_authorization);
+      assertSelection();
+      if (authorized.client_delivery_allowed !== true
+        || (operatorDecision && (!/^[0-9a-f]{64}$/i.test(String(receipt.delivery_authorization_certificate_sha256 || ""))
+          || stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(approvedArtifactIdentity)
+          || receipt.approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256
+          || (operatorDecision && receipt.original_approval_manifest_sha256 !== (asRecord(operatorEdition.rendering_derivation).authoritative_approval_manifest_sha256 || operatorEdition.accepted_edition_manifest_sha256))
+          || stableIdentity(operatorEditionFrom(authorized).source_review_artifact_identity) !== stableIdentity(operatorEdition.source_review_artifact_identity)
+          || stableIdentity(reviewCertificateFrom(authorized).source_identity) !== stableIdentity(reviewCertificateFrom(reviewed).source_identity)
+          || reviewCertificateFrom(authorized).approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256))) {
+        throw new Error(copy.authorizationFailed);
+      }
+      setResult(authorized);
+      uncertainDecision.current = null;
+      authorizationRecorded = true;
+      setConfirmed(false);
       setDownloadedArtifactDigest("");
-      const approvedPdfDigest = await downloadExactPdf(reviewed);
-      setDownloadedArtifactDigest(approvedPdfDigest);
+      setDownloadedArtifactDigest(await downloadExactPdf(authorized));
       setNotice(copy.approvedNotice);
     } catch (caught) {
+      if (selectionVersion.current !== version) return;
+      if (uncertainDecision.current) {
+        try {
+          const persisted = await reconcileFinalization(uncertainDecision.current);
+          assertSelection();
+          setResult(persisted);
+          approvalRecorded = Object.keys(operatorEditionFrom(persisted)).length > 0 || approvalRecorded;
+          authorizationRecorded = persisted.client_delivery_allowed === true;
+          uncertainDecision.current = null;
+        } catch {
+          // Keep the unresolved decision: a later tap must read before any POST.
+        }
+      }
       const message = caught instanceof Error ? caught.message : copy.approvalFailed;
-      setError(approvalRecorded ? `${copy.approvalDownloadFailed} ${message}` : message);
+      setError(authorizationRecorded ? `${copy.authorizationNotice} ${copy.pdfRetry} ${message}`
+        : approvalRecorded ? `${copy.approvalDeliveryFailed} ${message}` : message);
     } finally {
+      document.dispatchEvent(new Event("nico:pdf-action-finished"));
       approvalInFlight.current = false;
       setLoading(false);
     }
@@ -696,59 +841,6 @@ export default function ComprehensiveFinalReviewWorkspace() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.decisionFailed);
     } finally {
-      setLoading(false);
-    }
-  }
-
-  async function authorizeClientDelivery(): Promise<void> {
-    if (deliveryInFlight.current) return;
-    if (
-      !(operatorApprovalCompleted ? operatorReady : canonicalApprovalReady)
-      || !approvalCompleted
-      || deliveryAllowed
-      || !deliveryConfirmed
-      || !currentReviewPdfDigest
-      || downloadedArtifactDigest !== currentReviewPdfDigest
-    ) {
-      setError(copy.confirmAuthorizationFirst);
-      return;
-    }
-    setLoading(true);
-    setError("");
-    setNotice("");
-    deliveryInFlight.current = true;
-    let authorizationRecorded = false;
-    try {
-      const authorized = await requestJson(deliveryAuthorizationUrl(), {
-        method: "POST",
-        headers: headers(true),
-        body: JSON.stringify({
-          ...(operatorApprovalCompleted ? {delivery_kind: "operator_report"} : {}),
-          delivery_authorized: true,
-          authorization_confirmed: true,
-          authorizer: reviewer.trim(),
-          authorizer_role: reviewerRole.trim(),
-          authorization_reason: note.trim() || copy.defaultAuthorizationReason,
-          expected_artifact_identity: reviewArtifactIdentity,
-        }),
-      });
-      const receipt = asRecord(authorized.delivery_authorization);
-      if (authorized.client_delivery_allowed !== true
-        || (operatorApprovalCompleted && (!/^[0-9a-f]{64}$/i.test(String(receipt.delivery_authorization_certificate_sha256 || ""))
-          || stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(reviewArtifactIdentity)))) {
-        throw new Error(copy.authorizationFailed);
-      }
-      setResult(authorized);
-      authorizationRecorded = true;
-      setDeliveryConfirmed(false);
-      setDownloadedArtifactDigest("");
-      if (operatorApprovalCompleted) setDownloadedArtifactDigest(await downloadExactPdf(authorized));
-      setNotice(copy.authorizationNotice);
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : copy.authorizationFailed;
-      setError(authorizationRecorded ? `${copy.authorizationNotice} ${copy.pdfRetry} ${message}` : message);
-    } finally {
-      deliveryInFlight.current = false;
       setLoading(false);
     }
   }
@@ -782,8 +874,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
       <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
       <form className={styles.form} onSubmit={loadStatus}>
         <label>{locale === "es-MX" ? "Edición del informe" : "Report edition"}<select value={artifactEdition} disabled={loading} onChange={(event) => {
+          selectionVersion.current += 1; uncertainDecision.current = null;
           setArtifactEdition(event.target.value === "es-MX" ? "es-MX" : "source");
-          setResult(null); setConfirmed(false); setDeliveryConfirmed(false); setDownloadedArtifactDigest(""); setError(""); setNotice("");
+          setResult(null); setConfirmed(false); setDownloadedArtifactDigest(""); setError(""); setNotice("");
         }}>
           <option value="source">{locale === "es-MX" ? "Edición original" : "Source edition"}</option>
           <option value="es-MX">Español (México) — es-MX</option>
@@ -799,7 +892,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <button className={styles.primary} type="submit" disabled={loading || !operatorReady}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
         <details className={styles.advanced}><summary>{copy.exactIdentity}</summary><div className={styles.advancedGrid}>
           <label>{copy.assessment}<input value={copy.comprehensive} readOnly aria-readonly="true" /></label>
-          <label>{copy.exactRunId}<input value={runId} disabled={loading} onChange={(event) => {setRunId(event.target.value); setResult(null); setConfirmed(false); setDeliveryConfirmed(false); setDownloadedArtifactDigest("");}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+          <label>{copy.exactRunId}<input value={runId} disabled={loading} onChange={(event) => {selectionVersion.current += 1; uncertainDecision.current = null; setRunId(event.target.value); setResult(null); setConfirmed(false); setDownloadedArtifactDigest("");}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
         </div></details>
       </form>
       {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
@@ -816,7 +909,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{copy.approveHeading}</h2><p>{copy.approveLead}</p></div></div>
       <p className={styles.securityNote}>{copy.operatorDisclosure}</p>
       <div className={styles.statusGrid}>
-        <article className={styles.statusCard}><span>{copy.review}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
+        <article className={styles.statusCard}><span>{operatorApprovalCompleted ? copy.operatorReview : copy.review}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
         <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{result?.human_review_completed === true ? copy.specialistComplete : copy.specialistIncomplete}</strong></article>
         <article className={deliveryAllowed ? styles.statusCardReady : styles.statusCardBlocked}><span>{copy.delivery}</span><strong>{deliveryAllowed ? copy.authorized : copy.blocked}</strong></article>
       </div>
@@ -829,17 +922,15 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <article className={styles.statusCard}><span>PDF</span><strong>{report.pdf_filename ? String(report.pdf_filename) : copy.notIssued}</strong></article>
       </div> : null}
       {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
-        <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!exactEditionDownloaded || loading || approvalCompleted} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label>
+        {!approvalCompleted ? <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!exactEditionDownloaded || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label> : null}
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
         <div className={styles.downloadActions}>
-          <button className={approvalCompleted ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !currentReviewPdfDigest} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
-          {!approvalCompleted ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !approvalAuthorityReady || !confirmed || !exactEditionDownloaded} onClick={approveExactReport}>{copy.approveExactReport}</button> : null}
-          {approvalCompleted ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
+          <button className={deliveryAllowed ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !operatorReady || !currentReviewPdfDigest} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
+          {!deliveryAllowed ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !finalActionAuthorityReady || !currentReviewPdfDigest || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button> : null}
+          {approvalCompleted && !deliveryAllowed ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
           {deliveryAllowed && !operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
         </div>
-        {!approvalCompleted ? <p id="approval-next-step" className={styles.securityNote} aria-live="polite">{approvalNextStep}</p> : null}
-        {approvalCompleted && !deliveryAllowed ? <label className={styles.confirmRow}><input type="checkbox" checked={deliveryConfirmed} disabled={downloadedArtifactDigest !== currentReviewPdfDigest || !currentReviewPdfDigest} onChange={(event) => setDeliveryConfirmed(event.target.checked)} /><span><strong>{copy.authorizationConfirm}</strong></span></label> : null}
-        {approvalCompleted && !deliveryAllowed ? <div className={styles.downloadActions}><button className={styles.approve} type="button" disabled={loading || !deliveryConfirmed || !(operatorApprovalCompleted ? operatorReady : canonicalApprovalReady)} onClick={authorizeClientDelivery}>{loading ? copy.authorizingDelivery : copy.authorizeDelivery}</button></div> : null}
+        {!deliveryAllowed ? <p id="approval-next-step" className={styles.securityNote} aria-live="polite">{approvalNextStep}</p> : null}
         <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery}</div>
         <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
       </>}

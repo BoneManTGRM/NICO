@@ -54,12 +54,14 @@ def test_ios_reserved_window_receives_verified_blob_without_second_tap() -> None
     assert "No second-tap handoff is rendered." in source
 
 
-def test_handoff_closes_stale_reserved_window_without_shortening_blob_lifetime() -> None:
+def test_handoff_closes_on_action_completion_not_an_independent_deadline() -> None:
     source = HANDOFF.read_text(encoding="utf-8")
 
-    assert "RESERVED_WINDOW_TIMEOUT_MS = 60 * 1000" in source
+    assert 'PDF_ACTION_FINISHED = "nico:pdf-action-finished"' in source
+    assert "document.addEventListener(PDF_ACTION_FINISHED, finishPdfAction)" in source
+    assert "document.removeEventListener(PDF_ACTION_FINISHED, finishPdfAction)" in source
+    assert "RESERVED_WINDOW_TIMEOUT_MS" not in source
     assert "REVOKE_DELAY_MS = 5 * 60 * 1000" in source
-    assert "}, RESERVED_WINDOW_TIMEOUT_MS);" in source
 
 
 def test_handoff_restores_global_hooks_and_closes_unused_reserved_window() -> None:

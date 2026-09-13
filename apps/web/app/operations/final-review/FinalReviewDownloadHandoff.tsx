@@ -3,7 +3,7 @@
 import {useEffect} from "react";
 
 const REVOKE_DELAY_MS = 5 * 60 * 1000;
-const RESERVED_WINDOW_TIMEOUT_MS = 60 * 1000;
+const PDF_ACTION_FINISHED = "nico:pdf-action-finished";
 const PDF_ACTION_LABELS = new Set([
   "Download final assessment PDF",
   "Approve exact downloaded report",
@@ -32,18 +32,17 @@ export default function FinalReviewDownloadHandoff() {
     const originalRevokeObjectURL = URL.revokeObjectURL;
     const delayedRevocations = new Map<string, number>();
     let reservedPdfWindow: Window | null = null;
-    let reservedPdfWindowTimer = 0;
+    let reservationFailed = false;
 
     function clearReservedPdfWindow(close = false): void {
-      if (reservedPdfWindowTimer) {
-        window.clearTimeout(reservedPdfWindowTimer);
-        reservedPdfWindowTimer = 0;
-      }
       if (close && reservedPdfWindow && !reservedPdfWindow.closed) {
         reservedPdfWindow.close();
       }
       reservedPdfWindow = null;
+      reservationFailed = false;
     }
+
+    function finishPdfAction(): void { clearReservedPdfWindow(true); }
 
     function reservePdfWindow(event: MouseEvent): void {
       if (!isIOSFamilyWebKit()) return;
@@ -55,8 +54,9 @@ export default function FinalReviewDownloadHandoff() {
       // Prefer the stable action marker; keep legacy labels for mixed cached builds.
       if (button.dataset.nicoPdfAction !== "true" && !PDF_ACTION_LABELS.has(label)) return;
 
-      clearReservedPdfWindow(true);
+      if (reservedPdfWindow && !reservedPdfWindow.closed) return;
       const popup = window.open("about:blank", "nico-comprehensive-pdf");
+      reservationFailed = !popup;
       if (!popup) return;
       reservedPdfWindow = popup;
       try {
@@ -70,15 +70,17 @@ export default function FinalReviewDownloadHandoff() {
         // The synchronously reserved browsing context is still useful even if its
         // short-lived placeholder cannot be edited.
       }
-      reservedPdfWindowTimer = window.setTimeout(() => {
-        if (reservedPdfWindow === popup) clearReservedPdfWindow(true);
-      }, RESERVED_WINDOW_TIMEOUT_MS);
     }
 
     function guardedClick(this: HTMLAnchorElement): void {
       const href = this.href || "";
       const filename = this.download || "nico-comprehensive-report.pdf";
       if (href.startsWith("blob:") && filename.toLowerCase().endsWith(".pdf")) {
+        if (isIOSFamilyWebKit() && (reservationFailed || !reservedPdfWindow || reservedPdfWindow.closed)) {
+          throw new Error(requestedLocale === "es-MX"
+            ? "No se pudo presentar el PDF. Vuelva a intentar la descarga."
+            : "The PDF could not be presented. Retry the download.");
+        }
         if (reservedPdfWindow && !reservedPdfWindow.closed) {
           const targetWindow = reservedPdfWindow;
           clearReservedPdfWindow(false);
@@ -90,6 +92,9 @@ export default function FinalReviewDownloadHandoff() {
             return;
           } catch {
             targetWindow.close();
+            throw new Error(requestedLocale === "es-MX"
+              ? "No se pudo presentar el PDF. Vuelva a intentar la descarga."
+              : "The PDF could not be presented. Retry the download.");
           }
         }
       }
@@ -111,11 +116,13 @@ export default function FinalReviewDownloadHandoff() {
     }
 
     document.addEventListener("click", reservePdfWindow, true);
+    document.addEventListener(PDF_ACTION_FINISHED, finishPdfAction);
     HTMLAnchorElement.prototype.click = guardedClick;
     URL.revokeObjectURL = delayedRevoke;
 
     return () => {
       document.removeEventListener("click", reservePdfWindow, true);
+      document.removeEventListener(PDF_ACTION_FINISHED, finishPdfAction);
       clearReservedPdfWindow(true);
       if (HTMLAnchorElement.prototype.click === guardedClick) {
         HTMLAnchorElement.prototype.click = originalClick;
