@@ -1,5 +1,106 @@
 # Operator approval of an exact NICO report
 
+## Current continuation — one authenticated final action (2026-09-13)
+
+This owner decision supersedes the historical two-interaction descriptions below:
+**Approve and download final PDF** records exact-report approval and permission for
+that edition together. Two bound receipts remain internal. There is one existing
+review acknowledgement, no separate delivery control, and no automatic transmission.
+
+PR #1592, branch `fix/one-action-approval-delivery`, was reconciled at head
+`37bf0a636deeb006636378831b7a9a035a6a6ae2`, main
+`f549dd2e4ed3f8be1ea2790e903d06f51b640538`. Runtime repair candidate:
+`288dba56557c362cb823a2c4faf037cc63d01a21`, exact verified tree
+`57361bdf173c306cb52bddd58d2b31b3e25f75c6` (matches locally tested commit
+`d7e5160901566b2ef8733f59367d6ffac929f397`). Keep the existing PR draft.
+
+**Not complete.** The prior tool-policy denial for modifying
+`tests/test_review_artifact_approval_boundary_v1.py` remains unresolved. No write to
+that file was attempted in this continuation. Its two obsolete source-contract
+tests still fail; its four API/immutable-artifact checks pass. An independent
+technical reviewer inspected the file and specified narrow replacement assertions
+in the PR continuation. That technical review does not override tool policy.
+No supported policy-resolution capability was exposed in this session.
+
+The owner target is `comprun_490d6d5686053f9eb1036368f4c7fa21`, source edition / EN.
+Source revision 55 and assessed commit `f549dd2e4ed3f8be1ea2790e903d06f51b640538`
+are supplied screenshot observations, not fresh authenticated evidence. Do not use
+the older run in the historical sections below. The secure browser sign-in attempt
+returned `submission_failed`; the target record, receipts and PDF remain unverified.
+No credential was extracted or copied and no production mutation was performed.
+
+Production frontend and backend were both independently observed at main `f549dd2`:
+Vercel `dpl_AzyAro6wZqVGGx7CXSavmMay5TXf`, READY, alias `app.nicoaudit.com`;
+Railway `4b198570-42a7-48e7-be91-4d93bd808923`, SUCCESS. These releases contain
+PR #1591's two-step UI. No merge, deployment, replacement assessment, approval,
+permission or client transmission was performed by this continuation.
+
+### Focused repairs and evidence
+
+The workspace reconciles ambiguous mutation outcomes using the same authenticated
+run/edition before any repeat POST. Persisted approval is reused; persisted delivery
+permission leads to download-only recovery. Receipt canonical SHA-256, parent
+approval, original manifest, returned run/digests and selected language are checked.
+Late selection responses are rejected. The source read for Spanish preparation
+remains valid without authorizing the Spanish edition. Operator labels explicitly
+identify the operator decision and preserve specialist/QC truth.
+
+The existing iPhone handoff retains its synchronous window until action completion,
+closes unused windows on failure, and reports popup/presentation failures without
+discarding permission. It no longer expires independently after 60 seconds.
+
+Local environment: Python 3.12, repository-pinned Python/frontend dependencies.
+CI uses Python 3.11; no CI result is inferred from this local evidence.
+
+- `node --test tests/frontend/final_review_approval.test.cjs`: exit 0, 53 passed,
+  none skipped. Real TSX and composed handoff, isolated React/DOM/network fixtures.
+- Focused Python frontend suite (handoff, hydration, handler collection, workspace,
+  independent metadata): exit 0, 28 passed; invokes the actual Node suite.
+- Four backend suites (operator approval, presentation, delivery, localized edition):
+  all 37 cases passed in the 65-case affected run. That run exited 1 for one obsolete
+  frontend source assertion; the corrected frontend suite subsequently passed.
+- Protected approval-boundary file: exit 1, 2 obsolete source assertions failed,
+  4 API/immutable-artifact cases passed. It is unchanged.
+- `npm run lint`, final `npm run build`, and `git diff --check`: exit 0.
+- Independent read-only technical review reproduced response-loss, receipt-binding
+  and handoff-timing defects, reviewed the fixes, and closed its substantiated
+  findings. This is implementation review, not specialist assessment review.
+
+### Requirement-to-evidence matrix
+
+| AC | Implementation/evidence | Current result and limitation |
+| --- | --- | --- |
+| 1 | Combined handler; one acknowledgement; only authorized bytes presented | Isolated EN/es-MX pass; production pending |
+| 2 | Existing approval reuse and no additional acknowledgement | Fixture pass; owner's target not authenticated |
+| 3 | Authenticated reconciliation, receipt checks, reload tests; backend readback | Fixture/API pass; production receipts unknown |
+| 4 | Real SHA-256, exact run/digests, source and parent binding | Fixture/API pass; actual final PDF hash unknown |
+| 5 | Operator Approved / delivery Authorized; retained backend lifecycle rendering | Local pass; actual PDF/cover not inspected |
+| 6 | No backend/source/ledger edits; existing preservation tests | Backend pass; no production mutation or comparison |
+| 7 | Missing auth/ack, stale/corrupt/wrong-parent/run/edition responses rejected | Behavioral/API pass; two old contract tests unresolved |
+| 8 | Duplicate ref, persisted-state reads after response loss; download recovery | Reordering fixtures pass; concurrent browser proof pending |
+| 9 | EN/es-MX actions, isolated edition identity, source-to-Spanish preparation | Behavioral/backend pass; production editions pending |
+| 10 | Synchronous handoff composed with handler; explicit failure cleanup | Mocked iPhone surface only; real Chromium/WebKit/iPhone unverified |
+| 11 | Existing authenticated endpoints; no transmission added; backend exposure tests | Local pass; no production mutation/transmission occurred |
+| 12 | Existing PR retained; current deployed identities read | Blocked before integration; no production acceptance |
+
+Iteration results: **minimal case** reproduced saved-approval/response-loss and
+wrong-parent/wrong-run false success; **fixed conditions** retained the same fixture
+source and initial lifecycle without rerunning an assessment; **critique** used the
+independent technical reviewer and repaired its substantiated findings;
+**reordering** exercised duplicate taps, lost responses, unavailable reconciliation,
+late selection, approved source then Spanish preparation, reload, and handoff timing.
+The strongest browser results are composed fixture tests, not browser emulation
+or physical-device proof.
+
+Next unresolved action: resolve the denied test-edit boundary and replace only the
+two obsolete source-contract functions with the reviewed combined-action contract,
+leaving API and immutable-artifact tests unchanged. Then require final-head CI,
+merge/deploy through existing infrastructure, authenticate the exact target, and
+verify receipts, actual authorized PDF/provenance/cover, reload and real browsers.
+Do not reapprove a valid report or infer target receipt identities from fixtures.
+
+## Historical implementation and evidence
+
 ## Approved design
 
 An authenticated operator may approve an intact completed report while specialist
