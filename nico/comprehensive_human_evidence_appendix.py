@@ -9,6 +9,12 @@ from nico.comprehensive_human_evidence_report_v1 import (
 from nico.strategic_human_evidence_v1 import verify_strategic_human_evidence
 
 
+def is_literal_evidence_page(page) -> bool:
+    # Page metadata is assigned by this renderer, never parsed from supplied text.
+    marker = page.get('/NICOSuppliedEvidence')
+    return getattr(marker, 'value', None) is True
+
+
 def render_human_evidence_appendix(canonical: Mapping, *, spanish: bool) -> bytes | None:
     package = canonical.get('supplied_human_evidence')
     if not package or not verify_strategic_human_evidence(package):
@@ -48,4 +54,12 @@ def render_human_evidence_appendix(canonical: Mapping, *, spanish: bool) -> byte
         canvas.restoreState()
     SimpleDocTemplate(buffer, leftMargin=40, rightMargin=40, topMargin=42,
                       bottomMargin=65, invariant=1).build(story, onFirstPage=page_header, onLaterPages=page_header)
-    return buffer.getvalue()
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, BooleanObject
+    writer = PdfWriter()
+    for page in PdfReader(io.BytesIO(buffer.getvalue())).pages:
+        writer.add_page(page)
+        writer.pages[-1][NameObject('/NICOSuppliedEvidence')] = BooleanObject(True)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()

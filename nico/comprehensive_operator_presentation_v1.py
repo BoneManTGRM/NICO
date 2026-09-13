@@ -105,12 +105,10 @@ def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False,
                    repair_current_truth: bool = False) -> tuple[bytes, tuple[tuple[int, str, str], ...]]:
     writer = PdfWriter(clone_from=io.BytesIO(pdf))
     changes: list[tuple[int, str, str]] = []
+    from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
     for page_index, page in enumerate(writer.pages):
         text = page.extract_text() or ""
-        if repair_current_truth and any(label in text for label in (
-            "Supplied Human Evidence | supplied_unverified",
-            "Evidencia humana aportada | supplied_unverified",
-        )):
+        if repair_current_truth and is_literal_evidence_page(page):
             # These are source statements, including possibly quoted lifecycle
             # labels. Finalization must not rewrite them as report authority.
             continue

@@ -152,8 +152,16 @@ def sanitize_client_pdf_status(pdf: bytes) -> bytes:
         raise ValueError("client PDF status sanitizer requires a valid PDF")
     reader = PdfReader(io.BytesIO(pdf))
     writer = PdfWriter()
+    from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
     for source_page in reader.pages:
-        if _drop_internal_page(source_page.extract_text() or ""):
+        page_text = source_page.extract_text() or ""
+        if is_literal_evidence_page(source_page):
+            # This dedicated appendix is a literal source record. A supplier may
+            # quote internal field names or lifecycle phrases without making the
+            # page internal boilerplate or granting those phrases authority.
+            writer.add_page(source_page)
+            continue
+        if _drop_internal_page(page_text):
             continue
         writer.add_page(source_page)
         page = writer.pages[-1]

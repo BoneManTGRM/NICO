@@ -159,7 +159,7 @@ def test_full_finalizer_keeps_modules_in_all_applicable_exports(language):
     from tests.test_comprehensive_human_evidence_report_v1 import _human_input
     inputs = _human_input()
     inputs['functional_qa']['evidence']['test_cases'].append(
-        'TEST-LONG-START\n' + '\n'.join(f'Observation {i}: synthetic and unverified.' for i in range(70)) + '\nTEST-LONG-END')
+        'TEST-LONG-START\nQuoted source: AUTOMATED FINAL; artifact_schema; stage_execution.\n' + '\n'.join(f'Observation {i}: synthetic and unverified.' for i in range(70)) + '\nTEST-LONG-END')
     context['human_evidence'] = normalize_strategic_human_evidence(inputs)
     context['prior_stage_results'] = {'authorization_and_scope': {'status': 'complete', 'authorization_confirmed': True}}
     canonical = build_canonical_report_source(context)['canonical_report']
@@ -200,7 +200,8 @@ def test_full_finalizer_keeps_modules_in_all_applicable_exports(language):
 def test_approval_appendix_updates_only_lifecycle_cells(authorized):
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer)
-    for i, line in enumerate(['Human Review and Approval Truth',
+    for i, line in enumerate(['Supplied Human Evidence | supplied_unverified',
+                             'Human Review and Approval Truth',
                              'Final human approval', 'PENDING',
                              'Client-delivery authorization', 'BLOCKED',
                              'Authorized human disposition pending', '626',

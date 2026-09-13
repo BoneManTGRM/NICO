@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import re
 from copy import deepcopy
 from typing import Any, Mapping
 
@@ -179,7 +180,13 @@ def _validate_final_surfaces(
 
     reader = PdfReader(io.BytesIO(pdf))
     extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-    combined = "\n".join((markdown, rendered_html, extracted))
+    from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
+    presentation_extracted = "\n".join(page.extract_text() or "" for page in reader.pages
+                                        if not is_literal_evidence_page(page))
+    # Supplied quotations have no lifecycle authority. Validate report-owned
+    # prose while retaining literal evidence and its exact export bytes.
+    without_literals = lambda text: re.sub(r'<span data-nico-client-literal="true">.*?</span>', '', text, flags=re.S)
+    combined = "\n".join((without_literals(markdown), without_literals(rendered_html), presentation_extracted))
     if "/tmp/nico-snapshot-scan-" in combined or "/home/runner/work/" in combined:
         raise ValueError("client report exposed a temporary worker path")
     if "unknown · unknown" in combined:
@@ -205,7 +212,7 @@ def _validate_final_surfaces(
         "stage_execution.artifact_schema",
         "human_evidence_summary.",
     ):
-        if internal_marker in extracted:
+        if internal_marker in presentation_extracted:
             raise ValueError(
                 f"client PDF exposed raw internal evidence field: {internal_marker}"
             )
