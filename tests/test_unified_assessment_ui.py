@@ -97,7 +97,10 @@ def test_comprehensive_continues_the_exact_same_run_automatically() -> None:
     source = HOOK.read_text(encoding="utf-8")
     continuation = source.split("async function continueRun(", 1)[1].split("async function run()", 1)[0]
 
-    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in continuation
+    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS + 1; count += 1)" in continuation
+    assert continuation.index("if (count > MAX_POLL_ATTEMPTS)") < continuation.index(
+        "/assessment/comprehensive-run/${encodeURIComponent(runId)}/continue"
+    )
     assert "const continuationRunId = exactRunId(current)" in continuation
     assert "const runId = exactRunId(current)" in continuation
     assert "activeContinuationRunId.current === continuationRunId" in continuation

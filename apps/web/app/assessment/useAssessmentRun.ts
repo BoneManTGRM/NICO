@@ -547,7 +547,9 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     activeContinuationRunId.current = continuationRunId;
 
     try {
-      for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1) {
+      // The final iteration consumes the last response without dispatching another
+      // continuation. A terminal result at the budget boundary is still authoritative.
+      for (let count = 1; count <= MAX_POLL_ATTEMPTS + 1; count += 1) {
         if (token !== sequence.current) {
           return;
         }
@@ -558,13 +560,14 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         if (stable) {
           clearPersistedRun(true);
           setPhase(stable);
-          setAttempt(count);
+          setAttempt(Math.min(count, MAX_POLL_ATTEMPTS));
           setStarted(null);
           setMessage(
             stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
           );
           return;
         }
+        if (count > MAX_POLL_ATTEMPTS) break;
 
         setPhase("running");
         setAttempt(count);
@@ -630,12 +633,32 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
           setMessage(`${copy.service.label}: ${copy.recoveredRunState}`);
         }
         await wait(POLL_INTERVAL_MS);
+        if (count === MAX_POLL_ATTEMPTS && !terminal(service, current)) {
+          // Publication may finish after the last continuation returned. Reconcile
+          // through the existing exact-run GET before pausing browser polling.
+          current = await recoverRun(runId, {
+            repository: current.repository,
+            customerId: current.customer_id || scope.customerId,
+            projectId: current.project_id || scope.projectId,
+            commitSha: current.commit_sha || current.repository_snapshot?.commit_sha,
+            evidenceLedgerId: current.evidence_ledger_id,
+          }) || current;
+        }
       }
       persistExactRun(current, scope, startedAt);
       publishResult(current);
       setPhase("timed_out");
       setStarted(null);
-      setMessage(copy.phases.timed_out);
+      setMessage("");
+      setIssue({
+        kind: "service_unavailable",
+        title: copy.phases.timed_out,
+        message: copy.pollingPausedMessage,
+        code: "assessment_poll_budget_exhausted",
+        requestId: "",
+        retryable: true,
+        runCreated: true,
+      });
     } finally {
       if (activeContinuationRunId.current === continuationRunId) {
         activeContinuationRunId.current = "";
