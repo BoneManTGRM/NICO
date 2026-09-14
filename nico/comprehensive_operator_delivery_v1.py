@@ -106,11 +106,18 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     source_pdf = base64.b64decode(report_package_from_record(record)["pdf_base64"], validate=True)
     corrected, _changes = _render_source(source_pdf, client_delivery_authorized=True,
         repair_current_truth=bool(report_package_from_record(record).get("json", {}).get("human_report_export_schema")))
+    canonical = report_package_from_record(record).get('json', {})
+    if canonical.get('report_truth_schema') == 'nico.report_truth.v2':
+        from nico.comprehensive_certificate_pagination import project_current_phase_pdf
+        corrected = project_current_phase_pdf(corrected, canonical, authorized=True)
     certificate, _text = _cover(approved["review"], spanish=record["identity"]["report_language"] == "es-MX",
                                 corrected_presentation=True, delivery_authorization=receipt)
     writer = PdfWriter()
     writer.append(PdfReader(io.BytesIO(certificate)))
     writer.append(PdfReader(io.BytesIO(corrected)))
+    if report_package_from_record(record).get('json', {}).get('report_truth_schema') == 'nico.report_truth.v2':
+        from nico.comprehensive_certificate_pagination import annotate_composed_pagination
+        annotate_composed_pagination(writer, spanish=record['identity']['report_language'] == 'es-MX')
     writer.add_metadata({"/Title": "NICO Comprehensive — Client Delivery Authorized",
                          "/NICOSourcePDFSHA256": approved["source_review_artifact_identity"]["artifact_digests"]["pdf"]["sha256"],
                          "/NICOApprovalCertificateSHA256": receipt["approval_certificate_sha256"],

@@ -64,6 +64,7 @@ REPORT_SECTION_MANIFEST: tuple[dict[str, Any], ...] = (
     _section("risk_reduction_executive_briefing", "Risk Reduction and Executive Briefing", "Reducción de riesgo y resumen ejecutivo", "Risk-reduction decisions and executive briefing."),
     _section("six_month_roadmap", "Six-Month Roadmap", "Hoja de ruta de seis meses", "Evidence-bound roadmap guidance pending stakeholder authority."),
     _section("staffing_sequencing_cost", "Staffing, Sequencing, and Cost", "Personal, secuencia y costo", "Role, sequencing, and cost context without invented commitments."),
+    _section("supplied_human_evidence", "Supplied Human Evidence", "Evidencia humana aportada", "Exact supplied values and provenance; not independent verification.", required=False),
     _section("compact_finding_remediation_register", "Compact Finding and Remediation Register", "Registro compacto de hallazgos y remediación", "Compact material finding and remediation register."),
     _section(
         "compact_finding_remediation_register_continuation",

@@ -219,6 +219,9 @@ def _build_structured_exports(canonical: Mapping[str, Any]) -> dict[str, bytes]:
         "business_impact",
         "recommended_correction",
         "verification",
+        "verification_kind",
+        "verification_outcome",
+        "observed_verification_results",
         "disposition",
         "evidence_confidence",
         "critical_path_relevance",
@@ -308,7 +311,7 @@ def _preliminary_entries(
             artifact_type="findings_csv",
             filename=f"nico-{run}-findings.csv",
             content=exports["findings_csv"],
-            schema_version="nico.findings-csv.v1",
+            schema_version=("nico.findings-csv.v2" if canonical.get("report_truth_schema") == "nico.report_truth.v2" else "nico.findings-csv.v1"),
             identity=identity,
         ),
         _artifact_entry(
@@ -961,7 +964,7 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
                 artifact_type="findings_csv",
                 filename=f"nico-{run}-findings.csv",
                 content=retained["findings_csv"],
-                schema_version="nico.findings-csv.v1",
+                schema_version=("nico.findings-csv.v2" if canonical.get("report_truth_schema") == "nico.report_truth.v2" else "nico.findings-csv.v1"),
                 identity=identity,
             ),
             _artifact_entry(

@@ -1048,7 +1048,7 @@ def _pdf(
         p(localized("Decision Boundary"), h2),
         p(
             localized(
-                "The report is an evidence-bound draft. NICO has not approved findings, accepted business assumptions, or authorized delivery. Missing evidence remains visible and constrains conclusions."
+                "Automated reporting does not accept findings or business assumptions. Operator approval and delivery permission are recorded separately for this edition; see its approval record. Missing evidence constrains conclusions."
             ),
             body,
         ),

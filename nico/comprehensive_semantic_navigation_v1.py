@@ -408,9 +408,9 @@ def _toc_pdf(
             ),
         )
         footer = (
-            f"{total_pages} páginas físicas"
+            f"{total_pages} páginas del informe (sin certificado)"
             if spanish
-            else f"{total_pages} physical pages"
+            else f"{total_pages} report pages (certificate excluded)"
         )
         if toc_page_count > 1:
             footer += (

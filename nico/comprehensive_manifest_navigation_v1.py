@@ -236,7 +236,7 @@ def _toc_page(entries: list[tuple[str, int]], total_pages: int) -> bytes:
     pdf.setFont("Helvetica", 7)
     pdf.setFillColorRGB(0.39, 0.45, 0.55)
     pdf.drawString(48, 36, "NICO | evidence-bound technical review package")
-    pdf.drawRightString(564, 36, f"{total_pages} physical pages")
+    pdf.drawRightString(564, 36, f"{total_pages} report pages (certificate excluded)")
     pdf.showPage()
     pdf.save()
     return buffer.getvalue()

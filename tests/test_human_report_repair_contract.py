@@ -229,6 +229,7 @@ def test_new_source_lifecycle_preserves_reviewed_bytes_and_validates_fresh_state
     record = deepcopy(fixture_record())
     canonical = report_package_from_record(record)['json']
     canonical['human_report_export_schema'] = 'nico.human_report_export.v1'
+    canonical['report_truth_schema'] = 'nico.report_truth.v2'
     canonical['supplied_human_evidence'] = _context()['human_evidence']
     record['stage_results']['final_comprehensive_report_generation']['report_package'] = rebuild_client_artifacts({'json': canonical})
     record['integrity_sha256'] = _record_hash(record)
@@ -254,3 +255,6 @@ def test_new_source_lifecycle_preserves_reviewed_bytes_and_validates_fresh_state
     pdf = base64.b64decode(edition['reports']['pdf_base64'])
     assert hashlib.sha256(pdf).hexdigest() == edition['artifact_digests']['pdf']['sha256']
     assert authorized['revision'] == approved['revision'] + 1
+    reader = PdfReader(io.BytesIO(pdf))
+    assert f'{len(reader.pages)} physical pages' in reader.pages[0].extract_text()
+    assert edition['reports']['json']['four_phase_program']['phases'][3]['status'] == 'authorized'

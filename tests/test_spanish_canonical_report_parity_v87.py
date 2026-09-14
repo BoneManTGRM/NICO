@@ -1102,21 +1102,9 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # Report-repair goldens include readable nested roadmap summaries/aliases and current
 # lifecycle guidance. Exact English before/after equality, bilingual semantic
 # parity, finding references, and all page-count gates remain active.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('3c2ac09328c91aba1dc4361a2bdafdd7269b46272b3d4426785508e803d7eb56', 18751),
- 'html': ('f5b522a0d24cf5346be2ac8540936632a401d6f0e48a33167754e0ced66f1d40', 23080),
- 'pdf_base64': ('224a0a4e779d625277d48a3d871ecd997858eae5d925c9d775a66468e64875e6', 177304),
- 'pdf_sha256': '72f97d4220d26b6c2a71fe50d68acadb541fda864b570dd78b1d1e4e11352d64',
- 'page_count': 21}
-RICH_ENGLISH_GOLDEN = {'markdown': ('3d3dda9753d54f53ffbe27932eb1a3b56ec77246116f79dac6761dbd8577044b', 20557),
- 'html': ('03372a03c7e301726c83b4507dbe9ce471a9fb7db3cb625e1d27f4d107eb1108', 25192),
- 'pdf_base64': ('e6c8a513b10aff38410e333824b60a555450a344b98d5e4f12ab7f19cb5475a2', 257616),
- 'pdf_sha256': '64b5827333e536f3906db84541cc1150b809d9bddb2b679307e3e1af88023a54',
- 'page_count': 39}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('3cf6b30c9141be9f337ae68ec8371bab0876e6c72577f0c6f67df0963ea314e3', 18870),
- 'html': ('3a363d60fa5f9605988451db641f30d7925ba3c95aad94045b6339983ce2424a', 23178),
- 'pdf_base64': ('b398b192be87487734002eee46b2e3eba7992c60118e2d47d341723867da1dfe', 172956),
- 'pdf_sha256': '6de155e14711c530a3f8fc45a6e2cc747a160bd3bf2344f2f66c49f870f8469a',
- 'page_count': 20}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('729923527d604574a169f170a0983d78abdd9d960c1e7a277801327edf7158ae', 18914), 'html': ('0e41d09e9cf842291be1ed1c53912ac5b37076414a8c718bc685056b913dd372', 23243), 'pdf_base64': ('41f907f1611548fb57cfe869ea6625631709c0d11c507d3423abd2b3a5027263', 177656), 'pdf_sha256': '668832ef3306f498fbe420368f6bd7521bd4fda35c3b7fdfdf98d75006657ba3', 'page_count': 21}
+RICH_ENGLISH_GOLDEN = {'markdown': ('c5cd3216d5580a617b24f0f856ea22a94f4631a5f42a684126aeac53e3bdc1f3', 20660), 'html': ('a4b8171c04443748766b704bc2a0893ee12c793cdf17f776403da6f75af4b5e4', 25295), 'pdf_base64': ('ed9b09059163b4571f2517e3e10655d2203dc385e53d1e37c133f73e5ff8f438', 257904), 'pdf_sha256': 'e40a44e792283008240322a10188c87d0a736824e9ad1e941334fe38133b1001', 'page_count': 39}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('a39eaf6d931c765e031f368afb019dc11f8f7b2bc53288e3757f407ef0845b70', 19003), 'html': ('406ac3ae16a036d61599484cded017d81696e1b33627ae409c57254c162b9852', 23311), 'pdf_base64': ('fd06843eebd6c5fc2f6218379678fd6ab57dded66fb3fbe370d37a2fe18d38dd', 173304), 'pdf_sha256': 'f792391b6e9e39abf88275c44c6dbebdfd99d202381959a5667f8397257909f7', 'page_count': 20}
 
 SPANISH_OUTLINE = {
     "Four-Phase Assessment Program": "Programa de evaluación en cuatro fases",

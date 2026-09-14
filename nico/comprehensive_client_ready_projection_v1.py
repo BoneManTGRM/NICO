@@ -231,7 +231,7 @@ def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: b
             ]
         )
         for criterion in localized_verification:
-            lines.append(f"- {('Verificación' if spanish else 'Verification')}: {criterion}")
+            lines.append(f"- {('Criterios de aceptación (resultado no verificado)' if spanish else 'Acceptance criteria (outcome not verified)')}: {criterion}")
         lines.append("")
 
     lines.extend([index_heading, ""])
@@ -386,8 +386,8 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
             ["Impacto" if spanish else "Impact", business_impact],
             ["Corrección" if spanish else "Correction", correction],
             [
-                "Verificación" if spanish else "Verification",
-                "; ".join(localized_verification)
+                "Criterios de aceptación" if spanish else "Acceptance criteria",
+                ("Resultado: no verificado. Criterios previstos: " if spanish else "Outcome: not verified. Planned criteria: ") + "; ".join(localized_verification)
                 or (
                     "Se requiere disposición humana"
                     if spanish
@@ -668,7 +668,7 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
         "Confirm technical score, Evidence-Adjusted score, assurance state, limitation accounting, and delivery status match across JSON, CSV, Markdown, HTML, and PDF.",
         "Disposition every executive risk and record residual risk, owner, and acceptance evidence.",
         "Validate business context, assumptions, roadmap, staffing, effort, and any financial inputs.",
-        "Approve or reject this exact immutable automated draft before authorizing client delivery.",
+        "Consult the exact-edition record for operator approval and delivery permission. Complete outstanding specialist acceptance separately.",
     ]
     if spanish:
         checklist = [
@@ -677,7 +677,7 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
             "Confirmar que puntuaciones, aseguramiento, limitaciones y estado de entrega coincidan en JSON, CSV, Markdown, HTML y PDF.",
             "Disponer cada riesgo ejecutivo y registrar riesgo residual, responsable y evidencia de aceptación.",
             "Validar contexto comercial, supuestos, hoja de ruta, personal, esfuerzo y datos financieros.",
-            "Aprobar o rechazar este borrador automatizado inmutable antes de autorizar la entrega.",
+            "Consultar la aprobación y el permiso de entrega en el registro de esta edición. Completar por separado la aceptación especializada pendiente.",
         ]
     for index, item in enumerate(checklist, start=1):
         story.append(p(f"{index}. {item}", body))

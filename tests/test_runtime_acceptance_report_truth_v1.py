@@ -10,6 +10,7 @@ from nico.comprehensive_report_review_integrity_v1 import _runtime_acceptance
 
 def canonical_with_observations() -> dict:
     return {
+        "identity": {"repository": "example/repo", "commit_sha": "a" * 40},
         "assessment": {"stage_summaries": []},
         "stage_summaries": [
             {
@@ -44,6 +45,28 @@ def canonical_with_observations() -> dict:
     }
 
 
+def with_retained_executions(canonical, *, verified=False):
+    from hashlib import sha256
+    import json
+    canonical['retained_runtime_executions'] = {}
+    canonical['production_acceptance'] = {}
+    for key in ('functional_qa', 'desktop', 'mobile', 'english', 'es_mx'):
+        execution = {'kind': 'actual', 'performed': True, 'scope': key,
+                     'repository': canonical['identity']['repository'], 'commit_sha': canonical['identity']['commit_sha'],
+                     'observed_at': '2026-09-14T00:00:00Z', 'observer': 'Runtime recorder',
+                     'evidence_reference': 'fixture://execution/' + key, 'result': 'pass',
+                     'retained_results': [{'step': 'Open exact fixture', 'result': 'pass'}]}
+        canonical['retained_runtime_executions'][key] = execution
+        record = {'execution_id': key}
+        if verified:
+            record['independent_review'] = {
+                'status': 'verified', 'reviewer': 'Independent fixture verifier',
+                'reviewed_at': '2026-09-14T00:01:00Z', 'evidence_reference': 'fixture://review/' + key,
+                'execution_sha256': sha256(json.dumps(execution, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()}
+        canonical['production_acceptance'][key] = record
+    return canonical
+
+
 def by_id(canonical: dict, *, spanish: bool) -> dict[str, dict]:
     return {
         section["id"]: section
@@ -52,7 +75,7 @@ def by_id(canonical: dict, *, spanish: bool) -> dict[str, dict]:
 
 
 def test_observed_pass_is_not_collapsed_to_not_assessed() -> None:
-    sections = by_id(canonical_with_observations(), spanish=False)
+    sections = by_id(with_retained_executions(canonical_with_observations()), spanish=False)
     functional = sections["functional_qa"]
     assert functional["status"] == (
         "Observed runtime evidence — independent verification pending"
@@ -67,35 +90,26 @@ def test_observed_pass_is_not_collapsed_to_not_assessed() -> None:
 
 
 def test_platform_observations_remain_dimensioned_until_independently_verified() -> None:
-    sections = by_id(canonical_with_observations(), spanish=False)
+    sections = by_id(with_retained_executions(canonical_with_observations()), spanish=False)
     platform = sections["platform_parity"]
     assert "Desktop browser: Observed — independent verification pending" in (
-        platform["evidence"]
+        "\n".join(platform["evidence"])
     )
     assert "Mobile browser: Observed — independent verification pending" in (
-        platform["evidence"]
+        "\n".join(platform["evidence"])
     )
     assert "English: Observed — independent verification pending" in (
-        platform["evidence"]
+        "\n".join(platform["evidence"])
     )
     assert "es-MX: Observed — independent verification pending" in (
-        platform["evidence"]
+        "\n".join(platform["evidence"])
     )
-    assert "Cross-platform parity: Not established" in platform["evidence"]
+    assert "Cross-platform parity: Not established" in "\n".join(platform["evidence"])
 
 
 def test_independent_four_matrix_proof_establishes_parity_without_human_approval() -> None:
     canonical = deepcopy(canonical_with_observations())
-    canonical["production_acceptance"] = {
-        "functional_qa": {
-            "independent_verification": "verified",
-            "broader_production_acceptance": "proven",
-        },
-        "desktop": {"status": "verified"},
-        "mobile": {"status": "verified"},
-        "english": {"status": "verified"},
-        "es_mx": {"status": "verified"},
-    }
+    with_retained_executions(canonical, verified=True)
     sections = by_id(canonical, spanish=False)
     assert "Independent verification: Verified" in sections["functional_qa"][
         "evidence"
@@ -111,7 +125,7 @@ def test_independent_four_matrix_proof_establishes_parity_without_human_approval
 
 
 def test_spanish_runtime_truth_is_authored_spanish_not_translated_client_values() -> None:
-    sections = by_id(canonical_with_observations(), spanish=True)
+    sections = by_id(with_retained_executions(canonical_with_observations()), spanish=True)
     assert "Evidencia de ejecución observada: PASS" in sections["functional_qa"][
         "evidence"
     ]

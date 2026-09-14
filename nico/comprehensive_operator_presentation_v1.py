@@ -207,11 +207,18 @@ def render_operator_presentation(record: Mapping[str, Any], edition: Mapping[str
         raise ValueError("operator_presentation_source_mismatch")
     corrected, changes = _render_source(source_pdf, repair_current_truth=bool(
         source.get("json", {}).get("human_report_export_schema")))
+    canonical = report_package_from_record(record).get('json', {})
+    if canonical.get('report_truth_schema') == 'nico.report_truth.v2':
+        from nico.comprehensive_certificate_pagination import project_current_phase_pdf
+        corrected = project_current_phase_pdf(corrected, canonical, authorized=False)
     certificate, _ = _cover(edition["review"], spanish=record["identity"]["report_language"] == "es-MX",
                             corrected_presentation=True)
     writer = PdfWriter()
     writer.append(PdfReader(io.BytesIO(certificate)))
     writer.append(PdfReader(io.BytesIO(corrected)))
+    if report_package_from_record(record).get('json', {}).get('report_truth_schema') == 'nico.report_truth.v2':
+        from nico.comprehensive_certificate_pagination import annotate_composed_pagination
+        annotate_composed_pagination(writer, spanish=record['identity']['report_language'] == 'es-MX')
     writer.add_metadata({"/Title": "NICO Comprehensive — Operator Approved Final", "/Author": "NICO",
                          "/NICOApprovalBasis": "operator_report", "/NICOSourcePDFSHA256": source_hash,
                          "/NICOApprovalCertificateSHA256": edition["review"]["approval_certificate_sha256"],
