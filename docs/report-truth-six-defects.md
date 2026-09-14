@@ -75,6 +75,12 @@ apply staged Railway changes or message/transmit to anyone.
 - Anti-Churn event initially declared environment independence false; removed that
   field and retained the concrete environment digest. Reservation then succeeded;
   reservation is not passing test evidence.
+- Initial PR CI identified a missing Spanish translation for revised specialist
+  rollback prose and stale expectations for the verification label and 35-entry
+  contents. Added the translation at the existing v88 contract, preserved the
+  legacy mapping, and checked the new evidence appendix across contents pages.
+  All 64 tests in those six affected files pass locally. Required CI reruns on
+  the resulting commit; earlier failed jobs are not counted as passing evidence.
 
 Pending: required CI, integration, deployment identity, fresh synthetic reviewed
 and authorized editions in both locales, original-byte export comparisons, all-page
