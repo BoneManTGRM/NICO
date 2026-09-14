@@ -55,6 +55,24 @@ def test_metric_translation_preserves_multiline_values_and_line_endings():
     )
 
 
+@pytest.mark.parametrize("rate", ["0%", "12.5%", "100%", "100.0%"])
+def test_observed_job_percentage_survives_installed_spanish_publication(rate):
+    from nico.comprehensive_spanish_current_copy_worker_v98 import localize_current_report_copy_v98
+
+    # The retained production failure was exactly this metric with 100%.
+    # Preserve the supplied unit and value, without changing canonical evidence.
+    canonical = {"ci_operational_context": {"job_success_rate": rate}}
+    before = deepcopy(canonical)
+    stage = _ci_operational_stage(canonical, renderer)
+    line = f"Observed job success rate: {rate}."
+    expected = f"Tasa de éxito observada de trabajos: {rate}."
+    assert line in stage["evidence"]
+    assert _translate_presentation_field(line, "evidence") == expected
+    assert localize_current_report_copy_v98(line) == expected
+    assert expected in _localize_tree(stage)["evidence"]
+    assert canonical == before
+
+
 @pytest.mark.parametrize("missing", [None, ""])
 @pytest.mark.parametrize("key,english,spanish", METRICS)
 def test_generated_missing_ci_metric_has_explicit_spanish_availability(key, english, spanish, missing):
@@ -104,6 +122,11 @@ def test_sparse_operational_stage_localizes_all_fields_without_mutating_evidence
     "Jobs observed: claimed successful.",
     "Successful workflow runs: Unavailable. Additional context",
     "Required-check health: 0.",
+    "Observed job success rate: 100%. Additional context",
+    "Observed job success rate: claimed successful%.",
+    "Observed job success rate: -1%.",
+    "Observed job success rate: 101%.",
+    "Jobs observed: 100%.",
 ])
 def test_unrecognized_structured_prose_is_still_rejected(line):
     with pytest.raises(ValueError, match="unrecognized Spanish presentation contract"):

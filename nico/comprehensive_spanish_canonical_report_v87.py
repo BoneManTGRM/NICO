@@ -2047,6 +2047,10 @@ def _structured_presentation_es(value: str) -> str | None:
         translated_label = _CI_OPERATIONAL_METRIC_LABELS_ES[label]
         if metric == "Unavailable.":
             return f"{translated_label}: no disponible."
+        if label == "Observed job success rate" and re.fullmatch(
+            r"(?:\d{1,2}(?:\.\d+)?|100(?:\.0+)?)%\.", metric,
+        ):
+            return f"{translated_label}: {metric}"
         if "check health" not in label and label != "Historical genuine-failure rate" and re.fullmatch(
             r"\d+(?:\.\d+)?\.", metric,
         ):
