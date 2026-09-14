@@ -130,6 +130,10 @@ async function normalizeTerminalFailure(response: Response, route: string): Prom
 
   const detail = record(payload.detail);
   const source = Object.keys(detail).length ? detail : payload;
+  // Match the Comprehensive run controller's terminal authority. A stale status
+  // or a report contract awaiting publication cannot stop an active exact run or
+  // hide its report actions through the global failure event.
+  if (COMPREHENSIVE_ROUTE.test(route) && payload.terminal !== true) return null;
   const runRecord = record(payload.record || source.record);
   const reportContract = record(source.report_contract || payload.report_contract || runRecord.report_contract);
   const scanner = record(source.scanner || payload.scanner);

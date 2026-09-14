@@ -54,6 +54,39 @@ The new synthetic run `comprun_ffe046f757500c9eb2ed5198a8fa29f2` exercised intak
 
 ## Export schema
 
+### Post-merge production-proof follow-up
+
+PR #1594 merged the spacing repair as `ee12b8d87215f40e09b78ba65381967290660abf`.
+Its main CI and Security Audit passed. Spanish production proof run 34789064959
+failed while exact-run telemetry for `comprun_98485dbe9f43c21c195e551ba8576e01`
+still reported `running`, `terminal: false`, and background final-report publication.
+The UI instead displayed a failed assessment. Mobile Restart 34789304769, iOS
+WebKit 34789304736, and Unified Acceptance 34789304759 failed their successful
+Spanish-source prerequisite; their live checks did not execute. The owner asked
+to repair these failures. The original failure artifact is retained externally.
+
+The global failure-response bridge did not enforce the explicit terminal marker
+already required by the Comprehensive run controller. Behavioral tests reproduced
+false failure events for a stale blocked status, a blocked report contract during
+publication, and missing terminal authority (3 failed, 10 passed before repair).
+The bridge now requires the top-level `terminal: true` before normalizing a
+Comprehensive failure. Nested diagnostics cannot override that authority. Genuine
+terminal failures, artifact-integrity blocking, pending human approval, transport
+errors, and legacy Express behavior have independent regression cases. This is a
+demonstrated projection defect and a candidate cause of the observed production
+failure; production reproduction must establish whether another cause remains.
+No proof timeout, recovery classification, scanner policy, persisted assessment,
+report bytes, or approval contract changes in this follow-up.
+
+The separately generated populated run `comprun_6b9a0dff45c60fa84e08e9869f88972b`
+remains preserved for final visual/report acceptance. Its submitted fields were
+compared before intake. Browser authentication expired before the exact report
+could be downloaded and approved. Secure sign-in retries returned
+`submission_failed` without a visible website error; authentication is unproven.
+Criteria A–D still require affected final production artifact checks; E requires
+the new branch gates and post-deployment production-proof results. Prior accepted
+source 66 / authorized 68 evidence above remains valid for unchanged dependencies.
+
 New editions carry `human_report_export_schema: nico.human_report_export.v1`.
 `supplied_human_evidence` retains the digest-verified durable intake package exactly,
 including all ten module states and digests. A verified transport digest establishes
