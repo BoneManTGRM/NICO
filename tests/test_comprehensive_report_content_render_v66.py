@@ -104,7 +104,7 @@ def test_rich_finding_cards_restore_verification_rollback_and_exit_criteria() ->
     )
 
     assert "Exact source: nico/report.py:50-180" in markdown
-    assert "Verification:" in markdown
+    assert "Required verification / planned acceptance criteria (outcome not verified):" in markdown
     assert "Rollback: Revert if verification fails." in markdown
     assert "Final exit criteria:" in markdown
 

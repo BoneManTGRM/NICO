@@ -45,7 +45,7 @@ def _semantic_fixture(*, spanish: bool) -> bytes:
     from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
     sections = list(CANONICAL_TOC_SECTIONS)
-    assert len(sections) == 35
+    assert any(section["section_id"] == "supplied_human_evidence" for section in sections)
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     pdf.drawString(
@@ -134,7 +134,7 @@ def test_layout_polish_binds_presentation_only_contracts() -> None:
 
 
 @pytest.mark.parametrize("spanish", [False, True])
-def test_all_35_toc_entries_share_one_page_above_four_phase_matrix(spanish: bool) -> None:
+def test_toc_continuation_retains_evidence_appendix_and_four_phase_matrix(spanish: bool) -> None:
     from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
     from nico.comprehensive_pdf_layout_polish_v1 import (
         install_comprehensive_pdf_layout_polish_v1,
@@ -172,11 +172,11 @@ def test_all_35_toc_entries_share_one_page_above_four_phase_matrix(spanish: bool
         if toc_heading in (page.extract_text() or "")
     ]
 
-    assert len(toc_pages) == 1
+    assert len(toc_pages) == 2
     assert matrix_heading in toc_pages[0]
-    assert final_title in toc_pages[0]
-    assert "TOC 1/2" not in toc_pages[0]
-    assert "contenido 1/2" not in toc_pages[0]
+    assert final_title in toc_pages[-1]
+    for section in CANONICAL_TOC_SECTIONS:
+        assert section["title_es" if spanish else "title_en"] in "\n".join(toc_pages)
 
 
 def test_sparse_reflow_keeps_velocity_evidence_with_its_heading() -> None:

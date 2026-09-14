@@ -326,6 +326,7 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Priority Constraints and Decision Risks", "Restricciones prioritarias y riesgos de decisión"),
     ("Priority Constraints and Risks", "Restricciones prioritarias y riesgos"),
     ("Executive Decision Brief", "Resumen ejecutivo para decisiones"),
+    ('Automated reporting does not accept findings or business assumptions. Operator approval and delivery permission are recorded separately for this edition; see its approval record. Missing evidence constrains conclusions.', 'El informe automatizado no acepta hallazgos ni supuestos comerciales. La aprobación del operador y el permiso de entrega se registran por separado para esta edición; consulte su registro de aprobación. La evidencia faltante limita las conclusiones.'),
     ("Decision Boundary", "Límite de decisión"),
     ("Canonical Maturity Signal", "Señal canónica de madurez"),
     ("Canonical Technical Scorecard", "Cuadro de puntuación técnica"),

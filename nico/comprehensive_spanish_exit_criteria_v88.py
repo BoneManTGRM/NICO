@@ -56,6 +56,14 @@ _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
     ),
     (
         "Revert the isolated remediation change if targeted or full verification fails; "
+        "retain the failed evidence and keep specialist remediation acceptance open."
+    ): (
+        "Revierta el cambio aislado de remediación si falla la verificación dirigida o "
+        "completa; conserve la evidencia del fallo y mantenga pendiente la aceptación "
+        "especialista de la remediación."
+    ),
+    (
+        "Revert the isolated remediation change if targeted or full verification fails; "
         "retain the failed evidence and keep client delivery blocked."
     ): (
         "Revierta el cambio aislado de remediación si falla la verificación dirigida o "

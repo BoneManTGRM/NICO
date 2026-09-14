@@ -280,7 +280,7 @@ def _rich_detailed_findings(findings: list[Mapping[str, Any]], *, spanish: bool)
                 seen.add(key)
                 verification.append(value)
         if verification:
-            lines.append("- Verification:")
+            lines.append("- Required verification / planned acceptance criteria (outcome not verified):")
             lines.extend(f"  - {value}" for value in verification)
 
         criteria_values = item.get("acceptance_criteria") or []

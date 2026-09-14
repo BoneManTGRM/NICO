@@ -402,7 +402,7 @@ def render_phase1_evidence_review_gate_pdf(
             "Aplicar muestreo profesional al conjunto de control de calidad y ampliar cualquier grupo cuya evidencia no sea homogénea.",
             "Confirmar puntuaciones, aseguramiento, limitaciones y entrega en JSON, CSV, Markdown, HTML y PDF.",
             "Disponer riesgos ejecutivos y registrar riesgo residual, responsable y evidencia de aceptación.",
-            "Aprobar o rechazar este borrador inmutable antes de autorizar la entrega.",
+            "Consultar la aprobación y el permiso de entrega en el registro de esta edición. Completar por separado la aceptación especializada pendiente.",
         ]
         if spanish
         else [
@@ -411,7 +411,7 @@ def render_phase1_evidence_review_gate_pdf(
             "Apply professional spot-check sampling to the quality-control pool and expand any cluster whose evidence is not homogeneous.",
             "Confirm technical score, Evidence-Adjusted score, assurance state, limitations, and delivery status across JSON, CSV, Markdown, HTML, and PDF.",
             "Disposition every executive risk and record residual risk, owner, and acceptance evidence.",
-            "Approve or reject this exact immutable automated draft before authorizing client delivery.",
+            "Consult the exact-edition record for operator approval and delivery permission. Complete outstanding specialist acceptance separately.",
         ]
     )
     for index, item in enumerate(checklist, 1):

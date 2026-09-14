@@ -26,12 +26,12 @@ _MARKER = "__nico_comprehensive_review_companion_v5__"
 # closed instead of silently publishing English or a shortened Spanish shape.
 _SPANISH_REVIEW_DETAIL_TEXT = {
     "Not assessed — runtime evidence required": "No evaluado — se requiere evidencia de ejecución",
-    "Repository tests and static evidence were retained, but critical user journeys were not executed in an approved client runtime environment.": "Se conservaron las pruebas del repositorio y la evidencia estática, pero los recorridos críticos de usuario no se ejecutaron en un entorno de ejecución aprobado por el cliente.",
+    "Retained report evidence does not establish whether critical user journeys were executed in an approved client runtime environment.": "La evidencia conservada en el informe no establece si los recorridos críticos de usuario se ejecutaron en un entorno de ejecución aprobado por el cliente.",
     "Repository-level test assets and technical controls can be reviewed.": "Pueden revisarse los activos de prueba y los controles técnicos del repositorio.",
     "No terminal scanner execution failure is being treated as functional acceptance.": "Ningún fallo terminal de ejecución de analizadores se trata como aceptación funcional.",
     "Production user journeys, browser and device behavior, integration behavior, and stakeholder acceptance are not proven.": "No se han demostrado los recorridos de usuario en producción, el comportamiento de navegadores y dispositivos, el comportamiento de las integraciones ni la aceptación de las partes interesadas.",
     "Approved critical journeys, runtime environment, browser and device scope, integration endpoints, and acceptance criteria.": "Recorridos críticos aprobados, entorno de ejecución, alcance de navegadores y dispositivos, endpoints de integración y criterios de aceptación.",
-    "Keep functional acceptance open. Execute the approved journey matrix and retain results before authorizing client delivery.": "Mantener abierta la aceptación funcional. Ejecutar la matriz de recorridos aprobada y conservar los resultados antes de autorizar la entrega al cliente.",
+    "Keep specialist functional acceptance open until the approved journey matrix is executed and its results are retained. Operator report approval and delivery permission are separate recorded decisions.": "Mantener abierta la aceptación funcional especializada hasta ejecutar la matriz aprobada y conservar sus resultados. La aprobación del informe y el permiso de entrega son decisiones registradas por separado.",
     "Repository indicators assessed — runtime parity not assessed": "Indicadores del repositorio evaluados — paridad de ejecución no evaluada",
     "Repository configuration and implementation indicators were reviewed. Actual feature, runtime, device, permission, and localization parity were not demonstrated.": "Se revisaron los indicadores de configuración e implementación del repositorio. No se demostró la paridad real de funciones, ejecución, dispositivos, permisos y localización.",
     "Repository-level platform indicators can identify likely shared and platform-specific implementation areas.": "Los indicadores de plataforma del repositorio pueden identificar áreas de implementación probablemente compartidas y específicas de cada plataforma.",
@@ -63,7 +63,7 @@ _SPANISH_REVIEW_DETAIL_TEXT = {
     "The executive brief can prioritize review work without authorizing remediation or delivery.": "El resumen ejecutivo puede priorizar el trabajo de revisión sin autorizar la remediación ni la entrega.",
     "Residual risk, finding acceptance, remediation ownership, and delivery authorization remain human decisions.": "El riesgo residual, la aceptación de hallazgos, la responsabilidad de la remediación y la autorización de entrega siguen siendo decisiones humanas.",
     "Finding disposition, residual-risk owner, remediation owner, target window, and acceptance evidence for each accepted priority.": "Disposición del hallazgo, responsable del riesgo residual, responsable de la remediación, ventana objetivo y evidencia de aceptación para cada prioridad aceptada.",
-    "Disposition each executive finding and retain the reviewer, rationale, owner, and verification artifact before approval.": "Determinar la disposición de cada hallazgo ejecutivo y conservar el revisor, el fundamento, el responsable y el artefacto de verificación antes de la aprobación.",
+    "For specialist acceptance, disposition each executive finding and retain the reviewer, rationale, owner, and verification artifact.": "Para la aceptación especializada, determinar la disposición de cada hallazgo y conservar revisor, fundamento, responsable y artefacto de verificación.",
     "Framework only — pending stakeholder validation": "Solo marco — pendiente de validación de las partes interesadas",
     "A six-month sequencing framework may be derived from technical evidence, but dates, owners, dependencies, commitments, and budget are not approved automatically.": "Puede derivarse de la evidencia técnica un marco de secuenciación de seis meses, pero las fechas, los responsables, las dependencias, los compromisos y el presupuesto no se aprueban automáticamente.",
     "Technical work can be grouped into 0–30, 31–90, and 91–180 day planning windows.": "El trabajo técnico puede agruparse en ventanas de planificación de 0–30, 31–90 y 91–180 días.",
@@ -373,7 +373,7 @@ def _base_section_details(section_id: str, *, spanish: bool) -> dict[str, Any]:
     en: dict[str, dict[str, Any]] = {
         "functional_qa": {
             "status": "Not assessed — runtime evidence required",
-            "summary": "Repository tests and static evidence were retained, but critical user journeys were not executed in an approved client runtime environment.",
+            "summary": "Retained report evidence does not establish whether critical user journeys were executed in an approved client runtime environment.",
             "can_conclude": [
                 "Repository-level test assets and technical controls can be reviewed.",
                 "No terminal scanner execution failure is being treated as functional acceptance.",
@@ -384,7 +384,7 @@ def _base_section_details(section_id: str, *, spanish: bool) -> dict[str, Any]:
             "required_input": [
                 "Approved critical journeys, runtime environment, browser and device scope, integration endpoints, and acceptance criteria.",
             ],
-            "recommended_decision": "Keep functional acceptance open. Execute the approved journey matrix and retain results before authorizing client delivery.",
+            "recommended_decision": "Keep specialist functional acceptance open until the approved journey matrix is executed and its results are retained. Operator report approval and delivery permission are separate recorded decisions.",
         },
         "platform_parity": {
             "status": "Repository indicators assessed — runtime parity not assessed",
@@ -456,7 +456,7 @@ def _base_section_details(section_id: str, *, spanish: bool) -> dict[str, Any]:
             "required_input": [
                 "Finding disposition, residual-risk owner, remediation owner, target window, and acceptance evidence for each accepted priority.",
             ],
-            "recommended_decision": "Disposition each executive finding and retain the reviewer, rationale, owner, and verification artifact before approval.",
+            "recommended_decision": "For specialist acceptance, disposition each executive finding and retain the reviewer, rationale, owner, and verification artifact.",
         },
         "six_month_roadmap": {
             "status": "Framework only — pending stakeholder validation",
@@ -516,28 +516,6 @@ def _human_runtime_stage(
     return {}
 
 
-def _acceptance_record(
-    canonical: Mapping[str, Any],
-    key: str,
-) -> Mapping[str, Any]:
-    acceptance = canonical.get("production_acceptance")
-    if not isinstance(acceptance, Mapping):
-        return {}
-    direct = acceptance.get(key)
-    return direct if isinstance(direct, Mapping) else {}
-
-
-def _verified(value: Any) -> bool:
-    return str(value or "").strip().casefold().replace("-", "_") in {
-        "verified",
-        "proven",
-        "complete",
-        "established",
-        "pass",
-        "passed",
-    }
-
-
 def _runtime_observation_lines(canonical: Mapping[str, Any], module_id: str, field: str) -> list[str]:
     from nico.comprehensive_human_evidence_report_v1 import _FIELD_LABELS
 
@@ -549,7 +527,7 @@ def _runtime_observation_lines(canonical: Mapping[str, Any], module_id: str, fie
         if "excluded" in str(stage.get("status") or "").casefold():
             continue
         for raw in _values(stage.get("evidence"), limit=100):
-            # Only the renderer-owned field label establishes an observation.
+            # Renderer-owned labels locate supplied text; they establish no observation.
             # A reviewer, source reference, test plan, or exclusion rationale may
             # contain PASS/device words without observing an execution.
             for prefix in ("Client-supplied data · ", "Dato aportado por el cliente · "):
@@ -588,23 +566,23 @@ def _functional_runtime_truth(
     ):
         return _human_input_truth(canonical, "functional_qa", details, spanish=spanish), evidence
     supplied = _runtime_observation_lines(canonical, "functional_qa", "observed_results")
-    if not supplied:
+    if not supplied and not canonical.get("production_acceptance"):
+        details.update(evidence_state="not_supplied", runtime_observation_established=False, independently_verified=False)
         return details, evidence
-    joined = " ".join(supplied).casefold()
-    observation = "FAIL" if re.search(r"\bfail(?:ed|ure)?\b", joined) else (
-        "PASS" if re.search(r"\bpass(?:ed)?\b", joined) else (
-            "Proporcionada" if spanish else "Supplied"
-        )
-    )
-    acceptance = _acceptance_record(canonical, "functional_qa")
-    independent = _verified(
-        acceptance.get("independent_verification")
-        or acceptance.get("verification_status")
-    )
-    broader = _verified(
-        acceptance.get("broader_production_acceptance")
-        or acceptance.get("status")
-    )
+    from nico.comprehensive_observation_truth import observation_truth
+    retained = observation_truth(canonical, "functional_qa")
+    independent = retained['verified']
+    broader = independent and retained['result'] == 'pass' and all(observation_truth(canonical, key)['verified'] and observation_truth(canonical, key)['result'] == 'pass'
+                                  for key in ('desktop', 'mobile', 'english', 'es_mx'))
+    details.update(evidence_state='retained_verified' if independent else 'retained_observation' if retained['observed'] else 'supplied_unverified',
+                   runtime_observation_established=retained['observed'], independently_verified=independent)
+    if not retained['observed']:
+        details['status'] = 'Material aportado — no verificado' if spanish else 'Supplied material — unverified'
+        details['summary'] = ('El material aportado se conserva literalmente en Evidencia humana aportada. Su contenido, fecha y proveedor no establecen ejecución, observación ni verificación.' if spanish else
+                              'Supplied material is preserved literally in Supplied Human Evidence. Its content, date and supplier do not establish execution, observation or verification.')
+        return details, [('Consulte Evidencia humana aportada: QA funcional; estado: no verificado.' if spanish else
+                          'See Supplied Human Evidence: Functional QA; status: supplied and unverified.'), *evidence]
+    observation = retained['result'].upper()
     if spanish:
         truth = [
             f"Evidencia de ejecución observada: {observation}",
@@ -651,25 +629,29 @@ def _platform_runtime_truth(
     ):
         return _human_input_truth(canonical, "platform_parity", details, spanish=spanish), evidence
     supplied = _runtime_observation_lines(canonical, "platform_parity", "matrix")
-    if not supplied:
+    if not supplied and not canonical.get("production_acceptance"):
+        details.update(evidence_state="not_supplied", runtime_observation_established=False, independently_verified=False)
         return details, evidence
-    joined = " ".join(supplied).casefold()
+    from nico.comprehensive_observation_truth import observation_truth
     dimensions = (
-        ("desktop", "Desktop browser", "Navegador de escritorio", ("desktop", "safari", "macos")),
-        ("mobile", "Mobile browser", "Navegador móvil", ("mobile", "iphone", "webkit", "ios")),
-        ("english", "English", "Inglés", ("english", "locale=en", " en-us")),
-        ("es_mx", "es-MX", "es-MX", ("es-mx", "es_mx", "mexican spanish", "español")),
+        ("desktop", "Desktop browser", "Navegador de escritorio"),
+        ("mobile", "Mobile browser", "Navegador móvil"),
+        ("english", "English", "Inglés"),
+        ("es_mx", "es-MX", "es-MX"),
     )
+    details.update(evidence_state='supplied_unverified' if supplied else 'not_supplied',
+                   runtime_observation_established=False, independently_verified=False)
     truth: list[str] = []
     independently_verified = 0
-    for key, english_label, spanish_label, tokens in dimensions:
-        record = _acceptance_record(canonical, key)
-        verified = _verified(record.get("status") or record.get("verification_status"))
-        independently_verified += int(verified)
-        observed = any(token in joined for token in tokens)
+    for key, english_label, spanish_label in dimensions:
+        record = observation_truth(canonical, key)
+        verified = record["verified"]
+        independently_verified += int(verified and record["result"] == "pass")
+        observed = record["observed"]
+        details["runtime_observation_established"] |= observed
         label = spanish_label if spanish else english_label
         if verified:
-            status = "Verificado" if spanish else "Verified"
+            status = ("Verificado: " if spanish else "Verified: ") + record["result"].upper()
         elif observed:
             status = (
                 "Observado — verificación independiente pendiente"
@@ -680,6 +662,9 @@ def _platform_runtime_truth(
             status = "No verificado" if spanish else "Not verified"
         truth.append(f"{label}: {status}")
     established = independently_verified == len(dimensions)
+    details["independently_verified"] = established
+    if details["runtime_observation_established"]:
+        details["evidence_state"] = "retained_verified" if established else "retained_observation"
     truth.append(
         (
             "Paridad entre plataformas: Establecida"
@@ -696,18 +681,18 @@ def _platform_runtime_truth(
     details["status"] = (
         "Paridad entre plataformas establecida"
         if spanish and established
-        else "Observaciones de plataforma aportadas — paridad entre plataformas no establecida"
+        else "Evidencia de plataformas — paridad entre plataformas no establecida"
         if spanish
         else "Cross-platform parity established"
         if established
-        else "Platform observations supplied — cross-platform parity not established"
+        else "Platform evidence — cross-platform parity not established"
     )
     details["summary"] = (
-        "Las observaciones de escritorio, móvil e idioma se presentan de forma independiente; la paridad solo se establece cuando las cuatro dimensiones se verifican."
+        "El texto de la matriz se conserva en Evidencia humana aportada. Cada plataforma requiere evidencia de ejecución conservada; el texto por sí solo no establece observación ni paridad."
         if spanish
-        else "Desktop, mobile, and locale observations are presented independently; parity is established only when all four dimensions are verified."
+        else "Supplied matrix text is retained in Supplied Human Evidence. Each platform requires retained execution evidence; text alone establishes no observation or parity."
     )
-    return details, [*truth, *evidence]
+    return details, ["; ".join(truth[:2]), "; ".join(truth[2:4]), truth[4], *evidence]
 
 
 def _human_input_truth(
@@ -868,6 +853,19 @@ def substantive_review_sections(
                 else _values(staffing, limit=6)
             ) or evidence
 
+        if section['id'] == 'staffing_sequencing_and_cost':
+            package = canonical.get('supplied_human_evidence') or {}
+            module = (package.get('modules') or {}).get('budget_staffing') or {}
+            resource = (module.get('evidence') or {}).get('constraints')
+            supplied_resource = resource is not None and resource != [] and resource != ''
+            details['resource_evidence_state'] = 'supplied_unverified' if supplied_resource else 'not_supplied'
+            details['resource_commitment_established'] = False
+            if supplied_resource:
+                details['summary'] = ('Se aportaron restricciones de personal/capacidad. Consulte sus valores y procedencia exactos en Evidencia humana aportada: Restricciones de presupuesto, personal y capacidad. Son datos no verificados y no comprometidos; no establecen un presupuesto aprobado.' if spanish else
+                                      'Staffing/capacity constraints were supplied. See their exact values and provenance in Supplied Human Evidence: Budget, staffing, and capacity constraints. They remain unverified and uncommitted; they do not establish an approved budget.')
+                evidence = [('Restricciones aportadas: consulte el apéndice de evidencia humana; presupuesto aprobado no establecido.' if spanish else
+                             'Supplied constraints: see the human evidence appendix; approved budget not established.'), *evidence]
+
         if not evidence:
             evidence = [
                 (
@@ -881,6 +879,7 @@ def substantive_review_sections(
 
         section.update(
             {
+                **{key: details[key] for key in ("evidence_state", "runtime_observation_established", "independently_verified", "resource_evidence_state", "resource_commitment_established") if key in details},
                 "section_number": index,
                 "section_count": SECTION_COUNT,
                 "status": details["status"],

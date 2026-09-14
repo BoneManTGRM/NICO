@@ -2,7 +2,7 @@
 import re
 
 
-def _current_prose(value, *, authorized):
+def _current_prose(value, *, authorized, current_truth=False):
     from nico.comprehensive_operator_presentation_v1 import lifecycle_text, delivery_lifecycle_text
     # Literal spans are escaped by the evidence renderer. Keep their full bytes,
     # even when a supplier quotes a report-owned lifecycle phrase.
@@ -12,6 +12,11 @@ def _current_prose(value, *, authorized):
         if authorized:
             text = delivery_lifecycle_text(text)
             text = text.replace('CLIENT DELIVERY NOT AUTHORIZED', 'CLIENT DELIVERY AUTHORIZED')
+        if current_truth:
+            text = text.replace('BLOCKED - AUTHORIZED HUMAN APPROVAL REQUIRED',
+                                'AUTHORIZED' if authorized else 'APPROVED - DELIVERY NOT AUTHORIZED')
+            text = text.replace('BLOQUEADA - REQUIERE APROBACIÓN HUMANA AUTORIZADA',
+                                'AUTORIZADA' if authorized else 'APROBADA - ENTREGA NO AUTORIZADA')
         pieces[index] = text
     return ''.join(pieces)
 
@@ -52,15 +57,27 @@ def project_operator_report_formats(reports, *, authorized=False):
         for key in ('finding_population', 'client_readiness_contract', 'post_readiness_report_contract_truth',
                     'four_phase_program', 'v2_pipeline_contract', 'v2_prepublication_contract',
                     'post_readiness_maturity_truth', 'approval', 'artifact_manifest')
-        if key in parent
+        if key in parent and not (
+            key == 'four_phase_program'
+            and canonical.get('report_truth_schema') == 'nico.report_truth.v2'
+        )
     ]
+    if canonical.get('report_truth_schema') == 'nico.report_truth.v2':
+        for parent in (canonical, canonical.get('assessment', {})):
+            program = parent.get('four_phase_program', {})
+            for phase in program.get('phases', []):
+                if phase.get('id') == 'approval_and_client_delivery':
+                    phase['status'] = 'authorized' if authorized else 'approved_pending_delivery_authorization'
+            if program:
+                program['operator_approval_completed'] = True
+                program['client_delivery_allowed'] = authorized
     canonical['report_lifecycle'] = {
         'operator_approval': 'approved', 'delivery_authorization': 'authorized' if authorized else 'blocked',
         'specialist_review_completed_by_this_action': False, 'transmission_performed': False,
     }
     # The marked appendix is renderer-owned; arbitrary client text is untouched.
     for key in ('markdown', 'html'):
-        text = _current_prose(reports.get(key, ''), authorized=authorized)
+        text = _current_prose(reports.get(key, ''), authorized=authorized, current_truth=canonical.get('report_truth_schema') == 'nico.report_truth.v2')
         def section(match):
             value = re.sub(r'(Final human approval\s*:\s*(?:</strong>\s*)?)PENDING', r'\1APPROVED', match[0], flags=re.I)
             if authorized:

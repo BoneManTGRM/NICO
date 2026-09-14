@@ -126,7 +126,8 @@ def test_four_phase_program_preserves_truth_boundaries() -> None:
     assert [item["phase"] for item in program["phases"]] == [1, 2, 3, 4]
     assert program["phases"][0]["status"] == "complete"
     assert program["phases"][1]["status"] == "ready_pending_human_decision"
-    assert program["phases"][2]["status"] == "complete_with_disclosed_limitations"
+    assert program["phases"][2]["status"] == "limited"
+    assert program["phases"][2]["processing_status"] == "complete"
     assert program["phases"][3]["status"] == (
         "blocked_pending_authorized_human_approval"
     )

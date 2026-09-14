@@ -353,7 +353,7 @@ def test_same_run_route_binds_final_layout_before_actual_render_target() -> None
     assert layout["review_small_font_size"] >= 6.75
 
 
-def test_final_navigation_replaces_spanish_indice_and_keeps_35_rows_on_one_page() -> None:
+def test_final_navigation_replaces_spanish_indice_and_preserves_appendix_continuation() -> None:
     from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 
     buffer = io.BytesIO()
@@ -397,7 +397,7 @@ def test_final_navigation_replaces_spanish_indice_and_keeps_35_rows_on_one_page(
     toc = reader.pages[1].extract_text() or ""
     next_page = reader.pages[2].extract_text() or ""
 
-    assert len(CANONICAL_TOC_SECTIONS) == 35
+    assert any(section["section_id"] == "supplied_human_evidence" for section in CANONICAL_TOC_SECTIONS)
     assert "Tabla de contenido" in toc
     assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in toc
     assert not any(
@@ -405,9 +405,9 @@ def test_final_navigation_replaces_spanish_indice_and_keeps_35_rows_on_one_page(
         for page in reader.pages
         for line in (page.extract_text() or "").splitlines()
     )
-    assert "Tabla de contenido" not in next_page
+    assert "Tabla de contenido" in next_page
     for section in CANONICAL_TOC_SECTIONS:
-        assert section["title_es"] in toc
+        assert section["title_es"] in toc + next_page
 
 
 def test_provider_access_truth_is_not_limited_to_generic_ten_line_preview() -> None:

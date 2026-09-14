@@ -54,6 +54,7 @@ _RICH_FINDING_MARKDOWN_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("- Cost of inaction:", "- Costo de no actuar:"),
     ("- Residual risk:", "- Riesgo residual:"),
     ("- Disposition:", "- Disposición:"),
+    ("- Required verification / planned acceptance criteria (outcome not verified):", "- Verificación requerida / criterios de aceptación previstos (resultado no verificado):"),
     ("- Verification:", "- Verificación:"),
     ("- Acceptance / exit criteria:", "- Criterios de aceptación / salida:"),
     ("- Rollback:", "- Reversión:"),

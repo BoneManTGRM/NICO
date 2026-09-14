@@ -290,7 +290,7 @@ def test_spanish_scorecard_cells_and_wrapped_final_heading_keep_real_toc_targets
     assert toc_lines[toc_lines.index(approval_title) + 1] == "5"
 
 
-def test_spanish_semantic_toc_keeps_35_rows_above_the_four_phase_matrix() -> None:
+def test_spanish_semantic_toc_keeps_bounded_rows_above_the_four_phase_matrix() -> None:
     from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
     from nico.comprehensive_pdf_layout_polish_v1 import (
         install_comprehensive_pdf_layout_polish_v1,
@@ -318,9 +318,10 @@ def test_spanish_semantic_toc_keeps_35_rows_above_the_four_phase_matrix() -> Non
         if "Tabla de contenido" in (page.extract_text() or "")
     ]
 
-    assert len(toc_pages) == 1
+    assert len(toc_pages) == 2  # Supplied-evidence appendix adds the 36th entry.
+    assert "Evidencia humana aportada" in "\n".join(toc_pages)
     assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in toc_pages[0]
     assert (
         "Registro de revisión humana y aprobación de artefactos exactos"
-        in toc_pages[0]
+        in "\n".join(toc_pages)
     )

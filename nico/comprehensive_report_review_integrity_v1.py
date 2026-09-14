@@ -227,18 +227,12 @@ def _runtime_acceptance(
     *,
     spanish: bool,
 ) -> str:
-    acceptance = canonical.get("production_acceptance")
-    if isinstance(acceptance, Mapping):
-        status = str(
-            acceptance.get("status")
-            or acceptance.get("runtime_acceptance_status")
-            or ""
-        ).strip().casefold().replace("-", "_")
-        if status in {"proven", "verified", "complete", "established"}:
-            return "Demostrada" if spanish else "Proven"
-        if status in {"excluded", "excluded_from_scope", "not_applicable"}:
-            return "Excluida" if spanish else "Excluded"
-
+    from nico.comprehensive_observation_truth import observation_truth
+    truths = [observation_truth(canonical, key) for key in ('functional_qa', 'desktop', 'mobile', 'english', 'es_mx')]
+    if all(item['verified'] and item['result'] == 'pass' for item in truths):
+        return 'Demostrada' if spanish else 'Proven'
+    if any(item['observed'] for item in truths):
+        return 'Parcial' if spanish else 'Partial'
     stage_sources = (
         canonical.get("stage_summaries"),
         (canonical.get("assessment") or {}).get("stage_summaries")
@@ -264,7 +258,7 @@ def _runtime_acceptance(
             status = str(raw.get("status") or "").casefold()
             is_excluded = "excluded" in status
             excluded = excluded or is_excluded
-            observed = observed or (not is_excluded and bool(raw.get("evidence")))
+            # Supplied prose is not a retained execution observation.
     if observed:
         return "Parcial" if spanish else "Partial"
     if excluded:

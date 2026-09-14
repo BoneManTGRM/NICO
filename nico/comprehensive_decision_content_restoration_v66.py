@@ -320,10 +320,13 @@ def _synthesized_complexity_findings(
                 ),
                 "recommendation": _complexity_recommendation(name, path),
                 "verification": verification,
+                "verification_kind": "planned_acceptance_criteria",
+                "verification_outcome": "not_verified",
+                "observed_verification_results": [],
                 "acceptance_criteria": verification,
                 "rollback": (
                     "Revert the isolated remediation change if targeted or full verification fails; "
-                    "retain the failed evidence and keep client delivery blocked."
+                    "retain the failed evidence and keep specialist remediation acceptance open."
                 ),
                 "exit_criteria": [
                     "All verification requirements pass on the exact remediation commit.",

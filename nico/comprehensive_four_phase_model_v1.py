@@ -98,6 +98,14 @@ def build_four_phase_program(canonical: Mapping[str, Any]) -> dict[str, Any]:
     )
     limitations = source.get("decision_content_limitations")
     limitations = limitations if isinstance(limitations, list) else []
+    from nico.comprehensive_client_review_companion_v2 import _stage_map
+    stages = _stage_map(source)
+    required = ('functional_qa', 'platform_parity', 'requirements_traceability',
+                'stakeholder_and_business_alignment', 'six_month_roadmap', 'staffing_sequencing_and_cost')
+    dimensions = {key: (stages.get(key) or {}).get('assessment_dimensions', {}) for key in required}
+    broader_complete = all(d.get('full_coverage_claim') is True
+                           and d.get('substantive_coverage') == 'complete'
+                           and d.get('human_review_status') == 'complete' for d in dimensions.values())
     phases = [
         {
             "phase": 1,
@@ -123,9 +131,12 @@ def build_four_phase_program(canonical: Mapping[str, Any]) -> dict[str, Any]:
             "id": "broader_professional_assessment",
             "title_en": "Broader Professional Assessment",
             "title_es": "Evaluación profesional ampliada",
-            "status": "complete_with_disclosed_limitations" if state in {"review_required", "complete", "completed"} else "limited",
-            "evidence_boundary_en": "Functional QA, platform parity, requirements, stakeholder alignment, roadmap, staffing, and executive conclusions remain evidence-bound.",
-            "evidence_boundary_es": "QA funcional, paridad de plataformas, requisitos, alineación, hoja de ruta, personal y conclusiones siguen limitados por evidencia.",
+            "status": "complete" if broader_complete else "limited",
+            "processing_status": "complete" if state in {"review_required", "complete", "completed"} else "not_established",
+            "coverage_and_review_requirements": dimensions,
+            "specialist_completion_established": broader_complete,
+            "evidence_boundary_en": "Section processing is separate from specialist completion. Functional QA, parity, requirements, alignment, roadmap and staffing require complete coverage and specialist review.",
+            "evidence_boundary_es": "Procesar secciones no completa la evaluación especializada. QA, paridad, requisitos, alineación, hoja de ruta y personal requieren cobertura y revisión completas.",
             "disclosed_limitation_count": len(limitations),
         },
         {
@@ -133,7 +144,7 @@ def build_four_phase_program(canonical: Mapping[str, Any]) -> dict[str, Any]:
             "id": "approval_and_client_delivery",
             "title_en": "Approval and Client Delivery",
             "title_es": "Aprobación y entrega al cliente",
-            "status": "authorized" if delivery else "blocked_pending_authorized_human_approval",
+            "status": "authorized" if delivery else "approved_pending_delivery_authorization" if source.get("operator_approval_status") == "approved" else "blocked_pending_authorized_human_approval",
             "evidence_boundary_en": "Exact-artifact approval, residual-risk acceptance, immutable receipts, and protected delivery remain authorized human actions.",
             "evidence_boundary_es": "La aprobación del artefacto exacto, la aceptación del riesgo residual, los recibos inmutables y la entrega protegida son acciones humanas autorizadas.",
         },
@@ -186,6 +197,7 @@ def _status(status: str, spanish: bool) -> str:
         "complete_with_disclosed_limitations": ("COMPLETE - LIMITATIONS DISCLOSED", "COMPLETA - LIMITACIONES DECLARADAS"),
         "blocked_pending_authorized_human_approval": ("BLOCKED - AUTHORIZED HUMAN APPROVAL REQUIRED", "BLOQUEADA - REQUIERE APROBACIÓN HUMANA AUTORIZADA"),
         "authorized": ("AUTHORIZED", "AUTORIZADA"),
+        "approved_pending_delivery_authorization": ("APPROVED - DELIVERY NOT AUTHORIZED", "APROBADA - ENTREGA NO AUTORIZADA"),
     }
     return labels.get(status, (status.upper(), status.upper()))[1 if spanish else 0]
 
