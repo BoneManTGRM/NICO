@@ -57,7 +57,10 @@ def project_operator_report_formats(reports, *, authorized=False):
         for key in ('finding_population', 'client_readiness_contract', 'post_readiness_report_contract_truth',
                     'four_phase_program', 'v2_pipeline_contract', 'v2_prepublication_contract',
                     'post_readiness_maturity_truth', 'approval', 'artifact_manifest')
-        if key in parent
+        if key in parent and not (
+            key == 'four_phase_program'
+            and canonical.get('report_truth_schema') == 'nico.report_truth.v2'
+        )
     ]
     if canonical.get('report_truth_schema') == 'nico.report_truth.v2':
         for parent in (canonical, canonical.get('assessment', {})):

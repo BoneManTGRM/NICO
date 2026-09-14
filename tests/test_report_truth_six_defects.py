@@ -53,6 +53,18 @@ def test_future_specialist_work_is_not_undone_operator_authorization():
     assert 'before authorizing client delivery' not in str(sections)
 
 
+def test_current_authorization_projection_is_not_labelled_historical():
+    from nico.comprehensive_operator_report_formats import project_operator_report_formats
+    reports = {'json': {'human_report_export_schema': 'v1',
+                       'report_truth_schema': 'nico.report_truth.v2',
+                       'four_phase_program': {'phases': [{'id': 'approval_and_client_delivery',
+                                                        'status': 'blocked_pending_authorized_human_approval'}]}}}
+    project_operator_report_formats(reports, authorized=True)
+    canonical = reports['json']
+    assert canonical['four_phase_program']['phases'][0]['status'] == 'authorized'
+    assert '/four_phase_program' not in canonical['reviewed_source_lifecycle']['historical_contract_paths']
+
+
 def test_final_pdf_contents_distinguish_report_and_physical_numbering():
     import io
     from pypdf import PdfReader
@@ -83,6 +95,21 @@ def test_changed_execution_invalidates_review_but_preserves_actual_observation()
     result = observation_truth(report, 'functional_qa')
     assert result['observed'] is True and result['verified'] is False
     assert result['result'] == 'fail'
+
+
+def test_verification_requires_an_identified_observer_for_independence():
+    from hashlib import sha256
+    import json
+    from nico.comprehensive_observation_truth import observation_truth
+    from tests.test_runtime_acceptance_report_truth_v1 import with_retained_executions
+    report = with_retained_executions(canonical_with_observations(), verified=True)
+    execution = report['retained_runtime_executions']['functional_qa']
+    execution.pop('observer', None)
+    review = report['production_acceptance']['functional_qa']['independent_review']
+    review['execution_sha256'] = sha256(json.dumps(execution, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+    result = observation_truth(report, 'functional_qa')
+    assert result['observed'] is True
+    assert result['verified'] is False
 
 
 def test_certificate_counts_composed_pages_and_keeps_bookmark_destination():

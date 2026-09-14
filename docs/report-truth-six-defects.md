@@ -81,6 +81,13 @@ apply staged Railway changes or message/transmit to anyone.
   legacy mapping, and checked the new evidence appendix across contents pages.
   All 64 tests in those six affected files pass locally. Required CI reruns on
   the resulting commit; earlier failed jobs are not counted as passing evidence.
+- Final JSON review found the current authorization phase still listed among
+  historical source contract paths. A failing regression reproduced this edition
+  metadata mismatch; new-edition projection now excludes that current phase path
+  from the historical list. Legacy projections remain unchanged.
+- Adversarial verification fixture: a retained execution with no observer identity
+  was incorrectly eligible for independent verification. Require the observer
+  identity before asserting independence; preserve the actual observation itself.
 
 Pending: required CI, integration, deployment identity, fresh synthetic reviewed
 and authorized editions in both locales, original-byte export comparisons, all-page

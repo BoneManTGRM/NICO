@@ -46,6 +46,7 @@ def observation_truth(canonical, key):
                 and verification.get('status') == 'verified'
                 and verification.get('execution_sha256') == digest
                 and bool(verification.get('reviewer'))
+                and bool(execution.get('observer'))
                 and verification.get('reviewer') != execution.get('observer')
                 and bool(verification.get('evidence_reference')))
     try:
