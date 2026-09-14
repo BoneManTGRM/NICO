@@ -26,7 +26,7 @@ _MARKER = "__nico_comprehensive_review_companion_v5__"
 # closed instead of silently publishing English or a shortened Spanish shape.
 _SPANISH_REVIEW_DETAIL_TEXT = {
     "Not assessed — runtime evidence required": "No evaluado — se requiere evidencia de ejecución",
-    "Repository tests and static evidence were retained, but critical user journeys were not executed in an approved client runtime environment.": "Se conservaron las pruebas del repositorio y la evidencia estática, pero los recorridos críticos de usuario no se ejecutaron en un entorno de ejecución aprobado por el cliente.",
+    "Retained report evidence does not establish whether critical user journeys were executed in an approved client runtime environment.": "La evidencia conservada en el informe no establece si los recorridos críticos de usuario se ejecutaron en un entorno de ejecución aprobado por el cliente.",
     "Repository-level test assets and technical controls can be reviewed.": "Pueden revisarse los activos de prueba y los controles técnicos del repositorio.",
     "No terminal scanner execution failure is being treated as functional acceptance.": "Ningún fallo terminal de ejecución de analizadores se trata como aceptación funcional.",
     "Production user journeys, browser and device behavior, integration behavior, and stakeholder acceptance are not proven.": "No se han demostrado los recorridos de usuario en producción, el comportamiento de navegadores y dispositivos, el comportamiento de las integraciones ni la aceptación de las partes interesadas.",
@@ -373,7 +373,7 @@ def _base_section_details(section_id: str, *, spanish: bool) -> dict[str, Any]:
     en: dict[str, dict[str, Any]] = {
         "functional_qa": {
             "status": "Not assessed — runtime evidence required",
-            "summary": "Repository tests and static evidence were retained, but critical user journeys were not executed in an approved client runtime environment.",
+            "summary": "Retained report evidence does not establish whether critical user journeys were executed in an approved client runtime environment.",
             "can_conclude": [
                 "Repository-level test assets and technical controls can be reviewed.",
                 "No terminal scanner execution failure is being treated as functional acceptance.",

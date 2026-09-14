@@ -15,6 +15,14 @@ def test_run_completion_is_not_broader_specialist_completion(state):
     assert phase['status'] not in {'complete', 'complete_with_disclosed_limitations'}
 
 
+@pytest.mark.parametrize('spanish', [False, True])
+def test_absent_execution_evidence_does_not_assert_tests_were_not_performed(spanish):
+    qa = next(s for s in substantive_review_sections({}, spanish=spanish) if s['id'] == 'functional_qa')
+    assert qa['runtime_observation_established'] is False
+    assert ('no establece si' if spanish else 'does not establish whether') in qa['summary']
+    assert ('no se ejecutaron' if spanish else 'were not executed') not in qa['summary']
+
+
 @pytest.mark.parametrize('text', [
     'PASS', '0', 'Runtime behavior NOT VERIFIED',
     'Desktop mobile English es-MX NOT TESTED; no observation asserted.',

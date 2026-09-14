@@ -88,6 +88,11 @@ apply staged Railway changes or message/transmit to anyone.
 - Adversarial verification fixture: a retained execution with no observer identity
   was incorrectly eligible for independent verification. Require the observer
   identity before asserting independence; preserve the actual observation itself.
+- Re-rendering the actual minimal-input source exposed an inherited absence claim:
+  QA said journeys were not executed although only execution evidence was absent.
+  Two failing bilingual cases reproduce it. The summary now says retained evidence
+  does not establish whether execution occurred; explicit supplied not-tested text
+  is still retained verbatim. The 36 evidence/runtime cases pass after correction.
 
 Pending: required CI, integration, deployment identity, fresh synthetic reviewed
 and authorized editions in both locales, original-byte export comparisons, all-page
