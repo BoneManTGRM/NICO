@@ -148,3 +148,20 @@ scanner candidates; they do not manufacture findings from human input.
 Original source editions, decisions, certificates, and delivered bytes are not
 overwritten. Substantive corrected evidence requires a newly generated source edition
 and fresh exact-edition review/approval. Delivery permission is not transmission.
+
+### Percentage publication follow-up
+
+After PR1596 deployed, authenticated inspection of retained synthetic run
+`comprun_8373581b34ac0416da9a6b5171f3f7de` exposed the exact final-stage error:
+`unrecognized Spanish presentation contract: Observed job success rate: 100%.`
+The transient active-publication observation did not establish a UI defect. The
+persisted terminal error identifies an omitted percentage grammar in v87.
+
+Four focused cases reproduced rejection of 0%, 12.5%, 100%, and 100.0%. A four-line
+grammar addition accepts percentages from 0 through 100 only for observed job
+success rate, preserving exact digits and the percent unit. Counts, malformed
+values, out-of-range percentages and appended untrusted prose remain rejected.
+The generated-stage and installed-v98 tests retain canonical evidence unchanged.
+Retest: 101 passed across metric availability, existing worker-copy contracts and
+current report truth parity. No golden, lifecycle, scanner, or authentication
+changes. Required CI and production acceptance remain pending for this follow-up.
