@@ -327,14 +327,14 @@ def _prove_locale_round_trip(
 def _review_locale_surface(page: Page, locale: str, run_id: str) -> dict[str, Any]:
     spanish = locale == "es-MX"
     expected_title = (
-        "Revisión final interna y autorización para el cliente."
+        "Aprueba el informe final exacto de la evaluación."
         if spanish
-        else "Internal final review and client-ready authorization."
+        else "Approve the exact final assessment report."
     )
     expected_boundary = (
-        "Revisa el informe NICO Comprehensive inmutable exacto, confirma su límite de evidencia"
+        "Aprobar y descargar registra la aprobación del informe y el permiso de entrega al cliente en una sola acción. La revisión especializada y el control de calidad independiente siguen declarados; no se envía ningún informe automáticamente."
         if spanish
-        else "Review the exact immutable NICO Comprehensive report, confirm its evidence boundary"
+        else "Approve and download records report approval and client-delivery permission in one action. Specialist review and independent QC remain accurately disclosed; no report is sent automatically."
     )
     query = parse_qs(urlparse(str(page.url)).query)
     assert query.get("run_id") == [run_id], query
@@ -342,14 +342,14 @@ def _review_locale_surface(page: Page, locale: str, run_id: str) -> dict[str, An
         assert query.get("lang") == ["es-MX"], query
     else:
         assert query.get("lang", ["en"])[0] in {"en", "en-US"}, query
-    workspace = page.locator("main[data-review-contract='accepted-edition-v2']")
+    workspace = page.locator("main[data-review-contract='final-report-independent-v1']")
     workspace.wait_for(state="visible", timeout=120_000)
     expected_language_prefix = "es" if spanish else "en"
     page.wait_for_function(
         """([languagePrefix, expectedHeading]) => (
           (document.documentElement.lang || '').toLowerCase().startsWith(languagePrefix)
           && document.querySelector(
-            "main[data-review-contract='accepted-edition-v2'] h1"
+            "main[data-review-contract='final-report-independent-v1'] h1"
           )?.textContent?.trim() === expectedHeading
         )""",
         arg=[expected_language_prefix, expected_title],
@@ -364,7 +364,7 @@ def _review_locale_surface(page: Page, locale: str, run_id: str) -> dict[str, An
     assert heading == expected_title
     assert expected_boundary in body
     if spanish:
-        assert "Internal final review and client-ready authorization." not in body
+        assert "Approve the exact final assessment report." not in body
     return {
         "locale": locale,
         "document_language": document_language,

@@ -673,7 +673,7 @@ def test_review_locale_proofs_wait_for_client_projection_before_asserting() -> N
         language_read = helper.index("document_language = str(")
         assert projection_wait < language_read
         assert "document.documentElement.lang" in helper
-        assert "main[data-review-contract='accepted-edition-v2'] h1" in helper
+        assert "main[data-review-contract='final-report-independent-v1'] h1" in helper
         assert "expectedHeading" in helper
 
 
