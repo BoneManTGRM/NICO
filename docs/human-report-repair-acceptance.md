@@ -129,6 +129,9 @@ regression independently reproduced it. v98 now delegates complete metric lines
 to the strict canonical grammar before phrase substitution; unknown values still
 fail closed. The decisive combined canonical parity/metric retest passed 82 tests.
 No golden artifacts were updated. Final required CI and production proof follow.
+An adversarial multiline metric input then reproduced a whole-block grammar
+rejection. The same strict translator now handles each line while preserving CRLF
+and LF endings. The focused regression failed before the two-line correction.
 
 New editions carry `human_report_export_schema: nico.human_report_export.v1`.
 `supplied_human_evidence` retains the digest-verified durable intake package exactly,

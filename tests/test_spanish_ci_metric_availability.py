@@ -45,6 +45,16 @@ def test_installed_current_copy_pass_preserves_complete_metric_translation():
         ) == f"{label}: no disponible."
 
 
+def test_metric_translation_preserves_multiline_values_and_line_endings():
+    from nico.comprehensive_spanish_current_copy_worker_v98 import localize_current_report_copy_v98
+
+    value = "Successful workflow runs: 0.\r\nJobs observed: Unavailable.\n"
+    assert localize_current_report_copy_v98(value) == (
+        "Ejecuciones exitosas de flujos de trabajo: 0.\r\n"
+        "Trabajos observados: no disponible.\n"
+    )
+
+
 @pytest.mark.parametrize("missing", [None, ""])
 @pytest.mark.parametrize("key,english,spanish", METRICS)
 def test_generated_missing_ci_metric_has_explicit_spanish_availability(key, english, spanish, missing):
