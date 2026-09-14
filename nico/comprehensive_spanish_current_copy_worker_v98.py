@@ -507,7 +507,8 @@ def localize_current_report_copy_v98(value: Any) -> str:
     stripped = raw.strip()
     # Translate the complete metric contract before static label substitutions
     # erase its English grammar. Keep value validation on the canonical boundary.
-    if stripped.partition(":")[0] in _CI_OPERATIONAL_METRIC_LABELS_ES:
+    label, separator, _ = stripped.partition(":")
+    if separator and label in _CI_OPERATIONAL_METRIC_LABELS_ES:
         if "\n" in stripped or "\r" in stripped:
             return "".join(localize_current_report_copy_v98(line) for line in raw.splitlines(keepends=True))
         translated = _structured_presentation_es(stripped)

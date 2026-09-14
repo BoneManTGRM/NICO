@@ -2628,7 +2628,8 @@ def _structured_presentation_es(value: str) -> str | None:
         "OSV lookup ",
         "OSV returned ",
     )
-    is_operational_metric = value.partition(":")[0] in _CI_OPERATIONAL_METRIC_LABELS_ES
+    label, separator, _ = value.partition(":")
+    is_operational_metric = bool(separator and label in _CI_OPERATIONAL_METRIC_LABELS_ES)
     if value.startswith(structural_prefixes) or is_operational_metric or re.match(
         r"^(?:\d+ (?:(?:captured-commit|repository) profile item|grouped static-analysis "
         r"candidates require validation|Python source file|source parser limitation)|"

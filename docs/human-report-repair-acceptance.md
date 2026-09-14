@@ -132,6 +132,9 @@ No golden artifacts were updated. Final required CI and production proof follow.
 An adversarial multiline metric input then reproduced a whole-block grammar
 rejection. The same strict translator now handles each line while preserving CRLF
 and LF endings. The focused regression failed before the two-line correction.
+CI then found the existing standalone-label contract also matched the new metric
+guard. The existing v98 regression reproduced this locally. Require the colon
+separator for metric validation; standalone translated headings remain valid.
 
 New editions carry `human_report_export_schema: nico.human_report_export.v1`.
 `supplied_human_evidence` retains the digest-verified durable intake package exactly,
