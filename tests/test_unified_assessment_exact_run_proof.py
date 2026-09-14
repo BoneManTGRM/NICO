@@ -53,7 +53,12 @@ def test_every_continuation_uses_the_run_id_returned_by_the_prior_response() -> 
 
 def test_timeout_preserves_identity_instead_of_starting_a_replacement_run() -> None:
     body = continuation_body()
-    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS; count += 1)" in body
+    assert "for (let count = 1; count <= MAX_POLL_ATTEMPTS + 1; count += 1)" in body
+    # One final observation consumes the last response without another mutation.
+    assert "if (count > MAX_POLL_ATTEMPTS) break;" in body
+    assert body.index("if (count > MAX_POLL_ATTEMPTS) break;") < body.index(
+        "const continued = await requestWithRetry("
+    )
     assert "persistExactRun(current, scope, startedAt)" in body
     assert "publishResult(current);" in body
     assert 'setPhase("timed_out")' in body
