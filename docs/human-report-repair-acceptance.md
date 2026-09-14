@@ -4,6 +4,33 @@ Scope: human evidence export, exact-edition lifecycle presentation, absent metri
 readable planning records, and assessment coverage labels. No client transmission.
 No claim of completed specialist review, QC, accessibility, or runtime parity.
 
+## Current production continuation: mobile review contract
+
+PR1597 merged as688ccb4254d2933a53063a2b453d2f072cb15d5f; both deployment
+providers and the live frontend identify that release. All required CI passed.
+Spanish production34800800422 passed fresh normal/exclusion publication and its
+simulated browser matrix. Original artifact10331980172 has SHA256
+50bbd3df4693ac3b8cc38f048317ff02f11bfd8a0740e69dcc27d1dc0d6594cb.
+All-module run6b9a0d source65 -> approved66 -> authorized67 passes exact evidence,
+provenance, final-PDF and fresh-state checks; specialist work remains unfinished,
+transmission false. Minimal-input run7dc93d rendered on688ccb passes23 original-byte
+checks, including preserved permission, absent descriptions and separate coverage.
+Full identities and artifacts are retained in the external acceptance bundle.
+
+Mobile Restart34801842005/job103845929106 then timed out at the read-only review
+locale check: it waited for `accepted-edition-v2`, while the dedicated Comprehensive
+page actually renders `final-report-independent-v1` and its corresponding localized
+heading. The authenticated live page independently confirms this contract. The
+same helper serves Chromium and WebKit. Two English/Spanish behavioral regressions
+failed before updating only the selector and expected headings; five negative cases
+preserve rejection of wrong run, language, heading and legacy workspace. All16
+focused current-surface/single-dispatch/layout checks pass. No authentication,
+approval, timeout, source-run mutation, app or report-renderer code changed.
+The initial isolated test import required unavailable Playwright; extracting the
+actual standalone helper from its AST avoids importing the browser launcher in unit
+tests. This is a test setup correction. Integration and deployed consumer retest
+remain pending at this checkpoint; no unchanged failed workflow was rerun.
+
 ## Baseline identities
 
 - Branch: main; checkout HEAD: `7fde559d83a37e35268cdc8ae8597a51625317ef`.

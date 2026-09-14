@@ -715,18 +715,18 @@ def _mobile_review_locale_surface(
     if spanish:
         assert query.get("lang") == ["es-MX"], query
     expected_heading = (
-        "Revisión final interna y autorización para el cliente."
+        "Aprueba el informe final exacto de la evaluación."
         if spanish
-        else "Internal final review and client-ready authorization."
+        else "Approve the exact final assessment report."
     )
-    workspace = page.locator("main[data-review-contract='accepted-edition-v2']")
+    workspace = page.locator("main[data-review-contract='final-report-independent-v1']")
     workspace.wait_for(state="visible", timeout=120_000)
     expected_language_prefix = "es" if spanish else "en"
     page.wait_for_function(
         """([languagePrefix, expectedHeading]) => (
           (document.documentElement.lang || '').toLowerCase().startsWith(languagePrefix)
           && document.querySelector(
-            "main[data-review-contract='accepted-edition-v2'] h1"
+            "main[data-review-contract='final-report-independent-v1'] h1"
           )?.textContent?.trim() === expectedHeading
         )""",
         arg=[expected_language_prefix, expected_heading],
