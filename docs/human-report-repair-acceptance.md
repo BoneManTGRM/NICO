@@ -87,6 +87,55 @@ Criteria A–D still require affected final production artifact checks; E requir
 the new branch gates and post-deployment production-proof results. Prior accepted
 source 66 / authorized 68 evidence above remains valid for unchanged dependencies.
 
+PR #1595 passed all 12 test shards, quality, Security Audit, and supporting gates,
+then merged as `dea3e33d9063cc127d4ba9046f664e56209f8c60`. Both deployment providers
+and the live frontend release endpoint identify that exact merge. Fresh protected
+download, review, and authorization probes still reject unauthenticated requests.
+Production proof 34792745228 then reached a genuine terminal failure for
+`comprun_f1c059ec310641d8dcce6769adec4271`: Spanish publication rejected
+`Historical genuine-failure rate: Unavailable.`. Delivery stayed blocked. This
+refines the earlier hypothesis: the browser projection gap was real, but the
+renderer also lacked a contract for the newly explicit availability label.
+
+The compact CI stage emits capitalized `Unavailable`, while strict Spanish
+structured-prose rules recognized lowercase availability only for the historical
+rate and did not handle the compact missing-value forms of required-check health.
+Other compact metric labels could remain partly untranslated. A generated-stage
+regression reproduced 52 failures and 9 passes across missing and numeric values.
+Translate only the recognized compact labels and scalar/availability forms;
+preserve zero and retained health states, and keep malformed structured prose
+rejected. Canonical evidence and report lifecycle state are unchanged.
+
+The same operational-stage review independently reproduced two value-loss paths:
+an outcome-class zero became empty text, and a recorded false default-branch
+required-check result became unavailable. Three additional regression cases failed
+before correction. Preserve numeric outcome counts, render that recorded boolean as
+green/not_green, and translate historical outcome-class names with strict validation.
+Booleans are still not accepted as measured counts or rates. Assessment permission,
+operator approval, and delivery authorization are separate and unchanged.
+
+The added compact-finalizer smoke test initially expected every intermediate
+metric line in a renderer that consolidates CI context. Inspection established
+that fixture mismatch. Exact field/label comparisons remain in the generated-stage
+tests; the finalizer test instead verifies publication, canonical zero/absence,
+Spanish prose and the unchanged approval boundary. Existing bilingual parity and
+PDF geometry tests pass without golden-file updates. The next production proof
+must confirm publication before the dependent workflows can establish acceptance.
+
+The combined parity run then exposed a real installed-translator interaction:
+v98 replaced metric labels before v87 could validate and translate the whole line,
+leaving English `Unavailable` behind (19 failures). A focused installed-chain
+regression independently reproduced it. v98 now delegates complete metric lines
+to the strict canonical grammar before phrase substitution; unknown values still
+fail closed. The decisive combined canonical parity/metric retest passed 82 tests.
+No golden artifacts were updated. Final required CI and production proof follow.
+An adversarial multiline metric input then reproduced a whole-block grammar
+rejection. The same strict translator now handles each line while preserving CRLF
+and LF endings. The focused regression failed before the two-line correction.
+CI then found the existing standalone-label contract also matched the new metric
+guard. The existing v98 regression reproduced this locally. Require the colon
+separator for metric validation; standalone translated headings remain valid.
+
 New editions carry `human_report_export_schema: nico.human_report_export.v1`.
 `supplied_human_evidence` retains the digest-verified durable intake package exactly,
 including all ten module states and digests. A verified transport digest establishes
