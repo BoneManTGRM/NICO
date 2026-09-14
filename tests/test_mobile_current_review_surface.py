@@ -9,11 +9,22 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-# Exercise the actual helper without importing the browser launcher/dependencies.
-SOURCE = Path(__file__).resolve().parents[1] / "scripts/mobile_restart_live_acceptance_v1.py"
-helper = next(node for node in ast.parse(SOURCE.read_text()).body
-              if isinstance(node, ast.FunctionDef) and node.name == "_mobile_review_locale_surface")
-exec(compile(ast.Module(body=[helper], type_ignores=[]), str(SOURCE), "exec"))
+# Exercise actual helpers without importing browser launchers/dependencies.
+def load_helper(filename, function_name):
+    source = Path(__file__).resolve().parents[1] / "scripts" / filename
+    helper = next(node for node in ast.parse(source.read_text()).body
+                  if isinstance(node, ast.FunctionDef) and node.name == function_name)
+    namespace = {"Page": Any, "Any": Any, "parse_qs": parse_qs, "urlparse": urlparse}
+    exec(compile(ast.Module(body=[helper], type_ignores=[]), str(source), "exec"), namespace)
+    return namespace[function_name]
+
+
+@pytest.fixture(params=[
+    ("mobile_restart_live_acceptance_v1.py", "_mobile_review_locale_surface"),
+    ("completed_run_two_pass_acceptance_v1.py", "_review_locale_surface"),
+])
+def proof(request):
+    return load_helper(*request.param)
 
 
 class ReviewDocument:
@@ -26,6 +37,12 @@ class ReviewDocument:
         self.heading = (
             "Aprueba el informe final exacto de la evaluación."
             if locale == "es-MX" else "Approve the exact final assessment report."
+        )
+
+        self.boundary = (
+            "Aprobar y descargar registra la aprobación del informe y el permiso de entrega al cliente en una sola acción. La revisión especializada y el control de calidad independiente siguen declarados; no se envía ningún informe automáticamente."
+            if locale == "es-MX" else
+            "Approve and download records report approval and client-delivery permission in one action. Specialist review and independent QC remain accurately disclosed; no report is sent automatically."
         )
 
     def locator(self, selector: str):
@@ -55,15 +72,15 @@ class ReviewElement:
 
     def locator(self, selector):
         assert selector == "h1"
-        return self
+        return ReviewElement(self.document, selector)
 
     def inner_text(self):
-        return self.document.heading
+        return self.document.heading if self.selector == "h1" else self.document.heading + "\n" + self.document.boundary
 
 
 @pytest.mark.parametrize("locale", ["en", "es-MX"])
-def test_completed_comprehensive_opens_current_review_surface(locale):
-    result = _mobile_review_locale_surface(ReviewDocument(locale), locale, "comprun_test")
+def test_completed_comprehensive_opens_current_review_surface(locale, proof):
+    result = proof(ReviewDocument(locale), locale, "comprun_test")
     assert result["heading"] == ReviewDocument(locale).heading
     assert result["run_id_preserved"] is True
     assert result["requested_locale_preserved"] is True
@@ -76,8 +93,17 @@ def test_completed_comprehensive_opens_current_review_surface(locale):
     ("heading", "Approve the exact final assessment report."),
     ("contract", "accepted-edition-v2"),
 ])
-def test_review_proof_rejects_wrong_run_locale_heading_or_legacy_surface(field, value):
+def test_review_proof_rejects_wrong_run_locale_heading_or_legacy_surface(field, value, proof):
     page = ReviewDocument("es-MX")
     setattr(page, field, value)
     with pytest.raises((AssertionError, TimeoutError)):
-        _mobile_review_locale_surface(page, "es-MX", "comprun_test")
+        proof(page, "es-MX", "comprun_test")
+
+
+@pytest.mark.parametrize("locale", ["en", "es-MX"])
+def test_desktop_review_requires_current_specialist_and_no_transmission_disclosure(locale):
+    page = ReviewDocument(locale)
+    page.boundary = ""
+    proof = load_helper("completed_run_two_pass_acceptance_v1.py", "_review_locale_surface")
+    with pytest.raises(AssertionError):
+        proof(page, locale, "comprun_test")

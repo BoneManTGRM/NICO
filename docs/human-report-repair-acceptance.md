@@ -30,6 +30,16 @@ The initial isolated test import required unavailable Playwright; extracting the
 actual standalone helper from its AST avoids importing the browser launcher in unit
 tests. This is a test setup correction. Integration and deployed consumer retest
 remain pending at this checkpoint; no unchanged failed workflow was rerun.
+CI34802476585 shard4/job103847755064 exposed a pre-existing assertion pinning
+both mobile and desktop consumer helpers to the obsolete selector. The desktop
+helper independently contained the same stale selector/headings and old boundary
+copy. Its two current-page cases reproduced the absence; two disclosure-negative
+cases also stopped at that absent workspace before reaching the disclosure check.
+Update the desktop helper to the same observed page contract and assert the current
+one-action/specialist-review/no-automatic-transmission disclosure. Update the
+existing projection-wait assertion without removing its wait-before-read check.
+All84 focused surface, handoff, single-dispatch and layout cases pass. Mandatory
+CI must run again on the changed candidate.
 
 ## Baseline identities
 
