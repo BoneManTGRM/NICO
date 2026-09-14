@@ -202,7 +202,9 @@ def _ci_operational_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[s
     }
     for key, label in labels.items():
         value = context.get(key)
-        if value is None or isinstance(value, bool) or value in ("", [], {}):
+        if key == "current_default_branch_required_check_health" and isinstance(value, bool):
+            rendered = "green" if value else "not_green"
+        elif value is None or isinstance(value, bool) or value in ("", [], {}):
             rendered = "Unavailable"
         else:
             rendered = str(value) if isinstance(value, (int, float)) else _text(value)
@@ -210,7 +212,7 @@ def _ci_operational_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[s
     outcome_classes = context.get("workflow_outcome_classes")
     if isinstance(outcome_classes, Mapping):
         rendered = "; ".join(
-            f"{_text(key)}={_text(value)}"
+            f"{_text(key)}={str(value) if isinstance(value, (int, float)) else _text(value)}"
             for key, value in outcome_classes.items()
             if value not in (None, "")
         )

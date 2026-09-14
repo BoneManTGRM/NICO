@@ -1833,6 +1833,20 @@ _REQUIRED_CHECK_HEALTH_ES = {
     "unavailable": "no disponible",
 }
 
+_CI_OPERATIONAL_METRIC_LABELS_ES = {
+    "Successful workflow runs": "Ejecuciones exitosas de flujos de trabajo",
+    "Non-success workflow runs": "Ejecuciones no exitosas de flujos de trabajo",
+    "Jobs observed": "Trabajos observados",
+    "Observed job success rate": "Tasa de éxito observada de trabajos",
+    "Deployments observed": "Despliegues observados",
+    "Successful deployments": "Despliegues exitosos",
+    "Non-success deployments": "Despliegues no exitosos",
+    "Historical genuine-failure rate": "Tasa histórica de fallos reales",
+    "Required-check health": "Estado de las verificaciones requeridas",
+    "Assessed-commit required-check health": "Estado de las verificaciones requeridas del commit evaluado",
+    "Current default-branch required-check health": "Estado de las verificaciones requeridas de la rama predeterminada actual",
+}
+
 
 def _ci_outcome_classes_es(match: re.Match[str]) -> str:
     raw_classes = match.group("classes").strip()
@@ -2026,6 +2040,21 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    # Compact operational stages emit explicit availability and scalar values.
+    # Translate that whole contract before legacy prose rules inspect its prefixes.
+    label, separator, metric = value.partition(": ")
+    if separator and label in _CI_OPERATIONAL_METRIC_LABELS_ES:
+        translated_label = _CI_OPERATIONAL_METRIC_LABELS_ES[label]
+        if metric == "Unavailable.":
+            return f"{translated_label}: no disponible."
+        if "check health" not in label and label != "Historical genuine-failure rate" and re.fullmatch(
+            r"\d+(?:\.\d+)?\.", metric,
+        ):
+            return f"{translated_label}: {metric}"
+        if "check health" in label and metric.endswith("."):
+            health = _REQUIRED_CHECK_HEALTH_ES.get(metric[:-1].casefold())
+            if health is not None:
+                return f"{translated_label}: {health}."
     lockfile = re.fullmatch(
         r"(?P<tool>(?:typescript|eslint|npm-audit): )?(?P<path>[A-Za-z0-9_.@/+\-]+/package-lock\.json) "
         r"is required for deterministic project-tool preparation\.", value,
@@ -2199,13 +2228,16 @@ def _structured_presentation_es(value: str) -> str | None:
         return _scanner_limitation_es(match)
 
     match = re.fullmatch(
-        r"Workflow outcome classes: (?P<classes>"
+        r"(?:Workflow|Historical workflow) outcome classes: (?P<classes>"
         r"No classified workflow outcomes retained|"
         r"[a-z_]+=\d+(?:; [a-z_]+=\d+)*)(?:\.)?",
         value,
     )
     if match is not None:
-        return _ci_outcome_classes_es(match) + "."
+        translated = _ci_outcome_classes_es(match)
+        if value.startswith("Historical workflow"):
+            translated = translated.replace("Clases de resultados", "Clases históricas de resultados", 1)
+        return translated + "."
 
     match = re.fullmatch(
         r"Historical genuine-failure rate: "
@@ -2574,6 +2606,7 @@ def _structured_presentation_es(value: str) -> str | None:
         "GitHub deployment evidence",
         "Exact-SHA source archive",
         "Historical genuine-failure rate:",
+        "Historical workflow outcome classes:",
         "JavaScript and TypeScript complexity",
         "No eligible first-party source files",
         "No eligible source files",
@@ -2595,7 +2628,8 @@ def _structured_presentation_es(value: str) -> str | None:
         "OSV lookup ",
         "OSV returned ",
     )
-    if value.startswith(structural_prefixes) or re.match(
+    is_operational_metric = value.partition(":")[0] in _CI_OPERATIONAL_METRIC_LABELS_ES
+    if value.startswith(structural_prefixes) or is_operational_metric or re.match(
         r"^(?:\d+ (?:(?:captured-commit|repository) profile item|grouped static-analysis "
         r"candidates require validation|Python source file|source parser limitation)|"
         r"[A-Za-z0-9_.+-]+: status=|"

@@ -498,7 +498,21 @@ def localize_current_report_copy_v98(value: Any) -> str:
     mixed-language presentation copy.
     """
 
-    text = _translate_structured_current_report_copy(str(value or ""))
+    from nico.comprehensive_spanish_canonical_report_v87 import (
+        _CI_OPERATIONAL_METRIC_LABELS_ES,
+        _structured_presentation_es,
+    )
+
+    raw = str(value or "")
+    stripped = raw.strip()
+    # Translate the complete metric contract before static label substitutions
+    # erase its English grammar. Keep value validation on the canonical boundary.
+    if stripped.partition(":")[0] in _CI_OPERATIONAL_METRIC_LABELS_ES:
+        translated = _structured_presentation_es(stripped)
+        if translated is not None:
+            return raw.replace(stripped, translated, 1)
+
+    text = _translate_structured_current_report_copy(raw)
     for source, target in _current_report_phrase_pairs():
         text = text.replace(source, target)
     return text
