@@ -560,13 +560,16 @@ def _functional_runtime_truth(
 ) -> tuple[dict[str, Any], list[str]]:
     human_stage = _human_runtime_stage(canonical, "functional_qa")
     dimensions = (_stage_map(canonical).get("functional_qa") or {}).get("assessment_dimensions") or {}
+    from nico.comprehensive_observation_truth import observation_truth
+    retained = observation_truth(canonical, "functional_qa")
     if (
         dimensions.get("substantive_coverage") in {"not_assessed", "excluded"}
         or "excluded" in str(human_stage.get("status") or "").casefold()
-    ):
+    ) and not retained['observed']:
+        details.update(evidence_state="not_supplied", runtime_observation_established=False, independently_verified=False)
         return _human_input_truth(canonical, "functional_qa", details, spanish=spanish), evidence
     supplied = _runtime_observation_lines(canonical, "functional_qa", "observed_results")
-    if not supplied and not canonical.get("production_acceptance"):
+    if not supplied and not retained['observed']:
         details.update(evidence_state="not_supplied", runtime_observation_established=False, independently_verified=False)
         return details, evidence
     from nico.comprehensive_observation_truth import observation_truth
@@ -627,11 +630,8 @@ def _platform_runtime_truth(
         dimensions.get("substantive_coverage") in {"not_assessed", "excluded"}
         or "excluded" in str(human_stage.get("status") or "").casefold()
     ):
-        return _human_input_truth(canonical, "platform_parity", details, spanish=spanish), evidence
+        details = _human_input_truth(canonical, "platform_parity", details, spanish=spanish)
     supplied = _runtime_observation_lines(canonical, "platform_parity", "matrix")
-    if not supplied and not canonical.get("production_acceptance"):
-        details.update(evidence_state="not_supplied", runtime_observation_established=False, independently_verified=False)
-        return details, evidence
     from nico.comprehensive_observation_truth import observation_truth
     dimensions = (
         ("desktop", "Desktop browser", "Navegador de escritorio"),
@@ -659,7 +659,8 @@ def _platform_runtime_truth(
                 else "Observed — independent verification pending"
             )
         else:
-            status = "No verificado" if spanish else "Not verified"
+            status = ("Aportado — no verificado" if spanish else "Supplied — unverified") if supplied else (
+                "No evaluado — sin observación conservada" if spanish else "Not assessed — no retained observation")
         truth.append(f"{label}: {status}")
     established = independently_verified == len(dimensions)
     details["independently_verified"] = established
@@ -678,6 +679,11 @@ def _platform_runtime_truth(
             else "Cross-platform parity: Not established"
         )
     )
+    if not supplied and not details["runtime_observation_established"]:
+        from nico.comprehensive_platform_parity_summary_v1 import canonical_platform_parity_line
+        details["status"] = "No evaluado — paridad de ejecución no establecida" if spanish else "Not assessed — runtime parity not established"
+        details["summary"] = canonical_platform_parity_line(canonical, spanish=spanish)
+        return details, [*truth, *evidence]
     details["status"] = (
         "Paridad entre plataformas establecida"
         if spanish and established
@@ -692,7 +698,10 @@ def _platform_runtime_truth(
         if spanish
         else "Supplied matrix text is retained in Supplied Human Evidence. Each platform requires retained execution evidence; text alone establishes no observation or parity."
     )
-    return details, ["; ".join(truth[:2]), "; ".join(truth[2:4]), truth[4], *evidence]
+    if not supplied:
+        details["summary"] = ("Se conservan observaciones de ejecución por dimensión; la disponibilidad, la verificación y la aceptación se informan por separado." if spanish else
+                              "Runtime observations are retained by dimension; availability, verification, and acceptance are reported separately.")
+    return details, [*truth, *evidence]
 
 
 def _human_input_truth(
@@ -742,9 +751,9 @@ def _human_input_truth(
             "summary": (
                 "Se organizaron las observaciones aportadas para revisión. Su disponibilidad no establece cobertura completa, conformidad, aceptación ni aprobación."
                 if spanish else
-                "Supplied observations were organized for review. Their availability does not establish full coverage, conformance, acceptance, or approval."
+                "Supplied statements were organized for review. Their availability does not establish full coverage, conformance, acceptance, or approval."
             ),
-            "can_conclude": ["Las observaciones aportadas están disponibles para revisión." if spanish else "Supplied observations are available for review."],
+            "can_conclude": ["Las declaraciones aportadas están disponibles para revisión." if spanish else "Supplied statements are available for review."],
             "cannot_conclude": ["No se establecen automáticamente la conformidad, la autoridad ni la aceptación." if spanish else "Conformance, authority, and acceptance are not established automatically."],
             "required_input": ["Resolver los vínculos de evidencia, la autoridad y las decisiones de revisión pendientes." if spanish else "Resolve evidence links, authority, and pending review decisions."],
             "recommended_decision": "Revisar las observaciones aportadas y resolver las brechas antes de aceptar las conclusiones." if spanish else "Review the supplied observations and resolve gaps before accepting conclusions.",
@@ -760,6 +769,16 @@ def _human_input_truth(
             "La alineación con las partes interesadas no fue evaluada porque no se aportaron objetivos, restricciones ni medidas de éxito."
             if spanish else
             "Stakeholder alignment was not assessed because no objectives, constraints, or success measures were supplied."
+        )
+    elif section_id == "platform_parity":
+        from nico.comprehensive_platform_parity_summary_v1 import canonical_platform_parity_line
+        result.update(
+            status="No evaluado — paridad de ejecución no establecida" if spanish else "Not assessed — runtime parity not established",
+            summary=canonical_platform_parity_line(canonical, spanish=spanish),
+            can_conclude=["El procesamiento terminó; no establece revisión sustantiva." if spanish else
+                          "Processing completed; it does not establish substantive review."],
+            recommended_decision="Mantener la revisión de paridad pendiente hasta conservar evidencia de ejecución." if spanish else
+                                 "Keep parity review pending until runtime evidence is retained.",
         )
     return result
 

@@ -115,8 +115,13 @@ def compose_compact_client_pdf(
     gate = PdfReader(io.BytesIO(gate_pdf))
 
     retained: list[Any] = []
+    from nico.comprehensive_pdf_reflow_v1 import _content_lines, _has_standard_header
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
+        # Apply the existing final-reflow empty-page rule before the intermediate
+        # budget. A footer-only overflow must not displace required report content.
+        if _has_standard_header(extracted) and not _content_lines(extracted):
+            continue
         lines = _meaningful_lines(extracted)
         # The companion replaces generic section summaries, not detailed stage
         # evidence. Its bounded planning summary cannot substitute for retained
@@ -192,6 +197,19 @@ def compose_compact_client_pdf(
         )
 
     total_page_count = len(retained) + reserved_count
+    if total_page_count > MAX_CLIENT_PDF_PAGES:
+        # The same lossless, table-aware reflow runs at final navigation. Apply
+        # it before this intermediate budget as well, so readable translated
+        # prose is not rejected solely because sparse pages are still separate.
+        from nico.comprehensive_pdf_reflow_v1 import compact_sparse_stage_pages
+        body = PdfWriter()
+        for page in retained:
+            body.add_page(page)
+        buffer = io.BytesIO()
+        body.write(buffer)
+        compacted, _proof = compact_sparse_stage_pages(buffer.getvalue())
+        retained = list(PdfReader(io.BytesIO(compacted)).pages)
+        total_page_count = len(retained) + reserved_count
     if total_page_count > MAX_CLIENT_PDF_PAGES:
         raise ValueError(
             "client-ready PDF cannot preserve every primary and required page within "

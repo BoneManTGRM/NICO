@@ -45,6 +45,11 @@ def _text(value: Any, limit: int = 1200) -> str:
 def _label(value: Any) -> str:
     raw = _text(value, 180)
     key = raw.casefold().replace("-", "_").replace(" ", "_")
+    if key in {"analyzer_execution_coverage", "scanner_execution_coverage"}:
+        return "Analyzer execution coverage (%)"
+    grade = re.fullmatch(r"complexity_evidence\.complexity_grades\.([a-f])", key)
+    if grade:
+        return f"Complexity grade {grade[1].upper()} (functions measured)"
     return _OUTCOME_LABELS.get(
         key,
         raw.replace("_", " ").replace("-", " ").strip().title() or "Value",
@@ -139,12 +144,20 @@ def sanitize_client_rendered_stage(stage: Mapping[str, Any]) -> dict[str, Any]:
             else:
                 values = []
         else:
+            owned_values = item.get(field)
+            if isinstance(owned_values, (list, tuple)):
+                owned_values = [
+                    f"{_label(match[1])}: {match[2]}" if (match := re.fullmatch(
+                        r"((?:analyzer_execution_coverage|scanner_execution_coverage|complexity_evidence\.complexity_grades\.[A-F])):\s*(.*)",
+                        str(value))) else value
+                    for value in owned_values
+                ]
             values = client_surface_values(
-                item.get(field),
+                owned_values,
                 limit=_line_capacity(item.get(field)),
                 item_limit=_CLIENT_SURFACE_ITEM_LIMIT,
             )
-        if field == "evidence":
+        if field == "evidence" and not (stage_id == "client_evidence_summary" or stage_id.startswith("client_human_evidence_")):
             # The full nested evidence ledger remains in canonical JSON and CSV.
             # Lower-case field paths are serialization details, not client copy;
             # keep curated evidence sentences while excluding both simple keys and

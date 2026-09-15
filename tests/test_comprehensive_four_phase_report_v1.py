@@ -274,14 +274,15 @@ def test_installer_publishes_at_terminal_pre_digest_boundary() -> None:
     reader = PdfReader(io.BytesIO(pdf))
     pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
     proof = assert_four_phase_pdf(pdf, canonical)
-    assert proof["target_page_number"] == 2
+    contents_pages = [index + 1 for index, page in enumerate(reader.pages)
+                      if (page.extract_text() or "").splitlines()[0] == "Table of Contents"]
+    assert proof["target_page_number"] == contents_pages[-1]
     assert pdf_text.count("FOUR-PHASE ASSESSMENT PROGRAM") == 1
     assert "FOUR-PHASE ASSESSMENT PROGRAM" in (
-        reader.pages[1].extract_text() or ""
+        reader.pages[proof["target_page_index"]].extract_text() or ""
     )
-    assert "FOUR-PHASE ASSESSMENT PROGRAM" not in (
-        reader.pages[2].extract_text() or ""
-    )
+    assert all("FOUR-PHASE ASSESSMENT PROGRAM" not in (page.extract_text() or "")
+               for index, page in enumerate(reader.pages) if index != proof["target_page_index"])
     for title in (
         "Automated Technical Triage",
         "Human Review by Exception",
@@ -297,7 +298,7 @@ def test_installer_publishes_at_terminal_pre_digest_boundary() -> None:
     assert completion["four_phase_program_in_pdf"] is True
     assert completion["four_phase_pdf_bookmarks_present"] is True
     assert completion["four_phase_terminal_pdf_publication"] is True
-    assert completion["four_phase_toc_page_number"] == 2
+    assert completion["four_phase_toc_page_number"] == proof["target_page_number"]
 
     contents = {
         "findings_csv": result["findings_csv"].encode("utf-8"),

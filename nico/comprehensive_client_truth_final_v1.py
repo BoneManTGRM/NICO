@@ -428,10 +428,15 @@ def _sync_executive(canonical: dict[str, Any]) -> None:
         "staffing_sequencing_and_cost",
     )
     markers = ("not assessed", "limited", "framework only", "pending stakeholder validation")
-    statuses = {
-        section_id: _text(companion._base_section_details(section_id, spanish=False).get("status"))
-        for section_id in section_ids
-    }
+    statuses = {}
+    for section_id in section_ids:
+        details = companion._base_section_details(section_id, spanish=False)
+        details = companion._human_input_truth(canonical, section_id, details, spanish=False)
+        if section_id == "functional_qa":
+            details, _ = companion._functional_runtime_truth(canonical, details, [], spanish=False)
+        elif section_id == "platform_parity":
+            details, _ = companion._platform_runtime_truth(canonical, details, [], spanish=False)
+        statuses[section_id] = _text(details["status"])
     limited = [
         section_id
         for section_id, status in statuses.items()

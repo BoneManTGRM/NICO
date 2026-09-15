@@ -9,12 +9,14 @@ from pypdf import PdfReader
 VERSION = "nico.comprehensive_pdf_layout_polish.v1"
 _MARKER = "__nico_comprehensive_pdf_layout_polish_v1__"
 
-_TOC_ROWS_PER_PAGE = 35
 _TOC_FIRST_ROW_Y = 690.0
 _TOC_ROW_PITCH = 14.0
 _TOC_FONT_SIZE = 7.5
-_TOC_MATRIX_TOP_Y = 192.0
+from nico.comprehensive_four_phase_pdf_v1 import PHASE_BOX_TOP_Y
+
+_TOC_MATRIX_TOP_Y = PHASE_BOX_TOP_Y
 _TOC_MIN_CLEARANCE = 6.0
+_TOC_ROWS_PER_PAGE = int((_TOC_FIRST_ROW_Y - _TOC_FONT_SIZE - _TOC_MATRIX_TOP_Y - _TOC_MIN_CLEARANCE) // _TOC_ROW_PITCH) + 1
 
 _REVIEW_TITLE_FONT_SIZE = 12.0
 _REVIEW_HEADING_FONT_SIZE = 8.0
@@ -79,10 +81,14 @@ def _render_polished_toc_pdf(
     pdf.setTitle("Tabla de contenido de NICO" if spanish else "NICO Table of Contents")
     pdf.setAuthor("NICO")
 
-    chunks = [
-        records[index : index + _TOC_ROWS_PER_PAGE]
-        for index in range(0, len(records), _TOC_ROWS_PER_PAGE)
-    ] or [[]]
+    # Balance complete entries across the already budgeted pages. The final page
+    # owns the phase box; no one-entry continuation is created by a fixed chunk.
+    import math
+    rows_per_page = max(1, math.ceil(len(records) / toc_page_count))
+    if rows_per_page > _TOC_ROWS_PER_PAGE:
+        raise ValueError("Contents page budget is too small for legible entries")
+    chunks = [records[index:index + rows_per_page]
+              for index in range(0, len(records), rows_per_page)] or [[]]
 
     for chunk_index, chunk in enumerate(chunks, start=1):
         pdf.setFillColorRGB(0.06, 0.09, 0.16)
@@ -380,7 +386,7 @@ def _render_polished_review_pdf(
     def section_block(section: Mapping[str, Any], section_number: int) -> KeepInFrame:
         evidence = _unique(
             section.get("evidence") or [],
-            limit=3,
+            limit=max(3, len(section.get("evidence") or [])) if section.get("id") == "platform_parity" else 3,
             item_limit=900 if spanish else 430,
         )
         findings = _unique(section.get("findings") or [], limit=2)

@@ -17,11 +17,11 @@ _ES_REPOSITORY_ONLY = (
 )
 _EN_NOT_ASSESSED = (
     "Repository indicator review not established; runtime platform parity not assessed; "
-    "human input required."
+    "specialist acceptance not established."
 )
 _ES_NOT_ASSESSED = (
     "Revisión de indicadores del repositorio no establecida; "
-    "paridad de plataforma en ejecución no evaluada; se requiere intervención humana."
+    "paridad de plataforma en ejecución no evaluada; aceptación especializada no establecida."
 )
 
 
@@ -66,19 +66,18 @@ def canonical_platform_parity_status(canonical: Mapping[str, Any]) -> str:
         dimensions = record.get("assessment_dimensions")
         if isinstance(dimensions, Mapping) and dimensions.get("substantive_coverage") == "excluded":
             return "excluded"
+    identity = canonical.get("identity") or {}
     for record in records:
-        status = _normalized(
-            record.get("status")
-            or record.get("state")
-            or record.get("stage_status")
-            or record.get("completion_status")
-        )
-        if status.startswith("complete") or status in {
-            "passed",
-            "ready",
-            "available",
-            "review-required",
-        }:
+        evidence = record.get("evidence")
+        if not isinstance(evidence, Mapping):
+            evidence = record
+        source = evidence.get("source_indicator_identity") or {}
+        paths = evidence.get("source_indicator_paths")
+        if (isinstance(paths, list) and paths
+                and all(isinstance(path, str) and path.strip() for path in paths)
+                and evidence.get("source_indicator_state") == "retained_observation"
+                and all(identity.get(key) and source.get(key) == identity[key]
+                        for key in ("repository", "commit_sha", "run_id"))):
             return "complete_repository_only"
     return "not_assessed"
 

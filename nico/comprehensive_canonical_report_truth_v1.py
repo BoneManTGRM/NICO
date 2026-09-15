@@ -336,7 +336,7 @@ def apply_canonical_score_truth(assessment: dict[str, Any]) -> dict[str, Any]:
     adjusted_text = "not scored" if adjusted is None else f"{adjusted}/100"
     output["executive_summary"] = (
         f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
-        f"Weighted technical maturity is {technical_text}; independently evidence-adjusted readiness is {adjusted_text}. "
+        f"Weighted technical maturity is {technical_text}; the evidence-adjusted technical score is {adjusted_text}. This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety. "
         "The assessment combines repository health, exact-location findings, deeper architecture evidence, a six-month execution roadmap, "
         "staffing sequence, and a full evidence appendix. Internal technical review and exact-package authorization remain mandatory before client delivery."
     )

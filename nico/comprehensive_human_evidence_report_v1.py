@@ -419,12 +419,12 @@ def _human_module_stage_specs(
                     "summary": (
                         ("Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación." if spanish else "This module was excluded from scope; its retained inputs provide no assessment coverage or approval.")
                         if excluded else
-                        "Estas observaciones fueron aportadas explícitamente por "
+                        "Estas declaraciones fueron aportadas explícitamente por "
                         "personas y se conservan sin inferencias del repositorio. "
                         "No modifican automáticamente las puntuaciones técnicas ni "
                         "conceden aprobación o autoridad de entrega."
                         if spanish
-                        else "These observations were explicitly supplied by people "
+                        else "These statements were explicitly supplied by people "
                         "and are retained without repository inference. They do not "
                         "automatically change technical scores or grant approval or "
                         "delivery authority."
@@ -452,13 +452,13 @@ def _client_summary_stage(
             else "Client Evidence Summary"
         ),
         "summary": (
-            "Los metadatos del encargo aportados por el cliente y la evidencia "
-            "observada por personas se conservan como contexto explícito de "
+            "Los metadatos del encargo y las declaraciones aportadas por el cliente "
+            "se conservan como contexto explícito de "
             "revisión. Los datos faltantes no se infieren. Estos valores no "
             "modifican las puntuaciones técnicas ni conceden aprobación o "
             "autoridad de entrega."
             if spanish
-            else "Client-supplied engagement metadata and human-observed evidence "
+            else "Client-supplied engagement metadata and supplied statements "
             "are retained as explicit review context. Missing facts are not "
             "inferred. These values do not change technical scores or grant "
             "approval or delivery authority."
@@ -536,8 +536,8 @@ def _localize_retained_stage(
     if stage_id == "client_evidence_summary":
         output["title"] = "Resumen de evidencia del cliente"
         output["summary"] = (
-            "Los metadatos del encargo aportados por el cliente y la evidencia "
-            "observada por personas se conservan como contexto explícito de "
+            "Los metadatos del encargo y las declaraciones aportadas por el cliente "
+            "se conservan como contexto explícito de "
             "revisión. Los datos faltantes no se infieren. Estos valores no "
             "modifican las puntuaciones técnicas ni conceden aprobación o "
             "autoridad de entrega."
@@ -575,7 +575,7 @@ def _localize_retained_stage(
         output["summary"] = (
             "Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación."
             if str(output.get("status") or "").casefold() == "excluded"
-            else "Estas observaciones fueron aportadas explícitamente por personas "
+            else "Estas declaraciones fueron aportadas explícitamente por personas "
             "y se conservan sin inferencias del repositorio. No modifican "
             "automáticamente las puntuaciones técnicas ni conceden aprobación "
             "o autoridad de entrega."

@@ -225,3 +225,42 @@ Current and historical delivery tests exercise read/retry ordering, unchanged st
 records/receipts and rejection of altered artifacts or authority. Approval, delivery
 and report-truth suites pass 63 tests. Protected integration and the real production
 companion download remain required; local reconstructed output is not production proof.
+
+
+## Reopened report-content acceptance — 2026-09-15 UTC
+
+D2/D6 and A2 are reopened by inspection of the retained approved artifact.
+Earlier approval/download, release and digest proofs establish narrower facts;
+they do not establish truthful report prose or correct contents grouping. No
+new production acceptance is claimed here. The current repair base is
+`d261dda781e8cbdf9c39e06c7e6b596d355b4d94`. Today has no supplied exact cutoff.
+Original evidence and private identities remain in the existing private checkpoint.
+
+| Repair | Failure → hypothesis → smallest correction | Counterexample / fixed-condition result → next action |
+|---|---|---|
+| R1 / A2 | A bounded technical score was called independently adjusted readiness → shared cover templates overstate meaning → describe scored repository controls and explicit limits, without changing scores | Same retained source keeps both scores at 93; synthetic bilingual assertions reject readiness/professional-review implications → inspect actual new edition |
+| R2 / D2 | Stage not assessed but review label assessed → static default promoted processing → project sections and executive status from retained inputs and exact-source observations | Absent, supplied-unverified, wrong-source, and positive retained execution cases preserve distinct states; all four configured runtime dimensions remain visible → cross-format production proof |
+| R3 / D2 | Absent QA and incident inputs described as reconciled → unconditional provider summaries → derive narrative from actual input population and processing | Omit, supply cases only, supply results only, supply both, clear, exclude; supplied verification labels cannot create independent review → bilingual fixed-source publication |
+| R4 / D6 | One-entry contents continuation after phase box → fixed chunks and first-TOC target → balance entries, reserve legible phase-box geometry, put box on final contents page | Longer/shorter bilingual contents, final record, page references and bookmarks; empty footer-only overflow removed before budget using existing reflow rule; frozen historical matrix location retained → final assembled artifact inspection |
+| R5 | Raw metric paths and vague approval lookup → generated labels and lifecycle placeholders → readable values/units, new-source marker for actual approval-page and receipt references | Literal supplied source remains unchanged; variable record location, missing target rejection, retry determinism and legacy reference behavior tested → final authorized companion/manifest proof |
+| R6 | Operator decision could be mistaken for specialist completion → retain explicit separate states and explanation | Existing operator/delivery suites preserve pending specialist review and no transmission; optional specialist omissions remain nongating → verify actual records |
+
+The fixed-source local reconstruction is an engineering comparison, not a new
+product edition, specialist review, owner approval, or delivered final report.
+The score contract retains seven scored technical sections and named assurance
+deductions; no calculation defect has been demonstrated. Hash goldens change only
+where generated wording/layout changed; cross-language semantic, structure,
+reference, byte-binding, and locale-switch assertions remain required.
+
+Ordering relevant to static wording is edition generation and locale selection;
+static text has no independent permission ordering effect. Existing stale-edition,
+wrong-run, altered-byte, durable-decision retry, and separate authorization checks
+remain required. Changed substantive conclusions require fresh owner review.
+The single ordinary approval/download action and authentication are unchanged.
+
+Engineering verification is in progress. Protected CI, merge, actual serving
+identity, corrected frozen product edition, owner action, final all-page visual
+inspection, exact bytes and receipt/manifest checks remain open. Rollback uses the
+previous qualified commit through the existing providers, preserving the durable
+run store and every source, edition, decision, receipt and artifact; no reset,
+state migration, protection bypass or historical approval reuse is part of this repair.

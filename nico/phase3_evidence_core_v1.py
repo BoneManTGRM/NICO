@@ -46,9 +46,9 @@ def _state(context: Mapping[str, Any], module_id: str) -> str:
     status = _text(module.get("status"), 80).casefold()
     if _excluded(context, module_id):
         return "excluded"
-    if status in {"complete", "partial"}:
-        verification = " ".join(_field(context, module_id, "verification_status")).casefold()
-        return "retained_verified" if verification in {"verified", "retained_verified", "verified_by_authorized_source"} else "supplied_unverified"
+    if status in {"complete", "partial"} or any((module.get("evidence") or {}).values()):
+        # A supplier's verification label is a claim, not an independently bound review.
+        return "supplied_unverified"
     return "not_supplied"
 
 
@@ -207,6 +207,21 @@ def functional_qa_provider(context: dict[str, Any]) -> dict[str, Any]:
     input_fields = (("functional_qa", "test_cases"), ("functional_qa", "observed_results"))
     input_state = _input_state(context, input_fields)
     synthesis = _qa_result_synthesis(cases, observed)
+    if cases and observed:
+        summary = "Supplied test cases and result text were processed into a draft QA synthesis. "
+    elif cases:
+        summary = "Supplied test cases were processed; result text was not supplied. "
+    elif observed:
+        summary = "Supplied result text was processed; test cases were not supplied. "
+    elif input_state == "excluded":
+        summary = "Optional functional QA was excluded from scope; no journey results were processed. "
+    else:
+        summary = "Optional QA test cases and runtime results were not supplied. No journey results were parsed or reconciled. "
+    summary += (
+        "Supplied claims are not independently verified runtime observations or acceptance."
+        if supplied else
+        "Repository test inventory processing does not establish executed runtime journeys; functional QA was not assessed."
+    )
     missing = [] if supplied or input_state == "excluded" else [
         _missing(
             "runtime_functional_qa",
@@ -225,7 +240,7 @@ def functional_qa_provider(context: dict[str, Any]) -> dict[str, Any]:
             )
         )
     evidence = {
-        "repository_test_inventory_state": "retained_verified",
+        "repository_test_inventory_state": "retained_observation" if "test_path_count" in architecture else "not_supplied",
         "test_path_count": int(architecture.get("test_path_count") or 0),
         "test_commands_detected": [item for item in workflows.get("commands_detected") or [] if "test" in str(item).casefold()],
         "runtime_evidence_state": input_state,
@@ -238,7 +253,7 @@ def functional_qa_provider(context: dict[str, Any]) -> dict[str, Any]:
     }
     return _result(
         context,
-        summary="Repository test inventory, supplied journey evidence, parsed results, coverage gaps, and draft QA conclusions were reconciled without treating repository tests or model synthesis as runtime acceptance.",
+        summary=summary,
         functional_qa=evidence,
         assessment_dimensions=_assessment_dimensions(input_state, _input_module_states(context, input_fields)),
         missing_evidence=missing,
@@ -265,7 +280,9 @@ def platform_parity_provider(context: dict[str, Any]) -> dict[str, Any]:
         )
     ]
     evidence = {
-        "source_indicator_state": "retained_verified",
+        "source_indicator_state": "retained_observation" if sampled else "not_supplied",
+        "source_indicator_paths": sampled,
+        "source_indicator_identity": legacy._identity(context),
         "ios_paths": [path for path in sampled if any(token in path.casefold() for token in ("ios", ".swift", "xcode"))][:30],
         "android_paths": [path for path in sampled if any(token in path.casefold() for token in ("android", ".kt", ".gradle"))][:30],
         "runtime_matrix_state": input_state,
@@ -277,7 +294,13 @@ def platform_parity_provider(context: dict[str, Any]) -> dict[str, Any]:
     }
     return _result(
         context,
-        summary="Repository platform indicators and supplied feature/device observations were reconciled and divergence candidates surfaced without promoting source indicators or an unapproved matrix to runtime/device parity.",
+        summary=(
+            "Supplied platform matrix text was parsed for draft divergence candidates. "
+            "Source path indicators and supplied claims do not establish runtime observations, independent verification, or parity."
+            if supplied else
+            "An optional runtime platform matrix was not supplied; no supplied runtime results were parsed or reconciled. "
+            "Source path indicators, when retained, describe repository paths only. Runtime platform parity was not assessed."
+        ),
         platform_parity=evidence,
         assessment_dimensions=_assessment_dimensions(input_state, _input_module_states(context, input_fields)),
         missing_evidence=missing,

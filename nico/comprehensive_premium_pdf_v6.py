@@ -30,7 +30,7 @@ class _PdfStoryBuilder:
             PageBreak(), p("Executive Decision Brief", c["h1"]),
             p(f"NICO assessed {_text(identity.get('repository'))} at immutable commit {_text(identity.get('commit_sha'))}. "
               + (f"Weighted technical maturity is {maturity.get('score_band_label')} ({score_value}/100). " if isinstance(score_value, int) else "Technical maturity is not scored. ")
-              + (f"Evidence-Adjusted readiness is {int(adjusted)}/100. " if isinstance(adjusted, (int, float)) else "Evidence-Adjusted readiness is not scored. ")
+              + (f"Evidence-Adjusted technical score is {int(adjusted)}/100. " if isinstance(adjusted, (int, float)) else "Evidence-Adjusted technical score is not scored. ")
               + f"{limitations.get('individual_limitation_records', 0)} distinct evidence limitation record(s) remain. Technical score, evidence assurance, and client-delivery authorization are independent; an authorized internal reviewer must approve the exact package before client release.", c["body"]),
             p("Decision dashboard", c["h2"]),
             table([["Dimension", "Result", "Decision meaning / condition"],

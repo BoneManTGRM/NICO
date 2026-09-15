@@ -280,7 +280,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    structured_fields = {"source_observation", "structured_tables", "profile_coverage"}
+    structured_fields = {"source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state"}
     def without_structured(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}

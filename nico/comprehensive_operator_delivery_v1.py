@@ -108,6 +108,7 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     receipt_bound = source.get("json", {}).get("operator_approval_record_schema") == RECEIPT_VERSION
     source_pdf = base64.b64decode(source["pdf_base64"], validate=True)
     corrected, _changes = _render_source(source_pdf, client_delivery_authorized=True,
+        resolve_approval_references=source.get("json", {}).get("reader_reference_schema") == "nico.reader_references.v1",
         approval_receipt_json=json.dumps(approved["review"], sort_keys=True) if receipt_bound else "",
         repair_current_truth=bool(report_package_from_record(record).get("json", {}).get("human_report_export_schema")))
     canonical = report_package_from_record(record).get('json', {})

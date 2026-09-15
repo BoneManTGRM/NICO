@@ -49,12 +49,12 @@ def _install_spanish_presentation_score_summary_contract() -> dict[str, Any]:
 
     extended_score_summary = re.compile(
         r"Technical maturity remains based on exact-commit technical controls\. "
-        r"Evidence-Adjusted readiness is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
+        r"Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
         r"technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
         r"(?P<review>\d+) review-required candidates and (?P<material>\d+) "
         r"confirmed material findings as explicit review context\. Candidate volume, "
-        r"clustering and reviewer workload do not change numeric security or "
-        r"readiness scores\. Candidate volume and reviewer workload are operational "
+        r"clustering and reviewer workload do not change numeric (?:security or readiness|technical) "
+        r"scores\. Candidate volume and reviewer workload are operational "
         r"review metrics and have no numeric technical-maturity or Evidence-Adjusted "
         r"score effect\."
     )
@@ -70,7 +70,7 @@ def _install_spanish_presentation_score_summary_contract() -> dict[str, Any]:
             return current(value)
         return (
             "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-            f"La preparación ajustada por evidencia es {match.group('adjusted')}/100 "
+            f"La puntuación técnica ajustada por evidencia es {match.group('adjusted')}/100 "
             f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
             f"conserva {match.group('review')} candidatos que requieren revisión y "
             f"{match.group('material')} hallazgos materiales confirmados como contexto "

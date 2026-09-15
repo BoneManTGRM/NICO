@@ -170,7 +170,7 @@ def _install_english_retained_titles() -> dict[str, bool]:
         if stage_id == "client_evidence_summary":
             output["title"] = "Client Evidence Summary"
             output["summary"] = (
-                "Client-supplied engagement metadata and human-observed evidence are "
+                "Client-supplied engagement metadata and supplied statements are "
                 "retained as explicit review context. Missing facts are not inferred. "
                 "These values do not change technical scores or grant approval or "
                 "delivery authority."
@@ -187,7 +187,7 @@ def _install_english_retained_titles() -> dict[str, bool]:
             output["summary"] = (
                 "This module was excluded from scope; its retained inputs provide no assessment coverage or approval."
                 if str(output.get("status") or "").casefold() == "excluded"
-                else "These observations were explicitly supplied by people and are retained "
+                else "These statements were explicitly supplied by people and are retained "
                 "without repository inference. They do not automatically change technical "
                 "scores or grant approval or delivery authority."
             )
