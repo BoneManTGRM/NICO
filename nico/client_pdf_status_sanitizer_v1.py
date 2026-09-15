@@ -147,7 +147,7 @@ def _dedupe_boundary(value: Any, seen: set[str]) -> tuple[Any, bool]:
     return replaced, changed
 
 
-def sanitize_client_pdf_status(pdf: bytes) -> bytes:
+def sanitize_client_pdf_status(pdf: bytes, *, spanish: bool | None = None) -> bytes:
     if not pdf.startswith(b"%PDF"):
         raise ValueError("client PDF status sanitizer requires a valid PDF")
     reader = PdfReader(io.BytesIO(pdf))

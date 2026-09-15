@@ -221,7 +221,9 @@ def _validate_final_surfaces(
             f"client report exceeds the {MAX_CLIENT_PDF_PAGES}-page client boundary"
         )
 
-    spanish = any(title in combined for title in _REVIEW_SECTION_TITLES_ES)
+    # Report-owned locale selection must agree with the renderer. Retained
+    # source titles or literal quotations can legitimately use another language.
+    spanish = legacy._is_spanish(canonical)
     required_titles = _REVIEW_SECTION_TITLES_ES if spanish else _REVIEW_SECTION_TITLES
     missing_review_sections = [title for title in required_titles if title not in combined]
     if missing_review_sections:
@@ -363,7 +365,8 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             review_pdf=review_pdf,
             ci_boundary_pdf=ci_boundary_pdf,
             human_evidence_pdf=human_evidence_pdf,
-        )
+        ),
+        spanish=spanish,
     )
     validation = _validate_final_surfaces(
         canonical,
