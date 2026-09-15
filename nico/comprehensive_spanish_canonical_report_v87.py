@@ -391,6 +391,11 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Delivery Status", "Estado de entrega"),
     ("Presented score", "Puntuación presentada"),
     ("Evidence readiness", "Preparación de la evidencia"),
+    ("Evidence-adjusted technical score", "Puntuación técnica ajustada por evidencia"),
+    (
+        "This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety.",
+        "Esta señal ponderada de los controles del repositorio evaluados no establece preparación operativa, cobertura exhaustiva, revisión profesional independiente ni seguridad del despliegue.",
+    ),
     ("Immutable commit SHA", "SHA del commit inmutable"),
     ("Evidence ledger ID", "ID del libro mayor de evidencia"),
     ("Customer scope", "Alcance del cliente"),
@@ -2088,6 +2093,10 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    tool_count = re.fullmatch(r"([A-Za-z0-9_-]+) — (Raw candidates|Review-required candidates): (\d+)", value)
+    if tool_count:
+        label = "Candidatos sin procesar" if tool_count[2] == "Raw candidates" else "Candidatos que requieren revisión"
+        return f"{tool_count[1]} — {label}: {tool_count[3]}"
     # Compact operational stages emit explicit availability and scalar values.
     # Translate that whole contract before legacy prose rules inspect its prefixes.
     label, separator, metric = value.partition(": ")

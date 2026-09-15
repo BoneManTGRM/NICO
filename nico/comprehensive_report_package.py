@@ -619,6 +619,8 @@ def _markdown(
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else localized("NOT SCORED")
+    adjusted_score = maturity.get("evidence_readiness_score")
+    adjusted_score_text = f"{adjusted_score}/100" if isinstance(adjusted_score, (int, float)) else localized("Pending")
     constraints = _constraints(assessment, stages)
     from nico.comprehensive_engagement_metadata_v1 import (
         _literal,
@@ -668,7 +670,9 @@ def _markdown(
         f"## {localized('Canonical Maturity Signal')}",
         f"- {localized('Level')}: {localized(_text(maturity.get('level') or 'Pending'))}",
         f"- {localized('Presented score')}: {score_text}",
-        f"- {localized('Evidence readiness')}: {localized(_text(maturity.get('evidence_readiness_score') or 'Pending'))}",
+        f"- {localized('Evidence-adjusted technical score')}: {adjusted_score_text}",
+        "",
+        localized("This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety."),
         "",
         f"## {localized('Technical Scorecard')}",
     ]

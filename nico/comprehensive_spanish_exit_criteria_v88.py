@@ -202,6 +202,18 @@ def _translate_complexity_method(method: str) -> str | None:
 
 
 def _translate_generated_complexity_contract(value: Any) -> str | None:
+    current = re.fullmatch(
+        r"Cyclomatic complexity: (?P<complexity>\d+) independent paths; method: (?P<method>[^;\r\n]+); "
+        r"(?:source: retained exact-SHA architecture evidence|exact commit match: (?P<exact>True|False))",
+        str(value or ""),
+    )
+    if current:
+        method = _translate_complexity_method(current["method"])
+        if method is None:
+            return None
+        source = ("fuente: evidencia de arquitectura conservada del SHA exacto" if current["exact"] is None
+                  else f"coincidencia exacta del commit: {'Sí' if current['exact'] == 'True' else 'No'}")
+        return f"Complejidad ciclomática: {current['complexity']} rutas independientes; método: {method}; {source}"
     text = str(value or "").strip()
     if not text:
         return None

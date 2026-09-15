@@ -362,3 +362,46 @@ The existing English real run can be retained; this does not justify another
 assessment. Static grammar has no independent ordering effect; full edition and
 locale integration tests retain the existing freeze/identity checks. Next: finish
 required checks, protected merge/deploy and repeat the failed production predicate.
+
+
+## Companion score and remaining reader labels — 2026-09-15 UTC
+
+Actual retained English Markdown/HTML still called the technical-score alias
+“Evidence readiness”. This reopens R1 despite the corrected PDF cover. Six minimal
+EN/es-MX cases fail before correction (93, zero, absent). The shared Markdown
+constructor now names the evidence-adjusted technical score, includes /100 units,
+and explains the weighted repository-control boundary: no operational readiness,
+exhaustive coverage, independent professional review or deployment-safety claim.
+The structured alias and calculations are preserved; zero no longer becomes Pending.
+
+Actual companion inspection also found two owned scanner tool-count field paths,
+a planning status enum, generated human-evidence state and generated complexity
+metric labels. Seven reduced assertions failed. Their existing constructors now
+emit readable labels and complexity units. Tool identifiers, distinct counts,
+source paths, exact facts already retained, supplied literal text and structured
+keys remain intact; EN/es-MX tests include literal lookalikes and input immutability.
+100 focused/affected checks and35 companion/Spanish/literal checks pass. Static
+labels have no independent event ordering; full fixed-source publication and locale
+integration still exercise edition generation and retained deterministic identity.
+This does not change approval, consent, authentication, scoring or finalization.
+
+The earlier Spanish-only conclusion about retaining the pending English edition
+is superseded by this substantive companion correction. The pending source must
+not inherit its old approval or be silently replaced. Existing same-locale controls
+reuse frozen successful sources; alternate-language editions require approved
+sources and reject same-locale requests. Recovery is for actual blocked publication,
+not arbitrary regeneration. A necessary new real source at the original assessed
+commit may be prepared only after all known engineering repairs and deployment
+checks close. Preserve every old source, artifact and decision. Next: qualify exact
+publication comparisons, protected integration and actual production, then inspect
+the corrected reviewable source before requesting genuine owner approval.
+
+
+Fixed-condition publication comparison reproduced the current three English
+fingerprints on the original head. New Markdown/HTML differ only by the bounded
+score label, /100 units when numeric, and explanatory sentence. Every PDF page
+compares identically after substituting only the independently computed old/new
+companion digests; all23/48/22 page totals and outline destinations are unchanged.
+Only those demonstrated exact-byte expectations were updated. The comparison
+script retains semantic, bilingual, manifest and repeat-generation assertions.
+Actual real-source inspection remains a separate gate; this is fixture evidence.

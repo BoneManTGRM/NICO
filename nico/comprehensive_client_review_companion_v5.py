@@ -139,6 +139,9 @@ def _values(value: Any, *, limit: int = 8, item_limit: int = 850) -> list[str]:
                 value = raw.get(field)
                 if value is not None and not isinstance(value, (Mapping, list, tuple)):
                     text = str(value).strip()
+                    if field == "status":
+                        text = {"review_required": "Review required", "not_assessed": "Not assessed",
+                                "not_established": "Not established"}.get(text, text)
                     if text:
                         parts.append(text)
             aliases = raw.get('finding_aliases')

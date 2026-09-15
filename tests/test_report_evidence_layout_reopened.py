@@ -74,6 +74,28 @@ def test_canonical_workload_summary_uses_technical_score_meaning():
     assert "Evidence-Adjusted technical score is 93/100" in result["summary"]
 
 
+@pytest.mark.parametrize("spanish", [False, True])
+@pytest.mark.parametrize("score", [93, 0, None])
+def test_companion_maturity_score_has_bounded_meaning_and_preserves_values(spanish, score):
+    from nico.comprehensive_report_package import _markdown, _semantic_html
+    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation
+    assessment = {"maturity_signal": {"presented_score": 93,
+                  "evidence_readiness_score": score}}
+    before = deepcopy(assessment)
+    markdown = _markdown({}, assessment, [], "2026-09-15T00:00:00Z",
+                         localize_presentation=_translate_presentation if spanish else None)
+    label = "Puntuación técnica ajustada por evidencia" if spanish else "Evidence-adjusted technical score"
+    value = ("Pendiente" if spanish else "Pending") if score is None else f"{score}/100"
+    boundary = ("no establece preparación operativa, cobertura exhaustiva, revisión profesional independiente ni seguridad del despliegue"
+                if spanish else "does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety")
+    for output in (markdown, _semantic_html(markdown, "Synthetic score regression")):
+        assert f"{label}: {value}" in output
+        assert boundary in output
+        assert "Evidence readiness:" not in output
+        assert "Preparación de la evidencia:" not in output
+    assert assessment == before
+
+
 @pytest.mark.parametrize("provider", [functional_qa_provider, platform_parity_provider])
 def test_absent_optional_inputs_are_not_reconciled(provider):
     result = provider({key: "synthetic" for key in (
@@ -155,6 +177,65 @@ def test_owned_metric_lines_keep_values_with_readable_labels():
     assert "complexity_evidence.complexity_grades.A" not in text
     literal = {"stage_id": "client_human_evidence_functional_qa", "evidence": lines}
     assert sanitize_client_rendered_stage(literal) == literal
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_scanner_tool_metric_labels_keep_tool_identity_and_counts(spanish):
+    from nico.comprehensive_client_surface_structure_cleanup_v1 import sanitize_client_rendered_stage
+    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation
+    lines = ["scanner_triage.finding_summary.by_tool.osv-scanner.raw: 22",
+             "scanner_triage.finding_summary.by_tool.osv-scanner.review_required: 21"]
+    stage = {"stage_id": "deep_scanner_triage", "evidence": lines}
+    before = deepcopy(stage)
+    result = sanitize_client_rendered_stage(stage)["evidence"]
+    if spanish:
+        result = [_translate_presentation(line) for line in result]
+    assert result == (["osv-scanner — Candidatos sin procesar: 22", "osv-scanner — Candidatos que requieren revisión: 21"]
+                      if spanish else ["osv-scanner — Raw candidates: 22", "osv-scanner — Review-required candidates: 21"])
+    assert stage == before
+    literal = {"stage_id": "client_human_evidence_functional_qa", "evidence": lines}
+    assert sanitize_client_rendered_stage(literal) == literal
+
+
+def test_planning_status_label_does_not_rewrite_literal_title():
+    from nico.comprehensive_client_review_companion_v5 import _values
+    records = [{"title": "Literal review_required title", "status": "review_required"}]
+    before = deepcopy(records)
+    assert _values(records) == ["Literal review_required title · Review required"]
+    assert records == before
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_generated_human_evidence_state_is_readable_and_literal_input_is_preserved(spanish):
+    from nico.comprehensive_human_evidence_report_v1 import _human_module_stage_specs
+    snapshot = {"human_evidence": {"provided_module_ids": ["functional_qa"], "modules": {
+        "functional_qa": {"evidence": {"test_cases": ["Literal supplied_unverified case"]}}}}}
+    before = deepcopy(snapshot)
+    specs = _human_module_stage_specs(snapshot, spanish=spanish)
+    text = str(specs)
+    assert ("Suministrada; sin verificación independiente" if spanish else "Supplied; not independently verified") in text
+    assert "Literal supplied_unverified case" in text
+    assert snapshot == before
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_new_complexity_fact_labels_explain_metric_without_changing_measurement(spanish):
+    from nico.comprehensive_decision_content_restoration_v66 import _synthesized_complexity_findings
+    from nico.comprehensive_spanish_exit_criteria_v88 import _translate_generated_complexity_contract
+    hotspots = [{"path": "src/literal_name.ts", "line": 8, "name": "literal_name",
+                 "cyclomatic_complexity": 36, "method": "typescript_compiler_ast"}]
+    before = deepcopy(hotspots)
+    finding = _synthesized_complexity_findings(hotspots, "a" * 40)[0]
+    for field in ("fact", "evidence"):
+        text = finding[field]
+        if spanish:
+            text = _translate_generated_complexity_contract(text)
+        assert text is not None
+        assert ("Complejidad ciclomática: 36 rutas independientes" if spanish else "Cyclomatic complexity: 36 independent paths") in text
+        assert "typescript_compiler_ast" in text
+        assert "cyclomatic_complexity=" not in text
+    assert finding["path"] == "src/literal_name.ts"
+    assert hotspots == before
 
 
 @pytest.mark.parametrize("spanish", [False, True])
