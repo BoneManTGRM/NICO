@@ -660,6 +660,14 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "La evidencia de commits, solicitudes de incorporación, flujos de trabajo, trabajos y despliegues se revisó como historial acotado del proceso de entrega.",
     ),
     (
+        "No delivery-process observations were retained for this stage. Operational history was not assessed.",
+        "No se conservaron observaciones del proceso de entrega para esta etapa. No se evaluó el historial operativo.",
+    ),
+    (
+        "Retained commit, pull-request, and job counts are bounded delivery-process context. Their availability does not establish deployment history, independent review, or operational readiness.",
+        "Los conteos conservados de commits, solicitudes de incorporación y trabajos son contexto acotado del proceso de entrega. Su disponibilidad no establece el historial de despliegue, la revisión independiente ni la preparación operativa.",
+    ),
+    (
         "Stakeholder and business alignment remains an explicit human-context boundary; NICO did not infer unprovided objectives or approvals.",
         "La alineación comercial y de las partes interesadas sigue siendo un límite explícito de contexto humano; NICO no infirió objetivos ni aprobaciones no aportados.",
     ),

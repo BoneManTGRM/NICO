@@ -626,6 +626,7 @@ def _platform_runtime_truth(
 ) -> tuple[dict[str, Any], list[str]]:
     human_stage = _human_runtime_stage(canonical, "platform_parity")
     dimensions = (_stage_map(canonical).get("platform_parity") or {}).get("assessment_dimensions") or {}
+    excluded = dimensions.get("substantive_coverage") == "excluded" or "excluded" in str(human_stage.get("status") or "").casefold()
     if (
         dimensions.get("substantive_coverage") in {"not_assessed", "excluded"}
         or "excluded" in str(human_stage.get("status") or "").casefold()
@@ -679,6 +680,8 @@ def _platform_runtime_truth(
             else "Cross-platform parity: Not established"
         )
     )
+    if excluded:
+        return details, [*truth, *evidence]
     if not supplied and not details["runtime_observation_established"]:
         from nico.comprehensive_platform_parity_summary_v1 import canonical_platform_parity_line
         details["status"] = "No evaluado — paridad de ejecución no establecida" if spanish else "Not assessed — runtime parity not established"
@@ -847,6 +850,16 @@ def substantive_review_sections(
         elif section["id"] == "historical_trends_and_change_failure":
             assessment = _assessment(canonical)
             operational = assessment.get("ci_cd_operational_health")
+            context = canonical.get("ci_operational_context") or {}
+            workflow_count = (operational.get("workflow_run_count", operational.get("observed_run_count", 0))
+                              if isinstance(operational, Mapping) else 0)
+            workflow_count = max(int(workflow_count or 0), int(context.get("successful_runs") or 0) + int(context.get("non_success_runs") or 0))
+            if workflow_count == 0:
+                details["summary"] = (
+                    "No se conservaron observaciones de resultados de flujos de trabajo. Los incidentes, las reversiones y los tiempos de recuperación siguen sin evaluarse salvo que exista evidencia específica."
+                    if spanish else
+                    "No workflow outcome observations were retained. Incidents, rollbacks, and recovery times remain unassessed unless specific evidence is retained."
+                )
             if isinstance(operational, Mapping):
                 taxonomy = operational.get("outcome_taxonomy")
                 evidence = _values(

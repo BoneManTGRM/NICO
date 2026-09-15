@@ -133,6 +133,11 @@ def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
                 "Supplied incident statements were processed as unverified claims. " if incidents
                 else "Incident evidence was not supplied. "
             ) + "Activity volume and workflow counts do not establish incident rates or measured recovery."
+        if stage_id == "developer_delivery_process":
+            from nico.comprehensive_native_providers import delivery_process_summary
+            retained = (output.get("stage_results") or {}).get(stage_id) or {}
+            evidence = retained.get("evidence") or raw
+            stage["summary"] = delivery_process_summary(evidence)
         if stage_id == "risk_reduction_and_executive_briefing":
             stage["status"] = "review_required"
             stage["summary"] = (

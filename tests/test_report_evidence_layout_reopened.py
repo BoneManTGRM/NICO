@@ -218,3 +218,30 @@ def test_qa_input_narratives_have_canonical_spanish_translation(fields):
     translated = _translate_presentation_field(text, "summary")
     assert translated != text
     assert "Supplied" not in translated and "were not supplied" not in translated
+
+
+def test_absent_delivery_history_does_not_claim_provider_review():
+    from nico.comprehensive_native_providers import delivery_process_provider
+    context = {key: 'synthetic' for key in ('run_id', 'repository', 'commit_sha', 'evidence_ledger_id', 'customer_id', 'project_id')}
+    result = delivery_process_provider(context)
+    assert 'were reviewed' not in result['summary']
+    assert 'not assessed' in result['summary']
+
+
+def test_absent_workflow_history_is_not_described_as_retained_outcomes():
+    canonical = absent_canonical()
+    canonical['ci_operational_context'] = {'successful_runs': 0, 'non_success_runs': 0}
+    section = next(s for s in substantive_review_sections(canonical, spanish=False) if s['id'] == 'historical_trends_and_change_failure')
+    assert 'No workflow outcome observations were retained' in section['summary']
+
+
+def test_genuine_delivery_counts_survive_canonical_projection():
+    from nico.comprehensive_report_package import _stage_summary
+    from nico.comprehensive_client_truth_canonical_v2 import _normalize_stage_truth
+    stage = _stage_summary('developer_delivery_process', {'status': 'complete', 'evidence': {'commits_returned': 2, 'pull_requests_returned': 3, 'jobs_observed': 4}})
+    result = _normalize_stage_truth({'stage_summaries': [stage]})['stage_summaries'][0]
+    assert result['commits_returned'] == 2
+    assert result['pull_requests_returned'] == 3
+    assert result['jobs_observed'] == 4
+    assert 'Retained commit' in result['summary']
+    assert 'does not establish' in result['summary']

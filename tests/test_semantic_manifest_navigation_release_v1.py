@@ -320,7 +320,8 @@ def test_spanish_semantic_toc_keeps_bounded_rows_above_the_four_phase_matrix() -
 
     assert len(toc_pages) == 2  # Supplied-evidence appendix adds the 36th entry.
     assert "Evidencia humana aportada" in "\n".join(toc_pages)
-    assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in toc_pages[0]
+    assert all("PROGRAMA DE EVALUACIÓN EN CUATRO FASES" not in page for page in toc_pages[:-1])
+    assert toc_pages[-1].index("Registro de revisión humana y aprobación de artefactos exactos") < toc_pages[-1].index("PROGRAMA DE EVALUACIÓN EN CUATRO FASES")
     assert (
         "Registro de revisión humana y aprobación de artefactos exactos"
         in "\n".join(toc_pages)

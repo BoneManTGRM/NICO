@@ -424,7 +424,20 @@ def delivery_process_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = _repo(context)
     activity = repo.get("activity_evidence") if isinstance(repo.get("activity_evidence"), dict) else {}
     workflow = repo.get("workflow_evidence") if isinstance(repo.get("workflow_evidence"), dict) else {}
-    return _result(context, summary="Commit, pull-request, workflow, job, and deployment evidence were reviewed as bounded delivery-process history.", evidence={"commits_returned": activity.get("commits_returned", 0), "pull_requests_returned": activity.get("pull_requests_returned", 0), "merged_pull_requests": activity.get("merged_pull_requests", 0), "open_pull_requests": activity.get("open_pull_requests", 0), "jobs_observed": workflow.get("jobs_observed", 0), "job_success_rate": workflow.get("job_success_rate")})
+    evidence = {"commits_returned": activity.get("commits_returned", 0), "pull_requests_returned": activity.get("pull_requests_returned", 0), "merged_pull_requests": activity.get("merged_pull_requests", 0), "open_pull_requests": activity.get("open_pull_requests", 0), "jobs_observed": workflow.get("jobs_observed", 0), "job_success_rate": workflow.get("job_success_rate")}
+    return _result(context, summary=delivery_process_summary(evidence), evidence=evidence)
+
+
+def delivery_process_summary(evidence: Any) -> str:
+    """Describe retained counts without turning provider completion into review."""
+    values = evidence if isinstance(evidence, dict) else {}
+    observed = any(isinstance(values.get(key), (int, float)) and not isinstance(values[key], bool) and values[key] > 0
+                   for key in ("commits_returned", "pull_requests_returned", "jobs_observed"))
+    return (
+        "Retained commit, pull-request, and job counts are bounded delivery-process context. Their availability does not establish deployment history, independent review, or operational readiness."
+        if observed else
+        "No delivery-process observations were retained for this stage. Operational history was not assessed."
+    )
 
 
 def stakeholder_alignment_provider(context: dict[str, Any]) -> dict[str, Any]:

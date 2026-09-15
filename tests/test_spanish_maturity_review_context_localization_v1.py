@@ -18,7 +18,7 @@ def test_production_maturity_review_context_sentence_localizes_with_dynamic_trut
     assert "review-required candidates" not in localized
     assert "Candidate volume and reviewer workload" not in localized
     assert "La madurez técnica sigue basándose en controles técnicos del commit exacto." in localized
-    assert "La preparación ajustada por evidencia es 93/100 frente a una madurez técnica de 93/100." in localized
+    assert "La puntuación técnica ajustada por evidencia es 93/100 frente a una madurez técnica de 93/100." in localized
     assert "NICO conserva 691 candidatos que requieren revisión y 0 hallazgos materiales confirmados" in localized
     assert "El volumen de candidatos y la carga de trabajo del revisor" in localized
 

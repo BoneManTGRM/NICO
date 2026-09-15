@@ -140,12 +140,13 @@ def _bind_final_pdf_layout() -> dict[str, Any]:
     """Bind the approved PDF geometry before any client artifact is rendered."""
 
     from nico.comprehensive_pdf_layout_polish_v1 import (
+        _TOC_ROWS_PER_PAGE,
         install_comprehensive_pdf_layout_polish_v1,
     )
 
     layout = install_comprehensive_pdf_layout_polish_v1()
-    if layout.get("toc_rows_per_page") != 35:
-        raise ValueError("localized report 35-row TOC layout was not installed")
+    if layout.get("toc_rows_per_page") != _TOC_ROWS_PER_PAGE:
+        raise ValueError("localized report contents geometry was not installed")
     if float(layout.get("review_small_font_size") or 0) < 6.75:
         raise ValueError("localized report readable review typography was not installed")
     return layout
@@ -496,7 +497,7 @@ def _finalize_artifact_navigation(
     from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
 
     # The locale endpoint runs in the web process, while the original PDF was produced
-    # by the isolated final-report worker. Explicitly bind the same 35-row geometry in
+    # by the isolated final-report worker. Explicitly bind the same contents geometry in
     # this process before rebuilding navigation, then restore the four-phase matrix and
     # bookmarks that lived on the removed stale TOC page.
     _bind_final_pdf_layout()

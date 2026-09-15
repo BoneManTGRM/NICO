@@ -289,6 +289,9 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         return value
     evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
     retained_structure = {key: deepcopy(evidence[key]) for key in structured_fields if key in evidence}
+    if stage_id == "developer_delivery_process":
+        retained_structure.update({key: deepcopy(evidence[key]) for key in (
+            "commits_returned", "pull_requests_returned", "jobs_observed") if key in evidence})
     complexity = result.get("complexity_evidence")
     if isinstance(complexity, dict) and isinstance(complexity.get("profile_coverage"), dict):
         retained_structure.setdefault("profile_coverage", deepcopy(complexity["profile_coverage"]))

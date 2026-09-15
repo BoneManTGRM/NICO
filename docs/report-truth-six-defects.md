@@ -264,3 +264,20 @@ inspection, exact bytes and receipt/manifest checks remain open. Rollback uses t
 previous qualified commit through the existing providers, preserving the durable
 run store and every source, edition, decision, receipt and artifact; no reset,
 state migration, protection bypass or historical approval reuse is part of this repair.
+
+CI integration continuation (2026-09-15 UTC, PR #1609): the protected checks
+exposed a stale locale-only 35-row guard and a parity-section overwrite of
+explicit scope exclusion. The guard now checks the geometry-derived capacity;
+the existing excluded-scope projection survives dimension rendering. The original
+exclusion tests remain unchanged. The focused integration retest passes 81 tests.
+Other failed expectations required obsolete readiness prose, raw coverage keys,
+processing-only parity completion or the first-page phase box; their replacements
+retain counts, negative cases, source literals and final navigation checks.
+
+The shared narrative audit also reproduced a delivery-history provider claiming
+review with no retained observations and a review section claiming retained workflow
+outcomes at zero observed runs. Small corrections derive those narratives from
+retained counts; a positive retained-count projection remains intact. Thirty-seven
+focused assertions pass. Bilingual fixed-source artifact comparisons and all
+protected checks run again before merge. No new real run, owner decision or
+production acceptance is claimed by these engineering fixtures.
