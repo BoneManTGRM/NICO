@@ -294,3 +294,9 @@ fixed-source bilingual assembly reproduced the production guard failure and the
 minimal test captured three failures before the two-label repair. All 54 affected
 semantic assertions now pass; final assembly and protected production checks
 must pass before P7 can close. No guard, source quotation, score or decision changes.
+
+The same companion inspection also exposed `mutable_operational_trend` and `none`
+as reader-facing CI state values. Two failing bilingual assertions precede a
+field-specific label correction in the same formatter. Structured source values
+and unrelated quoted text remain literal. This affects companion presentation;
+actual reviewable exports must be reinspected before owner approval.

@@ -387,6 +387,11 @@ def _flatten_scalars(
 
 
 def _format_value(key: str, value: Any, *, spanish: bool) -> str:
+    leaf = key.rsplit(".", 1)[-1]
+    if leaf == "classification" and value == "mutable_operational_trend":
+        return "Contexto operativo mutable" if spanish else "Mutable operational context"
+    if leaf in {"score_effect", "technical_score_effect"} and value == "none":
+        return "Ninguno" if spanish else "None"
     if isinstance(value, bool):
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     if value is None:
