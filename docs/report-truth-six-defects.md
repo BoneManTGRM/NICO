@@ -300,3 +300,17 @@ as reader-facing CI state values. Two failing bilingual assertions precede a
 field-specific label correction in the same formatter. Structured source values
 and unrelated quoted text remain literal. This affects companion presentation;
 actual reviewable exports must be reinspected before owner approval.
+
+### Shared planning narrative follow-up — 2026-09-15 UTC
+
+The pre-approval UI critique found the planning provider still saying supplied
+requirements and constraints contributed when both retained collections were
+empty. The PDF's canonical roadmap wording was already bounded, but that did not
+prove the stage-history narrative. Four fixed-input assertions failed before the
+change. The provider now names retained requirement mappings and stakeholder
+constraints separately as included or absent; four exact es-MX UI messages and
+owned report translations cover those states. Omit/supply/clear checks preserve
+positive mappings, literal constraints, source input, and proposed-only authority.
+The focused affected suite passes 72 tests. No score, artifact binding, review,
+or delivery control changed. Protected checks and deployed workflow remain the
+next gate; this is not a report acceptance claim.

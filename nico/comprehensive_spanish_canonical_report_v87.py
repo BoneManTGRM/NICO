@@ -1643,6 +1643,11 @@ _PRESENTATION_REPLACEMENTS += (
         "Resolve remaining architectural debt, platform/runtime evidence gaps, and supplied stakeholder/requirements objectives.",
         "Resolver la deuda arquitectónica restante, las brechas de evidencia de plataforma y ejecución y los objetivos aportados de partes interesadas y requisitos.",
     ),
+    ("The existing 0-30/31-90/91-180 roadmap framework was drafted from technical priorities and evidence gaps without creating commitments.", "El marco existente de hoja de ruta de 0-30/31-90/91-180 días se redactó a partir de prioridades técnicas y brechas de evidencia, sin crear compromisos."),
+    ("No requirement mappings were retained.", "No se conservaron correspondencias de requisitos."),
+    ("Retained requirement mappings were included.", "Se incluyeron las correspondencias de requisitos conservadas."),
+    ("No stakeholder constraints were retained.", "No se conservaron restricciones de las partes interesadas."),
+    ("Retained stakeholder constraints were included.", "Se incluyeron las restricciones conservadas de las partes interesadas."),
     (
         "The existing 0-30/31-90/91-180 roadmap framework was drafted from technical priorities, evidence gaps, supplied requirements, and supplied constraints without creating commitments.",
         "El marco existente de hoja de ruta de 0-30/31-90/91-180 días se redactó a partir de prioridades técnicas, brechas de evidencia, requisitos aportados y restricciones aportadas, sin crear compromisos.",

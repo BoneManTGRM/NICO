@@ -279,3 +279,38 @@ def test_genuine_delivery_counts_survive_canonical_projection():
     assert result['jobs_observed'] == 4
     assert 'Retained commit' in result['summary']
     assert 'does not establish' in result['summary']
+
+
+@pytest.mark.parametrize("requirements,constraints", [(False, False), (True, False), (False, True), (True, True)])
+def test_roadmap_narrative_tracks_retained_optional_inputs_and_clear(requirements, constraints):
+    from nico.phase3_planning_synthesis_v1 import roadmap_provider
+    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation
+    context = {key: "synthetic" for key in (
+        "run_id", "repository", "commit_sha", "evidence_ledger_id", "customer_id", "project_id")}
+    context["prior_stage_results"] = {
+        "requirements_traceability": {"requirements_traceability": {"mappings":
+            [{"requirement_id": "REQ-LITERAL", "requirement": "source: verified"}] if requirements else []}},
+        "stakeholder_and_business_alignment": {"stakeholder_alignment": {"constraints":
+            ["source: reviewed"] if constraints else []}}}
+    before = deepcopy(context)
+    result = roadmap_provider(context)
+    text = result["summary"]
+    assert ("Retained requirement mappings were included." if requirements else
+            "No requirement mappings were retained.") in text
+    assert ("Retained stakeholder constraints were included." if constraints else
+            "No stakeholder constraints were retained.") in text
+    assert "without creating commitments" in text
+    assert result["roadmap"][0]["requirements"] == (["REQ-LITERAL"] if requirements else [])
+    assert result["roadmap"][0]["constraints"] == (["source: reviewed"] if constraints else [])
+    assert context == before
+    spanish = _translate_presentation(text)
+    assert "sin crear compromisos" in spanish
+    assert "were retained" not in spanish and "were included" not in spanish
+    from pathlib import Path
+    ui = Path("apps/web/app/assessment/AssessmentSpanishLocalization.ts").read_text()
+    assert f'["{text.lower()}",' in ui
+    context["prior_stage_results"] = {}
+    cleared = roadmap_provider(context)
+    assert "No requirement mappings were retained." in cleared["summary"]
+    assert "No stakeholder constraints were retained." in cleared["summary"]
+    assert not cleared["roadmap"][0]["requirements"] and not cleared["roadmap"][0]["constraints"]
