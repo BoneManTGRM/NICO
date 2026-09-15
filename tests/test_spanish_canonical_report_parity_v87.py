@@ -1105,9 +1105,11 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # and HTML fingerprints are unchanged; PDF totals and matching bilingual bookmarks
 # now include those retained pages. Exact English before/after equality, bilingual semantic
 # parity, finding references, and all page-count gates remain active.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('1866cafc02216d917983fc0cd793cb24c9b447ecb38291dac17b8ffd13ad60af', 18943), 'html': ('63a8af3ea3b01ae077c11957a7ec858833a0f18f43f0a728154d59e93b5633f8', 23296), 'pdf_base64': ('2181922a8e20895331120efb76782b22fb33c25416b8ad6272c51de21d9af5c9', 185900), 'pdf_sha256': '437f6dcfb7e69f615b13fd5b3a898c3daab83309e6e6b33ac0a3451e46c133f8', 'page_count': 23}
-RICH_ENGLISH_GOLDEN = {'markdown': ('502d7fcd0dc3429f980b97dff2814b6703c0b3e4f6e02fdd3a27e03c794a62ad', 20689), 'html': ('87a9de336e14442f1a2f3b47166aa5d737510b63682894eca43dec1d57824cf9', 25348), 'pdf_base64': ('ea0fb160c361ad9106850f8b3ce93908215c864a318a0dd68497cfcbf6a2a0e0', 288808), 'pdf_sha256': '2814e1f6cde1ff70e771b009cb9236b078f67d093c93465b12cab0f4c7da170e', 'page_count': 48}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('a399b033b5f5439e34f6bd4e41e1b7208b674a12e4aee2e62ae4d51aaf9747ca', 19032), 'html': ('1a505743252b810804f0d2f975e7d9a352484e107d648c2c8ff65d074628d736', 23364), 'pdf_base64': ('54cc95e8c1873514fcc35f2649260d73b4fd88a28fe88496a87e9304f38495a9', 181868), 'pdf_sha256': 'cd757621e9db67186d069bdbaba79e1e38e63456697e1b244efacf3410a31086', 'page_count': 22}
+# Reader-label repair: fixed-condition outputs differ only in the owned timeout
+# label and exact companion digests. All semantic and pagination assertions remain.
+SMALL_ENGLISH_GOLDEN = {'markdown': ('f90828ce1a5e8beb74a16aa8fe458d3f1124f61cadf3c166619c07c356c6d0fd', 18943), 'html': ('0fbd7d26a9a7293ea8147e35b4a107a7a0701cf904c9e59cdb451e7e058f210f', 23296), 'pdf_base64': ('dcddea03e0d75f06e80ef9c4dd85b38ee1aeae1a904303b8715c77f80d61b75a', 185900), 'pdf_sha256': '225f38baa3d2d1ed9f3318177207ae8540ff26809e4d5b6d6def4235e99bd769', 'page_count': 23}
+RICH_ENGLISH_GOLDEN = {'markdown': ('f6213aba20b990bb0b23e8e55f0881dd98c422c0ad32541fd744760062b50425', 20689), 'html': ('253896e7e5123b2d23f90182cd276cba19a4a041ee43e9482e60ce8e55563995', 25348), 'pdf_base64': ('77ba3ce15611e38c0047b591c5bacebd4bf1282fae53fb0b97bb1170b9dd1f42', 288800), 'pdf_sha256': '129b684baaedb473479e7b7dad9141780d64737de1b2f1058c46a9b852b54e0b', 'page_count': 48}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('d9f7fc949ee439cfca5288b06bfb4a5d26a8e0e35da6f26a3b16ae529ae0f4df', 19032), 'html': ('6d9d92a8255f298be85dc2201ee5427cb8834c842afb0f827922606e5664995f', 23364), 'pdf_base64': ('f37e395ee780bd8a139641b6e2f090907de865ff2a2f344f7536df34f77377cc', 181868), 'pdf_sha256': '154102061fb1d3f897a469c88dbda9a1b5917a07f8680cb8fa62f94e0a1e2692', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",

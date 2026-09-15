@@ -332,3 +332,13 @@ sentences and is layout evidence, not a corrected production edition. New-source
 builder tests verify that newly generated roadmap prose uses reader labels while
 retaining exact machine references. Actual replacement-edition inspection and
 fresh owner approval remain mandatory.
+
+Protected CI rejected stale exact-byte English goldens. A detached baseline at
+78d4dd3 reproduced all three old fingerprints exactly. The same input fixtures
+on d62c495 differ in Markdown/HTML only by the owned `timed_out` → `timed out`
+label. Page-by-page PDF comparison proves only that label and the exact updated
+companion digests differ (including wrapped digest text). All 23/48/22 pages and
+outline destinations are unchanged. The capture scripts retained the semantic,
+Spanish parity, manifest and repeat-generation assertions and passed. Only the
+three observed fingerprints were updated; no semantic assertion was removed.
+Protected checks on the resulting head remain required before merge.
