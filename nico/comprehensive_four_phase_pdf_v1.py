@@ -19,6 +19,9 @@ def _overlay(
     canonical: Mapping[str, Any],
     spanish: bool,
     size: tuple[float, float],
+    *,
+    regular_font: str = "Helvetica",
+    bold_font: str = "Helvetica-Bold",
 ) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -48,28 +51,28 @@ def _overlay(
 
     heading = style(
         "fp-heading",
-        "Helvetica-Bold",
+        bold_font,
         8.2,
         9.2,
         colors.HexColor("#0C2740"),
     )
     header = style(
         "fp-header",
-        "Helvetica-Bold",
+        bold_font,
         6.8,
         8.4,
         colors.white,
     )
     cell = style(
         "fp-cell",
-        "Helvetica",
+        regular_font,
         6.8,
         8.4,
         colors.HexColor("#243B53"),
     )
     status = style(
         "fp-status",
-        "Helvetica-Bold",
+        bold_font,
         6.8,
         8.4,
         colors.HexColor("#8A4B08"),

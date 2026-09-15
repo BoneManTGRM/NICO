@@ -209,7 +209,7 @@ def render_delivery_companion_presentation(edition: Mapping[str, Any]) -> dict[s
     result["artifact_digests"] = _artifact_digests(result["reports"])
     result["report_artifact_digest"] = canonical_sha256(result["artifact_digests"])
     result["rendering_derivation"] = {
-        "version": "nico.authorized_lifecycle_presentation.v2",
+        "version": "nico.authorized_lifecycle_presentation.v3",
         "kind": "owned_lifecycle_presentation_correction", "new_human_approval": False,
         "authoritative_delivery_manifest_sha256": edition["accepted_edition_manifest_sha256"],
         "original_artifact_digests": deepcopy(edition["artifact_digests"]),

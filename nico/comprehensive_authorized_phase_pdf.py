@@ -1,6 +1,7 @@
 """Refresh only the owned phase overlay after delivery authority validation."""
 import io
 from copy import deepcopy
+from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ContentStream
@@ -34,6 +35,42 @@ def _groups(operations):
         raise ValueError('unbalanced_phase_pdf_graphics')
 
 
+def _portable_font_options():
+    """Own new aliases; never remap fonts used by historical validators."""
+    import reportlab
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    directory = Path(reportlab.__file__).resolve().parent / 'fonts'
+    names = ('NICOAuthorizedPhase', 'NICOAuthorizedPhase-Bold')
+    for name, filename in zip(names, ('Vera.ttf', 'VeraBd.ttf')):
+        if name not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(name, str(directory / filename)))
+    pdfmetrics.registerFontFamily(names[0], normal=names[0], bold=names[1],
+                                  italic=names[0], boldItalic=names[1])
+    return {'regular_font': names[0], 'bold_font': names[1]}
+
+
+def _text_fonts_embedded(operations, resources):
+    fonts = resources.get('/Font', {})
+    fonts = fonts.get_object() if hasattr(fonts, 'get_object') else fonts
+    active = None
+    saved = []
+    for args, op in operations:
+        if op == b'q':
+            saved.append(active)
+        elif op == b'Q':
+            active = saved.pop() if saved else None
+        elif op == b'Tf':
+            active = fonts.get(args[0])
+        elif op == b'Tj' and any(str(value).strip() for value in args):
+            font = active.get_object() if active is not None else {}
+            descriptor = font.get('/FontDescriptor')
+            if descriptor is None or not descriptor.get_object().get('/FontFile2'):
+                return False
+    return True
+
+
 def refresh_authorized_phase_pdf(pdf, canonical):
     """Replace an exact known overlay, preserving all other page content.
 
@@ -55,20 +92,26 @@ def refresh_authorized_phase_pdf(pdf, canonical):
     writer = PdfWriter(clone_from=reader)
     page = writer.pages[target]
     size = float(page.mediabox.width), float(page.mediabox.height)
-    current_overlay = PdfReader(io.BytesIO(_overlay(source, spanish, size)))
+    font_options = _portable_font_options()
+    current_overlay = PdfReader(io.BytesIO(_overlay(source, spanish, size, **font_options)))
     current_text = _text_operations(ContentStream(current_overlay.pages[0].get_contents(), current_overlay).operations)
     known_text = [current_text]
-    for status in ('blocked_pending_authorized_human_approval', 'approved_pending_delivery_authorization'):
+    for status in ('authorized', 'blocked_pending_authorized_human_approval', 'approved_pending_delivery_authorization'):
         phases[3]['status'] = status
-        old = PdfReader(io.BytesIO(_overlay(source, spanish, size)))
-        known_text.append(_text_operations(ContentStream(old.pages[0].get_contents(), old).operations))
+        # Retained overlays can come from either the embedded-font worker or the
+        # historical API process. Recognize both without changing legacy aliases.
+        for options in ({}, font_options):
+            old = PdfReader(io.BytesIO(_overlay(source, spanish, size, **options)))
+            known_text.append(_text_operations(ContentStream(old.pages[0].get_contents(), old).operations))
     stream = ContentStream(page.get_contents(), writer)
     candidates = [(start, end) for start, end in _groups(stream.operations)
                   if _text_operations(stream.operations[start:end]) in known_text]
     if len(candidates) != 1:
         raise ValueError('authorized_phase_overlay_not_uniquely_identified')
     start, end = candidates[0]
-    if _text_operations(stream.operations[start:end]) == current_text:
+    owned_operations = stream.operations[start:end]
+    if (_text_operations(owned_operations) == current_text
+            and _text_fonts_embedded(owned_operations, page['/Resources'])):
         return pdf
     # Remove the complete isolated overlay: no hidden stale text beneath new ink.
     stream.operations = stream.operations[:start] + stream.operations[end:]
