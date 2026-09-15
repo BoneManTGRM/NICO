@@ -119,6 +119,7 @@ const COPY = {
     deliveryCertificateDigest: "Delivery authorization certificate",
     notIssued: "Not issued",
     technicalRecord: "Technical review record",
+    retainedEditionRecords: "Download retained edition records",
     confirmFirst: "Confirm that you reviewed the exact report and authorize its approval and client delivery with the disclosed limitations.",
     decisionNoteRequired: "Add a clear review note before requesting more evidence or rejecting delivery.",
     approvedNotice: "Report approved, client delivery authorized, and the exact authorized final PDF downloaded. Specialist review/QC remains separate. No report has been sent.",
@@ -215,6 +216,7 @@ const COPY = {
     deliveryCertificateDigest: "Certificado de autorización de entrega",
     notIssued: "No emitido",
     technicalRecord: "Registro técnico de revisión",
+    retainedEditionRecords: "Descargar registros de la edición conservada",
     confirmFirst: "Confirma que revisaste el informe exacto y autorizas su aprobación y entrega al cliente con las limitaciones declaradas.",
     decisionNoteRequired: "Agrega una nota clara antes de solicitar más evidencia o rechazar la entrega.",
     approvedNotice: "Informe aprobado, entrega al cliente autorizada y PDF final autorizado exacto descargado. La revisión especializada/QC sigue separada. No se ha enviado el informe.",
@@ -474,6 +476,19 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const deliveryCertificateDigest = String(
     deliveryCertificate.delivery_authorization_certificate_sha256 || "",
   );
+  const retainedEditionExportReady = Boolean(operatorReady && operatorApprovalCompleted
+    && manifestDigest && !loading && reviewArtifactIdentity.run_id === runId.trim());
+
+  function downloadRetainedEditionRecords(): void {
+    if (!retainedEditionExportReady) return;
+    // Export the authenticated retained payload verbatim. This supplementary
+    // inspection action neither renders reports nor creates approval authority.
+    const records = {review_artifact_identity: reviewArtifactIdentity,
+      operator_approved_edition: edition};
+    downloadBlob(new Blob([JSON.stringify(records, null, 2)], {type: "application/json"}),
+      safeFilename(`nico-${runId.trim()}-revision-${reviewArtifactIdentity.revision}-retained-edition.json`,
+        "nico-retained-edition.json"));
+  }
 
   function canonicalUrl(path: string): string {
     return new URL(`/api/nico${path}`, window.location.origin).href;
@@ -938,7 +953,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
       </>}
     </section>
 
-    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary><pre className={styles.code}>{JSON.stringify({
+    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary>
+      {operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={!retainedEditionExportReady} onClick={downloadRetainedEditionRecords}>{copy.retainedEditionRecords}</button> : null}
+      <pre className={styles.code}>{JSON.stringify({
       status: result.status,
       operator_approval_status: result.operator_approval_status,
       human_review_completed: result.human_review_completed,
