@@ -76,6 +76,7 @@ def _assert_bound_report(result):
     assert result["report_package"]["json"] == canonical
     stage = next(row for row in canonical["stage_summaries"] if row["stage_id"] == "six_month_roadmap")
     assert package["package_id"] in "\n".join(stage["evidence"])
+    assert " | review_candidate_summary | " not in "\n".join(stage["evidence"])
     assert "Invented generic work" not in json.dumps(stage)
     assert canonical["human_review_required"] is True
     assert canonical["client_delivery_allowed"] is False

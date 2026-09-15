@@ -119,10 +119,10 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
             continue
         evidence.append(
             f"{_text(category).title()}: raw={_integer(counts.get('raw'))}; "
-            f"confirmed_material={_integer(counts.get('material'))}; "
-            f"review_required={_integer(counts.get('review_required'))}; "
-            f"excluded_test_only={_integer(counts.get('excluded_test_only'))}; "
-            f"approved_or_nonblocking={_integer(counts.get('approved_or_nonblocking'))}."
+            f"confirmed material={_integer(counts.get('material'))}; "
+            f"review required={_integer(counts.get('review_required'))}; "
+            f"excluded test only={_integer(counts.get('excluded_test_only'))}; "
+            f"approved or nonblocking={_integer(counts.get('approved_or_nonblocking'))}."
         )
 
     findings: list[str] = []
@@ -136,6 +136,7 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
         installed = _text(item.get("installed_version"))
         fixed = _text(item.get("fixed_version"))
         disposition = _text(item.get("disposition") or "review_required")
+        disposition_label = disposition.replace("_", " ")
         details = [
             value
             for value in (
@@ -144,7 +145,7 @@ def _candidate_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[str, A
                 f"installed={installed}" if installed else "",
                 f"fixed={fixed}" if fixed else "",
                 f"location={location}" if location else "",
-                f"disposition={disposition}",
+                f"disposition={disposition_label}",
             )
             if value
         ]

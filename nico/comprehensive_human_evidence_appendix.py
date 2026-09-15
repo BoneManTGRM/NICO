@@ -30,8 +30,8 @@ def render_human_evidence_appendix(canonical: Mapping, *, spanish: bool) -> byte
     def paragraph(value, style=body):
         return Paragraph(escape(str(value)).replace('\n', '<br/>'), style)
     story = [paragraph('Evidencia humana aportada' if spanish else 'Supplied Human Evidence', styles['Title']),
-             paragraph('supplied_unverified — No establece pruebas de ejecución ni revisión especializada.' if spanish
-                       else 'supplied_unverified — Supplied statements do not establish runtime testing or specialist review.')]
+             paragraph('Aportado sin verificar — No establece pruebas de ejecución ni revisión especializada.' if spanish
+                       else 'Supplied, unverified — Supplied statements do not establish runtime testing or specialist review.')]
     for module_id in provided:
         module = package['modules'][module_id]
         label = _MODULE_LABEL_ES.get(module_id, module['label']) if spanish else module['label']
@@ -50,7 +50,7 @@ def render_human_evidence_appendix(canonical: Mapping, *, spanish: bool) -> byte
         canvas.saveState()
         canvas.setFont('Helvetica', 8)
         canvas.drawString(40, document.pagesize[1] - 26,
-                          ('Evidencia humana aportada' if spanish else 'Supplied Human Evidence') + ' | supplied_unverified')
+                          ('Evidencia humana aportada | Aportado sin verificar' if spanish else 'Supplied Human Evidence | Supplied, unverified'))
         canvas.restoreState()
     SimpleDocTemplate(buffer, leftMargin=40, rightMargin=40, topMargin=42,
                       bottomMargin=65, invariant=1).build(story, onFirstPage=page_header, onLaterPages=page_header)

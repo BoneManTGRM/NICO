@@ -370,13 +370,30 @@ _SOURCE_COPY_ES = {
 }
 
 
+_SOURCE_COPY_EN = {
+    "source_module": "Source module",
+    "import": "Import",
+    "http_call": "HTTP call",
+    "storage_call": "Storage call",
+    "process_call": "Process call",
+    "route_declaration": "Route declaration",
+    "declared_container_configuration": "Declared container configuration",
+    "declared_provider_configuration": "Declared provider configuration",
+    "declared_deployment_manifest": "Declared deployment manifest",
+    "outbound_network_destination_unresolved": "Outbound network destination unresolved",
+    "storage_target_and_access_policy_unresolved": "Storage target and access policy unresolved",
+    "child_process_privilege_boundary_unresolved": "Child process privilege boundary unresolved",
+    "incoming_request_authorization_unverified": "Incoming request authorization unverified"
+}
+
+
 def _source_cell(value: Any, *, spanish: bool) -> str:
     if value is None:
         return "No evaluado" if spanish else "Not assessed"
     if isinstance(value, bool):
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     text = str(value)
-    return _SOURCE_COPY_ES.get(text, text) if spanish else text
+    return (_SOURCE_COPY_ES if spanish else _SOURCE_COPY_EN).get(text, text)
 
 
 def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:

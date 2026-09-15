@@ -300,3 +300,45 @@ as reader-facing CI state values. Two failing bilingual assertions precede a
 field-specific label correction in the same formatter. Structured source values
 and unrelated quoted text remain literal. This affects companion presentation;
 actual reviewable exports must be reinspected before owner approval.
+
+### Shared planning narrative follow-up — 2026-09-15 UTC
+
+The pre-approval UI critique found the planning provider still saying supplied
+requirements and constraints contributed when both retained collections were
+empty. The PDF's canonical roadmap wording was already bounded, but that did not
+prove the stage-history narrative. Four fixed-input assertions failed before the
+change. The provider now names retained requirement mappings and stakeholder
+constraints separately as included or absent; four exact es-MX UI messages and
+owned report translations cover those states. Omit/supply/clear checks preserve
+positive mappings, literal constraints, source input, and proposed-only authority.
+The focused affected suite passes 72 tests. No score, artifact binding, review,
+or delivery control changed. Protected checks and deployed workflow remain the
+next gate; this is not a report acceptance claim.
+
+The same pre-approval R5 inspection also found internal labels in source tables,
+roadmap gap references, workflow outcome text, scanner provenance, candidate
+counts/dispositions and the human-evidence appendix header. Corrections are at the
+owned label constructors. Machine gap references, source paths, retained records,
+counts, digest values and literal evidence remain unchanged. The appendix
+regression now recognizes both historical and corrected renderer-owned headers;
+it still checks every supplied literal and all module boundaries.
+
+Reduced label assertions fail on the prior implementation and pass after repair;
+56 focused checks and47 affected source/provenance/candidate/render checks pass.
+A broader run passed153 checks; its one fixture API/identity error was corrected
+and rerun in the focused suite. Full fixed-source English/es-MX reconstruction
+passes assembly/localization guards at51/50 pages. It retains historical canonical
+sentences and is layout evidence, not a corrected production edition. New-source
+builder tests verify that newly generated roadmap prose uses reader labels while
+retaining exact machine references. Actual replacement-edition inspection and
+fresh owner approval remain mandatory.
+
+Protected CI rejected stale exact-byte English goldens. A detached baseline at
+78d4dd3 reproduced all three old fingerprints exactly. The same input fixtures
+on d62c495 differ in Markdown/HTML only by the owned `timed_out` → `timed out`
+label. Page-by-page PDF comparison proves only that label and the exact updated
+companion digests differ (including wrapped digest text). All 23/48/22 pages and
+outline destinations are unchanged. The capture scripts retained the semantic,
+Spanish parity, manifest and repeat-generation assertions and passed. Only the
+three observed fingerprints were updated; no semantic assertion was removed.
+Protected checks on the resulting head remain required before merge.
