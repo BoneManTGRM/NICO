@@ -50,7 +50,7 @@ _PROVIDER_ASSURANCE_RE = re.compile(
 )
 _TECHNICAL_MATURITY_RE = re.compile(
     r"Technical maturity remains based on exact-commit technical controls\. "
-    r"Evidence-Adjusted readiness is (?P<adjusted>\d+(?:\.\d+)?)/100 versus technical maturity "
+    r"Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 versus technical maturity "
     r"(?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
     r"(?P<review_required>\d+) review-required candidates and "
     r"(?P<confirmed>\d+) confirmed material findings as explicit review context\."
@@ -68,7 +68,7 @@ _CANDIDATE_VOLUME_RE = re.compile(
     r"(?:Evidence-Adjusted|Ajuste por evidencia) score effect\."
 )
 _CANDIDATE_VOLUME_SECURITY_RE = re.compile(
-    r"Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores\."
+    r"Candidate volume, clustering and reviewer workload do not change numeric (?:security or readiness|technical) scores\."
 )
 _ANALYZER_COMPLETION_RE = re.compile(
     r"(?P<completed>\d+) of (?P<applicable>\d+) applicable analyzers completed; "
@@ -192,7 +192,7 @@ _STRUCTURED_TRIGGER_TOKENS = (
     "Complexity risk: observed;",
     "The exact-SHA rerun no longer reports cyclomatic complexity above",
     "Candidate volume and reviewer workload are operational review metrics",
-    "Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.",
+    "Candidate volume, clustering and reviewer workload do not change numeric",
     "applicable analyzers completed;",
     "Review-required scanner candidates:",
     "Non-success or unresolved deployment observations:",
@@ -260,7 +260,7 @@ def _translate_structured_current_report_copy(text: str) -> str:
     def technical_maturity(match: re.Match[str]) -> str:
         return (
             "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-            f"La preparación ajustada por evidencia es {match.group('adjusted')}/100 "
+            f"La puntuación técnica ajustada por evidencia es {match.group('adjusted')}/100 "
             f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
             f"conserva {match.group('review_required')} candidatos que requieren revisión y "
             f"{match.group('confirmed')} hallazgos materiales confirmados como contexto "
@@ -446,9 +446,9 @@ def _translate_structured_current_report_copy(text: str) -> str:
             "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación de Ajuste por evidencia.",
             output,
         )
-    if "Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores." in output:
+    if _CANDIDATE_VOLUME_SECURITY_RE.search(output):
         output = _CANDIDATE_VOLUME_SECURITY_RE.sub(
-            "El volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican las puntuaciones numéricas de seguridad ni de preparación.",
+            "El volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican las puntuaciones numéricas de los controles técnicos.",
             output,
         )
     if "applicable analyzers completed;" in output:
@@ -615,7 +615,7 @@ def install_comprehensive_spanish_current_copy_worker_v98() -> dict[str, Any]:
         and "Candidate triage is separate" not in sample
         and "Review-required scanner candidates" not in sample
         and "La madurez técnica sigue basándose en controles técnicos del commit exacto." in sample
-        and "La preparación ajustada por evidencia es 93/100 frente a una madurez técnica de 93/100." in sample
+        and "La puntuación técnica ajustada por evidencia es 93/100 frente a una madurez técnica de 93/100." in sample
         and "NICO conserva 691 candidatos que requieren revisión y 0 hallazgos materiales confirmados" in sample
         and "Control de permisos explícitos: aprobado." in sample
         and "Cobertura de objetivos inmutables de CI independiente del proveedor: 100%." in sample

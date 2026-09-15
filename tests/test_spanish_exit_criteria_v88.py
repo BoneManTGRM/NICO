@@ -28,6 +28,20 @@ def _criterion(tail: str) -> str:
     )
 
 
+def test_generated_roadmap_finding_and_joined_criteria_preserve_anchors():
+    install_comprehensive_spanish_exit_criteria_v88()
+    prefix = "NICO-WORK-0123456789ABCDEF | NICO-FINDING-SYNTHETIC | "
+    action = "Validate the retained finding; implement its retained correction only when the disposition and change scope authorize remediation."
+    assert canonical._translate_presentation_field(prefix + action, "evidence").startswith(prefix + "Validar")
+    criteria = "The exact-SHA rerun no longer reports cyclomatic complexity of 30 or greater at src/synthetic.py:12.; Targeted characterization tests pass on the remediation commit.; No new material regression or cross-format report-truth mismatch is introduced."
+    translated = canonical._translate_presentation_field(prefix + criteria, "evidence")
+    assert translated.startswith(prefix)
+    assert "src/synthetic.py:12" in translated and "30" in translated
+    assert "Targeted" not in translated and "No new material" not in translated
+    with pytest.raises(ValueError):
+        canonical._translate_presentation_field(prefix + criteria + "; Unrecognized independent verification claim remains.", "evidence")
+
+
 def test_production_remediation_exit_criteria_localizes_without_english_leakage() -> None:
     result = install_comprehensive_spanish_exit_criteria_v88()
 

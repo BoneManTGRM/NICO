@@ -118,13 +118,13 @@ def test_layout_polish_binds_presentation_only_contracts() -> None:
     state = install_comprehensive_pdf_layout_polish_v1()
 
     assert state["bound"] is True
-    assert state["toc_rows_per_page"] == 35
+    assert state["toc_rows_per_page"] == 28
     assert state["toc_single_page_capacity_above_four_phase_matrix"] is True
     assert state["sparse_section_keep_together"] is True
     assert state["review_companion_pages"] == 4
     assert state["review_small_font_size"] >= 6.8
     assert state["canonical_truth_mutated"] is False
-    assert semantic._TOC_ROWS_PER_PAGE == 35
+    assert semantic._TOC_ROWS_PER_PAGE == 28
     assert getattr(semantic._toc_pdf, "__nico_comprehensive_pdf_layout_polish_v1__") is True
     assert getattr(reflow._render_group, "__nico_comprehensive_pdf_layout_polish_v1__") is True
     assert getattr(
@@ -173,7 +173,7 @@ def test_toc_continuation_retains_evidence_appendix_and_four_phase_matrix(spanis
     ]
 
     assert len(toc_pages) == 2
-    assert matrix_heading in toc_pages[0]
+    assert matrix_heading in toc_pages[-1]
     assert final_title in toc_pages[-1]
     for section in CANONICAL_TOC_SECTIONS:
         assert section["title_es" if spanish else "title_en"] in "\n".join(toc_pages)

@@ -35,14 +35,14 @@ def _truthful_executive_posture(
     if spanish:
         return (
             f"NICO generó un borrador automatizado de evaluación técnica integral para {repository}. "
-            f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
+            f"La madurez técnica ponderada es {technical} y la puntuación técnica ajustada por evidencia es {adjusted}. Esta señal ponderada de controles evaluados del repositorio no establece preparación operativa, cobertura exhaustiva, revisión profesional independiente ni seguridad de despliegue. "
             "El paquete conserva salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
             "un marco de hoja de ruta de seis meses pendiente de validación y exportaciones estructuradas para revisión humana; "
             "no constituye aprobación ni autorización de entrega."
         )
     return (
         f"NICO generated an automated Comprehensive Technical Assessment draft for {repository}. "
-        f"Weighted technical maturity is {technical}; independently evidence-adjusted readiness is {adjusted}. "
+        f"Weighted technical maturity is {technical}; the evidence-adjusted technical score is {adjusted}. This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety. "
         "The evidence-bound package retains repository health, exact-location findings, architecture evidence, "
         "a six-month roadmap framework pending stakeholder validation, and structured exports for human review; "
         "it is not approval or client-delivery authorization."

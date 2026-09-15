@@ -37,6 +37,10 @@ _EXIT_CRITERIA_TRANSLATIONS: dict[str, str] = {
 # the approved production vocabulary here so all report surfaces share one bounded
 # contract. Unknown prose still delegates to the canonical fail-closed translator.
 _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
+    'Validate the retained finding; implement its retained correction only when the disposition and change scope authorize remediation.': 'Validar el hallazgo conservado; aplicar su corrección conservada únicamente cuando la disposición y el alcance del cambio autoricen la remediación.',
+    'The proposal addresses this retained finding and preserves its current review state.': 'La propuesta atiende este hallazgo conservado y mantiene su estado actual de revisión.',
+    'Retain the exact remediation revision, the finding-specific verification evidence, and regression results; obtain the required specialist disposition.': 'Conservar la revisión exacta de remediación, la evidencia de verificación específica del hallazgo y los resultados de regresión; obtener la disposición profesional requerida.',
+
     'Review the retained scanner candidates and record evidence-linked dispositions; candidate counts are not confirmed defect counts.': 'Revisar los candidatos conservados de los analizadores y registrar disposiciones vinculadas a evidencia; los recuentos de candidatos no son recuentos de defectos confirmados.',
     'Obtain the specified missing input within authorized scope and assess the limitation again; absence is not a confirmed vulnerability.': 'Obtener el insumo faltante especificado dentro del alcance autorizado y reevaluar la limitación; su ausencia no constituye una vulnerabilidad confirmada.',
     'Suggested role type: Cybersecurity specialist | Dependencies: Retained scanner artifact availability, Qualified specialist review': 'Tipo de función sugerida: Especialista en ciberseguridad | Dependencias: Disponibilidad del artefacto conservado del analizador, Revisión de un especialista cualificado',
@@ -385,7 +389,11 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
     # presentation prose. Validate/localize only the prose; preserve both anchors.
     roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16} \| [A-Za-z0-9_.-]+ \| )([^\r\n]+)", str(value))
     if roadmap is not None:
-        return roadmap.group(1) + _translate_canonical_field_v88(roadmap.group(2), key)
+        prose = roadmap.group(2)
+        clauses = prose.split("; ")
+        if len(clauses) > 1 and _COMPLEXITY_ACCEPTANCE_RE.fullmatch(clauses[0]):
+            return roadmap.group(1) + "; ".join(_translate_canonical_field_v88(clause, key) for clause in clauses)
+        return roadmap.group(1) + _translate_canonical_field_v88(prose, key)
 
     targeted = _translate_targeted_presentation_literal(value)
     if targeted is not None:

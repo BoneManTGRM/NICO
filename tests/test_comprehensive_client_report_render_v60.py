@@ -172,6 +172,12 @@ def test_final_accuracy_validation_rejects_stale_report_truth() -> None:
         validate_existing_report_accuracy(package)
 
 
+def test_spanish_reader_coverage_retains_numeric_validation():
+    from nico.comprehensive_client_report_render_v60 import _coverage_values
+    assert _coverage_values("Cobertura de ejecución de analizadores: 100%") == {100}
+    assert _coverage_values("Cobertura de ejecución de analizadores: 88%\nAnalyzer execution coverage: 100%") == {88, 100}
+
+
 def test_final_runtime_preserves_renderer_and_binds_phase17_static_aliases() -> None:
     source = (
         ROOT / "nico" / "comprehensive_client_report_render_v60.py"

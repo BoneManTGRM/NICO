@@ -660,6 +660,14 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "La evidencia de commits, solicitudes de incorporación, flujos de trabajo, trabajos y despliegues se revisó como historial acotado del proceso de entrega.",
     ),
     (
+        "No delivery-process observations were retained for this stage. Operational history was not assessed.",
+        "No se conservaron observaciones del proceso de entrega para esta etapa. No se evaluó el historial operativo.",
+    ),
+    (
+        "Retained commit, pull-request, and job counts are bounded delivery-process context. Their availability does not establish deployment history, independent review, or operational readiness.",
+        "Los conteos conservados de commits, solicitudes de incorporación y trabajos son contexto acotado del proceso de entrega. Su disponibilidad no establece el historial de despliegue, la revisión independiente ni la preparación operativa.",
+    ),
+    (
         "Stakeholder and business alignment remains an explicit human-context boundary; NICO did not infer unprovided objectives or approvals.",
         "La alineación comercial y de las partes interesadas sigue siendo un límite explícito de contexto humano; NICO no infirió objetivos ni aprobaciones no aportados.",
     ),
@@ -936,6 +944,32 @@ _PRESENTATION_REPLACEMENTS += tuple(_ES_PHRASES.items())
 # as exact source/target pairs so the Spanish renderer preserves every claim,
 # qualifier, and evidence boundary without changing the English providers.
 _PRESENTATION_REPLACEMENTS += (
+    ('Client-supplied engagement metadata and supplied statements are retained as explicit review context. Missing facts are not inferred. These values do not change technical scores or grant approval or delivery authority.', 'Los metadatos del encargo y las declaraciones aportadas por el cliente se conservan como contexto explícito de revisión. Los datos faltantes no se infieren. Estos valores no modifican las puntuaciones técnicas ni conceden aprobación o autoridad de entrega.'),
+    ('These statements were explicitly supplied by people and are retained without repository inference. They do not automatically change technical scores or grant approval or delivery authority.', 'Estas declaraciones fueron aportadas explícitamente por personas y se conservan sin inferencias del repositorio. No modifican automáticamente las puntuaciones técnicas ni conceden aprobación o autoridad de entrega.'),
+
+    ('Analyzer execution coverage (%)', 'Cobertura de ejecución de analizadores (%)'),
+    ('Complexity grade A (functions measured)', 'Grado de complejidad A (funciones medidas)'),
+    ('Complexity grade B (functions measured)', 'Grado de complejidad B (funciones medidas)'),
+    ('Complexity grade C (functions measured)', 'Grado de complejidad C (funciones medidas)'),
+    ('Complexity grade D (functions measured)', 'Grado de complejidad D (funciones medidas)'),
+    ('Complexity grade E (functions measured)', 'Grado de complejidad E (funciones medidas)'),
+    ('Complexity grade F (functions measured)', 'Grado de complejidad F (funciones medidas)'),
+
+    ('Supplied test cases were processed; result text was not supplied.', 'Se procesaron los casos de prueba aportados; no se aportó texto de resultados.'),
+    ('Supplied result text was processed; test cases were not supplied.', 'Se procesó el texto de resultados aportado; no se aportaron casos de prueba.'),
+    ('Optional functional QA was excluded from scope; no journey results were processed.', 'QA funcional opcional se excluyó del alcance; no se procesaron resultados de recorridos.'),
+    ('Supplied claims are not independently verified runtime observations or acceptance.', 'Las afirmaciones aportadas no son observaciones de ejecución verificadas de forma independiente ni aceptación.'),
+    ('Repository test inventory processing does not establish executed runtime journeys; functional QA was not assessed.', 'El procesamiento del inventario de pruebas del repositorio no establece recorridos ejecutados; QA funcional no fue evaluado.'),
+    ('Retained repository activity and workflow context was summarized.', 'Se resumió el contexto conservado de actividad del repositorio y flujos de trabajo.'),
+    ('Repository activity and workflow records were not retained for this synthesis.', 'No se conservaron registros de actividad del repositorio ni flujos de trabajo para esta síntesis.'),
+    ('Supplied incident statements were processed as unverified claims.', 'Las declaraciones de incidentes aportadas se procesaron como afirmaciones sin verificar.'),
+    ('Incident evidence was not supplied.', 'No se aportó evidencia de incidentes.'),
+    ('Activity volume and workflow counts do not establish incident rates or measured recovery.', 'El volumen de actividad y los conteos de flujos de trabajo no establecen tasas de incidentes ni recuperación medida.'),
+
+    ('Supplied test cases and result text were processed into a draft QA synthesis. Supplied claims are not independently verified runtime observations or acceptance.', 'Los casos de prueba y el texto de resultados aportados se procesaron en una síntesis preliminar de QA. Las afirmaciones aportadas no son observaciones de ejecución verificadas de forma independiente ni aceptación.'),
+    ('Optional QA test cases and runtime results were not supplied. No journey results were parsed or reconciled. Repository test inventory processing does not establish executed runtime journeys; functional QA was not assessed.', 'No se aportaron casos de prueba opcionales de QA ni resultados de ejecución. No se analizaron ni conciliaron resultados de recorridos. El procesamiento del inventario de pruebas del repositorio no establece recorridos ejecutados; QA funcional no fue evaluado.'),
+    ('Supplied platform matrix text was parsed for draft divergence candidates. Source path indicators and supplied claims do not establish runtime observations, independent verification, or parity.', 'El texto de la matriz de plataformas aportada se analizó para proponer candidatos de divergencia. Los indicadores de rutas fuente y las afirmaciones aportadas no establecen observaciones de ejecución, verificación independiente ni paridad.'),
+    ('An optional runtime platform matrix was not supplied; no supplied runtime results were parsed or reconciled. Source path indicators, when retained, describe repository paths only. Runtime platform parity was not assessed.', 'No se aportó una matriz opcional de plataformas en ejecución; no se analizaron ni conciliaron resultados de ejecución aportados. Los indicadores de rutas fuente, cuando se conservan, describen únicamente rutas del repositorio. La paridad de plataformas en ejecución no fue evaluada.'),
     (
         "Proceed to human review; do not authorize client delivery until evidence limitations and recommendations are approved.",
         "Proceder a la revisión humana; no autorizar la entrega al cliente hasta que se aprueben las limitaciones de evidencia y las recomendaciones.",
@@ -2341,24 +2375,24 @@ def _structured_presentation_es(value: str) -> str | None:
 
     match = re.fullmatch(
         r"Technical maturity remains based on exact-commit technical controls\. "
-        r"Evidence-Adjusted readiness is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
+        r"Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
         r"technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
         r"(?P<review>\d+) review-required candidates and (?P<material>\d+) "
         r"confirmed material findings as explicit review context\. Candidate volume, "
-        r"clustering and reviewer workload do not change numeric security or "
-        r"readiness scores\.",
+        r"clustering and reviewer workload do not change numeric (?:security or readiness|technical) "
+        r"scores\.",
         value,
     )
     if match is not None:
         return (
             "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-            f"La preparación ajustada por evidencia es {match.group('adjusted')}/100 "
+            f"La puntuación técnica ajustada por evidencia es {match.group('adjusted')}/100 "
             f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
             f"conserva {match.group('review')} candidatos que requieren revisión y "
             f"{match.group('material')} hallazgos materiales confirmados como contexto "
             "explícito de revisión. El volumen de candidatos, la agrupación y la carga "
             "de trabajo de revisión no modifican las puntuaciones numéricas de "
-            "seguridad ni de preparación."
+            "los controles técnicos."
         )
 
     match = re.fullmatch(

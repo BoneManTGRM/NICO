@@ -352,11 +352,11 @@ def test_spanish_scanner_limitations_localize_the_production_truth_contract() ->
 
     assert localized["summary"] == (
         "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-        "La preparación ajustada por evidencia es 93/100 frente a una madurez técnica "
+        "La puntuación técnica ajustada por evidencia es 93/100 frente a una madurez técnica "
         "de 93/100. NICO conserva 639 candidatos que requieren revisión y 0 hallazgos "
         "materiales confirmados como contexto explícito de revisión. El volumen de "
         "candidatos, la agrupación y la carga de trabajo de revisión no modifican las "
-        "puntuaciones numéricas de seguridad ni de preparación."
+        "puntuaciones numéricas de los controles técnicos."
     )
     assert localized["evidence"] == [
         (
@@ -1105,9 +1105,9 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # and HTML fingerprints are unchanged; PDF totals and matching bilingual bookmarks
 # now include those retained pages. Exact English before/after equality, bilingual semantic
 # parity, finding references, and all page-count gates remain active.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('6f8effd493f2f40512ba1ee102db0da14219f51fe3f2c8da6e8e428c5a0ddaf1', 18906), 'html': ('3209be741baa28495984937ee0d9df04ee3055f035e9e4115a7f3aa744081175', 23235), 'pdf_base64': ('c1cded4e9e980ebca3a2c21e83512c5e88e56f04c602b1cbc847614d79e16033', 185164), 'pdf_sha256': 'd26dc785dd302250f827349fdf03a7a73216c6a353d079f526decc0aba22d9d9', 'page_count': 23}
-RICH_ENGLISH_GOLDEN = {'markdown': ('97efa6a78e16bcf80eafac93067409b238f0889997c24e1093a44bcc570b3b3a', 20652), 'html': ('f88110639bfbc28bee30db19160bfed7c26ec373510aa35e4c7efbc2496fde5b', 25287), 'pdf_base64': ('9e30e9c74b7f53edae621b9393f9c2e0700a8fcb67c8b4f84f7a38ecef1d02f6', 287884), 'pdf_sha256': '8ea2db54b307a87eb1e2f5f9967d48d4db62557122e55ac11b64a44a66e99f61', 'page_count': 48}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('2f15d21494ae4b23d1315fd0d57e69c9544a426a8b6ee4fef8a722847ca0abc2', 18995), 'html': ('c6f9dc4e88dfd6c06e0c675fc3c54d4cadaf339174ac79c38271a147acca5c45', 23303), 'pdf_base64': ('17565b3910e3957988050c5ca2fc33b79e70630cf836e31cf59d758c1abfe5a7', 181132), 'pdf_sha256': 'f4dfc26d0b674593df28dfe5d00030150ccbd3281cc59fbc7757852f42404c4f', 'page_count': 22}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('1866cafc02216d917983fc0cd793cb24c9b447ecb38291dac17b8ffd13ad60af', 18943), 'html': ('63a8af3ea3b01ae077c11957a7ec858833a0f18f43f0a728154d59e93b5633f8', 23296), 'pdf_base64': ('2181922a8e20895331120efb76782b22fb33c25416b8ad6272c51de21d9af5c9', 185900), 'pdf_sha256': '437f6dcfb7e69f615b13fd5b3a898c3daab83309e6e6b33ac0a3451e46c133f8', 'page_count': 23}
+RICH_ENGLISH_GOLDEN = {'markdown': ('502d7fcd0dc3429f980b97dff2814b6703c0b3e4f6e02fdd3a27e03c794a62ad', 20689), 'html': ('87a9de336e14442f1a2f3b47166aa5d737510b63682894eca43dec1d57824cf9', 25348), 'pdf_base64': ('ea0fb160c361ad9106850f8b3ce93908215c864a318a0dd68497cfcbf6a2a0e0', 288808), 'pdf_sha256': '2814e1f6cde1ff70e771b009cb9236b078f67d093c93465b12cab0f4c7da170e', 'page_count': 48}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('a399b033b5f5439e34f6bd4e41e1b7208b674a12e4aee2e62ae4d51aaf9747ca', 19032), 'html': ('1a505743252b810804f0d2f975e7d9a352484e107d648c2c8ff65d074628d736', 23364), 'pdf_base64': ('54cc95e8c1873514fcc35f2649260d73b4fd88a28fe88496a87e9304f38495a9', 181868), 'pdf_sha256': 'cd757621e9db67186d069bdbaba79e1e38e63456697e1b244efacf3410a31086', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",

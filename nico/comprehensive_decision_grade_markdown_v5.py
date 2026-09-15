@@ -157,7 +157,7 @@ def _decision_summary(identity: dict[str, Any], assessment: dict[str, Any], limi
     delivery = assessment.get("delivery_status") or "Human Review Required"
     return (
         f"NICO completed a Comprehensive Technical Assessment for {_text(identity.get('repository'))} at immutable commit "
-        f"{_text(identity.get('commit_sha'))}. Technical maturity is {band.title()} ({score_text}); Evidence-Adjusted readiness is {adjusted_text}. "
+        f"{_text(identity.get('commit_sha'))}. Technical maturity is {band.title()} ({score_text}); Evidence-Adjusted technical score is {adjusted_text}. "
         f"Evidence assurance remains independently review-gated: {limitations['stages_with_limitations']} stage(s) contain "
         f"{limitations['individual_limitation_records']} distinct limitation record(s), and {material} material scanner finding(s) were retained. "
         f"Delivery posture is {delivery}. Automated evidence is not client approval; an authorized human must disposition findings and approve the exact package."

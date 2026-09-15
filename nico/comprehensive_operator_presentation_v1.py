@@ -167,9 +167,20 @@ def delivery_lifecycle_text(value: str) -> str:
 @lru_cache(maxsize=4)
 def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False,
                    repair_current_truth: bool = False,
+                   resolve_approval_references: bool = False,
                    approval_receipt_json: str = "") -> tuple[bytes, tuple[tuple[int, str, str], ...]]:
     writer = PdfWriter(clone_from=io.BytesIO(pdf))
     changes: list[tuple[int, str, str]] = []
+    approval_page = None
+    if resolve_approval_references:
+        for index, candidate in enumerate(writer.pages):
+            lines = (candidate.extract_text() or "").splitlines()
+            if any(title in " ".join(lines[:6]) for title in (
+                    "Human Review and Exact-Artifact Approval", "Operator Report Approval Record",
+                    "Registro de revisión humana y aprobación de artefactos exactos", "Registro de aprobación del operador")):
+                approval_page = index + 1
+        if approval_page is None:
+            raise ValueError("operator_approval_reference_target_missing")
     from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
     for page_index, page in enumerate(writer.pages):
         text = page.extract_text() or ""
@@ -209,6 +220,9 @@ def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False,
                     continue
                 original = str(operand) if isinstance(operand, TextStringObject) else bytes(operand).decode("latin-1")
                 updated = lifecycle_text(original)
+                if resolve_approval_references:
+                    updated = updated.replace("Recorded; see certificate.", f"Approved; record: report p. {approval_page}.")
+                    updated = updated.replace("Registrada; ver certificado.", f"Aprobada; registro: pág. {approval_page} del informe.")
                 normalized = original.strip()
                 if review_truth:
                     if previous in {"Final human approval", "Aprobación humana final"} and normalized.upper() in {"PENDING", "PENDIENTE"}:
@@ -285,7 +299,9 @@ def render_operator_presentation(record: Mapping[str, Any], edition: Mapping[str
     source_hash = hashlib.sha256(source_pdf).hexdigest()
     if source_hash != edition["source_review_artifact_identity"]["artifact_digests"]["pdf"]["sha256"]:
         raise ValueError("operator_presentation_source_mismatch")
-    corrected, changes = _render_source(source_pdf, approval_receipt_json=json.dumps(edition["review"], sort_keys=True) if receipt_bound else "", repair_current_truth=bool(
+    corrected, changes = _render_source(source_pdf,
+        resolve_approval_references=source.get("json", {}).get("reader_reference_schema") == "nico.reader_references.v1",
+        approval_receipt_json=json.dumps(edition["review"], sort_keys=True) if receipt_bound else "", repair_current_truth=bool(
         source.get("json", {}).get("human_report_export_schema")))
     canonical = report_package_from_record(record).get('json', {})
     if canonical.get('report_truth_schema') == 'nico.report_truth.v2':

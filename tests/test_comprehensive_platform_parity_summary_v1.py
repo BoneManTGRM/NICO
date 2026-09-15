@@ -41,11 +41,17 @@ def _pdf() -> bytes:
 
 def _complete_canonical() -> dict:
     return {
+        "identity": {"repository": "example/synthetic", "commit_sha": "a" * 40, "run_id": "synthetic"},
         "stage_results": {
             "platform_parity": {
                 "stage_id": "platform_parity",
                 "status": "complete",
                 "human_evidence_status": "not_assessed",
+                "evidence": {
+                    "source_indicator_state": "retained_observation",
+                    "source_indicator_paths": ["ios/Synthetic.swift"],
+                    "source_indicator_identity": {"repository": "example/synthetic", "commit_sha": "a" * 40, "run_id": "synthetic"},
+                },
             }
         }
     }
@@ -75,7 +81,7 @@ def test_unassessed_platform_parity_never_implies_completion() -> None:
     assert canonical_platform_parity_status(canonical) == "not_assessed"
     assert "Repository indicator review not established" in line
     assert "runtime platform parity not assessed" in line
-    assert "human input required" in line
+    assert "specialist acceptance not established" in line
     assert "Platform Parity: Complete" not in line
 
 

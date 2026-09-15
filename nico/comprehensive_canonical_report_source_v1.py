@@ -225,6 +225,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     canonical = {
         "human_report_export_schema": "nico.human_report_export.v1",
         "operator_approval_record_schema": "nico.operator_approved_presentation.v2",
+        "reader_reference_schema": "nico.reader_references.v1",
         "report_truth_schema": "nico.report_truth.v2",
         "supplied_human_evidence": deepcopy(human_snapshot["human_evidence"]),
         "service_id": _SERVICE_ID,

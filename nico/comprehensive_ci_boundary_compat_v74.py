@@ -23,6 +23,14 @@ _ES_BOUNDARY_MARKERS = (
     "D. Resultados históricos de los flujos de trabajo",
 )
 _EN_LABELS = {
+    'classification': 'Evidence category',
+    'configuration_maturity_scored_separately': 'Configuration maturity scored separately',
+    'non_success_runs': 'Non-success workflow runs',
+    'successful_runs': 'Successful workflow runs',
+    'required_check_health_reported_separately': 'Required-check health reported separately',
+    'score_effect': 'Score effect',
+    'technical_score_effect': 'Technical score effect',
+
     "successful_workflow_runs": "Successful workflow runs",
     "non_successful_workflow_runs": "Non-success workflow runs",
     "failed_workflow_runs": "Failed workflow runs",
@@ -46,6 +54,14 @@ _EN_LABELS = {
     "ci_cd_operational_health_status": "CI/CD operational health status",
 }
 _ES_LABELS = {
+    'classification': 'Categoría de evidencia',
+    'configuration_maturity_scored_separately': 'Madurez de configuración puntuada por separado',
+    'non_success_runs': 'Ejecuciones de flujo no exitosas',
+    'successful_runs': 'Ejecuciones de flujo exitosas',
+    'required_check_health_reported_separately': 'Estado de verificaciones requeridas informado por separado',
+    'score_effect': 'Efecto en la puntuación',
+    'technical_score_effect': 'Efecto en la puntuación técnica',
+
     "successful_workflow_runs": "Ejecuciones de flujo exitosas",
     "non_successful_workflow_runs": "Ejecuciones de flujo no exitosas",
     "failed_workflow_runs": "Ejecuciones de flujo fallidas",
@@ -381,7 +397,7 @@ def _format_value(key: str, value: Any, *, spanish: bool) -> str:
 def _label(key: str, *, spanish: bool) -> str:
     leaf = key.rsplit(".", 1)[-1]
     labels = _ES_LABELS if spanish else _EN_LABELS
-    return labels.get(leaf, f"`{key}`")
+    return labels.get(leaf, key.replace("_", " ").replace(".", " / ").capitalize())
 
 
 def ci_operational_truth_markdown(
