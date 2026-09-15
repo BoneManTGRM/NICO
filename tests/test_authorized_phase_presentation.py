@@ -82,3 +82,8 @@ def test_unknown_matrix_content_and_unestablished_authority_fail_closed():
 def test_legacy_source_is_not_reinterpreted():
     from nico.comprehensive_authorized_phase_pdf import refresh_authorized_phase_pdf
     assert refresh_authorized_phase_pdf(b'original historical bytes', {}) == b'original historical bytes'
+
+
+def test_unrecognized_text_operator_cannot_hide_source_content():
+    from nico.comprehensive_authorized_phase_pdf import _text_operations
+    assert _text_operations([(['owned heading'], b'Tj'), ([['source literal']], b'TJ')]) is None

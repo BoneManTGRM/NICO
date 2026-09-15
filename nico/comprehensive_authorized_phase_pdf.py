@@ -10,6 +10,9 @@ from nico.comprehensive_four_phase_pdf_v1 import _overlay, four_phase_target_pag
 
 
 def _text_operations(operations):
+    # Unknown text operators must not be silently removed with the owned box.
+    if any(op in (b'TJ', b"'", b'"') for _args, op in operations):
+        return None
     # Wrapping can differ with embedded font metrics; preserve every word.
     return ' '.join(' '.join(str(value) for args, op in operations
                             if op == b'Tj' for value in args).split())
