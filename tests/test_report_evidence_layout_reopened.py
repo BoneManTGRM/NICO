@@ -15,6 +15,26 @@ from nico.comprehensive_pdf_layout_polish_v1 import _render_polished_toc_pdf
 from nico.v2_dark_branded_cover_readiness_v4 import _truthful_executive_posture
 
 
+@pytest.mark.parametrize("key", ["job_success_rate", "observed_job_success_rate"])
+@pytest.mark.parametrize("rate", [0.0, 0.75, 1.0])
+def test_retained_job_rate_is_localized_without_changing_observation(key, rate):
+    from nico.comprehensive_ci_boundary_compat_v74 import ci_operational_truth_markdown
+    canonical = {"report_language": "es-MX", "ci_operational_context": {key: rate}}
+    before = deepcopy(canonical)
+    output = ci_operational_truth_markdown(canonical, spanish=True)
+    assert f"Tasa de éxito observada de trabajos: {rate * 100:.1f}%" in output
+    assert "job success rate" not in output.casefold()
+    assert canonical == before
+
+
+def test_absent_job_rate_remains_absent_in_operational_companion():
+    from nico.comprehensive_ci_boundary_compat_v74 import ci_operational_truth_markdown
+    canonical = {"report_language": "es-MX", "ci_operational_context": {"jobs_observed": 0}}
+    output = ci_operational_truth_markdown(canonical, spanish=True)
+    assert "Tasa de éxito" not in output
+    assert "Trabajos observados: 0" in output
+
+
 def absent_canonical():
     return {"identity": {"repository": "example/synthetic", "commit_sha": "a" * 40},
             "assessment": {"technical_score": 93},
