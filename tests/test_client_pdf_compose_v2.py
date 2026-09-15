@@ -23,6 +23,20 @@ def _pdf(*pages: list[str]) -> bytes:
     return output.getvalue()
 
 
+@pytest.mark.parametrize("title,evidence", [("Six-Month Roadmap", "Retained Evidence"),
+                                           ("Hoja de ruta de seis meses", "Evidencia conservada")])
+def test_companion_does_not_replace_detailed_stage_evidence_or_its_continuations(title, evidence):
+    base = _pdf(["NICO COMPREHENSIVE"],
+                [title, "Stage ID: six_month_roadmap", evidence, "NICO-WORK-001 retained decision"],
+                [title + " — " + evidence, "NICO-WORK-002 retained dependency"],
+                [title, "Generic summary replaced by the review companion"])
+    result = compose_compact_client_pdf(base, _pdf(["Register"]), _pdf(["Gate"]), review_pdf=_pdf(["Review companion"]))
+    text = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(result)).pages)
+    assert "NICO-WORK-001 retained decision" in text
+    assert "NICO-WORK-002 retained dependency" in text
+    assert "Generic summary replaced" not in text
+
+
 def test_compose_uses_section_headings_not_incidental_appendix_mentions() -> None:
     base = _pdf(
         [

@@ -21,12 +21,15 @@ from nico.comprehensive_run_store import ComprehensiveRunStore
 from tests.test_comprehensive_review_decision_v1 import _review_ready_record
 
 
-@lru_cache(maxsize=1)
-def fixture_record():
+@lru_cache(maxsize=2)
+def fixture_record(receipt_bound=False):
     from tests.test_phase4_approved_delivery_v4 import _record
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
     record = _review_ready_record()
     package = report_package_from_record(record)
+    if receipt_bound:
+        package["json"]["operator_approval_record_schema"] = "nico.operator_approved_presentation.v2"
+        package["json"]["human_report_export_schema"] = "nico.human_report_export.v1"
     assessment = report_package_from_record(_record())["json"]["assessment"]
     from tests.test_phase2_review_work_v1 import _register
     register = _register()
@@ -46,8 +49,8 @@ def fixture_record():
 
 
 @pytest.fixture
-def service(tmp_path):
-    record = deepcopy(fixture_record())
+def service(tmp_path, request):
+    record = deepcopy(fixture_record(getattr(request, "param", False)))
     store = ComprehensiveRunStore(lambda: sqlite3.connect(tmp_path / "runs.db"), dialect="sqlite")
     store.ensure_schema()
     store.create(record)

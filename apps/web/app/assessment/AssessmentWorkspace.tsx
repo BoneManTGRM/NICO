@@ -469,14 +469,16 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
 
   function deriveReviewView() {
     const internalReview = internalReviewStateFor(result);
-    const reviewStatus = internalReview.approvalCompleted
+    const reviewStatus = internalReview.operatorApprovalCompleted
+      ? copy.operatorApproved
+      : internalReview.approvalCompleted
       ? copy.internalReviewApproved
       : phase === "review_required"
         ? copy.internalReviewRequired
         : running ? copy.reviewAfterReport : copy.awaitingStage;
     const clientReadyStatus = internalReview.deliveryAllowed
       ? copy.clientReadyYes
-      : internalReview.approvalCompleted
+      : internalReview.operatorApprovalCompleted || internalReview.approvalCompleted
         ? copy.deliveryAuthorizationRequired
         : copy.clientReadyNo;
     const internalReviewHref = internalReviewHrefFor(result, locale);
@@ -658,7 +660,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       className={workspaceStyles.internalReviewAction}
       data-assessment-internal-review="true"
       href={internalReviewHref}
-    >{internalReview.approvalCompleted ? copy.openReviewRecord : copy.openInternalReview}</a>;
+    >{internalReview.operatorApprovalCompleted || internalReview.approvalCompleted ? copy.openReviewRecord : copy.openInternalReview}</a>;
   }
 
   function renderReportActions() {
@@ -848,7 +850,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           {renderReportActions()}
           {renderReviewAction()}
           {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
-          {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
+          {phase === "review_required" ? <p className="warning-box">{internalReview.operatorApprovalCompleted ? copy.specialistSeparateNotice : copy.reviewNotice}</p> : null}
           <details className={mobileStyles.compactIdentity}>
             <summary>{locale === "es-MX" ? "Identidad técnica" : "Technical identity"}</summary>
             <p><b>{copy.runId}</b><code title={String(result.run_id || "")}>{compactIdentifier(String(result.run_id || ""), 18, 8)}</code></p>
@@ -867,9 +869,9 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           {renderReportActions()}
           {renderReviewAction()}
           {terminalView ? <div className={workspaceStyles.terminalActions} data-assessment-terminal-actions="true"><button type="button" onClick={startNew}>{locale === "es-MX" ? "Iniciar una nueva evaluación" : "Start new assessment"}</button></div> : null}
-          {phase === "review_required" ? <p className="warning-box">{copy.reviewNotice}</p> : null}
+          {phase === "review_required" ? <p className="warning-box">{internalReview.operatorApprovalCompleted ? copy.specialistSeparateNotice : copy.reviewNotice}</p> : null}
           {executivePresentation.summary ? <>
-            <p className="summary-box">{executivePresentation.summary}</p>
+            <p className="summary-box">{internalReview.operatorApprovalCompleted ? <strong>{copy.reviewedSourceSummary} </strong> : null}{executivePresentation.summary}</p>
           </> : null}
           {progressItems.length ? <details className={workspaceStyles.stageHistory} open={running}><summary>{stageHistoryLabel}</summary><ProgressTimeline items={progressItems} copy={copy} locale={locale} /></details> : null}
           <Scorecard sections={assessment?.sections} copy={copy} locale={locale} />
@@ -891,7 +893,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <p className="eyebrow">{copy.state}</p>
           <h2 title={result?.run_id}>{result?.run_id ? compactIdentifier(result.run_id, 18, 8) : copy.phases[phase]}</h2>
         </div>
-        <span className={statusClass(phase)}>{copy.phases[phase]}</span>
+        <span className={statusClass(phase)}>{internalReview.operatorApprovalCompleted ? copy.operatorApproved : copy.phases[phase]}</span>
       </div>
 
       {/* issue ? <div legacy source contract; run-created issues remain in the exact-run panel. */}
@@ -913,7 +915,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         </div>
       </div> : null}
 
-      {!runIssue && message ? <p className={workspaceStyles.stateMessage}>{message}</p> : null}
+      {!runIssue && message ? <p className={workspaceStyles.stateMessage}>{internalReview.operatorApprovalCompleted ? copy.specialistSeparateNotice : message}</p> : null}
 
       {running && phase !== "checking" ? <>
         <div className={styles.progressMeta}>

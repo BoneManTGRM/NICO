@@ -76,7 +76,7 @@ def test_fresh_worker_captures_and_renders_its_own_release_provenance(tmp_path, 
             pdf, pages = spanish.render_spanish_pdf(canonical)
             title = 'Procedencia de la versión de NICO'
             backend_label = 'Commit del código del backend'
-            frontend_label = 'Commit del código del frontend'
+            frontend_label = 'Commit configurado del código del frontend'
             scanner_boundary = 'Las versiones configuradas son declaraciones, no evidencia de ejecución de cada evaluación'
         else:
             markdown = premium._markdown(identity, assessment, stages, identity['generated_at'])
@@ -85,7 +85,7 @@ def test_fresh_worker_captures_and_renders_its_own_release_provenance(tmp_path, 
             pdf = base64.b64decode(encoded)
             title = 'NICO Release Provenance'
             backend_label = 'Backend source commit'
-            frontend_label = 'Frontend source commit'
+            frontend_label = 'Configured frontend source commit'
             scanner_boundary = 'Configured versions are declarations, not per-run execution evidence'
         text = '\\n'.join(page.extract_text() for page in PdfReader(io.BytesIO(pdf)).pages)
         for surface in (markdown, text):
