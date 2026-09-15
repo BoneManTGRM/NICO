@@ -134,6 +134,8 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     edition["reports"]["pdf_filename"] = edition["reports"]["pdf_filename"].replace("OPERATOR-APPROVED-FINAL", "CLIENT-DELIVERY-AUTHORIZED")
     from nico.comprehensive_operator_report_formats import project_operator_report_formats
     project_operator_report_formats(edition["reports"], authorized=True, approval_receipt=approved["review"] if receipt_bound else None)
+    from nico.comprehensive_operator_report_formats import project_authorized_companion_formats
+    project_authorized_companion_formats(edition["reports"], receipt=approved["review"], delivery=receipt)
     edition["artifact_digests"] = _artifact_digests(edition["reports"])
     edition["reports"]["pdf_sha256"] = edition["artifact_digests"]["pdf"]["sha256"]
     edition["report_artifact_digest"] = canonical_sha256(edition["artifact_digests"])
@@ -154,6 +156,7 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
 
 
 def operator_delivery_identity(record: Mapping[str, Any], edition: Mapping[str, Any]) -> dict[str, Any]:
+    edition = render_delivery_companion_presentation(edition)
     return {
         "artifact_schema": "nico.comprehensive_review_artifact_identity.v1",
         "run_id": record["identity"]["run_id"], "revision": record["revision"],
@@ -175,6 +178,36 @@ def project_operator_delivery(response: dict[str, Any], record: Mapping[str, Any
     if edition:
         response["delivery_authorization"] = edition["delivery_authorization"]
         if include_reports:
-            response["operator_approved_edition"] = edition
-            response["review_artifact_identity"] = operator_delivery_identity(record, edition)
+            presented = render_delivery_companion_presentation(edition)
+            if presented != edition:
+                response["retained_operator_delivery_edition"] = edition
+            response["operator_approved_edition"] = presented
+            response["review_artifact_identity"] = operator_delivery_identity(record, presented)
     return response
+
+
+def render_delivery_companion_presentation(edition: Mapping[str, Any]) -> dict[str, Any]:
+    """Versioned read-only derivation after validation; retain original bytes/authority.
+
+    Repairs only companion lifecycle sections. The already approved PDF, canonical
+    evidence and both decisions are identical; no new approval or revision is made.
+    """
+    from nico.comprehensive_operator_report_formats import project_authorized_companion_formats
+    result = deepcopy(dict(edition))
+    project_authorized_companion_formats(result["reports"], receipt=result["review"],
+                                        delivery=result["delivery_authorization"])
+    if result["reports"] == edition["reports"]:
+        return dict(edition)
+    result["artifact_digests"] = _artifact_digests(result["reports"])
+    result["report_artifact_digest"] = canonical_sha256(result["artifact_digests"])
+    result["rendering_derivation"] = {
+        "version": "nico.authorized_companion_presentation.v1",
+        "kind": "companion_lifecycle_presentation_correction", "new_human_approval": False,
+        "authoritative_delivery_manifest_sha256": edition["accepted_edition_manifest_sha256"],
+        "original_artifact_digests": deepcopy(edition["artifact_digests"]),
+        "approval_certificate_sha256": edition["review"]["approval_certificate_sha256"],
+        "delivery_authorization_certificate_sha256": edition["delivery_authorization"]["delivery_authorization_certificate_sha256"],
+    }
+    result.pop("accepted_edition_manifest_sha256", None)
+    result["accepted_edition_manifest_sha256"] = canonical_sha256(result)
+    return result

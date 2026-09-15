@@ -196,3 +196,32 @@ changed artifact cases are rejected. All 64 affected handler/state tests and Typ
 checking pass locally. Production retrieval and detached-manifest verification
 remain required after protected integration and deployment. No private report
 identifiers or artifact contents are included in this public ledger.
+
+### Final companion lifecycle correction (2026-09-15)
+
+Independent inspection of an authenticated retained edition confirmed all PDF,
+JSON, Markdown and HTML byte bindings, but exposed stale delivery-blocked certificate
+text, a preauthorization phase row and first-approval instructions in the companions.
+The PDF and canonical lifecycle were already correct. D4/A2 remained open for those
+companion narratives; digest equality alone was not accepted as semantic proof.
+
+The authorized companion renderer now uses the retained decisions for its own
+certificate, phase table, decision boundary and review instructions. HTML uses the
+same corrected Markdown with an explicit lifecycle badge. Evidence literals,
+findings, scores, specialist tasks, canonical JSON and PDF bytes remain unchanged.
+The legacy approval renderer remains frozen because original receipts bind its
+exact artifacts. Existing valid deliveries receive a deterministic, versioned,
+read-only companion presentation; its manifest references the retained delivery
+manifest and original digests. The authenticated export also exposes the original
+edition, preserving its bytes and permitting independent verification. New delivery
+editions use the correction directly. No approval, authorization or record revision
+is invented or repeated, and no report is transmitted.
+
+Iteration: reduced bilingual cases failed before the correction; fixed fixtures
+now cover both lifecycle text and quoted CLIENT DELIVERY BLOCKED evidence, preserved
+specialist checklist items, identical PDF/JSON, and idempotent projection. Independent
+retained-record comparisons identified a second legacy checklist and tested it too.
+Current and historical delivery tests exercise read/retry ordering, unchanged stored
+records/receipts and rejection of altered artifacts or authority. Approval, delivery
+and report-truth suites pass 63 tests. Protected integration and the real production
+companion download remain required; local reconstructed output is not production proof.
