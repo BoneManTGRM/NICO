@@ -190,20 +190,27 @@ def project_operator_delivery(response: dict[str, Any], record: Mapping[str, Any
 def render_delivery_companion_presentation(edition: Mapping[str, Any]) -> dict[str, Any]:
     """Versioned read-only derivation after validation; retain original bytes/authority.
 
-    Repairs only companion lifecycle sections. The already approved PDF, canonical
+    Repairs owned lifecycle sections, including the phase overlay. Canonical
     evidence and both decisions are identical; no new approval or revision is made.
     """
     from nico.comprehensive_operator_report_formats import project_authorized_companion_formats
     result = deepcopy(dict(edition))
     project_authorized_companion_formats(result["reports"], receipt=result["review"],
                                         delivery=result["delivery_authorization"])
+    from nico.comprehensive_authorized_phase_pdf import refresh_authorized_phase_pdf
+    pdf = base64.b64decode(result["reports"]["pdf_base64"], validate=True)
+    corrected = refresh_authorized_phase_pdf(pdf, result["reports"].get("json", {}))
+    result["reports"]["pdf_base64"] = base64.b64encode(corrected).decode()
+    if corrected != pdf:
+        import hashlib
+        result["reports"]["pdf_sha256"] = hashlib.sha256(corrected).hexdigest()
     if result["reports"] == edition["reports"]:
         return dict(edition)
     result["artifact_digests"] = _artifact_digests(result["reports"])
     result["report_artifact_digest"] = canonical_sha256(result["artifact_digests"])
     result["rendering_derivation"] = {
-        "version": "nico.authorized_companion_presentation.v1",
-        "kind": "companion_lifecycle_presentation_correction", "new_human_approval": False,
+        "version": "nico.authorized_lifecycle_presentation.v2",
+        "kind": "owned_lifecycle_presentation_correction", "new_human_approval": False,
         "authoritative_delivery_manifest_sha256": edition["accepted_edition_manifest_sha256"],
         "original_artifact_digests": deepcopy(edition["artifact_digests"]),
         "approval_certificate_sha256": edition["review"]["approval_certificate_sha256"],
