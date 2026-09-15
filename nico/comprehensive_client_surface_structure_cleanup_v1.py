@@ -44,6 +44,10 @@ def _text(value: Any, limit: int = 1200) -> str:
 
 def _label(value: Any) -> str:
     raw = _text(value, 180)
+    tool_count = re.fullmatch(r"scanner_triage\.finding_summary\.by_tool\.([A-Za-z0-9_-]+)\.(raw|review_required)", raw)
+    if tool_count:
+        count_label = "Raw candidates" if tool_count[2] == "raw" else "Review-required candidates"
+        return f"{tool_count[1]} — {count_label}"
     key = raw.casefold().replace("-", "_").replace(" ", "_")
     if key in {"analyzer_execution_coverage", "scanner_execution_coverage"}:
         return "Analyzer execution coverage (%)"
@@ -148,7 +152,7 @@ def sanitize_client_rendered_stage(stage: Mapping[str, Any]) -> dict[str, Any]:
             if isinstance(owned_values, (list, tuple)):
                 owned_values = [
                     f"{_label(match[1])}: {match[2]}" if (match := re.fullmatch(
-                        r"((?:analyzer_execution_coverage|scanner_execution_coverage|complexity_evidence\.complexity_grades\.[A-F])):\s*(.*)",
+                        r"((?:analyzer_execution_coverage|scanner_execution_coverage|complexity_evidence\.complexity_grades\.[A-F]|scanner_triage\.finding_summary\.by_tool\.[A-Za-z0-9_-]+\.(?:raw|review_required))):\s*(.*)",
                         str(value))) else value
                     for value in owned_values
                 ]

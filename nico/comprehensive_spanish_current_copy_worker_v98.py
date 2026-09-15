@@ -126,8 +126,8 @@ _SCANNER_EXECUTION_SUMMARY_RE = re.compile(
 )
 _CANDIDATE_CATEGORY_SUMMARY_RE = re.compile(
     r"(?P<category>Dependency|Secret|Static): raw=(?P<raw>\d+); "
-    r"confirmed_material=(?P<confirmed>\d+); review_required=(?P<review>\d+); "
-    r"excluded_test_only=(?P<excluded>\d+); approved_or_nonblocking=(?P<nonblocking>\d+)\.",
+    r"confirmed[_ ]material=(?P<confirmed>\d+); review[_ ]required=(?P<review>\d+); "
+    r"excluded[_ ]test[_ ]only=(?P<excluded>\d+); approved[_ ]or[_ ]nonblocking=(?P<nonblocking>\d+)\.",
     re.IGNORECASE,
 )
 _CANDIDATE_CATEGORY_ES = {
@@ -412,15 +412,17 @@ def _translate_structured_current_report_copy(text: str) -> str:
                     localized,
                 )
             localized = re.sub(
-                r"(?P<label>disposición=)(?P<value>[A-Za-z_]+)",
+                r"(?P<label>disposición=)(?P<value>review[_ ]required|not[_ ]actionable|"
+                r"false[_ ]positive|confirmed)(?=;| ·|$)",
                 lambda disposition: (
                     disposition.group("label")
                     + _CANDIDATE_DISPOSITION_ES.get(
-                        disposition.group("value").casefold(),
+                        disposition.group("value").replace(" ", "_").casefold(),
                         disposition.group("value"),
                     )
                 ),
                 localized,
+                flags=re.IGNORECASE,
             )
             output_lines.append(localized)
         return "".join(output_lines)

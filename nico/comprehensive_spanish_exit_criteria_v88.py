@@ -202,6 +202,18 @@ def _translate_complexity_method(method: str) -> str | None:
 
 
 def _translate_generated_complexity_contract(value: Any) -> str | None:
+    current = re.fullmatch(
+        r"Cyclomatic complexity: (?P<complexity>\d+) independent paths; method: (?P<method>[^;\r\n]+); "
+        r"(?:source: retained exact-SHA architecture evidence|exact commit match: (?P<exact>True|False))",
+        str(value or ""),
+    )
+    if current:
+        method = _translate_complexity_method(current["method"])
+        if method is None:
+            return None
+        source = ("fuente: evidencia de arquitectura conservada del SHA exacto" if current["exact"] is None
+                  else f"coincidencia exacta del commit: {'Sí' if current['exact'] == 'True' else 'No'}")
+        return f"Complejidad ciclomática: {current['complexity']} rutas independientes; método: {method}; {source}"
     text = str(value or "").strip()
     if not text:
         return None
@@ -385,15 +397,24 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 canonical translator is not installed")
 
-    # Roadmap generator emits an immutable package ID and evidence label before
-    # presentation prose. Validate/localize only the prose; preserve both anchors.
-    roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16} \| [A-Za-z0-9_.-]+ \| )([^\r\n]+)", str(value))
+    # Preserve package IDs and legacy machine references; translate only known
+    # current reader labels and validated presentation prose.
+    labels = {
+        "Candidate review summary": "Resumen de revisión de candidatos",
+        "Runtime functional QA": "QA funcional en ejecución",
+        "Authoritative requirements": "Requisitos autorizados",
+        "Device runtime parity": "Paridad de dispositivos en ejecución",
+        "Stakeholder and business authority": "Autoridad de partes interesadas y negocio",
+        "Incident and recovery history": "Historial de incidentes y recuperación",
+    }
+    roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16}) \| (" + "|".join(re.escape(label) for label in labels) + r"|[A-Za-z0-9_.-]+) \| ([^\r\n]+)", str(value))
     if roadmap is not None:
-        prose = roadmap.group(2)
+        prefix = roadmap[1] + " | " + labels.get(roadmap[2], roadmap[2]) + " | "
+        prose = roadmap[3]
         clauses = prose.split("; ")
         if len(clauses) > 1 and _COMPLEXITY_ACCEPTANCE_RE.fullmatch(clauses[0]):
-            return roadmap.group(1) + "; ".join(_translate_canonical_field_v88(clause, key) for clause in clauses)
-        return roadmap.group(1) + _translate_canonical_field_v88(prose, key)
+            return prefix + "; ".join(_translate_canonical_field_v88(clause, key) for clause in clauses)
+        return prefix + _translate_canonical_field_v88(prose, key)
 
     targeted = _translate_targeted_presentation_literal(value)
     if targeted is not None:

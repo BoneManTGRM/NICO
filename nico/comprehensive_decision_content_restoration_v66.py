@@ -305,12 +305,12 @@ def _synthesized_complexity_findings(
                 "function": name,
                 "function_or_component": name,
                 "fact": (
-                    f"cyclomatic_complexity={complexity}; method={method}; "
-                    "source=retained exact-SHA architecture evidence"
+                    f"Cyclomatic complexity: {complexity} independent paths; method: {method}; "
+                    "source: retained exact-SHA architecture evidence"
                 ),
                 "evidence": (
-                    f"cyclomatic_complexity={complexity}; method={method}; "
-                    "exact_commit_match=True"
+                    f"Cyclomatic complexity: {complexity} independent paths; method: {method}; "
+                    "exact commit match: True"
                 ),
                 "interpretation": f"Concentrated branching in `{name}`.",
                 "technical_impact": "High-complexity code hotspot.",

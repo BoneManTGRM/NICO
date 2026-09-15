@@ -325,7 +325,7 @@ def _human_module_stage_specs(
         lines: list[str] = []
         lines.extend(_literal_lines(
             "Estado de evidencia" if spanish else "Evidence status",
-            "supplied_unverified", spanish=spanish,
+            "Suministrada; sin verificación independiente" if spanish else "Supplied; not independently verified", spanish=spanish,
         ))
         excluded = module.get("excluded") is True or str(module.get("status") or "").casefold() == "excluded"
 
