@@ -157,10 +157,17 @@ def test_direct_compact_finalizer_binds_ci_boundary_after_review_rebuild(
         "render_evidence_review_gate_pdf",
         lambda canonical, register, *, spanish: _pdf_pages(("Human review gate",)),
     )
-    monkeypatch.setattr(completion, "sanitize_client_pdf_status", lambda value: value)
+    sanitizer_languages = []
+
+    def retain_pdf(value, *, spanish):
+        sanitizer_languages.append(spanish)
+        return value
+
+    monkeypatch.setattr(completion, "sanitize_client_pdf_status", retain_pdf)
 
     core_finalize = inspect.unwrap(completion.finalize_client_report_package)
     result = core_finalize(package)
+    assert sanitizer_languages == [spanish]
     pdf = base64.b64decode(result["pdf_base64"])
     extracted = "\n".join(
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
