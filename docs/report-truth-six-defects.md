@@ -159,3 +159,16 @@ or retained endpoint claims and mismatch status stay separately labelled (2 fail
 The receipt repair is versioned at canonical source creation: recomputing a new presentation
 for historical delivery validation would invalidate old receipts, so legacy derivations remain
 byte-compatible. No stored authority is migrated. All controlled fixtures remain synthetic.
+
+PR1602 integration iteration: required CI on 09fde742 found an outdated bilingual PDF
+golden after detailed evidence pages were restored. The unchanged base reproduces its
+old fingerprint in the same environment; all three Markdown/HTML goldens are unchanged.
+Keeping the original parity assertions exposed the compatibility renderer's 32-entry
+contents truncation. Two minimal bilingual cases fail before repair and pass after
+paginating every entry above the phase-matrix region, with final offsets/bookmarks.
+Critique then found phase bookmarks selecting a contents continuation; two more failing
+cases now pass by excluding contents pages from body targets. No evidence is dropped.
+The affected navigation/layout suites pass 32 tests; full bilingual publication parity
+passes 12 tests. Both contents pages were visually checked in English and Spanish;
+protected CI is being rerun. Existing semantic navigation, authority records and original artifacts are
+preserved. Production acceptance remains open; the next action is qualified integration.

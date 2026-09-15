@@ -15,6 +15,8 @@ from reportlab.pdfgen import canvas
 
 VERSION = "nico.comprehensive-manifest-navigation.v1.2"
 _MARKER = "__nico_comprehensive_manifest_navigation_v1__"
+# Reserve room for the four-phase table added to the first contents page.
+_TOC_ROWS_PER_PAGE = 28
 _CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_manifest_navigation_context", default={}
 )
@@ -209,35 +211,34 @@ def _toc_page(entries: list[tuple[str, int]], total_pages: int) -> bytes:
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     pdf.setTitle("NICO Table of Contents")
     pdf.setAuthor("NICO")
-    pdf.setFillColorRGB(0.06, 0.09, 0.16)
-    pdf.setFont("Helvetica-Bold", 20)
-    pdf.drawString(48, 744, "Table of Contents")
-    pdf.setFillColorRGB(0.57, 0.25, 0.04)
-    pdf.setFont("Helvetica-Bold", 7)
-    pdf.drawString(
-        48,
-        722,
-        "AUTOMATED DRAFT | PENDING HUMAN APPROVAL | CLIENT DELIVERY BLOCKED",
-    )
-    pdf.setStrokeColorRGB(0.80, 0.84, 0.89)
-    pdf.line(48, 710, 564, 710)
-    pdf.setFillColorRGB(0.20, 0.25, 0.33)
-    y = 690
-    for title, page_number in entries[:32]:
-        fitted = _fit_title(title, max_width=445, font_name="Helvetica", font_size=8.2)
-        pdf.setFont("Helvetica", 8.2)
-        pdf.drawString(54, y, fitted)
-        pdf.setFont("Helvetica-Bold", 8.2)
-        pdf.drawRightString(558, y, str(page_number))
-        y -= 18
-    if len(entries) > 32:
-        pdf.setFont("Helvetica-Oblique", 7.2)
-        pdf.drawString(54, y, "Additional navigation entries are retained as PDF bookmarks.")
-    pdf.setFont("Helvetica", 7)
-    pdf.setFillColorRGB(0.39, 0.45, 0.55)
-    pdf.drawString(48, 36, "NICO | evidence-bound technical review package")
-    pdf.drawRightString(564, 36, f"{total_pages} report pages (certificate excluded)")
-    pdf.showPage()
+    chunks = [entries[i:i + _TOC_ROWS_PER_PAGE] for i in range(0, len(entries), _TOC_ROWS_PER_PAGE)] or [[]]
+    for chunk in chunks:
+        pdf.setFillColorRGB(0.06, 0.09, 0.16)
+        pdf.setFont("Helvetica-Bold", 20)
+        pdf.drawString(48, 744, "Table of Contents")
+        pdf.setFillColorRGB(0.57, 0.25, 0.04)
+        pdf.setFont("Helvetica-Bold", 7)
+        pdf.drawString(
+            48,
+            722,
+            "AUTOMATED DRAFT | PENDING HUMAN APPROVAL | CLIENT DELIVERY BLOCKED",
+        )
+        pdf.setStrokeColorRGB(0.80, 0.84, 0.89)
+        pdf.line(48, 710, 564, 710)
+        pdf.setFillColorRGB(0.20, 0.25, 0.33)
+        y = 690
+        for title, page_number in chunk:
+            fitted = _fit_title(title, max_width=445, font_name="Helvetica", font_size=8.2)
+            pdf.setFont("Helvetica", 8.2)
+            pdf.drawString(54, y, fitted)
+            pdf.setFont("Helvetica-Bold", 8.2)
+            pdf.drawRightString(558, y, str(page_number))
+            y -= 18
+        pdf.setFont("Helvetica", 7)
+        pdf.setFillColorRGB(0.39, 0.45, 0.55)
+        pdf.drawString(48, 36, "NICO | evidence-bound technical review package")
+        pdf.drawRightString(564, 36, f"{total_pages} report pages (certificate excluded)")
+        pdf.showPage()
     pdf.save()
     return buffer.getvalue()
 
@@ -257,10 +258,15 @@ def _renumber_and_outline(pdf: bytes) -> bytes:
         used.add(key)
         toc_entries.append((title, original_index + 2))
 
-    total = len(reader.pages) + 1
-    toc = PdfReader(io.BytesIO(_toc_page(toc_entries, total))).pages[0]
+    toc_count = max(1, (len(toc_entries) + _TOC_ROWS_PER_PAGE - 1) // _TOC_ROWS_PER_PAGE)
+    toc_entries = [(title, number + toc_count - 1) for title, number in toc_entries]
+    total = len(reader.pages) + toc_count
+    toc = PdfReader(io.BytesIO(_toc_page(toc_entries, total))).pages
+    if len(toc) != toc_count:
+        raise ValueError("contents page-count contract failed")
     writer = PdfWriter()
-    source_pages: list[tuple[Any, bool]] = [(reader.pages[0], True), (toc, False)]
+    source_pages: list[tuple[Any, bool]] = [(reader.pages[0], True)]
+    source_pages.extend((page, False) for page in toc)
     source_pages.extend((page, True) for page in reader.pages[1:])
 
     for index, (source, rewrite_labels) in enumerate(source_pages, start=1):
@@ -282,7 +288,7 @@ def _renumber_and_outline(pdf: bytes) -> bytes:
             continue
         used.add(key)
         try:
-            writer.add_outline_item(title, original_index + 1)
+            writer.add_outline_item(title, original_index + toc_count)
         except Exception:
             pass
 

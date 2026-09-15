@@ -63,3 +63,54 @@ def test_long_stage_evidence_continuations_identify_their_section():
     assert len(work_pages) > 1
     assert all("Six-Month Roadmap" in text for text in work_pages)
     assert all(f"WORK-{i}:" in "\n".join(pages) for i in range(18))
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_compatibility_contents_retains_every_entry_and_final_page_reference(monkeypatch, spanish):
+    from reportlab.pdfgen import canvas
+    from nico import comprehensive_manifest_navigation_v1 as navigation
+    from nico import comprehensive_spanish_presentation_parity_v1 as localization
+
+    output = io.BytesIO()
+    pdf = canvas.Canvas(output, pagesize=(612, 792), invariant=1)
+    for title in ["Cover", *[f"SECTION-{i:02}" for i in range(33)]]:
+        pdf.drawString(48, 744, title)
+        pdf.showPage()
+    pdf.save()
+    monkeypatch.setattr(navigation, "_outline_title", lambda text: text.splitlines()[0])
+    monkeypatch.setattr(localization, "_spanish_outline_title", lambda nav, text: text.splitlines()[0])
+    monkeypatch.setattr(localization, "_localized_title", lambda title: title)
+    rendered = (localization._renumber_spanish(navigation, output.getvalue()) if spanish
+                else navigation._renumber_and_outline(output.getvalue()))
+    reader = PdfReader(io.BytesIO(rendered))
+    assert len(reader.pages) == 36  # cover, two contents pages, 33 sections
+    contents = "\n".join(page.extract_text() for page in reader.pages[1:3])
+    for i in range(33):
+        assert f"SECTION-{i:02}\n{i + 4}" in contents
+        destination = next(item for item in reader.outline if item.title == f"SECTION-{i:02}")
+        assert reader.get_destination_page_number(destination) == i + 3
+    # Leave the first contents page's four-phase table region clear.
+    positions = []
+    reader.pages[1].extract_text(visitor_text=lambda text, cm, tm, font, size:
+                                 positions.append(tm[5]) if text.startswith("SECTION-") else None)
+    assert min(positions) >= 190
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_phase_bookmarks_do_not_target_contents_continuations(spanish):
+    from reportlab.pdfgen import canvas
+    from nico.comprehensive_four_phase_pdf_v1 import apply_four_phase_pdf
+    output = io.BytesIO()
+    pdf = canvas.Canvas(output, pagesize=(612, 792), invariant=1)
+    contents = "Índice" if spanish else "Table of Contents"
+    gate = "Puerta de revisión humana y aceptación" if spanish else "Human Review and Acceptance Gate"
+    for heading, text in [("Cover", ""), (contents, ""), (contents, gate), ("Body", ""), (gate, "")]:
+        pdf.drawString(48, 744, heading)
+        pdf.drawString(48, 700, text)
+        pdf.showPage()
+    pdf.save()
+    reader = PdfReader(io.BytesIO(apply_four_phase_pdf(output.getvalue(), {}, spanish=spanish)))
+    name = "Revisión humana por excepción" if spanish else "Human Review by Exception"
+    phases = next(items for items in reader.outline if isinstance(items, list))
+    target = next(item for item in phases if item.title == name)
+    assert reader.get_destination_page_number(target) == 4
