@@ -172,3 +172,24 @@ The affected navigation/layout suites pass 32 tests; full bilingual publication 
 passes 12 tests. Both contents pages were visually checked in English and Spanish;
 protected CI is being rerun. Existing semantic navigation, authority records and original artifacts are
 preserved. Production acceptance remains open; the next action is qualified integration.
+
+### Retained-edition export dependency (2026-09-15)
+
+Final production inspection established a remaining D5/A2/A5 access gap: the
+technical review panel exposed digest summaries, while the authenticated response
+already retained the complete operator edition, receipts, and companion formats.
+The ordinary UI could download the approved PDF but could not export those records
+for independent verification. Add a supplementary records download inside that
+existing panel. It serializes only the retained edition and its review identity;
+it creates no decision, performs no request or rendering, and is not another step
+in the successful one-action PDF path. The reviewed source and final bytes remain
+immutable, so this export does not require another assessment or owner approval.
+
+Iteration: bilingual minimal export assertions failed with a missing control;
+the same fixtures now preserve the full exact payload and pending specialist state.
+Clearing operator credentials disables and guards the export; pending assessments
+have no approved-edition export. These ordering checks issue no mutation and do
+not serialize credentials. All 61 affected handler/state tests and TypeScript
+checking pass locally. Production retrieval and detached-manifest verification
+remain required after protected integration and deployment. No private report
+identifiers or artifact contents are included in this public ledger.
