@@ -458,3 +458,22 @@ Locale ordering is material: Spanish source→English projection is the regressi
 English→Spanish, repeated retrieval and immutable-source behavior remain required.
 Next: affected checks, protected integration, deployed bilingual proof, then the
 corrected real source and genuine owner approval. No final acceptance claimed.
+
+## Reopened final phase lifecycle (2026-09-15 UTC)
+
+Actual post-approval inspection reopened the phase status predicate: canonical
+phase 4 and both durable decisions were authorized, while the PDF's existing
+matrix retained the draft blocked label. Prior source/byte checks did not prove
+final lifecycle truth. Original approved bytes and decisions remain retained.
+
+Failure → matrix-presence short circuit plus changed line wrapping → replace only
+an exact recognized isolated phase overlay after delivery validation → reject
+unknown overlay text/unestablished canonical state; preserve supplied literals,
+other phases, source, decisions and legacy validator rendering → English/es-MX
+minimal regressions, real retained-artifact replay and idempotent retrieval →
+protected deployment and actual same-edition final inspection still required.
+The first local correction exposed font-resource corruption; writer ownership
+fixed it before integration. Production font configuration is held constant in
+retained-artifact replay. No fresh approval, revision or scanning is performed.
+The detached presentation manifest identifies new bytes and the original delivery
+manifest; neither old PDF digest nor historical approval is relabeled.
