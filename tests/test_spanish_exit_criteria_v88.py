@@ -111,8 +111,29 @@ def test_roadmap_line_preserves_package_and_source_anchors() -> None:
     )
 
 
+@pytest.mark.parametrize("label,expected", [
+    ("Candidate review summary", "Resumen de revisión de candidatos"),
+    ("Runtime functional QA", "QA funcional en ejecución"),
+    ("Authoritative requirements", "Requisitos autorizados"),
+    ("Device runtime parity", "Paridad de dispositivos en ejecución"),
+    ("Stakeholder and business authority", "Autoridad de partes interesadas y negocio"),
+    ("Incident and recovery history", "Historial de incidentes y recuperación"),
+])
+def test_current_roadmap_reader_prefix_localizes_without_changing_anchor(label, expected):
+    install_comprehensive_spanish_exit_criteria_v88()
+    source = "Review the retained scanner candidates and record evidence-linked dispositions; candidate counts are not confirmed defect counts."
+    prefix = "NICO-WORK-06B8E8AC460ADC6B | "
+    translated = canonical._translate_presentation_field(prefix + label + " | " + source, "evidence")
+    assert translated == prefix + expected + " | " + (
+        "Revisar los candidatos conservados de los analizadores y registrar disposiciones "
+        "vinculadas a evidencia; los recuentos de candidatos no son recuentos de defectos confirmados."
+    )
+
+
 @pytest.mark.parametrize("prefix", [
     "NICO-WORK-06B8E8AC460ADC6B | review_candidate_summary | ",
+    "NICO-WORK-06B8E8AC460ADC6B | Candidate review summary | ",
+    "NICO-WORK-06B8E8AC460ADC6B | Unknown review label | ",
     "NICO-WORK-invalid | review_candidate_summary | ",
 ])
 def test_roadmap_unknown_prose_still_fails_closed(prefix: str) -> None:

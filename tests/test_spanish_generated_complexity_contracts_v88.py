@@ -121,7 +121,7 @@ def test_generated_complexity_finding_family_and_spanish_publisher_stay_synchron
         "cost_of_inaction",
         "residual_risk",
     )
-    for source_finding in findings:
+    for hotspot, source_finding in zip(hotspots, findings):
         localized = canonical._localize_tree(source_finding)
         path = source_finding["path"]
         line = source_finding["line"]
@@ -133,12 +133,13 @@ def test_generated_complexity_finding_family_and_spanish_publisher_stay_synchron
         assert localized["finding_id"] == source_finding["finding_id"]
         assert localized["source_commit_sha"] == commit_sha
 
-        assert "cyclomatic_complexity=" in localized["fact"]
-        assert "method=evidencia de complejidad conservada del SHA exacto" in localized["fact"]
-        assert "source=evidencia de arquitectura conservada del SHA exacto" in localized["fact"]
-        assert "cyclomatic_complexity=" in localized["evidence"]
-        assert "method=evidencia de complejidad conservada del SHA exacto" in localized["evidence"]
-        assert "exact_commit_match=True" in localized["evidence"]
+        metric = f"Complejidad ciclomática: {hotspot['cyclomatic_complexity']} rutas independientes"
+        assert metric in localized["fact"]
+        assert "método: evidencia de complejidad conservada del SHA exacto" in localized["fact"]
+        assert "fuente: evidencia de arquitectura conservada del SHA exacto" in localized["fact"]
+        assert metric in localized["evidence"]
+        assert "método: evidencia de complejidad conservada del SHA exacto" in localized["evidence"]
+        assert "coincidencia exacta del commit: Sí" in localized["evidence"]
 
         criteria = localized["acceptance_criteria"]
         verification = localized["verification"]

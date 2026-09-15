@@ -397,15 +397,24 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 canonical translator is not installed")
 
-    # Roadmap generator emits an immutable package ID and evidence label before
-    # presentation prose. Validate/localize only the prose; preserve both anchors.
-    roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16} \| [A-Za-z0-9_.-]+ \| )([^\r\n]+)", str(value))
+    # Preserve package IDs and legacy machine references; translate only known
+    # current reader labels and validated presentation prose.
+    labels = {
+        "Candidate review summary": "Resumen de revisión de candidatos",
+        "Runtime functional QA": "QA funcional en ejecución",
+        "Authoritative requirements": "Requisitos autorizados",
+        "Device runtime parity": "Paridad de dispositivos en ejecución",
+        "Stakeholder and business authority": "Autoridad de partes interesadas y negocio",
+        "Incident and recovery history": "Historial de incidentes y recuperación",
+    }
+    roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16}) \| (" + "|".join(re.escape(label) for label in labels) + r"|[A-Za-z0-9_.-]+) \| ([^\r\n]+)", str(value))
     if roadmap is not None:
-        prose = roadmap.group(2)
+        prefix = roadmap[1] + " | " + labels.get(roadmap[2], roadmap[2]) + " | "
+        prose = roadmap[3]
         clauses = prose.split("; ")
         if len(clauses) > 1 and _COMPLEXITY_ACCEPTANCE_RE.fullmatch(clauses[0]):
-            return roadmap.group(1) + "; ".join(_translate_canonical_field_v88(clause, key) for clause in clauses)
-        return roadmap.group(1) + _translate_canonical_field_v88(prose, key)
+            return prefix + "; ".join(_translate_canonical_field_v88(clause, key) for clause in clauses)
+        return prefix + _translate_canonical_field_v88(prose, key)
 
     targeted = _translate_targeted_presentation_literal(value)
     if targeted is not None:

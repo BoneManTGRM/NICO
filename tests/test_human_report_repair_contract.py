@@ -36,7 +36,7 @@ def test_actual_canonical_source_retains_exact_modules_and_provenance():
         for values in module['evidence'].values():
             for value in values:
                 assert value in section or value in str(canonical['identity'])
-        assert 'supplied_unverified' in section
+        assert 'Supplied; not independently verified' in section
     assert context == original
 
 
