@@ -1100,13 +1100,22 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # and its derived artifact digests; page and semantic parity checks stay active.
 # Source-table CSS changes HTML bytes and their printed manifest hash only.
 # Report-repair goldens include readable nested roadmap summaries/aliases and current
-# lifecycle guidance. Exact English before/after equality, bilingual semantic
+# lifecycle guidance. D7 retains detailed stage/work evidence that title-only
+# composition previously dropped, with repeated continuation headings. Markdown
+# and HTML fingerprints are unchanged; PDF totals and matching bilingual bookmarks
+# now include those retained pages. Exact English before/after equality, bilingual semantic
 # parity, finding references, and all page-count gates remain active.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('6f8effd493f2f40512ba1ee102db0da14219f51fe3f2c8da6e8e428c5a0ddaf1', 18906), 'html': ('3209be741baa28495984937ee0d9df04ee3055f035e9e4115a7f3aa744081175', 23235), 'pdf_base64': ('4af82ef7b0c3a0da6d9663f6cbbbe99991dbe028f3b84203a62c158e733432cf', 177644), 'pdf_sha256': '4d58d8d60a4d9769b2bc920f960b481e47735ed9b6566bf56519f89a78c56781', 'page_count': 21}
-RICH_ENGLISH_GOLDEN = {'markdown': ('97efa6a78e16bcf80eafac93067409b238f0889997c24e1093a44bcc570b3b3a', 20652), 'html': ('f88110639bfbc28bee30db19160bfed7c26ec373510aa35e4c7efbc2496fde5b', 25287), 'pdf_base64': ('a37f5561d01599da00ada9fcfdff42ccf6cab13010405d41477602054990a87d', 257892), 'pdf_sha256': 'fe73586af2be865c91effa6afb5cde1dd6c2a2f22bf1f16a426cced9705468fe', 'page_count': 39}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('2f15d21494ae4b23d1315fd0d57e69c9544a426a8b6ee4fef8a722847ca0abc2', 18995), 'html': ('c6f9dc4e88dfd6c06e0c675fc3c54d4cadaf339174ac79c38271a147acca5c45', 23303), 'pdf_base64': ('f446eb33c04ebfce1a9b5393cc7bf408e479232b57000f4857f6ed64c9996ee4', 173296), 'pdf_sha256': '9e1ef03b7f601ffd8c8a9d5fc7abdeb9f20da34ef297eee48e39ec0733fd5ebf', 'page_count': 20}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('6f8effd493f2f40512ba1ee102db0da14219f51fe3f2c8da6e8e428c5a0ddaf1', 18906), 'html': ('3209be741baa28495984937ee0d9df04ee3055f035e9e4115a7f3aa744081175', 23235), 'pdf_base64': ('c1cded4e9e980ebca3a2c21e83512c5e88e56f04c602b1cbc847614d79e16033', 185164), 'pdf_sha256': 'd26dc785dd302250f827349fdf03a7a73216c6a353d079f526decc0aba22d9d9', 'page_count': 23}
+RICH_ENGLISH_GOLDEN = {'markdown': ('97efa6a78e16bcf80eafac93067409b238f0889997c24e1093a44bcc570b3b3a', 20652), 'html': ('f88110639bfbc28bee30db19160bfed7c26ec373510aa35e4c7efbc2496fde5b', 25287), 'pdf_base64': ('9e30e9c74b7f53edae621b9393f9c2e0700a8fcb67c8b4f84f7a38ecef1d02f6', 287884), 'pdf_sha256': '8ea2db54b307a87eb1e2f5f9967d48d4db62557122e55ac11b64a44a66e99f61', 'page_count': 48}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('2f15d21494ae4b23d1315fd0d57e69c9544a426a8b6ee4fef8a722847ca0abc2', 18995), 'html': ('c6f9dc4e88dfd6c06e0c675fc3c54d4cadaf339174ac79c38271a147acca5c45', 23303), 'pdf_base64': ('17565b3910e3957988050c5ca2fc33b79e70630cf836e31cf59d758c1abfe5a7', 181132), 'pdf_sha256': 'f4dfc26d0b674593df28dfe5d00030150ccbd3281cc59fbc7757852f42404c4f', 'page_count': 22}
 
 SPANISH_OUTLINE = {
+    "Functional QA": "QA funcional",
+    "Platform Parity": "Paridad de plataformas",
+    "Requirements Traceability": "Trazabilidad de requisitos",
+    "Stakeholder and Business Alignment": "Alineación comercial y de partes interesadas",
+    "Six-Month Roadmap": "Hoja de ruta de seis meses",
+    "Staffing, Sequencing, and Cost": "Personal, secuencia y costo",
     "Four-Phase Assessment Program": "Programa de evaluación en cuatro fases",
     "Automated Technical Triage": "Triaje técnico automatizado",
     "Human Review by Exception": "Revisión humana por excepción",
@@ -1361,8 +1370,9 @@ def assert_structural_parity(english, spanish):
     ]
     assert_pdf_text_within_media_box(es_reader)
 
-    en_toc = en_pages[1]
-    es_toc = es_pages[1]
+    # Include every contents page before the first body bookmark.
+    en_toc = "\n".join(en_pages[1:en_outline[1][1] - 1])
+    es_toc = "\n".join(es_pages[1:es_outline[1][1] - 1])
     spanish_phase_titles = {
         SPANISH_OUTLINE[title] for title in PHASE_OUTLINE_TITLES
     }
@@ -1408,8 +1418,8 @@ rich_english = render(rich_input("en"))
 rich_spanish = render(rich_input("es-MX"))
 assert fingerprint(rich_english[0]) == RICH_ENGLISH_GOLDEN
 assert_structural_parity(rich_english, rich_spanish)
-assert len(rich_english[2]) == len(rich_spanish[2]) == 39
-assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 33
+assert len(rich_english[2]) == len(rich_spanish[2]) == 48
+assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 39
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_english[0]["markdown"])) == 88
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_spanish[0]["markdown"])) == 88
 
@@ -1425,8 +1435,8 @@ for finding_id in (
     assert finding_id in phase9_english[0]["markdown"]
     assert finding_id in phase9_spanish[0]["markdown"]
 assert "componentes hij..." not in phase9_spanish[0]["markdown"]
-assert len(phase9_english[2]) == len(phase9_spanish[2]) == 20
-assert len(outline_projection(phase9_english[1])) == len(outline_projection(phase9_spanish[1])) == 19
+assert len(phase9_english[2]) == len(phase9_spanish[2]) == 22
+assert len(outline_projection(phase9_english[1])) == len(outline_projection(phase9_spanish[1])) == 20
 assert len(re.findall(r"(?m)^#{1,3}\s", phase9_english[0]["markdown"])) == 79
 assert len(re.findall(r"(?m)^#{1,3}\s", phase9_spanish[0]["markdown"])) == 79
 

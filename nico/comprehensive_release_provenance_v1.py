@@ -63,7 +63,7 @@ def comprehensive_release_provenance() -> dict[str, Any]:
         "backend_build_commit": backend_commit,
         "backend_identity_source": "RAILWAY_GIT_COMMIT_SHA" if _first_env("RAILWAY_GIT_COMMIT_SHA") else "configured_release_label",
         "frontend_build_commit": frontend_commit,
-        "frontend_identity_established": frontend_commit != "unavailable",
+        "frontend_identity_established": frontend_commit != "unavailable" and not _first_env("NICO_FRONTEND_BUILD_COMMIT_SHA") and bool(_first_env("VERCEL_GIT_COMMIT_SHA")),
         "frontend_identity_source": "configured_release_label" if _first_env("NICO_FRONTEND_BUILD_COMMIT_SHA") else "native_environment" if _first_env("VERCEL_GIT_COMMIT_SHA") else "unavailable",
         "frontend_deployment_id": _first_env("NICO_FRONTEND_DEPLOYMENT_ID") or "unavailable",
         "frontend_deployment_identity_verified": False,
@@ -96,7 +96,7 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
     scanner = provenance.get("scanner_versions") if isinstance(provenance.get("scanner_versions"), dict) else {}
     lines = [
         ("Backend source commit", str(provenance.get("backend_build_commit") or "unavailable")),
-        ("Frontend source commit", str(provenance.get("frontend_build_commit") or "unavailable")),
+        ("Configured frontend source commit" if provenance.get("frontend_identity_source") == "configured_release_label" else "Frontend source commit", str(provenance.get("frontend_build_commit") or "unavailable")),
         ("Railway deployment", str(provenance.get("railway_deployment_id") or "unavailable")),
         ("Report renderer", str(provenance.get("report_renderer_version") or "unavailable")),
         ("Release provenance", str(provenance.get("release_provenance_version") or "unavailable")),
@@ -107,6 +107,13 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
         ("Configured ESLint", str(scanner.get("eslint") or "unavailable")),
         ("Configured TypeScript", str(scanner.get("typescript") or "unavailable")),
     ]
+    observation = provenance.get("frontend_runtime_observation")
+    if isinstance(observation, dict):
+        lines.extend([
+            ("Retained frontend endpoint claim", str(observation.get("release_sha") or "unavailable")),
+            ("Frontend observation status", str(observation.get("status") or "unavailable")),
+            ("Frontend observed at", str(observation.get("observed_at") or "unavailable")),
+        ])
     execution = provenance.get("scanner_execution_evidence")
     if not isinstance(execution, dict):
         return lines
@@ -135,6 +142,10 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 _ES_LABELS = {
+    "Configured frontend source commit": "Commit configurado del código del frontend",
+    "Retained frontend endpoint claim": "Declaración conservada del endpoint del frontend",
+    "Frontend observation status": "Estado de la observación del frontend",
+    "Frontend observed at": "Fecha de observación del frontend",
     "Configured OSV-Scanner": "OSV-Scanner configurado",
     "Configured Gitleaks": "Gitleaks configurado",
     "Configured TruffleHog": "TruffleHog configurado",

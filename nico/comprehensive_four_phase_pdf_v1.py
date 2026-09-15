@@ -338,6 +338,10 @@ def apply_four_phase_pdf(
                     index
                     for index, page in enumerate(reader.pages)
                     if index != target_index
+                    and not any(
+                        line in {"Table of Contents", "Índice", "Tabla de contenido"}
+                        for line in _page_lines(page)[:1]
+                    )
                     and any(
                         value.casefold()
                         in _text(page.extract_text(), 30_000).casefold()

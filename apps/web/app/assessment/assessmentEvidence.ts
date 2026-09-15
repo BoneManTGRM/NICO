@@ -268,6 +268,7 @@ export function evidenceCompletionFor(
 }
 
 export type InternalReviewState = {
+  operatorApprovalCompleted: boolean;
   approvalCompleted: boolean;
   completed: boolean;
   deliveryAllowed: boolean;
@@ -319,6 +320,7 @@ export function internalReviewStateFor(
     status === "rejected" ||
     decision === "rejected";
   return {
+    operatorApprovalCompleted: String(result?.operator_approval_status || record.operator_approval_status || "").toLowerCase() === "approved",
     approvalCompleted,
     completed,
     deliveryAllowed,

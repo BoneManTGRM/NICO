@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Mapping
@@ -17,7 +18,7 @@ from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_operator_approval_v1 import (
     _artifact_digests, _cover, presented_operator_identity, validated_operator_edition,
 )
-from nico.comprehensive_operator_presentation_v1 import _render_source, render_operator_presentation
+from nico.comprehensive_operator_presentation_v1 import RECEIPT_VERSION, _render_source, render_operator_presentation
 from nico.comprehensive_review_decision_v1 import report_package_from_record
 from nico.comprehensive_run_record import _record_hash
 
@@ -103,8 +104,11 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     }
     receipt["delivery_authorization_certificate_sha256"] = canonical_sha256(receipt)
     edition = render_operator_presentation(record, approved)
-    source_pdf = base64.b64decode(report_package_from_record(record)["pdf_base64"], validate=True)
+    source = report_package_from_record(record)
+    receipt_bound = source.get("json", {}).get("operator_approval_record_schema") == RECEIPT_VERSION
+    source_pdf = base64.b64decode(source["pdf_base64"], validate=True)
     corrected, _changes = _render_source(source_pdf, client_delivery_authorized=True,
+        approval_receipt_json=json.dumps(approved["review"], sort_keys=True) if receipt_bound else "",
         repair_current_truth=bool(report_package_from_record(record).get("json", {}).get("human_report_export_schema")))
     canonical = report_package_from_record(record).get('json', {})
     if canonical.get('report_truth_schema') == 'nico.report_truth.v2':
@@ -129,7 +133,7 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     edition["reports"]["pdf_base64"] = base64.b64encode(output.getvalue()).decode()
     edition["reports"]["pdf_filename"] = edition["reports"]["pdf_filename"].replace("OPERATOR-APPROVED-FINAL", "CLIENT-DELIVERY-AUTHORIZED")
     from nico.comprehensive_operator_report_formats import project_operator_report_formats
-    project_operator_report_formats(edition["reports"], authorized=True)
+    project_operator_report_formats(edition["reports"], authorized=True, approval_receipt=approved["review"] if receipt_bound else None)
     edition["artifact_digests"] = _artifact_digests(edition["reports"])
     edition["reports"]["pdf_sha256"] = edition["artifact_digests"]["pdf"]["sha256"]
     edition["report_artifact_digest"] = canonical_sha256(edition["artifact_digests"])

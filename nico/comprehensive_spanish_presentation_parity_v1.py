@@ -394,31 +394,31 @@ def _toc_page_spanish(nav: Any, entries: list[tuple[str, int]], total_pages: int
     pdf = canvas.Canvas(buffer, pagesize=letter, invariant=1)
     pdf.setTitle("NICO · Índice")
     pdf.setAuthor("NICO")
-    pdf.setFillColorRGB(0.06, 0.09, 0.16)
-    pdf.setFont("Helvetica-Bold", 20)
-    pdf.drawString(48, 744, "Índice")
-    pdf.setFillColorRGB(0.57, 0.25, 0.04)
-    pdf.setFont("Helvetica-Bold", 7)
-    pdf.drawString(48, 722, "BORRADOR AUTOMATIZADO | APROBACIÓN HUMANA PENDIENTE | ENTREGA AL CLIENTE BLOQUEADA")
-    pdf.setStrokeColorRGB(0.80, 0.84, 0.89)
-    pdf.line(48, 710, 564, 710)
-    pdf.setFillColorRGB(0.20, 0.25, 0.33)
-    y = 690
-    for title, page_number in entries[:32]:
-        fitted = nav._fit_title(_localized_title(title), max_width=445, font_name="Helvetica", font_size=8.2)
-        pdf.setFont("Helvetica", 8.2)
-        pdf.drawString(54, y, fitted)
-        pdf.setFont("Helvetica-Bold", 8.2)
-        pdf.drawRightString(558, y, str(page_number))
-        y -= 18
-    if len(entries) > 32:
-        pdf.setFont("Helvetica-Oblique", 7.2)
-        pdf.drawString(54, y, "Las entradas adicionales de navegación se conservan como marcadores del PDF.")
-    pdf.setFont("Helvetica", 7)
-    pdf.setFillColorRGB(0.39, 0.45, 0.55)
-    pdf.drawString(48, 36, "NICO | paquete de revisión técnica basado en evidencia")
-    pdf.drawRightString(564, 36, f"{total_pages} páginas físicas")
-    pdf.showPage()
+    rows = nav._TOC_ROWS_PER_PAGE
+    chunks = [entries[i:i + rows] for i in range(0, len(entries), rows)] or [[]]
+    for chunk in chunks:
+        pdf.setFillColorRGB(0.06, 0.09, 0.16)
+        pdf.setFont("Helvetica-Bold", 20)
+        pdf.drawString(48, 744, "Índice")
+        pdf.setFillColorRGB(0.57, 0.25, 0.04)
+        pdf.setFont("Helvetica-Bold", 7)
+        pdf.drawString(48, 722, "BORRADOR AUTOMATIZADO | APROBACIÓN HUMANA PENDIENTE | ENTREGA AL CLIENTE BLOQUEADA")
+        pdf.setStrokeColorRGB(0.80, 0.84, 0.89)
+        pdf.line(48, 710, 564, 710)
+        pdf.setFillColorRGB(0.20, 0.25, 0.33)
+        y = 690
+        for title, page_number in chunk:
+            fitted = nav._fit_title(_localized_title(title), max_width=445, font_name="Helvetica", font_size=8.2)
+            pdf.setFont("Helvetica", 8.2)
+            pdf.drawString(54, y, fitted)
+            pdf.setFont("Helvetica-Bold", 8.2)
+            pdf.drawRightString(558, y, str(page_number))
+            y -= 18
+        pdf.setFont("Helvetica", 7)
+        pdf.setFillColorRGB(0.39, 0.45, 0.55)
+        pdf.drawString(48, 36, "NICO | paquete de revisión técnica basado en evidencia")
+        pdf.drawRightString(564, 36, f"{total_pages} páginas físicas")
+        pdf.showPage()
     pdf.save()
     return buffer.getvalue()
 
@@ -490,10 +490,16 @@ def _renumber_spanish(nav: Any, pdf: bytes) -> bytes:
             continue
         used.add(key)
         toc_entries.append((localized, original_index + 2))
-    total = len(reader.pages) + 1
-    toc = PdfReader(io.BytesIO(_toc_page_spanish(nav, toc_entries, total))).pages[0]
+    rows = nav._TOC_ROWS_PER_PAGE
+    toc_count = max(1, (len(toc_entries) + rows - 1) // rows)
+    toc_entries = [(title, number + toc_count - 1) for title, number in toc_entries]
+    total = len(reader.pages) + toc_count
+    toc = PdfReader(io.BytesIO(_toc_page_spanish(nav, toc_entries, total))).pages
+    if len(toc) != toc_count:
+        raise ValueError("contents page-count contract failed")
     writer = PdfWriter()
-    source_pages: list[tuple[Any, bool]] = [(reader.pages[0], True), (toc, False)]
+    source_pages: list[tuple[Any, bool]] = [(reader.pages[0], True)]
+    source_pages.extend((page, False) for page in toc)
     source_pages.extend((page, True) for page in reader.pages[1:])
     for index, (source, rewrite_labels) in enumerate(source_pages, start=1):
         writer.add_page(source)
@@ -514,7 +520,7 @@ def _renumber_spanish(nav: Any, pdf: bytes) -> bytes:
             continue
         used.add(key)
         try:
-            writer.add_outline_item(localized, original_index + 1)
+            writer.add_outline_item(localized, original_index + toc_count)
         except Exception:
             pass
     output = io.BytesIO()

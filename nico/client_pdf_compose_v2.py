@@ -117,6 +117,15 @@ def compose_compact_client_pdf(
     retained: list[Any] = []
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
+        lines = _meaningful_lines(extracted)
+        # The companion replaces generic section summaries, not detailed stage
+        # evidence. Its bounded planning summary cannot substitute for retained
+        # work packages and dependencies. Repeated source-renderer evidence
+        # headings identify continuation pages as well as the initial stage page.
+        detailed_review_evidence = bool(lines and _page_heading(extracted, _REVIEW_SECTION_HEADINGS) and (
+            any(line.startswith(("stage id:", "id de etapa:")) for line in lines)
+            or any(label in lines[0] for label in ("retained evidence", "evidencia conservada"))
+        ))
         if ci_boundary is not None and _page_heading(
             extracted,
             _CI_BOUNDARY_HEADINGS,
@@ -133,7 +142,7 @@ def compose_compact_client_pdf(
             ),
         ):
             break
-        if _page_heading(
+        if not detailed_review_evidence and _page_heading(
             extracted,
             (
                 "finding and remediation register",

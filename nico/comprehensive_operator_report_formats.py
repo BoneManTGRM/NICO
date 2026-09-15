@@ -21,7 +21,7 @@ def _current_prose(value, *, authorized, current_truth=False):
     return ''.join(pieces)
 
 
-def project_operator_report_formats(reports, *, authorized=False):
+def project_operator_report_formats(reports, *, authorized=False, approval_receipt=None):
     canonical = reports.get('json', {})
     if not canonical.get('human_report_export_schema'):
         return
@@ -84,4 +84,20 @@ def project_operator_report_formats(reports, *, authorized=False):
                 value = re.sub(r'(Client-delivery authorization\s*:\s*(?:</strong>\s*)?)(BLOCKED|PENDING_AUTHORIZATION)', r'\1AUTHORIZED', value, flags=re.I)
             return value
         text = re.sub(r'<!-- NICO_PHASE2_REVIEW_TRUTH_START -->.*?<!-- NICO_PHASE2_REVIEW_TRUTH_END -->', section, text, flags=re.S)
+        if approval_receipt:
+            from html import escape
+            from copy import deepcopy
+            from nico.comprehensive_operator_presentation_v1 import _approval_record_rows
+            canonical['operator_approval_receipt'] = deepcopy(approval_receipt)
+            rows = _approval_record_rows(approval_receipt, authorized=authorized)
+            spanish = approval_receipt['source_identity']['report_language'] == 'es-MX'
+            heading = 'Registro de aprobación del operador' if spanish else 'Operator Report Approval Record'
+            replacement = '## ' + heading + '\n\n' + '\n'.join(f'- {label}: {value or ("No conservado" if spanish else "Not retained")}' for label, value in rows) + '\n'
+            # Only the renderer-owned trailing manifest section carries this
+            # approval template. Supplied literals elsewhere remain verbatim.
+            pattern = r'(## (?:Client Artifact Manifest|Manifiesto de artefactos del cliente)\n.*?)(## (?:Operator Report Approval Record|Registro de aprobación del operador)\n.*?)(?=</pre></section>|\Z)'
+            start = (text.rfind('<section data-nico-artifact-manifest="true">') if key == 'html' else
+                     max(text.rfind('## ' + title + '\n') for title in ('Client Artifact Manifest', 'Manifiesto de artefactos del cliente')))
+            if start >= 0:
+                text = text[:start] + re.sub(pattern, lambda match: match[1] + (escape(replacement) if key == 'html' else replacement), text[start:], count=1, flags=re.S)
         reports[key] = text

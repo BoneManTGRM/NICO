@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import io
+import json
 from copy import deepcopy
 
 import pytest
@@ -91,6 +92,51 @@ def test_approval_table_keeps_specialist_risk_pending():
     assert "Decision\nApproved" in text
     assert "Specialist risk acceptance\nPending" in text
     assert "Client delivery: Blocked" in text
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_owned_approval_record_resolves_exact_receipt_without_self_hashing(spanish):
+    stream = io.BytesIO()
+    c = canvas.Canvas(stream, pagesize=(612, 792))
+    lines = (["Registro de revisión humana y aprobación de artefactos exactos", "Registro de aprobación requerido", "Identidad del revisor", "Pendiente"]
+             if spanish else ["Human Review and Exact-Artifact Approval Record", "Reviewer identity", "Pending"])
+    for i, line in enumerate(lines):
+        c.drawString(30, 750-i*25, line)
+    c.save()
+    receipt = {"reviewer": "Fixture operator", "reviewer_role": "Authenticated operator", "decided_at": "2026-09-15T01:02:03Z",
+               "approval_certificate_sha256": "c" * 64, "reason": "Exact fixture approval",
+               "source_identity": {"run_id": "fixture-run", "commit_sha": "a" * 40, "report_language": "es-MX" if spanish else "en"},
+               "source_review_artifact_identity": {"revision": 3, "artifact_digests": {"pdf": {"sha256": "d" * 64}, "json": {"sha256": "e" * 64}}},
+               "approved_artifact_digests": {"pdf": {"sha256": "f" * 64}},
+               "review_disclosure": {"specialist_review_completed": False}}
+    original = deepcopy(receipt)
+    rendered, _ = _render_source(stream.getvalue(), approval_receipt_json=json.dumps(receipt))
+    reader = PdfReader(io.BytesIO(rendered))
+    text = reader.pages[0].extract_text()
+    compact = "".join(text.split())
+    assert len(reader.pages) == 1
+    assert "See certificate" not in text and "Ver certificado" not in text
+    for value in [receipt["reviewer"], receipt["decided_at"], "c" * 64, "d" * 64, "e" * 64, "f" * 64]:
+        assert "".join(value.split()) in compact
+    assert ("Not completed" if not spanish else "No completada") in text
+    assert hashlib.sha256(rendered).hexdigest() not in compact
+    assert receipt == original
+    from nico.comprehensive_operator_report_formats import project_operator_report_formats
+    title = "Registro de revisión humana y aprobación de artefactos exactos" if spanish else "Human Review and Exact-Artifact Approval Record"
+    # The finalizer's manifest tail is a reserved template; source quotations stay
+    # in the literal appendix outside that template.
+    manifest_title = "Manifiesto de artefactos del cliente" if spanish else "Client Artifact Manifest"
+    source_text = f'## {manifest_title}\n\nRetained source reference\n\n## {title}\n\n- Reviewer identity: Pending\n'
+    literal = '<span data-nico-client-literal="true">## Client Artifact Manifest\n## Operator Report Approval Record\nCLIENT DELIVERY BLOCKED</span>'
+    reports = {"json": {"human_report_export_schema": "fixture", "report_truth_schema": "nico.report_truth.v2"},
+               "markdown": literal + '\n\n' + source_text,
+               "html": literal + '<section data-nico-artifact-manifest="true"><pre>' + source_text + '</pre></section>'}
+    project_operator_report_formats(reports, authorized=True, approval_receipt=receipt)
+    for kind in ("markdown", "html"):
+        assert "- Reviewer identity: Pending" not in reports[kind]
+        assert "c" * 64 in reports[kind]
+        assert literal in reports[kind]
+    assert reports["json"]["operator_approval_receipt"] == original
 
 
 def test_pending_evidence_and_quoted_status_text_are_not_approval_labels():

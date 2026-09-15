@@ -423,7 +423,25 @@ def _source_presentation_stages(stages: Any) -> list[dict[str, Any]]:
         if digest:
             indices[digest] = len(result)
         result.append(stage)
-    return result
+    # A coverage-only repository stage can repeat the architecture profile without
+    # carrying its observation digest. Deduplicate the complete retained profile,
+    # including paths and limits, rather than a heading or displayed row subset.
+    # Prefer attaching it to the source observation regardless of stage order.
+    coverage_owner: dict[str, int] = {}
+    projected = deepcopy(result)
+    for index, stage in enumerate(projected):
+        coverage = stage.get("profile_coverage")
+        if not isinstance(coverage, dict) or not coverage:
+            continue
+        key = _canonical_hash(coverage)
+        if key not in coverage_owner:
+            coverage_owner[key] = index
+        elif stage.get("source_observation") and not projected[coverage_owner[key]].get("source_observation"):
+            projected[coverage_owner[key]].pop("profile_coverage", None)
+            coverage_owner[key] = index
+        else:
+            stage.pop("profile_coverage", None)
+    return [stage for stage in projected if _source_tables(stage)]
 
 
 def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
@@ -454,31 +472,35 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
     cell_style = ParagraphStyle("SourceEvidenceCell", fontName="Helvetica", fontSize=7.1, leading=9.0)
-    title_style = ParagraphStyle("SourceEvidenceTitle", parent=cell_style, fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, spaceBefore=5, spaceAfter=3)
+    title_style = ParagraphStyle("SourceEvidenceTitle", parent=cell_style, fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, spaceBefore=5, spaceAfter=3, keepWithNext=True)
     def cell(value: Any, heading: bool = False, literal: bool = False) -> Any:
         return Paragraph(html.escape(str(value) if literal else _source_cell(value, spanish=spanish)), title_style if heading else cell_style)
     flowables: list[Any] = []
+    observed = stage.get("source_observation")
+    if isinstance(observed, dict):
+        label = "SHA-256 de la observación" if spanish else "Observation SHA-256"
+        reference = cell(f"{label}: {observed.get('observation_sha256', '')}")
+        reference.keepWithNext = True
+        flowables.append(reference)
     for table in _source_tables(stage):
         rows = table["rows"]
         columns = table["columns"]
         flowables.append(cell(table["title"], True))
         values = [[cell(value) for value in columns]] + [[cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)] for row in rows[:row_limit]]
+        note = cell(f"Se muestran {min(row_limit, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa."
+                    if spanish else f"Showing {min(row_limit, len(rows))} of {len(rows)} rows; JSON retains the complete observation.")
+        values.append([note] + [""] * (len(columns) - 1))
         rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1, hAlign="LEFT")
         rendered.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
-            ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#94a3b8")),
+            ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#94a3b8")),
+            ("SPAN", (0, -1), (-1, -1)),
+            ("NOSPLIT", (0, -2), (-1, -1)),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
             ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
-        flowables += [rendered, cell(
-            f"Se muestran {min(row_limit, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa."
-            if spanish else f"Showing {min(row_limit, len(rows))} of {len(rows)} rows; JSON retains the complete observation."
-        ), Spacer(1, 5)]
-    observed = stage.get("source_observation")
-    if isinstance(observed, dict):
-        label = "SHA-256 de la observación" if spanish else "Observation SHA-256"
-        flowables.append(cell(f"{label}: {observed.get('observation_sha256', '')}"))
+        flowables += [rendered, Spacer(1, 5)]
     return flowables
 
 
@@ -1259,13 +1281,18 @@ def _pdf(
             p(stage["title"], h1),
             p(f"{localized('Stage ID')}: {stage['stage_id']} · {localized('Status')}: {localized(stage['status'].upper())}", small),
             p(stage["summary"], body),
-            p(localized("Retained Evidence"), h2),
-            *bullets(
-                stage["evidence"],
-                limit=100,
-                client_literal=client_literal_stage,
-            ),
         ]
+        evidence_rows = [[p(f"{stage['title']} — {localized('Retained Evidence')}", h3)]]
+        evidence_rows.extend([item] for item in bullets(
+            stage["evidence"], limit=100, client_literal=client_literal_stage,
+        ))
+        evidence_table = Table(evidence_rows, colWidths=[doc.width], repeatRows=1, hAlign="LEFT")
+        evidence_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(evidence_table)
         if stage["findings"]:
             story += [p(localized("Findings"), h2), *bullets(stage["findings"], limit=50)]
         if stage["unavailable"]:

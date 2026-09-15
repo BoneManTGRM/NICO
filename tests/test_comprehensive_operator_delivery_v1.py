@@ -26,6 +26,30 @@ def approved_request(service, metadata=""):
                          expected_artifact_identity=presented_operator_identity(approved, approved["operator_approved_edition"]))
 
 
+@pytest.mark.parametrize("service", [False, True], indirect=True)
+def test_source_version_preserves_old_authorized_bytes_and_binds_new_receipt_page(service, monkeypatch):
+    from nico.comprehensive_review_decision_v1 import report_package_from_record
+    from nico import comprehensive_operator_presentation_v1 as presentation
+    approved, request = approved_request(service)
+    result = authorize_operator_delivery(service, approved["identity"]["run_id"], request)
+    edition = validated_operator_delivery(result)
+    assert edition is not None
+    source = report_package_from_record(result)["json"]
+    receipt_bound = source.get("operator_approval_record_schema") == presentation.RECEIPT_VERSION
+    if receipt_bound:
+        text = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(base64.b64decode(edition["reports"]["pdf_base64"]))).pages)
+        assert "See certificate" not in text
+        assert edition["reports"]["json"]["operator_approval_receipt"] == approved["operator_approved_edition"]["review"]
+    else:
+        assert "operator_approval_receipt" not in edition["reports"]["json"]
+        def unexpected(*args, **kwargs):
+            raise AssertionError("New receipt renderer must not affect historical identity")
+        monkeypatch.setattr(presentation, "_approval_record_pdf", unexpected)
+        presentation._render_source.cache_clear()
+    assert validated_operator_delivery(current(service)) == edition
+    assert authorize_operator_delivery(service, approved["identity"]["run_id"], request) == result
+
+
 @pytest.mark.parametrize("metadata", ["", "TEST", "test", " TeSt ", "   "])
 def test_explicit_permission_persists_and_download_retains_source_and_work(service, metadata):
     approved, request = approved_request(service, metadata)
