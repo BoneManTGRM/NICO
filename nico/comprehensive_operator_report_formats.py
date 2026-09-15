@@ -101,3 +101,67 @@ def project_operator_report_formats(reports, *, authorized=False, approval_recei
             if start >= 0:
                 text = text[:start] + re.sub(pattern, lambda match: match[1] + (escape(replacement) if key == 'html' else replacement), text[start:], count=1, flags=re.S)
         reports[key] = text
+
+
+def project_authorized_companion_formats(reports, *, receipt, delivery):
+    """Render owned lifecycle sections from validated decisions, preserving evidence.
+
+    Called after authority validation. PDF and canonical evidence bytes are not
+    regenerated. Legacy approval projection stays frozen for receipt validation.
+    """
+    from nico.comprehensive_operator_approval_v1 import _cover
+    from nico.comprehensive_four_phase_model_v1 import _EN, _ES, four_phase_markdown
+    from nico.client_ready_html_v1 import render_client_html
+
+    canonical = reports.get('json', {})
+    if not canonical.get('human_report_export_schema'):
+        return
+    spanish = receipt['source_identity']['report_language'] == 'es-MX'
+    badge = ('APROBADO POR OPERADOR · REVISIÓN ESPECIALIZADA SEPARADA · ENTREGA AL CLIENTE AUTORIZADA'
+             if spanish else 'OPERATOR APPROVED · SPECIALIST REVIEW SEPARATE · CLIENT DELIVERY AUTHORIZED')
+    markdown = reports.get('markdown', '')
+    # The certificate is the renderer-owned prefix, never a source quotation.
+    if markdown.startswith('NICO Comprehensive — '):
+        _, separator, body = markdown.partition('\n\n---\n\n')
+        if separator:
+            _, certificate = _cover(receipt, spanish=spanish, corrected_presentation=True,
+                                    delivery_authorization=delivery)
+            markdown = certificate + separator + body
+
+    def owned_section(headings, transform):
+        nonlocal markdown
+        pattern = r'(?ms)^(## (?:' + '|'.join(re.escape(h) for h in headings) + r')\n)(.*?)(?=^## |\Z)'
+        markdown = re.sub(pattern, lambda m: m[1] + transform(m[2]), markdown)
+
+    phase = four_phase_markdown(canonical, spanish=spanish)
+    phase_body = phase.split('\n', 1)[1]
+    # Replace only this generated section's default draft banner.
+    phase_body = re.sub(r'(?m)^\*\*[^\n]+\*\*$', '**' + badge + '**', phase_body)
+    owned_section((_EN, _ES), lambda _: phase_body)
+    boundary = ('La aprobación del operador y la autorización de entrega están registradas para esta edición. '
+                'La revisión especializada y el control de calidad siguen separados; no se ha enviado el informe. '
+                'La evidencia faltante se declara y no se convierte en un resultado aprobado.\n\n' if spanish else
+                'Operator approval and delivery authorization are recorded for this edition. '
+                'Specialist review and quality control remain separate; no report has been sent. '
+                'Missing evidence is disclosed and is never converted into a passing claim.\n\n')
+    owned_section(('Decision Boundary', 'Límite de decisión'), lambda _: boundary)
+
+    def review_instructions(text):
+        # Exact checklist item within the owned gate, not a document-wide rewrite.
+        return text.replace('- [ ] Approve or reject this immutable automated draft before delivery.',
+            '- Operator approval and delivery authorization are recorded. Complete outstanding specialist acceptance separately.').replace(
+            '- [ ] Aprobar o rechazar este borrador automatizado antes de la entrega.',
+            '- La aprobación del operador y la autorización de entrega están registradas. Completar por separado la aceptación especializada pendiente.')
+    owned_section(('Human Review and Acceptance Gate', 'Puerta de revisión humana y aceptación'), review_instructions)
+    def legacy_checklist(text):
+        return text.replace('- [ ] Approve or reject the exact immutable report package before any client delivery.',
+            '- Operator approval and delivery authorization are recorded. Complete outstanding specialist acceptance separately.').replace(
+            '- [ ] Aprobar o rechazar el paquete inmutable exacto del informe antes de cualquier entrega al cliente.',
+            '- La aprobación del operador y la autorización de entrega están registradas. Completar por separado la aceptación especializada pendiente.')
+    owned_section(('Human Review Checklist', 'Lista de verificación para revisión humana'), legacy_checklist)
+    markdown = re.sub(
+        r'(?m)^(### Client Human Evidence — [^\n]+\n)These observations were explicitly supplied by people and are retained ',
+        r'\1This information was explicitly supplied by people and is retained ', markdown)
+    reports['markdown'] = markdown
+    title = ('Evaluación Técnica Integral NICO' if spanish else 'NICO Comprehensive Technical Assessment')
+    reports['html'] = render_client_html(markdown, title, spanish=spanish, lifecycle_badge=badge)
