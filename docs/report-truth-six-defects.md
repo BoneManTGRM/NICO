@@ -281,3 +281,22 @@ retained counts; a positive retained-count projection remains intact. Thirty-sev
 focused assertions pass. Bilingual fixed-source artifact comparisons and all
 protected checks run again before merge. No new real run, owner decision or
 production acceptance is claimed by these engineering fixtures.
+
+Postmerge counterexample (2026-09-15 UTC): the controlled Spanish publication
+failed on the populated `job_success_rate` field; three dependent acceptance jobs
+then stopped on the failed source workflow. P7 is reopened. Failure → a retained
+rate became an English fallback label in the final Markdown/HTML CI context;
+hypothesis → the compatibility map recognizes only `observed_job_success_rate`;
+smallest correction → map the actual provider alias to the same bilingual label;
+counterexample → absent, zero, partial and full rates plus both aliases preserve
+their distinct values and leave canonical input untouched; evidence → the
+fixed-source bilingual assembly reproduced the production guard failure and the
+minimal test captured three failures before the two-label repair. All 54 affected
+semantic assertions now pass; final assembly and protected production checks
+must pass before P7 can close. No guard, source quotation, score or decision changes.
+
+The same companion inspection also exposed `mutable_operational_trend` and `none`
+as reader-facing CI state values. Two failing bilingual assertions precede a
+field-specific label correction in the same formatter. Structured source values
+and unrelated quoted text remain literal. This affects companion presentation;
+actual reviewable exports must be reinspected before owner approval.

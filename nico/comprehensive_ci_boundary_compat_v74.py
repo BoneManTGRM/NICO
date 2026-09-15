@@ -43,6 +43,7 @@ _EN_LABELS = {
     "observed_workflow_runs": "Workflow runs observed",
     "workflow_run_count": "Workflow runs observed",
     "jobs_observed": "Jobs observed",
+    "job_success_rate": "Observed job success rate",
     "observed_job_success_rate": "Observed job success rate",
     "deployments_observed": "Deployments observed",
     "successful_deployments": "Successful deployments",
@@ -74,6 +75,7 @@ _ES_LABELS = {
     "observed_workflow_runs": "Ejecuciones de flujo observadas",
     "workflow_run_count": "Ejecuciones de flujo observadas",
     "jobs_observed": "Trabajos observados",
+    "job_success_rate": "Tasa de éxito observada de trabajos",
     "observed_job_success_rate": "Tasa de éxito observada de trabajos",
     "deployments_observed": "Despliegues observados",
     "successful_deployments": "Despliegues exitosos",
@@ -385,6 +387,11 @@ def _flatten_scalars(
 
 
 def _format_value(key: str, value: Any, *, spanish: bool) -> str:
+    leaf = key.rsplit(".", 1)[-1]
+    if leaf == "classification" and value == "mutable_operational_trend":
+        return "Contexto operativo mutable" if spanish else "Mutable operational context"
+    if leaf in {"score_effect", "technical_score_effect"} and value == "none":
+        return "Ninguno" if spanish else "None"
     if isinstance(value, bool):
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     if value is None:

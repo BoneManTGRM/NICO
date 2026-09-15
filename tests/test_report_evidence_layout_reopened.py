@@ -15,6 +15,40 @@ from nico.comprehensive_pdf_layout_polish_v1 import _render_polished_toc_pdf
 from nico.v2_dark_branded_cover_readiness_v4 import _truthful_executive_posture
 
 
+@pytest.mark.parametrize("key", ["job_success_rate", "observed_job_success_rate"])
+@pytest.mark.parametrize("rate", [0.0, 0.75, 1.0])
+def test_retained_job_rate_is_localized_without_changing_observation(key, rate):
+    from nico.comprehensive_ci_boundary_compat_v74 import ci_operational_truth_markdown
+    canonical = {"report_language": "es-MX", "ci_operational_context": {key: rate}}
+    before = deepcopy(canonical)
+    output = ci_operational_truth_markdown(canonical, spanish=True)
+    assert f"Tasa de éxito observada de trabajos: {rate * 100:.1f}%" in output
+    assert "job success rate" not in output.casefold()
+    assert canonical == before
+
+
+def test_absent_job_rate_remains_absent_in_operational_companion():
+    from nico.comprehensive_ci_boundary_compat_v74 import ci_operational_truth_markdown
+    canonical = {"report_language": "es-MX", "ci_operational_context": {"jobs_observed": 0}}
+    output = ci_operational_truth_markdown(canonical, spanish=True)
+    assert "Tasa de éxito" not in output
+    assert "Trabajos observados: 0" in output
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_ci_context_enums_have_reader_labels_and_preserve_source_values(spanish):
+    from nico.comprehensive_ci_boundary_compat_v74 import ci_operational_truth_markdown, _format_value
+    source = {"ci_operational_context": {"classification": "mutable_operational_trend",
+              "score_effect": "none", "technical_score_effect": "none"}}
+    before = deepcopy(source)
+    output = ci_operational_truth_markdown(source, spanish=spanish)
+    assert "mutable_operational_trend" not in output
+    assert ("Contexto operativo mutable" if spanish else "Mutable operational context") in output
+    assert ("Efecto en la puntuación: Ninguno" if spanish else "Score effect: None") in output
+    assert _format_value("quoted_source", "none", spanish=spanish) == "none"
+    assert source == before
+
+
 def absent_canonical():
     return {"identity": {"repository": "example/synthetic", "commit_sha": "a" * 40},
             "assessment": {"technical_score": 93},
