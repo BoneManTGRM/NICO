@@ -342,3 +342,23 @@ outline destinations are unchanged. The capture scripts retained the semantic,
 Spanish parity, manifest and repeat-generation assertions and passed. Only the
 three observed fingerprints were updated; no semantic assertion was removed.
 Protected checks on the resulting head remain required before merge.
+
+## Candidate-label Spanish grammar integration — 2026-09-15
+
+Production Spanish publication on PR1611's merged release was blocked by the
+existing English-copy guard: candidate category count lines still used English.
+Three downstream production proofs consequently did not run. This reopens P7;
+protected CI and serving identity did not establish Spanish production acceptance.
+Failure → the actual renderer now emits readable count/disposition labels, while
+two existing Spanish grammar rules still expected underscores. Smallest correction
+→ those rules accept both retained legacy labels and current reader labels, and
+translate only known disposition field values. Counts, source records, quoted
+titles and source paths remain unchanged. Counterexample → exercise actual current
+renderer output for all three categories and four dispositions, with distinct
+counts and literal title/path assertions:9 failures/1 pass before;24 focused and
+affected passes after. Full publication and evidence-literal tests remain required.
+No English generation, score, approval, finalization or persistence code changed.
+The existing English real run can be retained; this does not justify another
+assessment. Static grammar has no independent ordering effect; full edition and
+locale integration tests retain the existing freeze/identity checks. Next: finish
+required checks, protected merge/deploy and repeat the failed production predicate.

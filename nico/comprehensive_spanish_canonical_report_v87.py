@@ -2452,10 +2452,10 @@ def _structured_presentation_es(value: str) -> str | None:
 
     match = re.fullmatch(
         r"(?P<category>Dependency|Secret|Static): raw=(?P<raw>\d+); "
-        r"confirmed_material=(?P<confirmed>\d+); "
-        r"review_required=(?P<review>\d+); "
-        r"excluded_test_only=(?P<excluded>\d+); "
-        r"approved_or_nonblocking=(?P<nonblocking>\d+)\.",
+        r"confirmed[_ ]material=(?P<confirmed>\d+); "
+        r"review[_ ]required=(?P<review>\d+); "
+        r"excluded[_ ]test[_ ]only=(?P<excluded>\d+); "
+        r"approved[_ ]or[_ ]nonblocking=(?P<nonblocking>\d+)\.",
         value,
         flags=re.IGNORECASE,
     )
