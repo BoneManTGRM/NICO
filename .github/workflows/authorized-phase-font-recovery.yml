@@ -1,0 +1,30 @@
+name: Authorized phase font workspace recovery
+
+on:
+  push:
+    branches: [fix/authorized-phase-font-20260915]
+    paths: [.github/workflows/authorized-phase-font-recovery.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive tracked source only
+        run: |
+          mkdir -p recovery-output
+          git archive --format=tar --output=recovery-output/nico-source.tar HEAD
+          git rev-parse HEAD > recovery-output/source-commit.txt
+          sha256sum recovery-output/nico-source.tar > recovery-output/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nico-phase-font-source
+          path: recovery-output/
+          retention-days: 1
+          if-no-files-found: error
