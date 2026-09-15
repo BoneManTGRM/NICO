@@ -180,8 +180,9 @@ technical review panel exposed digest summaries, while the authenticated respons
 already retained the complete operator edition, receipts, and companion formats.
 The ordinary UI could download the approved PDF but could not export those records
 for independent verification. Add a supplementary records download inside that
-existing panel. It serializes only the retained edition and its review identity;
-it creates no decision, performs no request or rendering, and is not another step
+existing panel. It downloads the original authenticated JSON response after confirming the same
+retained edition and review identity; it creates no decision, performs no rendering,
+and is not another step
 in the successful one-action PDF path. The reviewed source and final bytes remain
 immutable, so this export does not require another assessment or owner approval.
 
@@ -189,7 +190,9 @@ Iteration: bilingual minimal export assertions failed with a missing control;
 the same fixtures now preserve the full exact payload and pending specialist state.
 Clearing operator credentials disables and guards the export; pending assessments
 have no approved-edition export. These ordering checks issue no mutation and do
-not serialize credentials. All 61 affected handler/state tests and TypeScript
+not serialize credentials. A numeric counterexample exposed browser reserialization changing 1.0 to 1;
+that minimal case failed before preserving raw server JSON. Changed revision and
+changed artifact cases are rejected. All 64 affected handler/state tests and TypeScript
 checking pass locally. Production retrieval and detached-manifest verification
 remain required after protected integration and deployment. No private report
 identifiers or artifact contents are included in this public ledger.
