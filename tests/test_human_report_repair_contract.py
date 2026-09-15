@@ -179,7 +179,7 @@ def test_full_finalizer_keeps_modules_in_all_applicable_exports(language):
     import re
     # Join flowed evidence across physical page headers/footers, retaining all
     # substantive text and order for the full-value comparison.
-    evidence_text = re.sub(r'(?m)^(?:Document page \d+ of \d+|Página del documento \d+ de \d+|Supplied Human Evidence \| supplied_unverified|Evidencia humana aportada \| supplied_unverified)\s*$', '', text)
+    evidence_text = re.sub(r'(?m)^(?:Document page \d+ of \d+|Página del documento \d+ de \d+|Supplied Human Evidence \| supplied_unverified|Evidencia humana aportada \| supplied_unverified|Supplied Human Evidence \| Supplied, unverified|Evidencia humana aportada \| Aportado sin verificar)\s*$', '', text)
     rows = list(csv.DictReader(io.StringIO(report['evidence_csv'])))
     human_rows = {row['module_id']: row for row in rows if row.get('record_type') == 'supplied_human_evidence'}
     for module_id, module in context['human_evidence']['modules'].items():

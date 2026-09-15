@@ -314,3 +314,69 @@ def test_roadmap_narrative_tracks_retained_optional_inputs_and_clear(requirement
     assert "No requirement mappings were retained." in cleared["summary"]
     assert "No stakeholder constraints were retained." in cleared["summary"]
     assert not cleared["roadmap"][0]["requirements"] and not cleared["roadmap"][0]["constraints"]
+
+
+def test_source_table_enum_labels_preserve_paths_and_source_values():
+    from nico.comprehensive_report_package import _source_cell
+    assert _source_cell('source_module', spanish=False) == 'Source module'
+    assert _source_cell('http_call', spanish=False) == 'HTTP call'
+    assert _source_cell('outbound_network_destination_unresolved', spanish=False) == 'Outbound network destination unresolved'
+    assert _source_cell('declared_container_configuration', spanish=False) == 'Declared container configuration'
+    assert _source_cell('source_module', spanish=True) == 'módulo de código'
+    assert _source_cell('src/source_module.py', spanish=False) == 'src/source_module.py'
+
+
+def test_work_package_labels_preserve_machine_gap_references():
+    from nico.comprehensive_finding_roadmap_v1 import bind_final_finding_roadmap
+    source = {'identity': {'run_id': 'synthetic', 'repository': 'fixture/repo', 'commit_sha': 'a'*40, 'evidence_ledger_id': 'synthetic-ledger'},
+              'assessment': {}, 'canonical_findings': [], 'review_candidate_summary': {'review_required_total': 3},
+              'stage_summaries': [{'stage_id': 'six_month_roadmap'}]}
+    before = deepcopy(source)
+    result = bind_final_finding_roadmap(source, raw_stages={})
+    assert result['roadmap'][0]['source_refs'][0]['surface'] == 'review_candidate_summary'
+    assert ' | Candidate review summary | ' in '\n'.join(result['stage_summaries'][0]['evidence'])
+    assert source == before
+
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_historical_workflow_timeout_uses_reader_label(spanish):
+    from nico.comprehensive_ci_boundary_compat_v74 import _historical_line
+    source = {'ci_operational_context': {'outcome_taxonomy': {'timed_out': 2}, 'workflow_run_count': 2}}
+    before = deepcopy(source)
+    text = _historical_line(source, spanish=spanish)
+    assert ('agotadas por tiempo=2' if spanish else 'timed out=2') in text
+    assert 'timed_out=' not in text and 'agotadas_por_tiempo=' not in text
+    assert source == before
+
+
+def test_scanner_provenance_reader_labels_preserve_retained_record_and_digests():
+    from nico.comprehensive_release_provenance_v1 import _provenance_lines
+    source = {'scanner_execution_evidence': {'scanner_records': [{'scanner_name': 'fixture',
+        'execution_status': 'completed', 'execution_evidence_verified': True,
+        'inapplicability_evidence_verified': False, 'raw_artifact': {'sha256': 'a'*64},
+        'execution_provenance': {'execution_receipt': {'receipt_sha256': 'b'*64,
+                               'status': 'retained_receipt_integrity_verified'}}, 'configuration': {}}]}}
+    before = deepcopy(source)
+    text = '\n'.join(value for _,value in _provenance_lines(source))
+    assert 'execution evidence verified=True' in text
+    assert 'full configuration verified=False' in text
+    assert 'retained receipt integrity verified' in text
+    assert 'execution_evidence_verified=' not in text
+    assert 'a'*64 in text and 'b'*64 in text and source == before
+
+
+def test_candidate_prose_labels_keep_numeric_counts_and_machine_dispositions():
+    from types import SimpleNamespace
+    from nico.comprehensive_report_content_render_v66 import _candidate_stage
+    source = {'review_candidate_summary': {'raw_total': 2, 'review_required_total': 2,
+              'by_category': {'dependency': {'raw': 2, 'material': 0, 'review_required': 2,
+                  'excluded_test_only': 0, 'approved_or_nonblocking': 0}}},
+              'review_candidate_register': [{'candidate_id': 'C-LITERAL', 'disposition': 'review_required',
+                                           'title': 'literal supplied_unverified'}]}
+    before = deepcopy(source)
+    result = _candidate_stage(source, SimpleNamespace(_stage=lambda *args, **kw: kw))
+    text = '\n'.join(result['evidence'] + result['findings'])
+    assert 'confirmed material=0' in text and 'review required=2' in text
+    assert 'disposition=review required' in text
+    assert 'literal supplied_unverified' in text
+    assert source == before

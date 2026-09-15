@@ -314,3 +314,21 @@ positive mappings, literal constraints, source input, and proposed-only authorit
 The focused affected suite passes 72 tests. No score, artifact binding, review,
 or delivery control changed. Protected checks and deployed workflow remain the
 next gate; this is not a report acceptance claim.
+
+The same pre-approval R5 inspection also found internal labels in source tables,
+roadmap gap references, workflow outcome text, scanner provenance, candidate
+counts/dispositions and the human-evidence appendix header. Corrections are at the
+owned label constructors. Machine gap references, source paths, retained records,
+counts, digest values and literal evidence remain unchanged. The appendix
+regression now recognizes both historical and corrected renderer-owned headers;
+it still checks every supplied literal and all module boundaries.
+
+Reduced label assertions fail on the prior implementation and pass after repair;
+56 focused checks and47 affected source/provenance/candidate/render checks pass.
+A broader run passed153 checks; its one fixture API/identity error was corrected
+and rerun in the focused suite. Full fixed-source English/es-MX reconstruction
+passes assembly/localization guards at51/50 pages. It retains historical canonical
+sentences and is layout evidence, not a corrected production edition. New-source
+builder tests verify that newly generated roadmap prose uses reader labels while
+retaining exact machine references. Actual replacement-edition inspection and
+fresh owner approval remain mandatory.
