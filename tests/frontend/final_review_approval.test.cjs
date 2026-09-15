@@ -19,7 +19,7 @@ assert.equal((compiled.diagnostics || []).filter(d => d.category === ts.Diagnost
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const stable = value => Array.isArray(value) ? `[${value.map(stable).join(',')}]`
   : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}` : JSON.stringify(value);
-const response = value => ({ok: true, status: 200, json: async () => value});
+const response = value => ({ok: true, status: 200, json: async () => value, text: async () => JSON.stringify(value)});
 function fixture(approved = false, operator = true, language = 'en') {
   const bytes = Buffer.from(`%PDF-1.7\nUNIT FIXTURE ONLY ${approved ? 'APPROVED' : 'PENDING'}\n%%EOF\n`);
   const value = {
@@ -777,4 +777,52 @@ for (const locale of ['en', 'es-MX']) test(`${locale}: retained approval does no
   await h.load();
   assert.doesNotMatch(h.text(), /Download and review the report, confirm that exact PDF|Descarga y revisa el informe, confirma ese PDF exacto/);
   assert.match(h.text(), locale === 'en' ? /already approved/ : /ya está aprobado/);
+});
+
+for (const locale of ['en', 'es-MX']) test(`${locale}: export retains exact authenticated edition and receipts without another decision`, async () => {
+  const value = fixture(true, true, locale);
+  const h = harness({locale, get: async () => response(value)});
+  await h.load();
+  const label = locale === 'en' ? 'Download retained edition records' : 'Descargar registros de la edición conservada';
+  await h.click(label);
+  const exported = JSON.parse(await h.downloads[0].blob.text());
+  assert.deepEqual(exported.review_artifact_identity, value.review_artifact_identity);
+  assert.deepEqual(exported.operator_approved_edition, value.operator_approved_edition);
+  assert.equal(exported.operator_approved_edition.reports.json.human_review_completed, false);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+  assert.doesNotMatch(await h.downloads[0].blob.text(), /unit-test-not-a-secret/);
+  h.change(locale === 'en' ? 'Operator password' : 'Contraseña del operador', '');
+  assert.equal(h.button(label).props.disabled, true);
+  await h.button(label).props.onClick();
+  assert.equal(h.downloads.length, 1);
+});
+
+test('pending source has no retained approved-edition export', async () => {
+  const h = harness(); await h.load();
+  assert.equal(h.button('Download retained edition records'), undefined);
+  assert.equal(h.downloads.length, 0);
+});
+
+test('retained export preserves original JSON number bytes', async () => {
+  const value = fixture(true); value.operator_approved_edition.reports.json.measured = 1;
+  const raw = JSON.stringify(value).replace('"measured":1', '"measured":1.0');
+  const h = harness({get: async () => ({...response(value), text: async () => raw})});
+  await h.load(); await h.click('Download retained edition records');
+  assert.equal(await h.downloads[0].blob.text(), raw);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+});
+
+for (const changed of ['revision', 'artifact']) test(`retained export refuses changed ${changed}`, async () => {
+  let count = 0;
+  const h = harness({get: async () => {
+    const value = fixture(true);
+    if (count++ > 0) {
+      if (changed === 'revision') value.review_artifact_identity.revision++;
+      else value.operator_approved_edition.reports.json.pending_qc = 0;
+    }
+    return response(value);
+  }});
+  await h.load(); await h.click('Download retained edition records');
+  assert.equal(h.downloads.length, 0);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });

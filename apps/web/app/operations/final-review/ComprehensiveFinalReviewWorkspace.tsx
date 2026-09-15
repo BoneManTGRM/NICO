@@ -119,6 +119,7 @@ const COPY = {
     deliveryCertificateDigest: "Delivery authorization certificate",
     notIssued: "Not issued",
     technicalRecord: "Technical review record",
+    retainedEditionRecords: "Download retained edition records",
     confirmFirst: "Confirm that you reviewed the exact report and authorize its approval and client delivery with the disclosed limitations.",
     decisionNoteRequired: "Add a clear review note before requesting more evidence or rejecting delivery.",
     approvedNotice: "Report approved, client delivery authorized, and the exact authorized final PDF downloaded. Specialist review/QC remains separate. No report has been sent.",
@@ -215,6 +216,7 @@ const COPY = {
     deliveryCertificateDigest: "Certificado de autorización de entrega",
     notIssued: "No emitido",
     technicalRecord: "Registro técnico de revisión",
+    retainedEditionRecords: "Descargar registros de la edición conservada",
     confirmFirst: "Confirma que revisaste el informe exacto y autorizas su aprobación y entrega al cliente con las limitaciones declaradas.",
     decisionNoteRequired: "Agrega una nota clara antes de solicitar más evidencia o rechazar la entrega.",
     approvedNotice: "Informe aprobado, entrega al cliente autorizada y PDF final autorizado exacto descargado. La revisión especializada/QC sigue separada. No se ha enviado el informe.",
@@ -474,6 +476,35 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const deliveryCertificateDigest = String(
     deliveryCertificate.delivery_authorization_certificate_sha256 || "",
   );
+  const retainedEditionExportReady = Boolean(operatorReady && operatorApprovalCompleted
+    && manifestDigest && !loading && reviewArtifactIdentity.run_id === runId.trim());
+
+  async function downloadRetainedEditionRecords(): Promise<void> {
+    if (!retainedEditionExportReady) return;
+    const selection = selectionVersion.current;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(statusUrl(), {cache: "no-store", headers: headers()});
+      if (!response.ok) throw await responseError(response, copy.loadFailed, locale);
+      // Preserve the original JSON text: reserialization in JavaScript loses
+      // Python's integer/float distinctions and breaks retained artifact hashes.
+      const raw = await response.text();
+      const current = JSON.parse(raw) as ReviewResponse;
+      if (selection !== selectionVersion.current
+        || stableIdentity(current.review_artifact_identity) !== stableIdentity(reviewArtifactIdentity)
+        || stableIdentity(operatorEditionFrom(current)) !== stableIdentity(edition)) {
+        throw new Error(copy.invalidPdf);
+      }
+      downloadBlob(new Blob([raw], {type: "application/json"}),
+        safeFilename(`nico-${runId.trim()}-revision-${reviewArtifactIdentity.revision}-retained-edition.json`,
+          "nico-retained-edition.json"));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.loadFailed);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function canonicalUrl(path: string): string {
     return new URL(`/api/nico${path}`, window.location.origin).href;
@@ -938,7 +969,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
       </>}
     </section>
 
-    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary><pre className={styles.code}>{JSON.stringify({
+    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary>
+      {operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={!retainedEditionExportReady} onClick={downloadRetainedEditionRecords}>{copy.retainedEditionRecords}</button> : null}
+      <pre className={styles.code}>{JSON.stringify({
       status: result.status,
       operator_approval_status: result.operator_approval_status,
       human_review_completed: result.human_review_completed,
