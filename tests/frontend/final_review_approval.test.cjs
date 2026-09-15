@@ -771,3 +771,10 @@ test('Spanish preparation may read its approved English source without granting 
   assert.equal(h.requests[1].body.delivery_authorized, undefined);
   assert.equal(h.downloads.length, 0);
 });
+
+for (const locale of ['en', 'es-MX']) test(`${locale}: retained approval does not instruct a first approval again`, async () => {
+  const h = harness({locale, get: async () => response(fixture(true, true, locale))});
+  await h.load();
+  assert.doesNotMatch(h.text(), /Download and review the report, confirm that exact PDF|Descarga y revisa el informe, confirma ese PDF exacto/);
+  assert.match(h.text(), locale === 'en' ? /already approved/ : /ya está aprobado/);
+});

@@ -69,6 +69,7 @@ const COPY = {
     loadFailed: "Unable to load final review.",
     finalDecision: "FINAL REPORT AND REVIEW STATE",
     approveHeading: "Review and approve the exact assessment report",
+    approvedHeading: "Approved assessment report and retained decision",
     approveLead: "Download and review the report, confirm that exact PDF, then use Approve and download final PDF. That one action approves the report, authorizes client delivery, and downloads the authorized PDF. Existing approvals are reused. No separate delivery button or acknowledgement is required.",
     review: "Report approval",
     operatorReview: "Operator approval",
@@ -164,6 +165,7 @@ const COPY = {
     loadFailed: "No fue posible cargar la revisión final.",
     finalDecision: "INFORME FINAL Y ESTADO DE REVISIÓN",
     approveHeading: "Revisa y aprueba el informe exacto de la evaluación",
+    approvedHeading: "Informe aprobado y decisión conservada",
     approveLead: "Descarga y revisa el informe, confirma ese PDF exacto y usa Aprobar y descargar PDF final. Esa única acción aprueba el informe, autoriza la entrega al cliente y descarga el PDF autorizado. Se reutilizan las aprobaciones existentes. No se requiere otro botón ni otra confirmación de entrega.",
     review: "Aprobación del informe",
     operatorReview: "Aprobación del operador",
@@ -861,7 +863,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     <section className={styles.hero}>
       <div className={styles.heroGlow} aria-hidden="true" />
       <p className={styles.eyebrow}>{copy.eyebrow}</p>
-      <h1>{copy.title}</h1>
+      <h1>{approvalCompleted ? copy.approvedHeading : copy.title}</h1>
       <p className={styles.lead}>{copy.lead}</p>
       <div className={styles.identityStrip}>
         <div><span>{copy.assessment}</span><strong>{copy.comprehensive}</strong></div>
@@ -906,7 +908,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
     </section>
 
     <section className={`${styles.panel} ${result ? styles.approvalActive : styles.approvalWaiting}`}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{copy.approveHeading}</h2><p>{copy.approveLead}</p></div></div>
+      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{approvalCompleted ? copy.approvedHeading : copy.approveHeading}</h2><p>{approvalCompleted ? deliveryAllowed ? copy.authorizationNotice : copy.pendingAuthorization : copy.approveLead}</p></div></div>
       <p className={styles.securityNote}>{copy.operatorDisclosure}</p>
       <div className={styles.statusGrid}>
         <article className={styles.statusCard}><span>{operatorApprovalCompleted ? copy.operatorReview : copy.review}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
