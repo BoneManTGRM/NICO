@@ -479,15 +479,31 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const retainedEditionExportReady = Boolean(operatorReady && operatorApprovalCompleted
     && manifestDigest && !loading && reviewArtifactIdentity.run_id === runId.trim());
 
-  function downloadRetainedEditionRecords(): void {
+  async function downloadRetainedEditionRecords(): Promise<void> {
     if (!retainedEditionExportReady) return;
-    // Export the authenticated retained payload verbatim. This supplementary
-    // inspection action neither renders reports nor creates approval authority.
-    const records = {review_artifact_identity: reviewArtifactIdentity,
-      operator_approved_edition: edition};
-    downloadBlob(new Blob([JSON.stringify(records, null, 2)], {type: "application/json"}),
-      safeFilename(`nico-${runId.trim()}-revision-${reviewArtifactIdentity.revision}-retained-edition.json`,
-        "nico-retained-edition.json"));
+    const selection = selectionVersion.current;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(statusUrl(), {cache: "no-store", headers: headers()});
+      if (!response.ok) throw await responseError(response, copy.loadFailed, locale);
+      // Preserve the original JSON text: reserialization in JavaScript loses
+      // Python's integer/float distinctions and breaks retained artifact hashes.
+      const raw = await response.text();
+      const current = JSON.parse(raw) as ReviewResponse;
+      if (selection !== selectionVersion.current
+        || stableIdentity(current.review_artifact_identity) !== stableIdentity(reviewArtifactIdentity)
+        || stableIdentity(operatorEditionFrom(current)) !== stableIdentity(edition)) {
+        throw new Error(copy.invalidPdf);
+      }
+      downloadBlob(new Blob([raw], {type: "application/json"}),
+        safeFilename(`nico-${runId.trim()}-revision-${reviewArtifactIdentity.revision}-retained-edition.json`,
+          "nico-retained-edition.json"));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.loadFailed);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function canonicalUrl(path: string): string {
