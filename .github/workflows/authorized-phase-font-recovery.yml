@@ -15,10 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 3
+          fetch-depth: 4
       - name: Apply exactly the locally tested two-file correction
         run: |
-          test "$(git rev-parse HEAD~2)" = e7ad7e01594a09bd2c5ffeab9fa5cb1b7991c48c
+          test "$(git rev-parse HEAD~3)" = e7ad7e01594a09bd2c5ffeab9fa5cb1b7991c48c
           python - <<'PY'
           import hashlib, pathlib, subprocess
           before = {
@@ -30,21 +30,20 @@ jobs:
           path = pathlib.Path('scripts/security_audit_gate.py')
           text = path.read_text()
           needle = '        elif fixture_path:\n            disposition = "approved_unverified_test_placeholder"\n'
-          addition = '''        elif (
-              path == "NICO-Ship-Checkpoint.md"
-              and finding.get("DetectorName") == "RailwayApp"
-              and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
-              == "74578dc40d97154cfd69c5767cb023643eba010802aba8dc329306074433c3c8"
-          ):
-              # PR #1618: fresh Railway deployment metadata confirms this exact
-              # value is the successful 59dfa4d deployment ID, not a credential.
-              # Scope is one checkpoint/detector/digest; verified findings still
-              # block above. Preserve the scanner finding and redact its value.
-              disposition = "approved_nonsecret_deployment_identifier"
-              approved_nonsecret_identifiers += 1
-          '''
-          # Match the original function's eight-space branch indentation.
-          addition = addition.replace('\n', '\n    ').rstrip() + '\n'
+          addition = '\n'.join([
+              '        elif (',
+              '            path == "NICO-Ship-Checkpoint.md"',
+              '            and finding.get("DetectorName") == "RailwayApp"',
+              '            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()',
+              '            == "74578dc40d97154cfd69c5767cb023643eba010802aba8dc329306074433c3c8"',
+              '        ):',
+              '            # PR #1618: fresh Railway deployment metadata confirms this exact',
+              '            # value is the successful 59dfa4d deployment ID, not a credential.',
+              '            # Scope is one checkpoint/detector/digest; verified findings still',
+              '            # block above. Preserve the scanner finding and redact its value.',
+              '            disposition = "approved_nonsecret_deployment_identifier"',
+              '            approved_nonsecret_identifiers += 1',
+          ]) + '\n'
           assert text.count(needle) == 1
           path.write_text(text.replace(needle, addition + needle))
           path = pathlib.Path('tests/test_security_audit_gate.py')
