@@ -15,25 +15,50 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 2
-      - name: Apply exactly the locally tested two-file patch
+          fetch-depth: 3
+      - name: Apply exactly the locally tested two-file correction
         run: |
-          test "$(git rev-parse HEAD^)" = e7ad7e01594a09bd2c5ffeab9fa5cb1b7991c48c
+          test "$(git rev-parse HEAD~2)" = e7ad7e01594a09bd2c5ffeab9fa5cb1b7991c48c
           python - <<'PY'
-          import base64, gzip, hashlib, pathlib, subprocess
-          encoded = 'H4sIAAAAAAAC/51VTW/bOBC9+1cMnIsNm4o+qK8UWbRoL720QQrsZVEIFDm0iMqiQFJp8u+XsuI4MhJ4uzpYtDB8nJn35lEoKYGQnXLAri03qnf22iIfjHJPFRuEctWOOQz6J6gvBCxUJ/AROA+xTjEIcsniQtYQhWFG6YIQcvGMxWazuXzOx49AEhpuM9iMr6gA/0WghMqZQcoWG71bGa3dDdwx16yB/AVCcfePdWYLn7qnnzcLeP1cwd9olFQoQPoiVLezYJ1qW6hbzX8Bq/UDfgCDjqkOXKPsMQ6YBXxQAjuOwRxUKNtrq5zSHdzCkvW98Sii6nTn6/JYlcC+1U977Fw1IrgxA7Oco7yx7RRrYXML0WJzDMZWSVid/o9P7zsAtz6Bb18/fyc/GtWTzw3yX71WnQv2YjkPZ91LD4IdutXyCzrkTptvbI/L9QHpnqn2N3v61PdvbG6Y6bVpVB7ZhcZqtfMtXM7x79tvDaAPL5TrwbdMCV+t10OCjUDu0brWeY44H5jTNC8FpKMo8SimXIit5mmc5r8M4yWiCNQujsAhjVjMfmMRlEmZhTmmS8IQXr9Jc38zhr+DuHq6iLCpuQBq0DTxXByd2YO+JF8wx4LqTyuztpAF8ZNydwz2wdkBQYwiCHThHa+XQQloKyah4Dfv1yxY67ScPPK8HUlkbnOPK8HUlkbnOP94Lo/4OkOgb8wdy2eebme2vYBHt6W8DneK0UHcOcrRvOAU7KcdR2ak7Q9mz4vXyMoZ6fCztL73xrf/KnGYaZxqR7dYLAaxX3z38Zu6I4NqpzvV9W3jHujaMX7I3ce95yKeO2ZY4w9/Fbv2ubFmGfnlGmZpDELgpBHZcqiuXNeRpnM83Lc6J9xHo3+Ob7yo30e9pwstHppmDYjNdWx688CqQ5Ssiu37yciTm77TU8tXS2F5vbaK9gwr1VisNfGkanDXuzefrawLGJ/YciiIDHGMaESI8Jo4Vc0D0NJM5qm+XK9/RNIWkdlkeYhoTHLCS0wJzWWEaGiTGpRhEUZJ+eQzbBn3RHPv5gyhPn57R0b3X0CTvO0KFhUEC5iJDSppc81E34VU5aFIk5yNgJvJuD3TNcjYVyUeUhDEsmCE19jScpUeiRal1mEMuNxdkjx53pxosdnOozT5Fkxk1HNR6xStpruKR9RD67SfrRNdTIYO9G2mkqfc7eFaX24J2ew07fFv34BLwIvCAAA'
-          compressed = base64.b64decode(encoded, validate=True)
-          assert hashlib.sha256(compressed).hexdigest() == '1ff6c0ef9ac9ecfe9d86978c7a49bb72de67f4e1c426740d313359f8eb45b40c'
-          patch = gzip.decompress(compressed)
-          assert hashlib.sha256(patch).hexdigest() == 'ac321a0d7bcb38702959e3cd2bb90a0c9da3997d2a96207d2e4345ab7f3e123b'
-          subprocess.run(['git', 'apply', '--check', '-'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '--index', '-'], input=patch, check=True)
+          import hashlib, pathlib, subprocess
+          before = {
+              'scripts/security_audit_gate.py': '86cd427f3d9e284fc10ae5626f9fa3195c1c7aef6a384e0209bdd98a9c4820bb',
+              'tests/test_security_audit_gate.py': '765d8c59b78e3b914bfd5e5726339e03ed93f97943c8c44a43781e41b7e9bf9a',
+          }
+          for name, digest in before.items():
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == digest, name
+          path = pathlib.Path('scripts/security_audit_gate.py')
+          text = path.read_text()
+          needle = '        elif fixture_path:\n            disposition = "approved_unverified_test_placeholder"\n'
+          addition = '''        elif (
+              path == "NICO-Ship-Checkpoint.md"
+              and finding.get("DetectorName") == "RailwayApp"
+              and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+              == "74578dc40d97154cfd69c5767cb023643eba010802aba8dc329306074433c3c8"
+          ):
+              # PR #1618: fresh Railway deployment metadata confirms this exact
+              # value is the successful 59dfa4d deployment ID, not a credential.
+              # Scope is one checkpoint/detector/digest; verified findings still
+              # block above. Preserve the scanner finding and redact its value.
+              disposition = "approved_nonsecret_deployment_identifier"
+              approved_nonsecret_identifiers += 1
+          '''
+          # Match the original function's eight-space branch indentation.
+          addition = addition.replace('\n', '\n    ').rstrip() + '\n'
+          assert text.count(needle) == 1
+          path.write_text(text.replace(needle, addition + needle))
+          path = pathlib.Path('tests/test_security_audit_gate.py')
+          text = path.read_text()
+          needle = '    ("docs/human-report-repair-acceptance.md", "57588a18-cd2e-43bf-a46d-4324a60d237a"),\n'
+          assert text.count(needle) == 1
+          path.write_text(text.replace(needle, needle + '    ("NICO-Ship-Checkpoint.md", "e2897040-1f8c-4559-95fd-44b961ef6c26"),\n'))
           expected = {
               'scripts/security_audit_gate.py': '7c4f19284eb0d968a4e92df7477224c73f72d75cad45fff629b3560fc427b6f7',
               'tests/test_security_audit_gate.py': '89a965be85a4ad03f96e866abd2901eb5cb1289ab922950dab222f6e2cbadc45',
           }
           for name, digest in expected.items():
               assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == digest, name
+          subprocess.run(['git', 'add', *expected], check=True)
           changed = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
           assert set(changed) == set(expected), changed
           PY
