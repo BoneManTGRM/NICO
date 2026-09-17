@@ -1743,6 +1743,7 @@ _RAW_CANONICAL_SUBTREES = {
     "source_observation",
     "structured_tables",
     "profile_coverage",
+    "coverage_reconciliation",
     "candidate_register",
     "canonical_findings",
     "canonical_scanner_finding_register",
@@ -2741,6 +2742,15 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
+    from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
+    if stripped == _STAKEHOLDER_METADATA_SUMMARY[0]:
+        return text.replace(stripped, _STAKEHOLDER_METADATA_SUMMARY[1], 1)
+    if stripped in COPY_ES:
+        return text.replace(stripped, COPY_ES[stripped], 1)
+    footprint = re.fullmatch(r"Architecture footprint source files: (\d+)\.", stripped)
+    if footprint:
+        return f"Archivos del conjunto de arquitectura: {footprint[1]}."
     exact = _CANONICAL_PARITY_EXACT.get(
         stripped,
         _ES_EXTRA_EXACT.get(stripped, ES_EXACT.get(stripped)),

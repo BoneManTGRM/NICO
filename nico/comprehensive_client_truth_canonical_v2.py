@@ -112,6 +112,10 @@ def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
             # The summary is renderer-owned; the supplied evidence below remains literal.
             if stage_id == "client_evidence_summary":
                 stage["summary"] = "Client-supplied engagement metadata and supplied statements are retained as explicit review context. Missing facts are not inferred. These values do not change technical scores or grant approval or delivery authority."
+            elif (re.fullmatch(r"client_human_evidence_stakeholder_context(?:_\d+)?", stage_id)
+                  and stage.get("status") != "excluded"):
+                from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
+                stage["summary"] = _STAKEHOLDER_METADATA_SUMMARY[0]
             elif stage.get("status") != "excluded":
                 stage["summary"] = "These statements were explicitly supplied by people and are retained without repository inference. They do not automatically change technical scores or grant approval or delivery authority."
         else:

@@ -393,6 +393,10 @@ def _source_cell(value: Any, *, spanish: bool) -> str:
     if isinstance(value, bool):
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     text = str(value)
+    if spanish:
+        from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
+        if text in COPY_ES:
+            return COPY_ES[text]
     return (_SOURCE_COPY_ES if spanish else _SOURCE_COPY_EN).get(text, text)
 
 
@@ -409,14 +413,22 @@ def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
             ("File limit", "file_limit"), ("Per-file byte limit", "per_file_byte_limit"),
             ("Selection method", "selection_method"),
         ]
+        reconciliation = stage.get("coverage_reconciliation") or {}
+        from nico.comprehensive_coverage_reconciliation_v1 import VERSION as COVERAGE_RECONCILIATION_VERSION
         tables.append({"title": "Bounded profile coverage", "columns": ["Measure", "Value"],
-                       "rows": [[label, coverage.get(key)] for label, key in fields]})
+                       "rows": [[label, (reconciliation.get("unavailable_file_path_count")
+                                         if key == "unavailable_profile_files" and reconciliation.get("version") == COVERAGE_RECONCILIATION_VERSION
+                                         else coverage.get(key))] for label, key in fields]})
         archive_limits = (coverage.get("collection_limits") or {}).get("exact_sha_archive") or {}
         if archive_limits:
             tables[-1]["rows"].append(["Archive total byte limit", archive_limits.get("total_byte_limit")])
         for title, key in [("Unavailable source paths", "unavailable_paths"), ("Unanalyzed sampled source paths", "sampled_unanalyzed_source_paths")]:
             if coverage.get(key):
                 tables.append({"title": title, "columns": ["Source"], "rows": [[path] for path in coverage[key]]})
+    from nico.comprehensive_coverage_reconciliation_v1 import coverage_reconciliation_table
+    reconciliation = coverage_reconciliation_table(stage)
+    if reconciliation:
+        tables.append(reconciliation)
     return [table for table in tables if isinstance(table, dict) and table.get("columns") and isinstance(table.get("rows"), list)]
 
 
@@ -473,10 +485,10 @@ def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
             return html.escape(str(value) if literal else _source_cell(value, spanish=spanish), quote=False).replace("|", "&#124;").replace("\n", " ")
         lines += ["", "#### " + cell(table["title"]), "", "| " + " | ".join(cell(value) for value in columns) + " |",
                   "| " + " | ".join("---" for _ in columns) + " |"]
-        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)) + " |" for row in rows[:24]]
+        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)) + " |" for row in rows]
         lines += [
-            (f"Se muestran {min(24, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa." if spanish else
-             f"Showing {min(24, len(rows))} of {len(rows)} rows; JSON retains the complete observation.")]
+            (f"Se muestran las {len(rows)} filas completas." if spanish else
+             f"Showing all {len(rows)} rows in full.")]
     observed = stage.get("source_observation")
     if isinstance(observed, dict):
         label = "SHA-256 de la observación" if spanish else "Observation SHA-256"
@@ -505,22 +517,41 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
     for table in _source_tables(stage):
         rows = table["rows"]
         columns = table["columns"]
-        flowables.append(cell(table["title"], True))
-        values = [[cell(value) for value in columns]] + [[cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)] for row in rows[:row_limit]]
-        note = cell(f"Se muestran {min(row_limit, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa."
-                    if spanish else f"Showing {min(row_limit, len(rows))} of {len(rows)} rows; JSON retains the complete observation.")
-        values.append([note] + [""] * (len(columns) - 1))
-        rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1, hAlign="LEFT")
-        rendered.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
-            ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#94a3b8")),
-            ("SPAN", (0, -1), (-1, -1)),
-            ("NOSPLIT", (0, -2), (-1, -1)),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ]))
-        flowables += [rendered, Spacer(1, 5)]
+        # row_limit bounds each layout batch, not the substantive evidence retained.
+        # Existing report page, byte and process-time limits remain unchanged.
+        batch_size = max(1, row_limit)
+        for offset in range(0, max(1, len(rows)), batch_size):
+            batch = rows[offset:offset + batch_size]
+            end = offset + len(batch)
+            heading = table["title"]
+            if offset:
+                heading = _source_cell(heading, spanish=spanish) + (" (continuación)" if spanish else " (continued)")
+            flowables.append(cell(heading, True))
+            values = [[cell(value) for value in columns]] + [
+                [cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)]
+                for row in batch
+            ]
+            if len(rows) <= batch_size:
+                note_text = (f"Se muestran las {len(rows)} filas completas." if spanish else
+                             f"Showing all {len(rows)} rows in full.")
+            else:
+                note_text = (f"Se muestran las filas {offset + 1}–{end} de {len(rows)}." if spanish else
+                             f"Showing rows {offset + 1}–{end} of {len(rows)}.")
+                note_text += ((" La tabla continúa a continuación." if spanish else " The table continues below.")
+                              if end < len(rows) else (" Fin de la tabla completa." if spanish else " End of complete table."))
+            values.append([cell(note_text)] + [""] * (len(columns) - 1))
+            rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1,
+                             splitInRow=1, hAlign="LEFT")
+            rendered.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
+                ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#94a3b8")),
+                ("SPAN", (0, -1), (-1, -1)),
+                ("NOSPLIT", (0, -2), (-1, -1)),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]))
+            flowables += [rendered, Spacer(1, 5)]
     return flowables
 
 
