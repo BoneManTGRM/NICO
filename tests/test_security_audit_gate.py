@@ -271,6 +271,7 @@ def test_trufflehog_verified_or_non_fixture_finding_blocks(tmp_path: Path) -> No
     ("docs/operator-report-approval.md", "82eb5f88-2e22-4fe1-a482-44700f464557"),
     ("docs/operator-report-approval.md", "4b198570-42a7-48e7-be91-4d93bd808923"),
     ("docs/human-report-repair-acceptance.md", "57588a18-cd2e-43bf-a46d-4324a60d237a"),
+    ("NICO-Ship-Checkpoint.md", "e2897040-1f8c-4559-95fd-44b961ef6c26"),
 ])
 def test_documented_railway_deployment_id_is_retained_but_other_credentials_block(
     tmp_path: Path, path: str, deployment_id: str,

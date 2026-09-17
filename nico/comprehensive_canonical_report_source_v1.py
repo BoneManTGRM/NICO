@@ -263,6 +263,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     install_comprehensive_human_evidence_report_v2()
     canonical = bind_final_finding_roadmap(canonical, raw_stages=stages)
     canonical = bind_report_execution_provenance(canonical, raw_stages=stages)
+    from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
+    canonical = reconcile_report_coverage(canonical)
     spanish_preflight = assert_spanish_canonical_publication_preflight(canonical)
 
     assessment = dict(canonical.get("assessment") or {})

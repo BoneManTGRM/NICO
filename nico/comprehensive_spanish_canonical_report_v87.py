@@ -1743,6 +1743,7 @@ _RAW_CANONICAL_SUBTREES = {
     "source_observation",
     "structured_tables",
     "profile_coverage",
+    "coverage_reconciliation",
     "candidate_register",
     "canonical_findings",
     "canonical_scanner_finding_register",
@@ -2183,6 +2184,15 @@ def _structured_presentation_es(value: str) -> str | None:
     match = re.fullmatch(r"Exact-source locators: (?P<count>\d+) present\.", value)
     if match is not None:
         return f"Localizadores de fuente exacta: {match.group('count')} presentes."
+
+    match = re.fullmatch(
+        r"Collection notes recorded: (?P<count>\d+); informational acquisition notes: (?P<info>\d+); "
+        r"remaining limitation notes: (?P<limits>\d+)\.", value,
+    )
+    if match is not None:
+        return (f"Notas de recopilación registradas: {match.group('count')}; "
+                f"notas informativas de adquisición: {match.group('info')}; "
+                f"notas de limitación restantes: {match.group('limits')}.")
 
     match = re.fullmatch(r"Collection limitations recorded: (?P<count>\d+)\.", value)
     if match is not None:
@@ -2741,6 +2751,15 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
+    from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
+    if stripped == _STAKEHOLDER_METADATA_SUMMARY[0]:
+        return text.replace(stripped, _STAKEHOLDER_METADATA_SUMMARY[1], 1)
+    if stripped in COPY_ES:
+        return text.replace(stripped, COPY_ES[stripped], 1)
+    footprint = re.fullmatch(r"Architecture footprint source files: (\d+)\.", stripped)
+    if footprint:
+        return f"Archivos del conjunto de arquitectura: {footprint[1]}."
     exact = _CANONICAL_PARITY_EXACT.get(
         stripped,
         _ES_EXTRA_EXACT.get(stripped, ES_EXACT.get(stripped)),
