@@ -1,0 +1,67 @@
+name: Bounded three-defect candidate transfer
+
+on:
+  push:
+    branches: [fix/final-three-defect-closeout-20260917]
+    paths: [.github/workflows/authorized-phase-font-recovery.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  transfer:
+    if: github.repository == 'BoneManTGRM/NICO' && github.ref == 'refs/heads/fix/final-three-defect-closeout-20260917'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - name: Verify transport and apply only the scoped candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = a509b6cc82154781f776f1b8cf9e7a57dfa4c9b8
+          test -z "$(git status --porcelain)"
+          python - <<'PY'
+          import base64, gzip, hashlib, json, os, pathlib, subprocess
+          blobs = ['a3a2f9288d66ff9bf37155d60bbff3190c0c6ec8', 'b033de685de0fe2c7105113d699c6f9b762c635f', 'c6cff26fcaba7f80c8cae63c45e37a53864fadc3']
+          parts = []
+          for sha in blobs:
+              obj = json.loads(subprocess.check_output(['gh', 'api', 'repos/BoneManTGRM/NICO/git/blobs/' + sha]))
+              data = base64.b64decode(obj['content'])
+              assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == sha
+              parts.append(data)
+          patch = gzip.decompress(b''.join(parts))
+          assert hashlib.sha256(patch).hexdigest() == '769579e4e613bed6ea705dcdca6df24377f04fb2414192f38b9f6deac861b4ec'
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'nico-three-defect.patch'
+          path.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(path)], check=True)
+          subprocess.run(['git', 'apply', str(path)], check=True)
+          expected = {
+              'nico/comprehensive_canonical_report_source_v1.py': 'b08dbb0e876767c8b1f9e3fafe3c9f54f5926b5c97867a6003cda9d3cc8c0401',
+              'nico/comprehensive_client_truth_canonical_v2.py': 'c64db44ab36eb677941d0cff3d2a7fc8e84f08d4e878e1b33bda6a9923c97229',
+              'nico/comprehensive_coverage_reconciliation_v1.py': '6fc4a870ef03f889901171c0e2302d2325919f189d12143cac24b639d6d5a051',
+              'nico/comprehensive_human_evidence_appendix.py': 'e0d602248a4152d3603cead1d16f19487af9e9058845034c62cf7e19d6992814',
+              'nico/comprehensive_human_evidence_report_v1.py': '891e1ae30e71bffba0b02cb2db741c4726850daa88759f9228498499ee3b455b',
+              'nico/comprehensive_human_evidence_report_v2.py': 'b21978f61448262a4e82dae91558d30e9b5a1cf2fb18dfb78eaa512d81c8da5c',
+              'nico/comprehensive_report_package.py': '2a74d4dc79ed2659016aeb377618fa534815d970d2e6491c49ba065510deb5aa',
+              'nico/comprehensive_spanish_canonical_report_v87.py': 'a7b10b6b1728503168ed1dc05a50c89110df505ea63f2edb5b22b483032e123c',
+              'nico/phase17_canonical_artifact_rebuild_v1.py': 'a1175fb3ae9979d98916a0c5c6d54f5368b7970a4f9fe8804bea1450a0b94158',
+              'tests/test_final_three_report_closeout.py': 'c7089f9afabf86fd963b0786bee6c1ecbaf57cafe52287ace14f0a28fcb7f29f',
+              'tests/test_report_coverage_reconciliation_v1.py': '422466989abae71391c8ed6904ebb3dca76e25c2a98b781cc76fed0d4c56c927',
+          }
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+          changed.update(subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], text=True).splitlines())
+          assert changed == set(expected), sorted(changed)
+          for name, digest in expected.items():
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == digest, name
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          subprocess.run(['git', 'add', '--', *expected], check=True)
+          print('Verified exact 11-file candidate; no production, assessment, or approval action.')
+          PY
+          git rm -- .github/workflows/authorized-phase-font-recovery.yml
+          git diff --cached --check
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Fix bounded report metadata attribution, substantive tables, and coverage units' -m 'Hash-verified transfer of local candidate 828f3a4a6ad801cc41aef89fbfa07d9f6704321b. R1 preserves verified inputs; R2 restores all substantive source rows; R3 projects retained population and availability definitions without changing raw evidence or scores. Remove temporary transfer workflow. Production acceptance and genuine new-edition approval remain outstanding.'
+          git push origin HEAD:refs/heads/fix/final-three-defect-closeout-20260917
