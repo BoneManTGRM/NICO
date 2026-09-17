@@ -169,3 +169,42 @@ def test_unproven_collection_note_population_is_not_reconciled(count, notes):
     stage['evidence'].append(f'Collection limitations recorded: {count}.')
     result = reconcile_report_coverage(value)['stage_summaries'][1]
     assert f'Collection limitations recorded: {count}.' in result['evidence']
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_collection_count_survives_localization_before_reconciliation(spanish):
+    from nico.comprehensive_same_run_locale_report_v1 import _localized_draft_view
+
+    value = canonical()
+    value["stage_summaries"][1]["evidence"].append("Collection limitations recorded: 2.")
+    if spanish:
+        value = _localized_draft_view(value, "es-MX")
+    before = deepcopy(value)
+    result = reconcile_report_coverage(value)
+    expected = (
+        "Notas de recopilación registradas: 2; notas informativas de adquisición: 1; "
+        "notas de limitación restantes: 1."
+        if spanish else
+        "Collection notes recorded: 2; informational acquisition notes: 1; "
+        "remaining limitation notes: 1."
+    )
+    stage = result["stage_summaries"][1]
+    assert expected in stage["evidence"]
+    assert stage["unavailable"] == ["Genuine retained limit."]
+    assert stage["profile_coverage"] == before["stage_summaries"][1]["profile_coverage"]
+    assert value == before
+    assert reconcile_report_coverage(result) == result
+
+    reordered = deepcopy(value)
+    reordered["stage_summaries"][1]["evidence"].reverse()
+    assert set(reconcile_report_coverage(reordered)["stage_summaries"][1]["evidence"]) == set(stage["evidence"])
+
+
+def test_localized_wrong_collection_count_is_not_relabelled():
+    from nico.comprehensive_same_run_locale_report_v1 import _localized_draft_view
+
+    value = canonical()
+    value["stage_summaries"][1]["evidence"].append("Collection limitations recorded: 3.")
+    value = _localized_draft_view(value, "es-MX")
+    result = reconcile_report_coverage(value)
+    assert "Limitaciones de recopilación registradas: 3." in result["stage_summaries"][1]["evidence"]

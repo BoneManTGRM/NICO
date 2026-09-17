@@ -1,64 +1,65 @@
 # NICO — final three-defect closeout checkpoint
 
-## Current continuation — VERIFY / INTEGRATE, not shipped
+## Current continuation: INTEGRATE / DEPLOY / ACCEPT — not shipped
 
-The correct retained evidence ZIP has been received and verified. No further owner download is needed. R1–R3 implementation is now on isolated branch `fix/final-three-defect-closeout-20260917`, source commit `bbdcb70508346a3d384906eada99c4aae8b8f272`. Required candidate CI, the complete fixed-input differential gate, every-page inspection, production deployment, genuine corrected-edition approval, final-manifest verification and repeat retrieval remain outstanding. Do not treat local reports as approved product exports.
+Repository BoneManTGRM/NICO; PR #1618; branch `fix/final-three-defect-closeout-20260917`. Last observed remote head before this atomic correction: `15df03f8a28bd66f39194b272368136956254c39`, tree `54e3170247c2ab9ffa77206144d8b7d9a0f7e0e9`. R0 cleanup is published. R1–R3 local retained-input, whole-report, companion-integrity and every-page bilingual gates pass. This candidate changes only the demonstrated localized R3 count matcher/output, its tests, and this checkpoint. Exact-candidate/integrated CI, deployment and actual approved-artifact acceptance remain separate.
 
-### Identities and preservation
+No new production assessment, corrected approved edition, owner approval, specialist disposition, QC completion, delivery authorization or transmission has been performed by this continuation. Local PDFs are unapproved engineering replays.
 
-- Anchored main / assessed target: `59dfa4db2d8a6c3fffcab9d1c14803e710d5b1a2`; source tree `290c9865f91200cd7ece81131efe131588c1a652`. These are conceptually different identities even though this run assessed the same commit as its serving release.
-- Original run: `comprun_7cd22391b5a2ef1e35ab88d5e66428bd`; printed reviewed revision 63. Original approved PDF: 2,015,831 bytes; SHA-256 `cf66dcf5cb4352ba34968c5809050c26d644d18c99c6f590b725d4373611d594`; 49 physical pages (unnumbered covering page plus numbered 1–48, ending with approval record).
-- Printed original operator approval: `2026-09-17T04:18:46+00:00`; delivery authorization: `2026-09-17T04:19:15+00:00`. Specialist review not completed; specialist risk acceptance separate; authorization is not transmission. Independent original receipt/accepted-manifest verification remains distinct from these printed claims.
-- Retained ZIP SHA-256 `1030d1f94f839c29bdd19ca7ae93dc831610d19f5462ddf5f6d3cf13a6f9f00c`; all eight original artifact hashes and the detached-manifest hash pass. Existing NICO retained_report_zip reproduces the upload byte-for-byte.
-- Retained draft PDF SHA-256 `e2e447652c367aea18e245990c3325f2922b9267e4c468e6f01e0e814aa8eeca`; canonical JSON `dbc33c005dfe8d2b9b07144af611dfc8777afa04d97687ef115a427e2c778ba5`; detached manifest `21856f0032443acfb186d663d3cd8bc37239c2619b1f1e5cdc7643e46b8e3e7d`. Draft PDF/JSON hashes match reviewed-source hashes printed in the approved PDF. This ZIP is the retained reviewed draft, not the detached final accepted-edition package.
-- Current production metadata / rollback pair: Vercel alias app.nicoaudit.com serves READY deployment `dpl_A69Xe171duEwd3KJjFsF8YbPsxRe`, commit 59dfa4d; Railway SUCCESS deployment `e2897040-1f8c-4559-95fd-44b961ef6c26`, same commit. Metadata is not endpoint/report-service runtime acceptance.
-- No original assessment, raw evidence, approval, authorized artifact, dependency or lockfile was changed. No new assessment, owner approval, client transmission, repair merge or production deployment has occurred.
+## Immutable anchors
 
-## Defect → repair → observable evidence
+Assessed target / anchored main: `59dfa4db2d8a6c3fffcab9d1c14803e710d5b1a2`; tree `290c9865f91200cd7ece81131efe131588c1a652`. Run `comprun_7cd22391b5a2ef1e35ab88d5e66428bd`; ledger `ledger_comprehensive_7cd22391b5a2ef1e35ab88d5e66428bd`.
 
-### R1 — human-input classification and attribution
+Original authorized PDF: 2,015,831 bytes,49 physical pages, SHA-256 `cf66dcf5cb4352ba34968c5809050c26d644d18c99c6f590b725d4373611d594`. Printed reviewed revision63, operator approval `2026-09-17T04:18:46+00:00`, delivery authorization `2026-09-17T04:19:15+00:00`. Underlying final receipts remain distinct from these printed claims.
 
-Shared human-evidence presenter/appendix labels distinguish stakeholder context from intake metadata; absent objectives/constraints are explicit; genuine supplied objectives remain literal. Verified original module SHA-256 `9b3187c6c9f6ee0d85b8e6f1d04a488c16b0e9c7964a44479fe5185c05327a89` and raw input remain unchanged.
+Original retained ZIP SHA-256 `1030d1f94f839c29bdd19ca7ae93dc831610d19f5462ddf5f6d3cf13a6f9f00c`: all8 file hashes/sizes and detached manifest reverified; ordinary exporter reproduces ZIP bytes. No repeat owner upload is needed. Canonical SHA-256 `dbc33c005dfe8d2b9b07144af611dfc8777afa04d97687ef115a427e2c778ba5`; reviewed-draft PDF `e2e447652c367aea18e245990c3325f2922b9267e4c468e6f01e0e814aa8eeca`; manifest `21856f0032443acfb186d663d3cd8bc37239c2619b1f1e5cdc7643e46b8e3e7d`. This is the reviewed-draft package, NOT the authorized-final companion package.
 
-Minimal metadata-only reproduction failed on baseline. Full retained replay then falsified the first local repair: retained Markdown/canonical stages bypassed fresh-intake injection. A bounded verified-stakeholder-stage refresh at the existing draft rebuild seam repairs that path without changing approved objects or unrelated stages. A second falsification found a later canonical normalizer overwriting the truthful summary with generic human-supplied attribution; a four-line stakeholder-specific condition plus the existing Spanish translation seam corrects that overwrite. The new predicate failed before correction and passed afterward. No raw evidence or authorization meaning was changed.
+Older local continuation ZIP `4a4f1e9859b208386f37000c0f9005e85f31802392d79a00ec37f78a505cb0e1` has95 verified entries but differs from current PR code. Its old candidate rendering is not reused. Historical checkpoints remain in branch history.
 
-Files: comprehensive_human_evidence_report_v1.py, comprehensive_human_evidence_report_v2.py, comprehensive_human_evidence_appendix.py, comprehensive_client_truth_canonical_v2.py, shared rebuild/Spanish presentation seams.
+## R0 — resolved without report changes
 
-### R2 — complete substantive source tables
+Historical job105247691748/run35234758450 fails at the first bash-e ancestry assertion: historical8c64fa8 HEAD~3 is40ac745, not expectede7ad7e0. Printed Python was not executed; indentation was not the observed cause.
 
-The shared source renderer now batches, rather than truncates, substantive rows at 24. PDF continuation repeats headers and supports long cells; Markdown/HTML retain all rows. Existing page, byte and process-time bounds remain unchanged.
+Existing correction already requires exact checkpoint path, RailwayApp detector, exact value digest and literal `finding.get("Verified") is False`. It remains unchanged. Ordinary commit15df03f8 removes only the obsolete helper. Exact tracked-source search finds no remaining helper references; active observed ruleset does not require it. No protection or historical run was removed.
 
-Canonical 26-row oracle obtained. Omitted rows are AssessmentRecoveryActions.tsx HTTP fetch at line 126 and AssessmentRequestGuard.tsx react import at line 3. Source/target literals, row and column association, multiplicity, legitimate duplicates, 24/25/26 boundaries and reordered long-cell pagination have local regression coverage. Exact whole-report row/cell and visual inspection is still being completed.
+Current15 existing security tests and21 separate negative/scope/redaction/immutability cases pass. Actual current logs, not the cleanup commit's unretained earlier test-time claim, establish verification.
 
-File: comprehensive_report_package.py. Tests: test_final_three_report_closeout.py and existing source/layout neighbors.
+## R1/R2/R3 — retained evidence and final bounded iteration
 
-### R3 — supported populations and availability units
+R1: absent objectives/constraints disclosed; authorization/mode/repository attributed to intake; genuine objectives and raw module digest preserved. Local printed pages EN41/es-MX46.
 
-Exact assessed tree: 2,801 paths; 2,396 supported source paths; architecture footprint 1,138; complexity-eligible 1,139. Architecture-only set empty; complexity-only set is `nico/release_verification_attestation_v1.py`. The existing architecture filter excludes filenames containing `test`, including `attestation`; complexity selection uses explicit test-path rules. Counts are not forced equal and scores are not changed.
+R2: independent canonical oracle verifies15 component rows,26 interaction rows/130 cells,2 infrastructure rows, including order, association and multiplicity. Continuation EN17–18/es-MX20–21 restores AssessmentRecoveryActions.tsx126 and AssessmentRequestGuard.tsx3. Markdown/HTML independently contain the same26-row table. Existing fonts, renderer and resource limits unchanged.
 
-The original one-item note is successful credential-free exact-SHA Git acquisition, not an unavailable file. Retained unavailable_paths is explicitly empty. The report-only reconciliation labels the successful note informational and documents message entries versus distinct file paths, alongside population filters and assessed revision. Raw profiles/observations stay unchanged. All 90 retained observed-text hashes match the exact source tree.
+R3: architecture1138 and complexity-eligible1139 remain distinct populations; existing filter difference identifies `nico/release_verification_attestation_v1.py`. Exact assessed-tree proof and90 retained observed-text hashes match. Raw profiles/observations/modules unchanged. One profile message is successful acquisition; unavailable_paths is explicitly empty. Two collection notes comprise one informational acquisition message and one genuine missing provider-pagination limitation. Current disclosures: EN9/12/18/21, es-MX10/14/21–22/25.
 
-Falsification caught an unchanged coverage-table zero when the retained path list is absent/nonempty; the existing table now projects the verified distinct-path population, preserving unknown as unknown and retaining the original count in canonical evidence. Reordering notes preserves multiset identity. Conflicting profile records remain explicitly unreconciled. Provider-specific attribution is not guessed.
+A3 falsification: localization-before-reconciliation left Spanish page14 saying2 collection limitations. Minimal pre-fix Spanish test failed; English/wrong-count controls passed. Smallest correction recognizes both NICO-owned count labels only when recorded count matches actual retained population. Existing source/test files only; rollback unit is this small correction. Post-fix46 focused controls pass. English PDF/JSON/MD/HTML/manifest remain byte-identical; Spanish now states total2/informational1/remaining1. Failed prior Spanish bytes preserved.
 
-Files: comprehensive_coverage_reconciliation_v1.py and existing canonical/rebuild/source-table/Spanish seams. Tests: test_report_coverage_reconciliation_v1.py.
+## Fixed-input and visual gate
 
-## Fixed conditions, tests and invalidated proof
+Actual worker bootstrap v8.2; pinned pypdf6.16.2/ReportLab5.0.1; local Python3.13.5/pytest9.0.2 differ from CI. Canonical, locale, phase and config fixed; audit timestamps not rewritten.
 
-Local validation source `828f3a4a6ad801cc41aef89fbfa07d9f6704321b` is a local reconstruction commit, NOT an upstream commit. Exact 11-file patch SHA-256 `769579e4e613bed6ea705dcdca6df24377f04fb2414192f38b9f6deac861b4ec` was checked against the clean baseline. A branch-only temporary recovery workflow verified every changed file hash, applied exactly that patch, committed it as bbdcb705 and removed itself. It is absent from the final diff. No evidence package or secret was committed.
+Baseline EN48pages SHA-256 `72fb0417f8735f077ae3dee22adb6931ef5e25f43b68f929ed89973506f60f41`; baseline es-MX50pages `22be44530174913c32b61efcd3d2a77a8116f167029948a94c9b94d97ee5a00c`.
+Corrected local EN47pages/2,001,280bytes/`4e0ddb1234d8351dbbf06c1101f14bab0fc7bcc45e45572c89686389da0174f4`.
+Corrected local es-MX52pages/2,093,848bytes/`00a7e5306b9d8a127b3b391fafc6760116f09c39d47010fb18ddbd96e5713c18`.
 
-Pinned pypdf 6.16.2 and ReportLab 5.0.1; local Python 3.13.5 / pytest 9.0.2 differ from CI/production. Full ordinary final-report worker bootstrap v8.2 was used for offline retained-draft replays. Baseline and candidate hold input canonical bytes, locale and configuration fixed; no timestamps/audit records were rewritten for byte equality.
+All99 candidate pages inspected, including draft manifest/review record; critical continuations inspected at full resolution. No observed clipping, overlap, missing cells/glyphs, broken boxes or accidental blank pages. Each locale's36 printed contents entries match outlines; page footers/targets/bounds pass.
 
-- Current focused R1/R2/R3 controls: 40 passed.
-- Prior candidate neighbor run: 153 passed across 12 files, including source rendering, human evidence, layout, authorized-phase fonts, operator approval and same-run locale behavior. Last R1 normalizer change invalidates affected earlier results; mandatory candidate CI must rerun.
-- Initial R1/R2 baseline failures and R3 minimal failures are retained. Older partial-bootstrap replay hit the existing page bound; using the real worker bootstrap fixed the test environment, not the bound. Earlier local lifecycle timeout was retained; later isolated operator/locale suites completed successfully.
-- Current fixed-input full EN and es-MX replays both completed. Candidate EN: 47 draft pages, 1,960,901 bytes, SHA-256 `5b67fab3c82e43294e38539ccb261eb9398a16feb856b3701e9e67c20f62a7be`. Candidate es-MX: 52 draft pages, 2,093,682 bytes, SHA-256 `607316ef0a0cf96525e60169d882f0aa09e112be444e6cbe5d1aff22779717eb`. These are local unapproved replays, not accepted production artifacts.
-- Full-differential gate is NOT yet declared passed. Removing false limitations changes which already-retained items occupy existing bounded executive-summary slots; verify and document this causal consequence without broadening the change budget. Every-page visual inspection is also pending.
-- Source-evidence falsification and page review are by the same assistant, not an independent human specialist.
+Complete canonical, Markdown, HTML visible-text and PDF deltas reviewed. No unexplained substantive difference remains. Findings/severities/scores/raw scanner/source/input/lifecycle subtrees and findings/evidence/register/backlog exports unchanged. Existing first20 priority slots expose already-retained items after false limitations are removed; selector unchanged.
 
-## Continuation locations / exact next action
+Read-only tracing explains Spanish duplicate-detail variation: shorter corrected CI prose changes existing sparse-page grouping; unchanged internal-page filtering removes the grouped duplicate. All four CI A–D statements remain on page12 and later CI pages; scanner counts already existed on baselinepage14. Both traces reproduce exact inspected PDF hashes. No unique evidence loss or additional code change.
 
-Working source: `/mnt/data/nico-closeout/workspace`; frozen candidate: `/mnt/data/nico-closeout/candidate-v3`; clean baseline: `/mnt/data/nico-closeout/baseline`. Evidence and logs: `/mnt/data/nico-closeout/evidence-current`; complete replay outputs under `replay/baseline-{locale}-worker` and `replay/candidate-v3-{locale}`. Current patch: `/mnt/data/nico-closeout/R1-R3-integration.patch`. Earlier R1/R2-only continuation ZIP is superseded for implementation, not deleted.
+Independent existing-manifest verification passes all8 file hashes/sizes, canonical self-reference exclusion digest, manifest-ID formula, bound identities and ZIP integrity. This does not satisfy A7 for a future real authorized artifact.
 
-Next: finish fixed-input whole-report/companion differential and complete visible table/TOC/font checks, run required checks for the exact integrated candidate, review the bounded PR, merge only when gates pass, verify actual deployed services, then use NICO's supported new-edition review path. Only the owner may securely approve the corrected reviewed edition. Retrieve and inspect actual final bytes, manifest and companions; repeat supported retrieval and prove the same identity/hash before shipment.
+Test groups are not additive totals:46 focused;6 additional empty/small/49-row bilingual continuation cases; neighbors11layout,2rebuild,56locale,16approval,16delivery,2authorized-font tests. Initial two font fixture subprocess failures (BlockingIOError/EAGAIN and unrelated inherited-session startup errors) occurred before font assertions and remain recorded. Same tests passed2/2 in the minimal isolated environment used for worker replays, without code/dependency change.
 
-The owner uses an iPhone. Remote-browser typing failed; do not request passwords in chat or assume the former browser session is alive. The existing ZIP retrieval obstacle is resolved. Historical approved bytes are never replaced, and their approval is not inherited by corrected content. Earlier checkpoints remain in branch history (a509b6cc); this file is the single current continuation ledger.
+## Release, predicates and continuation
+
+Prior working rollback pair: Vercel `dpl_A69Xe171duEwd3KJjFsF8YbPsxRe` main59dfa, actual no-cache `/api/release` confirmed2026-09-17T17:58:13Z; Railway `e2897040-1f8c-4559-95fd-44b961ef6c26` SUCCESS main59dfa. This is not repair-release serving proof. Rollback route: normal reviewed revert and existing coordinated deployment; no rollback performed.
+
+A0 passed. A1/A2/A3 local retained-input gates passed; verify actual final output too. A4 genuine exact-edition owner approval/single-action presentation outstanding. A5 candidate bilingual part passed, actual authorized final pages outstanding. A6 fixed-input gate passed; CI35253662862 on15df passed quality/all12shards/aggregate, but final source/test correction requires exact-candidate/integrated reruns and actual serving frontend/backend/report-worker identities. A7/A8 real final PDF/companions/manifest, identical supported second retrieval and accessible delivery outstanding.
+
+Workspace `/mnt/data/nico-closeout/workspace`; baseline `../baseline`; immutable inputs `../retained-original`; logs `../evidence-current`; replays `../replay/corrected-en-worker` and `corrected-es-worker`; gates `../replay-corrected-gate`.
+Gate SHA-256: whole-report `ca8cfce30e78a3869f898a7c6c5eb91bb56278b55abe17e4501e965a0c2a500f`; integrity `26abf0c9f52209fa2ae57a56afc266c1983911cbaa25af1860bf2d58501e2dd8`; page review `1874b4ba84500e2c4e75ccacef523c43df97ef66021c935e5c07e49728cd3c3a`; companions `15d52a4f954d34d270260c255c2c71ffef98dfa7760d5051dc9bc9823503a141`.
+Source SHA-256 `53887d8dd8bae24a3df0386f099286215e15a5c72a4bc63603ef5b9c80aff2de`; tests `9b5b014b183008346eb2229d79629286584a7850ae5a056a5524359d3dda1828`.
+
+Next: verify exact atomic update/diff and required checks; finish existing PR through normal merge; verify deployed services. Use supported corrected-edition workflow, or document why ordinary flow requires a separate fresh assessment. Only the authenticated owner may review/approve that exact edition. Inspect actual receipts/final pages/companions/manifest and prove identical supported repeat retrieval before A0–A8 shipment. Preserve original approved bytes; no inherited approval, password requests, repeat evidence upload or client transmission.

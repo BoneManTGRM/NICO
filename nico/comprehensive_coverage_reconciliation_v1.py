@@ -134,9 +134,13 @@ def reconcile_report_coverage(canonical: Mapping[str, Any]) -> dict[str, Any]:
                 and isinstance(original_limits, list) and ACQUISITION_NOTE in original_limits):
             acquisition_count = original_limits.count(ACQUISITION_NOTE)
             stage["evidence"] = [
-                (f"Collection notes recorded: {match[1]}; informational acquisition notes: {acquisition_count}; "
-                 f"remaining limitation notes: {len(original_limits) - acquisition_count}.")
-                if ((match := re.fullmatch(r"Collection limitations recorded: (\d+)\.", str(line)))
+                ((f"Notas de recopilación registradas: {match[1]}; notas informativas de adquisición: {acquisition_count}; "
+                  f"notas de limitación restantes: {len(original_limits) - acquisition_count}.")
+                 if str(line).startswith("Limitaciones de recopilación registradas:") else
+                 (f"Collection notes recorded: {match[1]}; informational acquisition notes: {acquisition_count}; "
+                  f"remaining limitation notes: {len(original_limits) - acquisition_count}."))
+                if ((match := re.fullmatch(
+                    r"(?:Collection limitations recorded|Limitaciones de recopilación registradas): (\d+)\.", str(line)))
                     and int(match[1]) == len(original_limits)) else line
                 for line in stage.get("evidence") or []
             ]
