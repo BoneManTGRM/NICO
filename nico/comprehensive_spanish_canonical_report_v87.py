@@ -2185,6 +2185,15 @@ def _structured_presentation_es(value: str) -> str | None:
     if match is not None:
         return f"Localizadores de fuente exacta: {match.group('count')} presentes."
 
+    match = re.fullmatch(
+        r"Collection notes recorded: (?P<count>\d+); informational acquisition notes: (?P<info>\d+); "
+        r"remaining limitation notes: (?P<limits>\d+)\.", value,
+    )
+    if match is not None:
+        return (f"Notas de recopilación registradas: {match.group('count')}; "
+                f"notas informativas de adquisición: {match.group('info')}; "
+                f"notas de limitación restantes: {match.group('limits')}.")
+
     match = re.fullmatch(r"Collection limitations recorded: (?P<count>\d+)\.", value)
     if match is not None:
         return f"Limitaciones de recopilación registradas: {match.group('count')}."

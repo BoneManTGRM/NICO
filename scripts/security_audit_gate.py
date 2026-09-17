@@ -340,6 +340,19 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             # Verified findings still block above; retain this finding as evidence.
             disposition = "approved_nonsecret_deployment_identifier"
             approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "74578dc40d97154cfd69c5767cb023643eba010802aba8dc329306074433c3c8"
+        ):
+            # PR #1618: authenticated Railway deployment metadata and the exact
+            # retained scanner artifact identify this value as the successful
+            # 59dfa4d deployment ID, not a credential. Retain the observation;
+            # other values, paths, detectors and all verified secrets still block.
+            disposition = "approved_nonsecret_deployment_identifier"
+            approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
             approved_test_placeholders += 1

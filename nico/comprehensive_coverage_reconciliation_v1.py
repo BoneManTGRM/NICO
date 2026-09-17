@@ -129,6 +129,17 @@ def reconcile_report_coverage(canonical: Mapping[str, Any]) -> dict[str, Any]:
             }
         if not consistent or notes is None:
             continue
+        original_limits = stage.get("unavailable")
+        if (informational and stage.get("stage_id") == "repository_and_delivery_evidence"
+                and isinstance(original_limits, list) and ACQUISITION_NOTE in original_limits):
+            acquisition_count = original_limits.count(ACQUISITION_NOTE)
+            stage["evidence"] = [
+                (f"Collection notes recorded: {match[1]}; informational acquisition notes: {acquisition_count}; "
+                 f"remaining limitation notes: {len(original_limits) - acquisition_count}.")
+                if ((match := re.fullmatch(r"Collection limitations recorded: (\d+)\.", str(line)))
+                    and int(match[1]) == len(original_limits)) else line
+                for line in stage.get("evidence") or []
+            ]
         for field in ("unavailable", "unavailable_data_notes"):
             values = stage.get(field)
             if not isinstance(values, list):

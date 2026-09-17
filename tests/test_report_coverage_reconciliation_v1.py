@@ -142,3 +142,30 @@ def test_note_order_does_not_create_a_false_population_disagreement():
     value['stage_summaries'][1]['profile_coverage']['unavailable_item_notes'].reverse()
     result = reconcile_report_coverage(value)
     assert result['stage_summaries'][0]['coverage_reconciliation']['profile_records_agree'] is True
+
+
+def test_collection_note_count_does_not_relabel_success_as_limitation():
+    value = canonical()
+    value['stage_summaries'][1]['evidence'].append('Collection limitations recorded: 2.')
+    original = deepcopy(value)
+    result = reconcile_report_coverage(value)
+    expected = 'Collection notes recorded: 2; informational acquisition notes: 1; remaining limitation notes: 1.'
+    stage = result['stage_summaries'][1]
+    assert expected in stage['evidence']
+    assert 'Collection limitations recorded: 2.' not in stage['evidence']
+    assert stage['unavailable'] == ['Genuine retained limit.']
+    assert value == original
+    assert reconcile_report_coverage(result) == result
+    from nico.comprehensive_spanish_canonical_report_v87 import _localize_tree
+    assert _localize_tree(expected) == 'Notas de recopilación registradas: 2; notas informativas de adquisición: 1; notas de limitación restantes: 1.'
+
+
+@pytest.mark.parametrize('count,notes', [(3, [ACQUISITION_NOTE, 'Genuine retained limit.']),
+                                        (2, ['Unknown note', 'Genuine retained limit.'])])
+def test_unproven_collection_note_population_is_not_reconciled(count, notes):
+    value = canonical()
+    stage = value['stage_summaries'][1]
+    stage['unavailable'] = notes
+    stage['evidence'].append(f'Collection limitations recorded: {count}.')
+    result = reconcile_report_coverage(value)['stage_summaries'][1]
+    assert f'Collection limitations recorded: {count}.' in result['evidence']
