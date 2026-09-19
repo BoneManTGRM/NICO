@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from copy import deepcopy
 from typing import Any, Mapping
 
@@ -19,10 +18,6 @@ _PYTHON_MANIFEST_NAMES = {
     "pipfile",
     "pipfile.lock",
 }
-_PATH_TOKEN = re.compile(
-    r"(?P<path>[A-Za-z0-9_@.+\-/]+\.(?:json|ya?ml|toml|txt|lock|py|js|jsx|ts|tsx))",
-    re.IGNORECASE,
-)
 _SKIP_SIGNAL_KEYS = {
     "scanner_execution_records",
     "completed_scanner_records",
@@ -96,24 +91,15 @@ def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> li
     if any(marker in lowered for marker in _NEGATIVE_PATH_CONTEXT):
         return []
 
-    path_like_key = any(
-        marker in normalized_key
-        for marker in (
-            "path",
-            "file",
-            "manifest",
-            "lockfile",
-            "tree",
-            "source",
-            "root_item",
-            "deployment",
-            "location",
-        )
-    )
-    tokens = [match.group("path") for match in _PATH_TOKEN.finditer(text)]
-    if path_like_key:
-        tokens.append(text)
-    return [token.strip("`'\" ,.;:()[]{}") for token in tokens if token.strip()]
+    path_like_key = normalized_key in {
+        "path", "paths", "file", "files", "filename", "filenames",
+        "tree", "root_items", "top_level_items", "deployment_manifests", "location",
+    } or normalized_key.endswith(("_path", "_paths", "_file", "_files"))
+    # Report definitions and recommendations may mention supported suffixes or
+    # example filenames. Those descriptions are not observed repository inputs.
+    if not path_like_key:
+        return []
+    return [text.strip("`'\" ,.;:()[]{}")]
 
 
 def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
