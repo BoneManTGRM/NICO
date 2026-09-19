@@ -1,5 +1,43 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Maintenance correction checkpoint — 2026-09-19 23:30 UTC
+
+This section supersedes baseline status text below; baseline/source identities remain unchanged.
+Capability branch remains `feat/large-repository-cpp-comprehensive`; containing commit is checkpoint HEAD; no capability PR/source change yet. Main16ea1be remains the last verified serving release. No new assessment or human approval.
+
+PR1621 candidate now `618dcbc5fbaea88608c54ecc5b5f9d49d5f64764`, tree `c19ffd43be23ed023c2fe549706236bd3900cb99`, same existing branch. Main16ea1be integrated without reverting newer CSV/scanner/provenance work. Five changed frontend/test files. Connected GitHub update_ref was used because local git push lacks credentials; no credentials extracted, no force push. Local and remote tree identities match.
+
+Root causes and accumulator:
+- Original CI35460819265 shards1/10 failed stale hydration source assertions and executable expectations requiring a second download. Corrected assertions now enforce the intended automatic action, without weakening identity checks.
+- Primary reproduction: a failed PDF presentation followed by stale approved-only GET downgraded known authorization; a different final edition or receipt could also replace it. First divergence: reconcileFinalization. Guard now retains exact authorized edition/receipt; negative tests failed before repair.
+- Independent review verified a second path: the hydration wrapper could substitute different authorized GET bytes before workspace reconciliation. First divergence: FinalReviewApprovedReportHydration. Two RED tests proved edition/receipt substitution; wrapper now compares immutable mutation identity/receipt and keeps missing identity unresolved.
+- Independent reviewer exact local candidateb2af362 (same final treec19ffd43) reports no unresolved Important/Critical finding in focused re-review. Primary inspected reproductions and source. Prior findings retained and resolved; production browser evidence still missing.
+
+Retained development evidence: initial handler57/61; exact-recovery RED61/66 (three new negatives plus two iPhone regressions); first GREEN69/69; wrapper RED0/2; final handler GREEN71/71 including en/es-MX hydration, duplicate clicks, lost responses, wrong identities/receipts, corruption/reload and composed iPhone handoff. Five affected Python assertion tests pass. Typecheck passed; final npm production build passed. Original build environment failure was an out-of-root node_modules symlink; copied matching lockfile dependencies locally, no dependency change. Generated tsconfig/build-info changes discarded. No production browser or physical-device proof claimed.
+
+Exact-candidate CI automatically started: NICO CI35476194995; remaining required workflow/check conclusions pending. Vercel preview `dpl_HcDvqSH1M5qQV5ubZ3isayh2FRZX` READY mapped to618dcbc5; ordinary browser redirected to Vercel login and connected protected-fetch returned302. Preview runtime remains UNPROVEN; protection unchanged, no credential workaround. Authenticated preview access is needed before its browser acceptance.
+
+Railway original patch4f23df20-1f27-4a11-8d00-524c4c75958f dispositions (project4b5ff41e, environment760805be):
+1. query diagnostic service9be7c4d3 source image: staged addition discarded; no prior deployed source, no deployment created.
+2. same service startCommand: staged addition discarded. Reviewed code had unprotected HTTP diagnostics, noncanonical database schema and unsupported readiness derivation; not suitable to deploy.
+3. same service public domain: staged addition discarded with endpoint; no public diagnostic endpoint activated.
+4. same service DATABASE_URL reference: staged addition discarded with endpoint; no secret values retained in this ledger. Before config was empty, no dependencies/routes/deployments; reversibility: recover reviewed redacted configuration from retained private evidence if ever needed after proper qualification. Do not deploy the rejected source.
+5. read-only servicead217bab NICO_READONLY_DIAGNOSTIC_SQL: staged variable remains PRESERVED/UNPROVEN. Full before/after SQL inspected; staged query targets an old run and uses comprehensive_runs/id while current source uses nico_comprehensive_runs/run_id/payload, and contains malformed CTE syntax. Current deployed read-only query/config remain intact. Auto-review rejected the attempted discard because safe obsolescence/reversibility/ownership had not been sufficiently established. No alternate tool used to bypass rejection. Exact blocked action: discard this single staged variable edit, not deploy/delete service. Further evidence or explicit owner decision required.
+6. crashed diagnosticcd3816be proposed service deletion: Keep Service successfully removed staged deletion; service/logs retained. Root cause remains Python parsed as Bun index.tsx in deployment049d03ac. No routes/volume/cron observed; one-shot intended diagnostic. Repair or independently justified reversible retirement remains UNPROVEN; keeping it alone does not pass M5.
+No bulk Deploy Changes. Original6 now1 staged item. Postgres06b7e8f0, volume6b1ecddd at/var/lib/postgresql/data, PITRbucket23cc01bb unchanged; no database/artifact mutation. Config/log evidence retained privately, including original encoded diagnostic source; no raw database values committed.
+
+M0 UNPROVEN: all identities/diffs captured; final disposition and integrated proofs missing.
+M1 UNPROVEN: candidate focused proof/review passed; exact CI, preview, merge/deployment/browser acceptance pending.
+M2/M3 UNPROVEN: named dependency PRs unchanged; official release notes inspected, compatibility/artifact/browser proof pending.
+M4 UNPROVEN: original items1-4 discarded and6 deletion canceled; item5 unresolved.
+M5 FAIL: diagnostic execution still crashed; runtime-language mismatch proven, required-role disposition missing.
+M6 UNPROVEN: no maintenance merge/deployment performed.
+C0-C19 UNPROVEN: no expanded execution capability or qualification run yet. Existing worker forbids project commands by default; isolated build environment/resource entitlement must be established, not enabled on serving service.
+
+Official maintenance inputs read: py-pdf/pypdf release6.18.0 (configuration API migration and indirect-object-token bound); vercel/next.js v16.3.5 (image cache/CSP/cache/standalone fixes); DefinitelyTyped node26.5 commitaf92471c4aa594ef307ac159ba753cf6a4cc01a0. No claim of compatibility from release notes alone.
+
+EXACT NEXT ACTION: inspect candidate618dcbc5 terminal CI, complete required protected-preview access/browser proof, then merge1621 only after gates. Continue bounded1608/1607 compatibility/review serial integration. Resolve single blocked staged SQL disposition and diagnostic role/repair without deletion or blanket deploy. Final capability baseline/scope/budgets follow maintenance stabilization. Keep accepted unit evidence for unchanged tree; do not rerun merely on resume.
+
 ## Baseline established 2026-09-19
 
 Source baseline/main: `16ea1be933fdd046eeccd8e6d3431723bfcbe884`.
