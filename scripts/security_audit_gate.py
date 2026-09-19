@@ -377,6 +377,18 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             # No credential exemption extends to other values or verified hits.
             disposition = "approved_nonsecret_thread_identifier"
             approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "c8c06a22b8d59fc397706d825d2a827cfed0aa2a96b77375bfac5fc2e9aeebdc"
+        ):
+            # Artifact10589039830 and authenticated Railway deployment metadata
+            # identify this exact value as a prior successful deployment ID.
+            # Retain the hit; other values and all verified secrets still block.
+            disposition = "approved_nonsecret_deployment_identifier"
+            approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
             approved_test_placeholders += 1
