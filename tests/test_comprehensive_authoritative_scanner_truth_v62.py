@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import hashlib
+import pytest
 
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
@@ -34,6 +35,40 @@ def _record(name: str, *, completed: bool = True, source: str = "json") -> dict:
         "execution_source": source,
         "failure_reason": "" if completed else "scanner execution failed",
     }
+
+
+@pytest.mark.parametrize("paths,expected_count,expected_status", [
+    (["src/main.js"], 0, "supported_scope"),
+    ([], 1, "unverified"),
+])
+def test_reconciliation_refreshes_existing_assurance_from_final_applicability(paths, expected_count, expected_status):
+    from nico.comprehensive_score_assurance_ledger_v45 import bind_source_security_assurance
+
+    raw = _record("semgrep")
+    raw.update(applicable=None, applicability_state="applicability_unproven", verified_complete=True)
+    canonical = bind_source_security_assurance({
+        "repository_evidence": {"file_evidence": {"sampled_paths": paths}},
+        "assessment": {"technical_score": 74},
+        "stage_summaries": [{"profile_coverage": {
+            "inventory_complete": True, "observed_source_files": 1,
+            "eligible_source_files": 1, "analyzed_source_files": 1,
+            "unsampled_eligible_source_files": 0,
+        }}],
+        "requested_scanner_records": [raw],
+        "scanner_execution_records": [raw],
+        "live_scanner_evidence": {"tools_requested": ["semgrep"], "tools_run": ["semgrep"]},
+    })
+    assert canonical["source_security_assurance"]["unproven_applicability_count"] == 1
+    result = reconcile_authoritative_scanner_truth(canonical)
+    assurance = result["source_security_assurance"]
+    assert assurance["unproven_applicability_count"] == expected_count
+    assert assurance["status"] == expected_status
+    assert assurance == result["assessment"]["source_security_assurance"]
+    assert assurance["coverage_metrics"] == canonical["source_security_assurance"]["coverage_metrics"]
+    assert result["assessment"]["technical_score"] == 74
+    assert assurance["missing_evidence_is_pass"] is False
+    assert assurance["missing_evidence_is_fail"] is False
+    assert canonical["source_security_assurance"]["unproven_applicability_count"] == 1
 
 
 def test_live_manifest_preserves_failed_bandit_even_if_finalizer_drops_record() -> None:
