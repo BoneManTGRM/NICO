@@ -729,6 +729,11 @@ def reconcile_authoritative_scanner_truth(
     output["scanner_state_reconciled"] = True
     output["human_review_required"] = True
     output["client_delivery_allowed"] = False
+    # Applicability can become known at this boundary after assurance was bound.
+    # Refresh the existing dependent state from the final canonical records.
+    if isinstance(output.get("source_security_assurance"), Mapping):
+        from nico.comprehensive_score_assurance_ledger_v45 import bind_source_security_assurance
+        output = bind_source_security_assurance(output)
     return output
 
 
