@@ -4,7 +4,7 @@
 
 - Baseline and last authoritative main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
 - One repair branch: `fix/bitcoin-truth-stress-closeout`; one PR: **#1620**, OPEN/DRAFT, base equals baseline, no reviews. https://github.com/BoneManTGRM/NICO/pull/1620
-- Last published source HEAD before this checkpoint transition: `5e16f348742760e2ddd2d6ffedc46b02933fc8bb`. This checkpoint is published with the next atomic source commit on the same branch. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Do not interpret the prior HEAD as this candidate.
+- Last published branch HEAD before this checkpoint-only transition: `b2199bc96b1a9375596fbf6e0aeca83de29e0bf4`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
 - Candidate source/test fingerprint (all changed files against baseline except this ledger, sorted path→SHA256 JSON): `646cf7cb710dcc5b20aef08ab065787f23842d5997633a0840df5cd514efdae8` (59 files).
 - One primary writer. Two existing read-only discovery agents; neither has performed the required complete-candidate independent review.
 - No merge, production repair deployment, new assessment, operator approval, specialist disposition, or delivery authorization has occurred.
@@ -95,6 +95,18 @@ Affected existing suites, run in separate processes: publication_state_authority
 Golden differential: isolated read-only baseline193b reproduces all three existing golden fingerprints exactly. Fixed small/rich/phase9 candidate Markdown/HTML/PDF differences were inspected: applicability established versus unproven populations, empty scanner populations becoming unverified/review-required, adjacent source/security assurance on phase9 cover, and dependent artifact hashes. Page counts remain23/48/22. Protected canonical identities, finding populations, human/approval/delivery state and numeric scores compare equal. Three English golden fingerprints updated from these inspected candidate artifacts; bilingual structure, exact before/after locale stability, references and page gates remain active. Evidence retained under ci-evidence/golden-differential and exact new fingerprints in test_spanish_canonical_report_parity_v87.py. Final parity rerun:12 passed in57.01s, including all six PDF compositions and exact English locale-order stability. All six previously failing test files now pass locally.
 
 Fresh permitted browser inspection still shows NICO password and Open NICO; no signed-in signal. The prior manual handoff remains the pending owner action. No additional credential request or repeated manual handoff has been issued. D1 exact records remain unavailable; no historical mutation or production action occurred.
+
+## Latest continuation — alternate read-only evidence routes
+
+Owner requested a different method. Existing PR1620 remains OPEN/DRAFT, unmerged; authoritative base and head match the preserved identities above. No source/test changes or repeated tests were needed.
+
+Railway get_logs on the anchored backend deployment, filtered to the exact historical run during 2026-09-17T21:00:00Z–2026-09-18T00:00:00Z, returned53 entries. Every entry is an HTTP access record; none contains risk_pattern_hits, source_signal, source_path or rule_id evidence. The historical PDF request succeeded at22:46:03.946561219Z, but its HTTP200 is not evidence of either source record. No new request to the historical assessment was issued.
+
+The existing diagnostic service's latest deployment predates the September17 assessment: created September11 at14:55:09.764Z. Its old output cannot supply this later run. It was not redeployed.
+
+Existing Railway agent thread performed only getServiceConfigTool and listContainerFilesTool calls. Actual inspected directories: /app, /app/nico (listing truncated), /tmp, /var, /app/evidence and /app/build. /tmp lists only semgrep-mcp; /app/evidence lists candidate-lineage, triage-662 and candidate-triage; /app/build lists lib and bdist.linux-x86_64. No matching retained export was identified. The agent's claims of an exhaustive filesystem search and /exports or /reports absence exceed its returned tool evidence and are NOT accepted. Source inspection independently establishes canonical retention through ComprehensiveRunStore/PostgreSQL.
+
+Result: D1 remains FAIL/blocked on actual retained source records; no classification guessed, no browser restriction bypassed, no credentials read, no configuration or deployment mutation, no historical state changed. Unchanged source candidate's accepted CI remains valid. EXACT NEXT ACTION: obtain the existing run's retained canonical JSON through a supported authorized export or read-only database query capability, hash it and inspect the actual source records before D1 edits. Authentication already succeeded; another password request will not resolve this data-access boundary.
 
 ## Read-only backend retrieval attempt after owner request
 
