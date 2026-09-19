@@ -1,5 +1,16 @@
 # NICO — Bitcoin truth-stress closeout
 
+## Live supplemental Bitcoin assessment started — 2026-09-19
+
+Supersedes the pending-attestation handoff below. After the specific question “Do you confirm that NICO has permission from the client or repository owner to assess bitcoin/bitcoin?”, owner replied “I give you full access and permission.” Recorded as REQUESTER ATTESTATION ONLY, never independent ownership/permission verification. Existing authenticated browser showed owner-entered optional client name Cody Jenkins; preserved it, left project/human-evidence modules absent. Checked the existing authorization checkbox and submitted once through normal production UI.
+
+Fresh run `comprun_7f6a98aac9940df6aa06b016351726ff` binds repository bitcoin/bitcoin to `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`. At14s/9%, repository_and_delivery_evidence is running; authorization and immutable snapshot complete, persistent storage verified, scores not yet calculated, client-ready=false/internal approval required. Visible authorization stage says requester confirmed defensive read-only authorization and independent ownership/third-party permission is not established. This is NEW supplemental evidence, not frozen historical run/commit proof. No historical mutation, human review, approval or delivery authorization performed.
+
+Source/deployment identities and accepted original implementation evidence remain unchanged as recovered below. SAME branch and merged PR1624. Source/test diff unchanged; this is ledger only. Existing historical D1/R1 record-level and R13 JSON limitations remain UNPROVEN.
+
+EXACT NEXT ACTION: observe this SAME run through report completion, retrieve its normal review PDF/Markdown/structured outputs where supported, inspect D1-D7 semantics and summarize the actual result to owner. No second assessment, approval, deployment, source mutation or CI rerun is required for this observation. Current checkpoint HEAD is its containing Git commit.
+
+
 ## Continuation — fresh Bitcoin intake awaiting requester attestation, 2026-09-19
 
 Latest owner direction: “Please run the bitcoin repo assessment and and tell me how the report comes out.” This is a supplemental live assessment request within the existing mission; it does not replace or mutate the frozen run.
