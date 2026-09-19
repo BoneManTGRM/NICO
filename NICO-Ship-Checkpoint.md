@@ -4,7 +4,7 @@
 
 - Baseline and last authoritative main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
 - One repair branch: `fix/bitcoin-truth-stress-closeout`; one PR: **#1620**, OPEN/DRAFT, base equals baseline, no reviews. https://github.com/BoneManTGRM/NICO/pull/1620
-- Last published branch HEAD before this checkpoint-only transition: `b2199bc96b1a9375596fbf6e0aeca83de29e0bf4`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
+- Last published branch HEAD before this checkpoint-only transition: `7e37ea1103fb7089504d30d78d1b3e5046d7edf2`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
 - Candidate source/test fingerprint (all changed files against baseline except this ledger, sorted path→SHA256 JSON): `646cf7cb710dcc5b20aef08ab065787f23842d5997633a0840df5cd514efdae8` (59 files).
 - One primary writer. Two existing read-only discovery agents; neither has performed the required complete-candidate independent review.
 - No merge, production repair deployment, new assessment, operator approval, specialist disposition, or delivery authorization has occurred.
@@ -95,6 +95,14 @@ Affected existing suites, run in separate processes: publication_state_authority
 Golden differential: isolated read-only baseline193b reproduces all three existing golden fingerprints exactly. Fixed small/rich/phase9 candidate Markdown/HTML/PDF differences were inspected: applicability established versus unproven populations, empty scanner populations becoming unverified/review-required, adjacent source/security assurance on phase9 cover, and dependent artifact hashes. Page counts remain23/48/22. Protected canonical identities, finding populations, human/approval/delivery state and numeric scores compare equal. Three English golden fingerprints updated from these inspected candidate artifacts; bilingual structure, exact before/after locale stability, references and page gates remain active. Evidence retained under ci-evidence/golden-differential and exact new fingerprints in test_spanish_canonical_report_parity_v87.py. Final parity rerun:12 passed in57.01s, including all six PDF compositions and exact English locale-order stability. All six previously failing test files now pass locally.
 
 Fresh permitted browser inspection still shows NICO password and Open NICO; no signed-in signal. The prior manual handoff remains the pending owner action. No additional credential request or repeated manual handoff has been issued. D1 exact records remain unavailable; no historical mutation or production action occurred.
+
+## Current human retrieval handoff
+
+Owner requested completion. A bounded documentation check of Railway's service-scoped variable API and staged environment API did not establish a callable operation that preserves the diagnostic service's existing pending SQL and all other staged changes while executing our query. No infrastructure mutation was attempted. Evidence: official integrations/api/manage-variables documents service-scoped upserts/skipDeploys; integrations/api/manage-environments documents environmentPatchCommitStaged with environmentId only. These pages do not prove safe selective application of this environment's pending patch.
+
+The source-verified existing retained export is https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/comprun_7cc47a5a81695fa452354479ea23b422/report/evidence-package . The frontend allowlist accepts this artifact GET; comprehensive_api_controller.status_artifact_read_only loads existing state using load_read_only and checks retained package identity before returning it. It does not start another assessment or approve the report. Browser policy still prevents agent retrieval; no workaround was attempted.
+
+EXACT NEXT ACTION: owner opens that export link in their own authenticated NICO browser, downloads the existing retained ZIP, and attaches it to this conversation. No password is requested in chat. Once supplied, hash and validate the ZIP/manifest, inspect the two actual retained source-risk records and resume D1 root-cause repair on the existing branch/PR. No specialist review, operator approval or delivery authorization is requested. All prior accepted evidence remains unchanged; D1 and shipment remain unproven.
 
 ## Latest continuation — alternate read-only evidence routes
 
