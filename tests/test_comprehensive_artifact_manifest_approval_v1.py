@@ -281,6 +281,15 @@ def test_structured_exports_are_present_and_nonempty() -> None:
     assert len(result["remediation_backlog_sha256"]) == 64
 
 
+@pytest.mark.parametrize("human", [{"status": "not_assessed"}, {"provided_module_ids": []}, {"modules": {}}])
+def test_legacy_unverified_human_evidence_keeps_existing_csv_schema(human):
+    package = _package()
+    package["json"]["supplied_human_evidence"] = human
+    result = attach_artifact_manifest(package)
+    assert next(row for row in result["artifact_manifest"]["artifacts"]
+                if row["artifact_type"] == "evidence_csv")["schema_version"] == "nico.evidence-csv.v2"
+
+
 @pytest.mark.parametrize("language", ["en", "es-MX"])
 def test_terminal_evidence_csv_preserves_canonical_truth_populations(language):
     package = _package()

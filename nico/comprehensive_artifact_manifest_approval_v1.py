@@ -344,7 +344,8 @@ def _preliminary_entries(
             artifact_type="evidence_csv",
             filename=f"nico-{run}-evidence.csv",
             content=exports["evidence_csv"],
-            schema_version=("nico.evidence-csv.v2" if b"canonical_pointer" in exports["evidence_csv"].splitlines()[0] else "nico.evidence-csv.v1"),
+            schema_version=("nico.evidence-csv.v2" if canonical.get("supplied_human_evidence")
+                            or b"canonical_pointer" in exports["evidence_csv"].splitlines()[0] else "nico.evidence-csv.v1"),
             identity=identity,
         ),
         _artifact_entry(
