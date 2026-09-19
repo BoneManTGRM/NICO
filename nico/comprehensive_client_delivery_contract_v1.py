@@ -208,9 +208,10 @@ def require_new_report_release_readiness(record: Mapping[str, Any]) -> None:
     """Gate every new authority transition, without rewriting retained editions."""
     provenance = _mapping(_mapping(_canonical(record).get("assessment")).get("nico_release_provenance"))
     from nico.report_execution_provenance_e6 import observed_native_frontend_source
-    _require(version_truth(record)["deployment_identity_established"] is True
-        and observed_native_frontend_source(provenance.get("frontend_runtime_observation"))
-            == provenance.get("backend_build_commit"),
+    observed_source = observed_native_frontend_source(provenance.get("frontend_runtime_observation"))
+    _require(bool(observed_source)
+        and version_truth(record)["deployment_identity_established"] is True
+        and observed_source == provenance.get("backend_build_commit"),
         "report_release_provenance_unverified")
 
 

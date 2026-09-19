@@ -391,7 +391,7 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     assert package["json"]["source_security_assurance"]["status"] == "limited"
 
 
-@pytest.mark.parametrize("alignment", ["aligned", "mismatch", "unknown", "legacy_unknown"])
+@pytest.mark.parametrize("alignment", ["aligned", "mismatch", "unknown", "legacy_unknown", "legacy_missing_native_identities"])
 def test_new_report_operator_approval_requires_verified_aligned_release(alignment):
     """Synthetic approval boundary; never an owner's production decision."""
     import base64, hashlib, json
@@ -419,7 +419,21 @@ def test_new_report_operator_approval_requires_verified_aligned_release(alignmen
             'status': 'unavailable'}
         if alignment == 'legacy_unknown':
             provenance['frontend_runtime_observation'].pop('frontend_observation_schema')
+    if alignment == 'legacy_missing_native_identities':
+        from tests.test_phase4_approved_delivery_v4 import _record
+        from nico.comprehensive_client_delivery_contract_v1 import version_truth
+        from nico.report_execution_provenance_e6 import observed_native_frontend_source
+        legacy = deepcopy(report_package_from_record(_record())['json']['assessment']['nico_release_provenance'])
+        record['nico_build_commit'] = legacy.pop('backend_build_commit')
+        legacy['assessment_run_id'] = record['identity']['run_id']
+        legacy['assessed_repository_commit'] = record['identity']['commit_sha']
+        provenance.clear()
+        provenance.update(legacy)
+        assert provenance.get('backend_build_commit') is None
+        assert observed_native_frontend_source(provenance['frontend_runtime_observation']) is None
     record['stage_results']['final_comprehensive_report_generation']['report_package'] = rebuild_client_artifacts({'json': package['json']})
+    if alignment == 'legacy_missing_native_identities':
+        assert version_truth(record)['deployment_identity_established'] is True
     record['integrity_sha256'] = _record_hash(record)
     before = deepcopy(record)
     if alignment == 'aligned':
