@@ -260,3 +260,28 @@ def test_missing_applicable_python_binary_remains_unavailable() -> None:
     assert result["not_applicable_scanner_records"] == []
     assert result["scanner_execution_records"][0]["state"] == "unavailable"
     assert result["assessment"]["scanner_applicability_summary"]["incomplete_applicable_scanners"] == 1
+
+
+def test_typescript_configuration_does_not_conflict_with_dependency_absence(tmp_path):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+    from nico.scanner_package_inventory_v1 import inspect_package_sources
+    (tmp_path / "tsconfig.json").write_text("{}")
+    node = inspect_node_inputs(tmp_path, SHA)
+    packages = inspect_package_sources(tmp_path, SHA)
+    result = normalize_scanner_applicability_canonical({
+        "identity": {"commit_sha": SHA},
+        "repository_evidence": {"file_evidence": {"sampled_paths": ["tsconfig.json"]}},
+        "scanner_execution_records": [
+            {**_record("npm-audit", "not_applicable"), "applicability_evidence": node,
+             "execution_observed": False, "execution_observed_for_this_report": False},
+            {**_record("osv-scanner", "not_applicable"), "applicability_evidence": packages,
+             "execution_observed": False, "execution_observed_for_this_report": False},
+            {**_record("typescript", "failed"), "applicability_evidence": node},
+        ],
+    })
+    excluded = result["not_applicable_scanner_records"]
+    assert {row["scanner_name"] for row in excluded} == {"npm-audit", "osv-scanner"}
+    assert all(row["execution_state"] == "not_requested" for row in excluded)
+    assert result["scanner_execution_records"][0]["scanner_name"] == "typescript"
+    assert result["scanner_execution_records"][0]["applicability_state"] == "applicable"
+    assert result["scanner_execution_records"][0]["execution_state"] == "failed"

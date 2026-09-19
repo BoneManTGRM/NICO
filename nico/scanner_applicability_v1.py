@@ -11,7 +11,6 @@ _NODE_MANIFEST_NAMES = {
     "package-lock.json",
     "pnpm-lock.yaml",
     "yarn.lock",
-    "tsconfig.json",
 }
 _PYTHON_MANIFEST_NAMES = {
     "requirements.txt",

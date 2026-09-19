@@ -384,10 +384,14 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
         assert "132" in rendered
         assert ("Observaciones de riesgo del código fuente" if language == "es-MX" else "Source-risk observations") in rendered
         assert "src/runner.py" in rendered
+        for observation in canonical["source_risk_observations"]:
+            assert observation["observation_id"] in "".join(rendered.split())
+            assert observation["source_excerpt"] in rendered
+            assert observation["repository_revision"] in "".join(rendered.split())
     assert package["json"]["source_security_assurance"]["status"] == "limited"
 
 
-@pytest.mark.parametrize("alignment", ["aligned", "mismatch", "unknown"])
+@pytest.mark.parametrize("alignment", ["aligned", "mismatch", "unknown", "legacy_unknown"])
 def test_new_report_operator_approval_requires_verified_aligned_release(alignment):
     """Synthetic approval boundary; never an owner's production decision."""
     import base64, hashlib, json
@@ -410,9 +414,11 @@ def test_new_report_operator_approval_requires_verified_aligned_release(alignmen
             'source_url': FRONTEND_URL, 'frontend_observation_schema': 'nico.frontend-runtime-observation.v2',
             'observation_bytes_base64': base64.b64encode(raw).decode(), 'observation_size_bytes': len(raw),
             'observation_sha256': hashlib.sha256(raw).hexdigest()})
-    if alignment == 'unknown':
+    if alignment in {'unknown', 'legacy_unknown'}:
         provenance['frontend_runtime_observation'] = {'frontend_observation_schema': 'nico.frontend-runtime-observation.v2',
             'status': 'unavailable'}
+        if alignment == 'legacy_unknown':
+            provenance['frontend_runtime_observation'].pop('frontend_observation_schema')
     record['stage_results']['final_comprehensive_report_generation']['report_package'] = rebuild_client_artifacts({'json': package['json']})
     record['integrity_sha256'] = _record_hash(record)
     before = deepcopy(record)
@@ -431,3 +437,29 @@ def test_assurance_headline_passes_unchanged_publication_placeholder_gate(spanis
     headline = assurance_headline({'source_security_assurance': {'status': 'limited'}}, spanish=spanish)
     assert validate_production_report({'executive_summary': headline})['valid'] is True
     assert validate_production_report({'executive_summary': headline + ' TODO'})['valid'] is False
+
+
+def test_observation_presentation_preserves_literal_evidence_and_record_identity():
+    from nico.comprehensive_report_package import _source_markdown, _source_pdf_tables
+    from reportlab.platypus import SimpleDocTemplate
+    from pypdf import PdfReader
+    import io
+    stage = {"source_risk_observation_summary": {"reported_count": 2},
+        "source_risk_observations": [
+            {"observation_id": "observation-one", "path": "unknown", "line": 7, "column": 1,
+             "rule_id": "import", "source_excerpt": "import", "repository_revision": SHA,
+             "revision_match": True, "semantic_class": "source_observation"},
+            {"observation_id": "observation-two", "path": "unknown", "line": 7, "column": 12,
+             "rule_id": "import", "source_excerpt": "import", "repository_revision": "b" * 40,
+             "revision_match": False, "semantic_class": "source_observation"},
+        ]}
+    markdown = "\n".join(_source_markdown(stage, spanish=True))
+    assert "| Fuente | unknown |" in markdown
+    assert "| Fragmento del código fuente | import |" in markdown
+    assert "| Columna | 1 |" in markdown and "| Columna | 12 |" in markdown
+    assert "| La revisión de las observaciones coincide con la evaluación | No |" in markdown
+    output = io.BytesIO()
+    SimpleDocTemplate(output).build(_source_pdf_tables(stage, spanish=True, width=450))
+    text = "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(output.getvalue())).pages)
+    for value in ("observation-one", "observation-two", "unknown", "import", SHA, "b" * 40):
+        assert value in "".join(text.split())

@@ -342,6 +342,8 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
 
 
 _SOURCE_COPY_ES = {
+    "Observation ID": "Identificador de observación",
+    "Column": "Columna", "Source excerpt": "Fragmento del código fuente",
     "Source-risk observations": "Observaciones de riesgo del código fuente",
     "Retained source-risk observations": "Observaciones de riesgo del código fuente conservadas",
     "Reported source-risk observations": "Observaciones de riesgo del código fuente reportadas",
@@ -442,12 +444,20 @@ def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
                 ("Observation revision matches assessment", "revision_match"),
             )]})
         records = [record for record in stage.get("source_risk_observations") or [] if isinstance(record, dict)]
-        if records:
+        for record in records:
+            # Vertical detail rows preserve long identities/evidence without
+            # compressing nine unrelated fields into narrow PDF columns.
             tables.append({"title": "Retained source-risk observations",
-                "columns": ["Source", "Line", "Rule", "Classification", "Disposition"],
-                "rows": [[record.get(field) for field in (
-                    "path", "line", "rule_id", "semantic_class", "disposition_state")]
-                    for record in records]})
+                "columns": ["Measure", "Value"],
+                "literal_value_labels": {"Observation ID", "Source", "Rule", "Source excerpt", "Repository revision"},
+                "rows": [[label, record.get(field)] for label, field in (
+                    ("Observation ID", "observation_id"), ("Source", "path"),
+                    ("Line", "line"), ("Column", "column"), ("Rule", "rule_id"),
+                    ("Source excerpt", "source_excerpt"),
+                    ("Repository revision", "repository_revision"),
+                    ("Observation revision matches assessment", "revision_match"),
+                    ("Classification", "semantic_class"), ("Disposition", "disposition_state"),
+                )]})
     coverage = stage.get("profile_coverage")
     if isinstance(coverage, dict) and coverage:
         fields = [
@@ -536,7 +546,7 @@ def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
             return html.escape(str(value) if literal else _source_cell(value, spanish=spanish), quote=False).replace("|", "&#124;").replace("\n", " ")
         lines += ["", "#### " + cell(table["title"]), "", "| " + " | ".join(cell(value) for value in columns) + " |",
                   "| " + " | ".join("---" for _ in columns) + " |"]
-        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)) + " |" for row in rows]
+        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)) + " |" for row in rows]
         lines += [
             (f"Se muestran las {len(rows)} filas completas." if spanish else
              f"Showing all {len(rows)} rows in full.")]
@@ -579,7 +589,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
                 heading = _source_cell(heading, spanish=spanish) + (" (continuación)" if spanish else " (continued)")
             flowables.append(cell(heading, True))
             values = [[cell(value) for value in columns]] + [
-                [cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)]
+                [cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
                 for row in batch
             ]
             if len(rows) <= batch_size:

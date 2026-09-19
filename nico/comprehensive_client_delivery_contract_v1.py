@@ -205,12 +205,13 @@ def version_truth(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def require_new_report_release_readiness(record: Mapping[str, Any]) -> None:
-    """Gate new authority transitions for the new contract; never rewrite old editions."""
+    """Gate every new authority transition, without rewriting retained editions."""
     provenance = _mapping(_mapping(_canonical(record).get("assessment")).get("nico_release_provenance"))
-    observation = _mapping(provenance.get("frontend_runtime_observation"))
-    if observation.get("frontend_observation_schema") == "nico.frontend-runtime-observation.v2":
-        _require(version_truth(record)["deployment_identity_established"] is True,
-            "report_release_provenance_unverified")
+    from nico.report_execution_provenance_e6 import observed_native_frontend_source
+    _require(version_truth(record)["deployment_identity_established"] is True
+        and observed_native_frontend_source(provenance.get("frontend_runtime_observation"))
+            == provenance.get("backend_build_commit"),
+        "report_release_provenance_unverified")
 
 
 def _version_identity(record: Mapping[str, Any]) -> dict[str, Any]:

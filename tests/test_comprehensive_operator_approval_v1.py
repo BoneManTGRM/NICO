@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import io
+import json
 import sqlite3
 from copy import deepcopy
 from functools import lru_cache
@@ -42,6 +43,23 @@ def fixture_record(receipt_bound=False):
     provenance = deepcopy(assessment["nico_release_provenance"])
     provenance["assessment_run_id"] = record["identity"]["run_id"]
     provenance["assessed_repository_commit"] = record["identity"]["commit_sha"]
+    # New-transition positive control has native aligned release evidence.
+    # Legacy retrieval cases retain their own historical fixtures separately.
+    observed = {
+        "status": "ok", "release_sha": provenance["backend_build_commit"],
+        "release_sha_source": "VERCEL_GIT_COMMIT_SHA",
+        "deployment_id": provenance["frontend_deployment_id"],
+        "deployment_id_source": "VERCEL_DEPLOYMENT_ID",
+    }
+    raw = json.dumps(observed, sort_keys=True).encode()
+    provenance["frontend_build_commit"] = observed["release_sha"]
+    provenance["frontend_runtime_observation"] = {
+        **observed, "status": "verified", "deployment_identity_verified": True,
+        "frontend_observation_schema": "nico.frontend-runtime-observation.v2",
+        "source_url": "https://app.nicoaudit.com/api/release",
+        "observation_bytes_base64": base64.b64encode(raw).decode(),
+        "observation_sha256": hashlib.sha256(raw).hexdigest(), "observation_size_bytes": len(raw),
+    }
     package["json"]["assessment"]["nico_release_provenance"] = provenance
     record["stage_results"]["final_comprehensive_report_generation"]["report_package"] = rebuild_client_artifacts({"json": package["json"]})
     record["integrity_sha256"] = _record_hash(record)
