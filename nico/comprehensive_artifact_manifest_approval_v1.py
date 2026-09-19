@@ -271,6 +271,32 @@ def _build_structured_exports(canonical: Mapping[str, Any]) -> dict[str, bytes]:
                 "evidence": module.get("evidence", {}),
                 "raw_payload_retention_state": "retained_in_canonical_json",
             })
+    # Terminal exports must retain canonical truth separately from finding populations.
+    truth_records = []
+    for field in ("source_risk_observation_summary", "source_security_assurance", "authorization_evidence"):
+        value = canonical.get(field)
+        if isinstance(value, Mapping):
+            truth_records.append((field, f"/{field}", value))
+    for field, record_type in (("source_risk_observations", "source_risk_observation"),
+                               ("requested_scanner_records", "scanner_applicability_execution")):
+        for index, value in enumerate(canonical.get(field) or []):
+            if isinstance(value, Mapping):
+                truth_records.append((record_type, f"/{field}/{index}", value))
+    assessment = canonical.get("assessment")
+    if isinstance(assessment, Mapping) and isinstance(assessment.get("nico_release_provenance"), Mapping):
+        truth_records.append(("release_provenance", "/assessment/nico_release_provenance",
+                              assessment["nico_release_provenance"]))
+    if truth_records:
+        for field in ("record_type", "canonical_pointer", "evidence_status"):
+            if field not in evidence_fields:
+                evidence_fields.append(field)
+        for item in candidates:
+            item.setdefault("record_type", "scanner_candidate")
+        for record_type, pointer, value in truth_records:
+            candidates.append({"record_type": record_type, "canonical_pointer": pointer,
+                "evidence": deepcopy(dict(value)), "evidence_status": "retained_canonical_evidence",
+                "evidence_digest_sha256": _sha256(_json_bytes(value)),
+                "raw_payload_retention_state": "retained_in_canonical_json"})
     return {
         "findings_csv": _csv_bytes(findings, finding_fields),
         "evidence_csv": _csv_bytes(candidates, evidence_fields),
@@ -318,7 +344,7 @@ def _preliminary_entries(
             artifact_type="evidence_csv",
             filename=f"nico-{run}-evidence.csv",
             content=exports["evidence_csv"],
-            schema_version=("nico.evidence-csv.v2" if canonical.get("supplied_human_evidence") else "nico.evidence-csv.v1"),
+            schema_version=("nico.evidence-csv.v2" if b"canonical_pointer" in exports["evidence_csv"].splitlines()[0] else "nico.evidence-csv.v1"),
             identity=identity,
         ),
         _artifact_entry(
