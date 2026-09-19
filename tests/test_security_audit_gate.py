@@ -274,6 +274,7 @@ def test_trufflehog_verified_or_non_fixture_finding_blocks(tmp_path: Path) -> No
     ("NICO-Ship-Checkpoint.md", "e2897040-1f8c-4559-95fd-44b961ef6c26"),
     ("NICO-Ship-Checkpoint.md", "4b5ff41e-ec40-486c-8461-83475ffa90a9"),
     ("NICO-Ship-Checkpoint.md", "9c1d37e7-7233-41fa-b2a4-41d2cf89302b"),
+    ("NICO-Ship-Checkpoint.md", "b60e6737-9ed8-4ad0-b85d-2e771a02710d"),
 ])
 def test_documented_railway_deployment_id_is_retained_but_other_credentials_block(
     tmp_path: Path, path: str, deployment_id: str,

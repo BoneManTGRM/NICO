@@ -1,9 +1,76 @@
 from __future__ import annotations
 
+import pytest
+
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_canonical
 
 
 SHA = "a" * 40
+
+
+@pytest.mark.parametrize("name,description", [
+    ("typescript", "Case-insensitive .py/.js/.jsx/.ts/.tsx paths; each path is counted once."),
+    ("pip-audit", "Example supported source: src/main.py"),
+])
+def test_report_definitions_are_not_repository_input_evidence(tmp_path, name, description):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    canonical = {
+        "identity": {"commit_sha": SHA},
+        "stage_summaries": [{"coverage_reconciliation": {"complexity_definition": description}}],
+        "requested_scanner_records": [{
+            **_record(name, "not_applicable"),
+            "applicability_evidence": inventory,
+            "execution_observed_for_this_report": False,
+        }],
+    }
+    first = normalize_scanner_applicability_canonical(canonical)
+    second = normalize_scanner_applicability_canonical(first)
+    for value in (first, second):
+        record = value["requested_scanner_records"][0]
+        assert record["applicability_state"] == "not_applicable"
+        assert record["applicable"] is False
+        assert record["state"] == "not_applicable"
+        assert record["execution_state"] == "not_requested"
+        assert record["completed"] is False
+        assert record["applicability_evidence"] == inventory
+        assert value["assessment"]["scanner_applicability_summary"]["applicability_unproven_scanners"] == 0
+
+
+@pytest.mark.parametrize("name,path", [("typescript", "src/main.ts"), ("pip-audit", "src/main.py")])
+def test_actual_source_paths_still_conflict_with_complete_absence(tmp_path, name, path):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+
+    result = normalize_scanner_applicability_canonical({
+        "repository_evidence": {"file_evidence": {"sampled_paths": [path]}},
+        "requested_scanner_records": [{
+            **_record(name, "failed"),
+            "applicability_evidence": inspect_node_inputs(tmp_path, SHA),
+        }],
+    })
+    record = result["requested_scanner_records"][0]
+    assert record["applicability_state"] == "applicability_unproven"
+    assert record["execution_state"] == "failed"
+    assert record["applicable"] is None
+
+
+@pytest.mark.parametrize("name,path", [("typescript", "main.ts"), ("pip-audit", "main.py")])
+@pytest.mark.parametrize("contradictory_inventory", [False, True])
+def test_retained_top_level_items_preserve_applicability(tmp_path, name, path, contradictory_inventory):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+
+    record = _record(name, "failed")
+    if contradictory_inventory:
+        record["applicability_evidence"] = inspect_node_inputs(tmp_path, SHA)
+    result = normalize_scanner_applicability_canonical({
+        "repository_evidence": {"file_evidence": {"top_level_items": [path]}},
+        "requested_scanner_records": [record],
+    })["requested_scanner_records"][0]
+    assert result["applicability_state"] == ("applicability_unproven" if contradictory_inventory else "applicable")
+    assert result["applicable"] is (None if contradictory_inventory else True)
+    assert result["evidence_required"] is True
+    assert result["execution_state"] == "failed"
 
 
 def _record(name: str, status: str, reason: str = "") -> dict:

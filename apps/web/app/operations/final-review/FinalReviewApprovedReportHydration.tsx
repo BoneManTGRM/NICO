@@ -57,12 +57,25 @@ function objectRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function stableIdentity(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableIdentity).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = objectRecord(value);
+    return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${stableIdentity(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 async function containsApprovedPdf(
   response: Response,
   requireDeliveryAuthorization = false,
+  expected?: Record<string, unknown>,
 ): Promise<boolean> {
   try {
     const payload = await response.clone().json() as Record<string, unknown>;
+    if (expected && (stableIdentity(payload.review_artifact_identity) !== stableIdentity(expected.review_artifact_identity)
+      || (requireDeliveryAuthorization
+        && stableIdentity(payload.delivery_authorization) !== stableIdentity(expected.delivery_authorization)))) return false;
     if (requireDeliveryAuthorization && payload.client_delivery_allowed !== true) return false;
     const operatorEdition = objectRecord(payload.operator_approved_edition);
     const operatorReview = objectRecord(operatorEdition.review);
@@ -117,6 +130,14 @@ export default function FinalReviewApprovedReportHydration() {
       if (!mutationResponse.ok) return mutationResponse;
       if (await containsApprovedPdf(mutationResponse, requireDeliveryAuthorization)) return mutationResponse;
 
+      let expected: Record<string, unknown>;
+      try {
+        expected = objectRecord(await mutationResponse.clone().json());
+        if (!Object.keys(objectRecord(expected.review_artifact_identity)).length) return mutationResponse;
+      } catch {
+        return mutationResponse;
+      }
+
       const statusUrl = new URL(reviewUrl.href);
       statusUrl.pathname = statusUrl.pathname.replace(/\/(?:review|authorize-delivery)$/, "");
 
@@ -130,7 +151,7 @@ export default function FinalReviewApprovedReportHydration() {
             credentials: init?.credentials,
           });
           if (!currentResponse.ok) continue;
-          if (await containsApprovedPdf(currentResponse, requireDeliveryAuthorization)) return currentResponse;
+          if (await containsApprovedPdf(currentResponse, requireDeliveryAuthorization, expected)) return currentResponse;
         } catch {
           // Preserve the successful approval response if exact-run re-hydration is unavailable.
         }

@@ -469,7 +469,7 @@ test('optional client metadata does not block owner review navigation but remain
   assert.equal(finalReviewReadiness(value).ready, false);
 });
 
-async function hydrationHarness(mutation, status) {
+async function hydrationHarness(mutation, status, {action = 'review', locale = 'es-MX'} = {}) {
   const calls = [];
   const originalFetch = async (input, init) => {
     calls.push({url: String(input), method: init.method});
@@ -480,9 +480,12 @@ async function hydrationHarness(mutation, status) {
     window, Request, require: name => name === 'react' ? {useEffect: fn => fn()} : {},
   });
   helpers.default();
-  const result = await window.fetch('https://unit.invalid/api/nico/assessment/comprehensive-run/comprun_unit_fixture/localized-editions/es-MX/review', {
+  const edition = locale === 'en' ? '' : `/localized-editions/${locale}`;
+  const result = await window.fetch(`https://unit.invalid/api/nico/assessment/comprehensive-run/comprun_unit_fixture${edition}/${action}`, {
     method: 'POST', headers: {'X-NICO-Admin-Token': 'unit-fixture'},
-    body: JSON.stringify({decision: 'approved', approval_kind: 'operator_report', exact_report_acknowledged: true}),
+    body: JSON.stringify(action === 'review'
+      ? {decision: 'approved', approval_kind: 'operator_report', exact_report_acknowledged: true}
+      : {delivery_authorized: true, authorization_confirmed: true}),
   });
   return {calls, response: await result.json()};
 }
@@ -493,6 +496,35 @@ test('operator mutation with approved bytes needs no redundant hydration read', 
   assert.equal(h.response.operator_approval_status, 'approved');
   assert.equal(h.response.human_review_completed, false);
 });
+
+for (const locale of ['en', 'es-MX']) {
+  test(`delivery hydration uses the exact ${locale} endpoint and requires authorized PDF bytes`, async () => {
+    const current = authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}});
+    const missing = structuredClone(current); delete missing.operator_approved_edition.reports;
+    const h = await hydrationHarness(missing, current, {action: 'authorize-delivery', locale});
+    assert.equal(h.calls.length, 2);
+    assert.equal(h.calls[1].url, h.calls[0].url.replace(/\/authorize-delivery$/, ''));
+    assert.equal(h.response.client_delivery_allowed, true);
+    assert.equal(finalReport(h.response).pdf_base64, finalReport(current).pdf_base64);
+    assert.equal(h.response.human_review_completed, false);
+    const stale = await hydrationHarness(missing, fixture(true), {action: 'authorize-delivery', locale});
+    assert.equal(stale.calls.length, 5);
+    assert.deepEqual(stale.response, missing);
+    assert.equal(stale.calls.filter(call => call.method === 'POST').length, 1);
+  });
+}
+
+for (const mismatch of ['edition', 'receipt']) {
+  test(`delivery hydration cannot replace the mutation's known ${mismatch}`, async () => {
+    const current = authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}});
+    const missing = structuredClone(current); delete missing.operator_approved_edition.reports;
+    if (mismatch === 'edition') current.review_artifact_identity.revision += 1;
+    else current.delivery_authorization.delivery_authorization_certificate_sha256 = '9'.repeat(64);
+    const h = await hydrationHarness(missing, current, {action: 'authorize-delivery'});
+    assert.deepEqual(h.response, missing);
+    assert.equal(h.calls.filter(call => call.method === 'POST').length, 1);
+  });
+}
 
 test('operator hydration reads only the same exact locale and preserves specialist truth', async () => {
   const missing = fixture(true); delete missing.operator_approved_edition.reports;
@@ -592,7 +624,7 @@ for (const stage of ['approval', 'delivery']) {
     assert.match(h.text(), /Operator approvalApproved/);
     if (stage === 'delivery') {
       assert.equal(h.button(h.approveLabel), undefined);
-      await h.click('Download approved final PDF');
+      assert.equal(h.downloads.length, 2); // Recovery presents the PDF within the original action.
     } else {
       assert.equal(h.elements().filter(n => n.type === 'input' && n.props.type === 'checkbox').length, 0);
       await h.click(h.approveLabel);
@@ -631,7 +663,7 @@ test('selection change while approval is pending rejects its late response', asy
   assert.equal(h.downloads.length, 1);
 });
 
-test('persisted client permission survives failed final download with download-only recovery', async () => {
+test('persisted client permission recovers corrupt mutation bytes automatically from the exact status', async () => {
   let current = fixture(false);
   const h = harness({get: async () => response(current), post: async request => {
     if (!request.url.endsWith('/authorize-delivery')) return response(fixture(true));
@@ -639,15 +671,33 @@ test('persisted client permission survives failed final download with download-o
     return response(authorizedFixture(request, true));
   }});
   await h.ready(); await h.click(h.approveLabel);
-  assert.match(h.text(), /retry the download without authorizing again/);
   assert.equal(h.button(h.approveLabel), undefined);
   assert.ok(h.button('Download approved final PDF'));
-  assert.equal(h.downloads.length, 1);
-  await h.load(); await h.click('Download approved final PDF');
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 2);
   assert.equal(h.downloads.length, 2);
   assert.equal(h.downloads[1].filename, 'NICO-CLIENT-DELIVERY-AUTHORIZED.pdf');
 });
+
+for (const mismatch of ['stale-approval', 'different-final-edition', 'different-receipt']) {
+  test(`failed presentation cannot reconcile ${mismatch} over known exact authorization`, async () => {
+    let reads = 0;
+    const request = {body: {expected_artifact_identity: fixture(true).review_artifact_identity}};
+    const current = authorizedFixture(request);
+    if (mismatch === 'different-final-edition') current.review_artifact_identity.revision += 1;
+    if (mismatch === 'different-receipt') {
+      current.delivery_authorization.original_approval_manifest_sha256 = 'e'.repeat(64);
+      delete current.delivery_authorization.delivery_authorization_certificate_sha256;
+      current.delivery_authorization.delivery_authorization_certificate_sha256 = digest(stable(current.delivery_authorization));
+    }
+    const h = harness({get: async () => response(++reads === 1 || mismatch === 'stale-approval' ? fixture(true) : current),
+      post: async request => response(authorizedFixture(request, true))});
+    await h.load(); await h.click(h.approveLabel);
+    assert.equal(h.downloads.length, 0);
+    assert.equal(h.button(h.approveLabel), undefined);
+    assert.match(h.text(), /retry the download without authorizing again/);
+    assert.equal(h.requests.filter(r => r.method === 'POST').length, 1);
+  });
+}
 
 test('already authorized reload and download never issue another decision', async () => {
   const current = authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}});

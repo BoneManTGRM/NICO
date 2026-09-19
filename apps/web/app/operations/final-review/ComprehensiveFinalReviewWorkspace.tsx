@@ -586,6 +586,14 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
   async function reconcileFinalization(basis: ReviewResponse): Promise<ReviewResponse> {
     const current = await requestJson(statusUrl(), {headers: headers()});
+    // Hydration may supply missing bytes, but may not replace a known authorized
+    // edition or its receipt with a stale approval or a different final edition.
+    if (basis.client_delivery_allowed === true
+      && (current.client_delivery_allowed !== true
+        || stableIdentity(current.review_artifact_identity) !== stableIdentity(basis.review_artifact_identity)
+        || stableIdentity(current.delivery_authorization) !== stableIdentity(basis.delivery_authorization))) {
+      throw new Error(copy.authorizationFailed);
+    }
     const previous = operatorEditionFrom(basis);
     const persisted = operatorEditionFrom(current);
     if (Object.keys(previous).length) {
