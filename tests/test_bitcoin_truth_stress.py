@@ -343,7 +343,6 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     from nico.comprehensive_production_capabilities import _authorization_provider
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
     from nico.source_signal_analysis_v2 import analyze_source_signals
-    from nico.comprehensive_decision_grade_csv_v6 import _evidence_csv
     # Platform and scanner-store observations are outside this synthetic report case.
     monkeypatch.setattr(provenance, "capture_frontend_release", lambda *args: {"status": "unavailable",
         "frontend_observation_schema": "nico.frontend-runtime-observation.v2"})
@@ -375,10 +374,12 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     assert canonical["authorization_evidence"]["independent_authorization_verification"] == "not_established"
     assert canonical["source_risk_observation_summary"]["reported_count"] == 1
     assert canonical["canonical_findings"] == []
-    evidence_csv = _evidence_csv(canonical["stage_summaries"])
-    assert "source_risk_observation" in evidence_csv
-    assert "src/runner.py" in evidence_csv
     package = rebuild_client_artifacts(source["report_package"])
+    assert "source_risk_observation" in package["evidence_csv"]
+    assert "src/runner.py" in package["evidence_csv"]
+    assert "complexity_eligible_supported_source_files" in package["evidence_csv"]
+    assert "observed_supported_language_source_files_including_complexity_exclusions" in package["evidence_csv"]
+    assert "not_established" in package["evidence_csv"]
     pdf = PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"])))
     for rendered in (package["markdown"], package["html"], "\n".join(p.extract_text() for p in pdf.pages)):
         assert "5 / 137" in rendered and "5 / 484" in rendered
