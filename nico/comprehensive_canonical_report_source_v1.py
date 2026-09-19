@@ -145,6 +145,35 @@ def _authorization_confirmed(stages: Mapping[str, Any]) -> bool:
     )
 
 
+def _authorization_evidence(stages: Mapping[str, Any], commit_sha: str) -> dict[str, Any]:
+    """Project attestation and observed access without claiming ownership evidence."""
+    bindings = []
+    for stage_id, field, revision_field in (
+        ("immutable_repository_snapshot", "snapshot", "commit_sha"),
+        ("repository_and_delivery_evidence", "repository_evidence", "snapshot_commit_sha"),
+    ):
+        stage = stages.get(stage_id) or {}
+        record = stage.get(field) or {}
+        if not isinstance(record, Mapping) or record.get(revision_field) != commit_sha:
+            continue
+        if field == "snapshot" and record.get("provider_access_observed") is not True:
+            continue
+        mode = record.get("provider_access_mode") or record.get("access_mode")
+        credential = record.get("provider_credential_used", record.get("credential_used"))
+        if mode in {"anonymous_public", "authenticated_read_only"} and type(credential) is bool:
+            bindings.append((mode, credential))
+    consistent = bool(bindings) and len(set(bindings)) == 1
+    return {
+        "requester_authorization_attestation": "confirmed" if _authorization_confirmed(stages) else "not_established",
+        "repository_access_mode": bindings[0][0] if consistent else "unknown",
+        "provider_credential_used": bindings[0][1] if consistent else None,
+        "access_evidence_conflict": len(set(bindings)) > 1,
+        "independent_authorization_verification": "not_established",
+        "public_access_establishes_authorization": False,
+        "provider_credential_establishes_ownership": False,
+    }
+
+
 def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     """Build the exact canonical report model without rendering legacy artifacts.
 
@@ -201,6 +230,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     human_snapshot = _strict_context_snapshot(context)
     stages = _inject_human_review_stages(stages, human_snapshot)
     authorization_confirmed = _authorization_confirmed(stages)
+    authorization_evidence = _authorization_evidence(stages, identity["commit_sha"])
     ordered = [
         _stage_summary(str(stage_id), result)
         for stage_id, result in stages.items()
@@ -212,6 +242,18 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         if stage["stage_id"] == "client_evidence_summary" or stage["stage_id"].startswith("client_human_evidence_")
         else stage for stage in ordered
     ]
+    for stage in ordered:
+        if stage.get("stage_id") == "authorization_and_scope":
+            stage["authorization_evidence"] = deepcopy(authorization_evidence)
+            stage.setdefault("structured_tables", []).append({
+                "title": "Authorization and repository access evidence", "columns": ["Measure", "Value"],
+                "rows": [[label, authorization_evidence[field]] for label, field in (
+                    ("Requester authorization attestation", "requester_authorization_attestation"),
+                    ("Repository access mode", "repository_access_mode"),
+                    ("Provider credential used", "provider_credential_used"),
+                    ("Independent NICO verification of ownership or third-party permission", "independent_authorization_verification"),
+                )],
+            })
     assessment = _assessment(dict(stages))
     assessment = dict(assessment)
     assessment["repository"] = identity["repository"]
@@ -230,6 +272,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
         "supplied_human_evidence": deepcopy(human_snapshot["human_evidence"]),
         "service_id": _SERVICE_ID,
         "authorization_confirmed": authorization_confirmed,
+        "authorization_evidence": authorization_evidence,
         "identity": identity,
         "report_language": report_language,
         "locale": report_language,
@@ -265,6 +308,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     canonical = bind_report_execution_provenance(canonical, raw_stages=stages)
     from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
     canonical = reconcile_report_coverage(canonical)
+    from nico.comprehensive_score_assurance_ledger_v45 import bind_source_security_assurance
+    canonical = bind_source_security_assurance(canonical)
     spanish_preflight = assert_spanish_canonical_publication_preflight(canonical)
 
     assessment = dict(canonical.get("assessment") or {})

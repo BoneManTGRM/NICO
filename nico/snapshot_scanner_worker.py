@@ -21,6 +21,21 @@ _COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40,64}$")
 _EXCLUDED_PATH_PARTS = {"tests", "test", "fixtures", "fixture", "examples", "example", "samples", "sample"}
 
 
+class RepositoryExecutionLimit(Exception):
+    """Retain an exact-source execution boundary after checkout cleanup."""
+
+    def __init__(self, commit_sha: str, observed_bytes: int, limit_bytes: int):
+        super().__init__(f"Repository exceeds scanner size limit: {observed_bytes} bytes.")
+        self.commit_sha = commit_sha
+        self.evidence = {
+            "reason": "repository_size_limit_exceeded",
+            "observed_bytes": observed_bytes,
+            "limit_bytes": limit_bytes,
+            "commit_sha": commit_sha,
+            "scanner_execution_permitted": False,
+        }
+
+
 def _git(command: list[str], *, cwd: Path | None, env: dict[str, str], timeout: int = 90) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -265,6 +280,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
     unavailable_notes: list[str] = []
     redaction_applied = False
     repo_size = 0
+    execution_limit: dict[str, Any] = {}
     actual_commit_sha = ""
     specs = _requested_specs(payload)
     started = time.monotonic()
@@ -330,6 +346,23 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
                     })
                     redaction_applied = redaction_applied or "[REDACTED]" in str(result)
                     results.append(result)
+        except RepositoryExecutionLimit as exc:
+            actual_commit_sha = exc.commit_sha
+            execution_limit = dict(exc.evidence)
+            repo_size = execution_limit["observed_bytes"]
+            unavailable_notes.append(str(exc))
+            results = [{
+                "tool": spec.name, "category": spec.category,
+                "status": "unavailable", "execution_state": "unavailable",
+                "reason": "repository_size_limit_exceeded",
+                "execution_limit": dict(execution_limit),
+                "applicability_state": "applicability_unproven",
+                "applicability_reason": "Scanner target inventory was not established before the execution limit.",
+                "applicable": None, "execution_observed": False,
+                "verified_for_this_report": False, "completed": False,
+                "commit_sha": actual_commit_sha, "findings": [],
+                "scans_git_history": spec.scans_git_history,
+            } for spec in specs]
         except Exception as exc:  # pragma: no cover - defensive worker boundary
             unavailable_notes.append(f"Snapshot-bound worker failed safely: {type(exc).__name__}")
 
@@ -346,8 +379,9 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
     ]
     base.SCAN_JOBS[scan_id].update(
         {
-            "status": "complete" if snapshot_match else "unavailable",
-            "current_stage": "complete" if snapshot_match else "snapshot_verification_failed",
+            "status": "complete" if snapshot_match and not execution_limit else "unavailable",
+            "current_stage": "execution_limited" if execution_limit else "complete" if snapshot_match else "snapshot_verification_failed",
+            "execution_limit": execution_limit,
             "progress_percent": 100,
             "updated_at": base.now_iso(),
             "completed_at": base.now_iso(),
@@ -378,6 +412,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
                 "actual_commit_sha": actual_commit_sha,
                 "snapshot_match": snapshot_match,
                 "repo_size_bytes": repo_size,
+                "execution_limit": dict(execution_limit),
                 "tools_requested": len(specs),
                 "tools_run": len(completed),
                 "unavailable_tools": len(unavailable),

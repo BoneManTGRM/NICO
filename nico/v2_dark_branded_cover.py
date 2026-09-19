@@ -162,23 +162,29 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.setFont("Helvetica-Bold", 15)
     pdf.drawString(left, height - 285, "Postura ejecutiva" if spanish else "Executive posture")
     posture = _executive_posture(canonical, technical, adjusted, spanish=spanish)
-    pdf.setFillColor(muted)
-    pdf.setFont("Helvetica", 7.1)
+    if canonical.get("source_security_assurance"):
+        from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+        posture = assurance_headline(canonical, spanish=spanish)
+    has_assurance = bool(canonical.get("source_security_assurance"))
+    posture_size = 9.5 if has_assurance else 7.1
+    posture_leading = 13 if has_assurance else 10
+    pdf.setFillColor(white if has_assurance else muted)
+    pdf.setFont("Helvetica", posture_size)
     words = posture.split()
     lines: list[str] = []
     line = ""
     max_width = width - 84
     for word in words:
         candidate = f"{line} {word}".strip()
-        if stringWidth(candidate, "Helvetica", 7.1) <= max_width:
+        if stringWidth(candidate, "Helvetica", posture_size) <= max_width:
             line = candidate
         else:
             lines.append(line)
             line = word
     if line:
         lines.append(line)
-    for i, value in enumerate(lines[:5]):
-        pdf.drawString(left, height - 303 - i * 10, value)
+    for i, value in enumerate(lines[:8 if has_assurance else 5]):
+        pdf.drawString(left, height - 303 - i * posture_leading, value)
 
     box_y = 155
     pdf.setFillColor(panel)

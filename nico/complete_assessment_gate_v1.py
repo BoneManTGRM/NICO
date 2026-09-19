@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 REQUIRED_TOOLS = ("pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog")
-SCANNER_SUMMARY_POLICY = "source-input-retention-v2"
+SCANNER_SUMMARY_POLICY = "source-applicability-execution-v3"
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _COMPLETE = {"completed", "complete", "completed_clean", "completed_with_findings"}
@@ -226,8 +226,9 @@ def scanner_execution_summary(canonical: Mapping[str, Any], *, expected_commit: 
         'repository_evidence', 'file_evidence', 'dependency_evidence',
         'requested_scanner_records', 'scanner_execution_records',
     ) if key in assessment}
+    normalized = normalize_scanner_applicability_canonical(source)
     gate = complete_assessment_evidence(
-        normalize_scanner_applicability_canonical(source),
+        normalized,
         expected_commit=expected_commit, expected_run=expected_run,
     )
     failures = gate['failures']
@@ -239,14 +240,20 @@ def scanner_execution_summary(canonical: Mapping[str, Any], *, expected_commit: 
     completed = [name for name in REQUIRED_TOOLS if name in gate['completed_tools'] and valid(name)]
     not_applicable = [name for name in REQUIRED_TOOLS if name in gate['not_applicable_tools'] and valid(name)]
     incomplete = [name for name in REQUIRED_TOOLS if name not in completed and name not in not_applicable]
-    applicable_count = len(REQUIRED_TOOLS) - len(not_applicable)
+    execution_required_count = len(REQUIRED_TOOLS) - len(not_applicable)
+    established = {r['scanner_name'] for r in normalized['requested_scanner_records']
+        if identity_valid and r.get('applicable') is True}
+    applicable = [name for name in REQUIRED_TOOLS if name in established and name not in not_applicable]
+    unproven = [name for name in REQUIRED_TOOLS if name not in applicable and name not in not_applicable]
     return {
         'schema': 'nico.scanner-execution-ui-summary.v1',
         'evaluation_policy': SCANNER_SUMMARY_POLICY,
         'run_id': expected_run, 'commit_sha': expected_commit,
         'status': 'complete' if gate['passed'] else 'partial' if identity_valid else 'unknown',
-        'completed_count': len(completed), 'applicable_count': applicable_count,
-        'percent': round(100 * len(completed) / applicable_count) if identity_valid and applicable_count else None,
+        'completed_count': len(completed), 'execution_required_count': execution_required_count,
+        'applicable_count': len(applicable), 'applicable_tools': applicable,
+        'applicability_unproven_count': len(unproven), 'applicability_unproven_tools': unproven,
+        'percent': round(100 * len(completed) / execution_required_count) if identity_valid and execution_required_count else None,
         'completed_tools': completed, 'incomplete_tools': incomplete,
         'not_applicable_tools': not_applicable,
         'verification_scope': 'retained_canonical_execution_evidence',

@@ -243,6 +243,7 @@ def _inject_live_runtime_truth(
         "snapshot_commit_sha": retained.get("snapshot_commit_sha"),
         "actual_commit_sha": retained.get("actual_commit_sha"),
         "snapshot_match": retained.get("snapshot_match") is True,
+        "execution_limit": retained.get("execution_limit"),
         "tools_requested": list(retained.get("tools_requested") or []),
         "tools_run": list(retained.get("tools_run") or []),
         "failed_tools": list(retained.get("failed_tools") or []),

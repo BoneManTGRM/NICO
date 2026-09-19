@@ -111,8 +111,15 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
     if isinstance(observation, dict):
         lines.extend([
             ("Retained frontend endpoint claim", str(observation.get("release_sha") or "unavailable")),
-            ("Frontend observation status", str(observation.get("status") or "unavailable")),
+            ("Frontend configured-identity match" if observation.get("frontend_observation_schema") else "Frontend observation status", str(observation.get("status") or "unavailable")),
             ("Frontend observed at", str(observation.get("observed_at") or "unavailable")),
+        ])
+    if "frontend_backend_source_alignment" in provenance:
+        lines.extend([
+            ("Frontend/backend observed source alignment", str(provenance["frontend_backend_source_alignment"])),
+            ("Observed frontend source identity", str(provenance.get("frontend_observed_source_revision") or "unavailable")),
+            ("Observed frontend deployment identity", str((observation or {}).get("deployment_id") or "unavailable")),
+            ("Exact release readiness", str(provenance.get("exact_release_readiness") or "unverified")),
         ])
     execution = provenance.get("scanner_execution_evidence")
     if not isinstance(execution, dict):
@@ -142,6 +149,14 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 _ES_LABELS = {
+    "Frontend configured-identity match": "Coincidencia con la identidad configurada del frontend",
+    "Frontend/backend observed source alignment": "Coincidencia del código observado del frontend y backend",
+    "Observed frontend source identity": "Identidad del código observado del frontend",
+    "Observed frontend deployment identity": "Identidad del despliegue observado del frontend",
+    "Exact release readiness": "Preparación de la versión exacta",
+    "aligned": "coincidente",
+    "mismatch": "discrepancia",
+    "blocked": "bloqueada",
     "Configured frontend source commit": "Commit configurado del código del frontend",
     "Retained frontend endpoint claim": "Declaración conservada del endpoint del frontend",
     "Frontend observation status": "Estado de la observación del frontend",

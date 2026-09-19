@@ -205,6 +205,8 @@ def _build_scanner_ledger(result: dict[str, Any], section: dict[str, Any]) -> tu
 
 def _normalize_scanner_section(result: dict[str, Any], section: dict[str, Any]) -> None:
     ledger, counts = _build_scanner_ledger(result, section)
+    assurance = ("unverified" if not counts["total"] else "review_limited"
+                 if any(counts[key] for key in ("failed", "timed_out", "unavailable", "unknown")) else "verified")
     review_items = []
     for field in ("findings", "unavailable"):
         for item in section.get(field) or []:
@@ -227,9 +229,9 @@ def _normalize_scanner_section(result: dict[str, Any], section: dict[str, Any]) 
             "display_status": "SUPPLEMENTAL · NOT SCORED",
             "technical_score_display": "SUPPLEMENTAL · NOT SCORED",
             "score_kind": "not_scored",
-            "assurance_status": "review_limited" if any(counts[key] for key in ("failed", "timed_out", "unavailable", "unknown")) else "verified",
-            "assurance_label": "REVIEW LIMITED" if any(counts[key] for key in ("failed", "timed_out", "unavailable", "unknown")) else "VERIFIED",
-            "assurance_tone": "yellow" if any(counts[key] for key in ("failed", "timed_out", "unavailable", "unknown")) else "green",
+            "assurance_status": assurance,
+            "assurance_label": assurance.replace("_", " ").upper(),
+            "assurance_tone": "green" if assurance == "verified" else "yellow",
             "scanner_execution_coverage_percent": round(100 * counts["completed"] / counts["total"]) if counts["total"] else 0,
             "scanner_execution_denominator": counts["total"],
             "scanner_execution_summary": counts,

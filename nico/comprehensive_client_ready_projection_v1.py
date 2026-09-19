@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.scanner_applicability_v1 import scanner_execution_summary
+
 import base64
 import html
 import io
@@ -607,9 +609,9 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
     ]))
     story.extend([identity_table, p("Separación de ejecución y disposición" if spanish else "Execution and disposition are separate", h2)])
     story.append(p(
-        f"{len(completed)} of {len(scanners)} applicable scanner executions completed. {review} candidate(s) remain pending human triage; {material} confirmed material finding(s) are currently retained. Scanner completion does not equal candidate approval."
+        scanner_execution_summary(scanners) + f" {review} candidate(s) remain pending human triage; {material} confirmed material finding(s) are currently retained. Scanner completion does not equal candidate approval."
         if not spanish
-        else f"Se completaron {len(completed)} de {len(scanners)} ejecuciones aplicables. {review} candidato(s) siguen pendientes de revisión humana; se conservan {material} hallazgo(s) material(es) confirmado(s). Completar el analizador no equivale a aprobar los candidatos.",
+        else scanner_execution_summary(scanners, spanish=True) + f" {review} candidato(s) siguen pendientes de revisión humana; se conservan {material} hallazgo(s) material(es) confirmado(s). Completar el analizador no equivale a aprobar los candidatos.",
         body,
     ))
     if categories:

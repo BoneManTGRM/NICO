@@ -71,6 +71,9 @@ def _canonical() -> dict:
         "client_readiness_contract": {"maturity_label": "Exceptional"},
         "completed_applicable_analyzers": 9,
         "incomplete_applicable_analyzers": 0,
+        "scanner_execution_records": [{"scanner_name": name, "completed": True, "applicable": True,
+            "applicability_state": "applicable", "execution_state": "complete"} for name in (
+                "pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog")],
         "maturity_label_truth": {"canonical_label": "Senior"},
         "assessment": {
             "technical_score": 93,
@@ -233,7 +236,7 @@ def test_executive_maturity_limit_count_and_stage_boundaries_reconcile() -> None
     assert "Exceptional (93/100)" in assessment["executive_summary"]
     assert "7 client-review section(s)" in assessment["executive_summary"]
     assert stages["dependency_security_static_analysis"]["summary"] == (
-        "9 of 9 applicable analyzers completed; 0 are incomplete. Candidate triage is "
+        "9 of 9 required scanner executions completed. Applicability established: 9; applicability unproven: 0; not applicable: 0. Candidate triage is "
         "separate: 659 review-required candidates and 0 confirmed material findings are retained."
     )
     assert stages["evidence_reconciliation_and_scoring"]["evidence"] == [

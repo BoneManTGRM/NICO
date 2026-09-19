@@ -79,7 +79,7 @@ def _authoritative_scanner_applicability(
     Late client-safe projections may retain the complete requested scanner record list
     while dropping per-record applicability flags. The authoritative exact-run contract
     remains the denominator source in that shape. Any incomplete or contradictory
-    contract is ignored so unknown scanners continue to fail closed as applicable.
+    contract is ignored so unknown scanners remain required without proving applicability.
     """
 
     contract = canonical.get("client_readiness_contract")
@@ -97,12 +97,14 @@ def _authoritative_scanner_applicability(
 
     requested_values = contract.get("requested_exact_run_scanners")
     applicable_values = contract.get("applicable_exact_run_scanners")
+    unproven_values = contract.get("applicability_unproven_scanners", [])
     not_applicable_values = contract.get("not_applicable_exact_run_scanners")
     if not all(
         isinstance(values, list)
         for values in (
             requested_values,
             applicable_values,
+            unproven_values,
             not_applicable_values,
         )
     ):
@@ -110,18 +112,22 @@ def _authoritative_scanner_applicability(
 
     requested = {_scanner_name(value) for value in requested_values}
     applicable = {_scanner_name(value) for value in applicable_values}
+    unproven = {_scanner_name(value) for value in unproven_values}
     not_applicable = {
         _scanner_name(value) for value in not_applicable_values
     }
     if (
         "" in requested
         or "" in applicable
+        or "" in unproven
         or "" in not_applicable
         or not requested
         or applicable.intersection(not_applicable)
-        or requested != applicable.union(not_applicable)
+        or unproven.intersection(applicable | not_applicable)
+        or requested != applicable.union(not_applicable, unproven)
         or len(requested) != len(requested_values)
         or len(applicable) != len(applicable_values)
+        or len(unproven) != len(unproven_values)
         or len(not_applicable) != len(not_applicable_values)
     ):
         return None
@@ -130,7 +136,7 @@ def _authoritative_scanner_applicability(
         ("authoritative_scanner_record_count", len(requested)),
         ("applicable_scanner_record_count", len(applicable)),
         ("not_applicable_scanner_record_count", len(not_applicable)),
-        ("coverage_denominator", len(applicable)),
+        ("coverage_denominator", len(applicable | unproven)),
     )
     for key, expected in expected_counts:
         value = contract.get(key)
@@ -140,7 +146,7 @@ def _authoritative_scanner_applicability(
             or value != expected
         ):
             return None
-    return requested, applicable
+    return requested, applicable | unproven
 
 
 def _scanner_population(

@@ -269,7 +269,7 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     assert result["client_delivery_allowed"] is False
 
 
-def test_python_only_live_manifest_renders_six_of_six_applicable_scanners() -> None:
+def test_sampled_python_paths_do_not_make_other_scanners_not_applicable() -> None:
     package = _package()
     canonical = package["json"]
     canonical["repository_evidence"] = {
@@ -339,17 +339,18 @@ def test_python_only_live_manifest_renders_six_of_six_applicable_scanners() -> N
         for page in PdfReader(io.BytesIO(base64.b64decode(result["pdf_base64"]))).pages
     )
 
-    assert finalized["analyzer_execution_coverage"] == 100
+    assert finalized["analyzer_execution_coverage"] == 67
     assert finalized["completed_applicable_analyzers"] == 6
     assert finalized["incomplete_applicable_analyzers"] == 0
-    assert len(finalized["scanner_execution_records"]) == 6
-    assert len(finalized["not_applicable_scanner_records"]) == 3
-    assert "6 of 6 applicable scanner executions completed" in extracted
+    assert len(finalized["scanner_execution_records"]) == 9
+    assert len(finalized["not_applicable_scanner_records"]) == 0
+    assert "6 of 9 required scanner executions completed" in extracted
     assert "6 of 9 applicable scanner executions completed" not in extracted
     assert "Incomplete applicable analyzers: npm-audit" not in extracted
     assert {
         item["scanner_name"]
         for item in finalized["not_applicable_scanner_records"]
-    } == set(reasons)
+    } == set()
+    assert finalized["assessment"]["scanner_applicability_summary"]["applicability_unproven_scanners"] == 3
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False

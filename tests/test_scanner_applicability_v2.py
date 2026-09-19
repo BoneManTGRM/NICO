@@ -21,7 +21,7 @@ def _record(name: str, status: str, reason: str = "") -> dict:
     }
 
 
-def test_python_only_repository_marks_node_analyzers_not_applicable() -> None:
+def test_python_sample_keeps_node_applicability_unproven() -> None:
     canonical = {
         "identity": {"commit_sha": SHA},
         "repository_evidence": {
@@ -47,31 +47,22 @@ def test_python_only_repository_marks_node_analyzers_not_applicable() -> None:
     not_applicable = result["not_applicable_scanner_records"]
     summary = result["assessment"]["scanner_applicability_summary"]
 
-    assert [item["scanner_name"] for item in applicable] == [
-        "pip-audit",
-        "bandit",
-        "semgrep",
-        "gitleaks",
-        "trufflehog",
-        "osv-scanner",
-    ]
-    assert {item["scanner_name"] for item in not_applicable} == {
-        "npm-audit",
-        "eslint",
-        "typescript",
-    }
-    assert all(item["completed"] is False for item in not_applicable)
-    assert all(item["verified"] is False for item in not_applicable)
-    assert all(item["applicable"] is False for item in not_applicable)
+    assert len(applicable) == 9  # required includes the unresolved population
+    assert not_applicable == []
+    unproven = [item for item in applicable if item["applicability_state"] == "applicability_unproven"]
+    assert {item["scanner_name"] for item in unproven} == {"npm-audit", "eslint", "typescript"}
+    assert all(item["execution_state"] == "unavailable" for item in unproven)
+    assert all(item["completed"] is False and item["applicable"] is None for item in unproven)
     assert summary["requested_scanners"] == 9
     assert summary["applicable_scanners"] == 6
     assert summary["completed_applicable_scanners"] == 6
     assert summary["incomplete_applicable_scanners"] == 0
-    assert summary["not_applicable_scanners"] == 3
+    assert summary["not_applicable_scanners"] == 0
+    assert summary["applicability_unproven_scanners"] == 3
     assert summary["not_applicable_receives_completion_credit"] is False
 
 
-def test_python_only_repository_accepts_exact_pipeline_unavailability_messages() -> None:
+def test_unavailability_messages_do_not_establish_absence_of_inputs() -> None:
     canonical = {
         "identity": {"commit_sha": SHA},
         "repository_evidence": {
@@ -100,17 +91,14 @@ def test_python_only_repository_accepts_exact_pipeline_unavailability_messages()
 
     result = normalize_scanner_applicability_canonical(canonical)
 
-    assert result["scanner_execution_records"] == []
-    assert {
-        item["scanner_name"] for item in result["not_applicable_scanner_records"]
-    } == {"npm-audit", "eslint", "typescript"}
-    assert all(
-        item["completed"] is False
-        for item in result["not_applicable_scanner_records"]
-    )
+    assert result["not_applicable_scanner_records"] == []
+    records = result["scanner_execution_records"]
+    assert {item["scanner_name"] for item in records} == {"npm-audit", "eslint", "typescript"}
+    assert all(item["applicability_state"] == "applicability_unproven" for item in records)
+    assert all(item["execution_state"] == "unavailable" for item in records)
 
 
-def test_python_only_frozen_report_recovers_legacy_failed_mismatch_states() -> None:
+def test_new_projection_preserves_legacy_failed_execution_without_inferring_applicability() -> None:
     canonical = {
         "identity": {"commit_sha": SHA},
         "repository_evidence": {
@@ -133,14 +121,10 @@ def test_python_only_frozen_report_recovers_legacy_failed_mismatch_states() -> N
 
     result = normalize_scanner_applicability_canonical(canonical)
 
-    assert result["scanner_execution_records"] == []
-    assert {
-        item["scanner_name"] for item in result["not_applicable_scanner_records"]
-    } == {"npm-audit", "eslint"}
-    assert all(
-        item["raw_state"] == "failed"
-        for item in result["not_applicable_scanner_records"]
-    )
+    assert result["not_applicable_scanner_records"] == []
+    records = result["scanner_execution_records"]
+    assert {item["scanner_name"] for item in records} == {"npm-audit", "eslint"}
+    assert all(item["execution_state"] == "failed" and item["applicability_state"] == "applicability_unproven" for item in records)
 
 
 def test_node_repository_does_not_hide_missing_applicable_analyzers() -> None:
@@ -187,7 +171,8 @@ def test_sampled_node_paths_do_not_prove_python_inapplicability() -> None:
 
     assert result['scanner_execution_records'][0]['state'] == 'unavailable'
     assert result['not_applicable_scanner_records'] == []
-    assert result['assessment']['scanner_applicability_summary']['incomplete_applicable_scanners'] == 1
+    assert result['assessment']['scanner_applicability_summary']['incomplete_applicable_scanners'] == 0
+    assert result['assessment']['scanner_applicability_summary']['applicability_unproven_scanners'] == 1
 
 
 def test_node_only_repository_requires_complete_retained_python_inventory(tmp_path) -> None:
@@ -220,6 +205,8 @@ def test_node_only_repository_requires_complete_retained_python_inventory(tmp_pa
         "repository_signals": {
             "node_manifest": True,
             "node_source": True,
+            "typescript_source": True,
+            "typescript_config": False,
             "python_manifest": False,
             "python_source": False,
         },
@@ -228,9 +215,12 @@ def test_node_only_repository_requires_complete_retained_python_inventory(tmp_pa
         "completed_applicable_scanners": 0,
         "incomplete_applicable_scanners": 0,
         "not_applicable_scanners": 1,
+        "applicability_unproven_scanners": 0,
+        "applicability_unproven_tools": [],
         "not_applicable_tools": ["pip-audit"],
         "not_applicable_receives_completion_credit": False,
-        "unavailable_reserved_for_applicable_missing_evidence": True,
+        "unavailable_reserved_for_applicable_missing_evidence": False,
+        "unavailable_does_not_establish_applicability": True,
     }
 
 
@@ -250,7 +240,8 @@ def test_scanner_error_wording_does_not_create_false_repository_signal() -> None
     summary = result["assessment"]["scanner_applicability_summary"]
     assert summary["repository_signals"]["node_manifest"] is False
     assert summary["repository_signals"]["node_source"] is False
-    assert summary["not_applicable_scanners"] == 1
+    assert summary["not_applicable_scanners"] == 0
+    assert summary["applicability_unproven_scanners"] == 1
 
 
 def test_missing_applicable_python_binary_remains_unavailable() -> None:
@@ -269,3 +260,28 @@ def test_missing_applicable_python_binary_remains_unavailable() -> None:
     assert result["not_applicable_scanner_records"] == []
     assert result["scanner_execution_records"][0]["state"] == "unavailable"
     assert result["assessment"]["scanner_applicability_summary"]["incomplete_applicable_scanners"] == 1
+
+
+def test_typescript_configuration_does_not_conflict_with_dependency_absence(tmp_path):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+    from nico.scanner_package_inventory_v1 import inspect_package_sources
+    (tmp_path / "tsconfig.json").write_text("{}")
+    node = inspect_node_inputs(tmp_path, SHA)
+    packages = inspect_package_sources(tmp_path, SHA)
+    result = normalize_scanner_applicability_canonical({
+        "identity": {"commit_sha": SHA},
+        "repository_evidence": {"file_evidence": {"sampled_paths": ["tsconfig.json"]}},
+        "scanner_execution_records": [
+            {**_record("npm-audit", "not_applicable"), "applicability_evidence": node,
+             "execution_observed": False, "execution_observed_for_this_report": False},
+            {**_record("osv-scanner", "not_applicable"), "applicability_evidence": packages,
+             "execution_observed": False, "execution_observed_for_this_report": False},
+            {**_record("typescript", "failed"), "applicability_evidence": node},
+        ],
+    })
+    excluded = result["not_applicable_scanner_records"]
+    assert {row["scanner_name"] for row in excluded} == {"npm-audit", "osv-scanner"}
+    assert all(row["execution_state"] == "not_requested" for row in excluded)
+    assert result["scanner_execution_records"][0]["scanner_name"] == "typescript"
+    assert result["scanner_execution_records"][0]["applicability_state"] == "applicable"
+    assert result["scanner_execution_records"][0]["execution_state"] == "failed"

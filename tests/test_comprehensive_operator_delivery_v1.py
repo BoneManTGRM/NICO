@@ -272,3 +272,39 @@ def test_old_delivery_keeps_original_binding_in_versioned_read_only_export(servi
         damaged = deepcopy(original)
         damaged['operator_delivery_edition'][field]['tampered'] = True
         assert project_operator_delivery({}, damaged, include_reports=True)['client_delivery_allowed'] is False
+
+
+def test_legacy_unknown_release_preserves_receipt_retrieval_but_blocks_new_delivery(service, monkeypatch):
+    """Simulate historical receipts locally; never create real owner approval."""
+    from nico import comprehensive_client_delivery_contract_v1 as contract
+    from nico.comprehensive_operator_approval_v1 import validated_operator_edition
+    from nico.comprehensive_review_decision_v1 import report_package_from_record
+    from nico.comprehensive_run_record import _record_hash
+    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    record = current(service)
+    package = report_package_from_record(record)
+    package["json"]["assessment"]["nico_release_provenance"]["frontend_runtime_observation"] = {"status": "unavailable"}
+    record["stage_results"]["final_comprehensive_report_generation"]["report_package"] = rebuild_client_artifacts({"json": package["json"]})
+    previous = record["revision"]
+    record["revision"] = previous + 1
+    record["integrity_sha256"] = _record_hash(record)
+    service._store.save(record, expected_revision=previous)
+    # Fixture construction alone reproduces the pre-repair historical policy.
+    with monkeypatch.context() as old_policy:
+        old_policy.setattr(contract, "require_new_report_release_readiness", lambda record: None)
+        approved, request = approved_request(service)
+    before = deepcopy(current(service))
+    assert validated_operator_edition(before) is not None
+    assert contract.version_truth(before)["deployment_identity_established"] is False
+    with pytest.raises(ValueError, match="report_release_provenance_unverified"):
+        authorize_operator_delivery(service, before["identity"]["run_id"], request)
+    assert current(service) == before
+    # A delivery receipt already committed under that historical policy remains
+    # retrievable; identical retry does not perform a new authority transition.
+    with monkeypatch.context() as old_policy:
+        old_policy.setattr(contract, "require_new_report_release_readiness", lambda record: None)
+        historical = authorize_operator_delivery(service, before["identity"]["run_id"], request)
+    retained = validated_operator_delivery(historical)
+    assert retained is not None
+    assert authorize_operator_delivery(service, before["identity"]["run_id"], request) == historical
+    assert validated_operator_delivery(current(service)) == retained

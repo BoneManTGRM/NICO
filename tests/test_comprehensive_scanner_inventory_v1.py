@@ -176,7 +176,8 @@ def test_existing_status_route_rechecks_bytes_before_crediting_cached_scanner(in
         **inventory.record["identity"], "revision": 7, "terminal": True,
         "human_review_completed": False, "client_delivery_allowed": False,
         "scanner_execution_summary": {"status": "partial", "completed_count": 1,
-            "applicable_count": 9, "percent": 11, "completed_tools": ["semgrep"],
+            "applicable_count": 1, "applicable_tools": ["semgrep"],
+            "execution_required_count": 9, "percent": 11, "completed_tools": ["semgrep"],
             "not_applicable_tools": [], "incomplete_tools": []},
         "scanner_evidence_binding": {
             **deepcopy(inventory.record),
@@ -202,6 +203,9 @@ def test_existing_status_route_rechecks_bytes_before_crediting_cached_scanner(in
     value = got.json()
     expected = 1 if change is None else 0
     assert value["scanner_execution_summary"]["completed_count"] == expected
+    assert value["scanner_execution_summary"]["execution_required_count"] == 9
+    assert value["scanner_execution_summary"]["applicable_count"] == 1
+    assert value["scanner_execution_summary"]["applicability_unproven_count"] == 8
     assert "scanner_evidence_verification" in value
     assert value["scanner_evidence_verification"]["read_only"] is True
     assert value["client_delivery_allowed"] is False

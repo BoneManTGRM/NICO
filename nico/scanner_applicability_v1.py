@@ -11,7 +11,6 @@ _NODE_MANIFEST_NAMES = {
     "package-lock.json",
     "pnpm-lock.yaml",
     "yarn.lock",
-    "tsconfig.json",
 }
 _PYTHON_MANIFEST_NAMES = {
     "requirements.txt",
@@ -138,11 +137,14 @@ def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
             and type(count) is int and count > 0
         ):
             node_source = True
-    python_manifest = any(name in _PYTHON_MANIFEST_NAMES for name in basenames)
+    python_manifest = any(name in _PYTHON_MANIFEST_NAMES or
+        (name.startswith("requirements") and name.endswith((".txt", ".in"))) for name in basenames)
     python_source = any(path.endswith(".py") for path in paths)
     return {
         "node_manifest": node_manifest,
         "node_source": node_source,
+        "typescript_source": any(path.endswith((".ts", ".tsx")) for path in paths),
+        "typescript_config": any(name.startswith("tsconfig") and name.endswith(".json") for name in basenames),
         "python_manifest": python_manifest,
         "python_source": python_source,
     }
@@ -159,176 +161,78 @@ def _reason(record: Mapping[str, Any]) -> str:
     )
 
 
-def _explicitly_not_applicable(
-    scanner: str,
-    reason: str,
-    signals: Mapping[str, bool],
-) -> tuple[bool, str]:
-    lowered = reason.casefold()
-    has_node_project = bool(signals.get("node_manifest") or signals.get("node_source"))
-    has_python_project = bool(signals.get("python_manifest") or signals.get("python_source"))
-
-    if scanner == "pip-audit":
-        missing_python_manifest = any(
-            marker in lowered
-            for marker in (
-                "requirements.txt not found",
-                "requirements.txt was not found",
-                "no supported python dependency manifest",
-                "python dependency manifest is missing",
-            )
-        )
-        if missing_python_manifest and not has_python_project:
-            return True, (
-                "No supported Python dependency manifest or source tree exists at the assessed commit; "
-                "pip-audit is not applicable to this repository snapshot."
-            )
-
-    if scanner == "npm-audit":
-        missing_lock = any(
-            marker in lowered
-            for marker in (
-                "package-lock.json not found",
-                "no javascript lockfile",
-                "no package-lock.json with an adjacent package.json was found",
-            )
-        )
-        if missing_lock and not has_node_project:
-            return True, (
-                "No supported JavaScript package manifest, lockfile, or source tree exists at the assessed commit; "
-                "npm-audit is not applicable to this repository snapshot."
-            )
-
-    if scanner == "eslint":
-        missing_project = any(
-            marker in lowered
-            for marker in (
-                "apps/web/package.json not found",
-                "package.json not found",
-                "no eslint configuration or lint script",
-                "eslint configuration or lint script was found",
-                "eslint was not installed by the exact package-lock",
-                "no supported javascript or typescript source files were found",
-                "project dependencies were not prepared",
-            )
-        )
-        if missing_project and not has_node_project:
-            return True, (
-                "No JavaScript/TypeScript project or source tree exists at the assessed commit; "
-                "ESLint is not applicable to this repository snapshot."
-            )
-
-    if scanner == "typescript":
-        missing_project = any(
-            marker in lowered
-            for marker in (
-                "apps/web/package.json not found",
-                "package.json not found",
-                "tsconfig.json not found",
-                "typescript evidence",
-                "tsc was not installed by the exact package-lock",
-                "project dependencies were not prepared",
-            )
-        )
-        if missing_project and not has_node_project:
-            return True, (
-                "No TypeScript project, source tree, or tsconfig exists at the assessed commit; "
-                "TypeScript compilation is not applicable to this repository snapshot."
-            )
-
-    return False, ""
-
-
 def _normalize_record(
     raw: Mapping[str, Any],
     signals: Mapping[str, bool],
 ) -> dict[str, Any]:
+    """Derive applicability from inputs, independently of execution outcome."""
+    from nico.node_scanner_applicability_v1 import justified_inapplicability, valid_input_inventory
+    from nico.scanner_package_inventory_v1 import justified_no_packages
+
     record = deepcopy(dict(raw))
     scanner = _scanner_name(record.get("scanner_name") or record.get("tool") or record.get("scanner"))
     record["scanner_name"] = scanner
-    state = _text(record.get("state") or record.get("status")).casefold().replace("-", "_")
-    reason = _reason(record)
-
-    already_not_applicable = (
-        state in {_NOT_APPLICABLE, "not_required", "inapplicable"}
-        or record.get("applicable") is False
+    state = _text(record.get("execution_state") or record.get("state") or record.get("status")).casefold().replace("-", "_")
+    execution = {"completed": "complete", "completed_with_findings": "complete",
+                 "timeout": "timed_out"}.get(state, state or "unavailable")
+    legacy_inapplicable = state in {_NOT_APPLICABLE, "not_required", "inapplicable"}
+    if legacy_inapplicable:
+        execution = "not_requested" if record.get("execution_observed") is False else "unavailable"
+    inventory = record.get("applicability_evidence")
+    absent = justified_inapplicability(
+        inventory, scanner, str(record.get("commit_sha") or record.get("target_commit_sha") or ""),
     )
-    # A complete, source-bound input inventory outranks generic ESLint targets.
-    # Keep historical records without that evidence under the existing policy.
-    from nico.node_scanner_applicability_v1 import justified_inapplicability
-    inventory_not_applicable = justified_inapplicability(
-        record.get("applicability_evidence"), scanner,
-        str(record.get("commit_sha") or record.get("target_commit_sha") or ""),
+    if scanner == "osv-scanner":
+        absent = justified_no_packages(inventory, str(record.get("commit_sha") or record.get("target_commit_sha") or ""))
+    positive = {
+        "pip-audit": signals.get("python_manifest") or signals.get("python_source"),
+        "bandit": signals.get("python_source"),
+        "npm-audit": signals.get("node_manifest"),
+        "eslint": signals.get("node_source"),
+        "typescript": signals.get("typescript_source") or signals.get("typescript_config"),
+        "semgrep": signals.get("python_source") or signals.get("node_source"),
+        "osv-scanner": signals.get("python_manifest") or signals.get("node_manifest"),
+        # History scanners apply to the exact Git snapshot, independent of language.
+        "gitleaks": record.get("exact_commit_match") is True,
+        "trufflehog": record.get("exact_commit_match") is True,
+    }.get(scanner, False)
+    if valid_input_inventory(inventory, str(record.get("commit_sha") or record.get("target_commit_sha") or "")):
+        field = {"npm-audit": "node_dependency_paths", "typescript": "typescript_input_paths", "pip-audit": "python_input_paths"}.get(scanner)
+        if field and isinstance(inventory.get(field), list) and inventory[field]:
+            positive = True
+    conflicting = bool(absent and positive)
+    if conflicting:
+        absent = positive = False
+        applicability = "applicability_unproven"
+        reason = "Retained supported inputs conflict with the complete-input-absence observation."
+    elif absent:
+        applicability = "not_applicable"
+        reason = _text(record.get("applicability_reason")) or "Complete source-bound inventory contains no inputs supported by this scanner."
+        if legacy_inapplicable and record.get("execution_observed_for_this_report") is False:
+            execution = "not_requested"
+    elif positive:
+        applicability = "applicable"
+        reason = "Retained repository inputs intersect the configured scanner capability."
+    else:
+        applicability = "applicability_unproven"
+        reason = "Retained input evidence does not establish scanner applicability or complete absence of supported inputs."
+    record.update(
+        applicability_state=applicability,
+        applicability_reason=reason,
+        applicable=False if absent else True if positive else None,
+        evidence_required=not absent,
+        execution_state=execution,
+        execution_reason=_text(record.get("execution_reason") or raw.get("failure_reason")
+            or raw.get("failure_or_unavailable_reason") or raw.get("reason") or raw.get("error")),
     )
-    if scanner == "pip-audit" and not inventory_not_applicable:
-        # Missing preparation inputs and reason text cannot establish absence.
-        # Keep the original record intact; this is a derived presentation only.
-        if already_not_applicable:
-            record["prior_applicability_reason"] = reason
-            record.update(state="unavailable", status="unavailable", completed=False,
-                          verified=False, verified_complete=False, verified_for_this_report=False,
-                          applicable=True, evidence_required=True, applicability_reason="",
-                          failure_reason="Python applicability is unverified: complete source inventory and retained observation evidence are required.",
-                          failure_or_unavailable_reason="Python applicability is unverified: complete source inventory and retained observation evidence are required.")
-        else:
-            record.setdefault("applicable", True)
-            record.setdefault("evidence_required", True)
-        return record
-    node_contradiction = scanner in {"npm-audit", "eslint", "typescript"} and (
-        signals.get("node_manifest") or signals.get("node_source")
-    ) and not inventory_not_applicable
-    if already_not_applicable and node_contradiction:
-        # Correct only this presentation classification; retain its prior claim
-        # and do not grant execution, verification, or score credit.
-        record["prior_applicability_reason"] = reason
-        record.update({
-            "state": "unavailable", "status": "unavailable", "completed": False,
-            "verified": False, "verified_complete": False,
-            "verified_for_this_report": False, "applicable": True,
-            "evidence_required": True, "applicability_reason": "",
-            "failure_reason": "Applicable Node analyzer execution evidence is unavailable; retained source evidence contradicts the earlier not-applicable classification.",
-            "failure_or_unavailable_reason": "Applicable Node analyzer execution evidence is unavailable; retained source evidence contradicts the earlier not-applicable classification.",
-        })
-        return record
-    inferred, inferred_reason = _explicitly_not_applicable(scanner, reason, signals)
-    if already_not_applicable or inventory_not_applicable or (
-        state
-        in {
-            "unavailable",
-            "missing",
-            "not_installed",
-            "not_available",
-            # Older frozen reports projected explicit technology-mismatch
-            # unavailability into ``failed`` before retaining the exact reason.
-            # The repository-signal guard above keeps real Node-project failures
-            # applicable and fail-closed.
-            "failed",
-        }
-        and inferred
-    ):
-        record.update(
-            {
-                "raw_state": record.get("raw_state") or state or "unavailable",
-                "state": _NOT_APPLICABLE,
-                "status": _NOT_APPLICABLE,
-                "completed": False,
-                "verified": False,
-                "verified_complete": False,
-                "verified_for_this_report": False,
-                "applicable": False,
-                "evidence_required": False,
-                "applicability_reason": _text(record.get("applicability_reason"))
-                or inferred_reason
-                or reason
-                or "The analyzer does not apply to the repository technology detected at the assessed commit.",
-                "failure_reason": "",
-                "failure_or_unavailable_reason": "",
-            }
-        )
-        return record
-
-    record.setdefault("applicable", True)
-    record.setdefault("evidence_required", True)
+    if absent or legacy_inapplicable:
+        # Do not grant execution credit to an inventory observation or an
+        # unsupported historical inapplicability assertion.
+        record.update(completed=False, verified=False, verified_complete=False,
+                      verified_for_this_report=False)
+        if legacy_inapplicable and not absent:
+            record.setdefault("prior_applicability_reason", _reason(raw))
+            record.update(state="unavailable", status="unavailable")
     return record
 
 
@@ -360,22 +264,23 @@ def normalize_scanner_applicability_canonical(value: Mapping[str, Any]) -> dict[
     signals = _repository_signals(canonical)
     records = [_normalize_record(item, signals) for item in _record_list(canonical)]
 
-    applicable = [item for item in records if item.get("applicable") is not False]
+    required = [item for item in records if item.get("applicable") is not False]
+    applicable = [item for item in records if item.get("applicable") is True]
+    unproven = [item for item in records if item.get("applicable") is None]
     not_applicable = [item for item in records if item.get("applicable") is False]
     completed = [item for item in applicable if item.get("completed") is True]
     incomplete = [item for item in applicable if item.get("completed") is not True]
 
-    # The authoritative execution population contains only analyzers that apply to
-    # this repository. Requested and not-applicable records remain separately
-    # retained so no analyzer disappears and no not-applicable tool receives credit.
+    # Required execution includes applicability-unproven scanners. Preserve that
+    # unresolved dimension without inventing failed or incomplete execution.
     canonical["requested_scanner_records"] = deepcopy(records)
-    canonical["scanner_execution_records"] = deepcopy(applicable)
+    canonical["scanner_execution_records"] = deepcopy(required)
     canonical["not_applicable_scanner_records"] = deepcopy(not_applicable)
     assessment = deepcopy(dict(canonical.get("assessment") or {}))
     assessment["requested_scanner_records"] = deepcopy(records)
-    assessment["scanner_execution_records"] = deepcopy(applicable)
-    assessment["completed_scanner_records"] = deepcopy(completed)
-    assessment["incomplete_scanner_records"] = deepcopy(incomplete)
+    assessment["scanner_execution_records"] = deepcopy(required)
+    assessment["completed_scanner_records"] = deepcopy([r for r in required if r.get("completed") is True])
+    assessment["incomplete_scanner_records"] = deepcopy([r for r in required if r.get("completed") is not True])
     assessment["not_applicable_scanner_records"] = deepcopy(not_applicable)
     assessment["scanner_applicability_summary"] = {
         "version": VERSION,
@@ -385,9 +290,12 @@ def normalize_scanner_applicability_canonical(value: Mapping[str, Any]) -> dict[
         "completed_applicable_scanners": len(completed),
         "incomplete_applicable_scanners": len(incomplete),
         "not_applicable_scanners": len(not_applicable),
+        "applicability_unproven_scanners": len(unproven),
+        "applicability_unproven_tools": [item.get("scanner_name") for item in unproven],
         "not_applicable_tools": [item.get("scanner_name") for item in not_applicable],
         "not_applicable_receives_completion_credit": False,
-        "unavailable_reserved_for_applicable_missing_evidence": True,
+        "unavailable_reserved_for_applicable_missing_evidence": False,
+        "unavailable_does_not_establish_applicability": True,
     }
     canonical["assessment"] = assessment
 
@@ -403,6 +311,23 @@ def normalize_scanner_applicability_canonical(value: Mapping[str, Any]) -> dict[
     )
     canonical["v2_pipeline_contract"] = contract
     return canonical
+
+
+def scanner_execution_summary(records: list[Mapping[str, Any]], *, spanish: bool = False) -> str:
+    """Describe the two retained dimensions without renaming unknown inputs applicable."""
+    if not records:
+        return ("Las poblaciones de aplicabilidad y ejecución de analizadores no están verificadas." if spanish
+            else "Scanner applicability and execution populations are unverified.")
+    required = [r for r in records if r.get("applicable") is not False]
+    complete = sum(r.get("completed") is True for r in required)
+    applicable = sum(r.get("applicable") is True for r in required)
+    unproven = len(required) - applicable
+    excluded = len(records) - len(required)
+    if spanish:
+        return (f"Se completaron {complete} de {len(required)} ejecuciones requeridas de analizadores. "
+            f"Aplicabilidad establecida: {applicable}; aplicabilidad no comprobada: {unproven}; no aplicables: {excluded}.")
+    return (f"{complete} of {len(required)} required scanner executions completed. "
+        f"Applicability established: {applicable}; applicability unproven: {unproven}; not applicable: {excluded}.")
 
 
 def normalize_scanner_applicability_package(package: Mapping[str, Any]) -> dict[str, Any]:

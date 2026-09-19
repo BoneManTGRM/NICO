@@ -593,12 +593,28 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "La evidencia canónica está disponible.",
     ),
     (
+        "Scanner applicability and execution populations are unverified.",
+        "Las poblaciones de aplicabilidad y ejecución de analizadores no están verificadas.",
+    ),
+    (
+        "Scanner execution completeness is unverified.",
+        "La integridad de la ejecución de analizadores no está verificada.",
+    ),
+    (
         "Exact-SHA first-party source archive when available; tests, generated, distribution, dependency, vendor, and minified paths are excluded.",
         "Archivo de código fuente propio del SHA exacto cuando está disponible; se excluyen las rutas de pruebas, código generado, distribución, dependencias, proveedores y archivos minificados.",
     ),
     (
         "Ownership or explicit authorization and the defensive read-only scope were confirmed for this exact Comprehensive run.",
         "Se confirmaron la propiedad o la autorización explícita y el alcance defensivo de solo lectura para esta ejecución integral exacta.",
+    ),
+    (
+        "The requester confirmed authorization for this defensive read-only assessment. Independent NICO verification of ownership or third-party permission is not established.",
+        "El solicitante confirmó su autorización para esta evaluación defensiva de solo lectura. No se ha establecido una verificación independiente de NICO de la propiedad o el permiso de terceros.",
+    ),
+    (
+        "The immutable repository revision was verified, but its size exceeded the scanner execution limit. Scanner execution is unavailable; reporting continues with limited evidence.",
+        "Se verificó la revisión inmutable del repositorio, pero su tamaño superó el límite de ejecución de analizadores. La ejecución de analizadores no está disponible; el informe continúa con evidencia limitada.",
     ),
     (
         "Score effect: assurance-only while authorized human disposition remains pending; NICO automated technical triage is complete.",
@@ -1142,6 +1158,7 @@ _PRESENTATION_REPLACEMENTS += (
     ("Merged pull requests:", "Solicitudes de incorporación fusionadas:"),
     ("Observed job success rate:", "Tasa de éxito observada de trabajos:"),
     ("Executable code-risk findings:", "Hallazgos de riesgo en código ejecutable:"),
+    ("Executable source-risk observations:", "Observaciones de riesgo en código ejecutable:"),
     ("Excluded non-production observations:", "Observaciones excluidas por no ser de producción:"),
     ("Example placeholder secrets retained separately:", "Secretos de ejemplo conservados por separado:"),
     ("Source analysis:", "Análisis de código fuente:"),
@@ -1744,6 +1761,10 @@ _RAW_CANONICAL_SUBTREES = {
     "structured_tables",
     "profile_coverage",
     "coverage_reconciliation",
+    "coverage_metrics",
+    "source_security_assurance",
+    "authorization_evidence",
+    "execution_limit",
     "candidate_register",
     "canonical_findings",
     "canonical_scanner_finding_register",
@@ -2986,6 +3007,11 @@ def _translate_presentation(value: Any) -> str:
         text,
     )
     text = re.sub(
+        r"(\d+) of (\d+) required scanner executions completed\. Applicability established: (\d+); applicability unproven: (\d+); not applicable: (\d+)\.",
+        lambda match: f"Se completaron {match[1]} de {match[2]} ejecuciones requeridas de analizadores. Aplicabilidad establecida: {match[3]}; aplicabilidad no comprobada: {match[4]}; no aplicables: {match[5]}.",
+        text,
+    )
+    text = re.sub(
         r"(\d+) of (\d+) applicable scanner executions completed\.",
         lambda match: (
             f"{'Se completó' if int(match.group(2)) == 1 else 'Se completaron'} "
@@ -3119,6 +3145,14 @@ def _translate_presentation(value: Any) -> str:
         lambda match: (
             f"{match.group(1)} "
             f"{'hallazgo de riesgo en código ejecutable propio requiere' if int(match.group(1)) == 1 else 'hallazgos de riesgo en código ejecutable propio requieren'} disposición con fuente exacta."
+        ),
+        text,
+    )
+    text = re.sub(
+        r"(\d+) executable first-party source-risk observation\(s\) require review; canonical finding eligibility is not established by the detector count\.",
+        lambda match: (
+            f"{match.group(1)} observaciones de riesgo en código ejecutable propio requieren revisión; "
+            "el conteo del detector no establece la elegibilidad como hallazgo canónico."
         ),
         text,
     )

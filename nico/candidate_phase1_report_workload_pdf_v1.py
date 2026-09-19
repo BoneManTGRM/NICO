@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.scanner_applicability_v1 import scanner_execution_summary
+
 import html
 import io
 from typing import Any, Mapping
@@ -293,9 +295,9 @@ def render_phase1_evidence_review_gate_pdf(
         p("El triaje técnico y la disposición humana están separados" if spanish else "Technical triage and human disposition are separate", h2),
         p(
             (
-                f"{'Se completó' if len(scanners) == 1 else 'Se completaron'} {completed_scanners} de {len(scanners)} {'analizador' if len(scanners) == 1 else 'analizadores'}. NICO completó el triaje técnico para {completed} de {total} {'candidato' if total == 1 else 'candidatos'} ({coverage}%). Las disposiciones humanas siguen pendientes; completar el triaje técnico no equivale a aprobación humana."
+                scanner_execution_summary(scanners, spanish=True) + f" NICO completó el triaje técnico para {completed} de {total} {'candidato' if total == 1 else 'candidatos'} ({coverage}%). Las disposiciones humanas siguen pendientes; completar el triaje técnico no equivale a aprobación humana."
                 if spanish
-                else f"{completed_scanners} of {len(scanners)} applicable scanner executions completed. NICO completed automated technical triage for {completed} of {total} candidates ({coverage}%). Human dispositions remain pending; technical triage completion does not equal human approval."
+                else scanner_execution_summary(scanners) + f" NICO completed automated technical triage for {completed} of {total} candidates ({coverage}%). Human dispositions remain pending; technical triage completion does not equal human approval."
             )
         ),
         p("Carga de revisión por excepción" if spanish else "Review-by-exception workload", h2),

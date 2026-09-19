@@ -127,7 +127,12 @@ def test_requested_population_retains_inapplicable_source_identity():
     canonical = reconcile_authoritative_scanner_truth(canonical)
     records, _, _, _ = requested_scanner_population(canonical)
     by_name = {r['scanner_name']:r for r in records}
-    for name in ('npm-audit','typescript','osv-scanner'):
+    for name in ('npm-audit','typescript'):
+        assert by_name[name]['status'] == 'unavailable'
+        assert by_name[name]['applicability_state'] == 'applicability_unproven'
+        assert by_name[name]['completed'] is False
+        assert by_name[name]['commit_sha'] == SHA
+    for name in ('osv-scanner',):
         assert by_name[name]['status'] == 'not_applicable', by_name[name]
         assert by_name[name]['commit_sha'] == SHA
         assert by_name[name]['exact_commit_match'] is True

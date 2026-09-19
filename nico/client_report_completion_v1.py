@@ -163,9 +163,11 @@ def _scanner_records(canonical: Mapping[str, Any]) -> tuple[list[Mapping[str, An
 
 def scanner_provenance_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
-    applicable, not_applicable = _scanner_records(canonical)
-    completed = [item for item in applicable if item.get("completed") is True]
-    incomplete = [item for item in applicable if item.get("completed") is not True]
+    required, not_applicable = _scanner_records(canonical)
+    applicable = [item for item in required if item.get("applicable") is True]
+    unproven = [item for item in required if item.get("applicable") is not True]
+    completed = [item for item in required if item.get("completed") is True]
+    incomplete = [item for item in required if item.get("completed") is not True]
     register = canonical.get("client_finding_remediation_register") if isinstance(canonical.get("client_finding_remediation_register"), Mapping) else {}
     register_summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
 
@@ -177,14 +179,15 @@ def scanner_provenance_markdown(canonical: Mapping[str, Any], *, spanish: bool) 
             f"- Commit exacto: {_text(identity.get('commit_sha'))}",
             f"- ID de ejecución: {_text(identity.get('run_id'))}",
             f"- ID del libro de evidencia: {_text(identity.get('evidence_ledger_id'))}",
-            f"- Analizadores solicitados: {len(applicable) + len(not_applicable)}",
+            f"- Analizadores solicitados: {len(required) + len(not_applicable)}",
             f"- Analizadores aplicables: {len(applicable)}",
-            f"- Aplicables completados: {len(completed)}",
-            f"- Aplicables incompletos: {len(incomplete)}",
+            f"- Aplicabilidad no comprobada: {len(unproven)}",
+            f"- Ejecuciones requeridas completadas: {len(completed)}",
+            f"- Ejecuciones requeridas incompletas: {len(incomplete)}",
             f"- No aplicables: {len(not_applicable)}",
             f"- Hallazgos con ubicación exacta: {int(register_summary.get('exact_source_code_finding_count') or 0)}",
             "",
-            "### Procedencia de analizadores aplicables",
+            "### Procedencia de analizadores requeridos",
             "",
         ]
     else:
@@ -195,20 +198,21 @@ def scanner_provenance_markdown(canonical: Mapping[str, Any], *, spanish: bool) 
             f"- Exact commit: {_text(identity.get('commit_sha'))}",
             f"- Run ID: {_text(identity.get('run_id'))}",
             f"- Evidence ledger ID: {_text(identity.get('evidence_ledger_id'))}",
-            f"- Requested analyzers: {len(applicable) + len(not_applicable)}",
+            f"- Requested analyzers: {len(required) + len(not_applicable)}",
             f"- Applicable analyzers: {len(applicable)}",
-            f"- Completed applicable analyzers: {len(completed)}",
-            f"- Incomplete applicable analyzers: {len(incomplete)}",
+            f"- Applicability unproven: {len(unproven)}",
+            f"- Completed required executions: {len(completed)}",
+            f"- Incomplete required executions: {len(incomplete)}",
             f"- Not-applicable analyzers: {len(not_applicable)}",
             f"- Exact-source findings: {int(register_summary.get('exact_source_code_finding_count') or 0)}",
             "",
-            "### Applicable scanner provenance",
+            "### Required scanner provenance",
             "",
         ]
 
-    if not applicable:
-        lines.append("- No applicable analyzer records were retained." if not spanish else "- No se conservaron registros de analizadores aplicables.")
-    for item in applicable:
+    if not required:
+        lines.append("- No required analyzer records were retained." if not spanish else "- No se conservaron registros de analizadores requeridos.")
+    for item in required:
         name = _text(item.get("scanner_name") or item.get("tool"))
         state = _text(item.get("state") or item.get("status"))
         verified = "yes" if item.get("verified") is True else "no"
@@ -243,7 +247,7 @@ def scanner_provenance_markdown(canonical: Mapping[str, Any], *, spanish: bool) 
         lines.extend(
             [
                 "",
-                "### Evidencia aplicable incompleta" if spanish else "### Incomplete applicable analyzer evidence",
+                "### Evidencia de ejecución requerida incompleta" if spanish else "### Incomplete required execution evidence",
                 "",
             ]
         )

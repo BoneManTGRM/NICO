@@ -280,7 +280,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    structured_fields = {"source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state"}
+    structured_fields = {"source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
     def without_structured(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}
@@ -342,6 +342,33 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
 
 
 _SOURCE_COPY_ES = {
+    "Observation ID": "Identificador de observación",
+    "Column": "Columna", "Source excerpt": "Fragmento del código fuente",
+    "Source-risk observations": "Observaciones de riesgo del código fuente",
+    "Retained source-risk observations": "Observaciones de riesgo del código fuente conservadas",
+    "Reported source-risk observations": "Observaciones de riesgo del código fuente reportadas",
+    "Retained observation records": "Registros de observaciones conservados",
+    "Excluded non-production observations": "Observaciones excluidas por no ser de producción",
+    "Observation record retention complete": "Conservación completa de registros de observaciones",
+    "Repository revision": "Revisión del repositorio",
+    "Observation revision matches assessment": "La revisión de las observaciones coincide con la evaluación",
+    "Rule": "Regla", "Classification": "Clasificación", "Disposition": "Disposición",
+    "source_observation": "Observación del código fuente",
+    "excluded_non_production_observation": "Observación excluida por no ser de producción",
+    "not_dispositioned": "Sin disposición",
+    "Authorization and repository access evidence": "Evidencia de autorización y acceso al repositorio",
+    "Requester authorization attestation": "Declaración de autorización del solicitante",
+    "Repository access mode": "Modalidad de acceso al repositorio",
+    "Provider credential used": "Credencial del proveedor utilizada",
+    "Independent NICO verification of ownership or third-party permission": "Verificación independiente de NICO de propiedad o permiso de terceros",
+    "confirmed": "Confirmada",
+    "not_established": "No establecida",
+    "anonymous_public": "Público anónimo",
+    "authenticated_read_only": "Autenticado de solo lectura",
+    "unknown": "Desconocida",
+    "Eligible-source analysis coverage (%)": "Cobertura de análisis del código elegible (%)",
+    "Eligible-source coverage fraction": "Fracción de cobertura del código elegible",
+    "Observed supported-source coverage fraction": "Fracción de cobertura del código compatible observado",
     "Known file paths in configured priority order, then sorted eligible paths, within unchanged file and byte limits.": "Rutas conocidas en el orden de prioridad configurado y después rutas elegibles ordenadas, dentro de los límites existentes de archivos y bytes.",
     "Bounded API priority paths followed by sorted eligible paths; exact-SHA archive sources in sorted path order within existing archive file and byte limits. Overlapping paths are counted once.": "Rutas prioritarias de la API acotada seguidas de rutas elegibles ordenadas; código del archivo del SHA exacto en orden de ruta dentro de sus límites existentes de archivos y bytes. Cada ruta coincidente se cuenta una vez.",
     "Observed source components": "Componentes observados en el código",
@@ -371,6 +398,9 @@ _SOURCE_COPY_ES = {
 
 
 _SOURCE_COPY_EN = {
+    "source_observation": "Source observation",
+    "excluded_non_production_observation": "Excluded non-production observation",
+    "not_dispositioned": "Not dispositioned",
     "source_module": "Source module",
     "import": "Import",
     "http_call": "HTTP call",
@@ -402,6 +432,32 @@ def _source_cell(value: Any, *, spanish: bool) -> str:
 
 def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
     tables = deepcopy(stage.get("structured_tables") or [])
+    observations = stage.get("source_risk_observation_summary")
+    if isinstance(observations, dict) and observations:
+        tables.append({"title": "Source-risk observations", "columns": ["Measure", "Value"],
+            "rows": [[label, observations.get(key)] for label, key in (
+                ("Reported source-risk observations", "reported_count"),
+                ("Retained observation records", "retained_record_count"),
+                ("Excluded non-production observations", "excluded_non_production_count"),
+                ("Observation record retention complete", "record_retention_complete"),
+                ("Repository revision", "repository_revision"),
+                ("Observation revision matches assessment", "revision_match"),
+            )]})
+        records = [record for record in stage.get("source_risk_observations") or [] if isinstance(record, dict)]
+        for record in records:
+            # Vertical detail rows preserve long identities/evidence without
+            # compressing nine unrelated fields into narrow PDF columns.
+            tables.append({"title": "Retained source-risk observations",
+                "columns": ["Measure", "Value"],
+                "literal_value_labels": {"Observation ID", "Source", "Rule", "Source excerpt", "Repository revision"},
+                "rows": [[label, record.get(field)] for label, field in (
+                    ("Observation ID", "observation_id"), ("Source", "path"),
+                    ("Line", "line"), ("Column", "column"), ("Rule", "rule_id"),
+                    ("Source excerpt", "source_excerpt"),
+                    ("Repository revision", "repository_revision"),
+                    ("Observation revision matches assessment", "revision_match"),
+                    ("Classification", "semantic_class"), ("Disposition", "disposition_state"),
+                )]})
     coverage = stage.get("profile_coverage")
     if isinstance(coverage, dict) and coverage:
         fields = [
@@ -410,6 +466,7 @@ def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
             ("Analyzed source files", "analyzed_source_files"), ("Excluded source files", "complexity_excluded_source_files"),
             ("Unsampled eligible source files", "unsampled_eligible_source_files"), ("Unavailable profile files", "unavailable_profile_files"),
             ("Whole supported-source coverage (%)", "whole_repository_coverage_percent"),
+            ("Eligible-source analysis coverage (%)", "eligible_source_coverage_percent"),
             ("File limit", "file_limit"), ("Per-file byte limit", "per_file_byte_limit"),
             ("Selection method", "selection_method"),
         ]
@@ -419,6 +476,10 @@ def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
                        "rows": [[label, (reconciliation.get("unavailable_file_path_count")
                                          if key == "unavailable_profile_files" and reconciliation.get("version") == COVERAGE_RECONCILIATION_VERSION
                                          else coverage.get(key))] for label, key in fields]})
+        tables[-1]["rows"].extend([
+            ["Eligible-source coverage fraction", f"{coverage.get('analyzed_source_files')} / {coverage.get('eligible_source_files')}"],
+            ["Observed supported-source coverage fraction", f"{coverage.get('analyzed_source_files')} / {coverage.get('observed_source_files')}"],
+        ])
         archive_limits = (coverage.get("collection_limits") or {}).get("exact_sha_archive") or {}
         if archive_limits:
             tables[-1]["rows"].append(["Archive total byte limit", archive_limits.get("total_byte_limit")])
@@ -485,7 +546,7 @@ def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
             return html.escape(str(value) if literal else _source_cell(value, spanish=spanish), quote=False).replace("|", "&#124;").replace("\n", " ")
         lines += ["", "#### " + cell(table["title"]), "", "| " + " | ".join(cell(value) for value in columns) + " |",
                   "| " + " | ".join("---" for _ in columns) + " |"]
-        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)) + " |" for row in rows]
+        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)) + " |" for row in rows]
         lines += [
             (f"Se muestran las {len(rows)} filas completas." if spanish else
              f"Showing all {len(rows)} rows in full.")]
@@ -528,7 +589,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
                 heading = _source_cell(heading, spanish=spanish) + (" (continuación)" if spanish else " (continued)")
             flowables.append(cell(heading, True))
             values = [[cell(value) for value in columns]] + [
-                [cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)]
+                [cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
                 for row in batch
             ]
             if len(rows) <= batch_size:
@@ -593,10 +654,13 @@ def _decision_summary(
         if blocked
         else "Every automated stage represented in this package completed without a terminal execution failure."
     )
+    from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+    assurance = (assurance_headline(assessment, spanish=str(identity.get("report_language") or "").startswith("es"))
+        if assessment.get("source_security_assurance") else "")
     return (
         f"NICO completed a native Comprehensive Technical Assessment for {_text(identity.get('repository'))} "
         f"at immutable commit {_text(identity.get('commit_sha'))}. The evidence-bound maturity signal is "
-        f"{level} ({score_text}). {limited} stage(s) disclose unavailable or limited evidence. {boundary} "
+        f"{level} ({score_text}). {assurance} {limited} stage(s) disclose unavailable or limited evidence. {boundary} "
         "The package is a review-gated draft: automated evidence and recommendations are not client approval or delivery authorization."
     )
 

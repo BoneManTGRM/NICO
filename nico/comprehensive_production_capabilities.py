@@ -45,11 +45,13 @@ def _authorization_provider(context: dict[str, Any]) -> dict[str, Any]:
         "authorization_confirmed": True,
         "scope": "authorized_read_only_assessment",
         "summary": (
-            "Ownership or explicit authorization and the defensive read-only scope "
-            "were confirmed for this exact Comprehensive run."
+            "The requester confirmed authorization for this defensive read-only assessment. "
+            "Independent NICO verification of ownership or third-party permission is not established."
         ),
         "evidence": {
             "authorization_confirmed": True,
+            "requester_authorization_attestation": "confirmed",
+            "independent_authorization_verification": "not_established",
             "scope": "authorized_read_only_assessment",
             "repository": identity["repository"],
             "commit_sha": identity["commit_sha"],

@@ -353,6 +353,30 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             # other values, paths, detectors and all verified secrets still block.
             disposition = "approved_nonsecret_deployment_identifier"
             approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "0ca2174e3995d9ab44fc39f79cace1ebe0ee83e6a2d55ed1ece16ebcee500a21"
+        ):
+            # PR #1620: authenticated Railway project metadata and retained
+            # CI artifact 10583914606 establish this exact nonsecret project ID.
+            # Preserve the observation; verified values and other paths block.
+            disposition = "approved_nonsecret_project_identifier"
+            approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "ab15a06f193e60201aa9e3bf61638905457c681a70fcce1083d13c6c2e9a49d9"
+        ):
+            # PR #1620: connector response identifies this exact value as its
+            # read-only discovery conversation ID (CI artifact 10584863453).
+            # No credential exemption extends to other values or verified hits.
+            disposition = "approved_nonsecret_thread_identifier"
+            approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
             approved_test_placeholders += 1

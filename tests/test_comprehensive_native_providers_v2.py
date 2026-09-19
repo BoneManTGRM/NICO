@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import pytest
 
 from nico import comprehensive_native_providers as legacy
 from nico import comprehensive_native_providers_v2 as scoring
@@ -166,3 +167,28 @@ def test_incomplete_eslint_reduces_coverage_and_static_assurance(monkeypatch) ->
     assert sections["static_analysis"]["presented_score"] == 88
     assert "eslint" in result["assessment"]["evidence_coverage"]["incomplete_analyzers"]
     assert result["assessment"]["canonical_evidence_adjusted_score"] <= result["assessment"]["technical_score"]
+
+
+@pytest.mark.parametrize("active_chain", [False, True])
+def test_source_observation_count_does_not_claim_canonical_findings(monkeypatch, active_chain) -> None:
+    repo = _repo()
+    repo["code_signal_evidence"]["risk_pattern_hits"] = 2
+    monkeypatch.setattr(legacy, "_repo", lambda context: repo)
+    monkeypatch.setattr(legacy, "_complexity", lambda context: {"complexity_score": 78})
+    monkeypatch.setattr(legacy, "_scan", lambda context: _scan())
+    from nico import comprehensive_native_providers_v5
+    provider = comprehensive_native_providers_v5 if active_chain else scoring
+    result = provider.canonical_scoring_provider(_context())
+    code = next(section for section in result["assessment"]["sections"] if section["id"] == "code_audit")
+    assert code["presented_score"] == 80  # existing score formula is unchanged
+    assert "Executable source-risk observations: 2." in code["evidence"]
+    assert code["findings"] == [
+        "2 executable first-party source-risk observation(s) require review; canonical finding eligibility is not established by the detector count."
+    ]
+    assert code["source_risk_observation_count"] == 2
+    assert code["source_risk_population"] == "source_observations"
+    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
+    translated = _translate_presentation_field(code["findings"][0], "findings")
+    assert "observaciones de riesgo" in translated
+    assert "no establece la elegibilidad como hallazgo" in translated
+    assert "source-risk" not in translated

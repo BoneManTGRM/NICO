@@ -138,7 +138,8 @@ def test_scanner_execution_and_candidate_disposition_are_separate() -> None:
 
     stage = build_scanner_execution_stage(canonical, _Renderer)
 
-    assert "9 of 9 applicable scanner executions completed" in stage["summary"]
+    assert "9 of 9 required scanner executions completed" in stage["summary"]
+    assert "applicability unproven: 9" in stage["summary"]
     assert "No scanner execution remains incomplete" in stage["summary"]
     assert "662 resulting candidates remain pending human disposition" in stage["summary"]
     assert "Scanner completion does not equal candidate approval" in stage["summary"]
@@ -182,7 +183,8 @@ def test_scanner_stage_surfaces_explicit_not_applicable_tools_without_credit() -
     stage = build_scanner_execution_stage(canonical, _Renderer)
     combined = "\n".join(stage["evidence"])
 
-    assert "1 of 1 applicable scanner executions completed" in stage["summary"]
+    assert "1 of 1 required scanner executions completed" in stage["summary"]
+    assert "applicability unproven: 1" in stage["summary"]
     assert "npm-audit: not applicable" in combined
     assert "No JavaScript package manifest exists" in combined
 

@@ -707,7 +707,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
 
 def scanner_triage_provider(context: dict[str, Any]) -> dict[str, Any]:
     scan = legacy._scan(context)
-    if scan.get("status") != "complete":
+    if scan.get("status") != "complete" and not legacy.verified_execution_limit(scan, str(context.get("commit_sha") or "")):
         return legacy._result(context, "blocked", reason="complete_scanner_evidence_required")
     register = build_canonical_scanner_finding_register(scan, str(context.get("commit_sha") or ""))
     if register["status"] != "complete":
