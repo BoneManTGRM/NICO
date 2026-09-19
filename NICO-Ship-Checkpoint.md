@@ -4,7 +4,7 @@
 
 - Baseline and last authoritative main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
 - One repair branch: `fix/bitcoin-truth-stress-closeout`; one PR: **#1620**, OPEN/DRAFT, base equals baseline, no reviews. https://github.com/BoneManTGRM/NICO/pull/1620
-- Last published branch HEAD before this checkpoint-only transition: `7e37ea1103fb7089504d30d78d1b3e5046d7edf2`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
+- Last published branch HEAD before this checkpoint-only transition: `256e58346ea0f9f3f0588c89f72d70fff54307d3`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
 - Candidate source/test fingerprint (all changed files against baseline except this ledger, sorted path→SHA256 JSON): `646cf7cb710dcc5b20aef08ab065787f23842d5997633a0840df5cd514efdae8` (59 files).
 - One primary writer. Two existing read-only discovery agents; neither has performed the required complete-candidate independent review.
 - No merge, production repair deployment, new assessment, operator approval, specialist disposition, or delivery authorization has occurred.
@@ -96,7 +96,15 @@ Golden differential: isolated read-only baseline193b reproduces all three existi
 
 Fresh permitted browser inspection still shows NICO password and Open NICO; no signed-in signal. The prior manual handoff remains the pending owner action. No additional credential request or repeated manual handoff has been issued. D1 exact records remain unavailable; no historical mutation or production action occurred.
 
-## Current human retrieval handoff
+## Current owner-requested supplemental Bitcoin intake
+
+Owner explicitly requested a new Bitcoin run. This is supplemental current-revision evidence, not the frozen historical assessment and not evidence of the undeployed repair. Existing browser tab1 successfully opened the normal Comprehensive intake. The repository field is populated with bitcoin/bitcoin; optional fields remain blank. No engagement was submitted and no new run ID exists.
+
+Actual intake statement: "I confirm that NICO has permission from the client or repository owner to access and analyze this repository for this engagement." Its checkbox was observed unchecked; the agent did not select it. Public repository access and the owner's request do not establish that separate permission fact. A manual browser handoff was successfully requested for this new authorization boundary, not to retry blocked historical artifact access.
+
+EXACT NEXT ACTION: owner reviews the statement and personally checks it only if it is true for this engagement. If permission is not established, do not launch the third-party assessment; preserve the frozen regression and use an authorized control. After genuine attestation, inspect current UI state, submit through the normal workflow, retain the new immutable revision/run identity and inspect its evidence. Do not equate its revision with the frozen commit or mutate the historical run. D1 historical-record proof and the original release gates remain outstanding.
+
+## Prior human retrieval handoff
 
 Owner requested completion. A bounded documentation check of Railway's service-scoped variable API and staged environment API did not establish a callable operation that preserves the diagnostic service's existing pending SQL and all other staged changes while executing our query. No infrastructure mutation was attempted. Evidence: official integrations/api/manage-variables documents service-scoped upserts/skipDeploys; integrations/api/manage-environments documents environmentPatchCommitStaged with environmentId only. These pages do not prove safe selective application of this environment's pending patch.
 
