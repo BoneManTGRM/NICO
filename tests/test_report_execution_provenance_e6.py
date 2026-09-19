@@ -237,3 +237,90 @@ def test_fixed_frontend_observation_does_not_credit_labels_alone(monkeypatch, ch
         assert base64.b64decode(result["observation_bytes_base64"]) == raw
         result["observation_sha256"] = "0" * 64
         assert verify_frontend_release(result, "b" * 40, "dpl_synthetic_e6") is False
+
+
+@pytest.mark.parametrize("change", [None, "wrong_id", "missing_source", "wrong_source",
+    "not_ready", "denied", "redirect", "oversize", "invalid_json", "configured_id", "timed_out"])
+def test_deployment_only_runtime_uses_platform_source_without_inventing_runtime_sha(monkeypatch, change):
+    import requests
+    from nico import report_execution_provenance_e6 as provenance
+    from nico.comprehensive_client_delivery_contract_v1 import (
+        require_new_report_release_readiness, version_truth,
+    )
+
+    endpoint = {"status": "ok", "release_sha": "unknown", "release_sha_source": "unavailable",
+        "deployment_id": "dpl_synthetic_e6", "deployment_id_source": "VERCEL_DEPLOYMENT_ID"}
+    platform = {"id": "dpl_synthetic_e6", "readyState": "READY",
+        "gitSource": {"sha": "b" * 40}, "meta": {"not_for_report": "unrelated-platform-metadata"}}
+    if change == "wrong_id": platform["id"] = "dpl_other"
+    if change == "missing_source": platform.pop("gitSource")
+    if change == "wrong_source": platform["gitSource"]["sha"] = "f" * 40
+    if change == "not_ready": platform["readyState"] = "BUILDING"
+    if change == "configured_id": endpoint["deployment_id_source"] = "configured_label"
+    calls = []
+    class Response:
+        def __init__(self, raw, status): self.raw, self.status_code = raw, status
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def iter_content(self, chunk_size):
+            assert chunk_size == 1
+            yield self.raw
+    class Session:
+        trust_env = True
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def get(self, url, **kwargs):
+            assert self.trust_env is False
+            assert kwargs["allow_redirects"] is False and kwargs["timeout"] == (3, 5)
+            assert kwargs["headers"] == {"Accept": "application/json"}
+            assert "auth" not in kwargs and "cookies" not in kwargs
+            calls.append(url)
+            if len(calls) == 1:
+                assert url == provenance.FRONTEND_URL
+                return Response(json.dumps(endpoint).encode(), 200)
+            assert url == "https://api.vercel.com/v13/deployments/dpl_synthetic_e6?withGitRepoInfo=true"
+            raw = json.dumps(platform).encode()
+            if change == "oversize": raw = b"x" * 300_000
+            if change == "invalid_json": raw = b"not json"
+            return Response(raw, 403 if change == "denied" else 302 if change == "redirect" else 200)
+    monkeypatch.setattr(requests, "Session", Session)
+    if change == "timed_out":
+        ticks = iter([0, 0, 0, 9])  # Endpoint completes; platform acquisition exceeds eight seconds.
+        monkeypatch.setattr(provenance.time, "monotonic", lambda: next(ticks))
+    observation = provenance.capture_frontend_release("b" * 40, "dpl_synthetic_e6")
+    assert len(calls) == (1 if change == "configured_id" else 2)
+    assert observation["release_sha"] == "unknown"
+    assert "unrelated-platform-metadata" not in json.dumps(observation)
+    assert provenance.observed_native_frontend_source(observation) is None
+    assert provenance.verify_frontend_release(observation, "b" * 40, "dpl_synthetic_e6") is (change is None)
+    release = {"backend_build_commit": "b" * 40, "backend_identity_source": "RAILWAY_GIT_COMMIT_SHA",
+        "deployment_identity_conflict": False, "railway_deployment_id": "synthetic_backend",
+        "frontend_build_commit": "b" * 40, "frontend_deployment_id": "dpl_synthetic_e6",
+        "assessment_run_id": "synthetic_mapping_run", "assessed_repository_commit": "c" * 40,
+        "frontend_runtime_observation": observation}
+    record = {"identity": {"run_id": "synthetic_mapping_run", "commit_sha": "c" * 40},
+        "reports": {"json": {"assessment": {"nico_release_provenance": release}}}}
+    assert version_truth(record)["deployment_identity_established"] is (change is None)
+    monkeypatch.setattr(provenance, "capture_frontend_release", lambda *args: deepcopy(observation))
+    monkeypatch.setattr(provenance, "scanner_execution_evidence", lambda *args: {"verification_status": "unverified"})
+    release["deployment_identity_established"] = True
+    bound = provenance.bind_report_execution_provenance({"identity": record["identity"],
+        "assessment": {"nico_release_provenance": release}}, raw_stages={})["assessment"]["nico_release_provenance"]
+    assert bound["frontend_backend_source_alignment"] == (
+        "aligned" if change is None else "mismatch" if change == "wrong_source" else "unverified")
+    assert bound["exact_release_readiness"] == (
+        "verified" if change is None else "blocked" if change == "wrong_source" else "unverified")
+    assert bound["frontend_runtime_observation"]["release_sha"] == "unknown"
+    assert len(calls) == (1 if change == "configured_id" else 2)  # Retrieval never re-observes current deployments.
+    if change is None:
+        require_new_report_release_readiness(record)
+        assert observation["observed_identity_type"] == "deployment_id"
+        assert observation["native_provider_record_verified_by_this_code"] is True
+        mapping = observation["deployment_source_mapping"]
+        assert mapping["record"]["source_revision"] == "b" * 40
+        # Corruption cannot turn the retained mapping into another release.
+        mapping["record"]["source_revision"] = "f" * 40
+        assert provenance.verify_frontend_release(observation, "f" * 40, "dpl_synthetic_e6") is False
+        with pytest.raises(ValueError): require_new_report_release_readiness(record)
+    else:
+        with pytest.raises(ValueError): require_new_report_release_readiness(record)

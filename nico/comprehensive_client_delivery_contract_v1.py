@@ -180,8 +180,8 @@ def version_truth(record: Mapping[str, Any]) -> dict[str, Any]:
     )
     observation = _mapping(provenance.get("frontend_runtime_observation"))
     if observation.get("frontend_observation_schema") == "nico.frontend-runtime-observation.v2":
-        from nico.report_execution_provenance_e6 import observed_native_frontend_source
-        deployment_verified = deployment_verified and observed_native_frontend_source(observation) == backend
+        from nico.report_execution_provenance_e6 import observed_frontend_source
+        deployment_verified = deployment_verified and observed_frontend_source(observation) == backend
     actual_scanners = _mapping(provenance.get("scanner_execution_evidence")).get("scanner_records")
     actual_versions = {row["scanner_name"]: row.get("scanner_version") for row in actual_scanners
         if isinstance(row, Mapping) and row.get("scanner_name")} if isinstance(actual_scanners, list) else {}
@@ -207,8 +207,8 @@ def version_truth(record: Mapping[str, Any]) -> dict[str, Any]:
 def require_new_report_release_readiness(record: Mapping[str, Any]) -> None:
     """Gate every new authority transition, without rewriting retained editions."""
     provenance = _mapping(_mapping(_canonical(record).get("assessment")).get("nico_release_provenance"))
-    from nico.report_execution_provenance_e6 import observed_native_frontend_source
-    observed_source = observed_native_frontend_source(provenance.get("frontend_runtime_observation"))
+    from nico.report_execution_provenance_e6 import observed_frontend_source
+    observed_source = observed_frontend_source(provenance.get("frontend_runtime_observation"))
     _require(bool(observed_source)
         and version_truth(record)["deployment_identity_established"] is True
         and observed_source == provenance.get("backend_build_commit"),

@@ -256,7 +256,8 @@ def test_limited_coverage_is_visible_on_score_cover_and_matches_csv(spanish):
     for fact in ("5 / 137", "5 / 484", "3.65%", "1.03%", "132"):
         assert fact in page
     assert ("limitada" if spanish else "limited") in page
-    assert ("no es una calificación de seguridad" if spanish else "not a repository-wide security rating") in page
+    # Installed PDF wrappers can reflow the same visible sentence across lines.
+    assert ("no es una calificación de seguridad" if spanish else "not a repository-wide security rating") in " ".join(page.split())
     markdown = "\n".join(_source_markdown(stage, spanish=spanish))
     assert "5 / 137" in markdown and "5 / 484" in markdown
     rows = [json.loads(r["record"]) for r in csv.DictReader(io.StringIO(_evidence_csv([stage]))) if r["record_type"] == "source_coverage_metric"]
