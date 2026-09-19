@@ -384,6 +384,7 @@ def _sanitize_node(
     *,
     requested: set[str],
     completed: set[str],
+    applicable: set[str],
     incomplete: set[str],
     coverage: int,
     removed: list[str],
@@ -415,6 +416,7 @@ def _sanitize_node(
                 item,
                 requested=requested,
                 completed=completed,
+                applicable=applicable,
                 incomplete=incomplete,
                 coverage=coverage,
                 removed=removed,
@@ -460,17 +462,17 @@ def _sanitize_node(
             retained = []
             for item_index, item in enumerate(raw_value):
                 name = _entry_tool(item, requested)
-                if name and name not in incomplete:
+                if name and name not in incomplete and "applicability_unproven" not in _text(item):
                     removed.append(f"{current_path}[{item_index}]")
                     changed = True
                     continue
                 retained.append(item)
             replacement = retained if changed else raw_value
         elif normalized in _INCOMPLETE_COUNT_FIELDS and requested:
-            replacement = len(incomplete)
+            replacement = len(incomplete & applicable) if "applicable" in normalized else len(incomplete)
             changed = replacement != raw_value
         elif normalized in _COMPLETED_COUNT_FIELDS and requested:
-            replacement = len(completed)
+            replacement = len(completed & applicable) if "applicable" in normalized else len(completed)
             changed = replacement != raw_value
         elif (
             requested
@@ -485,6 +487,7 @@ def _sanitize_node(
                 raw_value,
                 requested=requested,
                 completed=completed,
+                applicable=applicable,
                 incomplete=incomplete,
                 coverage=coverage,
                 removed=removed,
@@ -555,6 +558,7 @@ def canonicalize_stage_results_before_render(
 
     requested = set(truth["requested"])
     completed = set(truth["completed"])
+    applicable = set(truth["applicable"])
     incomplete = set(truth["incomplete"])
     removed: list[str] = []
     visits = [0]
@@ -567,6 +571,7 @@ def canonicalize_stage_results_before_render(
             stage,
             requested=requested,
             completed=completed,
+                applicable=applicable,
             incomplete=incomplete,
             coverage=int(truth["coverage"]),
             removed=removed,

@@ -428,7 +428,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const scannerExecution = scannerExecutionSummaryFor(result);
     const coverageLabel = result?.terminal
       ? scannerExecution?.percent != null
-        ? `${copy.analyzerCompletion}: ${scannerExecution.completed_count}/${scannerExecution.applicable_count} (${scannerExecution.percent}%)`
+        ? `${copy.analyzerCompletion}: ${scannerExecution.completed_count}/${scannerExecution.execution_required_count} (${scannerExecution.percent}%). ${locale === "es-MX" ? "Aplicabilidad establecida" : "Applicability established"}: ${scannerExecution.applicable_count}; ${locale === "es-MX" ? "no comprobada" : "unproven"}: ${scannerExecution.applicability_unproven_count}`
         : `${copy.analyzerCompletion}: ${copy.notVerified}`
       : primaryCoverage != null
       ? `${copy.automatableEvidence}: ${primaryCoverage}%`

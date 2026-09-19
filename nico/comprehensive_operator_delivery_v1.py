@@ -89,6 +89,8 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     identity = presented_operator_identity(record, approved)
     if not isinstance(expected, Mapping) or dict(expected) != identity:
         raise ValueError("stale_review_artifact_identity")
+    from nico.comprehensive_client_delivery_contract_v1 import require_new_report_release_readiness
+    require_new_report_release_readiness(record)
     timestamp = datetime.now(UTC).replace(microsecond=0).isoformat()
     receipt = {
         "artifact_schema": VERSION, "authorized_at": timestamp,

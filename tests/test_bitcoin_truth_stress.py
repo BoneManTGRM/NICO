@@ -1,11 +1,14 @@
 """Synthetic truth contracts; never live authorization or production acceptance."""
 from types import SimpleNamespace
+import json
+from pathlib import Path
 
 import pytest
 
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_canonical
 
 SHA = "a" * 40
+FROZEN_OBSERVATIONS = json.loads((Path(__file__).parent / "fixtures" / "bitcoin_truth_stress_observations.json").read_text())
 
 
 @pytest.mark.parametrize("execution", ["unavailable", "failed", "partial"])
@@ -71,11 +74,12 @@ def test_requester_attestation_is_not_independent_permission_verification():
 def test_coverage_projection_keeps_both_existing_denominators():
     from nico.repository_profile_coverage_v1 import profile_coverage
     from nico.comprehensive_report_package import _source_tables
-    eligible = [f"src/module_{i}.py" for i in range(137)]
-    excluded = [f"tests/test_module_{i}.py" for i in range(347)]
+    frozen = FROZEN_OBSERVATIONS["coverage"]
+    eligible = [f"src/module_{i}.py" for i in range(frozen["eligible_source_files"])]
+    excluded = [f"tests/test_module_{i}.py" for i in range(frozen["observed_source_files"] - len(eligible))]
     coverage = profile_coverage({"tree_paths": eligible + excluded,
-        "files": {p: "pass\n" for p in eligible[:5]},
-        "tree_collection_succeeded": True, "tree_truncated": False}, {"files_analyzed": 5})
+        "files": {p: "pass\n" for p in eligible[:frozen["analyzed_source_files"]]},
+        "tree_collection_succeeded": True, "tree_truncated": False}, {"files_analyzed": frozen["analyzed_source_files"]})
     assert coverage["eligible_source_coverage_percent"] == 3.65
     assert coverage["whole_repository_coverage_percent"] == 1.03
     rows = dict(_source_tables({"profile_coverage": coverage})[0]["rows"])
@@ -186,3 +190,224 @@ def test_applicability_normalization_is_idempotent_and_javascript_does_not_prove
     second = normalize_scanner_applicability_canonical(first)
     assert first["requested_scanner_records"] == second["requested_scanner_records"]
     assert first["requested_scanner_records"][0]["applicability_state"] == "applicability_unproven"
+
+
+@pytest.mark.parametrize("source,kind,expected", [(SHA, "VERCEL_GIT_COMMIT_SHA", "aligned"),
+    ("b" * 40, "VERCEL_GIT_COMMIT_SHA", "mismatch"), (SHA, "NICO_RELEASE_SHA", "unverified"),
+    ("dpl_synthetic", "VERCEL_GIT_COMMIT_SHA", "unverified")])
+def test_serving_source_alignment_is_separate_from_configured_deployment_pin(monkeypatch, source, kind, expected):
+    import base64, hashlib, json
+    from nico import report_execution_provenance_e6 as provenance
+    raw = json.dumps({"status": "ok", "release_sha": source, "release_sha_source": kind,
+        "deployment_id": "dpl_synthetic", "deployment_id_source": "VERCEL_DEPLOYMENT_ID"}).encode()
+    observation = {"frontend_observation_schema": "nico.frontend-runtime-observation.v2",
+        "status": "mismatch", "source_url": provenance.FRONTEND_URL, "deployment_identity_verified": False,
+        "release_sha": source, "release_sha_source": kind,
+        "deployment_id": "dpl_synthetic", "deployment_id_source": "VERCEL_DEPLOYMENT_ID",
+        "observation_bytes_base64": base64.b64encode(raw).decode(), "observation_size_bytes": len(raw),
+        "observation_sha256": hashlib.sha256(raw).hexdigest()}
+    monkeypatch.setattr(provenance, "capture_frontend_release", lambda *args: observation)
+    monkeypatch.setattr(provenance, "scanner_execution_evidence", lambda *args: {})
+    original = {"identity": {"commit_sha": "c" * 40, "run_id": "synthetic_run"}, "assessment": {
+        "nico_release_provenance": {"backend_build_commit": SHA, "backend_identity_source": "RAILWAY_GIT_COMMIT_SHA",
+            "deployment_identity_established": True, "frontend_build_commit": "d" * 40,
+            "frontend_deployment_id": "dpl_configured_previous"}}}
+    result = provenance.bind_report_execution_provenance(original, raw_stages={})["assessment"]["nico_release_provenance"]
+    assert result["frontend_backend_source_alignment"] == expected
+    assert result["frontend_build_commit"] == "d" * 40  # never bypass the existing configured pin
+    assert result["frontend_deployment_identity_verified"] is False
+    assert result["exact_release_readiness"] == "unverified" if expected != "mismatch" else result["exact_release_readiness"] == "blocked"
+    observation["observation_sha256"] = "0" * 64
+    corrupt = provenance.bind_report_execution_provenance(original, raw_stages={})["assessment"]["nico_release_provenance"]
+    assert corrupt["frontend_backend_source_alignment"] == "unverified"
+
+
+@pytest.mark.parametrize("mode,credential", [("anonymous_public", False), ("authenticated_read_only", True), (None, None)])
+def test_canonical_authorization_keeps_attestation_access_and_independent_evidence_separate(mode, credential):
+    from nico.comprehensive_canonical_report_source_v1 import _authorization_evidence
+    stages = {"authorization_and_scope": {"status": "complete", "authorization_confirmed": True},
+        "immutable_repository_snapshot": {"status": "complete", "snapshot": {"status": "attached", "commit_sha": SHA,
+            "provider_access_observed": True, "access_mode": mode, "credential_used": credential}}}
+    result = _authorization_evidence(stages, SHA)
+    assert result["requester_authorization_attestation"] == "confirmed"
+    assert result["repository_access_mode"] == (mode or "unknown")
+    assert result["provider_credential_used"] is credential
+    assert result["independent_authorization_verification"] == "not_established"
+    stages["immutable_repository_snapshot"]["snapshot"]["commit_sha"] = "b" * 40
+    assert _authorization_evidence(stages, SHA)["repository_access_mode"] == "unknown"
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+def test_limited_coverage_is_visible_on_score_cover_and_matches_csv(spanish):
+    import csv, io, json
+    from pypdf import PdfReader
+    from nico.comprehensive_score_assurance_ledger_v45 import bind_source_security_assurance
+    from nico.v2_dark_branded_cover import _cover
+    from nico.comprehensive_report_package import _source_markdown
+    from nico.comprehensive_decision_grade_csv_v6 import _evidence_csv
+    stage = {"stage_id": "repository_and_delivery_evidence", "title": "Source evidence", "status": "complete",
+        "profile_coverage": {"version": "nico.repository_profile_coverage.v1", "inventory_complete": True,
+            "observed_source_files": 484, "eligible_source_files": 137, "analyzed_source_files": 5,
+            "unsampled_eligible_source_files": 132, "eligible_source_coverage_percent": 3.65,
+            "whole_repository_coverage_percent": 1.03}}
+    canonical = bind_source_security_assurance({"identity": {"repository": "example/control", "commit_sha": SHA},
+        "stage_summaries": [stage], "assessment": {"technical_score": 74, "evidence_adjusted_score": 62}})
+    page = PdfReader(io.BytesIO(_cover(canonical, spanish=spanish))).pages[0].extract_text()
+    for fact in ("5 / 137", "5 / 484", "3.65%", "1.03%", "132"):
+        assert fact in page
+    assert ("limitada" if spanish else "limited") in page
+    assert ("no es una calificación de seguridad" if spanish else "not a repository-wide security rating") in page
+    markdown = "\n".join(_source_markdown(stage, spanish=spanish))
+    assert "5 / 137" in markdown and "5 / 484" in markdown
+    rows = [json.loads(r["record"]) for r in csv.DictReader(io.StringIO(_evidence_csv([stage]))) if r["record_type"] == "source_coverage_metric"]
+    assert {r["denominator"] for r in rows} == {137, 484}
+    assert {r["numerator"] for r in rows} == {5}
+
+
+def test_pinned_frontend_with_different_backend_cannot_claim_exact_release_readiness():
+    import base64, hashlib, json
+    from nico.comprehensive_client_delivery_contract_v1 import version_truth
+    from nico.report_execution_provenance_e6 import FRONTEND_URL
+    value = {"status": "ok", "release_sha": "b" * 40, "release_sha_source": "VERCEL_GIT_COMMIT_SHA",
+        "deployment_id": "dpl_synthetic", "deployment_id_source": "VERCEL_DEPLOYMENT_ID"}
+    raw = json.dumps(value).encode()
+    observation = {**value, "status": "verified", "deployment_identity_verified": True, "source_url": FRONTEND_URL,
+        "frontend_observation_schema": "nico.frontend-runtime-observation.v2",
+        "observation_bytes_base64": base64.b64encode(raw).decode(), "observation_size_bytes": len(raw),
+        "observation_sha256": hashlib.sha256(raw).hexdigest()}
+    provenance = {"backend_build_commit": SHA, "backend_identity_source": "RAILWAY_GIT_COMMIT_SHA",
+        "deployment_identity_conflict": False, "railway_deployment_id": "synthetic_backend_deployment",
+        "frontend_build_commit": "b" * 40, "frontend_deployment_id": "dpl_synthetic",
+        "assessment_run_id": "synthetic_run", "assessed_repository_commit": "c" * 40,
+        "frontend_runtime_observation": observation}
+    record = {"identity": {"run_id": "synthetic_run", "commit_sha": "c" * 40},
+        "reports": {"json": {"assessment": {"nico_release_provenance": provenance}}}}
+    assert version_truth(record)["deployment_identity_established"] is False
+    provenance["backend_build_commit"] = "b" * 40
+    assert version_truth(record)["deployment_identity_established"] is True
+
+
+def test_score_projection_cannot_verify_absent_scanners_from_empty_limitations():
+    from nico.v2_report_quality_repairs import repair_canonical_truth
+    result = repair_canonical_truth({"json": {"assessment": {"sections": [
+        {"id": "static_analysis", "score": 74, "status": "review_limited", "unavailable": []}]}}})
+    section = result["json"]["assessment"]["sections"][0]
+    assert section["score"] == 74
+    assert section["assurance_status"] == "unverified"
+
+
+def test_client_scanner_stage_names_required_and_unproven_populations():
+    from nico.comprehensive_human_review_package_cleanup_v1 import build_scanner_execution_stage
+    renderer = SimpleNamespace(_stage=lambda stage_id, title, summary, **kwargs: {"summary": summary, **kwargs})
+    record = {"scanner_name": "bandit", "completed": False, "status": "unavailable", "applicable": None,
+        "applicability_state": "applicability_unproven", "execution_state": "unavailable"}
+    result = build_scanner_execution_stage({"scanner_execution_records": [record]}, renderer)
+    assert "0 of 1 required scanner executions completed" in result["summary"]
+    assert "applicability unproven: 1" in result["summary"]
+    assert "0 of 1 applicable" not in result["summary"]
+
+
+def test_conflicting_input_evidence_does_not_establish_inapplicability(tmp_path):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    canonical = {"identity": {"commit_sha": SHA},
+        "repository_evidence": {"file_evidence": {"sampled_paths": ["package.json"]}},
+        "scanner_execution_records": [{"scanner_name": "npm-audit", "commit_sha": SHA,
+            "status": "unavailable", "applicability_evidence": inventory}]}
+    result = normalize_scanner_applicability_canonical(canonical)
+    record = result["requested_scanner_records"][0]
+    assert record["applicability_state"] == "applicability_unproven"
+    assert record["applicable"] is None
+    assert "conflict" in record["applicability_reason"].lower()
+
+
+def test_retained_complete_input_inventory_proves_applicability_without_report_path_samples(tmp_path):
+    from nico.node_scanner_applicability_v1 import inspect_node_inputs
+    (tmp_path / "package.json").write_text('{"devDependencies":{"typescript":"synthetic"}}')
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    result = normalize_scanner_applicability_canonical({"identity": {"commit_sha": SHA},
+        "scanner_execution_records": [{"scanner_name": "typescript", "commit_sha": SHA,
+            "status": "failed", "applicability_evidence": inventory}]})
+    assert result["requested_scanner_records"][0]["applicability_state"] == "applicable"
+    assert result["requested_scanner_records"][0]["execution_state"] == "failed"
+
+
+@pytest.mark.parametrize("language", ["en", "es-MX"])
+def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatch, language):
+    """Catch late canonical/localization/rendering loss of coverage and authorization evidence."""
+    import base64, io
+    from pypdf import PdfReader
+    from nico import report_execution_provenance_e6 as provenance
+    from nico.comprehensive_canonical_report_source_v1 import build_canonical_report_source
+    from nico.comprehensive_production_capabilities import _authorization_provider
+    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    # Platform and scanner-store observations are outside this synthetic report case.
+    monkeypatch.setattr(provenance, "capture_frontend_release", lambda *args: {"status": "unavailable",
+        "frontend_observation_schema": "nico.frontend-runtime-observation.v2"})
+    monkeypatch.setattr(provenance, "scanner_execution_evidence", lambda *args: {"verification_status": "unverified"})
+    context = {"service_id": "comprehensive", "repository": "example/authorized-fixture", "commit_sha": SHA,
+        "run_id": "synthetic_truth_report", "evidence_ledger_id": "synthetic_ledger", "customer_id": "customer",
+        "project_id": "project", "authorization_confirmed": True, "report_language": language,
+        "generated_at": "2026-09-19T00:00:00Z"}
+    coverage = {"version": "nico.repository_profile_coverage.v1", "inventory_complete": True,
+        "observed_source_files": 484, "eligible_source_files": 137, "analyzed_source_files": 5,
+        "unsampled_eligible_source_files": 132, "eligible_source_coverage_percent": 3.65,
+        "whole_repository_coverage_percent": 1.03}
+    context["prior_stage_results"] = {
+        "authorization_and_scope": _authorization_provider(context),
+        "immutable_repository_snapshot": {"status": "complete", "snapshot": {"status": "attached", "commit_sha": SHA,
+            "provider_access_observed": True, "access_mode": "anonymous_public", "credential_used": False}},
+        "repository_and_delivery_evidence": {"status": "complete", "evidence": {"profile_coverage": coverage}},
+        "dependency_security_static_analysis": {"status": "complete", "evidence": {"execution_limit": _limited_scan()["execution_limit"]},
+            "scanner_execution_records": _limited_scan()["scanner_results"]},
+        "evidence_reconciliation_and_scoring": {"status": "complete", "assessment": {"technical_score": 74,
+            "maturity_signal": {"score": 74, "presented_score": 74, "evidence_readiness_score": 62}, "sections": []}},
+    }
+    source = build_canonical_report_source(context)
+    assert source["status"] == "complete"
+    canonical = source["report_package"]["json"]
+    assert canonical["source_security_assurance"]["status"] == "limited"
+    assert canonical["authorization_evidence"]["independent_authorization_verification"] == "not_established"
+    package = rebuild_client_artifacts(source["report_package"])
+    pdf = PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"])))
+    for rendered in (package["markdown"], package["html"], "\n".join(p.extract_text() for p in pdf.pages)):
+        assert "5 / 137" in rendered and "5 / 484" in rendered
+        assert "132" in rendered
+    assert package["json"]["source_security_assurance"]["status"] == "limited"
+
+
+@pytest.mark.parametrize("alignment", ["aligned", "mismatch", "unknown"])
+def test_new_report_operator_approval_requires_verified_aligned_release(alignment):
+    """Synthetic approval boundary; never an owner's production decision."""
+    import base64, hashlib, json
+    from copy import deepcopy
+    from tests.test_comprehensive_operator_approval_v1 import fixture_record, payload
+    from nico.comprehensive_operator_approval_v1 import build_operator_edition
+    from nico.comprehensive_review_decision_v1 import report_package_from_record
+    from nico.comprehensive_run_record import _record_hash
+    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    from nico.report_execution_provenance_e6 import FRONTEND_URL
+    record = deepcopy(fixture_record())
+    package = report_package_from_record(record)
+    provenance = package['json']['assessment']['nico_release_provenance']
+    frontend = provenance['backend_build_commit'] if alignment == 'aligned' else 'f' * 40
+    value = {'status': 'ok', 'release_sha': frontend, 'release_sha_source': 'VERCEL_GIT_COMMIT_SHA',
+        'deployment_id': 'dpl_synthetic_truth', 'deployment_id_source': 'VERCEL_DEPLOYMENT_ID'}
+    raw = json.dumps(value).encode()
+    provenance.update(frontend_build_commit=frontend, frontend_deployment_id=value['deployment_id'],
+        frontend_runtime_observation={**value, 'status': 'verified', 'deployment_identity_verified': True,
+            'source_url': FRONTEND_URL, 'frontend_observation_schema': 'nico.frontend-runtime-observation.v2',
+            'observation_bytes_base64': base64.b64encode(raw).decode(), 'observation_size_bytes': len(raw),
+            'observation_sha256': hashlib.sha256(raw).hexdigest()})
+    if alignment == 'unknown':
+        provenance['frontend_runtime_observation'] = {'frontend_observation_schema': 'nico.frontend-runtime-observation.v2',
+            'status': 'unavailable'}
+    record['stage_results']['final_comprehensive_report_generation']['report_package'] = rebuild_client_artifacts({'json': package['json']})
+    record['integrity_sha256'] = _record_hash(record)
+    before = deepcopy(record)
+    if alignment == 'aligned':
+        assert build_operator_edition(record, payload(record))['review']['decision'] == 'approved'
+    else:
+        with pytest.raises(ValueError, match='report_release_provenance_unverified'):
+            build_operator_edition(record, payload(record))
+    assert record == before

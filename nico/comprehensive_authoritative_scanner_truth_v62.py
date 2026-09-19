@@ -103,7 +103,8 @@ def _phase14_records(
             "exit_code": record.get("exit_code"),
             "coverage": deepcopy(record.get("coverage") or {}),
         }
-        if status.casefold().replace("-", "_") == "not_applicable":
+        if record.get("applicable") is False and record.get("applicability_state") == "not_applicable":
+            item["status"] = "not_applicable"
             item.pop("artifact_sha256", None)
             item["capture_complete"] = True
             item["not_applicable_reason"] = (
@@ -716,6 +717,15 @@ def reconcile_authoritative_scanner_truth(
     health = deepcopy(dict(output.get("evidence_health_summary") or {}))
     health["applicability_unproven_scanners"] = unproven_names
     output["evidence_health_summary"] = health
+    def applicable_counts(value: Any) -> Any:
+        if isinstance(value, list):
+            return [applicable_counts(item) for item in value]
+        if not isinstance(value, Mapping):
+            return value
+        return {key: (len(completed & applicable_names) if key in {"completed_applicable_analyzers", "completed_applicable_scanners"}
+            else len(incomplete & applicable_names) if key in {"incomplete_applicable_analyzers", "incomplete_applicable_scanners"}
+            else applicable_counts(item)) for key, item in value.items()}
+    output = applicable_counts(output)
     output["scanner_state_reconciled"] = True
     output["human_review_required"] = True
     output["client_delivery_allowed"] = False

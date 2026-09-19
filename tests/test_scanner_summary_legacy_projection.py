@@ -125,7 +125,7 @@ def test_old_policy_projection_is_refreshed_without_rewriting_history(tmp_path):
     response = TestClient(app).get(f'/assessment/comprehensive-run/{RUN}', headers=HEADERS)
     assert response.status_code == 200
     assert response.json()['scanner_execution_summary']['percent'] == 0  # No native bytes exist in this metadata-only fixture.
-    assert response.json()['scanner_execution_summary']['evaluation_policy'] == 'source-input-retention-v2'
+    assert response.json()['scanner_execution_summary']['evaluation_policy'] == 'source-applicability-execution-v3'
     assert store.load(RUN) == before
 
 

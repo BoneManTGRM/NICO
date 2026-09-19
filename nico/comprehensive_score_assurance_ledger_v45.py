@@ -51,6 +51,7 @@ def bind_source_security_assurance(payload: Mapping[str, Any]) -> dict[str, Any]
         "repository_wide_security_rating": False, "technical_score_modified": False,
         "missing_evidence_is_pass": False, "missing_evidence_is_fail": False,
     }
+    output.setdefault("assessment", {})["source_security_assurance"] = deepcopy(output["source_security_assurance"])
     return output
 
 
@@ -66,10 +67,15 @@ def assurance_headline(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     metrics = assurance.get("coverage_metrics") or {}
     eligible, observed = metrics.get("eligible_source_analysis") or {}, metrics.get("observed_supported_source_analysis") or {}
     if eligible.get("numerator") is not None and eligible.get("denominator") is not None:
-        text += (f"Código elegible analizado: {eligible['numerator']} / {eligible['denominator']} ({eligible.get('percentage')}%); "
-            if spanish else f"Eligible source analyzed: {eligible['numerator']} / {eligible['denominator']} ({eligible.get('percentage')}%); ")
-        text += (f"código compatible observado: {observed.get('numerator')} / {observed.get('denominator')} ({observed.get('percentage')}%). "
-            if spanish else f"observed supported source: {observed.get('numerator')} / {observed.get('denominator')} ({observed.get('percentage')}%). ")
+        def percentage(metric: Mapping[str, Any]) -> str:
+            return f"{metric['percentage']}%" if metric.get("percentage") is not None else "no verificado" if spanish else "unverified"
+        text += (f"Código elegible analizado: {eligible['numerator']} / {eligible['denominator']} ({percentage(eligible)}); "
+            if spanish else f"Eligible source analyzed: {eligible['numerator']} / {eligible['denominator']} ({percentage(eligible)}); ")
+        text += (f"código compatible observado: {observed.get('numerator')} / {observed.get('denominator')} ({percentage(observed)}). "
+            if spanish else f"observed supported source: {observed.get('numerator')} / {observed.get('denominator')} ({percentage(observed)}). ")
+        unsampled = assurance.get("unsampled_eligible_source_files")
+        if unsampled is not None:
+            text += f"Elegibles sin muestrear: {unsampled}. " if spanish else f"Unsampled eligible files: {unsampled}. "
     if assurance.get("incomplete_required_scanner_count"):
         text += ("La ejecución de analizadores está incompleta." if spanish else "Scanner execution is incomplete.")
     return text.strip()

@@ -33,6 +33,9 @@ def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> 
     import requests
 
     result: dict[str, Any] = {"status": "unavailable", "source_url": FRONTEND_URL,
+        "frontend_observation_schema": "nico.frontend-runtime-observation.v2",
+        "configured_source_revision": expected_sha, "configured_deployment_id": expected_deployment_id,
+        "observed_identity_type": "source_revision_and_deployment_id",
         "deployment_identity_verified": False, "native_provider_record_verified_by_this_code": False}
     if not re.fullmatch(r"[0-9a-f]{40}", expected_sha) or not re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", expected_deployment_id):
         return {**result, "reason": "expected_frontend_deployment_unavailable"}
@@ -56,17 +59,20 @@ def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> 
             raise ValueError("frontend_release_response_invalid")
         matched = (value.get("status") == "ok" and value.get("release_sha") == expected_sha
             and value.get("deployment_id") == expected_deployment_id
+            and value.get("release_sha_source") == "VERCEL_GIT_COMMIT_SHA"
             and value.get("deployment_id_source") == "VERCEL_DEPLOYMENT_ID")
         # The endpoint has a deliberately small, nonsecret contract. Retain exact
         # observation bytes only for that contract, not an unexpected HTML/error body.
         allowed = {"status", "release_sha", "deployment_id", "deployment_id_source",
-            "ui_contract", "git_ref", "deployment_environment"}
+            "ui_contract", "git_ref", "deployment_environment", "release_sha_source"}
         if set(value) - allowed:
             return {**result, "reason": "frontend_release_response_contract_invalid"}
         return {**result, "status": "verified" if matched else "mismatch",
             "deployment_identity_verified": matched,
+            "configured_expectation_status": "matched" if matched else "mismatch",
             "observed_at": datetime.now(UTC).isoformat(),
             "release_sha": value.get("release_sha"), "deployment_id": value.get("deployment_id"),
+            "release_sha_source": value.get("release_sha_source"),
             "deployment_id_source": value.get("deployment_id_source"),
             "observation_bytes_base64": base64.b64encode(raw).decode("ascii"),
             "observation_sha256": hashlib.sha256(raw).hexdigest(), "observation_size_bytes": len(raw)}
@@ -74,9 +80,35 @@ def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> 
         return {**result, "reason": "frontend_release_observation_unavailable"}
 
 
+def observed_native_frontend_source(value: Any) -> str | None:
+    """Read a byte-bound native endpoint claim; this is not a platform API mapping."""
+    value = _mapping(value)
+    try:
+        raw = base64.b64decode(value.get("observation_bytes_base64", ""), validate=True)
+        if not 0 < len(raw) <= _MAX_FRONTEND_BYTES:
+            return None
+        observed = json.loads(raw)
+        if (value.get("source_url") == FRONTEND_URL
+            and value.get("observation_sha256") == hashlib.sha256(raw).hexdigest()
+            and value.get("observation_size_bytes") == len(raw)
+            and observed.get("status") == "ok"
+            and value.get("release_sha") == observed.get("release_sha")
+            and re.fullmatch(r"[0-9a-f]{40}", str(observed.get("release_sha") or ""))
+            and value.get("release_sha_source") == observed.get("release_sha_source") == "VERCEL_GIT_COMMIT_SHA"
+            and value.get("deployment_id") == observed.get("deployment_id")
+            and re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", str(observed.get("deployment_id") or ""))
+            and value.get("deployment_id_source") == observed.get("deployment_id_source") == "VERCEL_DEPLOYMENT_ID"):
+            return observed["release_sha"]
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
 def verify_frontend_release(value: Any, expected_sha: str, expected_deployment_id: str) -> bool:
     """Validate a retained observation without replacing it with current runtime data."""
     value = _mapping(value)
+    if value.get("frontend_observation_schema") == "nico.frontend-runtime-observation.v2" and observed_native_frontend_source(value) != expected_sha:
+        return False
     if not re.fullmatch(r"[0-9a-f]{40}", expected_sha) or not re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", expected_deployment_id):
         return False
     try:
@@ -174,6 +206,18 @@ def bind_report_execution_provenance(canonical: Mapping[str, Any], *, raw_stages
     provenance["frontend_deployment_identity_verified"] = verify_frontend_release(
         provenance["frontend_runtime_observation"], str(provenance.get("frontend_build_commit")),
         str(provenance.get("frontend_deployment_id")))
+    observed_source = observed_native_frontend_source(provenance["frontend_runtime_observation"])
+    backend_source = str(provenance.get("backend_build_commit") or "")
+    backend_known = (provenance.get("backend_identity_source") == "RAILWAY_GIT_COMMIT_SHA"
+        and provenance.get("deployment_identity_established") is True
+        and not provenance.get("deployment_identity_conflict")
+        and re.fullmatch(r"[0-9a-f]{40}", backend_source))
+    alignment = ("aligned" if observed_source == backend_source else "mismatch") if observed_source and backend_known else "unverified"
+    provenance["frontend_observed_source_revision"] = observed_source
+    provenance["frontend_backend_source_alignment"] = alignment
+    provenance["frontend_observation_authority"] = "retained_native_endpoint_claim; configured deployment pin verified separately"
+    provenance["exact_release_readiness"] = ("verified" if alignment == "aligned" and provenance["frontend_deployment_identity_verified"]
+        else "blocked" if alignment == "mismatch" else "unverified")
     assessment["nico_release_provenance"] = provenance
     result["assessment"] = assessment
     return result

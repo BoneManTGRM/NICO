@@ -1,40 +1,99 @@
 # NICO — Bitcoin truth-stress closeout
 
-## Mission baseline — 2026-09-19
+## Current mission — preserved candidate, NOT merge-ready or shipped
 
-- Baseline main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a` (GitHub ref and clean clone agree).
-- Repair branch: `fix/bitcoin-truth-stress-closeout`; PR: not created; source baseline HEAD as above. Checkpoint-only commits do not change source evidence.
-- Existing mission branch/PR: no Bitcoin branch or PR found; only unrelated dependency PRs #1607/#1608 open.
-- Backend: Railway project `4b5ff41e-ec40-486c-8461-83475ffa90a9`, environment `760805be-2eb2-4ef4-a476-5e10def95786`, service `d9d51992-d34a-4348-a83d-1f760faaa6a8`, deployment `460dd7bd-170e-4f31-9889-bb10533cedd0`, SUCCESS; authoritative deployment metadata commit equals baseline.
-- Frontend: Vercel project `prj_aZHoWcMSXHMOTViSGuVjmP6CofZn`, production alias `app.nicoaudit.com`, deployment `dpl_AvuPrbfniXMje5HtiZg69EhdXhWZ`, READY; authoritative githubCommitSha equals baseline. Runtime/report identity proof still pending.
-- Frozen historical run: `comprun_7cc47a5a81695fa452354479ea23b422`, assessed `bitcoin/bitcoin` at `0e9018e8b65611b0769545e177110e4b7fc51244`.
-- Supplied historical PDF: 2,050,194 bytes, SHA-256 `28349b20ede259f2d4d2ce38dd24163b176422cb1a8f89e139114cec033b790e`. Read-only copy inspected; no historical production mutation.
-- Normal control: existing supported synthetic fixture to be selected after active-path tracing; live first-party control requires ordinary authorization gate.
+- Baseline and last authoritative main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
+- One repair branch: `fix/bitcoin-truth-stress-closeout`; one PR: **#1620**, OPEN/DRAFT, base equals baseline, no reviews. https://github.com/BoneManTGRM/NICO/pull/1620
+- Last published source HEAD before this checkpoint transition: `d8664d9479ba5b1511922139635516b44847f9d7`. This checkpoint is published with the next atomic source commit on the same branch. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Do not interpret the prior HEAD as this candidate.
+- Candidate source/test fingerprint (all changed files against baseline except this ledger, sorted path→SHA256 JSON): `fd8d9478b955030c5d6183cb705e1e7cef5f91c64ef4c52200117256d4eef85c` (58 files).
+- One primary writer. Two existing read-only discovery agents; neither has performed the required complete-candidate independent review.
+- No merge, production repair deployment, new assessment, operator approval, specialist disposition, or delivery authorization has occurred.
 
-## Root-cause gates and current candidate (not accepted)
+## Production anchor (reconfirmed through platform plugins on continuation)
 
-- D1: frozen PDF says two code-risk findings, canonical zero. Producer `comprehensive_native_providers_v2.canonical_scoring_provider` calls risk_pattern_hits findings without eligibility. Restoration accepts structured decision records only. Actual two retained records still need authenticated read-only artifact inspection; no D1 production edit.
-- D2: reproduced missing inventory with unavailable/failed/partial execution; normalizer inferred inapplicability from failure prose or defaulted to applicable. Earliest incorrect retained projection: scanner_applicability_v1._normalize_record. Candidate separates applicability_state/execution_state and requires validated complete inventory for absence. Downstream v62 counts still need repair/integration. Protected boundary: unresolved remains evidence-required.
-- D3: active scanner_determinism_v1 clone deleted oversize checkout and returned only a string. Worker lost size receipt and requested execution outcomes. Deterministic synthetic 291563274-byte reproduction fails before change, passes after typed RepositoryExecutionLimit retention and unavailable per-tool outcomes. Resilience wrapper can transform old empty-suite state to failed; neither that nor snapshot match proves execution. Consumer/report continuation still UNPROVEN. Limit unchanged.
-- D4: repository_profile_coverage_v1 already computes eligible 5/137=3.65 and observed-supported-source 5/484=1.03. First projection loss in comprehensive_report_package._source_tables. Added both fractions and eligible percentage. Headline/canonical metric identities and bilingual/cross-format evidence still pending.
-- D5: existing express_score_assurance_ledger_v45._normalize_scanner_section can call an empty ledger verified; source/size limits absent from headline assurance. Candidate now keeps empty-ledger assurance unverified and derives separate provider-neutral source/security assurance from retained coverage and scanner records. Headline/projection integration remains incomplete; scores unchanged.
-- D6: actual pre-repair Vercel/Railway deployments align; configured expectation mismatch in report_execution_provenance_e6 is distinct from actual serving-release mismatch. Endpoint observed deployment/source matches platform metadata. No D6 source edit yet.
-- D7: authorization provider calls ownership/permission confirmed from requester gate alone. Synthetic regression reproduces missing independent-evidence distinction. Producer wording and retained evidence now identify requester attestation and independent verification not_established; canonical access-mode integration/localization remains pending.
+- Railway project `4b5ff41e-ec40-486c-8461-83475ffa90a9`, environment `760805be-2eb2-4ef4-a476-5e10def95786`, NICO service `d9d51992-d34a-4348-a83d-1f760faaa6a8`.
+- Backend deployment `460dd7bd-170e-4f31-9889-bb10533cedd0`, terminal SUCCESS; authoritative deployment metadata maps to baseline main.
+- Vercel team `team_WxxFciOc3iyQEnsabigvWjhe`, project `prj_aZHoWcMSXHMOTViSGuVjmP6CofZn`, production alias `app.nicoaudit.com`.
+- Frontend deployment `dpl_AvuPrbfniXMje5HtiZg69EhdXhWZ`, READY; Vercel githubCommitSha maps to baseline. Existing runtime /api/release observation matches deployment/source; new source-kind field is not deployed.
+- Railway status reports SIX unrelated staged changes, patch `4f23df20-1f27-4a11-8d00-524c4c75958f`. Do NOT accept the whole environment patch. Railway agent's later template-scoped “no changes” conclusion does not override authoritative environment status.
+- These are PRE-REPAIR identities, never proof of repair shipment.
 
-Focused synthetic tests: tests/test_bitcoin_truth_stress.py, 13 passing (2026-09-19, isolated Python 3.12 venv) after recorded red assertions for unproven applicability, size-limit retention/continuation, attestation separation, coverage populations, empty-ledger assurance and downstream count loss. Source/security adequate-evidence synthetic control preserves score74/readiness62 and supported_scope; this is not yet the required existing supported control. These are partial development evidence only, not D0-D7 PASS. Dependencies installed from unchanged requirements.txt into isolated scratch venv. No migrations or dependency changes.
-First secure browser sign-in request timed out; explicit origin navigation showed sign-in still required. Second secure request is pending. No credential values observed. Browser tab at specialist-login. No credential values accessed. Historical read-only endpoint confirmed in source: /assessment/comprehensive-run/{run_id}/report/json uses load_read_only and retained artifact validation; ordinary status GET is avoided because it reconciles state.
+## Immutable regression and normal controls
 
-## Requirement/evidence matrix
+- Historical repository `bitcoin/bitcoin`, assessed revision `0e9018e8b65611b0769545e177110e4b7fc51244`, run `comprun_7cc47a5a81695fa452354479ea23b422`.
+- Supplied `nico-comprehensive-assessment-AUTOMATED-DRAFT-PENDING-APPROVAL 53.pdf`: 2,050,194 bytes; SHA256 `28349b20ede259f2d4d2ce38dd24163b176422cb1a8f89e139114cec033b790e`, unchanged on current recheck. Read-only inspection; no attached JSON, actual two source-risk records absent from PDF.
+- Frozen facts fixture: `tests/fixtures/bitcoin_truth_stress_observations.json`, SHA256 `abdd0737a38d38a3b64afe356ce62c035c7e23724605e448564d64f1a6f75915`. It explicitly records source-risk records as unavailable, never invents them. 3.65% is arithmetic derived from frozen eligible counts, not a claim that the old PDF printed it.
+- Main regression: `tests/test_bitcoin_truth_stress.py`; synthetic generic repository/revision controls exercise the frozen populations without Bitcoin production logic or live authorization.
+- Existing supported execution control: `tests/test_comprehensive_authoritative_scanner_truth_v62.py::test_live_manifest_and_exact_records_produce_honest_full_coverage`, with explicit positive repository input evidence. Existing `tests/test_scanner_completion_gate.py::good` proves execution only, not input applicability.
+- Existing exact-edition control: `tests/test_comprehensive_operator_approval_v1.py::fixture_record`, used by approval and delivery suites. Synthetic approval decisions are never represented as owner decisions.
 
-D0-D7: UNPROVEN — partial candidate changes and focused synthetic evidence above; integration, review and production acceptance pending. Frozen PDF establishes historical symptoms; it does not establish their root causes or repaired behavior.
-R1-R20: UNPROVEN — baseline deployment mappings above are pre-repair evidence only.
-Completed: repository recovery, instructions, clean baseline, historical PDF digest/text extraction, authoritative pre-repair deployment mapping, 13 focused red/green development tests. D3 compact retention now preserves execution_limit and independent states; malformed or wrong-revision limit blocks. D2 downstream reconciliation now separates known applicability, unproven applicability and execution completion; broader regression work remains.
-Invalidated tests: affected scanner execution/applicability, coverage projection, authorization projection and downstream suites require candidate verification.
-Review findings accumulator (targeted discovery, not candidate approval): D2 v65 overwrites applicable counts/drops applicability blockers (valid, partially unresolved); D2 JavaScript alone proving TypeScript and execution-reason contamination (fixed in candidate); D6 existing one-action operator path checks artifact integrity but does not call version_truth (verified read-only finding, readiness semantics pending); keep historical approved retrieval unchanged. No material issue is considered resolved merely from a worker summary.
-Human actions performed: none. No authentication, report approval, specialist disposition, delivery authorization, or assessment initiation by this mission.
-Latest completed action: 13 focused synthetic regressions pass; candidate is partial and not merge-ready. Last published branch HEAD: 639d905589ba1fa3b2e61a3700e3eeeeb5d784ac (baseline checkpoint). This source checkpoint commit supersedes it; resolve its exact identity from branch ref.
-EXACT NEXT ACTION: finish D2 pre-render count/blocker preservation and update evidence-based applicability tests; finish D4/D5 cross-format/headline integration and D7 canonical access semantics. After secure sign-in, retrieve ONLY stored historical /report/json or /report/evidence-package (load_read_only); inspect exact two D1 records. D6 smallest safe route: keep configured deployment pin, distinguish actual observed source alignment from configured expectation mismatch, expose source-kind metadata; do not auto-promote endpoint claims into trusted platform mapping. Independent complete-diff review/CI/PR/merge/deploy/production acceptance remain pending. Workers are read-only and have finished targeted discovery; no independent candidate review yet.
-Boundary: actual historical source-risk records require pending secure operator authentication. Remaining independent implementation work continues.
+## Root-cause gates, repairs and remaining proof
+
+| Defect | First divergence and smallest active repair | Retained/domain/projection chain | Current result / missing proof |
+|---|---|---|---|
+| D0 | Changed-path regression gate only | scanner → report → status/cache → approval/delivery; no migrations or dependency changes | UNPROVEN: current complete CI, complete-diff review, preview and production acceptance pending |
+| D1 | `comprehensive_native_providers_v2.canonical_scoring_provider` calls raw risk_pattern_hits findings; exact two records must establish eligibility first | source_signal_analysis_v2 → repository evidence → candidate restoration/v66 → canonical registers → JSON/CSV/MD/HTML/PDF | FAIL remains observed in frozen artifact; actual retained records missing, no D1 production edit or invented classification |
+| D2 | `_normalize_record` previously inferred applicability from execution/failure prose; v62/v65 and status summaries conflated denominators | exact-source inventories/native targets → retained records → provider-neutral applicability_state + independent execution_state → requested/required/known/unproven partitions → report and UI | UNPROVEN overall; focused controls pass. Preserve OSV's existing SHA-bound no-package inventory. Missing-input prose never proves absence; JS alone never proves TS/npm manifests |
+| D3 | active clone size exception lost exact revision/size receipt before worker retention | scanner_determinism_v1 → typed RepositoryExecutionLimit → worker per-tool unavailable results → compact retained payload → strict context-bound limited continuation → report | UNPROVEN overall; deterministic worker/provider tests pass, threshold unchanged, malformed/wrong-revision receipt blocks; production limited-run proof pending |
+| D4 | profile formulas were correct; projection lost eligible denominator and headline limitation | repository_profile_coverage_v1 → explicit metric identities → canonical assurance/source tables → CSV/MD/HTML/PDF | UNPROVEN overall; numeric and bilingual public-builder tests pass; production artifacts pending |
+| D5 | empty scanner ledger could become verified; technical score lacked adjacent source/security assurance | existing score ledger + unchanged score formula → provider-neutral source_security_assurance → cover/executive/report quality projection | UNPROVEN overall; weak/adequate controls and PDF cover tests pass, scores unchanged; production artifacts pending |
+| D6 | configured frontend expectation was conflated with native observed identity; operator transition lacked new exact-release readiness check | fixed-origin captured bytes/digest + observed identity type → source-kind validation → observed frontend/backend alignment separate from configured pin → readiness → approval/delivery transition | UNPROVEN overall; aligned/mismatch/unknown and synthetic actual approval boundary pass. Configured pin preserved; no endpoint claim promoted to independent platform mapping. Exact repaired deployment/config mapping and production approval flow pending |
+| D7 | requester checkbox described ownership/permission as confirmed without independent verification | existing intake authorization gate → attestation record + exact-revision access receipt → canonical authorization_evidence → structured tables/CSV/bilingual reports | UNPROVEN overall; attestation/access/credential separation tests pass; independent verification remains not_established; live authorized control pending |
+
+Coverage contract (existing terminology retained):
+- `eligible_source_analysis`: analyzed eligible files / complexity-eligible supported-source files = **5 / 137 = 3.65%**.
+- `observed_supported_source_analysis`: analyzed eligible files / observed supported-language files including complexity exclusions = **5 / 484 = 1.03%**.
+- Unsampled eligible =132. Neither metric covers every repository language; no C/C++ analyzer was added. Both retain numerator/denominator population identifiers.
+
+D2 follow-on critique/reproduction: valid OSV inventory became unavailable (UI test expected complete execution scope, observed partial); requirements-prod.txt became unknown despite supported manifest evidence. Restored established OSV validator and requirements-pattern recognition. Actual scanner invocation remains distinct from not-requested inventory exclusion. Older tests that inferred absence solely from sampled paths/failure prose now assert unresolved applicability and retained failure; none grants clean evidence.
+D2 second projection reproduction: execution-only `good()` fixture reported nine applicable scanners when only two history scanners had positive applicability evidence. New UI summary has execution_required_count, true applicable_count and applicability_unproven_count; retained-byte recheck preserves this distinction. Existing derived-projection policy refresh is reused, no historical report rewrite.
+D2 report appendix reproduction: canonical three unknown scanners were labeled four applicable analyzers in client_report_completion_v1; repaired that active projection, bilingual labels retain required/known/unproven meaning.
+
+Protected boundaries: unknown stays unknown; execution failure never proves absence; empty ledger never verifies assurance; unchanged scoring; native/raw artifact checks and run binding retained; no new provider, scanner, storage, limit increase, dependency, or Bitcoin production special case. Existing approved editions/retrieval stay immutable; new v2 provenance gates new approval/delivery authority transitions only.
+
+## Accepted development evidence (NOT production acceptance)
+
+Environment: isolated Python3.12 venv using unchanged requirements; CI Python3.11 remains separate. No lockfile/dependency changes. Frontend build-generated tsconfig changes and tsbuildinfo removed.
+
+- Truth integration: 81 passed /48.95s across bitcoin_truth_stress, scanner_applicability_v2, node_scanner_applicability_inventory, authoritative_scanner_truth_v62, human_review_package_cleanup and client_truth_final suites. The later test-only frozen-fixture hookup invalidated only its coverage test, rechecked 1 passed.
+- UI/retention/cache: 75 passed /2.84s across scanner_execution_ui_summary, scanner_summary_legacy_projection, comprehensive_scanner_inventory_v1.
+- Existing approval/delivery/provenance suites: 53 passed /100.60s; exact source, optional metadata, repeat receipt/retrieval, auth checks and historical presentation preservation exercised.
+- New v2 provenance actual approval boundary: aligned succeeds, mismatch/unknown reject; 3 passed /35.43s (also included in integration). No actual owner action.
+- Both public report-builder/rebuild locales: 2 passed /13.59s; JSON retains limited assurance and not-established independent authorization; MD/HTML/PDF retain both fractions and132. Included in later integration.
+- Client report completion v1/v2: 5 passed /9.37s after appendix truth correction.
+- Scanner transport/provenance/Python/native-target group: 34 passed, two stale blocker-code assertions failed. Root evidence showed correct unavailable/execution-not-verified/raw-evidence failures; updated assertions also require applicability_unproven. Focused actual-bootstrap rerun: 2 passed /2.48s. Existing OSV-positive proof unchanged.
+- Security gate: 16 passed /0.18s, including exact-value/path/detector and verified-secret negative controls. Retained CI security artifact10583914606 replay now reports passed/no blockers with same raw findings retained.
+- Frontend `npm run lint` and `npm run build`: exit0 on current frontend sources; build produced52 routes. Browser desktop/mobile proof not yet performed.
+- `git diff --check`: clean.
+
+Earlier partial-head CI (d8664d9): workflow35442823218 failed shards0,1,3,5,9,10; other shards and quality passed. Security workflow35442823132 failed one untriaged potential secret. All other18 observed workflows succeeded. These are old partial-source results, NOT current candidate acceptance.
+Security finding verified independently: artifact10583914606, RailwayApp, Verified=false, checkpoint path, raw SHA256 `0ca2174e3995d9ab44fc39f79cace1ebe0ee83e6a2d55ed1ece16ebcee500a21` equals authoritative Railway PROJECT ID. Exact scoped disposition added to existing gate, no blanket UUID/path bypass; altered/verified values remain blocked. Full new CI pending.
+
+## Review accumulator
+
+Read-only discovery is not final independent review. Verified findings retained:
+1. D2 v65/v59 count and blocker overwrites: corrected; focused count/gate tests pass.
+2. D2 JS mistaken for TS/npm applicability, execution_reason contaminated by applicability prose: corrected; generic missing-inventory tests pass.
+3. D6 operator path omitted provenance-readiness guard: corrected for new v2 editions; aligned/mismatch/unknown actual approval tests pass, existing retrieval suites pass.
+4. D2 OSV no-package evidence discarded and requirements pattern missed: corrected; targeted existing controls pass.
+5. D2 terminal retained-byte projection reintroduced applicability conflation: corrected;75 UI/retention/cache tests pass.
+No Critical/Important complete-diff review findings exist yet because that review has NOT occurred. Do not call review passed.
+
+## Requirements and invalidation
+
+R1 UNPROVEN (D1 actual records missing); R2 UNPROVEN (existing controls pass locally, integrated production control pending); R3 UNPROVEN (D1 and production formats pending); R4 local numeric proof above, overall UNPROVEN; R5 local generic records above, overall UNPROVEN; R6–R11 existing local auth/approval/delivery controls above, production browser and actual human decision pending; R12 bilingual local proof above, production parity pending; R13 supplied PDF unchanged, live historical run/JSON hash not yet read; R14–R18 UNPROVEN (no merge/repaired deployment/production acceptance); R19 UNPROVEN (no complete review); R20 checkpoint/source fingerprint preserved, final audit pending.
+Invalidated proof: old d866 CI is invalidated by current source/test changes. The 58-file fingerprint identifies accepted current local evidence. Future D1 changes invalidate its canonical/projection/rendering dependents only. New frontend runtime/browser proof, integrated full CI, independent review and deployment proof are missing, not waived.
+
+## Authentication / external boundary and EXACT NEXT ACTION
+
+Secure browser handoff first timed out. Second returned `submission_failed`; permitted visible inspection still showed the NICO password sign-in page, no visible website error or signed-in signal. No credential values were accessed. BrowserAuth guidance prohibits fallback direct credential entry after this result; cloud manual takeover is unavailable. No further automated credential attempt has been made.
+
+Existing read-only historical endpoint verified in source: `/api/nico/assessment/comprehensive-run/comprun_7cc47a5a81695fa452354479ea23b422/report/json` (or `/report/evidence-package`) uses load_read_only and retained artifact checks. Avoid ordinary run status GET for frozen evidence: it can reconcile state.
+
+Railway read-only discovery thread `9c1d37e7-7233-41fa-b2a4-41d2cf89302b`: existing query service `nico-release-readonly-diagnostic` is one-shot psql with SQL configured at deployment; no callable SQL/container command tool. Retrieving this run there would require diagnostic configuration/redeployment. Isolation from the SIX staged environment changes is unproven, so no config/deployment change was made. Agent summary's guessed absence of artifact routes or staged changes is not accepted over source/platform evidence.
+
+Last completed action: current local truth/UI/provenance/approval suites and frontend build verified; frozen artifact digest unchanged; existing branch/PR recovered. Current atomic candidate is being preserved, not merged.
+EXACT NEXT ACTION: publish this atomic candidate/checkpoint to existing PR1620; inspect its new CI once terminal and diagnose any new failure. Earliest mission predicate remains D1: obtain retained historical canonical JSON/evidence package through restored secure authentication or an owner-provided export, inspect the exact two source-risk records, then implement the proven source-observation/candidate distinction using existing contracts. Do not invent records, force two findings, or erase observations. After D1 and invalidated tests pass: complete bounded independent diff review, resolve material findings, required CI/preview, merge, exact deployments and production acceptance. Human-only approval remains a later distinct boundary.
 
 ---
 ## Prior mission checkpoint (historical; not current mission acceptance)

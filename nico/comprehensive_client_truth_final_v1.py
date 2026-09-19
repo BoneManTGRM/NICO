@@ -384,8 +384,9 @@ def _sync_stages(canonical: dict[str, Any]) -> None:
         else:
             stage["evidence"] = _clean_evidence(stage.get("evidence"))
         if stage_id == "dependency_security_static_analysis":
+            from nico.scanner_applicability_v1 import scanner_execution_summary
             stage["summary"] = (
-                f"{completed} of {applicable} applicable analyzers completed; {incomplete} are incomplete. "
+                scanner_execution_summary(canonical.get("requested_scanner_records") or canonical.get("scanner_execution_records") or []) + " "
                 f"Candidate triage is separate: {_int(totals.get('review_required'))} review-required "
                 f"candidates and {_int(totals.get('material'))} confirmed material findings are retained."
             )
@@ -463,6 +464,9 @@ def _sync_executive(canonical: dict[str, Any]) -> None:
         f"limited, or stakeholder-dependent evidence. {boundary} The package is a review-gated "
         "automated draft: automated evidence and recommendations are not client approval or delivery authorization."
     )
+    if canonical.get("source_security_assurance"):
+        from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+        summary = assurance_headline(canonical, spanish=str(canonical.get("report_language") or "").startswith("es")) + " " + summary
     assessment.update(
         {
             "executive_summary": summary,

@@ -342,6 +342,16 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
 
 
 _SOURCE_COPY_ES = {
+    "Authorization and repository access evidence": "Evidencia de autorización y acceso al repositorio",
+    "Requester authorization attestation": "Declaración de autorización del solicitante",
+    "Repository access mode": "Modalidad de acceso al repositorio",
+    "Provider credential used": "Credencial del proveedor utilizada",
+    "Independent NICO verification of ownership or third-party permission": "Verificación independiente de NICO de propiedad o permiso de terceros",
+    "confirmed": "Confirmada",
+    "not_established": "No establecida",
+    "anonymous_public": "Público anónimo",
+    "authenticated_read_only": "Autenticado de solo lectura",
+    "unknown": "Desconocida",
     "Eligible-source analysis coverage (%)": "Cobertura de análisis del código elegible (%)",
     "Eligible-source coverage fraction": "Fracción de cobertura del código elegible",
     "Observed supported-source coverage fraction": "Fracción de cobertura del código compatible observado",
@@ -601,10 +611,13 @@ def _decision_summary(
         if blocked
         else "Every automated stage represented in this package completed without a terminal execution failure."
     )
+    from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+    assurance = (assurance_headline(assessment, spanish=str(identity.get("report_language") or "").startswith("es"))
+        if assessment.get("source_security_assurance") else "")
     return (
         f"NICO completed a native Comprehensive Technical Assessment for {_text(identity.get('repository'))} "
         f"at immutable commit {_text(identity.get('commit_sha'))}. The evidence-bound maturity signal is "
-        f"{level} ({score_text}). {limited} stage(s) disclose unavailable or limited evidence. {boundary} "
+        f"{level} ({score_text}). {assurance} {limited} stage(s) disclose unavailable or limited evidence. {boundary} "
         "The package is a review-gated draft: automated evidence and recommendations are not client approval or delivery authorization."
     )
 

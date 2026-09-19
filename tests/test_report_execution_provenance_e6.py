@@ -204,6 +204,7 @@ def test_fixed_frontend_observation_does_not_credit_labels_alone(monkeypatch, ch
     import requests
     from nico.report_execution_provenance_e6 import capture_frontend_release, verify_frontend_release
     value = {"status": "ok", "release_sha": "b" * 40, "deployment_id": "dpl_synthetic_e6",
+        "release_sha_source": "VERCEL_GIT_COMMIT_SHA",
         "deployment_id_source": "VERCEL_DEPLOYMENT_ID"}
     if change == "wrong_sha": value["release_sha"] = "f" * 40
     if change == "wrong_deployment": value["deployment_id"] = "dpl_other"

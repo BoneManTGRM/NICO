@@ -162,6 +162,9 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.setFont("Helvetica-Bold", 15)
     pdf.drawString(left, height - 285, "Postura ejecutiva" if spanish else "Executive posture")
     posture = _executive_posture(canonical, technical, adjusted, spanish=spanish)
+    if canonical.get("source_security_assurance"):
+        from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+        posture = assurance_headline(canonical, spanish=spanish)
     pdf.setFillColor(muted)
     pdf.setFont("Helvetica", 7.1)
     words = posture.split()

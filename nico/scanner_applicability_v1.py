@@ -138,7 +138,8 @@ def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
             and type(count) is int and count > 0
         ):
             node_source = True
-    python_manifest = any(name in _PYTHON_MANIFEST_NAMES for name in basenames)
+    python_manifest = any(name in _PYTHON_MANIFEST_NAMES or
+        (name.startswith("requirements") and name.endswith((".txt", ".in"))) for name in basenames)
     python_source = any(path.endswith(".py") for path in paths)
     return {
         "node_manifest": node_manifest,
@@ -166,7 +167,8 @@ def _normalize_record(
     signals: Mapping[str, bool],
 ) -> dict[str, Any]:
     """Derive applicability from inputs, independently of execution outcome."""
-    from nico.node_scanner_applicability_v1 import justified_inapplicability
+    from nico.node_scanner_applicability_v1 import justified_inapplicability, valid_input_inventory
+    from nico.scanner_package_inventory_v1 import justified_no_packages
 
     record = deepcopy(dict(raw))
     scanner = _scanner_name(record.get("scanner_name") or record.get("tool") or record.get("scanner"))
@@ -181,6 +183,8 @@ def _normalize_record(
     absent = justified_inapplicability(
         inventory, scanner, str(record.get("commit_sha") or record.get("target_commit_sha") or ""),
     )
+    if scanner == "osv-scanner":
+        absent = justified_no_packages(inventory, str(record.get("commit_sha") or record.get("target_commit_sha") or ""))
     positive = {
         "pip-audit": signals.get("python_manifest") or signals.get("python_source"),
         "bandit": signals.get("python_source"),
@@ -193,10 +197,19 @@ def _normalize_record(
         "gitleaks": record.get("exact_commit_match") is True,
         "trufflehog": record.get("exact_commit_match") is True,
     }.get(scanner, False)
-    if absent:
+    if valid_input_inventory(inventory, str(record.get("commit_sha") or record.get("target_commit_sha") or "")):
+        field = {"npm-audit": "node_dependency_paths", "typescript": "typescript_input_paths", "pip-audit": "python_input_paths"}.get(scanner)
+        if field and isinstance(inventory.get(field), list) and inventory[field]:
+            positive = True
+    conflicting = bool(absent and positive)
+    if conflicting:
+        absent = positive = False
+        applicability = "applicability_unproven"
+        reason = "Retained supported inputs conflict with the complete-input-absence observation."
+    elif absent:
         applicability = "not_applicable"
         reason = _text(record.get("applicability_reason")) or "Complete source-bound inventory contains no inputs supported by this scanner."
-        if legacy_inapplicable:
+        if legacy_inapplicable and record.get("execution_observed_for_this_report") is False:
             execution = "not_requested"
     elif positive:
         applicability = "applicable"
@@ -219,6 +232,7 @@ def _normalize_record(
         record.update(completed=False, verified=False, verified_complete=False,
                       verified_for_this_report=False)
         if legacy_inapplicable and not absent:
+            record.setdefault("prior_applicability_reason", _reason(raw))
             record.update(state="unavailable", status="unavailable")
     return record
 
@@ -281,7 +295,8 @@ def normalize_scanner_applicability_canonical(value: Mapping[str, Any]) -> dict[
         "applicability_unproven_tools": [item.get("scanner_name") for item in unproven],
         "not_applicable_tools": [item.get("scanner_name") for item in not_applicable],
         "not_applicable_receives_completion_credit": False,
-        "unavailable_reserved_for_applicable_missing_evidence": True,
+        "unavailable_reserved_for_applicable_missing_evidence": False,
+        "unavailable_does_not_establish_applicability": True,
     }
     canonical["assessment"] = assessment
 
@@ -297,6 +312,23 @@ def normalize_scanner_applicability_canonical(value: Mapping[str, Any]) -> dict[
     )
     canonical["v2_pipeline_contract"] = contract
     return canonical
+
+
+def scanner_execution_summary(records: list[Mapping[str, Any]], *, spanish: bool = False) -> str:
+    """Describe the two retained dimensions without renaming unknown inputs applicable."""
+    if not records:
+        return ("Las poblaciones de aplicabilidad y ejecución de analizadores no están verificadas." if spanish
+            else "Scanner applicability and execution populations are unverified.")
+    required = [r for r in records if r.get("applicable") is not False]
+    complete = sum(r.get("completed") is True for r in required)
+    applicable = sum(r.get("applicable") is True for r in required)
+    unproven = len(required) - applicable
+    excluded = len(records) - len(required)
+    if spanish:
+        return (f"Se completaron {complete} de {len(required)} ejecuciones requeridas de analizadores. "
+            f"Aplicabilidad establecida: {applicable}; aplicabilidad no comprobada: {unproven}; no aplicables: {excluded}.")
+    return (f"{complete} of {len(required)} required scanner executions completed. "
+        f"Applicability established: {applicable}; applicability unproven: {unproven}; not applicable: {excluded}.")
 
 
 def normalize_scanner_applicability_package(package: Mapping[str, Any]) -> dict[str, Any]:
