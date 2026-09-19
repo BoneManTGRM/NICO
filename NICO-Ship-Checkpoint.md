@@ -1,5 +1,64 @@
 # NICO — Bitcoin truth-stress closeout
 
+## Current closeout — CSV correction production-accepted, 2026-09-19
+
+This section and PR1624's final transition evidence supersede all earlier pending-CI, next-action and publication-permission statements below. Owner explicitly authorized: “Allow the CSV corrective PR and continue through production acceptance.” That bounded correction is complete. No further source correction, PR, merge or deployment is pending for CSV. No unconditional original all-predicate SHIPPED claim is made: original historical source records remain unavailable under the owner's previously accepted exception.
+
+### Exact baseline, source and deployment
+
+- Original mission baseline: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
+- Existing branch: `fix/bitcoin-truth-stress-closeout`. PR1624: https://github.com/BoneManTGRM/NICO/pull/1624, merged. Branch source candidate: `7113f0fdacb422d792d7f1966a74df3e44312d21`. This final checkpoint-only commit's exact HEAD is recorded in PR1624 after push; its code/tests remain identical to the deployed source.
+- CSV base: `554c11bdeb82ca73f9fe988ebcfcc3d7091a1623`; merged/current main: `16ea1be933fdd046eeccd8e6d3431723bfcbe884`. Merged tree `eab13e72dd0404b5113756e664059d0bf995039a` equals the reviewed candidate tree.
+- Backend service `d9d51992-d34a-4348-a83d-1f760faaa6a8`, environment `760805be-2eb2-4ef4-a476-5e10def95786`: final Railway deployment `b486f62e-607e-40be-ab5d-219d1cd01f89` SUCCESS, authoritative commitHash and native runtime RAILWAY_GIT_COMMIT_SHA equal merged source. Automatic source deployment `d06a5ec6-50cb-408f-b387-e130a6ddc5e9` reached SUCCESS first; only the three established nonsecret release pins were then synchronized. No unrelated staged changes applied.
+- Frontend production alias app.nicoaudit.com: Vercel deployment `dpl_912UEqTZ6Q5QVKzUgLF9f9Eo1Y9K` READY. Authoritative githubCommitSha and native /api/release VERCEL_GIT_COMMIT_SHA equal merged source; native VERCEL_DEPLOYMENT_ID agrees.
+- Health HTTP200; Comprehensive runtime ready,22 providers, missing capabilities[], durable storage true. Operator credential/session/credential-separation self-tests true. Configuration-only readiness correctly remains unverified until report-bound native frontend observation; both fresh reports retain verified exact provenance. Error-filter runtime logs after successful startup contain no entries.
+
+### Verification and independent review
+
+- Original complete review and focused correction reviews retained below; CSV full review554c11b→98f12777 and focused re-review at localbaf4d0eb closed the Important legacy schema-label finding. Published7113f0f and reviewedbaf4d0eb share the same tree. No unresolved material review finding.
+- Source correction changes only existing comprehensive_artifact_manifest_approval_v1 terminal export producer plus three affected test files and this checkpoint. Existing human rows are preserved alongside typed canonical rows. Findings/candidate/backlog exports and canonical bytes unchanged. Two PDF golden hashes change only because printed evidence CSV manifest digests change; no assertions removed.
+- Retained public manifest/Bitcoin integration72PASS; protected localized export/approval/delivery/exact-artifact/human evidence56PASS; superseding legacy schema5PASS and complete parity12PASS. Exact-source pushCI35467952676 PASS. All18 PR workflows PASS, including fullCI35468692455, security35468692463, CodeQL35468692517. Merged-main fullCI35469177738 and security35469177760 PASS. No retries/bypasses/source changes after review.
+- Candidate Vercel preview READY at exact7113f0f; supported runtime fetch302 SSO. Preview protection preserved; no preview runtime success inferred. Actual production evidence below supplies the live acceptance.
+
+### Direct production artifacts and semantics
+
+- Spanish/fresh-browser production workflow35469177683 PASS. Immutable archive10592237588 SHA256 `0d4ac06db7395e7883357fc0de025fd0941014cb20018203bca3e1193d6ee44f` verified locally. Standard run `comprun_ce8cfa060d9294d06730322d8301130c`; exclusion run `comprun_58a862c4a93c957e346c48eb47373b3b`. Existing production-proof scope, assessed fixture gitlab.com/gitlab-org/gitlab-test at `ddd0f15ae83993f5cb66a927a28673882e99100b`; no new provider or third-party Bitcoin attestation added.
+- Direct inspection verifies45 captured files per report, all bytes/sizes/digests, all13 canonical truth rows and full pointer/value/digest equality in each retained/EN/es-MX evidence CSV, preserved supplied-human row and zero canonical finding/candidate counts. Standard canonical file SHA256 `660c67fe76844f6476307f047b26a534fbb3b3f872166ac3dc6badda981c423e`; standard CSV `a2c7b953edd1953489e2dc020776e1b5e5c93f26c583cdf203a09035b38984e9`; exclusion CSV `fad8f501820b9820fa448de76d32284cd253d96c35faa5edb3627c30565a8ecf`.
+- Canonical source/security assurance limited, unresolved applicability1,9 configured scanners; four applicable+complete, four proven not applicable. OSV's real attempted execution (exit128, verified invocation receipt) remains unavailable independently of proven no-package applicability; pip/npm/TypeScript were not requested. No inapplicable execution credit; adequate-evidence synthetic control remains accepted. Coverage populations remain separately named (live0/1 each); missing evidence is neither PASS nor FAIL, maturity87/evidence-adjusted87 unchanged. Attestation confirmed, anonymous public access, no provider credential, independent authorization not_established.
+- Primary checker initially overconstrained existing human pointers and assumed all inapplicable scanners were never executed. Source/retained receipt inspection disproved those assumptions (same OSV state existed on554c11b); checker now verifies both distinct contracts. No product behavior or assertion about required canonical rows/digests was weakened. Primary semantic receipt SHA256 `6c840653a36668bd5dbf1fd43dac297733cd84536956b074601a19efe4e54502`.
+- Standard EN PDF48pages SHA256 `387eeb451b11e8a3a0cbd9e5b14eadc63dd71442eea2d196b7f2bee612084571`; es-MX50pages `04566e50424b6b9bcef59d1b4b832ed66be3e2dddb8e77f426585d50c9489d66`. Cover limitations and affected manifest rows visually inspected (EN1/47; es-MX1/49), no newly introduced digest-row clipping. English font appearance also occurs in unchanged prior release; no unrelated redesign undertaken. Visual/mobile receipt `95d2736b9b96b1e4c148b07b0b0dd9326c6b6817b930e31054340a730f8c85b8`.
+- Fresh mobile Chromium EN and iPhone WebKit EN/es-MX all PASS on16ea1be; cell file hashes independently verified. Mobile restart35470048295 PASS; iOS recovery/download35470048286 PASS. Browser emulation, not physical-device proof.
+- Unified production35470048285 PASS. Archive10592617808 SHA256 `77c6860be32aadec1f12a6abc1b7b789c6e1127a2afcb555d0af79c62b35aa6c` verified. Primary independently verifies same standard run, unchanged canonical JSON, es-MX91.24s/EN93.15s, two PDF actions per hold with exact locale hashes above, zero new intake/continuation/prohibited mutation/wrong-run requests, no page errors, structured audit errors[]. Primary receipt `560d5259ebde7538d88e45db4bf5b6916300fe4c6a12b9eadfd10dc73ddc51a1`.
+
+### Completion audit and exact remaining boundary
+
+PASS below means demonstrated within the owner's accepted historical-evidence exception; it does not assert the missing original records were inspected.
+
+| Predicate | Result | Evidence/boundary |
+| --- | --- | --- |
+| D0 | PASS | Reviewed bounded diff, all18 PR checks, mainCI, protected56 controls, fresh CSV/manifest/locale/mobile/retrieval evidence above |
+| D1 | PASS for repaired generic/population behavior; historical eligibility UNPROVEN | Frozen/generic tests, canonical/CSV equality, zero observation/finding live control; actual original two records unavailable |
+| D2 | PASS | Independent applicability/execution tests,9 live records, source-bound inventory and preserved OSV execution receipt |
+| D3 | PASS | Deterministic291563274-byte fixture retains revision/size limit/no execution; fullCI; no limit increase |
+| D4 | PASS | Frozen5/137=3.65% versus5/484=1.03%,132 unsampled; live canonical/CSV denominator identity and cover prominence |
+| D5 | PASS | Adequate control and limited-evidence tests; live synchronized assurance1, unchanged87/87, explicit limited cover |
+| D6 | PASS | Authoritative platform/native mapping and matching report-bound provenance16ea1be |
+| D7 | PASS | Canonical/CSV attestation/access/credential/independent-evidence separation; auth gates unchanged |
+| R1 | Frozen-facts regression PASS; original record-level proof UNPROVEN | tests/fixtures/bitcoin_truth_stress_observations.json and test_bitcoin_truth_stress.py; accepted unavailable-record exception |
+| R2-R5 | PASS | Existing adequate supported synthetic control, live supported production-proof fixture, typed cross-format rows, denominator and generic-provider tests |
+| R6-R8 | PASS | Auth/session self-tests, protected regression/fullCI, unchanged human/specialist boundaries and pending live states |
+| R9-R11 | PASS for preserved mechanism | Protected exact-edition approval/delivery/one-action tests and completeCI; live review-PDF retrieval verified; no actual human approval or authorized-final artifact fabricated |
+| R12 | PASS | Same canonical truth in EN/es-MX exports and direct PDFs/browser observations |
+| R13 | Frozen PDF unchanged; inaccessible historical JSON UNPROVEN | PDF2,050,194bytes SHA25628349b20ede259f2d4d2ce38dd24163b176422cb1a8f89e139114cec033b790e reverified; no historical mutation |
+| R14-R17 | PASS | Main16ea1be, exact Railway/Vercel source/deployment/native identities and matching reports |
+| R18 | PASS for accepted CSV release scope | Fresh production35469177683, Mobile35470048295, iOS35470048286, Unified35470048285 plus direct artifact inspections |
+| R19 | PASS | Complete independent review/focused re-review; all material findings closed and exact source tree checked |
+| R20 | PASS after this checkpoint push | This section plus final PR1624 exact-HEAD transition evidence |
+
+No new provider, C/C++ scanner, Bitcoin-specific production logic, avoidable provider coupling, score formula, database/storage, credential or authentication/approval change. No actual operator decision, specialist disposition or client delivery authorization was performed. Original historical two-record eligibility/unread JSON remain unverified under the owner's explicit instruction to move on; do not request nonexistent attachments or claim all original predicates passed.
+
+LATEST COMPLETED ACTION: merged16ea1be CSV correction deployed and production accepted, including direct structured artifacts, affected PDF pages, fresh browsers and stable repeated retrieval. EXACT NEXT ACTION: none for the authorized CSV correction; preserve this checkpoint and report the completed bounded release with the accepted historical exception. If a real client report is later approved, only the authorized human makes that exact-edition decision in NICO. No new assessment or approval is automatically required by this correction.
+
 ## Active release acceptance — 2026-09-19
 
 CSV review accumulator: focused reviewer additionally identified legacy schema-label drift at _preliminary_entries: replacing the existing supplied_human_evidence condition with header-only selection changes v2→v1 for truthy unverified legacy human payloads while export bytes stay identical. Primary reproduced3 RED failures/35deselected1.55s using public attach_artifact_manifest. First incorrect layer is the new schema-selection condition; preserve the existing condition OR recognize the new typed header. Invalidate schema-selection proof only; retain canonical CSV payload/digest/pointer and candidate-count proof. This is not yet evidence for the separate golden PDF hash difference. No previous review finding is erased.
