@@ -476,13 +476,14 @@ def reconcile_authoritative_scanner_truth(
     assessment["scanner_execution_records"] = deepcopy(raw_records)
     output["assessment"] = assessment
     output = normalize_scanner_applicability_canonical(output)
+    applicability_summary = deepcopy(output["assessment"]["scanner_applicability_summary"])
 
     requested_records = [
         deepcopy(dict(item))
         for item in output.get("requested_scanner_records") or []
         if isinstance(item, Mapping)
     ]
-    applicable_records = [
+    required_records = [
         deepcopy(dict(item))
         for item in output.get("scanner_execution_records") or []
         if isinstance(item, Mapping)
@@ -492,25 +493,29 @@ def reconcile_authoritative_scanner_truth(
         for item in output.get("not_applicable_scanner_records") or []
         if isinstance(item, Mapping)
     ]
+    applicable_records = [r for r in required_records if r.get("applicable") is True]
+    unproven_records = [r for r in required_records if r.get("applicable") is None]
+    applicable_names = {v59._tool(r) for r in applicable_records}
+    unproven_names = sorted(v59._tool(r) for r in unproven_records)
     truth: dict[str, dict[str, Any]] = {}
     for record in requested_records:
         state = v59._scanner_state(record)
         if state is not None:
             truth[state["scanner_name"]] = state
 
-    applicable_tools = [
+    required_tools = [
         name
-        for record in applicable_records
+        for record in required_records
         if (name := v59._tool(record))
     ]
-    applicable_set = set(applicable_tools)
-    requested = len(applicable_tools)
+    required_set = set(required_tools)
+    requested = len(required_tools)
     completed = {
         name
         for name, state in truth.items()
-        if state.get("completed") is True and name in applicable_set
+        if state.get("completed") is True and name in required_set
     }
-    incomplete = applicable_set - completed
+    incomplete = required_set - completed
 
     assessment = _mapping(output.get("assessment"))
     technical = assessment.get("technical_score") or output.get("technical_score")
@@ -529,7 +534,7 @@ def reconcile_authoritative_scanner_truth(
         technical_score=technical_score,
     )
     output["requested_scanner_records"] = deepcopy(requested_records)
-    output["scanner_execution_records"] = deepcopy(applicable_records)
+    output["scanner_execution_records"] = deepcopy(required_records)
     output["not_applicable_scanner_records"] = deepcopy(not_applicable_records)
     not_applicable_names = {
         name.casefold()
@@ -553,7 +558,7 @@ def reconcile_authoritative_scanner_truth(
             output,
             expected_sha=commit_sha,
             records=phase14_records,
-            required_scanners=applicable_tools,
+            required_scanners=required_tools,
         )
         evidence_health = deepcopy(dict(output.get("evidence_health_summary") or {}))
         phase14 = _mapping(evidence_health.get("phase14_analyzer_evidence"))
@@ -577,16 +582,17 @@ def reconcile_authoritative_scanner_truth(
         evidence_health["incomplete_scanner_records"] = deepcopy(execution_incomplete)
         output["evidence_health_summary"] = evidence_health
     assessment_output = deepcopy(dict(_mapping(output.get("assessment"))))
+    assessment_output["scanner_applicability_summary"] = applicability_summary
     assessment_output["requested_scanner_records"] = deepcopy(requested_records)
-    assessment_output["scanner_execution_records"] = deepcopy(applicable_records)
+    assessment_output["scanner_execution_records"] = deepcopy(required_records)
     assessment_output["completed_scanner_records"] = [
         deepcopy(record)
-        for record in applicable_records
+        for record in required_records
         if record.get("completed") is True
     ]
     assessment_output["incomplete_scanner_records"] = [
         deepcopy(record)
-        for record in applicable_records
+        for record in required_records
         if record.get("completed") is not True
     ]
     assessment_output["not_applicable_scanner_records"] = deepcopy(
@@ -596,12 +602,13 @@ def reconcile_authoritative_scanner_truth(
         **deepcopy(dict(_mapping(assessment_output.get("scanner_execution_summary")))),
         "record_count": len(requested_records),
         "applicable_record_count": len(applicable_records),
+        "applicability_unproven_count": len(unproven_records),
         "not_applicable_count": len(not_applicable_records),
         "completed_count": len(completed),
         "verified_count": sum(
             record.get("verified_complete") is True
             or record.get("verified_for_this_report") is True
-            for record in applicable_records
+            for record in required_records
         ),
         "incomplete_count": len(incomplete),
     }
@@ -610,8 +617,8 @@ def reconcile_authoritative_scanner_truth(
     coverage = round(100 * len(completed) / requested) if requested else 0
     output["analyzer_execution_coverage"] = coverage
     output["scanner_execution_coverage"] = coverage
-    output["completed_applicable_analyzers"] = len(completed)
-    output["incomplete_applicable_analyzers"] = len(incomplete)
+    output["completed_applicable_analyzers"] = len(completed & applicable_names)
+    output["incomplete_applicable_analyzers"] = len(incomplete & applicable_names)
 
     # Scoring is produced before repository applicability is finalized. A tool that
     # is later proven inapplicable must not survive as a numeric evidence penalty or
@@ -638,7 +645,9 @@ def reconcile_authoritative_scanner_truth(
         coverage_output.update(
             {
                 "percent": coverage,
-                "applicable_analyzers": requested,
+                "applicable_analyzers": len(applicable_records),
+                "required_analyzers": requested,
+                "applicability_unproven_analyzers": unproven_names,
                 "completed_verified_analyzers": len(completed),
                 "incomplete_analyzers": sorted(incomplete),
             }
@@ -652,6 +661,7 @@ def reconcile_authoritative_scanner_truth(
             {
                 "record_count": len(requested_records),
                 "applicable_record_count": len(applicable_records),
+                "applicability_unproven_count": len(unproven_records),
                 "not_applicable_count": len(not_applicable_records),
                 "completed_count": len(completed),
                 "incomplete_count": len(incomplete),
@@ -668,8 +678,10 @@ def reconcile_authoritative_scanner_truth(
             "analyzer_execution_coverage": coverage,
             "coverage_numerator": len(completed),
             "coverage_denominator": requested,
+            "coverage_population": "applicable_or_applicability_unproven_scanner_executions",
             "requested_exact_run_scanners": list(requested_tools),
-            "applicable_exact_run_scanners": list(applicable_tools),
+            "applicable_exact_run_scanners": sorted(applicable_names),
+            "applicability_unproven_scanners": unproven_names,
             "not_applicable_exact_run_scanners": [
                 v59._tool(record) for record in not_applicable_records
             ],
@@ -693,6 +705,17 @@ def reconcile_authoritative_scanner_truth(
         }
     )
     output["client_readiness_contract"] = contract
+    if unproven_names:
+        gate = deepcopy(dict(output.get("delivery_gate") or {}))
+        gate["analyzer_evidence_ready"] = False
+        gate["analyzer_assurance_state"] = "review_limited"
+        gate["applicability_unproven_scanners"] = unproven_names
+        gate["analyzer_evidence_blockers"] = list(gate.get("analyzer_evidence_blockers") or []) + [
+            f"{name}: applicability_unproven" for name in unproven_names]
+        output["delivery_gate"] = gate
+    health = deepcopy(dict(output.get("evidence_health_summary") or {}))
+    health["applicability_unproven_scanners"] = unproven_names
+    output["evidence_health_summary"] = health
     output["scanner_state_reconciled"] = True
     output["human_review_required"] = True
     output["client_delivery_allowed"] = False

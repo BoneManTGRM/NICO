@@ -265,6 +265,8 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     canonical = bind_report_execution_provenance(canonical, raw_stages=stages)
     from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
     canonical = reconcile_report_coverage(canonical)
+    from nico.comprehensive_score_assurance_ledger_v45 import bind_source_security_assurance
+    canonical = bind_source_security_assurance(canonical)
     spanish_preflight = assert_spanish_canonical_publication_preflight(canonical)
 
     assessment = dict(canonical.get("assessment") or {})

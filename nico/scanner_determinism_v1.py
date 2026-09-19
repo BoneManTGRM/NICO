@@ -197,7 +197,7 @@ def clone_repository_at_snapshot(
     size = base.directory_size(repo_dir)
     if size > base.MAX_REPO_BYTES:
         shutil.rmtree(repo_dir, ignore_errors=True)
-        return None, actual, [f"Repository exceeds scanner size limit: {size} bytes."]
+        raise snapshot.RepositoryExecutionLimit(actual, size, base.MAX_REPO_BYTES)
     return repo_dir, actual, []
 
 

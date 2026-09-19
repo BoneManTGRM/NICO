@@ -230,7 +230,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = legacy._repo(context)
     complexity = legacy._complexity(context)
     scan = legacy._scan(context)
-    if not repo or scan.get("status") != "complete":
+    if not repo or (scan.get("status") != "complete" and not legacy.verified_execution_limit(scan, str(context.get("commit_sha") or ""))):
         return legacy._result(context, "blocked", reason="complete_repository_and_scanner_evidence_required")
 
     architecture = repo.get("architecture_evidence") if isinstance(repo.get("architecture_evidence"), dict) else {}

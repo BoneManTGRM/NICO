@@ -280,7 +280,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    structured_fields = {"source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state"}
+    structured_fields = {"source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
     def without_structured(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}
@@ -342,6 +342,9 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
 
 
 _SOURCE_COPY_ES = {
+    "Eligible-source analysis coverage (%)": "Cobertura de análisis del código elegible (%)",
+    "Eligible-source coverage fraction": "Fracción de cobertura del código elegible",
+    "Observed supported-source coverage fraction": "Fracción de cobertura del código compatible observado",
     "Known file paths in configured priority order, then sorted eligible paths, within unchanged file and byte limits.": "Rutas conocidas en el orden de prioridad configurado y después rutas elegibles ordenadas, dentro de los límites existentes de archivos y bytes.",
     "Bounded API priority paths followed by sorted eligible paths; exact-SHA archive sources in sorted path order within existing archive file and byte limits. Overlapping paths are counted once.": "Rutas prioritarias de la API acotada seguidas de rutas elegibles ordenadas; código del archivo del SHA exacto en orden de ruta dentro de sus límites existentes de archivos y bytes. Cada ruta coincidente se cuenta una vez.",
     "Observed source components": "Componentes observados en el código",
@@ -410,6 +413,7 @@ def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
             ("Analyzed source files", "analyzed_source_files"), ("Excluded source files", "complexity_excluded_source_files"),
             ("Unsampled eligible source files", "unsampled_eligible_source_files"), ("Unavailable profile files", "unavailable_profile_files"),
             ("Whole supported-source coverage (%)", "whole_repository_coverage_percent"),
+            ("Eligible-source analysis coverage (%)", "eligible_source_coverage_percent"),
             ("File limit", "file_limit"), ("Per-file byte limit", "per_file_byte_limit"),
             ("Selection method", "selection_method"),
         ]
@@ -419,6 +423,10 @@ def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
                        "rows": [[label, (reconciliation.get("unavailable_file_path_count")
                                          if key == "unavailable_profile_files" and reconciliation.get("version") == COVERAGE_RECONCILIATION_VERSION
                                          else coverage.get(key))] for label, key in fields]})
+        tables[-1]["rows"].extend([
+            ["Eligible-source coverage fraction", f"{coverage.get('analyzed_source_files')} / {coverage.get('eligible_source_files')}"],
+            ["Observed supported-source coverage fraction", f"{coverage.get('analyzed_source_files')} / {coverage.get('observed_source_files')}"],
+        ])
         archive_limits = (coverage.get("collection_limits") or {}).get("exact_sha_archive") or {}
         if archive_limits:
             tables[-1]["rows"].append(["Archive total byte limit", archive_limits.get("total_byte_limit")])

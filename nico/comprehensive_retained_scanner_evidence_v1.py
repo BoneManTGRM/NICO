@@ -131,6 +131,7 @@ def _manifest(context: Mapping[str, Any]) -> dict[str, Any]:
             80,
         ).casefold(),
         "snapshot_match": scanner.get("snapshot_match") is True,
+        "execution_limit": deepcopy(scanner.get("execution_limit")),
         "tools_requested": sorted(requested),
         "tools_run": sorted(completed),
         "failed_tools": sorted(failed),
@@ -242,6 +243,7 @@ def compact_scanner_records(
                     key: deepcopy(raw[key])
                     for key in (
                         "applicable", "evidence_required", "applicability_reason",
+                        "applicability_state", "execution_state", "execution_reason", "execution_limit",
                         "applicability_evidence", "native_json_output",
                         "no_vulnerabilities_claimed",
                     )
@@ -362,6 +364,7 @@ def retained_scanner_payload(context: Mapping[str, Any]) -> dict[str, Any]:
         "snapshot_commit_sha": manifest["snapshot_commit_sha"] or commit_sha,
         "actual_commit_sha": manifest["snapshot_commit_sha"] or commit_sha,
         "snapshot_match": manifest["snapshot_match"] or bool(commit_sha),
+        "execution_limit": manifest["execution_limit"],
         "tools_requested": manifest["tools_requested"] or sorted(records),
         "tools_run": manifest["tools_run"],
         "failed_tools": manifest["failed_tools"],

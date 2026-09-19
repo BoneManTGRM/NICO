@@ -8,6 +8,25 @@ from nico.full_assessment_complexity_evidence import SOURCE_SUFFIXES, _is_source
 from nico.hosted_assessment import MAX_FILE_BYTES, MAX_TEXT_FILES
 
 
+def source_coverage_metrics(coverage: Mapping[str, Any]) -> dict[str, Any]:
+    """Name the two existing populations without changing their calculation."""
+    result = {}
+    for name, denominator, percentage, population in (
+        ("eligible_source_analysis", "eligible_source_files", "eligible_source_coverage_percent", "complexity_eligible_supported_source_files"),
+        ("observed_supported_source_analysis", "observed_source_files", "whole_repository_coverage_percent", "observed_supported_language_source_files_including_complexity_exclusions"),
+    ):
+        result[name] = {
+            "numerator": coverage.get("analyzed_source_files"),
+            "denominator": coverage.get(denominator),
+            "numerator_population": "analyzed_eligible_source_files",
+            "denominator_population": population,
+            "percentage": coverage.get(percentage),
+            "inventory_complete": coverage.get("inventory_complete") is True,
+            "all_repository_languages_covered": False,
+        }
+    return result
+
+
 def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) -> dict[str, Any]:
     paths = {str(path) for path in profile.get("tree_paths", [])}
     files = profile.get("files") or {}
@@ -51,7 +70,7 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
                 and profile.get("tree_truncated") is False)
     unavailable = sorted(set(profile.get("unavailable_paths") or []))
     limits = profile.get("profile_limits") or {}
-    return {
+    result = {
         "version": "nico.repository_profile_coverage.v1",
         "inventory_complete": complete,
         "coverage_denominator_scope": "complete_source_inventory" if complete else "observed_paths_only",
@@ -90,3 +109,5 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
         ),
         "absence_of_findings_proven": False,
     }
+    result["coverage_metrics"] = source_coverage_metrics(result)
+    return result

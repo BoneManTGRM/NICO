@@ -192,6 +192,25 @@ def repository_evidence_provider(context: dict[str, Any]) -> dict[str, Any]:
     return _result(context, summary="Exact-commit repository, dependency, architecture, workflow, activity, and complexity evidence were attached.", repository_evidence=repository_evidence, complexity_evidence=complexity_evidence, evidence={"repository_evidence_id": repository_evidence.get("evidence_id"), "complexity_evidence_id": complexity_evidence.get("evidence_id"), "snapshot_commit_sha": repository_evidence.get("snapshot_commit_sha"), "files_profiled": files.get("files_profiled", 0), "tree_paths_seen": files.get("tree_paths_seen", 0), "source_file_count": architecture.get("source_file_count", 0), "test_path_count": architecture.get("test_path_count", 0), "workflow_file_count": workflows.get("workflow_file_count", 0)}, unavailable_data_notes=repository_evidence.get("unavailable_data_notes") or [])
 
 
+def verified_execution_limit(scan: dict[str, Any], commit_sha: str) -> bool:
+    """Permit a limited evidence package, never credit an unexecuted scanner."""
+    limit = scan.get("execution_limit")
+    if not isinstance(limit, dict):
+        return False
+    observed, maximum = limit.get("observed_bytes"), limit.get("limit_bytes")
+    return (
+        len(commit_sha) == 40 and all(c in "0123456789abcdef" for c in commit_sha)
+        and scan.get("status") in {"unavailable", "failed", "partial"}
+        and scan.get("snapshot_match") is True
+        and scan.get("actual_commit_sha") == limit.get("commit_sha") == commit_sha
+        and limit.get("reason") == "repository_size_limit_exceeded"
+        and limit.get("scanner_execution_permitted") is False
+        and type(observed) is int and type(maximum) is int
+        and observed > maximum > 0
+        and not scan.get("tools_run")
+    )
+
+
 def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
     snapshot = _snapshot(context)
     if snapshot.get("status") != "attached":
@@ -227,6 +246,18 @@ def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
     status = _text(scan.get("status"), 40).lower()
     if status in {"queued", "running"}:
         return _result(context, "running", summary="The modern scanner suite is executing against the exact immutable commit.", scan_id=scan.get("scan_id"), scanner={"scan_id": scan.get("scan_id"), "status": status, "current_stage": scan.get("current_stage"), "active_tool": scan.get("active_tool"), "progress_percent": scan.get("progress_percent"), "snapshot_commit_sha": scan.get("snapshot_commit_sha")}, evidence={"scan_id": scan.get("scan_id"), "active_tool": scan.get("active_tool"), "progress_percent": scan.get("progress_percent"), "snapshot_commit_sha": scan.get("snapshot_commit_sha")})
+    if verified_execution_limit(scan, context["commit_sha"]):
+        retained = {key: scan.get(key) for key in (
+            "scan_id", "status", "snapshot_match", "actual_commit_sha", "tools_requested",
+            "tools_run", "unavailable_tools", "failed_tools", "timed_out_tools", "execution_limit",
+        )}
+        return _result(context, summary=(
+            "The immutable repository revision was verified, but its size exceeded the scanner execution limit. "
+            "Scanner execution is unavailable; reporting continues with limited evidence."
+        ), scan_id=scan.get("scan_id"), scanner=retained,
+            evidence={"execution_limit": scan["execution_limit"], "snapshot_match": True,
+                "actual_commit_sha": scan["actual_commit_sha"], "tools_run": []},
+            unavailable_data_notes=scan.get("unavailable_data_notes") or [])
     if status != "complete" or scan.get("snapshot_match") is not True:
         return _result(context, "blocked", reason="snapshot_scanner_not_verified", scan_id=scan.get("scan_id"), scanner_status=status or "unavailable", unavailable_data_notes=scan.get("unavailable_data_notes") or ["Scanner output did not verify the immutable snapshot."])
     counts = _counts(scan)
