@@ -4,10 +4,10 @@
 
 - Baseline and last authoritative main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
 - One repair branch: `fix/bitcoin-truth-stress-closeout`; one PR: **#1620**, OPEN/DRAFT, base equals baseline, no reviews. https://github.com/BoneManTGRM/NICO/pull/1620
-- Last published branch HEAD before this checkpoint-only transition: `256e58346ea0f9f3f0588c89f72d70fff54307d3`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
+- Last published branch HEAD before this checkpoint-only transition: `6bb375c9a3ee85a7767f70f241fab21e2cf83720`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
 - Candidate source/test fingerprint (all changed files against baseline except this ledger, sorted path→SHA256 JSON): `646cf7cb710dcc5b20aef08ab065787f23842d5997633a0840df5cd514efdae8` (59 files).
 - One primary writer. Two existing read-only discovery agents; neither has performed the required complete-candidate independent review.
-- No merge, production repair deployment, new assessment, operator approval, specialist disposition, or delivery authorization has occurred.
+- No merge, production repair deployment, operator approval, specialist disposition, or delivery authorization has occurred. The owner-requested supplemental assessment below is separate from the historical run and undeployed repair acceptance.
 
 ## Production anchor (reconfirmed through platform plugins on continuation)
 
@@ -96,7 +96,17 @@ Golden differential: isolated read-only baseline193b reproduces all three existi
 
 Fresh permitted browser inspection still shows NICO password and Open NICO; no signed-in signal. The prior manual handoff remains the pending owner action. No additional credential request or repeated manual handoff has been issued. D1 exact records remain unavailable; no historical mutation or production action occurred.
 
-## Current owner-requested supplemental Bitcoin intake
+## Current supplemental Bitcoin assessment — requester authorization clarified
+
+Owner explicitly requested a fresh Bitcoin assessment and then stated "I give you full permission." Source and fresh rendered intake both say permission from the client OR repository owner. The previous assistant requirement for separate maintainer permission overstated this contract. Bitcoin's public COPYING file was checked: MIT grants use/copying subject to preserving notices (https://raw.githubusercontent.com/bitcoin/bitcoin/master/COPYING). This is not a blanket legal conclusion or permission to probe live systems.
+
+The owner's explicit client instruction supplies requester authorization for this defensive public-source assessment. It does not establish ownership or independent third-party permission verification. The existing checkbox was selected on that basis and the ordinary create-engagement action submitted once. Optional fields remained blank; no authentication, authorization, approval or delivery code changed.
+
+Fresh rendered UI confirms new run `comprun_b9aaa5c6db3c5a9794f91472c7d00474`, immutable assessed revision `d48e76e689bb4d680d9d8a70b67f994be2f0cdd1` (full code-title DOM value). Repository evidence completed; dependency/security/static analysis was in progress. Persistence displayed verified. This is current-revision supplemental evidence on the serving pre-repair application, NOT the frozen commit and NOT validation of the undeployed repair. Historical run and artifact remain untouched.
+
+EXACT NEXT ACTION: monitor this same run through the existing UI to terminal/report state, retain its evidence and limitations without operator approval or delivery authorization. Do not start a duplicate run. The frozen D1 source-record requirement and all original release gates remain outstanding.
+
+## Prior owner-requested supplemental Bitcoin intake (superseded above)
 
 Owner explicitly requested a new Bitcoin run. This is supplemental current-revision evidence, not the frozen historical assessment and not evidence of the undeployed repair. Existing browser tab1 successfully opened the normal Comprehensive intake. The repository field is populated with bitcoin/bitcoin; optional fields remain blank. No engagement was submitted and no new run ID exists.
 
