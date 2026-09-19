@@ -1,3 +1,31 @@
+# NICO — Bitcoin truth-stress closeout
+
+## Mission baseline — 2026-09-19
+
+- Baseline main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a` (GitHub ref and clean clone agree).
+- Repair branch: `fix/bitcoin-truth-stress-closeout`; PR: not created; source baseline HEAD as above. Checkpoint-only commits do not change source evidence.
+- Existing mission branch/PR: no Bitcoin branch or PR found; only unrelated dependency PRs #1607/#1608 open.
+- Backend: Railway project `4b5ff41e-ec40-486c-8461-83475ffa90a9`, environment `760805be-2eb2-4ef4-a476-5e10def95786`, service `d9d51992-d34a-4348-a83d-1f760faaa6a8`, deployment `460dd7bd-170e-4f31-9889-bb10533cedd0`, SUCCESS; authoritative deployment metadata commit equals baseline.
+- Frontend: Vercel project `prj_aZHoWcMSXHMOTViSGuVjmP6CofZn`, production alias `app.nicoaudit.com`, deployment `dpl_AvuPrbfniXMje5HtiZg69EhdXhWZ`, READY; authoritative githubCommitSha equals baseline. Runtime/report identity proof still pending.
+- Frozen historical run: `comprun_7cc47a5a81695fa452354479ea23b422`, assessed `bitcoin/bitcoin` at `0e9018e8b65611b0769545e177110e4b7fc51244`.
+- Supplied historical PDF: 2,050,194 bytes, SHA-256 `28349b20ede259f2d4d2ce38dd24163b176422cb1a8f89e139114cec033b790e`. Read-only copy inspected; no historical production mutation.
+- Normal control: existing supported synthetic fixture to be selected after active-path tracing; live first-party control requires ordinary authorization gate.
+
+## Requirement/evidence matrix
+
+D0-D7: UNPROVEN — no repair or executable regression yet. Frozen PDF establishes historical symptoms; it does not establish their root causes or repaired behavior.
+R1-R20: UNPROVEN — baseline deployment mappings above are pre-repair evidence only.
+Completed: repository recovery, instructions, clean baseline, historical PDF digest/text extraction, authoritative pre-repair deployment mapping.
+Invalidated tests: none; no production-source change.
+Review findings accumulator: empty; independent candidate review pending.
+Human actions performed: none. No authentication, report approval, specialist disposition, delivery authorization, or assessment initiation by this mission.
+Latest completed action: baseline established.
+EXACT NEXT ACTION: inspect actual retained source-risk records and active canonical eligibility path; establish deterministic D1 reproduction before editing. Read-only workers trace D2-D5 and D6-D7; primary is sole writer.
+Blocker: none currently established.
+
+---
+## Prior mission checkpoint (historical; not current mission acceptance)
+
 # NICO — final three-defect closeout checkpoint
 
 ## Current continuation: INTEGRATE / DEPLOY / ACCEPT — not shipped
