@@ -61,7 +61,7 @@ def assurance_headline(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     labels = ({"limited": "limitada", "unverified": "no verificada", "supported_scope": "disponible para el alcance compatible"}
         if spanish else {"limited": "limited", "unverified": "unverified", "supported_scope": "available for the supported scope"})
     text = (f"Garantía de evidencia de código y seguridad: {labels.get(state, labels['unverified'])}. "
-        "La madurez técnica no es una calificación de seguridad de todo el repositorio. " if spanish else
+        "La madurez técnica no es una calificación de seguridad del repositorio en su conjunto. " if spanish else
         f"Source/security evidence assurance: {labels.get(state, labels['unverified'])}. "
         "Technical maturity is not a repository-wide security rating. ")
     metrics = assurance.get("coverage_metrics") or {}

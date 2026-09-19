@@ -411,3 +411,12 @@ def test_new_report_operator_approval_requires_verified_aligned_release(alignmen
         with pytest.raises(ValueError, match='report_release_provenance_unverified'):
             build_operator_edition(record, payload(record))
     assert record == before
+
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_assurance_headline_passes_unchanged_publication_placeholder_gate(spanish):
+    from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+    from nico.phase9_production_report_gate_v1 import validate_production_report
+    headline = assurance_headline({'source_security_assurance': {'status': 'limited'}}, spanish=spanish)
+    assert validate_production_report({'executive_summary': headline})['valid'] is True
+    assert validate_production_report({'executive_summary': headline + ' TODO'})['valid'] is False
