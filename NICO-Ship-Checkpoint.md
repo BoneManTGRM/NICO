@@ -4,10 +4,20 @@
 
 - Baseline and last authoritative main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
 - One repair branch: `fix/bitcoin-truth-stress-closeout`; one PR: **#1620**, OPEN/DRAFT, base equals baseline, no reviews. https://github.com/BoneManTGRM/NICO/pull/1620
-- Last published branch HEAD before this checkpoint-only transition: `d6295777c747a07285e33bb1e852930ba9f81c0f`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
+- Last published branch HEAD before this checkpoint-only transition: `6239957c1fca4e8ec4f3e9d8e1c00ab8e8b11bb1`. Resolve the exact containing commit from `git log -1 --format=%H -- NICO-Ship-Checkpoint.md`; authoritative PR head is the continuation authority. Production source/test candidate remains `3ca4dd95af6a43cc00fd808b7dccead56e4c8c04`.
 - Candidate source/test fingerprint (all changed files against baseline except this ledger, sorted path→SHA256 JSON): `646cf7cb710dcc5b20aef08ab065787f23842d5997633a0840df5cd514efdae8` (59 files).
 - One primary writer. Two existing read-only discovery agents; neither has performed the required complete-candidate independent review.
 - No merge, production repair deployment, operator approval, specialist disposition, or delivery authorization has occurred. The owner-requested supplemental assessment below is separate from the historical run and undeployed repair acceptance.
+
+## Current continuation — retained-record transfer boundary
+
+Source trace reconfirmed: `source_signal_analysis_v2.analyze_source_signals` emits individual `risk_records`; `snapshot_repository_evidence` retains them under `code_signal_evidence` (bounded at50); the active native scoring provider labels the raw hit count as findings. This establishes the labeling divergence, but does not establish the eligibility of the actual two historical records. No D1 classification or production edit was made without those records.
+
+The documented file-link `downloadMedia` operation was attempted on the independently requested supplemental run's existing retained ZIP link. Its event-capture attempt registered the download waiter before triggering transfer and timed out after30000ms; no download object/path or artifact bytes were returned. Browser troubleshooting and shared-file documentation provided no further supported recovery that preserves the prior historical-export policy boundary. No raw network/session access, historical navigation retry, credential extraction, infrastructure mutation or approval occurred.
+
+Accepted source/test evidence remains tied to3ca4dd95af6a43cc00fd808b7dccead56e4c8c04 and fingerprint646cf7cb710dcc5b20aef08ab065787f23842d5997633a0840df5cd514efdae8; no deterministic checks are invalidated by this checkpoint-only update. D1 remains FAIL; review, merge, repaired deployment and acceptance remain incomplete.
+
+EXACT NEXT ACTION: obtain the already-retained historical evidence-package ZIP or canonical JSON for comprun_7cc47a5a81695fa452354479ea23b422 through an owner-supplied attachment or restored supported read-only export. Hash and inspect the actual two source records before the D1 repair. This requests evidence transfer only, not another password, new assessment, specialist disposition, operator approval or delivery authorization.
 
 ## Production anchor (reconfirmed through platform plugins on continuation)
 
