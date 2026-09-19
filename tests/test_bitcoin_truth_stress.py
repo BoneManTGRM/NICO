@@ -341,6 +341,8 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     from nico.comprehensive_canonical_report_source_v1 import build_canonical_report_source
     from nico.comprehensive_production_capabilities import _authorization_provider
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    from nico.source_signal_analysis_v2 import analyze_source_signals
+    from nico.comprehensive_decision_grade_csv_v6 import _evidence_csv
     # Platform and scanner-store observations are outside this synthetic report case.
     monkeypatch.setattr(provenance, "capture_frontend_release", lambda *args: {"status": "unavailable",
         "frontend_observation_schema": "nico.frontend-runtime-observation.v2"})
@@ -357,7 +359,9 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
         "authorization_and_scope": _authorization_provider(context),
         "immutable_repository_snapshot": {"status": "complete", "snapshot": {"status": "attached", "commit_sha": SHA,
             "provider_access_observed": True, "access_mode": "anonymous_public", "credential_used": False}},
-        "repository_and_delivery_evidence": {"status": "complete", "evidence": {"profile_coverage": coverage}},
+        "repository_and_delivery_evidence": {"status": "complete", "evidence": {"profile_coverage": coverage},
+            "repository_evidence": {"code_signal_evidence": {"snapshot_commit_sha": SHA,
+                "risk_pattern_hits": 1, "risk_records": analyze_source_signals({"src/runner.py": "exec(command)\n"})["risk_records"]}}},
         "dependency_security_static_analysis": {"status": "complete", "evidence": {"execution_limit": _limited_scan()["execution_limit"]},
             "scanner_execution_records": _limited_scan()["scanner_results"]},
         "evidence_reconciliation_and_scoring": {"status": "complete", "assessment": {"technical_score": 74,
@@ -368,11 +372,18 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     canonical = source["report_package"]["json"]
     assert canonical["source_security_assurance"]["status"] == "limited"
     assert canonical["authorization_evidence"]["independent_authorization_verification"] == "not_established"
+    assert canonical["source_risk_observation_summary"]["reported_count"] == 1
+    assert canonical["canonical_findings"] == []
+    evidence_csv = _evidence_csv(canonical["stage_summaries"])
+    assert "source_risk_observation" in evidence_csv
+    assert "src/runner.py" in evidence_csv
     package = rebuild_client_artifacts(source["report_package"])
     pdf = PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"])))
     for rendered in (package["markdown"], package["html"], "\n".join(p.extract_text() for p in pdf.pages)):
         assert "5 / 137" in rendered and "5 / 484" in rendered
         assert "132" in rendered
+        assert ("Observaciones de riesgo del código fuente" if language == "es-MX" else "Source-risk observations") in rendered
+        assert "src/runner.py" in rendered
     assert package["json"]["source_security_assurance"]["status"] == "limited"
 
 

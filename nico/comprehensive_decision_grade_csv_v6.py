@@ -80,10 +80,14 @@ def _evidence_csv(stages: list[dict[str, Any]]) -> str:
             for metric, values in source_coverage_metrics(stage["profile_coverage"]).items():
                 writer.writerow([stage.get("stage_id"), stage.get("title"), stage.get("status"),
                     "source_coverage_metric", json.dumps({"metric": metric, **values}, sort_keys=True, separators=(",", ":"))])
-        for field in ("authorization_evidence", "execution_limit"):
+        for field in ("authorization_evidence", "execution_limit", "source_risk_observation_summary"):
             if isinstance(stage.get(field), dict):
                 writer.writerow([stage.get("stage_id"), stage.get("title"), stage.get("status"),
                     field, json.dumps(stage[field], sort_keys=True, separators=(",", ":"))])
+        for record in stage.get("source_risk_observations") or []:
+            if isinstance(record, dict):
+                writer.writerow([stage.get("stage_id"), stage.get("title"), stage.get("status"),
+                    "source_risk_observation", json.dumps(record, sort_keys=True, separators=(",", ":"))])
         for record_type in ("evidence", "findings", "unavailable"):
             for item in stage.get(record_type) or []:
                 writer.writerow(

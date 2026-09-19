@@ -242,10 +242,10 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     code_hits = int(signals.get("risk_pattern_hits") or 0)
     code_score = _bounded(96 - min(48, code_hits * 8))
     code_findings = [
-        f"{code_hits} executable first-party code-risk finding(s) require exact-source disposition."
+        f"{code_hits} executable first-party source-risk observation(s) require review; canonical finding eligibility is not established by the detector count."
     ] if code_hits else []
     code_evidence = [
-        f"Executable code-risk findings: {code_hits}.",
+        f"Executable source-risk observations: {code_hits}.",
         f"Excluded non-production observations: {int(signals.get('excluded_non_production_risk_count') or 0)}.",
         f"Example placeholder secrets retained separately: {int(signals.get('verified_example_placeholder_secret_count') or 0)}.",
         f"Source analysis: {signals.get('analysis_version') or 'legacy'}; comments/strings excluded={signals.get('comments_and_strings_excluded') is True}.",
@@ -298,14 +298,18 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     velocity_score, velocity_evidence, velocity_findings = _velocity_score(activity, workflow)
 
     sections = [
-        legacy._section(
-            "code_audit",
-            "Code Audit",
-            code_score,
-            "Exact-commit executable source signals were analyzed without promoting comments, strings, detector definitions, examples, or tests.",
-            code_evidence,
-            code_findings,
-        ),
+        {
+            **legacy._section(
+                "code_audit",
+                "Code Audit",
+                code_score,
+                "Exact-commit executable source signals were analyzed without promoting comments, strings, detector definitions, examples, or tests.",
+                code_evidence,
+                code_findings,
+            ),
+            "source_risk_observation_count": code_hits,
+            "source_risk_population": "source_observations",
+        },
         dependency_section,
         secret_section,
         static_section,

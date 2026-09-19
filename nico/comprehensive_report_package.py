@@ -342,6 +342,18 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
 
 
 _SOURCE_COPY_ES = {
+    "Source-risk observations": "Observaciones de riesgo del código fuente",
+    "Retained source-risk observations": "Observaciones de riesgo del código fuente conservadas",
+    "Reported source-risk observations": "Observaciones de riesgo del código fuente reportadas",
+    "Retained observation records": "Registros de observaciones conservados",
+    "Excluded non-production observations": "Observaciones excluidas por no ser de producción",
+    "Observation record retention complete": "Conservación completa de registros de observaciones",
+    "Repository revision": "Revisión del repositorio",
+    "Observation revision matches assessment": "La revisión de las observaciones coincide con la evaluación",
+    "Rule": "Regla", "Classification": "Clasificación", "Disposition": "Disposición",
+    "source_observation": "Observación del código fuente",
+    "excluded_non_production_observation": "Observación excluida por no ser de producción",
+    "not_dispositioned": "Sin disposición",
     "Authorization and repository access evidence": "Evidencia de autorización y acceso al repositorio",
     "Requester authorization attestation": "Declaración de autorización del solicitante",
     "Repository access mode": "Modalidad de acceso al repositorio",
@@ -384,6 +396,9 @@ _SOURCE_COPY_ES = {
 
 
 _SOURCE_COPY_EN = {
+    "source_observation": "Source observation",
+    "excluded_non_production_observation": "Excluded non-production observation",
+    "not_dispositioned": "Not dispositioned",
     "source_module": "Source module",
     "import": "Import",
     "http_call": "HTTP call",
@@ -415,6 +430,24 @@ def _source_cell(value: Any, *, spanish: bool) -> str:
 
 def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
     tables = deepcopy(stage.get("structured_tables") or [])
+    observations = stage.get("source_risk_observation_summary")
+    if isinstance(observations, dict) and observations:
+        tables.append({"title": "Source-risk observations", "columns": ["Measure", "Value"],
+            "rows": [[label, observations.get(key)] for label, key in (
+                ("Reported source-risk observations", "reported_count"),
+                ("Retained observation records", "retained_record_count"),
+                ("Excluded non-production observations", "excluded_non_production_count"),
+                ("Observation record retention complete", "record_retention_complete"),
+                ("Repository revision", "repository_revision"),
+                ("Observation revision matches assessment", "revision_match"),
+            )]})
+        records = [record for record in stage.get("source_risk_observations") or [] if isinstance(record, dict)]
+        if records:
+            tables.append({"title": "Retained source-risk observations",
+                "columns": ["Source", "Line", "Rule", "Classification", "Disposition"],
+                "rows": [[record.get(field) for field in (
+                    "path", "line", "rule_id", "semantic_class", "disposition_state")]
+                    for record in records]})
     coverage = stage.get("profile_coverage")
     if isinstance(coverage, dict) and coverage:
         fields = [

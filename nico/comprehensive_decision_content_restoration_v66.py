@@ -167,6 +167,42 @@ def _structured_findings(
     return _canonicalize(records)
 
 
+def _source_risk_observations(raw_stages: Mapping[str, Any], commit_sha: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Preserve the repository detector population independently of finding registers."""
+    from nico.source_signal_analysis_v2 import source_observation_record
+
+    stage = raw_stages.get("repository_and_delivery_evidence")
+    repository = stage.get("repository_evidence") if isinstance(stage, Mapping) else None
+    signals = repository.get("code_signal_evidence") if isinstance(repository, Mapping) else None
+    if not isinstance(signals, Mapping):
+        return [], {}
+    revision = _text(signals.get("snapshot_commit_sha"))
+    records = [source_observation_record(raw) for raw in _mapping_items(signals.get("risk_records"))]
+    revision_matches: list[bool | None] = [revision == commit_sha if revision and commit_sha else None]
+    for record in records:
+        declared = [_text(record.get(key)) for key in ("repository_revision", "commit_sha", "snapshot_commit_sha") if _text(record.get(key))]
+        record_revision = declared[0] if declared else revision
+        record["repository_revision"] = record_revision
+        bindings = [value for value in [revision, *declared] if value]
+        match = all(value == commit_sha for value in bindings) if bindings and commit_sha else None
+        record["revision_match"] = match
+        revision_matches.append(match)
+    count = signals.get("risk_pattern_hits")
+    reported = count if type(count) is int and count >= 0 else None
+    excluded = signals.get("excluded_non_production_risk_count")
+    summary = {
+        "population": "source_observations",
+        "reported_count": reported,
+        "retained_record_count": len(records),
+        "excluded_non_production_count": excluded if type(excluded) is int and excluded >= 0 else None,
+        "record_retention_complete": len(records) == reported if reported is not None else None,
+        "repository_revision": revision,
+        "revision_match": False if False in revision_matches else None if None in revision_matches else True,
+        "canonical_eligibility_inferred": False,
+    }
+    return records, summary
+
+
 def _path_from_hotspot(item: Mapping[str, Any]) -> str:
     for key in ("path", "source_path", "file", "filename", "location"):
         value = _text(item.get(key))
@@ -558,6 +594,14 @@ def restore_decision_content(
     review_summary = _review_candidate_summary(raw_stages)
     review_register = _review_candidate_register(raw_stages)
     ci_context = _ci_operational_context(raw_stages, updated_assessment)
+    observations, observation_summary = _source_risk_observations(raw_stages, commit_sha)
+    if observation_summary:
+        output["source_risk_observations"] = deepcopy(observations)
+        output["source_risk_observation_summary"] = deepcopy(observation_summary)
+        for stage in output.get("stage_summaries") or []:
+            if isinstance(stage, dict) and stage.get("stage_id") == "repository_and_delivery_evidence":
+                stage["source_risk_observations"] = deepcopy(observations)
+                stage["source_risk_observation_summary"] = deepcopy(observation_summary)
 
     for surface in (
         "canonical_findings",

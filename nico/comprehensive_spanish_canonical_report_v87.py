@@ -1158,6 +1158,7 @@ _PRESENTATION_REPLACEMENTS += (
     ("Merged pull requests:", "Solicitudes de incorporación fusionadas:"),
     ("Observed job success rate:", "Tasa de éxito observada de trabajos:"),
     ("Executable code-risk findings:", "Hallazgos de riesgo en código ejecutable:"),
+    ("Executable source-risk observations:", "Observaciones de riesgo en código ejecutable:"),
     ("Excluded non-production observations:", "Observaciones excluidas por no ser de producción:"),
     ("Example placeholder secrets retained separately:", "Secretos de ejemplo conservados por separado:"),
     ("Source analysis:", "Análisis de código fuente:"),
@@ -3144,6 +3145,14 @@ def _translate_presentation(value: Any) -> str:
         lambda match: (
             f"{match.group(1)} "
             f"{'hallazgo de riesgo en código ejecutable propio requiere' if int(match.group(1)) == 1 else 'hallazgos de riesgo en código ejecutable propio requieren'} disposición con fuente exacta."
+        ),
+        text,
+    )
+    text = re.sub(
+        r"(\d+) executable first-party source-risk observation\(s\) require review; canonical finding eligibility is not established by the detector count\.",
+        lambda match: (
+            f"{match.group(1)} observaciones de riesgo en código ejecutable propio requieren revisión; "
+            "el conteo del detector no establece la elegibilidad como hallazgo canónico."
         ),
         text,
     )
