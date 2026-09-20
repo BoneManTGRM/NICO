@@ -1,5 +1,13 @@
 # NICO — Bitcoin truth-stress closeout
 
+## OWNER-AUTHORIZED CORRECTIVE PR1629 — 2026-09-20
+
+Owner explicitly authorized ONE additional corrective PR: “Authorize one additional corrective PR.” The pending Section19 owner boundary below is resolved for this prepared late-normalizer correction. PR https://github.com/BoneManTGRM/NICO/pull/1629 is OPEN on SAME branch fix/bitcoin-truth-stress-closeout against unchanged mainc5748f466f98caf4445eb03d77c2c9ab6a9220cc. Opening HEAD4c9c5e5ceca513797c94fc63c23c85bb2b9ac08a. This containing checkpoint-only commit becomes final PR HEAD; reviewed source3a1ccb4 and all three source/test blobs remain unchanged.
+
+Reuse accepted185affected tests,9fresh post-review tests, full sourceCI35512720647/all14jobs and independent review. Required final-PR-HEAD checks still must pass. Currentproduction D2 remains FAIL until this exact correction is merged/deployed and direct new canonical/EN/es-MX artifacts prove the nonempty-register overwrite gone. The original historical D1/R1/R13 evidence-access exception persists.
+
+EXACT NEXT ACTION: verify PR1629 required checks and supported preview; merge the exact eligible HEAD without another permission request; follow established automatic deployment chain; verify native Vercel/Railway terminal successful identities and source mappings; synchronize only existing nonsecret release pins if required by authoritative evidence; inspect new scoped production source artifacts and source-bound consumers. Do not create duplicate source deployments or fabricate assessment approval/third-party authorization. No password or new Bitcoin run requested.
+
 ## PREPARED LATE-NORMALIZER CORRECTION — OWNER PR EXCEPTION PENDING — 2026-09-20
 
 This entry supersedes older current-status/next-action statements below. Production D2 is FAIL. The concrete correction is implemented, independently reviewed, locally verified and full-CI green on the SAME branch. It is not merged or deployed. Do not declare SHIPPED.
