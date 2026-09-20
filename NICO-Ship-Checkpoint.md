@@ -2,6 +2,9 @@
 
 ## Secure preview authentication boundary — 2026-09-20 01:07 UTC
 
+Final pre-handoff CI observation: PR NICO CI35479868456 subsequently completed SUCCESS. All19 observed workflows for exact1d57eb61 now pass, including both push and PR complete suites, Node build and security. Source unchanged; no rerun. The authentication boundary below remains the earliest unmet gate. Main d904794 Spanish production35479789272 is still active; observe its existing terminal result after recovery, never dispatch a duplicate.
+
+
 PR1607 remains candidate1d57eb61f1ce435afb0d6b87341eb3c1d9c8f192/base current maind904794abc7e7f088b0810d894c2c81293962e00. Existing previewdpl_2hrHKyts7WpboVHcJD1Qy53nRQKW/tab8 reached the NICO password form. The supported browserAuth request used only the visible operator-password field, actual type=password/autocomplete=current-password, with Enter submission. It returned submission_failed. No credential value was returned/read/logged and no human approval or delivery decision occurred. Authentication is UNKNOWN, not proven failed or successful.
 
 The required post-transition visible-DOM inspection was then rejected by automatic approval review: re-access to this preview after submission_failed was classified as an unnecessary retry conflicting with the authentication recovery boundary without a new user choice. This was an automatic rejection, NOT manual user rejection. No website error could be inspected. No alternate browser surface, origin, cookie, endpoint, raw protocol, credential extraction, or repeated request was used afterward. Do not infer a product bug. A fresh user choice authorizing secure sign-in recovery is required before any further access to this blocked preview. Then use the supported browserAuth/manual handoff only as permitted; never request the password in chat.
