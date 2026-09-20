@@ -111,8 +111,15 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
     if isinstance(observation, dict):
         lines.extend([
             ("Retained frontend endpoint claim", str(observation.get("release_sha") or "unavailable")),
-            ("Frontend observation status", str(observation.get("status") or "unavailable")),
+            ("Frontend configured-identity match" if observation.get("frontend_observation_schema") else "Frontend observation status", str(observation.get("status") or "unavailable")),
             ("Frontend observed at", str(observation.get("observed_at") or "unavailable")),
+        ])
+    if "frontend_backend_source_alignment" in provenance:
+        lines.extend([
+            ("Frontend/backend observed source alignment", str(provenance["frontend_backend_source_alignment"])),
+            ("Observed frontend source identity", str(provenance.get("frontend_observed_source_revision") or "unavailable")),
+            ("Observed frontend deployment identity", str((observation or {}).get("deployment_id") or "unavailable")),
+            ("Exact release readiness", str(provenance.get("exact_release_readiness") or "unverified")),
         ])
     execution = provenance.get("scanner_execution_evidence")
     if not isinstance(execution, dict):
@@ -132,16 +139,24 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
         config = row.get("configuration") or {}
         lines.extend([
             ("Actual scanner version", f"{name}: {row.get('scanner_version') or 'unavailable'}"),
-            ("Scanner execution status", f"{name}: {row.get('execution_status') or 'unknown'}; execution_evidence_verified={row.get('execution_evidence_verified') is True}; inapplicability_evidence_verified={row.get('inapplicability_evidence_verified') is True}"),
+            ("Scanner execution status", f"{name}: {row.get('execution_status') or 'unknown'}; execution evidence verified={row.get('execution_evidence_verified') is True}; inapplicability evidence verified={row.get('inapplicability_evidence_verified') is True}"),
             ("Raw artifact SHA-256", f"{name}: {raw.get('sha256') or 'unavailable'}; availability={raw.get('availability') or 'unavailable'}"),
-            ("Execution receipt SHA-256", f"{name}: {receipt.get('receipt_sha256') or 'unavailable'}; status={receipt.get('status') or 'not_recorded'}"),
-            ("Configuration SHA-256", f"{name}: {config.get('generated_config_sha256') or 'unavailable'}; full_configuration_verified=False"),
+            ("Execution receipt SHA-256", f"{name}: {receipt.get('receipt_sha256') or 'unavailable'}; status={str(receipt.get('status') or 'not_recorded').replace('_', ' ')}"),
+            ("Configuration SHA-256", f"{name}: {config.get('generated_config_sha256') or 'unavailable'}; full configuration verified=False"),
             ("Command identity SHA-256", f"{name}: {config.get('retained_command_intent_sha256') or 'unavailable'}"),
         ])
     return lines
 
 
 _ES_LABELS = {
+    "Frontend configured-identity match": "Coincidencia con la identidad configurada del frontend",
+    "Frontend/backend observed source alignment": "Coincidencia del código observado del frontend y backend",
+    "Observed frontend source identity": "Identidad del código observado del frontend",
+    "Observed frontend deployment identity": "Identidad del despliegue observado del frontend",
+    "Exact release readiness": "Preparación de la versión exacta",
+    "aligned": "coincidente",
+    "mismatch": "discrepancia",
+    "blocked": "bloqueada",
     "Configured frontend source commit": "Commit configurado del código del frontend",
     "Retained frontend endpoint claim": "Declaración conservada del endpoint del frontend",
     "Frontend observation status": "Estado de la observación del frontend",
@@ -176,7 +191,22 @@ def _presentation_localizer(localize: Callable[[str], str] | None) -> Callable[[
     if localize is None:
         return lambda value: value
     spanish = localize("NICO Release Provenance") != "NICO Release Provenance"
-    return lambda value: _ES_LABELS[value] if spanish and value in _ES_LABELS else localize(value)
+    def presentation(value: str) -> str:
+        if not spanish:
+            return localize(value)
+        if value in _ES_LABELS:
+            return _ES_LABELS[value]
+        # Only constructed provenance values pass this formatter; retained records stay literal.
+        for original, translated in (
+            ("inapplicability evidence verified", "evidencia de no aplicabilidad verificada"),
+            ("execution evidence verified", "evidencia de ejecución verificada"),
+            ("full configuration verified", "configuración completa verificada"),
+            ("retained receipt integrity verified", "integridad del comprobante conservado verificada"),
+            ("not recorded", "no registrado"),
+        ):
+            value = value.replace(original, translated)
+        return localize(value)
+    return presentation
 
 
 def _append_provenance_pdf(
@@ -208,8 +238,7 @@ def _append_provenance_pdf(
         return 710
 
     for label, value in _provenance_lines(provenance):
-        if value in {"verified", "unverified", "unavailable"}:
-            value = localize(value)
+        value = localize(value)
         if y < 96:
             y = continuation()
         page.setFont("Helvetica-Bold", 8.5)
@@ -275,7 +304,7 @@ def _bind_release_provenance(package: Any) -> None:
             provenance = comprehensive_release_provenance()
         localize = _presentation_localizer(localize_presentation)
         lines = ["", f"## {localize('NICO Release Provenance')}", ""]
-        lines.extend(f"- **{localize(label)}:** `{localize(value) if value in {'verified', 'unverified', 'unavailable'} else value}`" for label, value in _provenance_lines(provenance))
+        lines.extend(f"- **{localize(label)}:** `{localize(value)}`" for label, value in _provenance_lines(provenance))
         lines.extend(["", localize(_SCANNER_VERSION_BOUNDARY), "", localize(str(provenance.get("truth_boundary") or "")), ""])
         return markdown.rstrip() + "\n" + "\n".join(lines)
 

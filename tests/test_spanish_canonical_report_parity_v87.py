@@ -352,11 +352,11 @@ def test_spanish_scanner_limitations_localize_the_production_truth_contract() ->
 
     assert localized["summary"] == (
         "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-        "La preparación ajustada por evidencia es 93/100 frente a una madurez técnica "
+        "La puntuación técnica ajustada por evidencia es 93/100 frente a una madurez técnica "
         "de 93/100. NICO conserva 639 candidatos que requieren revisión y 0 hallazgos "
         "materiales confirmados como contexto explícito de revisión. El volumen de "
         "candidatos, la agrupación y la carga de trabajo de revisión no modifican las "
-        "puntuaciones numéricas de seguridad ni de preparación."
+        "puntuaciones numéricas de los controles técnicos."
     )
     assert localized["evidence"] == [
         (
@@ -1105,9 +1105,18 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # and HTML fingerprints are unchanged; PDF totals and matching bilingual bookmarks
 # now include those retained pages. Exact English before/after equality, bilingual semantic
 # parity, finding references, and all page-count gates remain active.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('6f8effd493f2f40512ba1ee102db0da14219f51fe3f2c8da6e8e428c5a0ddaf1', 18906), 'html': ('3209be741baa28495984937ee0d9df04ee3055f035e9e4115a7f3aa744081175', 23235), 'pdf_base64': ('c1cded4e9e980ebca3a2c21e83512c5e88e56f04c602b1cbc847614d79e16033', 185164), 'pdf_sha256': 'd26dc785dd302250f827349fdf03a7a73216c6a353d079f526decc0aba22d9d9', 'page_count': 23}
-RICH_ENGLISH_GOLDEN = {'markdown': ('97efa6a78e16bcf80eafac93067409b238f0889997c24e1093a44bcc570b3b3a', 20652), 'html': ('f88110639bfbc28bee30db19160bfed7c26ec373510aa35e4c7efbc2496fde5b', 25287), 'pdf_base64': ('9e30e9c74b7f53edae621b9393f9c2e0700a8fcb67c8b4f84f7a38ecef1d02f6', 287884), 'pdf_sha256': '8ea2db54b307a87eb1e2f5f9967d48d4db62557122e55ac11b64a44a66e99f61', 'page_count': 48}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('2f15d21494ae4b23d1315fd0d57e69c9544a426a8b6ee4fef8a722847ca0abc2', 18995), 'html': ('c6f9dc4e88dfd6c06e0c675fc3c54d4cadaf339174ac79c38271a147acca5c45', 23303), 'pdf_base64': ('17565b3910e3957988050c5ca2fc33b79e70630cf836e31cf59d758c1abfe5a7', 181132), 'pdf_sha256': 'f4dfc26d0b674593df28dfe5d00030150ccbd3281cc59fbc7757852f42404c4f', 'page_count': 22}
+# Reader-label repair: fixed-condition outputs differ only in the owned timeout
+# label and exact companion digests. All semantic and pagination assertions remain.
+# Bitcoin truth-stress differential: baseline193b reproduces the prior goldens.
+# Candidate changes are the required/applicability-unproven scanner summaries,
+# empty-population review status, adjacent source/security assurance and dependent
+# artifact hashes. Finding content and page counts remain unchanged.
+# Terminal CSV truth retention: isolated base554c11b reproduces the prior goldens.
+# Only the printed evidence_csv digest changes in small/phase9 PDF manifests;
+# Markdown, HTML, every other PDF text byte and all page counts remain unchanged.
+SMALL_ENGLISH_GOLDEN = {'markdown': ('7572b31bfc8b3332e258668d2bd80c53a662ca96c8e4e6e7b6721b2115b779cb', 19204), 'html': ('3e895e660a11f4043bba91361f70f29f5762e23991170a01b29777e6259a0a2d', 23562), 'pdf_base64': ('b05d38e352d33978efb96cf6b958d070498bd0ed6b7543d4e620921f586bd591', 186280), 'pdf_sha256': 'e4ede6269e92a6a1ae7a244202a1ca8e442dd40dc41ef6e49d67c58985c5a77a', 'page_count': 23}
+RICH_ENGLISH_GOLDEN = {'markdown': ('03e82bb47770c0d1c9c08885a8cf57fc7f87d60b76fe6718cd72497710030488', 20908), 'html': ('523fb63fbb9f9cbe01ccec08ec2e2cd8131a5d51d7f6f3d3243c45a9bace0f2e', 25572), 'pdf_base64': ('6b9b2bf8add635b05f540b1ddd091daa15d1f870f40eafc0247c113c3fcda8a3', 288904), 'pdf_sha256': '855634fa3d6a4e906873bb763ca648fcc6f15b34e6d61b327194127eb42eadb4', 'page_count': 48}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('2819f01ec21903c9e96d0f2a2626d00d3cda7336a3cc0dbee36a0b04c58100aa', 19247), 'html': ('a8324013613832410bf5261e97e58a2df20fc1db7c8ad38ff1a7eb40bd12796c', 23584), 'pdf_base64': ('12d8dd2d94b67b14137e74636cd704278b8b541e95b2f93837f2fa9cdbdacfc9', 181084), 'pdf_sha256': '109a95a4012eab11963b5455472cc92034a5a653b34d0d7e8bc2a9b3f272d7e7', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",

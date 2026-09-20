@@ -232,10 +232,19 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
         "retained_scanner_artifact_availability": ("Retained scanner artifact availability", "Disponibilidad del artefacto conservado del analizador"),
         "qualified_specialist_review": ("Qualified specialist review", "Revisión de un especialista cualificado"),
     }
+    gap_labels = {
+        "review_candidate_summary": ("Candidate review summary", "Resumen de revisión de candidatos"),
+        "runtime_functional_qa": ("Runtime functional QA", "QA funcional en ejecución"),
+        "authoritative_requirements": ("Authoritative requirements", "Requisitos autorizados"),
+        "device_runtime_parity": ("Device runtime parity", "Paridad de dispositivos en ejecución"),
+        "stakeholder_business_authority": ("Stakeholder and business authority", "Autoridad de partes interesadas y negocio"),
+        "incident_and_recovery_history": ("Incident and recovery history", "Historial de incidentes y recuperación"),
+    }
     details: list[str] = []
     for item in packages:
         label = item.get("finding_id") or item.get("evidence_type") or "review_candidate_summary"
-        prefix = item["package_id"] + " | " + str(label)
+        display_label = _copy(*gap_labels[label], spanish) if label in gap_labels else str(label)
+        prefix = item["package_id"] + " | " + display_label
         details.append(prefix + " | " + item["action"])
         correction = item.get("retained_correction") or item.get("retained_required_input")
         if correction:

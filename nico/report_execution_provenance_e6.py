@@ -17,10 +17,57 @@ from typing import Any, Mapping
 VERSION = "nico.report-execution-provenance.v1"
 FRONTEND_URL = "https://app.nicoaudit.com/api/release"
 _MAX_FRONTEND_BYTES = 16_384
+_VERCEL_DEPLOYMENTS_URL = "https://api.vercel.com/v13/deployments/"
+_MAX_DEPLOYMENT_BYTES = 262_144
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _capture_deployment_source(deployment_id: str) -> dict[str, Any]:
+    """Read public platform metadata; denied/private source data stays unavailable.
+
+    Acquisition is confined to this adapter. No credentials, configured source
+    labels, arbitrary URLs, redirects, or provider-specific repository objects
+    enter the domain mapping. The receipt retains only selected nonsecret fields.
+    """
+    import requests
+
+    if not re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", deployment_id):
+        return {"status": "unavailable"}
+    url = _VERCEL_DEPLOYMENTS_URL + deployment_id + "?withGitRepoInfo=true"
+    unavailable = {"status": "unavailable", "source_url": url}
+    try:
+        with requests.Session() as session:
+            session.trust_env = False
+            with session.get(url, timeout=(3, 5), allow_redirects=False, stream=True,
+                    headers={"Accept": "application/json"}) as response:
+                if response.status_code != 200:
+                    return unavailable
+                raw = bytearray()
+                deadline = time.monotonic() + 8
+                # Yield each received byte so a slow trickle cannot keep the
+                # iterator buffering past the overall deadline indefinitely.
+                for chunk in response.iter_content(chunk_size=1):
+                    raw.extend(chunk)
+                    if time.monotonic() > deadline or len(raw) > _MAX_DEPLOYMENT_BYTES:
+                        return unavailable
+        payload = _mapping(json.loads(raw))
+        source = _mapping(payload.get("gitSource")).get("sha")
+        if (payload.get("id") != deployment_id or payload.get("readyState") != "READY"
+                or not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source)):
+            return unavailable
+        record = {"deployment_id": deployment_id, "source_revision": source,
+            "deployment_state": "READY", "source_field": "gitSource.sha"}
+        selected = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+        return {"status": "verified", "source_url": url, "record": record,
+            "observed_at": datetime.now(UTC).isoformat(),
+            "response_sha256": hashlib.sha256(raw).hexdigest(),
+            "record_sha256": hashlib.sha256(selected).hexdigest(),
+            "record_scope": "selected_platform_response_fields"}
+    except (requests.RequestException, ValueError, TypeError):
+        return unavailable
 
 
 def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> dict[str, Any]:
@@ -33,6 +80,9 @@ def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> 
     import requests
 
     result: dict[str, Any] = {"status": "unavailable", "source_url": FRONTEND_URL,
+        "frontend_observation_schema": "nico.frontend-runtime-observation.v2",
+        "configured_source_revision": expected_sha, "configured_deployment_id": expected_deployment_id,
+        "observed_identity_type": "source_revision_and_deployment_id",
         "deployment_identity_verified": False, "native_provider_record_verified_by_this_code": False}
     if not re.fullmatch(r"[0-9a-f]{40}", expected_sha) or not re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", expected_deployment_id):
         return {**result, "reason": "expected_frontend_deployment_unavailable"}
@@ -56,22 +106,107 @@ def capture_frontend_release(expected_sha: str, expected_deployment_id: str) -> 
             raise ValueError("frontend_release_response_invalid")
         matched = (value.get("status") == "ok" and value.get("release_sha") == expected_sha
             and value.get("deployment_id") == expected_deployment_id
+            and value.get("release_sha_source") == "VERCEL_GIT_COMMIT_SHA"
             and value.get("deployment_id_source") == "VERCEL_DEPLOYMENT_ID")
         # The endpoint has a deliberately small, nonsecret contract. Retain exact
         # observation bytes only for that contract, not an unexpected HTML/error body.
         allowed = {"status", "release_sha", "deployment_id", "deployment_id_source",
-            "ui_contract", "git_ref", "deployment_environment"}
+            "ui_contract", "git_ref", "deployment_environment", "release_sha_source"}
         if set(value) - allowed:
             return {**result, "reason": "frontend_release_response_contract_invalid"}
-        return {**result, "status": "verified" if matched else "mismatch",
+        result = {**result, "status": "verified" if matched else "mismatch",
             "deployment_identity_verified": matched,
+            "configured_expectation_status": "matched" if matched else "mismatch",
             "observed_at": datetime.now(UTC).isoformat(),
             "release_sha": value.get("release_sha"), "deployment_id": value.get("deployment_id"),
+            "release_sha_source": value.get("release_sha_source"),
             "deployment_id_source": value.get("deployment_id_source"),
             "observation_bytes_base64": base64.b64encode(raw).decode("ascii"),
             "observation_sha256": hashlib.sha256(raw).hexdigest(), "observation_size_bytes": len(raw)}
+        if (observed_native_frontend_source(result) is None and value.get("status") == "ok"
+                and value.get("deployment_id_source") == "VERCEL_DEPLOYMENT_ID"
+                and isinstance(value.get("deployment_id"), str)
+                and re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", value["deployment_id"])):
+            result["observed_identity_type"] = "deployment_id"
+            result["deployment_source_mapping"] = _capture_deployment_source(value["deployment_id"])
+            source = observed_frontend_source(result)
+            matched = bool(source and source == expected_sha and value["deployment_id"] == expected_deployment_id)
+            result.update(status="verified" if matched else "mismatch" if source else "unavailable",
+                deployment_identity_verified=matched,
+                configured_expectation_status="matched" if matched else "mismatch" if source else "unverified",
+                native_provider_record_verified_by_this_code=bool(source))
+        return result
     except (requests.RequestException, ValueError, TypeError):
         return {**result, "reason": "frontend_release_observation_unavailable"}
+
+
+def observed_native_frontend_source(value: Any) -> str | None:
+    """Read a byte-bound native endpoint claim; this is not a platform API mapping."""
+    value = _mapping(value)
+    try:
+        raw = base64.b64decode(value.get("observation_bytes_base64", ""), validate=True)
+        if not 0 < len(raw) <= _MAX_FRONTEND_BYTES:
+            return None
+        observed = json.loads(raw)
+        if (value.get("source_url") == FRONTEND_URL
+            and value.get("observation_sha256") == hashlib.sha256(raw).hexdigest()
+            and value.get("observation_size_bytes") == len(raw)
+            and observed.get("status") == "ok"
+            and value.get("release_sha") == observed.get("release_sha")
+            and re.fullmatch(r"[0-9a-f]{40}", str(observed.get("release_sha") or ""))
+            and value.get("release_sha_source") == observed.get("release_sha_source") == "VERCEL_GIT_COMMIT_SHA"
+            and value.get("deployment_id") == observed.get("deployment_id")
+            and re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", str(observed.get("deployment_id") or ""))
+            and value.get("deployment_id_source") == observed.get("deployment_id_source") == "VERCEL_DEPLOYMENT_ID"):
+            return observed["release_sha"]
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def observed_frontend_source(value: Any) -> str | None:
+    """Resolve retained native source or a byte-bound deployment/platform chain.
+
+    Mapping receipts are produced only by the trusted capture above and retained
+    under the existing canonical report integrity contract. A digest checks
+    integrity, not platform authority by itself; configured mapping inputs are
+    never accepted by the capture path.
+    """
+    native = observed_native_frontend_source(value)
+    if native:
+        return native
+    value = _mapping(value)
+    mapping = _mapping(value.get("deployment_source_mapping"))
+    record = _mapping(mapping.get("record"))
+    try:
+        raw = base64.b64decode(value.get("observation_bytes_base64", ""), validate=True)
+        if not 0 < len(raw) <= _MAX_FRONTEND_BYTES:
+            return None
+        endpoint = _mapping(json.loads(raw))
+        deployment_id = endpoint.get("deployment_id")
+        source = record.get("source_revision")
+        selected = json.dumps(dict(record), sort_keys=True, separators=(",", ":")).encode()
+        if (value.get("frontend_observation_schema") == "nico.frontend-runtime-observation.v2"
+            and value.get("source_url") == FRONTEND_URL and endpoint.get("status") == "ok"
+            and value.get("observation_sha256") == hashlib.sha256(raw).hexdigest()
+            and value.get("observation_size_bytes") == len(raw)
+            and value.get("release_sha") == endpoint.get("release_sha")
+            and value.get("release_sha_source") == endpoint.get("release_sha_source")
+            and value.get("deployment_id") == deployment_id
+            and isinstance(deployment_id, str) and re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", deployment_id)
+            and value.get("deployment_id_source") == endpoint.get("deployment_id_source") == "VERCEL_DEPLOYMENT_ID"
+            and mapping.get("status") == "verified"
+            and mapping.get("source_url") == _VERCEL_DEPLOYMENTS_URL + deployment_id + "?withGitRepoInfo=true"
+            and mapping.get("record_scope") == "selected_platform_response_fields"
+            and mapping.get("record_sha256") == hashlib.sha256(selected).hexdigest()
+            and re.fullmatch(r"[0-9a-f]{64}", str(mapping.get("response_sha256") or ""))
+            and record.get("deployment_id") == deployment_id
+            and record.get("deployment_state") == "READY" and record.get("source_field") == "gitSource.sha"
+            and isinstance(source, str) and re.fullmatch(r"[0-9a-f]{40}", source)):
+            return source
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return None
 
 
 def verify_frontend_release(value: Any, expected_sha: str, expected_deployment_id: str) -> bool:
@@ -79,6 +214,10 @@ def verify_frontend_release(value: Any, expected_sha: str, expected_deployment_i
     value = _mapping(value)
     if not re.fullmatch(r"[0-9a-f]{40}", expected_sha) or not re.fullmatch(r"dpl_[A-Za-z0-9_-]{1,120}", expected_deployment_id):
         return False
+    if value.get("frontend_observation_schema") == "nico.frontend-runtime-observation.v2":
+        return (value.get("status") == "verified" and value.get("deployment_identity_verified") is True
+            and observed_frontend_source(value) == expected_sha
+            and value.get("deployment_id") == expected_deployment_id)
     try:
         raw = base64.b64decode(value.get("observation_bytes_base64", ""), validate=True)
         if not 0 < len(raw) <= _MAX_FRONTEND_BYTES:
@@ -174,6 +313,22 @@ def bind_report_execution_provenance(canonical: Mapping[str, Any], *, raw_stages
     provenance["frontend_deployment_identity_verified"] = verify_frontend_release(
         provenance["frontend_runtime_observation"], str(provenance.get("frontend_build_commit")),
         str(provenance.get("frontend_deployment_id")))
+    observed_source = observed_frontend_source(provenance["frontend_runtime_observation"])
+    backend_source = str(provenance.get("backend_build_commit") or "")
+    backend_known = (provenance.get("backend_identity_source") == "RAILWAY_GIT_COMMIT_SHA"
+        and provenance.get("deployment_identity_established") is True
+        and not provenance.get("deployment_identity_conflict")
+        and re.fullmatch(r"[0-9a-f]{40}", backend_source))
+    alignment = ("aligned" if observed_source == backend_source else "mismatch") if observed_source and backend_known else "unverified"
+    provenance["frontend_observed_source_revision"] = observed_source
+    provenance["frontend_backend_source_alignment"] = alignment
+    provenance["frontend_observation_authority"] = (
+        "retained_native_endpoint_claim; configured deployment pin verified separately"
+        if observed_native_frontend_source(provenance["frontend_runtime_observation"])
+        else "retained_native_deployment_id_and_platform_source_mapping; configured deployment pin verified separately"
+        if observed_source else "unverified")
+    provenance["exact_release_readiness"] = ("verified" if alignment == "aligned" and provenance["frontend_deployment_identity_verified"]
+        else "blocked" if alignment == "mismatch" else "unverified")
     assessment["nico_release_provenance"] = provenance
     result["assessment"] = assessment
     return result

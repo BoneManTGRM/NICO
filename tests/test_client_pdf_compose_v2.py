@@ -97,6 +97,37 @@ def test_compose_never_silently_drops_late_primary_semantic_sections() -> None:
     assert "Executive risk decision evidence retained." in extracted
 
 
+def test_footer_only_overflow_is_removed_before_page_budget():
+    base = _pdf(*[[f"Primary evidence {i}"] for i in range(58)],
+                ["NICO Comprehensive · synthetic · AUTOMATED DRAFT", "Page 59"])
+    result = compose_compact_client_pdf(base, _pdf(["Register"]), _pdf(["Gate"]))
+    pages = PdfReader(io.BytesIO(result)).pages
+    assert len(pages) == 60
+    text = "\n".join(page.extract_text() for page in pages)
+    assert all(f"Primary evidence {i}" in text for i in range(58))
+
+
+def test_existing_sparse_reflow_precedes_intermediate_page_budget():
+    sparse = [["NICO Comprehensive · synthetic · AUTOMATED DRAFT", f"Sparse section {i}",
+               "This retained synthetic evidence is a bounded observation; independent verification remains incomplete."]
+              for i in range(2)]
+    result = compose_compact_client_pdf(
+        _pdf(*[[f"Primary evidence {i}"] for i in range(57)], *sparse),
+        _pdf(["Register"]), _pdf(["Gate"]))
+    pages = PdfReader(io.BytesIO(result)).pages
+    assert len(pages) <= 60
+    text = "\n".join(page.extract_text() for page in pages)
+    assert all(f"Primary evidence {i}" in text for i in range(57))
+    assert all(f"Sparse section {i}" in text for i in range(2))
+    assert text.count("independent verification remains incomplete.") == 2
+
+
+def test_unreflowable_content_still_fails_the_page_budget():
+    with pytest.raises(ValueError, match="cannot preserve every"):
+        compose_compact_client_pdf(_pdf(*[[f"Primary evidence {i}"] for i in range(59)]),
+                                  _pdf(["Register"]), _pdf(["Gate"]))
+
+
 @pytest.mark.parametrize(
     "heading",
     (

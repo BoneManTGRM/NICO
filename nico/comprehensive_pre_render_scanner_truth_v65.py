@@ -242,7 +242,7 @@ def _live_manifest(stage_results: Mapping[str, Any]) -> Mapping[str, Any]:
 def _scanner_records(stage_results: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     candidates: list[list[Mapping[str, Any]]] = []
     for root in _relevant_roots(stage_results):
-        direct = root.get("scanner_execution_records")
+        direct = root.get("requested_scanner_records") or root.get("scanner_execution_records")
         if isinstance(direct, list):
             records = [item for item in direct if isinstance(item, Mapping)]
             if records:
@@ -278,6 +278,8 @@ def derive_authoritative_scanner_truth(
     hard_incomplete: set[str] = set()
     soft_incomplete: set[str] = set()
     sources: list[str] = []
+    applicable: set[str] = set()
+    not_applicable: set[str] = set()
 
     records = _scanner_records(stage_results)
     if records:
@@ -287,6 +289,11 @@ def derive_authoritative_scanner_truth(
         if state is None:
             continue
         name = str(state["scanner_name"])
+        if record.get("applicable") is False and record.get("applicability_state") == "not_applicable":
+            not_applicable.add(name)
+            continue
+        if record.get("applicable") is True:
+            applicable.add(name)
         requested.add(name)
         if state.get("completed") is True:
             completed.add(name)
@@ -317,7 +324,8 @@ def derive_authoritative_scanner_truth(
     completed |= contract_completed
     soft_incomplete |= contract_incomplete
 
-    completed -= hard_incomplete
+    requested -= not_applicable
+    completed -= hard_incomplete | not_applicable
     incomplete = hard_incomplete | (soft_incomplete - completed) | (requested - completed)
     if requested == _REQUIRED_TOOLS:
         requested = set(_REQUIRED_TOOLS)
@@ -328,6 +336,10 @@ def derive_authoritative_scanner_truth(
         "completed": sorted(completed & requested),
         "incomplete": sorted(incomplete & requested),
         "coverage": coverage,
+        "coverage_population": "applicable_or_applicability_unproven_scanner_executions",
+        "applicable": sorted(applicable & requested),
+        "not_applicable": sorted(not_applicable),
+        "applicability_unproven": sorted(requested - applicable),
         "authoritative_sources": sources,
         "truth_available": bool(requested),
         "human_review_required": True,
@@ -372,6 +384,7 @@ def _sanitize_node(
     *,
     requested: set[str],
     completed: set[str],
+    applicable: set[str],
     incomplete: set[str],
     coverage: int,
     removed: list[str],
@@ -403,6 +416,7 @@ def _sanitize_node(
                 item,
                 requested=requested,
                 completed=completed,
+                applicable=applicable,
                 incomplete=incomplete,
                 coverage=coverage,
                 removed=removed,
@@ -438,7 +452,7 @@ def _sanitize_node(
             retained: list[Any] = []
             for item_index, item in enumerate(raw_value):
                 name = _entry_tool(item, requested)
-                if name and name not in incomplete:
+                if name and name not in incomplete and "applicability_unproven" not in _text(item):
                     removed.append(f"{current_path}[{item_index}]")
                     changed = True
                     continue
@@ -448,17 +462,17 @@ def _sanitize_node(
             retained = []
             for item_index, item in enumerate(raw_value):
                 name = _entry_tool(item, requested)
-                if name and name not in incomplete:
+                if name and name not in incomplete and "applicability_unproven" not in _text(item):
                     removed.append(f"{current_path}[{item_index}]")
                     changed = True
                     continue
                 retained.append(item)
             replacement = retained if changed else raw_value
         elif normalized in _INCOMPLETE_COUNT_FIELDS and requested:
-            replacement = len(incomplete)
+            replacement = len(incomplete & applicable) if "applicable" in normalized else len(incomplete)
             changed = replacement != raw_value
         elif normalized in _COMPLETED_COUNT_FIELDS and requested:
-            replacement = len(completed)
+            replacement = len(completed & applicable) if "applicable" in normalized else len(completed)
             changed = replacement != raw_value
         elif (
             requested
@@ -473,6 +487,7 @@ def _sanitize_node(
                 raw_value,
                 requested=requested,
                 completed=completed,
+                applicable=applicable,
                 incomplete=incomplete,
                 coverage=coverage,
                 removed=removed,
@@ -543,6 +558,7 @@ def canonicalize_stage_results_before_render(
 
     requested = set(truth["requested"])
     completed = set(truth["completed"])
+    applicable = set(truth["applicable"])
     incomplete = set(truth["incomplete"])
     removed: list[str] = []
     visits = [0]
@@ -555,6 +571,7 @@ def canonicalize_stage_results_before_render(
             stage,
             requested=requested,
             completed=completed,
+                applicable=applicable,
             incomplete=incomplete,
             coverage=int(truth["coverage"]),
             removed=removed,

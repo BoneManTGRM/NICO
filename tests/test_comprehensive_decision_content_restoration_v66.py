@@ -8,6 +8,85 @@ from nico.comprehensive_decision_content_restoration_v66 import (
 COMMIT = "a" * 40
 
 
+def test_source_observations_are_retained_separately_from_decision_findings() -> None:
+    from nico.source_signal_analysis_v2 import analyze_source_signals
+    records = analyze_source_signals({"src/runner.py": "exec(command)\n"})["risk_records"]
+    raw_stages = {"repository_and_delivery_evidence": {"repository_evidence": {
+        "code_signal_evidence": {"snapshot_commit_sha": COMMIT,
+            "risk_pattern_hits": 2, "risk_records": records,
+            "excluded_non_production_risk_count": 3}}}}
+    canonical, _, _ = restore_decision_content(
+        {"stage_summaries": [{"stage_id": "repository_and_delivery_evidence"}]},
+        raw_stages=raw_stages, assessment={}, commit_sha=COMMIT,
+    )
+    assert canonical["canonical_findings"] == []
+    assert canonical["review_candidate_register"] == []
+    summary = canonical["source_risk_observation_summary"]
+    assert summary["reported_count"] == 2
+    assert summary["retained_record_count"] == 1
+    assert summary["excluded_non_production_count"] == 3
+    assert summary["record_retention_complete"] is False
+    retained = canonical["source_risk_observations"][0]
+    for field, value in records[0].items():
+        assert retained[field] == value
+    assert retained["repository_revision"] == COMMIT
+    assert retained["revision_match"] is True
+    assert canonical["stage_summaries"][0]["source_risk_observations"] == canonical["source_risk_observations"]
+
+
+def test_decision_eligible_source_record_is_not_downgraded_by_observation_population() -> None:
+    from copy import deepcopy
+    from nico.source_signal_analysis_v2 import analyze_source_signals
+    observation = analyze_source_signals({"src/runner.py": "exec(command)\n"})["risk_records"][0]
+    finding = {**observation, "finding_id": "synthetic_review_required_source_finding",
+        "semantic_class": "decision_finding", "disposition_state": "review_required",
+        "title": "Validate command input", "category": "static", "status": "review_required",
+        "location": "src/runner.py:1", "commit_sha": COMMIT,
+        "impact": "Untrusted input can execute code.",
+        "recommendation": "Constrain accepted input and verify the calling boundary."}
+    assessment = {"findings_register": [finding]}
+    before = deepcopy(assessment)
+    canonical, _, _ = restore_decision_content({}, raw_stages={
+        "evidence_reconciliation_and_scoring": {"assessment": assessment},
+        "repository_and_delivery_evidence": {"repository_evidence": {
+            "code_signal_evidence": {"snapshot_commit_sha": COMMIT,
+                "risk_pattern_hits": 1, "risk_records": [observation]}}}},
+        assessment=assessment, commit_sha=COMMIT)
+    assert assessment == before
+    assert len(canonical["canonical_findings"]) == 1
+    retained = canonical["canonical_findings"][0]
+    for key in ("observation_id", "rule_id", "path", "line", "source_excerpt", "commit_sha"):
+        assert retained[key] == finding[key]
+    assert canonical["source_risk_observation_summary"]["reported_count"] == 1
+
+
+def test_observation_missing_count_and_revision_remain_unknown() -> None:
+    canonical, _, _ = restore_decision_content({}, raw_stages={
+        "repository_and_delivery_evidence": {"repository_evidence": {
+            "code_signal_evidence": {"risk_records": [{"message": "Legacy observation"}]}}}},
+        assessment={}, commit_sha=COMMIT)
+    summary = canonical["source_risk_observation_summary"]
+    assert summary["reported_count"] is None
+    assert summary["record_retention_complete"] is None
+    assert summary["revision_match"] is None
+    assert canonical["source_risk_observations"][0].get("observation_id") is None
+
+
+def test_observation_conflicting_revision_is_retained_without_exact_source_credit() -> None:
+    canonical, _, _ = restore_decision_content({}, raw_stages={
+        "repository_and_delivery_evidence": {"repository_evidence": {
+            "code_signal_evidence": {"snapshot_commit_sha": COMMIT, "risk_pattern_hits": 1,
+                "risk_records": [{"path": "src/runner.py", "line": 1, "rule_id": "python_eval_exec",
+                    "commit_sha": "b" * 40, "disposition": "non_actionable"}]}}}},
+        assessment={}, commit_sha=COMMIT)
+    observation = canonical["source_risk_observations"][0]
+    assert observation["repository_revision"] == "b" * 40
+    assert observation["revision_match"] is False
+    assert observation["disposition_state"] == "non_actionable"
+    assert canonical["source_risk_observation_summary"]["revision_match"] is False
+    assert canonical["canonical_findings"] == []
+
+
 def _base_assessment() -> dict:
     return {
         "sections": [

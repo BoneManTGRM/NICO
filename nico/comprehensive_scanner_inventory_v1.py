@@ -303,11 +303,17 @@ def verify_status_scanner_evidence(response: Mapping[str, Any]) -> dict[str, Any
     completed = [name for name in summary.get("completed_tools", []) if name in valid and states.get(name) != 'not_applicable']
     not_applicable = [name for name in summary.get("not_applicable_tools", []) if name in valid and states.get(name) == 'not_applicable']
     incomplete = [name for name in REQUIRED_TOOLS if name not in completed and name not in not_applicable]
-    applicable_count = len(REQUIRED_TOOLS) - len(not_applicable)
+    execution_required_count = len(REQUIRED_TOOLS) - len(not_applicable)
+    # Execution retention cannot establish or erase positive source applicability.
+    applicable = [name for name in REQUIRED_TOOLS if name in summary.get('applicable_tools', [])
+        and name not in not_applicable]
+    unproven = [name for name in REQUIRED_TOOLS if name not in applicable and name not in not_applicable]
     summary.update(completed_count=len(completed), completed_tools=completed,
                    not_applicable_tools=not_applicable, incomplete_tools=incomplete,
-                   applicable_count=applicable_count,
-                   percent=round(100 * len(completed) / applicable_count) if applicable_count else None,
+                   execution_required_count=execution_required_count,
+                   applicable_count=len(applicable), applicable_tools=applicable,
+                   applicability_unproven_count=len(unproven), applicability_unproven_tools=unproven,
+                   percent=round(100 * len(completed) / execution_required_count) if execution_required_count else None,
                    status="partial" if incomplete or failures else "complete",
                    verification_scope="current_source_run_bound_retained_bytes")
     result["scanner_execution_summary"] = summary

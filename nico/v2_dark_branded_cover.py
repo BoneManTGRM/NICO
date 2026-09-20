@@ -54,13 +54,13 @@ def _executive_posture(canonical: Mapping[str, Any], technical: str, adjusted: s
     if spanish:
         return (
             f"NICO generó un borrador automatizado de Evaluación Técnica Integral para {repository}. "
-            f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
+            f"La madurez técnica ponderada es {technical} y la puntuación técnica ajustada por evidencia es {adjusted}. Esta señal ponderada de controles evaluados del repositorio no establece preparación operativa, cobertura exhaustiva, revisión profesional independiente ni seguridad de despliegue. "
             "El paquete basado en evidencia conserva la salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
             "un marco de hoja de ruta y exportaciones estructuradas para revisión humana; no constituye aprobación ni autorización de entrega."
         )
     return (
         f"NICO generated an automated Comprehensive Technical Assessment draft for {repository}. "
-        f"Weighted technical maturity is {technical}; independently evidence-adjusted readiness is {adjusted}. "
+        f"Weighted technical maturity is {technical}; the evidence-adjusted technical score is {adjusted}. This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety. "
         "The evidence-bound package retains repository health, exact-location findings, architecture evidence, "
         "a roadmap framework, and structured exports for human review; it is not approval or client-delivery authorization."
     )
@@ -162,23 +162,29 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
     pdf.setFont("Helvetica-Bold", 15)
     pdf.drawString(left, height - 285, "Postura ejecutiva" if spanish else "Executive posture")
     posture = _executive_posture(canonical, technical, adjusted, spanish=spanish)
-    pdf.setFillColor(muted)
-    pdf.setFont("Helvetica", 7.1)
+    if canonical.get("source_security_assurance"):
+        from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+        posture = assurance_headline(canonical, spanish=spanish)
+    has_assurance = bool(canonical.get("source_security_assurance"))
+    posture_size = 9.5 if has_assurance else 7.1
+    posture_leading = 13 if has_assurance else 10
+    pdf.setFillColor(white if has_assurance else muted)
+    pdf.setFont("Helvetica", posture_size)
     words = posture.split()
     lines: list[str] = []
     line = ""
     max_width = width - 84
     for word in words:
         candidate = f"{line} {word}".strip()
-        if stringWidth(candidate, "Helvetica", 7.1) <= max_width:
+        if stringWidth(candidate, "Helvetica", posture_size) <= max_width:
             line = candidate
         else:
             lines.append(line)
             line = word
     if line:
         lines.append(line)
-    for i, value in enumerate(lines[:5]):
-        pdf.drawString(left, height - 303 - i * 10, value)
+    for i, value in enumerate(lines[:8 if has_assurance else 5]):
+        pdf.drawString(left, height - 303 - i * posture_leading, value)
 
     box_y = 155
     pdf.setFillColor(panel)

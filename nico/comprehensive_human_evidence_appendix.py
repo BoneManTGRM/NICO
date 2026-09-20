@@ -4,7 +4,8 @@ from html import escape
 import io
 
 from nico.comprehensive_human_evidence_report_v1 import (
-    _FIELD_LABELS, _MODULE_LABEL_ES, _flatten_scalars, _field_path_label,
+    _FIELD_LABELS, _flatten_scalars, _field_path_label,
+    _human_module_label, _stakeholder_absence_notes, _STAKEHOLDER_METADATA_SUMMARY,
 )
 from nico.strategic_human_evidence_v1 import verify_strategic_human_evidence
 
@@ -30,11 +31,11 @@ def render_human_evidence_appendix(canonical: Mapping, *, spanish: bool) -> byte
     def paragraph(value, style=body):
         return Paragraph(escape(str(value)).replace('\n', '<br/>'), style)
     story = [paragraph('Evidencia humana aportada' if spanish else 'Supplied Human Evidence', styles['Title']),
-             paragraph('supplied_unverified — No establece pruebas de ejecución ni revisión especializada.' if spanish
-                       else 'supplied_unverified — Supplied statements do not establish runtime testing or specialist review.')]
+             paragraph('Aportado sin verificar — No establece pruebas de ejecución ni revisión especializada.' if spanish
+                       else 'Supplied, unverified — Supplied statements do not establish runtime testing or specialist review.')]
     for module_id in provided:
         module = package['modules'][module_id]
-        label = _MODULE_LABEL_ES.get(module_id, module['label']) if spanish else module['label']
+        label = _human_module_label(module_id, module['label'], spanish=spanish)
         story += [CondPageBreak(100), Spacer(1, 8), paragraph(label, styles['Heading2'])]
         story.append(paragraph(f"{'Módulo' if spanish else 'Module'}: {module_id} · SHA-256: {module['module_sha256']}"))
         story.append(paragraph(('Estado de recopilación: ' if spanish else 'Input collection status: ') + module['status']))
@@ -43,14 +44,18 @@ def render_human_evidence_appendix(canonical: Mapping, *, spanish: bool) -> byte
         for field in ('reviewer', 'observed_at', 'source_reference'):
             story.append(paragraph(_FIELD_LABELS[field][int(spanish)] + ': ' +
                                    (module.get(field) or ('No proporcionado' if spanish else 'Not supplied'))))
+        if module_id == 'stakeholder_context':
+            story.append(paragraph(_STAKEHOLDER_METADATA_SUMMARY[int(spanish)]))
+            for note in _stakeholder_absence_notes(module, spanish=spanish):
+                story.append(paragraph(note))
         for path, value in _flatten_scalars(module.get('evidence', {})):
-            story.append(paragraph(_field_path_label(path, spanish=spanish) + ': ' + value))
+            story.append(paragraph(_field_path_label(path, spanish=spanish, module_id=module_id) + ': ' + value))
     buffer = io.BytesIO()
     def page_header(canvas, document):
         canvas.saveState()
         canvas.setFont('Helvetica', 8)
         canvas.drawString(40, document.pagesize[1] - 26,
-                          ('Evidencia humana aportada' if spanish else 'Supplied Human Evidence') + ' | supplied_unverified')
+                          ('Evidencia humana aportada | Aportado sin verificar' if spanish else 'Supplied Human Evidence | Supplied, unverified'))
         canvas.restoreState()
     SimpleDocTemplate(buffer, leftMargin=40, rightMargin=40, topMargin=42,
                       bottomMargin=65, invariant=1).build(story, onFirstPage=page_header, onLaterPages=page_header)

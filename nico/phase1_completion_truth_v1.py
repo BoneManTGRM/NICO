@@ -151,7 +151,7 @@ def normalize_phase1_scoring_result(payload: Mapping[str, Any]) -> dict[str, Any
     if isinstance(sections, list):
         assessment["sections"] = _rewrite_client_truth(sections)
     assessment["executive_summary"] = (
-        f"Exact-SHA technical maturity is {technical}/100. Evidence-Adjusted readiness is "
+        f"Exact-SHA technical maturity is {technical}/100. Evidence-Adjusted technical score is "
         f"{evidence_adjusted}/100 after evidence-completeness deductions only. Candidate volume, "
         "technical-triage routing, clustering, and human-review workload are reported separately "
         "and have no numeric score effect."
@@ -173,7 +173,7 @@ def normalize_phase1_scoring_result(payload: Mapping[str, Any]) -> dict[str, Any
     output["summary"] = (
         "Canonical scoring completed from exact-SHA technical evidence. Reviewer workload and "
         "candidate volume remain operational assurance context and do not change numeric security "
-        "or readiness scores; only actual evidence-completeness failures may reduce Evidence-Adjusted readiness."
+        "scores; only actual evidence-completeness failures may reduce Evidence-Adjusted technical score."
     )
     output["phase1_scoring_truth"] = {
         "artifact_schema": VERSION,

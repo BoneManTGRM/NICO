@@ -458,14 +458,18 @@ export function scannerStatusFor(
 
 export function scannerExecutionSummaryFor(result: Result | null): {
   status: "complete" | "partial" | "unknown"; percent: number | null;
-  completed_count: number; applicable_count: number;
+  completed_count: number; execution_required_count: number;
+  applicable_count: number; applicability_unproven_count: number;
 } | null {
   const value = evidenceRecord(result?.scanner_execution_summary as Evidence | undefined);
   if (value.schema !== "nico.scanner-execution-ui-summary.v1"
     || value.run_id !== result?.run_id || value.commit_sha !== immutableCommitFor(result)
-    || !["complete", "partial", "unknown"].includes(String(value.status))) return null;
+    || !["complete", "partial", "unknown"].includes(String(value.status))
+    || ![value.execution_required_count, value.applicable_count, value.applicability_unproven_count]
+      .every((count) => typeof count === "number" && Number.isInteger(count) && count >= 0)) return null;
   return value as {
     status: "complete" | "partial" | "unknown"; percent: number | null;
-    completed_count: number; applicable_count: number;
+    completed_count: number; execution_required_count: number;
+    applicable_count: number; applicability_unproven_count: number;
   };
 }

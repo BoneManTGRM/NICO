@@ -28,7 +28,9 @@ def test_positive_target_evidence_corrects_a_stale_inapplicable_projection():
     before = deepcopy(value)
     result = normalize(value)
     npm = result['scanner_execution_records'][1]
-    assert npm['state'] == 'unavailable' and npm['applicable'] is True
+    # Native JavaScript targets do not establish a dependency manifest.
+    assert npm['state'] == 'unavailable' and npm['applicable'] is None
+    assert npm['applicability_state'] == 'applicability_unproven'
     assert npm['verified'] is False and npm['evidence_required'] is True
     assert npm['prior_applicability_reason']
     assert normalize(result)['scanner_execution_records'] == result['scanner_execution_records']

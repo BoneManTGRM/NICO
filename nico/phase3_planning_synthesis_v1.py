@@ -10,8 +10,15 @@ VERSION = "nico.phase3_planning_synthesis.v1.1"
 def historical_trends_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = _repo(context); activity = repo.get("activity_evidence") if isinstance(repo.get("activity_evidence"), Mapping) else {}; workflow = repo.get("workflow_evidence") if isinstance(repo.get("workflow_evidence"), Mapping) else {}; incidents = _field(context, "incident_history", "incidents")
     missing = [] if incidents else [_missing("incident_and_recovery_history", "Workflow counts cannot distinguish incidents from cancellation/supersession/infrastructure noise.", "Change-failure rate, severity, rollback effectiveness, or measured recovery time.", "Incident, deployment/rollback, and measured recovery records.")]
-    evidence = {"operational_history_state": "retained_verified", "captured_through": activity.get("captured_through"), "commits_returned": activity.get("commits_returned", 0), "pull_requests_returned": activity.get("pull_requests_returned", 0), "successful_runs": workflow.get("successful_runs", 0), "non_success_runs": workflow.get("non_success_runs", 0), "incident_evidence_state": _state(context, "incident_history") if incidents else "not_supplied", "supplied_incidents": incidents, "workflow_outcomes_technical_score_effect": "none", "change_failure_rate_established": False}
-    return _result(context, summary="Bounded operational history and supplied incident evidence were reconciled without turning activity volume into quality or workflow counts into incident truth.", historical_trends=evidence, missing_evidence=missing, evidence=evidence, unavailable_data_notes=[x["cannot_conclude"] for x in missing])
+    evidence = {"operational_history_state": "retained_context" if activity or workflow else "not_supplied", "captured_through": activity.get("captured_through"), "commits_returned": activity.get("commits_returned", 0), "pull_requests_returned": activity.get("pull_requests_returned", 0), "successful_runs": workflow.get("successful_runs", 0), "non_success_runs": workflow.get("non_success_runs", 0), "incident_evidence_state": _state(context, "incident_history") if incidents else "not_supplied", "supplied_incidents": incidents, "workflow_outcomes_technical_score_effect": "none", "change_failure_rate_established": False}
+    summary = (
+        "Retained repository activity and workflow context was summarized. "
+        if activity or workflow else "Repository activity and workflow records were not retained for this synthesis. "
+    ) + (
+        "Supplied incident statements were processed as unverified claims. "
+        if incidents else "Incident evidence was not supplied. "
+    ) + "Activity volume and workflow counts do not establish incident rates or measured recovery."
+    return _result(context, summary=summary, historical_trends=evidence, missing_evidence=missing, evidence=evidence, unavailable_data_notes=[x["cannot_conclude"] for x in missing])
 
 
 def roadmap_provider(context: dict[str, Any]) -> dict[str, Any]:
@@ -24,7 +31,7 @@ def roadmap_provider(context: dict[str, Any]) -> dict[str, Any]:
         {"window": "91-180 days", "objective": "Resolve remaining architectural debt, platform/runtime evidence gaps, and supplied stakeholder/requirements objectives.", "priority_controls": controls},
     ]
     for item in roadmap: item.update({"sequence_state": "nico_proposed", "date_state": "illustrative", "stakeholder_approved": False, "dependency_provenance": "evidence_inferred", "constraints": constraints[:8], "requirements": [r.get("requirement_id") for r in reqs[:8] if isinstance(r, Mapping)]})
-    return _result(context, summary="The existing 0-30/31-90/91-180 roadmap framework was drafted from technical priorities, evidence gaps, supplied requirements, and supplied constraints without creating commitments.", roadmap=roadmap, roadmap_truth={"framework_only": True, "nico_proposed_sequence": True, "stakeholder_approved_sequence": False, "illustrative_dates_only": True, "approved_dates_present": False}, evidence={"roadmap_window_count": 3, "priority_controls": controls}, unavailable_data_notes=["Roadmap dates, owners, commitments, and budget remain pending authorized stakeholder approval."])
+    return _result(context, summary=("The existing 0-30/31-90/91-180 roadmap framework was drafted from technical priorities and evidence gaps without creating commitments. " + ("Retained requirement mappings were included. " if reqs else "No requirement mappings were retained. ") + ("Retained stakeholder constraints were included." if constraints else "No stakeholder constraints were retained.")), roadmap=roadmap, roadmap_truth={"framework_only": True, "nico_proposed_sequence": True, "stakeholder_approved_sequence": False, "illustrative_dates_only": True, "approved_dates_present": False}, evidence={"roadmap_window_count": 3, "priority_controls": controls}, unavailable_data_notes=["Roadmap dates, owners, commitments, and budget remain pending authorized stakeholder approval."])
 
 
 def resourcing_provider(context: dict[str, Any]) -> dict[str, Any]:

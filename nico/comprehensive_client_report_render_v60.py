@@ -45,6 +45,7 @@ _BROKEN_IDENTIFIERS = (
     "install_comprehensive_on_production_ app",
 )
 _COVERAGE_PATTERNS = (
+    re.compile(r"Cobertura de ejecución de analizadores\s*:\s*(\d{1,3})\s*%?", re.I),
     re.compile(
         r"analy[sz]er execution coverage\s*(?:is|[:=])\s*(\d{1,3})\s*%?",
         re.I,

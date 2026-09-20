@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from nico.comprehensive_current_report_truth_parity_v1 import _ES_PHRASES
 from nico.comprehensive_spanish_current_copy_worker_v98 import (
     install_comprehensive_spanish_current_copy_worker_v98,
@@ -16,6 +18,51 @@ WORKER_BOOTSTRAP = Path("nico/api/final_report_worker_bootstrap.py").read_text(
 PARENT_BOOTSTRAP = Path("nico/api/spanish_final_report_bootstrap.py").read_text(
     encoding="utf-8"
 )
+
+
+@pytest.mark.parametrize("category,label", [
+    ("dependency", "Dependencias"), ("secret", "Secretos"),
+    ("static", "Análisis estático"),
+])
+@pytest.mark.parametrize("boundary", ["canonical", "worker"])
+def test_current_renderer_candidate_count_labels_reach_spanish(category, label, boundary):
+    from copy import deepcopy
+    from nico import v2_premium_report_renderer as renderer
+    from nico.comprehensive_report_content_render_v66 import _candidate_stage
+    from nico.comprehensive_spanish_canonical_report_v87 import _structured_presentation_es
+
+    canonical = {"review_candidate_summary": {"raw_total": 21, "by_category": {
+        category: {"raw": 21, "material": 2, "review_required": 13,
+                   "excluded_test_only": 5, "approved_or_nonblocking": 1},
+    }}}
+    original = deepcopy(canonical)
+    line = next(value for value in _candidate_stage(canonical, renderer)["evidence"]
+                if ": raw=" in value)
+    localize = _structured_presentation_es if boundary == "canonical" else localize_current_report_copy_v98
+    assert localize(line) == (
+        f"{label}: brutos=21; materiales confirmados=2; requieren revisión=13; "
+        "excluidos por ser solo de pruebas=5; aprobados o no bloqueantes=1."
+    )
+    assert canonical == original
+
+
+@pytest.mark.parametrize("disposition,label", [
+    ("review_required", "revisión requerida"), ("not_actionable", "no accionable"),
+    ("false_positive", "falso positivo"), ("confirmed", "confirmado"),
+])
+def test_current_renderer_candidate_disposition_labels_reach_spanish(disposition, label):
+    from copy import deepcopy
+    from nico import v2_premium_report_renderer as renderer
+    from nico.comprehensive_report_content_render_v66 import _candidate_stage
+
+    canonical = {"review_candidate_register": [{"category": "static", "candidate_id": "SYNTHETIC-1",
+        "title": "Literal source title", "location": "tests/example.py", "disposition": disposition}]}
+    original = deepcopy(canonical)
+    line = _candidate_stage(canonical, renderer)["findings"][0]
+    localized = localize_current_report_copy_v98(line)
+    assert f"disposición={label} ·" in localized
+    assert "Literal source title" in localized and "tests/example.py" in localized
+    assert canonical == original
 
 
 def test_v98_localizes_every_current_report_leak_contract() -> None:

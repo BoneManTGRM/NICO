@@ -348,7 +348,8 @@ def test_same_run_route_binds_final_layout_before_actual_render_target() -> None
     assert projection < render_artifacts
 
     layout = _bind_final_pdf_layout()
-    assert layout["toc_rows_per_page"] == 35
+    from nico.comprehensive_pdf_layout_polish_v1 import _TOC_ROWS_PER_PAGE
+    assert layout["toc_rows_per_page"] == _TOC_ROWS_PER_PAGE
     assert layout["review_companion_pages"] == 4
     assert layout["review_small_font_size"] >= 6.75
 
@@ -399,7 +400,8 @@ def test_final_navigation_replaces_spanish_indice_and_preserves_appendix_continu
 
     assert any(section["section_id"] == "supplied_human_evidence" for section in CANONICAL_TOC_SECTIONS)
     assert "Tabla de contenido" in toc
-    assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in toc
+    assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" not in toc
+    assert "PROGRAMA DE EVALUACIÓN EN CUATRO FASES" in next_page
     assert not any(
         line.strip() == "Índice"
         for page in reader.pages

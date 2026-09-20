@@ -1,0 +1,32 @@
+{
+  "evidence_kind": "immutable_supplied_historical_observations",
+  "repository": "bitcoin/bitcoin",
+  "commit_sha": "0e9018e8b65611b0769545e177110e4b7fc51244",
+  "run_id": "comprun_7cc47a5a81695fa452354479ea23b422",
+  "artifact": {
+    "filename": "nico-comprehensive-assessment-AUTOMATED-DRAFT-PENDING-APPROVAL 53.pdf",
+    "bytes": 2050194,
+    "sha256": "28349b20ede259f2d4d2ce38dd24163b176422cb1a8f89e139114cec033b790e"
+  },
+  "coverage": {
+    "observed_source_files": 484,
+    "eligible_source_files": 137,
+    "sampled_eligible_source_files": 5,
+    "analyzed_source_files": 5,
+    "unsampled_eligible_source_files": 132,
+    "eligible_source_coverage_percent": 3.65,
+    "whole_repository_coverage_percent": 1.03
+  },
+  "technical_score": 74,
+  "evidence_adjusted_score": 62,
+  "repository_bytes": 291563274,
+  "reported_source_risk_count": 2,
+  "canonical_decision_finding_count": 0,
+  "source_risk_records": null,
+  "source_risk_records_status": "not_available_in_supplied_pdf_requires_retained_json_inspection",
+  "authorization": {
+    "requester_attestation": "confirmed",
+    "access_mode": "anonymous_public",
+    "provider_credential_used": false
+  }
+}

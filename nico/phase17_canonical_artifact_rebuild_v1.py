@@ -356,6 +356,10 @@ def _prepare_client_artifact_package(
     prepared = _populate_premium_stage_summaries(prepared)
     prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
     install_human_review_worksheet_title_contract_v1()
+    from nico.comprehensive_human_evidence_report_v2 import refresh_stakeholder_classification
+    from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
+    prepared["json"] = refresh_stakeholder_classification(prepared.get("json") or {})
+    prepared["json"] = reconcile_report_coverage(prepared["json"])
     return prepared
 
 

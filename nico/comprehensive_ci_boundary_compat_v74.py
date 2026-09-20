@@ -23,6 +23,14 @@ _ES_BOUNDARY_MARKERS = (
     "D. Resultados históricos de los flujos de trabajo",
 )
 _EN_LABELS = {
+    'classification': 'Evidence category',
+    'configuration_maturity_scored_separately': 'Configuration maturity scored separately',
+    'non_success_runs': 'Non-success workflow runs',
+    'successful_runs': 'Successful workflow runs',
+    'required_check_health_reported_separately': 'Required-check health reported separately',
+    'score_effect': 'Score effect',
+    'technical_score_effect': 'Technical score effect',
+
     "successful_workflow_runs": "Successful workflow runs",
     "non_successful_workflow_runs": "Non-success workflow runs",
     "failed_workflow_runs": "Failed workflow runs",
@@ -35,6 +43,7 @@ _EN_LABELS = {
     "observed_workflow_runs": "Workflow runs observed",
     "workflow_run_count": "Workflow runs observed",
     "jobs_observed": "Jobs observed",
+    "job_success_rate": "Observed job success rate",
     "observed_job_success_rate": "Observed job success rate",
     "deployments_observed": "Deployments observed",
     "successful_deployments": "Successful deployments",
@@ -46,6 +55,14 @@ _EN_LABELS = {
     "ci_cd_operational_health_status": "CI/CD operational health status",
 }
 _ES_LABELS = {
+    'classification': 'Categoría de evidencia',
+    'configuration_maturity_scored_separately': 'Madurez de configuración puntuada por separado',
+    'non_success_runs': 'Ejecuciones de flujo no exitosas',
+    'successful_runs': 'Ejecuciones de flujo exitosas',
+    'required_check_health_reported_separately': 'Estado de verificaciones requeridas informado por separado',
+    'score_effect': 'Efecto en la puntuación',
+    'technical_score_effect': 'Efecto en la puntuación técnica',
+
     "successful_workflow_runs": "Ejecuciones de flujo exitosas",
     "non_successful_workflow_runs": "Ejecuciones de flujo no exitosas",
     "failed_workflow_runs": "Ejecuciones de flujo fallidas",
@@ -58,6 +75,7 @@ _ES_LABELS = {
     "observed_workflow_runs": "Ejecuciones de flujo observadas",
     "workflow_run_count": "Ejecuciones de flujo observadas",
     "jobs_observed": "Trabajos observados",
+    "job_success_rate": "Tasa de éxito observada de trabajos",
     "observed_job_success_rate": "Tasa de éxito observada de trabajos",
     "deployments_observed": "Despliegues observados",
     "successful_deployments": "Despliegues exitosos",
@@ -306,14 +324,14 @@ def _historical_line(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             "D. Resultados históricos de los flujos de trabajo (contexto sin puntuación): "
             f"correctas={values['success']}, fallidas={values['failure']}, "
             f"canceladas={values['cancelled']}, omitidas={values['skipped']}, "
-            f"agotadas_por_tiempo={values['timed_out']}, desconocidas={values['unknown']}, "
+            f"agotadas por tiempo={values['timed_out']}, desconocidas={values['unknown']}, "
             f"observadas={values['observed']}."
         )
     return (
         "D. Historical workflow outcomes (unscored context): "
         f"success={values['success']}, failure={values['failure']}, "
         f"cancelled={values['cancelled']}, skipped={values['skipped']}, "
-        f"timed_out={values['timed_out']}, unknown={values['unknown']}, "
+        f"timed out={values['timed_out']}, unknown={values['unknown']}, "
         f"observed={values['observed']}."
     )
 
@@ -369,6 +387,11 @@ def _flatten_scalars(
 
 
 def _format_value(key: str, value: Any, *, spanish: bool) -> str:
+    leaf = key.rsplit(".", 1)[-1]
+    if leaf == "classification" and value == "mutable_operational_trend":
+        return "Contexto operativo mutable" if spanish else "Mutable operational context"
+    if leaf in {"score_effect", "technical_score_effect"} and value == "none":
+        return "Ninguno" if spanish else "None"
     if isinstance(value, bool):
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     if value is None:
@@ -381,7 +404,7 @@ def _format_value(key: str, value: Any, *, spanish: bool) -> str:
 def _label(key: str, *, spanish: bool) -> str:
     leaf = key.rsplit(".", 1)[-1]
     labels = _ES_LABELS if spanish else _EN_LABELS
-    return labels.get(leaf, f"`{key}`")
+    return labels.get(leaf, key.replace("_", " ").replace(".", " / ").capitalize())
 
 
 def ci_operational_truth_markdown(

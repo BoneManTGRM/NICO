@@ -282,7 +282,8 @@ def normalize_canonical_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "complete_exact_artifact_idempotence": True,
         "artifact_filename_truth_version": _ARTIFACT_FILENAME_TRUTH.get("version"),
     }
-    return normalized
+    from nico.comprehensive_score_assurance_ledger_v45 import bind_source_security_assurance
+    return bind_source_security_assurance(normalized)
 
 
 def finalize_report_package(

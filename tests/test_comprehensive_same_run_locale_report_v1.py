@@ -872,7 +872,10 @@ def test_legacy_scanner_applicability_repair_preserves_assessment_truth_parity()
     ) == subject._assessment_truth_projection(reconciled)
     assert canonical["assessment"]["technical_score"] == 76
     assert len(canonical["scanner_execution_records"]) == 9
-    assert len(reconciled["scanner_execution_records"]) == 6
+    # Historical failure messages and a sampled Python tree do not prove Node absence.
+    assert len(reconciled["scanner_execution_records"]) == 9
+    assert len(reconciled["not_applicable_scanner_records"]) == 0
+    assert reconciled["assessment"]["scanner_applicability_summary"]["applicability_unproven_scanners"] == 3
 
 
 def test_regeneration_marker_cannot_replace_approved_source_artifact(monkeypatch) -> None:

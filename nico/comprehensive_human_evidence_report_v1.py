@@ -9,6 +9,8 @@ VERSION = "nico.comprehensive_human_evidence_report.v1"
 
 _CLIENT_LITERAL_EN_PREFIX = "Client-supplied data · "
 _CLIENT_LITERAL_ES_PREFIX = "Dato aportado por el cliente · "
+_INTAKE_LITERAL_EN_PREFIX = "Intake metadata · "
+_INTAKE_LITERAL_ES_PREFIX = "Metadatos de ingreso · "
 _REPORT_LINE_CHARS = 760
 # The established decision-grade stage summarizer retains at most 18 evidence lines
 # per stage. Stay below that boundary so explicit human input is never silently clipped.
@@ -31,7 +33,7 @@ _MODULE_LABEL_ES = {
     "functional_qa": "QA funcional",
     "platform_parity": "Paridad de navegador, dispositivo y plataforma",
     "accessibility_ux": "Revisión de accesibilidad y UX",
-    "stakeholder_context": "Objetivos y restricciones de las partes interesadas",
+    "stakeholder_context": "Contexto de partes interesadas y metadatos del encargo",
     "incident_history": "Historial de incidentes y soporte",
     "product_objectives": "Objetivos del producto y resultados de la publicación",
     "release_constraints": "Plazos de publicación y restricciones de entrega",
@@ -61,6 +63,11 @@ _FIELD_LABELS = {
     "source_reference": ("Source reference", "Referencia de fuente"),
     "exclusion_rationale": ("Exclusion rationale", "Justificación de exclusión"),
 }
+_INTAKE_FIELD_LABELS = {
+    "authorization_confirmation": ("Authorization confirmation (intake selection)", "Confirmación de autorización (selección de ingreso)"),
+    "engagement_mode": ("Engagement mode (intake assignment)", "Modalidad del encargo (asignación de ingreso)"),
+    "repository_identity": ("Repository identity (intake repository target)", "Identidad del repositorio (destino del repositorio indicado al ingresar)"),
+}
 _ENGAGEMENT_LABELS = {
     "customer_name": ("Client display name", "Nombre mostrado del cliente"),
     "project_name": ("Project display name", "Nombre mostrado del proyecto"),
@@ -75,10 +82,42 @@ _EN_TO_ES_LABELS = {
     english: spanish
     for english, spanish in (
         *tuple(_FIELD_LABELS.values()),
+        *tuple(_INTAKE_FIELD_LABELS.values()),
         *tuple(_ENGAGEMENT_LABELS.values()),
         ("Excluded from scope", "Excluido del alcance"),
     )
 }
+
+_STAKEHOLDER_METADATA_SUMMARY = (
+    "Authorization confirmation and engagement mode are intake metadata. Repository identity "
+    "is the intake repository target, not a stakeholder objective. These fields do not establish "
+    "supplied objectives or constraints, specialist review, or delivery authority.",
+    "La confirmación de autorización y la modalidad del encargo son metadatos de ingreso. "
+    "La identidad del repositorio es el destino indicado al ingresar, no un objetivo de las "
+    "partes interesadas. Estos campos no acreditan objetivos o restricciones aportados, "
+    "revisión especializada ni autoridad de entrega.",
+)
+# NICO-authored absence disclosures must not be attributed to the client as literal input.
+_STAKEHOLDER_ABSENCE_COPY = {
+    "objectives": ("NICO input classification · Objectives: Not supplied",
+                   "Clasificación de ingreso de NICO · Objetivos: No proporcionado"),
+    "constraints": ("NICO input classification · Constraints: Not supplied",
+                    "Clasificación de ingreso de NICO · Restricciones: No proporcionado"),
+}
+
+
+def _human_module_label(module_id: str, source_label: str, *, spanish: bool) -> str:
+    if module_id == "stakeholder_context" and not spanish:
+        return "Stakeholder context and engagement metadata"
+    return _MODULE_LABEL_ES.get(module_id, source_label) if spanish else source_label
+
+
+def _stakeholder_absence_notes(module: Mapping[str, Any], *, spanish: bool) -> list[str]:
+    # Read the digest-verified module's existing field classification; never mutate it.
+    if module.get("excluded") or module.get("status") == "excluded":
+        return []
+    return [copy[int(spanish)] for field, copy in _STAKEHOLDER_ABSENCE_COPY.items()
+            if field in (module.get("missing_fields") or [])]
 
 
 def _text(value: Any, limit: int = 500) -> str:
@@ -195,8 +234,10 @@ def _literal_lines(
     value: Any,
     *,
     spanish: bool,
+    intake_metadata: bool = False,
 ) -> list[str]:
-    prefix = _CLIENT_LITERAL_ES_PREFIX if spanish else _CLIENT_LITERAL_EN_PREFIX
+    prefix = ((_INTAKE_LITERAL_ES_PREFIX if spanish else _INTAKE_LITERAL_EN_PREFIX)
+              if intake_metadata else (_CLIENT_LITERAL_ES_PREFIX if spanish else _CLIENT_LITERAL_EN_PREFIX))
     literal = _engagement_literal(value, 4000)
     if not literal:
         return []
@@ -233,7 +274,7 @@ def _flatten_scalars(value: Any, path: str = "") -> list[tuple[str, str]]:
     return [(path, normalized)] if normalized else []
 
 
-def _field_path_label(path: str, *, spanish: bool) -> str:
+def _field_path_label(path: str, *, spanish: bool, module_id: str = "") -> str:
     root = path
     suffix = ""
     for token in (".", "["):
@@ -242,10 +283,8 @@ def _field_path_label(path: str, *, spanish: bool) -> str:
             suffix = root[index:]
             root = root[:index]
             break
-    labels = _FIELD_LABELS.get(
-        root,
-        (root.replace("_", " ").title(), root.replace("_", " ").title()),
-    )
+    labels = ((_INTAKE_FIELD_LABELS.get(root) if module_id == "stakeholder_context" else None)
+              or _FIELD_LABELS.get(root, (root.replace("_", " ").title(), root.replace("_", " ").title())))
     return f"{labels[1 if spanish else 0]}{suffix}"
 
 
@@ -317,15 +356,11 @@ def _human_module_stage_specs(
             _text(module.get("label"), 240)
             or module_id.replace("_", " ").title()
         )
-        module_label = (
-            _MODULE_LABEL_ES.get(module_id, source_label)
-            if spanish
-            else source_label
-        )
+        module_label = _human_module_label(module_id, source_label, spanish=spanish)
         lines: list[str] = []
         lines.extend(_literal_lines(
             "Estado de evidencia" if spanish else "Evidence status",
-            "supplied_unverified", spanish=spanish,
+            "Suministrada; sin verificación independiente" if spanish else "Supplied; not independently verified", spanish=spanish,
         ))
         excluded = module.get("excluded") is True or str(module.get("status") or "").casefold() == "excluded"
 
@@ -334,6 +369,8 @@ def _human_module_stage_specs(
             if isinstance(module.get("evidence"), Mapping)
             else {}
         )
+        if module_id == "stakeholder_context":
+            lines.extend(_stakeholder_absence_notes(module, spanish=spanish))
         # Preserve excluded bytes in the retained package, but never project them as assessed observations.
         for field, raw in ({} if excluded else evidence).items():
             if (
@@ -347,9 +384,10 @@ def _human_module_stage_specs(
             for path, scalar in _flatten_scalars(raw, str(field)):
                 lines.extend(
                     _literal_lines(
-                        _field_path_label(path, spanish=spanish),
+                        _field_path_label(path, spanish=spanish, module_id=module_id),
                         scalar,
                         spanish=spanish,
+                        intake_metadata=module_id == "stakeholder_context" and str(field) in _INTAKE_FIELD_LABELS,
                     )
                 )
 
@@ -419,12 +457,14 @@ def _human_module_stage_specs(
                     "summary": (
                         ("Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación." if spanish else "This module was excluded from scope; its retained inputs provide no assessment coverage or approval.")
                         if excluded else
-                        "Estas observaciones fueron aportadas explícitamente por "
+                        _STAKEHOLDER_METADATA_SUMMARY[int(spanish)]
+                        if module_id == "stakeholder_context" else
+                        "Estas declaraciones fueron aportadas explícitamente por "
                         "personas y se conservan sin inferencias del repositorio. "
                         "No modifican automáticamente las puntuaciones técnicas ni "
                         "conceden aprobación o autoridad de entrega."
                         if spanish
-                        else "These observations were explicitly supplied by people "
+                        else "These statements were explicitly supplied by people "
                         "and are retained without repository inference. They do not "
                         "automatically change technical scores or grant approval or "
                         "delivery authority."
@@ -452,13 +492,13 @@ def _client_summary_stage(
             else "Client Evidence Summary"
         ),
         "summary": (
-            "Los metadatos del encargo aportados por el cliente y la evidencia "
-            "observada por personas se conservan como contexto explícito de "
+            "Los metadatos del encargo y las declaraciones aportadas por el cliente "
+            "se conservan como contexto explícito de "
             "revisión. Los datos faltantes no se infieren. Estos valores no "
             "modifican las puntuaciones técnicas ni conceden aprobación o "
             "autoridad de entrega."
             if spanish
-            else "Client-supplied engagement metadata and human-observed evidence "
+            else "Client-supplied engagement metadata and supplied statements "
             "are retained as explicit review context. Missing facts are not "
             "inferred. These values do not change technical scores or grant "
             "approval or delivery authority."
@@ -492,15 +532,22 @@ def _retained_human_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]
 def _translate_client_literal_line(value: Any) -> str:
     text = str(value or "")
     stripped = text.strip()
-    if stripped.startswith(_CLIENT_LITERAL_ES_PREFIX):
+    for english, translated in _STAKEHOLDER_ABSENCE_COPY.values():
+        if stripped in (english, translated):
+            return translated
+    if stripped.startswith((_CLIENT_LITERAL_ES_PREFIX, _INTAKE_LITERAL_ES_PREFIX)):
         return text
-    if not stripped.startswith(_CLIENT_LITERAL_EN_PREFIX):
+    if stripped.startswith(_INTAKE_LITERAL_EN_PREFIX):
+        source_prefix, target_prefix = _INTAKE_LITERAL_EN_PREFIX, _INTAKE_LITERAL_ES_PREFIX
+    elif stripped.startswith(_CLIENT_LITERAL_EN_PREFIX):
+        source_prefix, target_prefix = _CLIENT_LITERAL_EN_PREFIX, _CLIENT_LITERAL_ES_PREFIX
+    else:
         return text
 
-    body = stripped[len(_CLIENT_LITERAL_EN_PREFIX) :]
+    body = stripped[len(source_prefix) :]
     if ": " not in body:
         return (
-            _CLIENT_LITERAL_ES_PREFIX
+            target_prefix
             + body.replace(" (part ", " (parte ")
         )
     label, supplied = body.split(": ", 1)
@@ -514,7 +561,7 @@ def _translate_client_literal_line(value: Any) -> str:
             translated = spanish + translated[len(english) :]
             break
     translated = translated.replace(" (part ", " (parte ")
-    return f"{_CLIENT_LITERAL_ES_PREFIX}{translated}: {supplied}"
+    return f"{target_prefix}{translated}: {supplied}"
 
 
 def _module_id_from_stage(stage_id: str) -> str:
@@ -536,8 +583,8 @@ def _localize_retained_stage(
     if stage_id == "client_evidence_summary":
         output["title"] = "Resumen de evidencia del cliente"
         output["summary"] = (
-            "Los metadatos del encargo aportados por el cliente y la evidencia "
-            "observada por personas se conservan como contexto explícito de "
+            "Los metadatos del encargo y las declaraciones aportadas por el cliente "
+            "se conservan como contexto explícito de "
             "revisión. Los datos faltantes no se infieren. Estos valores no "
             "modifican las puntuaciones técnicas ni conceden aprobación o "
             "autoridad de entrega."
@@ -575,7 +622,8 @@ def _localize_retained_stage(
         output["summary"] = (
             "Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación."
             if str(output.get("status") or "").casefold() == "excluded"
-            else "Estas observaciones fueron aportadas explícitamente por personas "
+            else _STAKEHOLDER_METADATA_SUMMARY[1] if module_id == "stakeholder_context"
+            else "Estas declaraciones fueron aportadas explícitamente por personas "
             "y se conservan sin inferencias del repositorio. No modifican "
             "automáticamente las puntuaciones técnicas ni conceden aprobación "
             "o autoridad de entrega."
@@ -645,9 +693,11 @@ def _install_spanish_literal_guard() -> dict[str, bool]:
 
     def translate_with_client_literal_guard(value: str, key: str) -> str:
         stripped = str(value or "").strip()
-        if key == "evidence" and stripped.startswith(_CLIENT_LITERAL_ES_PREFIX):
+        if key == "evidence" and any(stripped in pair for pair in _STAKEHOLDER_ABSENCE_COPY.values()):
+            return _translate_client_literal_line(value)
+        if key == "evidence" and stripped.startswith((_CLIENT_LITERAL_ES_PREFIX, _INTAKE_LITERAL_ES_PREFIX)):
             return str(value)
-        if key == "evidence" and stripped.startswith(_CLIENT_LITERAL_EN_PREFIX):
+        if key == "evidence" and stripped.startswith((_CLIENT_LITERAL_EN_PREFIX, _INTAKE_LITERAL_EN_PREFIX)):
             return _translate_client_literal_line(value)
         return original(value, key)
 

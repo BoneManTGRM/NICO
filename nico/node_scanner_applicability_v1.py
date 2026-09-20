@@ -121,8 +121,8 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
     return inventory
 
 
-def justified_inapplicability(value: Any, scanner: str, expected_commit: str) -> bool:
-    if not isinstance(value, Mapping) or scanner not in SOURCE_REASONS:
+def valid_input_inventory(value: Any, expected_commit: str) -> bool:
+    if not isinstance(value, Mapping):
         return False
     if (
         value.get('schema') != VERSION or value.get('scope') != SCOPE
@@ -133,6 +133,12 @@ def justified_inapplicability(value: Any, scanner: str, expected_commit: str) ->
         or not re.fullmatch(r'[0-9a-f]{64}', str(value.get('inspected_paths_sha256') or ''))
         or value.get('inventory_sha256') != inventory_digest(value)
     ):
+        return False
+    return True
+
+
+def justified_inapplicability(value: Any, scanner: str, expected_commit: str) -> bool:
+    if scanner not in SOURCE_REASONS or not valid_input_inventory(value, expected_commit):
         return False
     field = {'npm-audit': 'node_dependency_paths', 'typescript': 'typescript_input_paths',
              'pip-audit': 'python_input_paths'}[scanner]

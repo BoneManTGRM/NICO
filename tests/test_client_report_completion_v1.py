@@ -166,18 +166,16 @@ def test_final_report_replaces_old_findings_and_scanner_only_appendix() -> None:
     assert result["client_delivery_allowed"] is False
     assert summary["requested_scanners"] == 4
     assert summary["applicable_scanners"] == 1
-    assert summary["not_applicable_scanners"] == 3
-    assert {item["scanner_name"] for item in canonical["not_applicable_scanner_records"]} == {
-        "npm-audit",
-        "eslint",
-        "typescript",
-    }
+    assert summary["not_applicable_scanners"] == 0
+    assert summary["applicability_unproven_scanners"] == 3
+    assert canonical["not_applicable_scanner_records"] == []
     assert register["summary"]["exact_source_code_finding_count"] >= 1
     assert "## Finding and Remediation Register" in result["markdown"]
     assert "## Detailed Canonical Findings" not in result["markdown"]
     assert "Analyzer Applicability and Provenance" in result["markdown"]
     assert "No structured item was retained." not in result["markdown"]
-    assert "No completion credit was awarded." in result["markdown"]
+    assert "Applicability unproven: 3" in result["markdown"]
+    assert "Applicable analyzers: 4" not in result["markdown"]
 
     pdf = base64.b64decode(result["pdf_base64"])
     extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
@@ -190,7 +188,7 @@ def test_final_report_replaces_old_findings_and_scanner_only_appendix() -> None:
     assert "npm-audit" in extracted
     assert "not applicable" in extracted.casefold() or "not-applicable" in extracted.casefold()
     assert "No structured item was retained." not in extracted
-    assert "eslint: unavailable" not in extracted
+    assert "Applicability unproven: 3" in extracted
 
 
 def test_final_report_is_idempotent_for_register_and_provenance() -> None:
