@@ -1,5 +1,81 @@
 # NICO — Bitcoin truth-stress closeout
 
+## PREPARED LATE-NORMALIZER CORRECTION — OWNER PR EXCEPTION PENDING — 2026-09-20
+
+This entry supersedes older current-status/next-action statements below. Production D2 is FAIL. The concrete correction is implemented, independently reviewed, locally verified and full-CI green on the SAME branch. It is not merged or deployed. Do not declare SHIPPED.
+
+### Exact identities and authorization boundary
+
+- Original baseline: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
+- Branch: `fix/bitcoin-truth-stress-closeout`; reviewed source candidate: `3a1ccb4abde95b05229a4af35f1ed666d41b70cf`, tree `f154ffaf59c392331d992ed2235ece47d7581640`. The containing checkpoint-only commit is the current branch HEAD; it preserves all three reviewed source/test blobs.
+- Current main/production source: `c5748f466f98caf4445eb03d77c2c9ab6a9220cc`. PR [1628](https://github.com/BoneManTGRM/NICO/pull/1628) is merged. No further PR exists.
+- Railway serving deployment: `65874b41-82dc-4b7e-b842-fbd656a00594`, native terminal SUCCESS and source mapping c5748f4. Vercel serving deployment: `dpl_4jZrDV4w65DdABsu3G1QH1ajU2W8`, native READY, production alias and source mapping c5748f4. Current retained report provenance agrees with those independently established identities.
+- The owner's explicit ONE-corrective-PR authorization was used by PR1628. The remaining late overwrite was observable before merge; Section19's automatic production-only exception does not apply. The merged PR cannot be amended. Prepare and preserve the correction, but require an explicit exception for ONE additional bounded corrective PR. No password, new Bitcoin run, assessment approval, or delivery authorization is required to grant that exception.
+
+### Root cause and bounded correction
+
+Direct production archive10606082335 inspection shows dependency/static evidence lists contradicting final applicability records when a nonempty finding-category register exists. The later `comprehensive_client_truth_final_v1._sync_scanner_sections` overwrites the earlier corrected projection using a fixed analyzer list. The prior Bitcoin replay had an empty category register and did not exercise this branch. This is a canonical producer defect, not an acquisition or renderer defect.
+
+The candidate changes only that producer to reuse existing retained-requested-record applicability and existing population projection. It keeps unknown applicability explicit and preserves independent execution, raw scanner payloads, finding/register arithmetic, identity, scores, authorization and approval. Source scope: one production module, two existing regression files, existing checkpoint. No new provider, scanner, dependency, storage, size threshold, scoring formula, authentication or approval change. No Bitcoin production condition.
+
+Pre-mortem boundaries verified: missing requested records remain unproven; valid nonempty finding/category registers preserve counts/identity; late bilingual artifact generation preserves corrected populations. Input immutability and idempotence are tested.
+
+### Exact verification evidence
+
+- RED on deployed producer: three new mixed/not-applicable/missing-record cases failed, six existing cases passed; SHA256 `048f11e2586694e3c8d299c96d773957b3bdd4cbd45997acf756be598127b4c3`.
+- GREEN:22 focused tests; SHA256 `403211ce134f64d761db3151300e9ed1f70172fed52510824f506edb65ef4cdb`.
+- Public terminal export:4 cases PASS, EN/es-MX with and without nonempty category register,29.84s; SHA256 `39ebd9d5f60856992835f79f780b67ed2655e189829afc055c2d1a0509dee27e`.
+- Eight affected suites:185 tests PASS,167.78s; SHA256 `baa46f3219281cb47079bbb3f9c2ec6585a56580bed961917ee0cc32c0bf54e9`. Includes canonical scanner truth, Bitcoin fixture, terminal/locale reports and exact artifact/operator approval. Existing deprecation warnings only.
+- Full NICO CI [35512720647](https://github.com/BoneManTGRM/NICO/actions/runs/35512720647) COMPLETE/SUCCESS on exact3a1ccb4. Primary native metadata verified all14 jobs SUCCESS: quality,12 test shards,final aggregate. Any required next-PR-HEAD checks still must pass before merge.
+- Independent focused read-only review basec5748f4 → candidate3a1ccb4 found no Important/Critical issue. Reviewer ran9 focused tests,48 applicability/execution/record-location cases with a nonempty finding register and literal raw payload, and same-bootstrap differential across six retained canonical inputs (standard/exclusion × retained/EN/es-MX). Only dependency/static evidence lists changed. No earlier verified review finding is erased; the prior raw-evidence issue remains resolved.
+- Primary fresh post-review:9 tests PASS0.18s; SHA256 `ed12499504fb433a657b31ced875e7369343bf9696d2544d97d223e4f49c7d34`. An initial invocation used the default interpreter without pytest; it did not execute tests. The retained project test environment produced this accepted result. No source mutation after review.
+- Full deployed-bootstrap read-only replay of actual retained inputs succeeded. Exactly `/assessment/sections/1/evidence` and `/assessment/sections/3/evidence` change under normalization; original input bytes remain unchanged. Replay receipt SHA256 `f4d8eb02a411d7412edd31a4f9286885b8b77b686f5d71ca2e282e17bcd5cefb`. Earlier incomplete-bootstrap translation failure is a rejected harness result; no translation change was made.
+- Local diagnostic PDFs, NOT production acceptance: EN47pages SHA256 `06047f32bd8fa2d70caf5b8ea3d91315c8a3e71b4b1c873057a644dfa06f807a`; es-MX48pages SHA256 `a05d8bdc14d3723e2edff98aaa339cd827f31501ca73c8b09086906924662f5e`. Page8 of each rendered and visually inspected: separate applicable/unproven populations legible without clipping. Original production artifact remains unchanged and fails D2.
+
+### Current production evidence retained without concealing D2 failure
+
+Source workflow35511400457:1 SUCCESS; standardrun `comprun_191d78dd4f4096ad8a506972494e588f`, exclusionrun `comprun_98b17ec69d36c3008221d1a748f3fcdc`. Existing scoped production-proof fixture `https://gitlab.com/gitlab-org/gitlab-test` at `ddd0f15ae83993f5cb66a927a28673882e99100b`; no new provider or false Bitcoin attestation. Primary90 file hashes/lengths and78 typed CSV pointer/value/digest checks passed; existing receipt `44303033256032092db0045c4704cbc1919a9ea9c674b81446835f16fa9393da` remains valid within its scope.
+
+Downstream source-bound workflows COMPLETE/SUCCESS: Unified35512174323, Mobile35512174283, WebKit35512174327. Downloaded immutable artifacts and exact native archive SHA256:
+
+- Unified10605933316: `0282323da9c37b5ac5e24507265c3a6a3fb45001588b0321d81600c51934e040`.
+- Mobile10605853125: `eeae83c269058b388ecd758f2a65b2d8bddc1d0a239131062f0937eaed3d8caa`.
+- WebKit10605817003: `dfe6e062c98d7a583bc324942ada906e75e882756335f757d3aab0749551ba00`.
+
+Primary consumer verification receipt SHA256 `d5f0e8b54d2239ebe41e145bb771f2b6b9fe54235acc8b95ae7b67bff7f51b2a`: same c5748f4/source35511400457:1/standardrun, canonical object exactly equals source retained JSON, canonical truth digest `bf8551571c3547fddb02ad6215c052cbcdac7dfd2f35e4d11f319c2e41eb8122`. Two desktop locale observations each >=90seconds with two stable visible PDF actions. Actual EN PDF `3761fec01f606ea55b4d8a5ccc497261abdacd612b346b8b44421fe369d64961`; actual es-MX PDF `a3ef9f7944920de3257d89d813b334ae21945bfb5d8e2e62c7229d8da4754a2e`, both match source files. Mobile/WebKit recovery and same-run identity verified; page/console/crash arrays empty; no new downstream intake/continuation or prohibited mutation. Browser emulation is not a physical-device assertion. These are review drafts; no human approval or client delivery occurred.
+
+Fresh source browser matrix:3 cells; primary18 file hash/length checks, exact release provenance/run identity, human-review-required and delivery-blocked states passed. Native Railway terminalSUCCESS logs inspected:469entries spanning12:45:30–13:09:37UTC, no Traceback/Exception/ERROR/CRITICAL message in that bounded window. INFO messages emitted on stderr are not classified as application errors.
+
+### Current requirement matrix and preserved gaps
+
+| Predicate | Current result and exact scope |
+| --- | --- |
+| D0 | UNPROVEN for next production candidate;185 affected tests/fullCI/review pass and current production retrieval/identity controls pass. |
+| D1 | UNPROVEN for unavailable original historical records; supplied supplemental actual records/cross-format evidence pass as retained below. |
+| D2 | FAIL in deployed c5748f4 canonical/report sections; prepared3a1ccb4 local/replay/CI/review PASS. |
+| D3 | PASS within retained frozen/supplemental regression and unchanged execution-limit implementation; no limit increase. |
+| D4 | PASS for retained numerator/denominator and headline coverage evidence;5/137 and5/484 remain distinct, current production CSV consistency checked. |
+| D5 | PASS for unchanged74/62 supplemental score semantics and separate limited assurance; missing evidence neitherPASSnorFAIL. |
+| D6 | PASS for current c5748f4 native deployment mapping, retained observation bytes and exact report agreement. |
+| D7 | PASS for current retained attestation/access/independent-verification distinction; defensive gate unchanged. |
+| R1,R13 | UNPROVEN original historical record-level/integrity predicates; previously accepted evidence-access exception persists. Supplied artifacts were not mutated. |
+| R2,R4,R5 | PASS retained normal control, denominator and provider-neutral tests; no new provider coupling in correction. |
+| R3 | FAIL current production D2 cross-format meaning; locally corrected replay does not count as production. |
+| R6–R10 | PASS retained authentication/authorization/review/approval/delivery contract tests; no actual human decision fabricated. |
+| R11 | PASS existing eligible one-action approval/download regression; current live draft retrieval is distinct from owner approval. |
+| R12 | PASS current source/locale tests and local corrected EN/es-MX projections; new candidate production locale acceptance pending. |
+| R14–R17 | PASS current main/source/deployment mappings and retained report provenance for c5748f4. |
+| R18 | UNPROVEN/NOT COMPLETE: deployed D2 FAIL; next candidate not deployed. |
+| R19 | PASS bounded independent review of3a1ccb4; no unresolved Important/Critical finding. |
+| R20 | PASS this checkpoint records exact source/production/failure/evidence/owner boundary; containing Git commit gives current HEAD. |
+
+No expensive accepted evidence was rerun without changed scope: late canonical producer invalidated its dependent D2 projections; source CI and focused post-review test supply new proof. Existing auth/scoring/provider/historical evidence remains scoped to its original identities. Current invalidated proof: production D2/R3 and next-release production acceptance; no synthetic/local result may replace it.
+
+LATEST COMPLETED ACTION: prepared source3a1ccb4 independently reviewed and fullCI green; direct current-production consumer checks retained; final source unchanged. PR1628's body is updated to disclose the D2 failure and prepared correction, not a successful closeout.
+
+EXACT NEXT ACTION: obtain the explicit owner Section19 exception for ONE additional corrective PR on SAME branch. Then create that one PR with reviewed3a1ccb4 source plus checkpoint, pass required final-PR checks, merge via existing mechanism, observe automatic deployments to terminal status, establish exact serving identities, synchronize only established nonsecret release pins if authoritative evidence requires it, and directly inspect new canonical/EN/es-MX artifacts for the late-register D2 behavior before claiming production acceptance. No password handoff, new Bitcoin assessment, specialist decision or delivery approval requested. Original historical evidence gaps remain explicit regardless of next-release success.
+
+
 ## PRODUCTION D2 ACCEPTANCE FAILED — LATE REGISTER NORMALIZER — 2026-09-20
 
 Supersedes any production D2/R3/PASS implication: source workflow35511400457 succeeded, but PRIMARY direct artifact inspection rejects D2. Archive10606082335,22440939bytes,SHA2863c8061f3ef03420b12b4b506c9c5a0e296e59651c8a1c1b4ae53c919cfbd6 verified. Standardruncomprun_191d78dd4f4096ad8a506972494e588f canonicalSHA3cc59791e4dfcbc99b31f76367a3b87e53573d057c83d92d3f93c988ca2fdcbf; exclusionruncomprun_98b17ec69d36c3008221d1a748f3fcdc canonicalSHA1f114538ca6873d59096952fe3d9f4caede6881dd6bbbf17732c2cb8ad6f49c2. Both exactreleasec5748f4/backend65874b41/frontenddpl_4jZrDV4w65DdABsu3G1QH1ajU2W8, verifiedaligned.90filehashes and78typedCSVpointer/value/digest checks PASS; receiptSHA44303033256032092db0045c4704cbc1919a9ea9c674b81446835f16fa9393da. These passes do NOT erase the D2failure.
@@ -12,7 +88,7 @@ PR1628 is already merged; owner authorized exactly one corrective PR in the late
 
 ## PR1628 MERGED AND EXACT RELEASE DEPLOYED — 2026-09-20
 
-Late-normalizer correction prepared on SAME branch: one production module comprehensive_client_truth_final_v1 directly reuses existing population projection with retained requested scanner states; no new wrapper/shim/provider or upstream mutation. New3caseRED failed against deployed producer (mixed,allnotapplicable,missingrecords) while6existingtests passed; logSHA048f11e2586694e3c8d299c96d773957b3bdd4cbd45997acf756be598127b4c3. GREEN22focusedtestsPASS0.39s logSHA403211ce134f64d761db3151300e9ed1f70172fed52510824f506edb65ef4cdb. Public-export regression now explicitly installs late normalizer and exercises nonempty zero-category register alongside prior no-register control in EN/es-MX;4PASS29.84s logSHA39ebd9d5f60856992835f79f780b67ed2655e189829afc055c2d1a0509dee27e. Affected8suite group185PASS167.78s logSH Abaa46f3219281cb47079bbb3f9c2ec6585a56580bed961917ee0cc32c0bf54e9, including exact artifact/approval/locale boundaries. Existing deprecation warnings only. No test assertion removed. First incomplete-bootstrap actual-data replay encountered preexisting missing translation; that harness is rejected as production-equivalent, and exact deployed specialist_ship_ready_bootstrap replay is pending. No translation production change authorized or made. Original production artifact D2failure remains; local results are not production proof.
+Late-normalizer correction prepared on SAME branch: one production module comprehensive_client_truth_final_v1 directly reuses existing population projection with retained requested scanner states; no new wrapper/shim/provider or upstream mutation. New3caseRED failed against deployed producer (mixed,allnotapplicable,missingrecords) while6existingtests passed; logSHA048f11e2586694e3c8d299c96d773957b3bdd4cbd45997acf756be598127b4c3. GREEN22focusedtestsPASS0.39s logSHA403211ce134f64d761db3151300e9ed1f70172fed52510824f506edb65ef4cdb. Public-export regression now explicitly installs late normalizer and exercises nonempty zero-category register alongside prior no-register control in EN/es-MX;4PASS29.84s logSHA39ebd9d5f60856992835f79f780b67ed2655e189829afc055c2d1a0509dee27e. Affected8suite group185PASS167.78s logSHAbaa46f3219281cb47079bbb3f9c2ec6585a56580bed961917ee0cc32c0bf54e9, including exact artifact/approval/locale boundaries. Existing deprecation warnings only. No test assertion removed. First incomplete-bootstrap actual-data replay encountered preexisting missing translation; that harness is rejected as production-equivalent, and exact deployed specialist_ship_ready_bootstrap replay is pending. No translation production change authorized or made. Original production artifact D2failure remains; local results are not production proof.
 
 Current main independently remainsc5748f4. Integrate that exact merged parent into SAME branch while preserving its identical deployed source tree and checkpoint additions; publish this prepared candidate for focused independent review and normal sourceCI. Source range againstc5748f4 is only oneproducer+twoexistingtestfiles+existingcheckpoint. No furtherPRcreated or merge/deployment authorized under the already-consumed one-PR exception. EXACT NEXT ACTION: finish full-bootstrap actual-input differential, focused independent review, final sourceCI and preserve concrete correction before requesting only the required additional PR exception.
 
