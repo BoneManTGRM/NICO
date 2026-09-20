@@ -1,5 +1,16 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Preview session recovered; exact report-access handoff — 2026-09-20 01:15 UTC
+
+Owner Done supplied the requested new sign-in recovery choice. Fresh visible DOM on existing previewtab8 showed Open NICO enabled with no visible website error. Submitted that owner-prepared form without reading any credential. Fresh subsequent evidence showed navigation to the exact Final Review workspace for comprun_7cd22391b5a2ef1e35ab88d5e66428bd. NICO session authentication is now established on exact previewdpl_2hrHKyts7WpboVHcJD1Qy53nRQKW/source1d57eb61. No Vercel or NICO protection changed.
+
+The Final Review workspace separately requires its existing page-local operator password. Supported browserAuth for that visible password field returned submission_failed. Required post-transition visible DOM inspection succeeded this time: Open review remains present/enabled; no visible website error; report still unopened. No credential value was read or copied. Do not infer whether secure filling completed or classify a NICO product failure. Per browserAuth failure guidance, stopped automated credential entry and prepared the documented manual handoff on that exact tab. Owner must press Open review, entering the operator password directly into NICO only if the page still requires it. This is read-only report access, not report approval or delivery authorization.
+
+Observed console errors came from chrome-extension://.../content-script.bundle.js browser metadata transport, not NICO source; no NICO runtime defect established. All19exact-candidate1607workflows PASS remain valid. PR1607 still unmerged; head1d57eb61f1ce435afb0d6b87341eb3c1d9c8f192. Main/servingd904794; pypdf Spanish production35479789272 still active at this observation. No rerun or new assessment requested. M4/M5 PASS; remaining M/C overall states unchanged/UNPROVEN.
+
+EXACT NEXT ACTION: owner completes the prepared Open review screen in browsertab8, then confirms completion. Resume with fresh visible report state, inspect retained approval/delivery identities, retrieve the existing finalized PDF from the6.18backend, verify hashcf66dcf5cb4352ba34968c5809050c26d644d18c99c6f590b725d4373611d594, and complete Next16.3.5 preview/restart/download proof without new approval. Observe the existing production job terminal result. Then merge1607 only when runtime gates pass and continue final integrated acceptance/capability implementation. Same branch/PR/ledger preserved; containing commit identifies checkpointHEAD.
+
+
 ## Secure preview authentication boundary — 2026-09-20 01:07 UTC
 
 Final pre-handoff CI observation: PR NICO CI35479868456 subsequently completed SUCCESS. All19 observed workflows for exact1d57eb61 now pass, including both push and PR complete suites, Node build and security. Source unchanged; no rerun. The authentication boundary below remains the earliest unmet gate. Main d904794 Spanish production35479789272 is still active; observe its existing terminal result after recovery, never dispatch a duplicate.
