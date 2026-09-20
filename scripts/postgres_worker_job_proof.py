@@ -1,0 +1,144 @@
+"""Real database proof of worker job ownership; executes no repository code."""
+from __future__ import annotations
+
+import argparse
+import json
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
+from uuid import uuid4
+
+from nico.assessment_worker_jobs import JobConflict, JobIdentity, JobLimits, WorkerJobs
+from nico.storage import PostgresAdapter
+
+
+def run_proof(database_url: str) -> dict:
+    adapter = PostgresAdapter(database_url)
+    jobs = WorkerJobs(adapter)
+    identity = JobIdentity(
+        customer_id="worker-proof-" + uuid4().hex,
+        project_id="synthetic-project", run_id="synthetic-run", scan_id="synthetic-scan",
+        repository_id="generic-repository", revision="a" * 40,
+        contract_sha256="b" * 64, release_revision="c" * 40,
+    )
+    limits = JobLimits(max_attempts=2, wall_seconds=120, lease_seconds=30)
+    initial = jobs.enqueue(identity, limits)
+    job_id = initial["job_id"]
+    assert jobs.enqueue(identity, limits) == initial
+    try:
+        jobs.enqueue(identity, replace(limits, max_attempts=3))
+    except JobConflict:
+        pass
+    else:
+        raise AssertionError("existing job budget overwritten")
+
+    def claim(index: int):
+        return WorkerJobs(adapter).claim(identity, f"synthetic-worker-{index}")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        claims = list(pool.map(claim, range(8)))
+    winners = [value for value in claims if value is not None]
+    assert len(winners) == 1
+    first = winners[0]
+    token = first["lease_id"]
+    assert first["attempts"] == 1
+    assert jobs.heartbeat(identity, token)["status"] == "running"
+    assert jobs.claim(identity, "competing-worker") is None
+    try:
+        jobs.complete(identity, "stale-lease", "d" * 64)
+    except JobConflict:
+        pass
+    else:
+        raise AssertionError("stale result accepted")
+
+    # Fixture-only clock advancement in this synthetic job, never production state.
+    def expire(*, deadline=False):
+        field = "deadline_epoch" if deadline else "lease_until_epoch"
+        with adapter._connect() as connection:
+            connection.execute(
+                "UPDATE client_jobs SET payload=jsonb_set(payload, %s, '0'::jsonb) "
+                "WHERE job_id=%s AND customer_id=%s",
+                ([field], job_id, identity.customer_id),
+            )
+
+    expire()
+    second = jobs.claim(identity, "restarted-worker")
+    assert second and second["attempts"] == 2 and second["lease_id"] != token
+    for operation in (
+        lambda: jobs.heartbeat(identity, token),
+        lambda: jobs.complete(identity, token, "d" * 64),
+        lambda: jobs.fail(identity, token, "transient_error", retryable=True),
+    ):
+        try:
+            operation()
+        except JobConflict:
+            pass
+        else:
+            raise AssertionError("expired owner changed replacement job")
+    terminal = jobs.complete(identity, second["lease_id"], "d" * 64)
+    assert terminal["status"] == "completed"
+    reconnected = WorkerJobs(PostgresAdapter(database_url))
+    assert reconnected.get(identity) == terminal
+    assert reconnected.complete(identity, second["lease_id"], "d" * 64) == terminal
+    try:
+        reconnected.complete(identity, second["lease_id"], "e" * 64)
+    except JobConflict:
+        pass
+    else:
+        raise AssertionError("completed receipt replaced")
+    assert reconnected.claim(identity, "late-worker") is None
+    assert not reconnected.cancel(identity)
+    assert reconnected.get(replace(identity, customer_id="different-tenant")) is None
+
+    cancel_identity = replace(identity, scan_id="cancelled-scan")
+    jobs.enqueue(cancel_identity, limits)
+    cancelled_lease = jobs.claim(cancel_identity, "cancelled-worker")
+    assert jobs.cancel(cancel_identity)
+    assert jobs.get(cancel_identity)["status"] == "cancelled"
+    try:
+        jobs.complete(cancel_identity, cancelled_lease["lease_id"], "d" * 64)
+    except JobConflict:
+        pass
+    else:
+        raise AssertionError("cancelled job accepted result")
+
+    retry_identity = replace(identity, scan_id="retry-scan")
+    jobs.enqueue(retry_identity, limits)
+    attempt = jobs.claim(retry_identity, "retry-worker")
+    assert jobs.fail(retry_identity, attempt["lease_id"], "temporary_failure", retryable=True)["status"] == "queued"
+    attempt = jobs.claim(retry_identity, "retry-worker-2")
+    assert jobs.fail(retry_identity, attempt["lease_id"], "temporary_failure", retryable=True)["status"] == "failed"
+    assert jobs.claim(retry_identity, "retry-worker-3") is None
+
+    deadline_identity = replace(identity, scan_id="deadline-scan")
+    job_id = jobs.enqueue(deadline_identity, limits)["job_id"]
+    jobs.claim(deadline_identity, "deadline-worker")
+    expire(deadline=True)
+    assert jobs.claim(deadline_identity, "late-worker") is None
+    assert jobs.get(deadline_identity)["status"] == "budget_exhausted"
+
+    return {
+        "schema": "nico.worker_job_postgres_proof.v1", "status": "passed",
+        "synthetic": True, "live_production_claim": False,
+        "checks": {
+            "single_claim_owner": True, "immutable_job_budget": True,
+            "heartbeat_prevents_reclaim": True, "expired_owner_fenced": True,
+            "reconnect_preserves_terminal_receipt": True,
+            "idempotent_completion": True, "conflicting_receipt_rejected": True,
+            "tenant_identity_separate": True, "cancellation_fences_completion": True,
+            "retry_budget_enforced": True, "wall_budget_enforced": True,
+        },
+        "repository_executed": False, "human_approval": False,
+        "client_delivery_authorized": False,
+    }
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--database-url", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+    result = run_proof(args.database_url)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
