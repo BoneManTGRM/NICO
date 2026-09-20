@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -24,6 +25,7 @@ MAX_OUTPUT_CHARS = int(os.getenv("NICO_MAX_TOOL_OUTPUT", "12000"))
 DEFAULT_TOOL_TIMEOUT_SECONDS = int(os.getenv("NICO_TOOL_TIMEOUT_SECONDS", "45"))
 TOTAL_SCAN_TIMEOUT_SECONDS = int(os.getenv("NICO_TOTAL_SCAN_TIMEOUT_SECONDS", "300"))
 MAX_REPO_BYTES = int(os.getenv("NICO_MAX_REPO_BYTES", "150000000"))
+MAX_GIT_HISTORY_BYTES = int(os.getenv("NICO_MAX_GIT_HISTORY_BYTES", str(1024 * 1024 * 1024)))
 
 TOOL_CATALOG: dict[str, dict[str, Any]] = {
     "pip-audit": {"binary": "pip-audit", "intent": "Python dependency review", "tier": "dependency"},
@@ -79,6 +81,47 @@ def safe_repo_url(repository: str) -> str:
 
 def clean_env(home: Path) -> dict[str, str]:
     return {"PATH": os.getenv("PATH", ""), "HOME": str(home), "TMPDIR": str(home), "PYTHONUNBUFFERED": "1"}
+
+
+def repository_size_observation(path: Path, *, source_limit: int | None = None,
+                                history_limit: int | None = None) -> dict[str, Any]:
+    """Count separate bounded source/history populations without following links."""
+    limits = {"source": MAX_REPO_BYTES if source_limit is None else source_limit,
+              "git_history": MAX_GIT_HISTORY_BYTES if history_limit is None else history_limit}
+    counts = {"source": 0, "git_history": 0}
+    errors: list[str] = []
+    links = entries = 0
+    exceeded: set[str] = set()
+    if not path.is_dir() or path.is_symlink():
+        errors.append("repository_directory_unavailable")
+    for current, directories, files in os.walk(path, followlinks=False,
+            onerror=lambda error: errors.append("repository_size_read_failed")):
+        for name in sorted([*directories, *files]):
+            entry = Path(current) / name
+            entries += 1
+            if entries > 1_000_000:
+                errors.append("repository_size_inventory_limit_exceeded")
+                break
+            try:
+                observed = entry.lstat()
+                if stat.S_ISLNK(observed.st_mode):
+                    links += 1
+                elif not stat.S_ISREG(observed.st_mode):
+                    continue
+                population = "git_history" if entry.relative_to(path).parts[0] == ".git" else "source"
+                counts[population] += observed.st_size
+                if counts[population] > limits[population]:
+                    exceeded.add(population)
+            except OSError:
+                errors.append("repository_size_read_failed")
+        if errors or exceeded:
+            break
+    return {"schema": "nico.repository-size-populations.v1", "source_bytes": counts["source"],
+            "git_history_bytes": counts["git_history"], "source_byte_limit": limits["source"],
+            "git_history_byte_limit": limits["git_history"], "exceeded_limits": sorted(exceeded),
+            "inventory_complete": not errors and not exceeded, "errors": sorted(set(errors)),
+            "byte_count_scope": "lower_bound" if errors or exceeded else "complete_checkout",
+            "symlink_count": links, "external_symlink_targets_read": False}
 
 
 def directory_size(path: Path) -> int:

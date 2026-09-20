@@ -23,7 +23,7 @@ from nico import snapshot_scanner_worker as snapshot_worker
 from nico.admin_security import require_admin_write
 from nico.comprehensive_production_capabilities import PROVIDER_STATE_KEY
 from nico.exact_commit_binding import expected_commit_sha
-from nico.full_assessment_complexity_evidence import collect_complexity_evidence
+from nico.full_assessment_complexity_evidence import SOURCE_SUFFIXES, collect_complexity_evidence
 from nico.hosted_assessment import (
     KNOWN_FILE_PATHS,
     MAX_FILE_BYTES,
@@ -835,9 +835,13 @@ def checkout_hosted_provider_snapshot(
         return None, actual, ["Provider checkout did not establish complete exact-commit ancestry."]
     from nico import scanner_worker as scanner_base
 
-    if scanner_base.directory_size(repo_path) > scanner_base.MAX_REPO_BYTES:
+    size_observation = scanner_base.repository_size_observation(repo_path)
+    if size_observation['exceeded_limits'] or not size_observation['inventory_complete']:
         shutil.rmtree(repo_path, ignore_errors=True)
-        return None, actual, ["Provider repository exceeds the configured scanner size limit."]
+        from nico.snapshot_scanner_worker import RepositoryExecutionLimit
+        population = next(iter(size_observation['exceeded_limits']), 'source')
+        raise RepositoryExecutionLimit(actual, size_observation[population + '_bytes'],
+            size_observation[population + '_byte_limit'], size_observation=size_observation)
     return repo_path, actual, []
 
 
@@ -1288,7 +1292,7 @@ def collect_hosted_provider_repository_evidence(
     workflows: dict[str, str] = {path: files[path] for path in _workflow_paths(provider, paths) if path in files}
     dependencies = collect_dependencies(files)
     source_scan = analyze_source_signals(files)
-    source_paths = [path for path in paths if path.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".cs", ".java", ".go", ".rs")) and "/test" not in path.casefold() and not path.casefold().startswith("test")]
+    source_paths = [path for path in paths if path.lower().endswith((*SOURCE_SUFFIXES, ".cs", ".java", ".go", ".rs")) and "/test" not in path.casefold() and not path.casefold().startswith("test")]
 
     ci_runs = [asdict(item) for item in envelope.ci_runs]
     ci_jobs = [asdict(item) for item in getattr(envelope, "ci_jobs", ())]

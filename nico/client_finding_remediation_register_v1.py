@@ -449,6 +449,22 @@ def _complexity_records(canonical: Mapping[str, Any], commit_sha: str) -> list[d
 
 def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
+    # Sample prose is a legacy fallback, not authority to promote a retained
+    # source observation. Explicit canonical and scanner findings are collected
+    # separately by build_finding_remediation_register and remain eligible.
+    observation_anchors = {
+        (_text(item.get("path")).replace("\\", "/"), item["line"],
+         _text(item.get("rule_id")).casefold(), item.get("column"))
+        for item in canonical.get("source_risk_observations") or []
+        if isinstance(item, Mapping)
+        and _text(item.get("semantic_class")) in {"source_observation", "excluded_non_production_observation"}
+        and commit_sha and _text(item.get("repository_revision")) == commit_sha
+        and item.get("revision_match") is True
+        and type(item.get("line")) is int and item["line"] > 0
+        and (item.get("column") is None or type(item.get("column")) is int and item["column"] >= 0)
+        and _text(item.get("path")) and _text(item.get("rule_id"))
+    }
+    observation_lines = {anchor[:3] for anchor in observation_anchors}
     for raw in _iter_strings(canonical):
         for match in _RISK_LINE.finditer(raw):
             path = match.group("path").replace("\\", "/")
@@ -457,6 +473,9 @@ def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[
             line = int(match.group("line"))
             column = int(match.group("column")) if match.group("column") else None
             rule = match.group("rule")
+            anchor = (path, line, rule.casefold())
+            if (*anchor, column) in observation_anchors or (column is None and anchor in observation_lines):
+                continue
             message = match.group("message")
             base = {
                 "priority": "P1" if rule.casefold() == "tls_verify_disabled" else "P2",

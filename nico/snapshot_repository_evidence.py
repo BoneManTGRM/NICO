@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from nico import repository_snapshot as snapshot_capture
 from nico.full_assessment_ci_evidence import collect_ci_runtime_evidence
-from nico.full_assessment_complexity_evidence import collect_complexity_evidence
+from nico.full_assessment_complexity_evidence import SOURCE_SUFFIXES, collect_complexity_evidence
 from nico.hosted_assessment import (
     KNOWN_FILE_PATHS,
     MAX_FILE_BYTES,
@@ -341,6 +341,8 @@ def _public_git_profile(
                 return None, "public_git_tree_listing_failed"
 
             sizes: dict[str, int] = {}
+            blob_ids: dict[str, str] = {}
+            symlink_paths: set[str] = set()
             inventory_complete = True
             for raw_record in listing.stdout.split(b"\x00"):
                 if not raw_record:
@@ -363,6 +365,9 @@ def _public_git_profile(
                     continue
                 if path and "\x00" not in path and size >= 0:
                     sizes[path] = size
+                    blob_ids[path] = fields[2].decode('ascii')
+                    if fields[0] == b'120000':
+                        symlink_paths.add(path)
 
             candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
             candidates.extend(
@@ -373,31 +378,44 @@ def _public_git_profile(
             files: dict[str, str] = {}
             unavailable: list[str] = []
             unavailable_paths: list[str] = []
-            for path in candidates[:MAX_TEXT_FILES]:
-                if sizes[path] > MAX_FILE_BYTES:
+            from nico import full_source_archive_profile_v1 as source_policy
+            selected = {path for path in candidates[:MAX_TEXT_FILES]
+                        if sizes[path] <= MAX_FILE_BYTES and path not in symlink_paths}
+            source_paths: list[str] = []
+            source_bytes = 0
+            size_excluded: list[str] = []
+            limit_excluded: list[str] = []
+            for path in sorted(sizes):
+                if not source_policy._eligible(path) or path in symlink_paths:
                     continue
-                blob = subprocess.run(
-                    [
-                        "git",
-                        "--no-pager",
-                        "show",
-                        "--no-textconv",
-                        f"FETCH_HEAD:{path}",
-                    ],
-                    cwd=str(git_dir),
-                    capture_output=True,
-                    timeout=20,
-                    check=False,
-                    shell=False,
-                    env=environment,
-                )
-                if blob.returncode == 0 and len(blob.stdout) <= MAX_FILE_BYTES:
-                    files[path] = blob.stdout.decode("utf-8", errors="replace")
-                else:
-                    unavailable_paths.append(path)
-                    unavailable.append(
-                        f"Exact public Git snapshot file {path} could not be read."
-                    )
+                if sizes[path] > source_policy.MAX_SOURCE_FILE_BYTES:
+                    size_excluded.append(path)
+                    continue
+                if len(source_paths) >= source_policy.MAX_SOURCE_FILES or source_bytes + sizes[path] > source_policy.MAX_TOTAL_SOURCE_BYTES:
+                    limit_excluded.append(path)
+                    continue
+                source_paths.append(path)
+                source_bytes += sizes[path]
+            selected.update(source_paths)
+            ordered = sorted(selected)
+            if ordered:
+                # Object IDs from the verified tree avoid newline/path ambiguity
+                # and process-per-file overhead; requested byte sizes are bounded.
+                batch = subprocess.run(['git', 'cat-file', '--batch'], cwd=str(git_dir),
+                    input=('\n'.join(blob_ids[path] for path in ordered) + '\n').encode('ascii'),
+                    capture_output=True, timeout=90, check=False, shell=False, env=environment)
+                import io
+                stream = io.BytesIO(batch.stdout if batch.returncode == 0 else b'')
+                for path in ordered:
+                    header = stream.readline().split()
+                    if header != [blob_ids[path].encode('ascii'), b'blob', str(sizes[path]).encode('ascii')]:
+                        break
+                    content = stream.read(sizes[path])
+                    if len(content) != sizes[path] or stream.read(1) != b'\n':
+                        break
+                    files[path] = content.decode('utf-8', errors='replace')
+                unavailable_paths = sorted(selected - set(files))
+                unavailable = [f'Exact public Git snapshot file {path} could not be read.' for path in unavailable_paths]
 
             paths = sorted(sizes)
             return {
@@ -406,7 +424,17 @@ def _public_git_profile(
                 "root_items": sorted({path.split("/", 1)[0] for path in paths}),
                 "unavailable": unavailable,
                 "unavailable_paths": unavailable_paths,
-                "size_excluded_paths": sorted(path for path, size in sizes.items() if size > MAX_FILE_BYTES),
+                "size_excluded_paths": sorted(set(size_excluded) | {path for path in candidates[:MAX_TEXT_FILES] if sizes[path] > MAX_FILE_BYTES and path not in files}),
+                "source_profile": {"source_files_loaded": len(set(source_paths) & set(files)),
+                    "source_bytes_loaded": sum(sizes[path] for path in source_paths if path in files),
+                    "limit_excluded_paths": limit_excluded, "size_excluded_paths": size_excluded,
+                    "symlink_paths_not_followed": sorted(symlink_paths), "snapshot_commit_sha": actual_commit,
+                    "acquisition_method": "exact_tree_git_blob_batch"},
+                "profile_limits": {"file_limit": MAX_TEXT_FILES + source_policy.MAX_SOURCE_FILES,
+                    "per_file_byte_limit": max(MAX_FILE_BYTES, source_policy.MAX_SOURCE_FILE_BYTES),
+                    "source_total_byte_limit": source_policy.MAX_TOTAL_SOURCE_BYTES,
+                    "source_file_limit": source_policy.MAX_SOURCE_FILES,
+                    "selection_method": "Bounded priority metadata and sorted exact-revision source blobs within the existing full-source file and byte budgets."},
                 "tree_sha": actual_tree,
                 "tree_truncated": False,
                 "tree_collection_succeeded": inventory_complete,
@@ -665,7 +693,7 @@ def collect_snapshot_repository_evidence(
     ci = collect_ci_runtime_evidence(github, repository, workflows, bounded_runs)
     file_scan, dependencies = analyze_source_signals(files), collect_dependencies(files)
     paths = profile["tree_paths"]
-    source_paths = [path for path in paths if path.endswith((".py", ".ts", ".tsx", ".js", ".jsx")) and not path.startswith("tests/") and "test" not in path.rsplit("/", 1)[-1].lower()]
+    source_paths = [path for path in paths if path.lower().endswith(SOURCE_SUFFIXES) and not path.startswith("tests/") and "test" not in path.rsplit("/", 1)[-1].lower()]
     notes = list(profile["unavailable"]) + workflow_unavailable + list(ci.get("unavailable_data_notes") or [])
     for label, error in (("Commit history", commit_error), ("Pull-request history", pull_error), ("Workflow-run history", run_error)):
         if error:

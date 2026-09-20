@@ -257,6 +257,21 @@ def _sync_scanner_sections(canonical: dict[str, Any]) -> None:
     assessment["canonical_scanner_finding_register"] = register
     assessment["scanner_finding_summary"] = deepcopy(by_category)
     _validate_register(register)
+    from nico.comprehensive_authoritative_scanner_truth_v62 import (
+        _analyzer_population_lines,
+        _requested_records,
+    )
+    from nico.comprehensive_client_readiness_v59 import _tool
+
+    records = _requested_records(canonical)
+    applicable = {
+        _tool(record) for record in records
+        if record.get("applicability_state") in {"applicable", "applicable_to_subset"}
+    }
+    not_applicable = {
+        _tool(record) for record in records
+        if record.get("applicability_state") == "not_applicable"
+    }
     sections = _records(assessment.get("sections"))
     for section in sections:
         category = _SECTION_CATEGORY.get(_text(section.get("id"), 80))
@@ -277,7 +292,13 @@ def _sync_scanner_sections(canonical: dict[str, Any]) -> None:
                 "confirmed_material_findings": material,
                 "review_required_candidates": review,
                 "evidence": [
-                    f"Applicable analyzers: {_ANALYZERS[category]}.",
+                    *(_analyzer_population_lines(
+                        f"Applicable analyzers: {_ANALYZERS[category]}.",
+                        applicable=applicable,
+                        not_applicable=not_applicable,
+                        completed=set(),
+                        field="evidence",
+                    ) or []),
                     f"Raw candidates: {raw}.",
                     f"Approved/nonblocking: {approved}.",
                     f"Excluded non-production/test-only: {excluded}.",

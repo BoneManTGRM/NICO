@@ -16,7 +16,8 @@ MAX_ARCHIVE_BYTES = int(os.getenv("NICO_MAX_SOURCE_ARCHIVE_BYTES", str(120 * 102
 MAX_SOURCE_FILES = int(os.getenv("NICO_MAX_ARCHIVE_SOURCE_FILES", "2500"))
 MAX_SOURCE_FILE_BYTES = int(os.getenv("NICO_MAX_ARCHIVE_SOURCE_FILE_BYTES", str(600_000)))
 MAX_TOTAL_SOURCE_BYTES = int(os.getenv("NICO_MAX_ARCHIVE_SOURCE_TOTAL_BYTES", str(90 * 1024 * 1024)))
-SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
+from nico.full_assessment_complexity_evidence import SOURCE_SUFFIXES as _SOURCE_SUFFIXES
+SOURCE_SUFFIXES = set(_SOURCE_SUFFIXES)
 SKIP_PARTS = {".git", ".venv", "venv", "node_modules", ".next", "dist", "build", "vendor", "coverage", "coverage_html", "__pycache__"}
 
 

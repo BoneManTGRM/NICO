@@ -24,8 +24,7 @@ _EXCLUDED_PATH_PARTS = {"tests", "test", "fixtures", "fixture", "examples", "exa
 class RepositoryExecutionLimit(Exception):
     """Retain an exact-source execution boundary after checkout cleanup."""
 
-    def __init__(self, commit_sha: str, observed_bytes: int, limit_bytes: int):
-        super().__init__(f"Repository exceeds scanner size limit: {observed_bytes} bytes.")
+    def __init__(self, commit_sha: str, observed_bytes: int, limit_bytes: int, *, size_observation: dict | None = None):
         self.commit_sha = commit_sha
         self.evidence = {
             "reason": "repository_size_limit_exceeded",
@@ -34,6 +33,16 @@ class RepositoryExecutionLimit(Exception):
             "commit_sha": commit_sha,
             "scanner_execution_permitted": False,
         }
+        if size_observation is not None:
+            self.evidence["size_observation"] = size_observation
+            self.evidence["size_population"] = next(iter(size_observation.get("exceeded_limits") or []), "unverified")
+            if not size_observation.get("exceeded_limits"):
+                self.evidence["reason"] = "repository_size_unverified"
+        population = self.evidence.get("size_population", "checkout")
+        message = ("Repository size could not be established; scanner execution is unavailable."
+                   if self.evidence["reason"] == "repository_size_unverified" else
+                   f"Repository {population} exceeds scanner size limit: {observed_bytes} observed bytes, {limit_bytes} byte limit.")
+        super().__init__(message)
 
 
 def _git(command: list[str], *, cwd: Path | None, env: dict[str, str], timeout: int = 90) -> subprocess.CompletedProcess[str]:
@@ -303,7 +312,9 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             )
             unavailable_notes.extend(clone_notes)
             if repo_path:
-                repo_size = base.directory_size(repo_path)
+                size_observation = base.repository_size_observation(repo_path)
+                repo_size = size_observation["source_bytes"]
+                base.SCAN_JOBS[scan_id]["repository_size_observation"] = size_observation
                 from nico.node_scanner_applicability_v1 import inspect_node_inputs
                 from nico.scanner_package_inventory_v1 import inspect_package_sources
                 workspace = WorkerWorkspace(
@@ -354,7 +365,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             results = [{
                 "tool": spec.name, "category": spec.category,
                 "status": "unavailable", "execution_state": "unavailable",
-                "reason": "repository_size_limit_exceeded",
+                "reason": execution_limit["reason"],
                 "execution_limit": dict(execution_limit),
                 "applicability_state": "applicability_unproven",
                 "applicability_reason": "Scanner target inventory was not established before the execution limit.",

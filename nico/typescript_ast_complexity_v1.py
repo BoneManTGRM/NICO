@@ -70,7 +70,7 @@ def _partition_source_files(
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     source_files = {path: text for path, text in files.items() if base._is_source_path(path)}
     python_files = {path: text for path, text in source_files.items() if path.casefold().endswith(".py")}
-    javascript_files = {path: text for path, text in source_files.items() if not path.casefold().endswith(".py")}
+    javascript_files = {path: text for path, text in source_files.items() if path.casefold().endswith(('.js', '.jsx', '.ts', '.tsx'))}
     return source_files, python_files, javascript_files
 
 
@@ -124,7 +124,7 @@ def _function_metrics(analyses: list[dict[str, Any]]) -> dict[str, Any]:
             if item.get("cognitive_complexity") is not None
         ],
         "lengths": [int(item.get("loc") or 0) for item in functions],
-        "nesting": [int(item.get("max_nesting") or 0) for item in functions],
+        "nesting": [int(item["max_nesting"]) for item in functions if item.get("max_nesting") is not None],
         "grades": Counter(str(item.get("grade") or "unknown") for item in functions),
     }
 
@@ -146,7 +146,7 @@ def _tracked_function_metrics(functions: list[dict[str, Any]]) -> dict[str, dict
                 else None
             ),
             "loc": int(item.get("loc") or 0),
-            "max_nesting": int(item.get("max_nesting") or 0),
+            "max_nesting": int(item["max_nesting"]) if item.get("max_nesting") is not None else None,
             "grade": item.get("grade"),
             "method": item.get("method"),
         }
@@ -212,6 +212,9 @@ def _unavailable_notes(
         unavailable.append(f"{len(parse_notes)} source parser limitation(s) were retained in the architecture evidence.")
     if not source_files:
         unavailable.append("No eligible first-party source files were present in the exact-SHA source profile.")
+    from nico.full_assessment_complexity_evidence import CPP_SOURCE_SUFFIXES
+    if any(path.lower().endswith(CPP_SOURCE_SUFFIXES) for path in source_files):
+        unavailable.append("C/C++ function complexity uses Lizard token analysis, not a compiler or security assessment. Include edges are textual; nesting, all preprocessing configurations and a successful build are not established.")
     return unavailable
 
 
@@ -251,6 +254,9 @@ def _complexity_summary_payload(context: dict[str, Any]) -> dict[str, Any]:
         "source_coverage_percent": round(100 * analyzed_count / eligible_count, 1) if eligible_count else 0.0,
         "python_files_analyzed": sum(item.get("language") == "python" for item in analyses),
         "javascript_typescript_files_analyzed": sum(item.get("language") == "javascript-typescript" for item in analyses),
+        "cpp_files_analyzed": sum(item.get("language") == "c-cpp" for item in analyses),
+        "cpp_analysis_method": "lizard_token_function_analysis" if any(item.get("language") == "c-cpp" for item in analyses) else None,
+        "cpp_build_verified": False,
         "typescript_ast_files_analyzed": sum(item.get("method") == "typescript_compiler_ast" for item in analyses),
         "typescript_ast_status": ast_result.get("status") or "unavailable",
         "typescript_parser_version": ast_result.get("parser_version") or "unavailable",
@@ -272,8 +278,9 @@ def _complexity_summary_payload(context: dict[str, Any]) -> dict[str, Any]:
         "average_function_loc": _safe_average(lengths),
         "median_function_loc": _safe_median(lengths),
         "long_functions": sum(value >= 80 for value in lengths),
-        "deep_nesting_functions": sum(value >= 5 for value in nesting),
+        "deep_nesting_functions": sum(value >= 5 for value in nesting) if nesting else None,
         "maximum_nesting": _safe_max(nesting),
+        "nesting_measured_functions": len(nesting),
     }
 
 
@@ -323,6 +330,13 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
     javascript_analyses, javascript_notes, ast_result = _collect_javascript_analyses(javascript_files, base)
     analyses = [*python_analyses, *javascript_analyses]
     parse_notes = [*python_notes, *javascript_notes]
+    for path, text in sorted(source_files.items()):
+        if path.lower().endswith(base.CPP_SOURCE_SUFFIXES):
+            analysis = base._analyze_cpp(path, text)
+            if analysis.get('status') == 'analyzed':
+                analyses.append(analysis)
+            else:
+                parse_notes.append(analysis['note'])
     metrics = _function_metrics(analyses)
     functions = metrics["functions"]
     complexities = metrics["complexities"]

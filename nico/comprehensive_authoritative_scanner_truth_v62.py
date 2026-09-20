@@ -22,11 +22,11 @@ _REQUIRED_TOOLS = (
 )
 
 _INCOMPLETE_ANALYZER_LIMITATION = re.compile(
-    r"^Incomplete applicable analyzers:\s*(?P<names>[^.]+)\.?$",
+    r"^Incomplete (?:applicable analyzers|analyzers with unproven applicability):\s*(?P<names>[^.]+)\.?$",
     re.IGNORECASE,
 )
 _APPLICABLE_ANALYZER_LINE = re.compile(
-    r"^(?P<label>Applicable analyzers:\s*)(?P<names>[^.]+)\.?$",
+    r"^(?:Applicable|Applicability unproven) analyzers:\s*(?P<names>[^.]+)\.?$",
     re.IGNORECASE,
 )
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
@@ -328,72 +328,94 @@ def _canonical_records(
     ]
 
 
-def _reconcile_unavailable_scanner_limitations(
-    value: Any,
+def _analyzer_population_lines(
+    value: str,
     *,
+    applicable: set[str],
     not_applicable: set[str],
-    field: str = "",
-) -> Any:
-    """Remove only structured limitations disproven by applicability evidence."""
-
-    if isinstance(value, Mapping):
-        return {
-            str(key): _reconcile_unavailable_scanner_limitations(
-                item,
-                not_applicable=not_applicable,
-                field=str(key),
-            )
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        output: list[Any] = []
-        for item in value:
-            reconciled = _reconcile_unavailable_scanner_limitations(
-                item,
-                not_applicable=not_applicable,
-                field=field,
-            )
-            if reconciled is not None:
-                output.append(reconciled)
-        return output
-    if not isinstance(value, str):
-        return value
-
-    applicable_match = _APPLICABLE_ANALYZER_LINE.fullmatch(value.strip())
-    if applicable_match:
-        names = [
-            name.strip()
-            for name in applicable_match.group("names").split(",")
-            if name.strip()
-        ]
-        remaining = [name for name in names if name.casefold() not in not_applicable]
-        if not remaining:
-            return None
-        return f"{applicable_match.group('label')}{', '.join(remaining)}."
-
-    if field not in {
-        "unavailable",
-        "limitations",
-        "unavailable_data_notes",
-    }:
-        return value
-
-    match = _INCOMPLETE_ANALYZER_LIMITATION.fullmatch(value.strip())
-    if match:
-        names = [
-            name.strip()
-            for name in match.group("names").split(",")
-            if name.strip()
-        ]
-        remaining = [name for name in names if name.casefold() not in not_applicable]
-        if not remaining:
-            return None
-        return f"Incomplete applicable analyzers: {', '.join(remaining)}."
-
-    normalized = value.strip().casefold()
-    if any(normalized.startswith(f"{name}:") for name in not_applicable):
+    completed: set[str],
+    field: str,
+) -> list[str] | None:
+    match = _APPLICABLE_ANALYZER_LINE.fullmatch(value.strip())
+    is_incomplete = False
+    if not match and field in {"unavailable", "limitations", "unavailable_data_notes"}:
+        match = _INCOMPLETE_ANALYZER_LIMITATION.fullmatch(value.strip())
+        is_incomplete = bool(match)
+    if not match:
         return None
-    return value
+    names = [name.strip() for name in match.group("names").split(",") if name.strip()]
+    names = [name for name in names if name.casefold() not in not_applicable]
+    if is_incomplete:
+        names = [name for name in names if name.casefold() not in completed]
+    established = [name for name in names if name.casefold() in applicable]
+    unresolved = [name for name in names if name.casefold() not in applicable]
+    lines = []
+    if established:
+        label = "Incomplete applicable analyzers" if is_incomplete else "Applicable analyzers"
+        lines.append(f"{label}: {', '.join(established)}.")
+    if unresolved:
+        label = (
+            "Incomplete analyzers with unproven applicability"
+            if is_incomplete else "Applicability unproven analyzers"
+        )
+        lines.append(f"{label}: {', '.join(unresolved)}.")
+    return lines
+
+
+def _reconcile_unavailable_scanner_limitations(
+    value: Mapping[str, Any],
+    *,
+    applicable: set[str],
+    not_applicable: set[str],
+    completed: set[str],
+) -> dict[str, Any]:
+    """Reconcile authored projections without traversing retained scanner payloads."""
+
+    output = deepcopy(dict(value))
+    limitation_fields = {"unavailable", "limitations", "unavailable_data_notes"}
+
+    def project(owner: dict[str, Any], *, include_evidence: bool) -> None:
+        fields = limitation_fields | ({"evidence"} if include_evidence else set())
+        for field in fields:
+            values = owner.get(field)
+            if not isinstance(values, list):
+                continue
+            lines: list[Any] = []
+            for item in values:
+                # Structured retained evidence is opaque, even when it contains
+                # keys or source text resembling a generated report heading.
+                if not isinstance(item, str):
+                    lines.append(item)
+                    continue
+                population = _analyzer_population_lines(
+                    item, applicable=applicable, not_applicable=not_applicable,
+                    completed=completed, field=field,
+                )
+                if population is not None:
+                    lines.extend(population)
+                elif field in limitation_fields and any(
+                    item.strip().casefold().startswith(f"{name}:")
+                    for name in not_applicable
+                ):
+                    continue
+                else:
+                    lines.append(item)
+            owner[field] = lines
+
+    owners = [output]
+    if isinstance(output.get("assessment"), dict):
+        owners.append(output["assessment"])
+    for owner in owners:
+        project(owner, include_evidence=False)
+        for collection in ("sections", "stage_summaries"):
+            for row in owner.get(collection) or []:
+                if not isinstance(row, dict):
+                    continue
+                stage_id = str(row.get("stage_id") or row.get("id") or "")
+                if stage_id == "client_evidence_summary" or stage_id.startswith("client_human_evidence_"):
+                    continue
+                project(row, include_evidence=True)
+    return output
 
 
 def _nonnegative_int(value: Any) -> int:
@@ -542,11 +564,12 @@ def reconcile_authoritative_scanner_truth(
         for record in not_applicable_records
         if (name := v59._tool(record))
     }
-    if not_applicable_names:
-        output = _reconcile_unavailable_scanner_limitations(
-            output,
-            not_applicable=not_applicable_names,
-        )
+    output = _reconcile_unavailable_scanner_limitations(
+        output,
+        applicable=applicable_names,
+        not_applicable=not_applicable_names,
+        completed=completed,
+    )
 
     # Phase 15 may have produced an analyzer summary before repository
     # applicability was finalized. Rebuild the projection from authoritative raw

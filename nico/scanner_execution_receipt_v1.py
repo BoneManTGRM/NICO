@@ -112,6 +112,7 @@ def _input_paths(arguments: Sequence[str], cwd: Path) -> list[tuple[str, Path]]:
     flags = {"--config": "explicit_config"}
     if executable in {"tsc", "tsc.js"}: flags["-p"] = "project_config"
     if executable == "pip-audit": flags["-r"] = "requirements_manifest"
+    if executable == "cppcheck": flags["--file-list"] = "explicit_target_list"
     paths: list[tuple[str, Path]] = []
     for index, value in enumerate(arguments):
         key, separator, attached = str(value).partition("=")

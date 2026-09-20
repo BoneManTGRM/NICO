@@ -22,6 +22,92 @@ TOOLS = [
 ]
 
 
+@pytest.mark.parametrize("supported_node_inputs", [False, True])
+@pytest.mark.parametrize("completed", [False, True])
+def test_section_populations_follow_final_applicability(supported_node_inputs, completed):
+    """Configured dependency tools are not proof of their applicability."""
+    from copy import deepcopy
+
+    paths = ["src/main.py", "requirements.txt"]
+    if supported_node_inputs:
+        paths += ["package.json", "package-lock.json"]
+    records = [_record(name, completed=completed) for name in TOOLS[:3]]
+    canonical = {
+        "repository_evidence": {"file_evidence": {"sampled_paths": paths}},
+        "assessment": {"technical_score": 74, "sections": [{
+            "id": "dependency_health",
+            "evidence": ["Applicable analyzers: pip-audit, npm-audit, osv-scanner."],
+            "unavailable": ([] if completed else [
+                "Incomplete applicable analyzers: pip-audit, npm-audit, osv-scanner.",
+                "Repository execution limit exceeded.",
+            ]),
+        }]},
+        "requested_scanner_records": records,
+        "scanner_execution_records": records,
+        "live_scanner_evidence": {"tools_requested": TOOLS[:3]},
+    }
+    original = deepcopy(canonical)
+    result = reconcile_authoritative_scanner_truth(canonical)
+    section = result["assessment"]["sections"][0]
+    # requirements.txt proves pip-audit and osv-scanner; no Node input proves npm-audit.
+    applicable = "pip-audit, npm-audit, osv-scanner" if supported_node_inputs else "pip-audit, osv-scanner"
+    assert section["evidence"][0] == f"Applicable analyzers: {applicable}."
+    if not supported_node_inputs:
+        assert "Applicability unproven analyzers: npm-audit." in section["evidence"]
+    if not completed:
+        assert f"Incomplete applicable analyzers: {applicable}." in section["unavailable"]
+        assert "Repository execution limit exceeded." in section["unavailable"]
+        if not supported_node_inputs:
+            assert "Incomplete analyzers with unproven applicability: npm-audit." in section["unavailable"]
+    else:
+        assert section["unavailable"] == []
+    assert result["assessment"]["technical_score"] == 74
+    assert canonical == original
+    assert reconcile_authoritative_scanner_truth(result)["assessment"]["sections"] == result["assessment"]["sections"]
+
+
+def test_missing_records_preserve_unresolved_execution_limitations():
+    result = reconcile_authoritative_scanner_truth({
+        "assessment": {"sections": [{
+            "id": "dependency_health",
+            "evidence": ["Applicable analyzers: npm-audit."],
+            "unavailable": ["Incomplete applicable analyzers: npm-audit."],
+        }]},
+    })
+    section = result["assessment"]["sections"][0]
+    assert section["evidence"] == ["Applicability unproven analyzers: npm-audit."]
+    assert section["unavailable"] == ["Incomplete analyzers with unproven applicability: npm-audit."]
+
+
+def test_population_projection_preserves_raw_scanner_and_supplied_evidence():
+    from copy import deepcopy
+
+    literal = "Applicable analyzers: npm-audit."
+    payload = {"evidence": [literal], "unavailable": ["Incomplete applicable analyzers: npm-audit."]}
+    record = {**_record("npm-audit", completed=False), "native_json_output": payload,
+              "raw_artifact": {"text": literal, "sha256": hashlib.sha256(literal.encode()).hexdigest()}}
+    source = {
+        "requested_scanner_records": [record], "scanner_execution_records": [record],
+        "assessment": {"sections": [{"id": "dependency_health", "evidence": [literal]}]},
+        "stage_summaries": [
+            {"stage_id": "dependency_security_static_analysis", "evidence": [literal, deepcopy(payload)]},
+            {"stage_id": "client_human_evidence_requirements", "evidence": [literal]},
+            {"stage_id": "client_evidence_summary", "evidence": [literal]},
+        ],
+    }
+    original = deepcopy(source)
+    result = reconcile_authoritative_scanner_truth(source)
+    for owner in (result, result["assessment"]):
+        for key in ("requested_scanner_records", "scanner_execution_records"):
+            assert owner[key][0]["native_json_output"] == payload
+            assert owner[key][0]["raw_artifact"] == record["raw_artifact"]
+    assert result["stage_summaries"][0]["evidence"] == [
+        "Applicability unproven analyzers: npm-audit.", payload,
+    ]
+    assert result["stage_summaries"][1:] == source["stage_summaries"][1:]
+    assert source == original
+
+
 def _record(name: str, *, completed: bool = True, source: str = "json") -> dict:
     return {
         "scanner_name": name,

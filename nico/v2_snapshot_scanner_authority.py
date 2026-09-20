@@ -215,8 +215,11 @@ def canonical_snapshot_tool_runner(
     commit_sha = _commit_sha(workspace)
     from nico.node_scanner_applicability_v1 import inspect_node_inputs
     inventory = workspace.node_input_inventory
-    if inventory is None and spec.name in {"npm-audit", "typescript", "pip-audit"}:
+    if inventory is None and spec.name in {"npm-audit", "typescript", "pip-audit", "cppcheck"}:
         inventory = inspect_node_inputs(workspace.repo_dir, commit_sha)
+    if spec.name == 'cppcheck' and workspace.node_input_inventory is None:
+        from dataclasses import replace
+        workspace = replace(workspace, node_input_inventory=inventory)
     payload = scanner_pipeline.node_inapplicability_result(spec, workspace, inventory or {}, commit_sha)
     prepared = preparation
     if payload is None and spec.name in {"eslint", "typescript"} and prepared is None:

@@ -159,6 +159,12 @@ _OSV_APPLICABILITY_ES = {
 _CANONICAL_PARITY_EXACT.update({
     "Processing complete; assessment coverage and specialist review are reported separately.":
         "Procesamiento completo; la cobertura de evaluación y la revisión especializada se informan por separado.",
+    "Velocity / Complexity combines bounded traceability with same-run measured source metrics. Nesting coverage is incomplete and contributes no score adjustment.":
+        "Velocidad / Complejidad combina trazabilidad acotada con métricas de código fuente medidas en la misma ejecución. El anidamiento queda sin ajuste de puntuación por cobertura incompleta.",
+    "C/C++ function complexity uses Lizard token analysis, not a compiler or security assessment. Include edges are textual; nesting, all preprocessing configurations and a successful build are not established.":
+        "La complejidad de funciones C/C++ utiliza el análisis de tokens de Lizard, sin compilación ni evaluación de seguridad. Las relaciones de inclusión son textuales; no se han establecido el anidamiento, todas las configuraciones de preprocesamiento ni una compilación correcta.",
+    "Repository size could not be established; scanner execution is unavailable.":
+        "No se pudo establecer el tamaño del repositorio; la ejecución de analizadores no está disponible.",
 })
 _CANONICAL_PARITY_EXACT.update({
     prefix + source: prefix + translated
@@ -926,6 +932,8 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ),
     ("Group summaries never replace underlying candidate IDs or evidence.", "Los resúmenes de grupo nunca sustituyen los ID ni la evidencia de los candidatos subyacentes."),
     ("Exact-source findings in index", "Hallazgos con fuente exacta en el índice"),
+    ("Incomplete analyzers with unproven applicability", "Analizadores incompletos con aplicabilidad no comprobada"),
+    ("Applicability unproven analyzers", "Analizadores con aplicabilidad no comprobada"),
     ("Incomplete applicable analyzers", "Analizadores aplicables incompletos"),
     ("`the identified unit`", "`la unidad identificada`"),
     ("location not retained", "ubicación no conservada"),
@@ -2115,6 +2123,14 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    source_sample = re.fullmatch(
+        r"(?P<anchor>repository_evidence\.code_signal_evidence\.risk_pattern_samples\[\d+\]: "
+        r"[A-Za-z0-9_@./+\-]+:\d+(?::\d+)?: [A-Za-z0-9_.\-]+ — )"
+        r"Dynamic code execution should be reviewed\.", value,
+    )
+    if source_sample:
+        # Evidence keys, source anchors and rule IDs remain literal evidence.
+        return source_sample["anchor"] + "La ejecución dinámica de código requiere revisión."
     tool_count = re.fullmatch(r"([A-Za-z0-9_-]+) — (Raw candidates|Review-required candidates): (\d+)", value)
     if tool_count:
         label = "Candidatos sin procesar" if tool_count[2] == "Raw candidates" else "Candidatos que requieren revisión"
@@ -2787,6 +2803,25 @@ def _translate_presentation(value: Any) -> str:
     )
     if exact is not None:
         return text.replace(stripped, exact, 1)
+    nesting = re.fullmatch(r"Deep nesting regions: (not available|[0-9]+)(?: \(nesting measured for ([0-9]+)/([0-9]+) functions\))?\.", stripped)
+    if nesting:
+        count = "no disponible" if nesting[1] == "not available" else nesting[1]
+        scope = f" (anidamiento medido en {nesting[2]}/{nesting[3]} funciones)" if nesting[2] else ""
+        return f"Regiones con anidamiento profundo: {count}{scope}."
+    hotspots = re.fullmatch(r"Complexity hotspots: long functions=([0-9]+), deep-nesting functions=(unavailable|[0-9]+)(?: \(nesting measured for ([0-9]+)/([0-9]+) functions\))?, maximum import fan-out=([0-9]+)\.", stripped)
+    if hotspots:
+        count = "no disponible" if hotspots[2] == "unavailable" else hotspots[2]
+        scope = f" (anidamiento medido en {hotspots[3]}/{hotspots[4]} funciones)" if hotspots[3] else ""
+        return f"Puntos críticos de complejidad: funciones largas={hotspots[1]}, funciones con anidamiento profundo={count}{scope}, máximo de dependencias de importación={hotspots[5]}."
+    size_limit = re.fullmatch(r"Repository (source|git_history|checkout) exceeds scanner size limit: ([0-9]+) observed bytes, ([0-9]+) byte limit\.", stripped)
+    if size_limit:
+        population = {"source": "código fuente", "git_history": "historial Git", "checkout": "copia de trabajo"}[size_limit[1]]
+        return f"El {population} del repositorio supera el límite de tamaño del analizador: {size_limit[2]} bytes observados, límite de {size_limit[3]} bytes."
+    cpp_unavailable = re.fullmatch(r"(.+): C/C\+\+ token analysis unavailable \((ImportError|ValueError|RecursionError)\); no measurement inferred\.", stripped)
+    if cpp_unavailable:
+        return f"{cpp_unavailable[1]}: análisis de tokens C/C++ no disponible ({cpp_unavailable[2]}); no se infirió ninguna medición."
+    if stripped.startswith(("Deep nesting regions:", "Complexity hotspots:")):
+        raise ValueError("unrecognized Spanish nesting presentation contract")
     configuration_failure = re.fullmatch(
         r"(eslint): \1 produced ([0-9]+) configuration error\(s\); the analyzer result is not valid source-code evidence\.",
         stripped,

@@ -219,7 +219,8 @@ def _architecture_control(complexity: dict[str, Any]) -> dict[str, Any]:
     functions = _bounded_int(complexity.get("functions_measured"))
     high = _bounded_int(complexity.get("high_complexity_functions"))
     ratio = complexity.get("high_complexity_ratio")
-    nesting = _bounded_int(complexity.get("deep_nesting_functions"))
+    nesting = _bounded_int(complexity["deep_nesting_functions"]) if complexity.get("deep_nesting_functions") is not None else None
+    nesting_measured = _bounded_int(complexity.get("nesting_measured_functions", functions if nesting is not None else 0))
     duplicate = _mapping(complexity.get("duplicate_evidence"))
     duplicate_ratio = duplicate.get("duplicate_line_ratio")
     findings: list[str] = []
@@ -240,6 +241,7 @@ def _architecture_control(complexity: dict[str, Any]) -> dict[str, Any]:
         "high": high,
         "ratio": ratio,
         "nesting": nesting,
+        "nesting_measured_functions": nesting_measured,
         "duplicate_ratio": duplicate_ratio,
         "findings": findings,
     }
@@ -376,17 +378,24 @@ def _architecture_section(
     duplicate_ratio = control["duplicate_ratio"]
     ratio_text = f"{ratio:.1%}" if isinstance(ratio, (int, float)) else "not available"
     duplicate_text = f"{duplicate_ratio:.1%}" if isinstance(duplicate_ratio, (int, float)) else "not available"
+    nesting_measured = control["nesting_measured_functions"]
+    nesting_text = str(control['nesting']) if control['nesting'] is not None else "not available"
+    if control['nesting'] is not None and nesting_measured < control['functions']:
+        nesting_text += f" (nesting measured for {nesting_measured}/{control['functions']} functions)"
+    summary = "Snapshot-bound source footprint, measured complexity, duplication, nesting, and named hotspots were evaluated."
+    if nesting_measured < control['functions'] or control['nesting'] is None:
+        summary = "Snapshot-bound source footprint and measured complexity evidence were evaluated."
     return _section(
         "architecture_debt",
         "Architecture & Technical Debt",
         control["score"],
-        "Snapshot-bound source footprint, measured complexity, duplication, nesting, and named hotspots were evaluated.",
+        summary,
         [
             f"Source files: {_bounded_int(architecture.get('source_file_count'))}.",
             f"Files analyzed for complexity: {_bounded_int(complexity.get('files_analyzed'))}.",
             f"Functions or module regions measured: {control['functions']}.",
             f"High-complexity regions: {control['high']}; ratio: {ratio_text}.",
-            f"Deep nesting regions: {control['nesting']}.",
+            f"Deep nesting regions: {nesting_text}.",
             f"Duplicate-line ratio: {duplicate_text}.",
         ],
         control["findings"],

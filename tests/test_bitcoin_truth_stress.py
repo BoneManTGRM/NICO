@@ -37,7 +37,14 @@ def test_size_limited_checkout_keeps_identity_without_scanner_completion(monkeyp
 
     monkeypatch.setattr(worker, "_git", fake_git)
     monkeypatch.setattr(worker, "clone_repository_at_snapshot", clone_repository_at_snapshot)
-    monkeypatch.setattr(base, "directory_size", lambda path: 291563274)
+    # Synthetic source-population oversize; historical mixed source/history
+    # observations remain unchanged in the frozen fixture and artifacts.
+    monkeypatch.setattr(base, "repository_size_observation", lambda path: {
+        "source_bytes": 291563274, "source_byte_limit": base.MAX_REPO_BYTES,
+        "git_history_bytes": 0, "git_history_byte_limit": base.MAX_GIT_HISTORY_BYTES,
+        "exceeded_limits": ["source"], "inventory_complete": False,
+        "byte_count_scope": "lower_bound", "errors": [],
+    })
     monkeypatch.setattr(worker, "STORE", MemoryAdapter())
     monkeypatch.setattr(base, "SCAN_JOBS", {"synthetic_size_limit": {}})
     monkeypatch.setattr(worker.tool_runners, "run_scanner_tool", lambda *args: pytest.fail("oversized checkout must not execute scanners"))
@@ -334,15 +341,15 @@ def test_retained_complete_input_inventory_proves_applicability_without_report_p
 
 
 @pytest.mark.parametrize("language", ["en", "es-MX"])
-def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatch, language):
+@pytest.mark.parametrize("has_category_register", [False, True])
+def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatch, language, has_category_register):
     """Catch late canonical/localization/rendering loss of coverage and authorization evidence."""
-    import base64, io
+    import base64, html, io
     from pypdf import PdfReader
     from nico import report_execution_provenance_e6 as provenance
     from nico.comprehensive_canonical_report_source_v1 import build_canonical_report_source
     from nico.comprehensive_production_capabilities import _authorization_provider
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
-    from nico.source_signal_analysis_v2 import analyze_source_signals
     # Platform and scanner-store observations are outside this synthetic report case.
     monkeypatch.setattr(provenance, "capture_frontend_release", lambda *args: {"status": "unavailable",
         "frontend_observation_schema": "nico.frontend-runtime-observation.v2"})
@@ -355,37 +362,79 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
         "observed_source_files": 484, "eligible_source_files": 137, "analyzed_source_files": 5,
         "unsampled_eligible_source_files": 132, "eligible_source_coverage_percent": 3.65,
         "whole_repository_coverage_percent": 1.03}
+    scanner_records = [
+        {**_limited_scan()["scanner_results"][0], "tool": name, "scanner_name": name}
+        for name in ("bandit", "pip-audit", "npm-audit", "osv-scanner")
+    ]
     context["prior_stage_results"] = {
         "authorization_and_scope": _authorization_provider(context),
         "immutable_repository_snapshot": {"status": "complete", "snapshot": {"status": "attached", "commit_sha": SHA,
             "provider_access_observed": True, "access_mode": "anonymous_public", "credential_used": False}},
         "repository_and_delivery_evidence": {"status": "complete", "evidence": {"profile_coverage": coverage},
             "repository_evidence": {"code_signal_evidence": {"snapshot_commit_sha": SHA,
-                "risk_pattern_hits": 1, "risk_records": analyze_source_signals({"src/runner.py": "exec(command)\n"})["risk_records"]}}},
+                "risk_pattern_hits": 2, "risk_records": FROZEN_OBSERVATIONS["source_risk_records"],
+                "risk_pattern_samples": [f"{row['path']}:{row['line']}: {row['rule_id']} — {row['message']}"
+                    for row in FROZEN_OBSERVATIONS["source_risk_records"]]}}},
         "dependency_security_static_analysis": {"status": "complete", "evidence": {"execution_limit": _limited_scan()["execution_limit"]},
-            "scanner_execution_records": _limited_scan()["scanner_results"]},
+            "scanner_execution_records": scanner_records},
         "evidence_reconciliation_and_scoring": {"status": "complete", "assessment": {"technical_score": 74,
-            "maturity_signal": {"score": 74, "presented_score": 74, "evidence_readiness_score": 62}, "sections": []}},
+            "requested_scanner_records": scanner_records,
+            "scanner_execution_records": scanner_records,
+            "maturity_signal": {"score": 74, "presented_score": 74, "evidence_readiness_score": 62}, "sections": [{
+                "id": "dependency_health", "label": "Dependency / Library Ecosystem", "score": 74,
+                "evidence": ["Applicable analyzers: pip-audit, npm-audit, osv-scanner."],
+                "unavailable": ["Incomplete applicable analyzers: pip-audit, npm-audit, osv-scanner."],
+            }]}},
     }
     source = build_canonical_report_source(context)
     assert source["status"] == "complete"
     canonical = source["report_package"]["json"]
     assert canonical["source_security_assurance"]["status"] == "limited"
     assert canonical["authorization_evidence"]["independent_authorization_verification"] == "not_established"
-    assert canonical["source_risk_observation_summary"]["reported_count"] == 1
+    assert canonical["source_risk_observation_summary"]["reported_count"] == 2
     assert canonical["canonical_findings"] == []
+    if has_category_register:
+        from nico.comprehensive_client_truth_final_v1 import install_comprehensive_client_truth_final_v1
+        zero = {key: 0 for key in (
+            "raw", "material", "review_required", "approved_or_nonblocking",
+            "excluded_test_only", "exact_source", "source_path", "payload_without_source", "count_only",
+        )}
+        canonical["assessment"]["canonical_scanner_finding_register"] = {
+            "totals": dict(zero), "findings": [],
+            "summary_by_category": {key: dict(zero) for key in ("dependency", "secret", "static")},
+        }
+        install_comprehensive_client_truth_final_v1()
     package = rebuild_client_artifacts(source["report_package"])
+    assert package["json"]["canonical_findings"] == []
+    assert package["json"]["decision_grade_finding_count"] == 0
+    assert package["json"]["decision_grade_findings_register"] == []
+    dependency = next(s for s in package["json"]["assessment"]["sections"] if s["id"] == "dependency_health")
+    assert "Applicable analyzers: pip-audit." in dependency["evidence"]
+    assert "Applicability unproven analyzers: npm-audit, osv-scanner." in dependency["evidence"]
+    assert "Incomplete applicable analyzers: pip-audit." in dependency["unavailable"]
+    assert "Incomplete analyzers with unproven applicability: npm-audit, osv-scanner." in dependency["unavailable"]
     assert "source_risk_observation" in package["evidence_csv"]
-    assert "src/runner.py" in package["evidence_csv"]
+    assert all(row["path"] in package["evidence_csv"] for row in FROZEN_OBSERVATIONS["source_risk_records"])
     assert "complexity_eligible_supported_source_files" in package["evidence_csv"]
     assert "observed_supported_language_source_files_including_complexity_exclusions" in package["evidence_csv"]
     assert "not_established" in package["evidence_csv"]
     pdf = PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"])))
-    for rendered in (package["markdown"], package["html"], "\n".join(p.extract_text() for p in pdf.pages)):
+    pdf_text = "\n".join(p.extract_text() for p in pdf.pages)
+    unresolved_label = ("Analizadores con aplicabilidad no comprobada" if language == "es-MX" else "Applicability unproven analyzers")
+    # The PDF includes the technical section evidence; the shorter Markdown/HTML
+    # projections retain its execution limitations and the canonical stage summary.
+    assert f"{unresolved_label}: npm-audit, osv-scanner." in " ".join(pdf_text.split())
+    for rendered in (package["markdown"], package["html"], pdf_text):
+        normalized = " ".join(rendered.split())
+        incomplete_label = ("Analizadores incompletos con aplicabilidad no comprobada" if language == "es-MX" else "Incomplete analyzers with unproven applicability")
+        assert f"{incomplete_label}: npm-audit, osv-scanner." in normalized
+        assert "Applicable analyzers: pip-audit, npm-audit, osv-scanner." not in normalized
+        assert "Analizadores aplicables: pip-audit, npm-audit, osv-scanner." not in normalized
         assert "5 / 137" in rendered and "5 / 484" in rendered
         assert "132" in rendered
         assert ("Observaciones de riesgo del código fuente" if language == "es-MX" else "Source-risk observations") in rendered
-        assert "src/runner.py" in rendered
+        rendered = html.unescape(rendered)
+        assert all(row["path"] in rendered for row in FROZEN_OBSERVATIONS["source_risk_records"])
         for observation in canonical["source_risk_observations"]:
             assert observation["observation_id"] in "".join(rendered.split())
             assert observation["source_excerpt"] in rendered
