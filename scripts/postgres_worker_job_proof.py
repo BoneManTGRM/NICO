@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -42,7 +45,10 @@ def run_proof(database_url: str) -> dict:
     first = winners[0]
     token = first["lease_id"]
     assert first["attempts"] == 1
-    assert jobs.heartbeat(identity, token)["status"] == "running"
+    renewed = jobs.heartbeat(identity, token)
+    assert renewed["status"] == "running"
+    assert renewed["lease_until_epoch"] > first["lease_until_epoch"]
+    assert jobs.get(identity)["lease_until_epoch"] == renewed["lease_until_epoch"]
     assert jobs.claim(identity, "competing-worker") is None
     try:
         jobs.complete(identity, "stale-lease", "d" * 64)
@@ -62,6 +68,12 @@ def run_proof(database_url: str) -> dict:
             )
 
     expire()
+    try:
+        jobs.complete(identity, token, "d" * 64)
+    except JobConflict:
+        pass
+    else:
+        raise AssertionError("expired result accepted before replacement claim")
     second = jobs.claim(identity, "restarted-worker")
     assert second and second["attempts"] == 2 and second["lease_id"] != token
     for operation in (
@@ -79,6 +91,22 @@ def run_proof(database_url: str) -> dict:
     assert terminal["status"] == "completed"
     reconnected = WorkerJobs(PostgresAdapter(database_url))
     assert reconnected.get(identity) == terminal
+    # A separate interpreter reconstructs the store with no process-local job state.
+    child = subprocess.run(
+        [sys.executable, "-c", "\n".join([
+            "import json, os, sys",
+            "from nico.assessment_worker_jobs import JobIdentity, WorkerJobs",
+            "from nico.storage import PostgresAdapter",
+            "data = json.load(sys.stdin)",
+            "jobs = WorkerJobs(PostgresAdapter(os.environ['NICO_TEST_DATABASE_URL']))",
+            "assert jobs.get(JobIdentity(**data['identity'])) == data['terminal']",
+            "print('fresh_process_receipt_verified')",
+        ])],
+        input=json.dumps({"identity": asdict(identity), "terminal": terminal}),
+        text=True, capture_output=True, timeout=30,
+        env={**os.environ, "NICO_TEST_DATABASE_URL": database_url},
+    )
+    assert child.returncode == 0 and child.stdout.strip() == "fresh_process_receipt_verified", "fresh process proof failed"
     assert reconnected.complete(identity, second["lease_id"], "d" * 64) == terminal
     try:
         reconnected.complete(identity, second["lease_id"], "e" * 64)
@@ -110,10 +138,29 @@ def run_proof(database_url: str) -> dict:
     assert jobs.fail(retry_identity, attempt["lease_id"], "temporary_failure", retryable=True)["status"] == "failed"
     assert jobs.claim(retry_identity, "retry-worker-3") is None
 
+    crash_identity = replace(identity, scan_id="crash-scan")
+    job_id = jobs.enqueue(crash_identity, limits)["job_id"]
+    assert jobs.claim(crash_identity, "crashed-worker-1")["attempts"] == 1
+    expire()
+    assert jobs.claim(crash_identity, "crashed-worker-2")["attempts"] == 2
+    expire()
+    assert jobs.claim(crash_identity, "crashed-worker-3") is None
+    assert jobs.get(crash_identity)["failure_code"] == "attempt_budget_exhausted"
+
     deadline_identity = replace(identity, scan_id="deadline-scan")
     job_id = jobs.enqueue(deadline_identity, limits)["job_id"]
-    jobs.claim(deadline_identity, "deadline-worker")
+    deadline_lease = jobs.claim(deadline_identity, "deadline-worker")
     expire(deadline=True)
+    for operation in (
+        lambda: jobs.heartbeat(deadline_identity, deadline_lease["lease_id"]),
+        lambda: jobs.complete(deadline_identity, deadline_lease["lease_id"], "d" * 64),
+    ):
+        try:
+            operation()
+        except JobConflict:
+            pass
+        else:
+            raise AssertionError("deadline-expired owner changed job")
     assert jobs.claim(deadline_identity, "late-worker") is None
     assert jobs.get(deadline_identity)["status"] == "budget_exhausted"
 
@@ -122,11 +169,13 @@ def run_proof(database_url: str) -> dict:
         "synthetic": True, "live_production_claim": False,
         "checks": {
             "single_claim_owner": True, "immutable_job_budget": True,
-            "heartbeat_prevents_reclaim": True, "expired_owner_fenced": True,
+            "heartbeat_extends_persisted_lease": True, "expired_owner_fenced": True,
             "reconnect_preserves_terminal_receipt": True,
+            "fresh_process_preserves_terminal_receipt": True,
             "idempotent_completion": True, "conflicting_receipt_rejected": True,
             "tenant_identity_separate": True, "cancellation_fences_completion": True,
-            "retry_budget_enforced": True, "wall_budget_enforced": True,
+            "retry_budget_enforced": True, "crash_retry_budget_enforced": True,
+            "wall_budget_enforced": True,
         },
         "repository_executed": False, "human_approval": False,
         "client_delivery_authorized": False,
@@ -142,3 +191,4 @@ if __name__ == "__main__":
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(result, sort_keys=True))

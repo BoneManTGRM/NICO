@@ -117,7 +117,7 @@ jobs:
           assert worker["repository_executed"] is False
           assert worker["human_approval"] is False
           assert worker["client_delivery_authorized"] is False
-          assert len(worker["checks"]) == 11
+          assert len(worker["checks"]) == 13
           assert all(value is True for value in worker["checks"].values())
           PY
 
