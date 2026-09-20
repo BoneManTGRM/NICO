@@ -1,5 +1,13 @@
 # NICO — Bitcoin truth-stress closeout
 
+## OWNER-AUTHORIZED CORRECTIVE PR1630 — EXACT PR CHECKS PENDING
+
+Owner replied “Go” to the explicit request for ONE further corrective PR for the prepared D1 finding-count repair. This resolves the Section19/continuation15 publication boundary below. PR https://github.com/BoneManTGRM/NICO/pull/1630 is OPEN on the SAME branch `fix/bitcoin-truth-stress-closeout` against main`3d43c7a0823c75b40402a0e2868506ef9a53f9c4`; opening HEAD`76193f5139f6e611a79bc1ebeae38ae3403bd609`. The Git commit containing this checkpoint-only authorization entry becomes the candidate HEAD. Reviewed source`52d16939828664a84307f5f2d337e669e7d65883` and all source/test blobs are unchanged;150affected tests,8fresh post-review tests, full14-job source CI, resolved independent review and actual-record bilingual/immutability evidence remain valid within their scopes.
+
+Exact current-PR required checks, including security audit, must pass before merge. Existing serving release remains3d43c7a; the prepared correction is not yet deployed. No historical mutation, actual owner report approval, specialist disposition, delivery authorization or new Bitcoin assessment occurred. Prior owner-boundary statements below are superseded by this explicit authorization.
+
+EXACT NEXT ACTION: finish PR1630 exact-HEAD checks, resolve only evidence-supported mission failures on this same PR, merge the exact eligible candidate without another permission request, observe established automatic Railway/Vercel deployments and source mappings, synchronize only the existing nonsecret release pins if authoritative metadata requires it, then complete production-safe diagnostics/control/artifact/bilingual/browser acceptance and the full original completion audit. No new password or further merge/deployment permission is required after these gates pass.
+
 ## PREPARED D1 CORRECTION — REVIEWED; PRODUCTION PUBLICATION NOT AUTHORIZED
 
 This entry supersedes older status and next-action statements below. Original historical evidence is now recovered and immutable; it exposed the late prose-promotion defect documented below. The smallest correction is prepared on the SAME branch, not merged or deployed.
