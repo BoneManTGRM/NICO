@@ -1,5 +1,125 @@
 # NICO — Bitcoin truth-stress closeout
 
+## PR1629 PRODUCTION ACCEPTANCE VERIFIED — ORIGINAL HISTORICAL PROOF STILL UNAVAILABLE — 2026-09-20
+
+This entry supersedes the pending/current-status statements below. The authorized late-normalizer correction is merged, exactly deployed and accepted against fresh production artifacts. No further source correction, PR, merge or deployment is pending for PR1629. The original historical-record qualification gap is not converted into PASS.
+
+### Baseline, branch and exact release
+
+- Original baseline main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
+- SAME repair branch: `fix/bitcoin-truth-stress-closeout`; PR [1629](https://github.com/BoneManTGRM/NICO/pull/1629), MERGED.
+- PR base: `c5748f466f98caf4445eb03d77c2c9ab6a9220cc`; final candidate: `531e7dc4289e49aaf974fb74b5bac4d01270cdf4`.
+- Exact merged main and serving source: `3d43c7a0823c75b40402a0e2868506ef9a53f9c4`. Native GitHub reconfirmed this main after production acceptance.
+- Candidate and merged source tree: `514e5b07ae7778cc5868dbcccadb406dbc09e451`, exact equality verified.
+- Branch HEAD immediately before this checkpoint-only update: `a0878e843bf95d3d7dfcd523b5693ce5003e122c`. Current checkpoint HEAD is the Git commit containing this entry; its exact SHA is also recorded in PR1629's final acceptance update. This update changes no deployed source or test.
+- Final native Railway deployment: `6b0447a3-1da7-476d-a758-af0ec6c2123b`, terminal SUCCESS, source via native meta.commitHash = merged source. Service `d9d51992-d34a-4348-a83d-1f760faaa6a8`, environment `760805be-2eb2-4ef4-a476-5e10def95786`, project `4b5ff41e-ec40-486c-8461-83475ffa90a9`.
+- Final native Vercel deployment: `dpl_scXeEyLMbynsH9Xekjo5mpS9cgLw`, READY, target production, alias `app.nicoaudit.com`, native githubCommitSha = merged source. Final lookup used the serving alias, not an inference from GitHub.
+- Frontend native runtime response byte SHA256 `b9fec23278287670d8e8196ed730e9af9f47e8b4f3add7075bfe1a693fd23cf7`; retained reports independently retain and verify those same bytes and source/deployment identities.
+- Exactly the three established nonsecret release pins were synchronized after the normal automatic source deployments. No additional variables, staged patch, credentials, privileges or duplicate source deployment.
+
+### Evidence A — final source, review and integration
+
+All 19 final candidate workflows COMPLETE/SUCCESS, including push CI35516865481, PR CI35516867137 (14 jobs each), Security35516867178, CodeQL35516867144. Main CI35517659507 SUCCESS. No required check bypassed. Independent D2 review base c5748f4 to source3a1ccb4 and focused gate review base03f8ed76 to source859d057 completed with no unresolved Important/Critical finding. Prior verified raw-evidence review finding remains resolved, never erased by later reviews.
+
+Accepted unchanged-source evidence: 185 affected tests SHA256 `baa46f3219281cb47079bbb3f9c2ec6585a56580bed961917ee0cc32c0bf54e9`; four bilingual public-export cases `39ebd9d5f60856992835f79f780b67ed2655e189829afc055c2d1a0509dee27e`; fresh nine D2 post-review tests `ed12499504fb433a657b31ced875e7369343bf9696d2544d97d223e4f49c7d34`; fresh 23 security post-review tests `acbd8afb334d9f80dd17722f4dfed5570c321dcbb5f0a6037b4f5bc6d0c12f1b`. RED results and actual immutable scanner replay remain recorded below. Source/test blobs were unchanged after their reviews.
+
+Material PR1629 files: `nico/comprehensive_client_truth_final_v1.py`, `scripts/security_audit_gate.py`, three existing regression files and this checkpoint. The canonical correction uses existing retained applicability population projection. The gate correction is one platform-proven nonsecret deployment-ID digest under the existing exact-path/detector/Verified-false condition; negative boundaries still block. No provider, scanner, dependency, storage, scoring formula, size limit, authentication or approval expansion.
+
+### Evidence B — fresh source reports and cross-format truth
+
+Source workflow [35517659470](https://github.com/BoneManTGRM/NICO/actions/runs/35517659470), attempt1, job106096208364, SUCCESS. Immutable archive10608066059: 22,441,473 bytes, SHA256 `50b61367bd744ad5dc1a2c50fae0c76a4e39ccd8d862c58eac85906b3304a5c7`, independently checked against native GitHub metadata before extraction.
+
+Existing scoped TEST production-proof control: `https://gitlab.com/gitlab-org/gitlab-test`, assessed revision `ddd0f15ae83993f5cb66a927a28673882e99100b`. This is existing infrastructure, not a new provider or arbitrary third-party Bitcoin attestation. Standard run `comprun_d2ff7c42131e01c43ed5918f737c1644`; exclusion run `comprun_f947fbd79537400a0e1fd66dbd2d4504`.
+
+Primary verification checked 90 retained file hashes/lengths and 78 typed canonical CSV pointers/values/digests across both runs and retained/EN/es-MX editions. Receipt SHA256 `a52e468860064bca09210dc822c729340d0416d526cffe3625fa0819c3412045`.
+Standard canonical bytes SHA256 `c8c3f3bd7d7bc4154f905eb914e5e6f71e4f85c65f4bd431980e723e2dc863b6`; exclusion `f7c2d899ef236f415302e7d9257bea1cc5c6eeec701a7c5d7c59ee0d4c0ee840`.
+Both report provenances: exact_release_readiness=verified, frontend_backend_source_alignment=aligned, exact backend/frontend/source identities above.
+
+D2-specific receipt SHA256 `57710ebb44e20e248d92935d932a79104ea5252cbcfa1a61832201939edf3b0a`. All six canonical editions actually exercise the nonempty category-register path that exposed the defect. Category counts remain zero and retained requested scanner records remain unchanged:
+- Dependency: no proven applicable or unresolved analyzers; pip-audit/npm-audit/OSV are not_applicable.
+- Secrets: gitleaks and trufflehog applicable.
+- Static: semgrep and eslint applicable; bandit applicability_unproven; TypeScript not_applicable.
+- Independent execution: pip/npm/TypeScript not_requested; OSV unavailable; bandit/semgrep/eslint/gitleaks/trufflehog complete. Execution does not establish applicability or finding approval.
+- Client summaries: 5/5 required executions complete; applicability established4, unproven1, not applicable4. All five completion lines and all four named not-applicable reasons remain.
+- No stale all-applicable dependency/static claim remains in current canonical/Markdown/HTML/PDF projections.
+
+Verifier correction retained transparently: an initial scratch assertion wrongly required PDF section-heading strings in Markdown/HTML, which use stage summaries instead. Primary source/output tracing established that renderer contract; assertions were replaced with positive population/per-tool/reason/native-provenance parity checks, while all canonical and PDF population assertions remained. Independent read-only reviewer verified all 12 retained/EN/es-MX Markdown/HTML files and the archive digest, finding no material D2 contradiction. Native provenance execution_status is preserved with receipt-verification flags and is not the independent execution_state or a completion claim. No production source, test assertion or artifact was changed to resolve this verifier assumption.
+
+### Evidence C — actual PDFs, browser recovery and repeated retrieval
+
+Standard EN PDF SHA256 `9bfea758f7267741f095689feb7c7c74bf6e529314cf59bfb79ed6c51275b0f9`; es-MX `f95a6e7d729457f36beb7100e8a25afb29f776c0b0fefc2826fd1496868a2de7`.
+Exclusion EN `2f295339a830a945fe3644b23e6550312ee91bf3b2f9a49dccd8e368eb85066e`; es-MX `f7d6bd857553f3c5c89116476a4814b386a2665a9431d535749c07bc6a861bd1`.
+All four PDFs' three population lines were checked. Actual standard pages1 and9 rendered and visually inspected in both locales: headline limited source/security assurance and distinct coverage populations accompany scores; applicable/unproven headings are legible; human review pending and delivery blocked remain explicit. EN page9 raster is byte-identical to the prior control's same PDF page (`ed0b2817982a5237660290fdb32c0c4cf5c66d1616da847749505a078c2450d8`); no font/layout change attributable to this canonical correction. es page9 raster SHA256 `62fe73c8b4df876ffa4d6040b5cc6fb30ec57225cc9f28aef5a9caccad3db86c`.
+
+All source-bound consumers COMPLETE/SUCCESS:
+- [Unified35518517509](https://github.com/BoneManTGRM/NICO/actions/runs/35518517509), archive10607972120, 547,564 bytes, SHA256 `5d7e6c1ba87f2504e3f066d22315a82666c26a0aa07935e94dea76dc183fc74d`.
+- [Mobile35518517489](https://github.com/BoneManTGRM/NICO/actions/runs/35518517489), archive10608071149, 73,124 bytes, SHA256 `329abd42b6c825b217643cde1fcee93e943f687759775ea6638160ebc88ace5b`.
+- [WebKit35518517588](https://github.com/BoneManTGRM/NICO/actions/runs/35518517588), archive10607433081, 3,686,949 bytes, SHA256 `d284dd5853eb7165ce17c55eba2af84a6cebca726fc8cbaed24e910173809188`.
+
+Each archive digest/size independently verified before decoding. Primary consumer receipt SHA256 `c07446feba72dfd5553698f2eac300d70838e6c7eeed960fc3b6214bc4b3d545`: same source3d43c7a, binding35517659470:1 and standard run; canonical object unchanged, truth digest `ebc9c5c16332bc3291c04cb019b69f74c99cb6a3419e92b2523d82843a89063d`. Actual EN/es-MX downloads equal source PDF hashes above. Locale observations: es-MX91.27s and EN93.62s, two stable visible verified PDF actions each. No new downstream intake/continuation, wrong-run request or prohibited mutation; page/console/crash arrays empty. Mobile/WebKit reopen/restart/navigation recovery and exact run identity pass. Browser emulation is not physical-device proof.
+
+Fresh three-cell source browser matrix also passed independent verification of 18 file hashes/lengths and exact native release/report identities. All are review drafts: human_approval_performed=false, human_review_required=true, client_delivery_allowed=false. No automated professional disposition, owner approval or client delivery is claimed.
+
+### Evidence D — runtime and protected contracts
+
+Fresh native alias/backend/source metadata still agree after consumers finish. Railway460 runtime entries spanning14:52:37–15:17:17UTC contained no Traceback/Exception/ERROR/CRITICAL message. This is bounded affected-runtime evidence, not a claim about every log. Existing health200, runtime ready,22providers/missing[],durability/replacement-survivaltrue,automatic-cross-store-fallbackfalse remain verified as above.
+
+Protected exact-edition and optional-metadata tests remain in accepted affected suites/current full CI: `test_comprehensive_operator_approval_v1.py`, `test_comprehensive_artifact_manifest_approval_v1.py`, existing single-action frontend contracts and delivery tests. No frontend/approval/delivery source changed in PR1629. Their mechanism preservation is distinct from today's live draft retrieval; no new actual human approval was performed or fabricated.
+
+### Evidence E — frozen/supplemental inputs and denominator contract
+
+Frozen regression fixture `tests/fixtures/bitcoin_truth_stress_observations.json`, SHA256 `abdd0737a38d38a3b64afe356ce62c035c7e23724605e448564d64f1a6f75915`; `tests/test_bitcoin_truth_stress.py` in accepted185-test/full-CI evidence. Retained original baseline PDF SHA256 `28349b20ede259f2d4d2ce38dd24163b176422cb1a8f89e139114cec033b790e`.
+Frozen repository bitcoin/bitcoin, revision `0e9018e8b65611b0769545e177110e4b7fc51244`, historical run `comprun_7cc47a5a81695fa452354479ea23b422`. Actual original two canonical records and historical JSON integrity remain UNPROVEN; neither synthetic fixtures nor later runs supply that missing historical proof.
+
+Separately supplied later run `comprun_f61b410c84383ea8523f99e070590728`, revision `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, canonical SHA256 `a9f32396fe3c6ec4c8cabb239f694106e6e758fb83ccd13b4b114231d51ec01b`, PDF `5da57c9f17531467eeca3d5c34aa4eed8bf459148f0ead256e1ba40c0b0cefb1`: actual two source observations and zero canonical findings/candidates were inspected and exact source independently corroborated earlier. This later report remains unchanged; its earlier D2 contradiction is not retroactively repaired. Its omitted standalone candidate-register artifact remains unverified; the embedded canonical register was inspected.
+
+Canonical coverage contracts retained:
+- `eligible_source_analysis`: analyzed_eligible_source_files / complexity_eligible_supported_source_files; frozen5/137=3.65%.
+- `observed_supported_source_analysis`: same numerator / observed_supported_language_source_files_including_complexity_exclusions; frozen5/484=1.03%.
+- Unsampled eligible132. Neither metric describes all repository languages; neither denominator is substituted for the other.
+Current small live control truthfully retains0/1 in each distinct metric. Adequate positive differential control remains `test_assurance_preserves_score_and_distinguishes_supported_control`; supported execution control remains `test_live_manifest_and_exact_records_produce_honest_full_coverage`. Generic provider-neutral fixture tests do not depend on Bitcoin/provider names. No new provider or C/C++ scanner was implemented.
+
+### Completion audit against original full requirements
+
+FAIL below denotes a missing required proof where stated, not a demonstrated defect in generic repaired behavior. Historical evidence exception previously accepted by owner remains explicit.
+
+| Predicate | Result | Evidence and scope |
+| --- | --- | --- |
+| D0 | PASS | A–D: bounded reviewed diff, affected/full CI, actual source/consumer identity and no new affected runtime error |
+| D1 | FAIL — original proof unavailable | E: generic and later actual-record classification pass; original two-record eligibility remains unproven |
+| D2 | PASS | A/B: nonempty register exercised in all six canonical editions; 12 MD/HTML outputs and four PDFs retain correct distinct applicability/execution populations |
+| D3 | PASS | E/A: retained size-limit regression and immutable identity; unchanged execution boundary, no execution credit for oversized input |
+| D4 | PASS | B/C/E: named denominator identity, typed CSV parity, visible cover limitation;5/137 and5/484 remain distinct |
+| D5 | PASS | A/B/C/E: adequate/limited differential; scores retained; limited assurance accompanies scores and missing evidence neitherPASSnorFAIL |
+| D6 | PASS | B/D: native serving alias/deployment/source, retained observation bytes and exact report provenance agree |
+| D7 | PASS | B/E: requester confirmed, anonymous_public, provider credential false, independent authorization not_established; gates unchanged |
+| R1 | FAIL — original record proof unavailable | E: frozen-facts tests pass; original actual records not retrieved |
+| R2 | PASS | A/E adequate supported fixture plus B/C existing scoped production control |
+| R3 | PASS | B/C:90file hashes,78typed rows, actual canonical/MD/HTML/PDF and consumer equality |
+| R4 | PASS | B/E: distinct numerator/denominator/population contracts |
+| R5 | PASS | A/E: generic provider-neutral tests and no new canonical provider condition |
+| R6 | PASS | A/D: security/session/authentication tests and scoped live controls; no auth source weakening |
+| R7 | PASS | B/D/E: defensive gate preserved, no false new Bitcoin attestation |
+| R8 | PASS | B/C/D: human/specialist review incomplete remains explicit; scanner completion is not approval |
+| R9 | PASS — mechanism preservation | A/D exact-reviewed-edition regression/currentCI; no new actual human decision claimed |
+| R10 | PASS — mechanism preservation | A/D exact delivery integrity tests; B/C actual delivery=false |
+| R11 | PASS — mechanism preservation | A/D existing eligible one-action tests/currentCI and unchanged frontend; C is draft retrieval, not synthetic owner approval |
+| R12 | PASS | A/B/C: actual English/es-MX semantic parity and locale/retrieval/recovery evidence |
+| R13 | FAIL — historical JSON proof unavailable | E: supplied bytes preserved and no historical mutation; unread original JSON integrity cannot be established |
+| R14 | PASS | Exact native merged main3d43c7a and reviewed tree equality |
+| R15 | PASS | Native Railway SUCCESS6b0447a3/source3d43c7a plus report runtime identity |
+| R16 | PASS | Native production alias to Vercel READYdpl_scXe/source3d43c7a plus runtime observation |
+| R17 | PASS | B/D: both new report provenances match independently established native identities |
+| R18 | PASS — current release acceptance | B/C/D source, direct artifacts, browsers, repeated retrieval, provenance and bounded logs |
+| R19 | PASS | A: independent D2/gate reviews and invalidated-surface verification; no unresolved valid Important/Critical finding |
+| R20 | PASS upon this durable commit | This single checkpoint plus PR1629 final exact-HEAD reference; original evidence gap preserved |
+
+LATEST COMPLETED ACTION: PR1629 exact release production acceptance and full evidence-scoped audit. All authorized implementation/review/merge/deploy/current-release checks are complete. No test proof invalidated by this documentation-only transition; previous failed/stale release evidence remains historical.
+
+ONE REMAINING ORIGINAL BOUNDARY: supported authorized read-only access to the original historical canonical package. Prior authenticated browser navigation returned net::ERR_BLOCKED_BY_CLIENT plus an explicit security rejection; available Railway tools did not establish a safe read-only query channel. Do not bypass that denial, repurpose scoped CI authentication, apply the unrelated staged diagnostic patch, request passwords in chat or ask the owner for a file already stated unavailable.
+
+EXACT NEXT ACTION after that boundary clears: retrieve and hash ONLY the existing original run's canonical evidence package read-only; inspect the actual two records against existing eligibility/identity contracts and verify historical integrity; update D1/R1/R13. Do not recreate the historical run, rewrite artifacts, rerun unchanged accepted tests, start another branch/PR or claim an unconditional all-original-predicates SHIPPED declaration.
+
 ## PR1629 EXACT RELEASE SERVING — REPORT ACCEPTANCE PENDING
 
 Exact merged source3d43c7a0823c75b40402a0e2868506ef9a53f9c4 now serves through Railway6b0447a3-1da7-476d-a758-af0ec6c2123b, native terminalSUCCESS14:52:10UTC, commitHash3d43c7a; Verceldpl_scXeEyLMbynsH9Xekjo5mpS9cgLw nativeREADY, production aliasapp.nicoaudit.com and native githubCommitSha3d43c7a. First normal source deploymentf178a47e reachedSUCCESS before exactly three established nonsecret release pins were synchronized; its replacement is the final configuration deployment6b0447a3. No other variable, staged change, credential or privilege changed (tool staged=null).
