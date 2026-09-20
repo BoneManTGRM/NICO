@@ -1,5 +1,13 @@
 # NICO — Bitcoin truth-stress closeout
 
+## PR1629 EXACT NONSECRET DEPLOYMENT DISPOSITION — ROOT-CAUSE GATE
+
+Exact-ID RED1fail/22pass0.25s SHA2568b5970d1b5710fde8a57c9ea4a5e3714a9d1e1096f2176885daf06243a3bf252; GREEN23pass0.21s SHA256f45d543b12d2c6cff965f73c61374f00ccd4d88266b4483358289f228f6eebcc. Primary replay of the SAME immutable archive passes:71observations retained,29exact nonsecret identifiers,42test placeholders,0blocking; raw scanner SHA04307136984b9fc200327634fa984c02a37c14d0a0a45492b81c2bb8faf8de0c unchanged. Gate production change is only one exact digest plus evidence comment; existing verified/unknown/wrong-path/wrong-detector cases still block. Focused independent review and new final-HEAD CI required before merge; D2 source and its accepted185test/review evidence unchanged.
+
+Security Audit35516284628/job106092667830 failed closed on one unclassified TruffleHog observation. Immutable archive10606379512 SHA256625606e07834363019f64f62ba931e32c83a500b92038c55c517a73539fab650 verified. Primary actual record: path=NICO-Ship-Checkpoint.md,DetectorName=RailwayApp,Verified=false,raw digest1e54f8132a238ed92b61943930014e12096ab783906227a47c490c90bdb888f9. Native authenticated Railway metadata confirms this exact value is deployment65874b41-82dc-4b7e-b842-fbd656a00594, terminalSUCCESS, sourcec5748f4, not a credential.
+
+FIRST INCORRECT LAYER: scanner evidence is correctly retained; scripts/security_audit_gate.py lacks the exact nonsecret identifier disposition required for this newly documented deployment. Smallest repair adds only this digest to the existing checkpoint-path/RailwayApp/Verified-false condition. No wildcard, scanner suppression, credential exemption, observation deletion or broader gate relaxation. Reproduce with one new exact-ID test before production edit; existing verified/unknown/different-path/detector cases must continue blocking. Security source/checks and focused review invalidated; reviewed D2 source/185tests remain unchanged. Stay on owner-authorized PR1629; no additional PR needed.
+
 ## OWNER-AUTHORIZED CORRECTIVE PR1629 — 2026-09-20
 
 Owner explicitly authorized ONE additional corrective PR: “Authorize one additional corrective PR.” The pending Section19 owner boundary below is resolved for this prepared late-normalizer correction. PR https://github.com/BoneManTGRM/NICO/pull/1629 is OPEN on SAME branch fix/bitcoin-truth-stress-closeout against unchanged mainc5748f466f98caf4445eb03d77c2c9ab6a9220cc. Opening HEAD4c9c5e5ceca513797c94fc63c23c85bb2b9ac08a. This containing checkpoint-only commit becomes final PR HEAD; reviewed source3a1ccb4 and all three source/test blobs remain unchanged.
