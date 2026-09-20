@@ -22,6 +22,14 @@ Candidate proof D2 and dependent local projections PASS; production D2/R3 remain
 
 EXACT NEXT ACTION: independent read-only review of this concrete candidate against currentmain2f340194, resolve verified material feedback, preserve final candidate/checkpoint, and obtain only the necessary Section19 additional corrective-PR exception. Do not request another owner run/password to prove this defect.
 
+### Independent review accumulator — D2 follow-up
+
+Candidate60521bb8419fc124b1fb886ab1d9291682bcf2fe/tree668efa9649a171dd9ea781494ac8c27de365b6a6 reviewed independently against currentmain2f340194. One Important/high-confidence finding: unconditional whole-tree traversal rewrote matching strings inside requested_scanner_records/scanner_execution_records.native_json_output and raw_artifact, while assessment copies stayed original. Primary independently reproduced this before modifying code. The actual supplied run did not contain that payload shape; its earlier two-path differential remains valid within that input scope. Finding remains in accumulator until focused re-review accepts resolution; no previous finding erased.
+
+Resolution: scope population rewriting to authored section/stage presentation fields and top-level limitation lists; preserve structured payloads as opaque, never traverse scanner-record subtrees; skip supplied human-evidence and engagement-summary stages. New regression checks native payloads, raw artifact/hash, both top-level/assessment record copies, structured nested evidence, supplied literals and input immutability. RED1failure/12deselected0.18s logSHAbfaca99bf402cafa3e0344338f4927109026da30ea597a99791f80513a9e6ca8; GREEN136PASS93.40s, same8affected suites including bilingual public exporters/operator approval/artifact integrity; logSHA26ba351e252e24dcdb273dab3fe775f48cdd65ca394702e0f214ed7300ab985f. Canonical/render tests depending on traversal were invalidated and rerun; no unrelated test repetition. Complete-unproven with stale incomplete prose was independently reproduced by reviewer: completion preserved, applicability remains unknown, stale execution limitation removed. No new production release or PR exists.
+
+EXACT NEXT ACTION: publish reviewed-scope candidate on SAME branch, focused independent re-review of raw-evidence boundary, GitHub required checks, then the Section19 corrective-PR exception. The prior60521bb CI35509179249 is not final-candidate proof after this source mutation.
+
 ## NEW BITCOIN ARTIFACTS VERIFIED — 2026-09-20
 
 Owner independently ran NICO on their phone with repository URL, operator password and requester attestation, leaving optional inputs blank, and supplied the actual new report files. No browser credential handoff or authentication bypass was used. This satisfies the pending supplemental artifact inspection; it does not reconstruct the original historical run.

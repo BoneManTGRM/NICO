@@ -363,68 +363,59 @@ def _analyzer_population_lines(
 
 
 def _reconcile_unavailable_scanner_limitations(
-    value: Any,
+    value: Mapping[str, Any],
     *,
     applicable: set[str],
     not_applicable: set[str],
     completed: set[str],
-    field: str = "",
-) -> Any:
-    """Project section populations from final applicability and execution truth."""
+) -> dict[str, Any]:
+    """Reconcile authored projections without traversing retained scanner payloads."""
 
-    if isinstance(value, Mapping):
-        return {
-            str(key): _reconcile_unavailable_scanner_limitations(
-                item,
-                applicable=applicable,
-                not_applicable=not_applicable,
-                completed=completed,
-                field=str(key),
-            )
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        output: list[Any] = []
-        for item in value:
-            if isinstance(item, str):
-                lines = _analyzer_population_lines(
+    output = deepcopy(dict(value))
+    limitation_fields = {"unavailable", "limitations", "unavailable_data_notes"}
+
+    def project(owner: dict[str, Any], *, include_evidence: bool) -> None:
+        fields = limitation_fields | ({"evidence"} if include_evidence else set())
+        for field in fields:
+            values = owner.get(field)
+            if not isinstance(values, list):
+                continue
+            lines: list[Any] = []
+            for item in values:
+                # Structured retained evidence is opaque, even when it contains
+                # keys or source text resembling a generated report heading.
+                if not isinstance(item, str):
+                    lines.append(item)
+                    continue
+                population = _analyzer_population_lines(
                     item, applicable=applicable, not_applicable=not_applicable,
                     completed=completed, field=field,
                 )
-                if lines is not None:
-                    output.extend(lines)
+                if population is not None:
+                    lines.extend(population)
+                elif field in limitation_fields and any(
+                    item.strip().casefold().startswith(f"{name}:")
+                    for name in not_applicable
+                ):
                     continue
-            reconciled = _reconcile_unavailable_scanner_limitations(
-                item,
-                applicable=applicable,
-                not_applicable=not_applicable,
-                completed=completed,
-                field=field,
-            )
-            if reconciled is not None:
-                output.append(reconciled)
-        return output
-    if not isinstance(value, str):
-        return value
+                else:
+                    lines.append(item)
+            owner[field] = lines
 
-    lines = _analyzer_population_lines(
-        value, applicable=applicable, not_applicable=not_applicable,
-        completed=completed, field=field,
-    )
-    if lines is not None:
-        return " ".join(lines) or None
-
-    if field not in {
-        "unavailable",
-        "limitations",
-        "unavailable_data_notes",
-    }:
-        return value
-
-    normalized = value.strip().casefold()
-    if any(normalized.startswith(f"{name}:") for name in not_applicable):
-        return None
-    return value
+    owners = [output]
+    if isinstance(output.get("assessment"), dict):
+        owners.append(output["assessment"])
+    for owner in owners:
+        project(owner, include_evidence=False)
+        for collection in ("sections", "stage_summaries"):
+            for row in owner.get(collection) or []:
+                if not isinstance(row, dict):
+                    continue
+                stage_id = str(row.get("stage_id") or row.get("id") or "")
+                if stage_id == "client_evidence_summary" or stage_id.startswith("client_human_evidence_"):
+                    continue
+                project(row, include_evidence=True)
+    return output
 
 
 def _nonnegative_int(value: Any) -> int:

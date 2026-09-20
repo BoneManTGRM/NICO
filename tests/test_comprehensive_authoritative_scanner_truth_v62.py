@@ -79,6 +79,35 @@ def test_missing_records_preserve_unresolved_execution_limitations():
     assert section["unavailable"] == ["Incomplete analyzers with unproven applicability: npm-audit."]
 
 
+def test_population_projection_preserves_raw_scanner_and_supplied_evidence():
+    from copy import deepcopy
+
+    literal = "Applicable analyzers: npm-audit."
+    payload = {"evidence": [literal], "unavailable": ["Incomplete applicable analyzers: npm-audit."]}
+    record = {**_record("npm-audit", completed=False), "native_json_output": payload,
+              "raw_artifact": {"text": literal, "sha256": hashlib.sha256(literal.encode()).hexdigest()}}
+    source = {
+        "requested_scanner_records": [record], "scanner_execution_records": [record],
+        "assessment": {"sections": [{"id": "dependency_health", "evidence": [literal]}]},
+        "stage_summaries": [
+            {"stage_id": "dependency_security_static_analysis", "evidence": [literal, deepcopy(payload)]},
+            {"stage_id": "client_human_evidence_requirements", "evidence": [literal]},
+            {"stage_id": "client_evidence_summary", "evidence": [literal]},
+        ],
+    }
+    original = deepcopy(source)
+    result = reconcile_authoritative_scanner_truth(source)
+    for owner in (result, result["assessment"]):
+        for key in ("requested_scanner_records", "scanner_execution_records"):
+            assert owner[key][0]["native_json_output"] == payload
+            assert owner[key][0]["raw_artifact"] == record["raw_artifact"]
+    assert result["stage_summaries"][0]["evidence"] == [
+        "Applicability unproven analyzers: npm-audit.", payload,
+    ]
+    assert result["stage_summaries"][1:] == source["stage_summaries"][1:]
+    assert source == original
+
+
 def _record(name: str, *, completed: bool = True, source: str = "json") -> dict:
     return {
         "scanner_name": name,
