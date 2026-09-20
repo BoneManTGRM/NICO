@@ -1,5 +1,63 @@
 # NICO — Bitcoin truth-stress closeout
 
+## PREPARED D1 CORRECTION — REVIEWED; PRODUCTION PUBLICATION NOT AUTHORIZED
+
+This entry supersedes older status and next-action statements below. Original historical evidence is now recovered and immutable; it exposed the late prose-promotion defect documented below. The smallest correction is prepared on the SAME branch, not merged or deployed.
+
+- Baseline main: `193b1aa14cc8a10afec8167a8a040fc12dc1945a`.
+- Current main/serving source: `3d43c7a0823c75b40402a0e2868506ef9a53f9c4`.
+- Branch: `fix/bitcoin-truth-stress-closeout`; existing PR1629 is MERGED and cannot be amended.
+- Reviewed source candidate: `52d16939828664a84307f5f2d337e669e7d65883`; tree `a5566239d9c0cebcd6e879e37b9c61df9c579ed8`; diff base is current main above.
+- Current checkpoint branch HEAD is the commit containing this documentation-only entry; exact HEAD is recorded in PR1629's preservation update. No source/test blob changed after reviewed candidate52d16939.
+- Candidate automatic Vercel preview: `dpl_6Ayp57MDfEyG4EwYkDhSP5yADR93`, READY, native githubCommitSha52d16939. Preview metadata is not production or backend-runtime proof; no frontend source changed and no safe backend preview is established.
+- Production Railway service/deployment: `d9d51992-d34a-4348-a83d-1f760faaa6a8` / `6b0447a3-1da7-476d-a758-af0ec6c2123b`, SUCCESS, native commitHash3d43c7a. Production Vercel alias app.nicoaudit.com / `dpl_scXeEyLMbynsH9Xekjo5mpS9cgLw`, READY, native githubCommitSha3d43c7a. Recovered native evidence is in final-serving-receipt.json; no deployment inference from main.
+
+### Accepted candidate evidence and bounded review
+
+Affected COMPLETE suites150PASS205.83s: log SHA256`b03b607a2b1d4ed60a0d481949c4507c329f198b3e60e3dc74465ab3b7588c83`, JUnit`2205af5df0e023454bd0e5d5469fc40372fe1d8d05992113c587339c79983a28`. Primary parsed the retained JUnit:150tests/0failures/0errors/0skips. Fresh post-review8PASS0.14s: log`198265d421b8b4f443108aa3977e95706d6f08cefe70498e172bcf0649f106f2`, JUnit`cabe6caee3154f4c33a9ae8ae256fb03a0a58ae50c37357d9f512cb66af6fe40`.
+
+Exact source-candidate NICO CI35523182022 COMPLETE/SUCCESS, all14jobs (quality,12isolated test shards,aggregate). Native GitHub head52d16939828664a84307f5f2d337e669e7d65883 matches reviewed source; frontend typecheck/production build, strict scanner installation, Docker/entry-point checks and file-integrity regression passed within quality. Native run/job/step receipt retained in candidate-ci-receipt.json. Required pull-request-only checks, including Security Audit Evidence, remain pending a permitted new PR; no check bypass or merge-readiness claim. A documentation-only preservation commit does not invalidate the tested source/test blobs.
+
+Independent complete review base3d43c7a to98a6ff9 found one Important/high-confidence overbroad source-anchor match. Primary reproduced three RED cases; correction52d16939 restricts suppression to trusted same-revision observations and preserves different columns. Focused re-review found no unresolved Important/Critical issue;80matching boundary cases and genuinely qualifying explicit canonical/scanner positives passed. Reviewer script/output retained from tool chunk892b4a without repeating them. Primary independent RED/GREEN tests, full150suite and actual-record replay substantiate the result. Nonblocking test note: the original positive fixture lacks guard revision fields; independent qualifying positive probes supply them and pass. No production change required. Review receipt SHA256`a48e1710e7a541c2d122cd229864bf14e4f398521b4db463266154480d93469a`. Older resolved mission findings remain preserved below.
+
+Pre-mortem boundaries directly checked: (1) unmatched or unverified legacy evidence must survive—three primary regressions and reviewer80-case matrix; (2) genuinely eligible canonical/scanner findings must survive—positive controls, full register/completion suite and qualifying reviewer probes; (3) Spanish translation must preserve source literals and keep unknown prose blocked—actual-record bilingual exports, parity/literal/preflight tests. No general defect hunt or new architecture.
+
+### Actual frozen Bitcoin proof
+
+Primary verifier on exact candidate52d16939 confirms all8original manifest artifact identities, actual two retained records, exact GitHub line corroboration, original database revision48/timestamp/integrity unchanged, requester review/delivery state unchanged, and both locally rebuilt languages. Receipt SHA256`f917c2e2fd89490e4c462c2ac0490d248c84811912f0e66567dc4bfb7cbd3c7d`; replay log`d25baa243ccca3d127782b3ddf5f0312970175a5e0b438b5472b6d92c88ccb85`. Corrected semantic result:2source-risk observations,0canonical decision findings,0review candidates. Actual source paths/excerpts/revision survive JSON, evidence CSV, Markdown, HTML and PDF. Both page10 observation tables visually inspected, fully retained/legible. EN raster SHA256`fa18abb9a9804b4fd21e0bcb31d4decb46ab482483cf8b7e8dafb0df44a53659`; es-MX`619d12980fe585092a984feccdfb154a05a2d31bb100dc6689aac0bb71364ce0`.
+
+These are explicitly LOCAL engineering replays of actual retained source signals plus existing generic frozen-facts context, not new live assessments, historical rewrites or production-provenance claims. The existing normal supported/eligible finding controls remain valid and full affected suites verify their preservation. No new live Bitcoin authorization, password, owner approval, specialist disposition or client delivery occurred.
+
+Coverage remains two canonical metrics: eligible_source_analysis=5/137 complexity-eligible supported files=3.65%; observed_supported_source_analysis=5/484 observed supported-language files including complexity exclusions=1.03%; unsampled eligible132. No denominator substitution, score formula/size-limit change, provider addition or Bitcoin-specific production condition.
+
+### Requirement-to-evidence state
+
+| Predicate | Candidate / retained proof | Production acceptance for this correction |
+| --- | --- | --- |
+| D0 |150affected tests,8fresh post-review tests, bounded resolved review and CI above; no auth/storage/approval/source-identity changes|UNPROVEN until exact new release acceptance|
+| D1 / R1 |PASS—actual two-record classification, failed old end-to-end reproduction, repaired bilingual canonical/CSV/MD/HTML/PDF and positive finding controls|FAIL on current code for reproduced late sample-text promotion; candidate not deployed|
+| D2 / D3 |PASS—unchanged producer contracts, size/applicability/execution frozen regressions in150suite and accepted PR1629 production artifacts below|Prior accepted proof retained; dependent new reports must be checked after deployment|
+| D4 / R4 |PASS—separate numerator/denominator/population contracts and bilingual visible fractions in actual-record replay|Prior proof retained; final candidate reports pending|
+| D5 |PASS—scores preserved, limited assurance and adequate differential controls in150suite|Prior proof retained; final candidate reports pending|
+| D6 |PASS for CURRENT3d43 release—native platform mapping and prior report provenance below; no provenance source mutation|UNPROVEN for candidate until deployed and mapped|
+| D7 / R7 |PASS—unchanged gate; confirmed attestation/public access/no credential/independent not_established remain separate|No new live attestation; final candidate reports pending|
+| R2 / R5 |PASS—existing adequate control/provider-neutral fixtures and no new provider coupling|Strong prior live control retained; new release safe control pending|
+| R3 / R12 |PASS—actual-record bilingual exports, structured counts/CSV and Spanish literal/failure-closed controls|UNPROVEN for new release|
+| R6 / R8–R11 |PASS mechanism preservation—affected authenticated approval/manifest tests, unchanged human-review/delivery controls; no new actual human decision claimed|Prior evidence retained; new release workflow check pending|
+| R13 |PASS—original exact artifacts and read-only before/after database integrity; historical error preserved|No historical mutation|
+| R14–R17 |PASS for prior3d43 release only|Candidate not merged/deployed; identities and report alignment UNPROVEN|
+| R18 |UNPROVEN for prepared correction|Must complete after authorized publication and exact deployment|
+| R19 |PASS—Important finding independently reproduced, fixed, focused re-reviewed; no unresolved material finding|No source mutation after reviewed52d16939|
+| R20 |This single checkpoint, preserved branch and PR1629 update retain exact state/evidence/next action|No completion declaration|
+
+Invalidated evidence is limited to D1/finding-dependent projections and new-release runtime/provenance/acceptance. Older CI/export failures and interrupted capture remain retained as failed/unproven, not relabeled. Unchanged D2-D7 contracts, prior release proof and historical integrity are not discarded. The complete historical proof archive is identified by hash and file reference in PR1629's preservation update; Git-backed source/checkpoint files are not duplicated there.
+
+LATEST COMPLETED ACTION: actual original evidence recovery/immutability verification, narrow producer and affected Spanish correction, full affected suite, independent review resolution and fresh post-review verification on the existing branch.
+
+ONE REMAINING OWNER BOUNDARY: authorize ONE further corrective PR for this concrete27-line production correction plus its tests/fixture/checkpoint. The prior explicit additional-PR authorization was used by merged PR1629. Original Section19 and continuation Section15 permit an automatic further PR only for a defect that was not observable pre-merge. This generic sample-string defect was pre-merge reproducible; newly recovered historical input does not justify pretending otherwise. No new PR has been created, and no source release has been changed.
+
+EXACT NEXT ACTION after the owner grants that bounded exception: create ONE corrective PR from this same branch against unchanged current main; preserve the prepared diff and review evidence; allow all required exact-PR checks, including security audit, to run; resolve only verified mission-related failures; merge under the already-granted conditional merge authority; observe established automatic Railway/Vercel releases and synchronize only established nonsecret release pins if independently required; verify exact serving identities; run existing authorized production controls and inspect actual structured/bilingual report artifacts and source-bound consumers; update this checkpoint and perform the original full completion audit. No new password, false Bitcoin authorization, assessment approval or client delivery permission is requested by the PR exception.
+
 ## ORIGINAL HISTORICAL EVIDENCE RECOVERED — D1 LATE TEXT PROMOTION REPRODUCED — 2026-09-20
 
 This is the current mission state; older status entries below remain historical. Same branch `fix/bitcoin-truth-stress-closeout`, checkpoint parent `b61ba3a04fbcb3d7e29b2b68eddd326b21a389a8`, merged PR1629, serving main `3d43c7a0823c75b40402a0e2868506ef9a53f9c4`. Native GitHub, Railway and Vercel were reconfirmed; serving application deployment/source identities are unchanged from the accepted PR1629 evidence below.
