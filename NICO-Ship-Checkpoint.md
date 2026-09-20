@@ -1,6 +1,12 @@
 # NICO — Bitcoin truth-stress closeout
 
-## READY FOR OWNER CORRECTIVE-PR EXCEPTION — 2026-09-20
+## OWNER-AUTHORIZED CORRECTIVE PR1628 — 2026-09-20
+
+Owner explicitly authorized ONE additional corrective PR: “Authorize one corrective PR.” This resolves the Section19 publication boundary below for this prepared D2 correction only. PR https://github.com/BoneManTGRM/NICO/pull/1628 is OPEN against unchanged main2f34019487c4d61fe089ac50884747eeffa0eeda, on SAME branch fix/bitcoin-truth-stress-closeout. Opening HEAD2235af0576771c9e82a05c66f5cd51c1af2546f3; this checkpoint-only commit becomes the final PR HEAD, identified by its containing Git commit. Reviewed sourcea8a06f17 and all four source/test blob identities below remain unchanged. Existing136-test,13-post-review-test and independent-review evidence remains valid. Required exact-PR-HEAD integration checks are pending; production remains2f340194. No further merge/deployment permission is needed after gates pass.
+
+EXACT NEXT ACTION: verify required PR1628 checks and supported preview, merge exact eligible HEAD, observe established automatic Vercel/Railway deployments to terminal success, synchronize only the three existing nonsecret release pins when required by authoritative identity evidence, then run existing scoped production controls and directly inspect new artifacts. No password handoff, new Bitcoin attestation, actual assessment approval, or client delivery authorization requested. Original historical D1/R1/R13 evidence exception remains UNPROVEN. Older owner-boundary/next-action entries below are superseded by this authorization.
+
+## PRE-AUTHORIZATION CANDIDATE EVIDENCE — 2026-09-20
 
 Baseline193b1aa14cc8a10afec8167a8a040fc12dc1945a; currentmain/production2f34019487c4d61fe089ac50884747eeffa0eeda. SAME branch fix/bitcoin-truth-stress-closeout. Existing mission PRs1620/1622/1623/1624 merged; no additional PR created. Exact reviewed/tested SOURCE HEADa8a06f17e64d28a929e28f528af500cbb1a31dc4, tree1abb21712f5ccd3cdd7249384442d2da69c37489. This final continuation commit changes this existing checkpoint only; branch HEAD is its containing GitHub commit, whose first parent is exact SOURCE HEADa8a06f17. Source/test blob identities are retained below to avoid mislabeling a documentation commit as a new source candidate.
 
