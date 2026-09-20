@@ -1,5 +1,13 @@
 # NICO — Bitcoin truth-stress closeout
 
+## PR1629 REVIEW COMPLETE — FINAL CHECKS PENDING
+
+Reviewed source candidate859d05794d878afe5e6fa43a418284c2dff98580/tree4e815324aa4abfc3eaa292d8de3248c5b1449805, base03f8ed76a60e741d205b611dda63a782f0d405e3 for the narrowly added gate correction. Independent read-only review verified exact source/test blobs, archive/raw digests,71-observation replay with exactly one disposition changed, and22 negative boundary cases including verified/missing/malformed verification, different values/detectors/paths. No Important/Critical finding; original D2 review unchanged. Primary native Railway metadata independently establishes the exact deployment-ID classification. Review is not substituted for that platform evidence.
+
+Fresh primary post-review23tests PASS0.23s, logSHAacbd8afb334d9f80dd17722f4dfed5570c321dcbb5f0a6037b4f5bc6d0c12f1b. Original D2 185tests,9postreviewtests, public bilingual exports and raw-input differential remain valid on unchanged blobs. This containing checkpoint-only commit becomes final PR1629 HEAD; no reviewed source/test mutation. Required final-HEAD PR workflows must pass; previous failed Security35516284628 is retained as RED, never bypassed or relabeled.
+
+EXACT NEXT ACTION: finish exact final-HEAD checks, confirm clean eligible PR1629, merge under existing owner authorization, deploy through established integrations, verify actual release/source mappings and new production D2 canonical/report populations. No further owner permission required. Current production remainsc5748f4 and failsD2; original historical D1/R1/R13 evidence exception remains.
+
 ## PR1629 EXACT NONSECRET DEPLOYMENT DISPOSITION — ROOT-CAUSE GATE
 
 Exact-ID RED1fail/22pass0.25s SHA2568b5970d1b5710fde8a57c9ea4a5e3714a9d1e1096f2176885daf06243a3bf252; GREEN23pass0.21s SHA256f45d543b12d2c6cff965f73c61374f00ccd4d88266b4483358289f228f6eebcc. Primary replay of the SAME immutable archive passes:71observations retained,29exact nonsecret identifiers,42test placeholders,0blocking; raw scanner SHA04307136984b9fc200327634fa984c02a37c14d0a0a45492b81c2bb8faf8de0c unchanged. Gate production change is only one exact digest plus evidence comment; existing verified/unknown/wrong-path/wrong-detector cases still block. Focused independent review and new final-HEAD CI required before merge; D2 source and its accepted185test/review evidence unchanged.
