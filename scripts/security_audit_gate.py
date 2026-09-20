@@ -382,12 +382,28 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             and finding.get("Verified") is False
             and finding.get("DetectorName") == "RailwayApp"
             and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
-            == "c8c06a22b8d59fc397706d825d2a827cfed0aa2a96b77375bfac5fc2e9aeebdc"
+            in {
+                "c8c06a22b8d59fc397706d825d2a827cfed0aa2a96b77375bfac5fc2e9aeebdc",
+                "20ac6fd29475931e12bf0ed0699f2bb90b015473b06b0ee851d7ea66c22d9106",
+            }
         ):
             # Artifact10589039830 and authenticated Railway deployment metadata
             # identify this exact value as a prior successful deployment ID.
             # Retain the hit; other values and all verified secrets still block.
+            # Artifact10593284621 plus Railway deployment metadata establish
+            # the second exact digest as the serving 16ea1be deployment ID.
             disposition = "approved_nonsecret_deployment_identifier"
+            approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "55a16aefae99e52dade482f9cecc291d6b5b5a97a92910132fcaa43f9ec8e6c5"
+        ):
+            # Artifact10593284621 and authenticated Railway service metadata
+            # identify this exact value as the NICO service ID, not a token.
+            disposition = "approved_nonsecret_service_identifier"
             approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
