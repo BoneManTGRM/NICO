@@ -1,5 +1,15 @@
 # NICO — Bitcoin truth-stress closeout
 
+## PR1629 MERGED — PRODUCTION ACCEPTANCE PENDING
+
+Owner-authorized PR1629 MERGED as3d43c7a0823c75b40402a0e2868506ef9a53f9c4. Native commit tree514e5b07ae7778cc5868dbcccadb406dbc09e451 exactly equals reviewed finalcandidate531e7dc4289e49aaf974fb74b5bac4d01270cdf4. SAME branch; baseline193b1aa preserved. All19candidate workflows COMPLETE/SUCCESS including pushCI35516865481/PRCI35516867137 (all14jobs each), Security35516867178 and CodeQL35516867144. Native GitHub mergeable=true/clean,reviews/comments empty before exact-HEAD squash merge. Both independent reviews resolved/no Important-Critical findings. Fresh23gatepostreview logacbd8afb334d9f80dd17722f4dfed5570c321dcbb5f0a6037b4f5bc6d0c12f1b; unchanged185D2affected/9D2postreview proof retained. Fresh security artifact10607246789 SHA4684ccaeaba22b3e944c11ae55a894d28b9ef472a31da9212c91ccb29733a0dd. No required check bypassed.
+
+Normal integrations created Railwayf178a47e-39f3-42c6-afed-5d5051dcea0b (BUILDING when first read) and Verceldpl_scXeEyLMbynsH9Xekjo5mpS9cgLw (READY,production), both native source3d43c7a. Established Spanish source production workflow35517659470 is in progress. No duplicate source deployment or arbitrary assessment initiated. Final candidate previewdpl_6YEj8GGS9qfRPoA9qDWXKfPnRH38 READY/exactcandidate; protected runtime not claimed verified.
+
+Current new-release backend terminal success/provenance/report acceptance UNPROVEN. Original historical D1/R1/R13 evidence exception remains. This checkpoint-only branch commit does not change merged/deployed code.
+
+EXACT NEXT ACTION: observe Railway terminalSUCCESS, verify Vercel production alias/source metadata, synchronize only the three established nonsecret release pins to authoritative3d43c7a/frontenddeployment if required; verify resulting backend deployment to terminalSUCCESS and native source mapping; finish existing source35517659470 then inspect immutable new canonical/CSV/EN/es-MX/PDF artifacts directly for D2nonempty-register consistency and all dependent invariants. Observe source-bound browser consumers. No further owner permission/password/Bitcoinrun required.
+
 ## PR1629 REVIEW COMPLETE — FINAL CHECKS PENDING
 
 Reviewed source candidate859d05794d878afe5e6fa43a418284c2dff98580/tree4e815324aa4abfc3eaa292d8de3248c5b1449805, base03f8ed76a60e741d205b611dda63a782f0d405e3 for the narrowly added gate correction. Independent read-only review verified exact source/test blobs, archive/raw digests,71-observation replay with exactly one disposition changed, and22 negative boundary cases including verified/missing/malformed verification, different values/detectors/paths. No Important/Critical finding; original D2 review unchanged. Primary native Railway metadata independently establishes the exact deployment-ID classification. Review is not substituted for that platform evidence.
