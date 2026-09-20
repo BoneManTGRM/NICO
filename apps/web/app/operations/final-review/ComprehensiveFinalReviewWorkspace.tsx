@@ -586,6 +586,14 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
   async function reconcileFinalization(basis: ReviewResponse): Promise<ReviewResponse> {
     const current = await requestJson(statusUrl(), {headers: headers()});
+    // Hydration may supply missing bytes, but may not replace a known authorized
+    // edition or its receipt with a stale approval or a different final edition.
+    if (basis.client_delivery_allowed === true
+      && (current.client_delivery_allowed !== true
+        || stableIdentity(current.review_artifact_identity) !== stableIdentity(basis.review_artifact_identity)
+        || stableIdentity(current.delivery_authorization) !== stableIdentity(basis.delivery_authorization))) {
+      throw new Error(copy.authorizationFailed);
+    }
     const previous = operatorEditionFrom(basis);
     const persisted = operatorEditionFrom(current);
     if (Object.keys(previous).length) {
@@ -830,14 +838,19 @@ export default function ComprehensiveFinalReviewWorkspace() {
         throw new Error(copy.authorizationFailed);
       }
       setResult(authorized);
-      uncertainDecision.current = null;
       authorizationRecorded = true;
       setConfirmed(false);
       setDownloadedArtifactDigest("");
+      // Keep the exact authorized state recoverable until its verified PDF has
+      // actually been presented. A successful authorization response without
+      // hydrated PDF bytes must not turn the one-action flow into a second tap.
+      uncertainDecision.current = authorized;
       setDownloadedArtifactDigest(await downloadExactPdf(authorized));
+      uncertainDecision.current = null;
       setNotice(copy.approvedNotice);
     } catch (caught) {
       if (selectionVersion.current !== version) return;
+      let recoveredPdf = false;
       if (uncertainDecision.current) {
         try {
           const persisted = await reconcileFinalization(uncertainDecision.current);
@@ -845,11 +858,22 @@ export default function ComprehensiveFinalReviewWorkspace() {
           setResult(persisted);
           approvalRecorded = Object.keys(operatorEditionFrom(persisted)).length > 0 || approvalRecorded;
           authorizationRecorded = persisted.client_delivery_allowed === true;
+          if (authorizationRecorded) {
+            try {
+              setDownloadedArtifactDigest(await downloadExactPdf(persisted));
+              setNotice(copy.approvedNotice);
+              recoveredPdf = true;
+            } catch {
+              // Authorization is known to be durable, but presentation still
+              // failed. Preserve download-only recovery without mutating again.
+            }
+          }
           uncertainDecision.current = null;
         } catch {
           // Keep the unresolved decision: a later tap must read before any POST.
         }
       }
+      if (recoveredPdf) return;
       const message = caught instanceof Error ? caught.message : copy.approvalFailed;
       setError(authorizationRecorded ? `${copy.authorizationNotice} ${copy.pdfRetry} ${message}`
         : approvalRecorded ? `${copy.approvalDeliveryFailed} ${message}` : message);

@@ -11,12 +11,13 @@ LAYOUT = (FINAL_REVIEW / "layout.tsx").read_text(encoding="utf-8")
 def test_successful_approval_rehydrates_exact_run_before_pdf_handoff() -> None:
     assert "REVIEW_DECISION_PATH" in HYDRATION
     assert 'requestMethod(input, init) !== "POST"' in HYDRATION
-    assert "if (!reviewUrl || !approvalRequested(init))" in HYDRATION
+    assert "if (!reviewUrl || !finalizationRequested(reviewUrl, init))" in HYDRATION
+    assert "DELIVERY_AUTHORIZATION_PATH" in HYDRATION
     assert "const mutationResponse = await originalFetch.call(window, input, init)" in HYDRATION
-    assert 'statusUrl.pathname = statusUrl.pathname.replace(/\\/review$/, "")' in HYDRATION
+    assert 'statusUrl.pathname = statusUrl.pathname.replace(/\\/(?:review|authorize-delivery)$/, "")' in HYDRATION
     assert 'method: "GET"' in HYDRATION
     assert 'cache: "no-store"' in HYDRATION
-    assert "containsApprovedPdf(currentResponse)" in HYDRATION
+    assert "containsApprovedPdf(currentResponse, requireDeliveryAuthorization, expected)" in HYDRATION
     assert "return currentResponse" in HYDRATION
     assert "return mutationResponse" in HYDRATION
     assert "<FinalReviewApprovedReportHydration />" in LAYOUT
