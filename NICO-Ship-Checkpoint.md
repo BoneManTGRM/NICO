@@ -1,5 +1,17 @@
 # NICO — Bitcoin truth-stress closeout
 
+## New supplemental Bitcoin assessment requested — authentication boundary, 2026-09-20
+
+Owner asked whether a new run could supply current repair evidence, then explicitly instructed “Please procede.” A new run can verify current behavior but cannot recover original historical records or establish original historical integrity. Preserve the original D1/R1/R13 qualification gap.
+
+Opened the standard new Comprehensive intake in the existing browser. Actual redirect: https://app.nicoaudit.com/specialist-login?returnTo=%2Fassessment%3Ftier%3Dcomprehensive . Visible page requires the private NICO operator password; intake/status/review artifacts remain gated. No authenticated operator session is present. No new assessment, attestation, operator approval or delivery action was submitted. Do not repurpose the fixed/scoped production-proof CI session for an arbitrary Bitcoin engagement or weaken authentication.
+
+Owner has already stated the secure browser handoff is unusable on their phone; do not repeatedly request it or ask for credentials in chat. Safe independent continuation: owner signs into NICO in their own phone browser, initiates the authorized Bitcoin Comprehensive assessment, then uploads that new run's evidence package ZIP (and PDF if separate) here. That phone session does not authenticate the agent browser. A run ID alone does not remove the agent authentication boundary.
+
+EXACT NEXT ACTION: inspect the user-supplied new package, bind run/repository/assessed revision and release identities, hash artifacts, inspect actual source observations/candidate classifications and D1-D7 cross-format truth. Keep this as new-run evidence, never a replacement or rewrite of the original historical run. Existing repair/review/deployment/current-release acceptance evidence below remains valid and is not rerun. SAME branch and merged PRs preserved; checkpoint-only update.
+
+
+
 ## FINAL CURRENT-RELEASE ACCEPTANCE — 2026-09-20
 
 The bounded implementation and latest release-configuration repair are deployed and production-verified. This is NOT an unconditional all-original-predicates SHIPPED declaration: original historical source-record eligibility and unread historical JSON integrity remain unavailable under the previously recorded evidence exception. No owner sign-in or approval was needed for today's established production-control path.
