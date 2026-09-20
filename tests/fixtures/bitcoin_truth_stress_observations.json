@@ -22,8 +22,32 @@
   "repository_bytes": 291563274,
   "reported_source_risk_count": 2,
   "canonical_decision_finding_count": 0,
-  "source_risk_records": null,
-  "source_risk_records_status": "not_available_in_supplied_pdf_requires_retained_json_inspection",
+  "source_risk_records": [
+    {
+      "line": 175,
+      "path": ".github/ci-windows-cross.py",
+      "message": "Dynamic code execution should be reviewed.",
+      "rule_id": "python_eval_exec",
+      "source_excerpt": "exec(f'{args.step}()')",
+      "analysis_method": "python_ast_executable_call",
+      "production_scope": true
+    },
+    {
+      "line": 233,
+      "path": ".github/ci-windows.py",
+      "message": "Dynamic code execution should be reviewed.",
+      "rule_id": "python_eval_exec",
+      "source_excerpt": "exec(f'{args.step}(\"{args.ci_type}\")')",
+      "analysis_method": "python_ast_executable_call",
+      "production_scope": true
+    }
+  ],
+  "source_risk_records_status": "original_retained_records_read_only_verified",
+  "source_risk_evidence": {
+    "canonical_json_sha256": "b6b3bba36fc6bbe25ea23f997d0b5b5753b332dc6f9d240caa9aa9663cc4dee4",
+    "source_export_sha256": "1c60276929d17c2646174ac5b18cb27f600b1f40a17d1cb96b60ccbdec9cf5d2",
+    "historical_revision": 48
+  },
   "authorization": {
     "requester_attestation": "confirmed",
     "access_mode": "anonymous_public",

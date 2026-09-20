@@ -15,6 +15,17 @@ from nico.comprehensive_spanish_publication_preflight_v93 import (
 )
 
 
+@pytest.mark.parametrize("anchor", ["src/runner.py:7: python_eval_exec", "src/unknown.js:9:3: javascript_eval"])
+def test_source_observation_sample_translation_preserves_literal_anchor(anchor):
+    prefix = f"repository_evidence.code_signal_evidence.risk_pattern_samples[0]: {anchor} — "
+    source = prefix + "Dynamic code execution should be reviewed."
+    install_spanish_publication_preflight_v93()
+    translated = canonical._translate_presentation_field(source, "evidence")
+    assert translated == prefix + "La ejecución dinámica de código requiere revisión."
+    with pytest.raises(ValueError, match="missing Spanish presentation translation"):
+        canonical._translate_presentation_field(prefix + "An unknown unsafe behavior should be reviewed.", "evidence")
+
+
 def _restored_complexity_canonical() -> tuple[dict, dict]:
     commit_sha = "b" * 40
     hotspots = [

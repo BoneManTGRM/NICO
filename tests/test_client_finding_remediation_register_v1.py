@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import io
+from copy import deepcopy
+
+import pytest
 
 from pypdf import PdfReader
 
@@ -12,6 +15,55 @@ from nico.client_finding_remediation_register_v2 import (
 
 
 SHA = "b" * 40
+
+
+@pytest.mark.parametrize("semantic_class,disposition", [
+    ("source_observation", "not_dispositioned"),
+    ("excluded_non_production_observation", "not_dispositioned"),
+    ("source_observation", "non_actionable"),
+])
+def test_sample_text_cannot_promote_a_classified_source_observation(semantic_class, disposition):
+    from nico.client_finding_remediation_register_v5 import build_finding_remediation_register as build
+    canonical = {
+        "identity": {"commit_sha": SHA}, "canonical_findings": [],
+        "source_risk_observations": [{"path": "src/runner.py", "line": 7,
+            "rule_id": "python_eval_exec", "semantic_class": semantic_class,
+            "disposition_state": disposition, "source_excerpt": "exec(command)",
+            "repository_revision": SHA}],
+        "stage_summaries": [{"evidence": [
+            "src/runner.py:7: python_eval_exec — Review execution.",
+            "src/other.py:8: python_eval_exec — Review execution.",
+        ]}],
+    }
+    before = deepcopy(canonical)
+    register = build(canonical)
+    assert [row["path"] for row in register["code_findings"]] == ["src/other.py"]
+    assert canonical == before
+
+
+@pytest.mark.parametrize("source", ["canonical", "scanner"])
+def test_explicit_finding_survives_matching_observation_and_sample_text(source):
+    from nico.client_finding_remediation_register_v5 import build_finding_remediation_register as build
+    finding = {"finding_id": "explicit_review_finding", "path": "src/runner.py", "line": 7,
+        "location": "src/runner.py:7", "rule_id": "python_eval_exec", "category": "static",
+        "title": "Validate caller input", "status": "review_required", "source_excerpt": "exec(command)",
+        "business_impact": "Caller input reaches execution.", "recommendation": "Validate caller input."}
+    canonical = {"identity": {"commit_sha": SHA}, "canonical_findings": [finding] if source == "canonical" else [],
+        "source_risk_observations": [{"path": "src/runner.py", "line": 7,
+            "rule_id": "python_eval_exec", "semantic_class": "source_observation"}],
+        "stage_summaries": [{"evidence": ["src/runner.py:7: python_eval_exec — Review execution."]}]}
+    if source == "scanner":
+        canonical["scanner_execution_records"] = [{"scanner_name": "semgrep", "applicable": True,
+            "exact_commit_match": True, "findings": [finding]}]
+    before = deepcopy(canonical)
+    register = build(canonical)
+    assert len(register["code_findings"]) == 1
+    retained = register["code_findings"][0]
+    assert retained["path"] == finding["path"] and retained["line"] == 7
+    assert retained["source_excerpt"] == finding["source_excerpt"]
+    assert retained["exact_commit_sha"] == SHA
+    assert retained["human_disposition_required"] is True
+    assert canonical == before
 
 
 def _canonical() -> dict:
