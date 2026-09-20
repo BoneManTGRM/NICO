@@ -1,5 +1,62 @@
 # NICO — Bitcoin truth-stress closeout
 
+## FINAL CURRENT-RELEASE ACCEPTANCE — 2026-09-20
+
+The bounded implementation and latest release-configuration repair are deployed and production-verified. This is NOT an unconditional all-original-predicates SHIPPED declaration: original historical source-record eligibility and unread historical JSON integrity remain unavailable under the previously recorded evidence exception. No owner sign-in or approval was needed for today's established production-control path.
+
+### Final identities and direct acceptance
+
+- Original baseline193b1aa14cc8a10afec8167a8a040fc12dc1945a. SAME repair branch `fix/bitcoin-truth-stress-closeout`; merged mission PRs1620/1622/1623/1624 with prior owner corrective exceptions preserved. Final mission source merged16ea1be933fdd046eeccd8e6d3431723bfcbe884; later work preserved. Current main/serving source `2f34019487c4d61fe089ac50884747eeffa0eeda`, independently reconfirmed at closeout.
+- Railway NICO deployment `7e14894a-4d8a-4fc3-8885-08bf7b0c6bb6` SUCCESS, native authoritative commitHash2f340194; Vercel production alias deployment `dpl_5Js2m8XSwFoSFxAhETe1pJoSTEux` READY, authoritative source2f340194. Current identities re-read after acceptance and agree with the actual new report provenance.
+- Exactly three existing nonsecret service release pins synchronized. No source code, dependency, scanner, provider, authentication, privilege, storage, assessment approval, delivery authorization or historical-artifact changes in this continuation.
+- Spanish source35482524577 attempt2/job106063695676 SUCCESS; source artifact10603309554 SHA256be52831ceb1b570ce63df8fa11a573d8c7b13daf320560d785edb49863a31156. Primary90file hash/length checks and78canonical CSV pointer/value/digest checks PASS; new reports' readiness verified/alignment aligned as detailed immediately below. Fresh3cell matrix also independently verified18file hashes and actual canonical provenance/lifecycle.
+- Mobile35505921780/job106065628671 SUCCESS, retained artifact10603634080. Primary decoded runtime record binds SAME standard run `comprun_c2468d75499350eeae0d3b1270639076`, source `35482524577:2`; restart/background/foreground/navigation recovery verified; actual EN PDF download hash8f6cfad06ccc7f4cb809615b20848931fb40d8ab51080369b9b66c7e5af4ecd7 matches downloaded source artifact. Page/console errors[].
+- WebKit35505921799/job106065632564 SUCCESS, retained artifact10603484738. Primary decoded runtime record binds same run/source attempt; actual es-MX PDF download hash5709a74da73ca0eac12b2577ad037526564c9ddfa3379603cad10210e66fe0e7 matches downloaded source artifact. Recovery verified; page/console errors[]. Browser emulation, not a physical-device assertion.
+- Unified35505921792/job106065670332 SUCCESS. Downloaded artifact10604315677,547559bytes, SHA256 `2b40dbd2bd175d82d6cf28b52667e3ef735b5be24bd7ad7a67caea25ea2cd2f8` matches native GitHub digest. Primary asserts exact current source, source_binding35482524577:2 and SAME standard run; es-MX91.33seconds/EN94.43seconds, two visible verified PDF actions per locale with hashes above, zero new intake/continuation, zero wrong-run/prohibited-mutation requests, page/console errors[]. Canonical JSON parsed object equals the source artifact after both observations, canonical truth digest `96cb8450f48015f89e3403951fa7436cb4bbeecde76e833ff9d2de1463f58c18`. Structured audit passed/errors[]; human review required and delivery blocked. Unified primary JSON byte digest `73d8c8f061feec6353e91ac7b1f092c98a8d0e06a2fe51847c933a01003cfc98`.
+- Native backend filtered ERROR/Exception/Traceback logs since startup10:28:18UTC returned[]; runtime ready/durable22providers/missing[]; health200.
+- Preserved current source CI35482524642, Node35482524633, Security35482524631, CodeQL35482524613, Postgres35482524591 and original/focused independent reviews. No source mutation invalidated them. Adjacent Phase1 binder35483737298 remains failed from the already-diagnosed preexisting Green Watch timing wait; no blanket all-repository-checks-green statement and no out-of-scope source repair.
+
+### Completion audit against the ORIGINAL full predicates
+
+FAIL for missing historical proof below means the original qualification cannot be established, not that the generic repaired behavior is known incorrect. The owner's previously recorded instruction to proceed with that exception is preserved; it is never converted to evidence.
+
+| Predicate | Result | Evidence |
+|---|---|---|
+| D0 | PASS | Unchanged reviewed source/currentCI; bounded3pin change; fresh standard/exclusion/mobile/WebKit/retrieval proofs and no new runtime error |
+| D1 | FAIL — original historical eligibility unproven | Generic classification and cross-format repairs pass retained tests/current CSV; original2records unavailable |
+| D2 | PASS | Retained matrix tests; all9current applicability/execution pairs and CSV equality, no failure-to-inapplicable rewrite |
+| D3 | PASS | Retained291563274-byte deterministic regression, unchanged implementation/limit; supplemental UI evidence remains separately labeled |
+| D4 | PASS | Frozen5/137=3.65% versus5/484=1.03% tests; current distinct population contracts/CSV/PDF cover limits |
+| D5 | PASS | Retained adequate/limited differential controls; current source_security_assurance limited, missing neitherPASSnorFAIL, scores87/87not modified |
+| D6 | PASS | Exact platform/runtime/new report identity chain above; prior mismatch retained, fresh readiness verified |
+| D7 | PASS | Actual canonical/CSV confirmed attestation, anonymous access, no provider credential, independent authorization not_established |
+| R1 | FAIL — original record-level proof unproven | Frozen-facts fixture/tests pass; actual original2records not retrieved |
+| R2 | PASS | Existing adequate synthetic control plus established scoped live production-proof fixture |
+| R3 | PASS |90captured file hashes,78typed canonical rows, actual Markdown/HTML/PDF families and primary structured audit |
+| R4 | PASS | Distinct named numerator/denominator populations in retained tests and current canonical/CSV |
+| R5 | PASS | Retained generic provider-neutral tests; no canonical source changes in this continuation |
+| R6 | PASS | Existing security/currentCI/session gate proof; current unsigned browser remains gated |
+| R7 | PASS | Existing production-proof scope/authorization gate retained; no false Bitcoin attestation |
+| R8 | PASS | Actual new report human_review_required=true, human_review_completed=false; no professional disposition fabricated |
+| R9 | PASS — mechanism preservation | Retained protected exact-edition tests/currentCI; no actual new human approval claimed |
+| R10 | PASS — mechanism preservation | Retained protected delivery tests/currentCI and current delivery=false |
+| R11 | PASS — mechanism preservation | Existing one-action tests/currentCI and accepted earlier approved-control evidence; today's checks retrieve drafts, not pretend human approval |
+| R12 | PASS | Actual EN/es-MX PDF/canonical/CSV; live locale/recovery/retrieval checks |
+| R13 | FAIL — historical JSON proof unavailable | Frozen PDF digest retained28349b20ede259f2d4d2ce38dd24163b176422cb1a8f89e139114cec033b790e; historical JSON unread; no historical mutation performed |
+| R14 | PASS | Native GitHub merged mission source16ea1be; currentmain2f340194contains it |
+| R15 | PASS | Native Railway SUCCESS7e14894a/source2f340194 plus actual report runtime provenance |
+| R16 | PASS | Native Vercel READYdpl_5Js2m8/source2f340194/production alias plus native runtime observation |
+| R17 | PASS | Both new canonical reports align with authoritative deployment/source identities |
+| R18 | PASS — current release production acceptance | Sourceattempt2 + Mobile35505921780 + WebKit35505921799 + Unified35505921792 and primary artifact inspections |
+| R19 | PASS | Original full/focused review findings closed; no new production source diff |
+| R20 | PASS upon this durable commit | This single checkpoint and PR1624final exact-HEAD reference |
+
+UNRESOLVED ORIGINAL BOUNDARY: supported read-only access to the original Bitcoin run `comprun_7cc47a5a81695fa452354479ea23b422` canonical records/evidence at commit0e9018e8b65611b0769545e177110e4b7fc51244. The two original records and historical JSON integrity cannot be independently verified from the frozen PDF. Previously blocked access is not bypassed. No nonexistent attachment or repeated password is requested.
+
+LATEST COMPLETED ACTION: configuration repair and all current-release production gates passed with direct artifact evidence.
+EXACT NEXT ACTION for remaining original predicates: if supported historical evidence access becomes available, retrieve/hash that SAME historical canonical package read-only and inspect the actual2records against the existing eligibility contract. Do not recreate the run, rewrite artifacts, rerun accepted current-release tests or start another branch/PR. No further implementation/merge/deployment is pending for the bounded repair. Supplemental current-Bitcoin PDF transfer remains an optional separate unfinished retrieval, not a substitute for the frozen historical records.
+
+
 ## Post-configuration D6 production proof accepted — 2026-09-20
 
 Workflow35482524577 attempt2/job106063695676 SUCCESS. Immutable artifact10603309554, 22,440,994bytes, SHA256 `be52831ceb1b570ce63df8fa11a573d8c7b13daf320560d785edb49863a31156` verified against GitHub. New standard run `comprun_c2468d75499350eeae0d3b1270639076` and exclusion run `comprun_3c3d2c47b32b3253afa30bad7e2de458` retain backend7e14894a-4d8a-4fc3-8885-08bf7b0c6bb6, frontenddpl_5Js2m8XSwFoSFxAhETe1pJoSTEux and exact source2f34019487c4d61fe089ac50884747eeffa0eeda. Canonical deployment_identity_conflict=false, deployment_identity_established=true, frontend_deployment_identity_verified=true, exact_release_readiness=verified, frontend_backend_source_alignment=aligned. Retained native endpoint bytes independently base64-decoded and SHA256/byte-length verified; observation digest8ea508e0f62e928c37516e158db8d48e0862a44c17c05d45a5c01dd8cfd155fd agrees with Vercel native source/deployment evidence.
