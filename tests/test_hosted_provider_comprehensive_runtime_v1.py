@@ -344,6 +344,9 @@ def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(monke
     def runner(command, **kwargs):
         commands.append(list(command))
         environments.append(dict(kwargs.get("env") or {}))
+        if command[-2:] == ["init", str(tmp_path / "repo")]:
+            # Retain real size accounting; model git init's filesystem effect.
+            (tmp_path / "repo" / ".git").mkdir(parents=True)
         if command[-2:] == ["rev-parse", "HEAD"]:
             return Result(stdout=revision + "\n")
         if command[-2:] == ["rev-parse", "--is-shallow-repository"]:
@@ -351,7 +354,6 @@ def test_exact_checkout_uses_ephemeral_askpass_not_secret_bearing_commands(monke
         return Result()
 
     monkeypatch.setattr("nico.hosted_provider_comprehensive_runtime_v1.shutil.which", lambda _: "/usr/bin/git")
-    monkeypatch.setattr("nico.scanner_worker.directory_size", lambda _: 0)
     repo_path, actual, notes = checkout_hosted_provider_snapshot(
         "gitlab.com/group/repo",
         revision,
@@ -386,6 +388,9 @@ def test_exact_anonymous_checkout_uses_no_credential_or_auth_helper(monkeypatch:
     def runner(command, **kwargs):
         commands.append(list(command))
         environments.append(dict(kwargs.get("env") or {}))
+        if command[-2:] == ["init", str(tmp_path / "repo")]:
+            # Retain real size accounting; model git init's filesystem effect.
+            (tmp_path / "repo" / ".git").mkdir(parents=True)
         if command[-2:] == ["rev-parse", "HEAD"]:
             return Result(stdout=revision + "\n")
         if command[-2:] == ["rev-parse", "--is-shallow-repository"]:
@@ -393,7 +398,6 @@ def test_exact_anonymous_checkout_uses_no_credential_or_auth_helper(monkeypatch:
         return Result()
 
     monkeypatch.setattr("nico.hosted_provider_comprehensive_runtime_v1.shutil.which", lambda _: "/usr/bin/git")
-    monkeypatch.setattr("nico.scanner_worker.directory_size", lambda _: 0)
     repo_path, actual, notes = checkout_hosted_provider_snapshot(
         "gitlab.com/group/repo",
         revision,
