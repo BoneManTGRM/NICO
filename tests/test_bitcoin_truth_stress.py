@@ -355,6 +355,10 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
         "observed_source_files": 484, "eligible_source_files": 137, "analyzed_source_files": 5,
         "unsampled_eligible_source_files": 132, "eligible_source_coverage_percent": 3.65,
         "whole_repository_coverage_percent": 1.03}
+    scanner_records = [
+        {**_limited_scan()["scanner_results"][0], "tool": name, "scanner_name": name}
+        for name in ("bandit", "pip-audit", "npm-audit", "osv-scanner")
+    ]
     context["prior_stage_results"] = {
         "authorization_and_scope": _authorization_provider(context),
         "immutable_repository_snapshot": {"status": "complete", "snapshot": {"status": "attached", "commit_sha": SHA,
@@ -363,9 +367,15 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
             "repository_evidence": {"code_signal_evidence": {"snapshot_commit_sha": SHA,
                 "risk_pattern_hits": 1, "risk_records": analyze_source_signals({"src/runner.py": "exec(command)\n"})["risk_records"]}}},
         "dependency_security_static_analysis": {"status": "complete", "evidence": {"execution_limit": _limited_scan()["execution_limit"]},
-            "scanner_execution_records": _limited_scan()["scanner_results"]},
+            "scanner_execution_records": scanner_records},
         "evidence_reconciliation_and_scoring": {"status": "complete", "assessment": {"technical_score": 74,
-            "maturity_signal": {"score": 74, "presented_score": 74, "evidence_readiness_score": 62}, "sections": []}},
+            "requested_scanner_records": scanner_records,
+            "scanner_execution_records": scanner_records,
+            "maturity_signal": {"score": 74, "presented_score": 74, "evidence_readiness_score": 62}, "sections": [{
+                "id": "dependency_health", "label": "Dependency / Library Ecosystem", "score": 74,
+                "evidence": ["Applicable analyzers: pip-audit, npm-audit, osv-scanner."],
+                "unavailable": ["Incomplete applicable analyzers: pip-audit, npm-audit, osv-scanner."],
+            }]}},
     }
     source = build_canonical_report_source(context)
     assert source["status"] == "complete"
@@ -375,13 +385,28 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     assert canonical["source_risk_observation_summary"]["reported_count"] == 1
     assert canonical["canonical_findings"] == []
     package = rebuild_client_artifacts(source["report_package"])
+    dependency = next(s for s in package["json"]["assessment"]["sections"] if s["id"] == "dependency_health")
+    assert "Applicable analyzers: pip-audit." in dependency["evidence"]
+    assert "Applicability unproven analyzers: npm-audit, osv-scanner." in dependency["evidence"]
+    assert "Incomplete applicable analyzers: pip-audit." in dependency["unavailable"]
+    assert "Incomplete analyzers with unproven applicability: npm-audit, osv-scanner." in dependency["unavailable"]
     assert "source_risk_observation" in package["evidence_csv"]
     assert "src/runner.py" in package["evidence_csv"]
     assert "complexity_eligible_supported_source_files" in package["evidence_csv"]
     assert "observed_supported_language_source_files_including_complexity_exclusions" in package["evidence_csv"]
     assert "not_established" in package["evidence_csv"]
     pdf = PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"])))
-    for rendered in (package["markdown"], package["html"], "\n".join(p.extract_text() for p in pdf.pages)):
+    pdf_text = "\n".join(p.extract_text() for p in pdf.pages)
+    unresolved_label = ("Analizadores con aplicabilidad no comprobada" if language == "es-MX" else "Applicability unproven analyzers")
+    # The PDF includes the technical section evidence; the shorter Markdown/HTML
+    # projections retain its execution limitations and the canonical stage summary.
+    assert f"{unresolved_label}: npm-audit, osv-scanner." in " ".join(pdf_text.split())
+    for rendered in (package["markdown"], package["html"], pdf_text):
+        normalized = " ".join(rendered.split())
+        incomplete_label = ("Analizadores incompletos con aplicabilidad no comprobada" if language == "es-MX" else "Incomplete analyzers with unproven applicability")
+        assert f"{incomplete_label}: npm-audit, osv-scanner." in normalized
+        assert "Applicable analyzers: pip-audit, npm-audit, osv-scanner." not in normalized
+        assert "Analizadores aplicables: pip-audit, npm-audit, osv-scanner." not in normalized
         assert "5 / 137" in rendered and "5 / 484" in rendered
         assert "132" in rendered
         assert ("Observaciones de riesgo del código fuente" if language == "es-MX" else "Source-risk observations") in rendered

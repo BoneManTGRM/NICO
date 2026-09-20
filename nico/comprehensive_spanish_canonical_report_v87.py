@@ -926,6 +926,8 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ),
     ("Group summaries never replace underlying candidate IDs or evidence.", "Los resúmenes de grupo nunca sustituyen los ID ni la evidencia de los candidatos subyacentes."),
     ("Exact-source findings in index", "Hallazgos con fuente exacta en el índice"),
+    ("Incomplete analyzers with unproven applicability", "Analizadores incompletos con aplicabilidad no comprobada"),
+    ("Applicability unproven analyzers", "Analizadores con aplicabilidad no comprobada"),
     ("Incomplete applicable analyzers", "Analizadores aplicables incompletos"),
     ("`the identified unit`", "`la unidad identificada`"),
     ("location not retained", "ubicación no conservada"),
