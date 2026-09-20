@@ -1,5 +1,38 @@
 # NICO — Bitcoin truth-stress closeout
 
+## Resumed original truth-stress closeout — configuration repair, 2026-09-20
+
+This section supersedes stale serving identities and next actions below. Recovered SAME branch `fix/bitcoin-truth-stress-closeout` at `559058e85e44514bdf14a51e22a1ca0c47b725af`, merged CSV PR #1624 / mission source `16ea1be933fdd046eeccd8e6d3431723bfcbe884`. Current authoritative main is `2f34019487c4d61fe089ac50884747eeffa0eeda`, tree `7ecc10ec88ea08c93333963acd04def9068d0d8f`. GitHub comparison establishes three newer commits (existing final-review repair and dependency updates); preserved, not repeated or reverted. No production source edit, new branch, PR or merge in this continuation.
+
+### Directly verified evidence and discovered D6 configuration gap
+
+Native Vercel maps production app.nicoaudit.com to READY `dpl_5Js2m8XSwFoSFxAhETe1pJoSTEux` and source2f340194; live /api/release HTTP200 at10:27UTC agrees via native VERCEL_GIT_COMMIT_SHA/VERCEL_DEPLOYMENT_ID. Railway initially served SUCCESS `be548d2c-58f0-401b-ba8c-8f17fe3688ef`, same source. Current source mainCI35482524642, frontend35482524605, Spanish35482524577 attempt1, mobile35483246257, WebKit35483246277 and unified35483246211 succeeded. Primary inspected unified job106004802781 actual output: same completed run `comprun_3f6edd8dcc4c4b8d48432d6b1768a1da`, two locale observations, stable PDF actions, pending human approval and blocked delivery, no additional intake/continuation/approval.
+
+Downloaded Spanish artifact10596786421, 22,446,892bytes; archive SHA256 `e95617d0a99faff9e52a309bdbc6a7536f4d9ce8f1a85d5262924fa0c778ce8d` matches GitHub. Primary verified all45 file byte lengths/hashes for BOTH standard and exclusion runs; all13 typed truth CSV rows in retained/EN/es-MX exports have exact canonical pointer/value/normalized JSON digest equality (78 truth rows total), existing supplied-human row retained. An initial auxiliary checker incorrectly hashed spaced CSV JSON; producer _json_bytes uses sorted compact UTF-8 JSON. Source inspection and independent value comparisons establish checker error; corrected check passes with every value/count assertion preserved. No product edit. Canonical byte hash standard `256c37dabc1e8ba34e2b6e47d6268b9ba96bbbcfa2fb293c489d7a952b4f6d55`. Both actual EN/es-MX cover pages rendered/inspected: limited assurance immediately below87/87scores, distinct0/1coverage populations and1unsampled; pending human review, blocked delivery. Preexisting English font spacing persists; no redesign.
+
+Crucially these actual reports contain stale configured frontend source16ea1be/deploymentdpl_912UEqTZ6Q5QVKzUgLF9f9Eo1Y9K versus native observed2f340194/dpl_5Js2m8XSwFoSFxAhETe1pJoSTEux. Canonical `deployment_identity_conflict=true`, frontend observation mismatch and exact_release_readiness unverified. Native observation digest `8ea508e0f62e928c37516e158db8d48e0862a44c17c05d45a5c01dd8cfd155fd`. Green workflows did NOT prove aligned report provenance. First divergence: three stale established nonsecret Railway release pins after subsequent source deployments; canonical fail-closed behavior is correct. D6/P6/R17 not accepted for those old reports.
+
+### Applied existing release configuration repair
+
+On only NICO service d9d51992-d34a-4348-a83d-1f760faaa6a8 / environment760805be-2eb2-4ef4-a476-5e10def95786 / project4b5ff41e-ec40-486c-8461-83475ffa90a9 set:
+- NICO_RELEASE_COMMIT_SHA = 2f34019487c4d61fe089ac50884747eeffa0eeda
+- NICO_FRONTEND_BUILD_COMMIT_SHA = 2f34019487c4d61fe089ac50884747eeffa0eeda
+- NICO_FRONTEND_DEPLOYMENT_ID = dpl_5Js2m8XSwFoSFxAhETe1pJoSTEux
+
+Native set_variables confirms exactly3names, staged:null, no secret/privilege/global configuration change. Resulting deployment `7e14894a-4d8a-4fc3-8885-08bf7b0c6bb6` reached terminal SUCCESS at10:28:17UTC with authoritative commitHash2f340194. Native logs show startup complete and /health200; INFO lines classified stderr by Railway are not application failures. No old report/artifact is rewritten.
+
+Only configuration/deployment-dependent proof invalidated. Existing source/unit/fullCI/independent review evidence retained. Anti-churn decision permits one post-configuration existing production-control rerun; reservation `13d063670a30e29081a58b31f8822b2535645768d95aee907421586d08553fc7`. Re-ran existing Spanish source job106002771157 (workflow35482524577) once via authenticated GitHub connector; accepted success response. It uses the existing bounded nico_production_proof session/smoke repository, not a new Bitcoin attestation or human decision. Fresh resulting artifact must prove new runtime/report provenance before D6/R17/P6 PASS; downstream production proof must match this source attempt.
+
+### Preserved boundaries
+
+Current cloud browser is signed out at NICO operator sign-in. Owner says secure handoff is unusable on phone; no credential request, password in chat, alternate authentication, privilege grant or bypass attempted. Existing source-control/platform connectors remain usable. Supplemental Bitcoin run7f6a98 below remains completed UI-only evidence, artifact transfer UNPROVEN. Frozen historical actual2records/unread JSON still unavailable under previously accepted owner exception; do not request nonexistent uploads or fabricate PASS.
+
+Adjacent workflow35483737298 (Phase1 bound completion report) failed waiting for missing Green Watch context; decoded job106006114997 proves this was the missing condition, while six serving/runtime contexts succeeded. Green Watch35494273283 subsequently succeeded. The failed binder has not been retried or called green; unrelated report-binding repair is outside this mission.
+
+LATEST COMPLETED ACTION: exact-source configuration deployment SUCCESS and fresh existing production-control rerun accepted.
+EXACT NEXT ACTION: await workflow35482524577 new attempt, retrieve its immutable archive through GitHub, independently verify canonical/CSV report provenance identifies backend7e14894a and frontenddpl_5Js2m8 with source2f340194 and aligned readiness; inspect affected downstream acceptance. Keep historical unavailable evidence UNPROVEN and old artifacts unchanged.
+
+
 ## Supplemental Bitcoin result — completed; direct artifact transfer unavailable
 
 Fresh production run `comprun_7f6a98aac9940df6aa06b016351726ff` completed automated analysis/report preparation on bitcoin/bitcoin commit `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`. Terminal UI: INTERNAL REVIEW REQUIRED; assessment package Complete; scanners Partial; technical maturity Moderate74/100; evidence-adjusted62/100; persistent storage verified; client-ready No/internal approval required. This records observed UI and read-only queue evidence, not downloaded canonical/PDF bytes.
