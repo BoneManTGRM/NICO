@@ -22,7 +22,8 @@ def test_missing_python_preparation_cannot_be_reclassified_as_inapplicable(pytho
     normalized = normalize_scanner_applicability_canonical(value)
     result = next(r for r in normalized["requested_scanner_records"] if r["scanner_name"] == "pip-audit")
     assert result["state"] == "unavailable"
-    assert result["applicable"] is True
+    assert result["applicable"] is (True if python_path else None)
+    assert result["applicability_state"] == ("applicable" if python_path else "applicability_unproven")
     with pytest.raises(RuntimeError, match="pip-audit"):
         require_complete_assessment(normalized, expected_commit=SHA, expected_run=RUN)
     summary = scanner_execution_summary(normalized, expected_commit=SHA, expected_run=RUN)

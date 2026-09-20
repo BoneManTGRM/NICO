@@ -340,6 +340,71 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             # Verified findings still block above; retain this finding as evidence.
             disposition = "approved_nonsecret_deployment_identifier"
             approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "74578dc40d97154cfd69c5767cb023643eba010802aba8dc329306074433c3c8"
+        ):
+            # PR #1618: authenticated Railway deployment metadata and the exact
+            # retained scanner artifact identify this value as the successful
+            # 59dfa4d deployment ID, not a credential. Retain the observation;
+            # other values, paths, detectors and all verified secrets still block.
+            disposition = "approved_nonsecret_deployment_identifier"
+            approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "0ca2174e3995d9ab44fc39f79cace1ebe0ee83e6a2d55ed1ece16ebcee500a21"
+        ):
+            # PR #1620: authenticated Railway project metadata and retained
+            # CI artifact 10583914606 establish this exact nonsecret project ID.
+            # Preserve the observation; verified values and other paths block.
+            disposition = "approved_nonsecret_project_identifier"
+            approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "ab15a06f193e60201aa9e3bf61638905457c681a70fcce1083d13c6c2e9a49d9"
+        ):
+            # PR #1620: connector response identifies this exact value as its
+            # read-only discovery conversation ID (CI artifact 10584863453).
+            # No credential exemption extends to other values or verified hits.
+            disposition = "approved_nonsecret_thread_identifier"
+            approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            in {
+                "c8c06a22b8d59fc397706d825d2a827cfed0aa2a96b77375bfac5fc2e9aeebdc",
+                "20ac6fd29475931e12bf0ed0699f2bb90b015473b06b0ee851d7ea66c22d9106",
+            }
+        ):
+            # Artifact10589039830 and authenticated Railway deployment metadata
+            # identify this exact value as a prior successful deployment ID.
+            # Retain the hit; other values and all verified secrets still block.
+            # Artifact10593284621 plus Railway deployment metadata establish
+            # the second exact digest as the serving 16ea1be deployment ID.
+            disposition = "approved_nonsecret_deployment_identifier"
+            approved_nonsecret_identifiers += 1
+        elif (
+            path == "NICO-Ship-Checkpoint.md"
+            and finding.get("Verified") is False
+            and finding.get("DetectorName") == "RailwayApp"
+            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            == "55a16aefae99e52dade482f9cecc291d6b5b5a97a92910132fcaa43f9ec8e6c5"
+        ):
+            # Artifact10593284621 and authenticated Railway service metadata
+            # identify this exact value as the NICO service ID, not a token.
+            disposition = "approved_nonsecret_service_identifier"
+            approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
             approved_test_placeholders += 1

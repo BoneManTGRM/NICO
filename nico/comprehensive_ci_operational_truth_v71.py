@@ -257,12 +257,12 @@ def _historical_line(canonical: Mapping[str, Any], *, spanish: bool) -> str:
         return (
             "D. Resultados históricos de los flujos de trabajo (contexto sin puntuación): "
             f"correctas={success}, fallidas={failure}, canceladas={cancelled}, omitidas={skipped}, "
-            f"agotadas_por_tiempo={timed_out}, desconocidas={unknown}, observadas={observed}."
+            f"agotadas por tiempo={timed_out}, desconocidas={unknown}, observadas={observed}."
         )
     return (
         "D. Historical workflow outcomes (unscored context): "
         f"success={success}, failure={failure}, cancelled={cancelled}, skipped={skipped}, "
-        f"timed_out={timed_out}, unknown={unknown}, observed={observed}."
+        f"timed out={timed_out}, unknown={unknown}, observed={observed}."
     )
 
 

@@ -23,12 +23,17 @@ ES_BOUNDED = (
 
 
 def _canonical(status: str) -> dict:
+    identity = {"repository": "synthetic/parity", "commit_sha": "a" * 40, "run_id": "synthetic_parity"}
     return {
+        "identity": identity,
         "stage_summaries": [
             {
                 "stage_id": "platform_parity",
                 "status": status,
                 "summary": "Repository indicators retained for bounded review.",
+                "source_indicator_identity": identity,
+                "source_indicator_state": "retained_observation" if status == "complete" else "not_supplied",
+                "source_indicator_paths": ["web/app.tsx"] if status == "complete" else [],
             }
         ]
     }
@@ -69,9 +74,9 @@ def test_unassessed_state_remains_explicitly_bounded() -> None:
 
     assert canonical_platform_parity_status(canonical) == "not_assessed"
     assert "runtime platform parity not assessed" in english
-    assert "human input required" in english
+    assert "specialist acceptance not established" in english
     assert "paridad de plataforma en ejecución no evaluada" in spanish
-    assert "se requiere intervención humana" in spanish
+    assert "aceptación especializada no establecida" in spanish
     assert FORBIDDEN not in english
 
 

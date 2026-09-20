@@ -28,6 +28,20 @@ def _criterion(tail: str) -> str:
     )
 
 
+def test_generated_roadmap_finding_and_joined_criteria_preserve_anchors():
+    install_comprehensive_spanish_exit_criteria_v88()
+    prefix = "NICO-WORK-0123456789ABCDEF | NICO-FINDING-SYNTHETIC | "
+    action = "Validate the retained finding; implement its retained correction only when the disposition and change scope authorize remediation."
+    assert canonical._translate_presentation_field(prefix + action, "evidence").startswith(prefix + "Validar")
+    criteria = "The exact-SHA rerun no longer reports cyclomatic complexity of 30 or greater at src/synthetic.py:12.; Targeted characterization tests pass on the remediation commit.; No new material regression or cross-format report-truth mismatch is introduced."
+    translated = canonical._translate_presentation_field(prefix + criteria, "evidence")
+    assert translated.startswith(prefix)
+    assert "src/synthetic.py:12" in translated and "30" in translated
+    assert "Targeted" not in translated and "No new material" not in translated
+    with pytest.raises(ValueError):
+        canonical._translate_presentation_field(prefix + criteria + "; Unrecognized independent verification claim remains.", "evidence")
+
+
 def test_production_remediation_exit_criteria_localizes_without_english_leakage() -> None:
     result = install_comprehensive_spanish_exit_criteria_v88()
 
@@ -97,8 +111,29 @@ def test_roadmap_line_preserves_package_and_source_anchors() -> None:
     )
 
 
+@pytest.mark.parametrize("label,expected", [
+    ("Candidate review summary", "Resumen de revisión de candidatos"),
+    ("Runtime functional QA", "QA funcional en ejecución"),
+    ("Authoritative requirements", "Requisitos autorizados"),
+    ("Device runtime parity", "Paridad de dispositivos en ejecución"),
+    ("Stakeholder and business authority", "Autoridad de partes interesadas y negocio"),
+    ("Incident and recovery history", "Historial de incidentes y recuperación"),
+])
+def test_current_roadmap_reader_prefix_localizes_without_changing_anchor(label, expected):
+    install_comprehensive_spanish_exit_criteria_v88()
+    source = "Review the retained scanner candidates and record evidence-linked dispositions; candidate counts are not confirmed defect counts."
+    prefix = "NICO-WORK-06B8E8AC460ADC6B | "
+    translated = canonical._translate_presentation_field(prefix + label + " | " + source, "evidence")
+    assert translated == prefix + expected + " | " + (
+        "Revisar los candidatos conservados de los analizadores y registrar disposiciones "
+        "vinculadas a evidencia; los recuentos de candidatos no son recuentos de defectos confirmados."
+    )
+
+
 @pytest.mark.parametrize("prefix", [
     "NICO-WORK-06B8E8AC460ADC6B | review_candidate_summary | ",
+    "NICO-WORK-06B8E8AC460ADC6B | Candidate review summary | ",
+    "NICO-WORK-06B8E8AC460ADC6B | Unknown review label | ",
     "NICO-WORK-invalid | review_candidate_summary | ",
 ])
 def test_roadmap_unknown_prose_still_fails_closed(prefix: str) -> None:

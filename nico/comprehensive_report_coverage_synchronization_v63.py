@@ -13,6 +13,7 @@ from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 VERSION = "nico.comprehensive_report_coverage_synchronization.v63"
 
 _COVERAGE_TEXT_PATTERNS = (
+    re.compile(r"(?P<prefix>Cobertura de ejecución de analizadores\s*:\s*)(?P<value>\d{1,3})(?P<suffix>\s*%?)", re.I),
     re.compile(
         r"(?P<prefix>analy[sz]er execution coverage\s*(?:is|[:=])\s*)"
         r"(?P<value>\d{1,3})(?P<suffix>\s*%?)",
@@ -43,7 +44,7 @@ _COVERAGE_LABEL_CONTEXT = re.compile(
     re.I,
 )
 _NUMERIC_COVERAGE = re.compile(r"^(?P<value>\d{1,3})(?P<suffix>\s*%?)$")
-_CANONICAL_COVERAGE_ALIAS = "analyzer_execution_coverage"
+_CANONICAL_COVERAGE_ALIAS = "Analyzer execution coverage"
 
 
 def _replace_coverage_text(value: str, expected: int) -> tuple[str, int]:
@@ -89,6 +90,7 @@ def _ensure_text_coverage_alias(
     *,
     html: bool,
     required: bool,
+    spanish: bool = False,
 ) -> tuple[str, int, int]:
     """Repair stale coverage and retain a canonical alias when publication requires it."""
 
@@ -96,7 +98,8 @@ def _ensure_text_coverage_alias(
     if _coverage_alias_present(output) or not required:
         return output, replacements, 0
 
-    line = f"{_CANONICAL_COVERAGE_ALIAS}: {expected}"
+    label = "Cobertura de ejecución de analizadores" if spanish else _CANONICAL_COVERAGE_ALIAS
+    line = f"{label}: {expected}%"
     if html:
         insertion = f"<p>{line}</p>"
         match = re.search(r"</body\s*>", output, flags=re.I)
@@ -230,8 +233,9 @@ def _ensure_pdf_coverage_alias(
     expected: int,
     *,
     required: bool,
+    spanish: bool = False,
 ) -> tuple[bytes, int]:
-    """Retain one bounded machine-readable coverage line only for commercial reports."""
+    """Retain one bounded reader-facing coverage line for commercial reports."""
 
     if _pdf_coverage_alias_present(pdf) or not required:
         return pdf, 0
@@ -263,7 +267,8 @@ def _ensure_pdf_coverage_alias(
     )
     overlay.setFillColor(colors.HexColor("#475569"))
     overlay.setFont("Helvetica", 6.6)
-    overlay.drawString(42, 35, f"{_CANONICAL_COVERAGE_ALIAS}: {expected}")
+    label = "Cobertura de ejecución de analizadores" if spanish else _CANONICAL_COVERAGE_ALIAS
+    overlay.drawString(42, 35, f"{label}: {expected}%")
     overlay.save()
 
     target.merge_page(PdfReader(io.BytesIO(overlay_buffer.getvalue())).pages[0])
@@ -295,18 +300,22 @@ def synchronize_final_report_coverage(
     expected = max(0, min(100, int(expected_coverage)))
     output = deepcopy(dict(package))
     require_presence = _scanner_backed_report(output)
+    from nico.v2_report_quality_repairs import _is_spanish
+    spanish = _is_spanish(output.get("json") or {})
 
     markdown, markdown_changes, markdown_insertions = _ensure_text_coverage_alias(
         str(output.get("markdown") or ""),
         expected,
         html=False,
         required=require_presence,
+        spanish=spanish,
     )
     html, html_changes, html_insertions = _ensure_text_coverage_alias(
         str(output.get("html") or ""),
         expected,
         html=True,
         required=require_presence,
+        spanish=spanish,
     )
     output["markdown"] = markdown
     output["html"] = html
@@ -325,6 +334,7 @@ def synchronize_final_report_coverage(
             synchronized_pdf,
             expected,
             required=require_presence,
+            spanish=spanish,
         )
         output["pdf_base64"] = base64.b64encode(synchronized_pdf).decode("ascii")
         output["pdf_sha256"] = hashlib.sha256(synchronized_pdf).hexdigest()

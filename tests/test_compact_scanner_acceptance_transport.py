@@ -166,7 +166,9 @@ for record in raw:
 report = f['reconcile_authoritative_scanner_truth'](f['canonical'](f['compact'](raw)))
 proof = f['complete_assessment_evidence'](report, expected_commit=f['SHA'], expected_run=f['RUN'])
 assert proof['passed'] is False
-assert {'npm-audit:node_input_inventory_unverified', 'typescript:node_input_inventory_unverified'} <= set(proof['failures'])
+assert {'npm-audit:scanner_incomplete:unavailable', 'typescript:scanner_incomplete:unavailable'} <= set(proof['failures'])
+assert all(r['applicability_state'] == 'applicability_unproven' for r in report['requested_scanner_records']
+           if r['scanner_name'] in {'npm-audit', 'typescript'})
 assert any(failure.startswith('pip-audit:') for failure in proof['failures'])
 
 # The historical reason-only input above remains incomplete. Only adding actual

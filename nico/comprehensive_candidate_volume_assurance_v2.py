@@ -142,10 +142,10 @@ def expose_candidate_workload_basis(result: Mapping[str, Any]) -> dict[str, Any]
     adjusted = _integer(assessment.get("evidence_adjusted_score"))
     assessment["executive_summary"] = (
         "Technical maturity remains based on exact-commit technical controls. "
-        f"Evidence-Adjusted readiness is {adjusted}/100 versus technical maturity {technical}/100. "
+        f"Evidence-Adjusted technical score is {adjusted}/100 versus technical maturity {technical}/100. "
         f"NICO retains {review_required} review-required candidates and {confirmed_material} confirmed "
         "material findings as explicit review context. Candidate volume, clustering and reviewer workload "
-        "do not change numeric security or readiness scores."
+        "do not change numeric technical scores."
     )
     output["assessment"] = assessment
     output["summary"] = assessment["executive_summary"]

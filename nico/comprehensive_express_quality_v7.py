@@ -69,7 +69,7 @@ def reconcile_comprehensive_assessment(assessment: dict[str, Any]) -> dict[str, 
     adjusted_text = "not scored" if adjusted is None else f"{int(adjusted)}/100"
     output["executive_summary"] = (
         f"NICO completed an authorized Comprehensive Technical Assessment for {repository}. "
-        f"Weighted technical maturity is {technical_text}; independently evidence-adjusted readiness is {adjusted_text}. "
+        f"Weighted technical maturity is {technical_text}; the evidence-adjusted technical score is {adjusted_text}. This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety. "
         "The Comprehensive package combines shared technical-health evidence with exact-location findings, deeper architecture evidence, "
         "a six-month execution roadmap, staffing sequence, and a full evidence appendix. Human review and exact-package approval remain mandatory."
     )

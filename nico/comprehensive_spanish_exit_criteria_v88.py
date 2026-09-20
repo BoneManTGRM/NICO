@@ -37,6 +37,10 @@ _EXIT_CRITERIA_TRANSLATIONS: dict[str, str] = {
 # the approved production vocabulary here so all report surfaces share one bounded
 # contract. Unknown prose still delegates to the canonical fail-closed translator.
 _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
+    'Validate the retained finding; implement its retained correction only when the disposition and change scope authorize remediation.': 'Validar el hallazgo conservado; aplicar su corrección conservada únicamente cuando la disposición y el alcance del cambio autoricen la remediación.',
+    'The proposal addresses this retained finding and preserves its current review state.': 'La propuesta atiende este hallazgo conservado y mantiene su estado actual de revisión.',
+    'Retain the exact remediation revision, the finding-specific verification evidence, and regression results; obtain the required specialist disposition.': 'Conservar la revisión exacta de remediación, la evidencia de verificación específica del hallazgo y los resultados de regresión; obtener la disposición profesional requerida.',
+
     'Review the retained scanner candidates and record evidence-linked dispositions; candidate counts are not confirmed defect counts.': 'Revisar los candidatos conservados de los analizadores y registrar disposiciones vinculadas a evidencia; los recuentos de candidatos no son recuentos de defectos confirmados.',
     'Obtain the specified missing input within authorized scope and assess the limitation again; absence is not a confirmed vulnerability.': 'Obtener el insumo faltante especificado dentro del alcance autorizado y reevaluar la limitación; su ausencia no constituye una vulnerabilidad confirmada.',
     'Suggested role type: Cybersecurity specialist | Dependencies: Retained scanner artifact availability, Qualified specialist review': 'Tipo de función sugerida: Especialista en ciberseguridad | Dependencias: Disponibilidad del artefacto conservado del analizador, Revisión de un especialista cualificado',
@@ -198,6 +202,18 @@ def _translate_complexity_method(method: str) -> str | None:
 
 
 def _translate_generated_complexity_contract(value: Any) -> str | None:
+    current = re.fullmatch(
+        r"Cyclomatic complexity: (?P<complexity>\d+) independent paths; method: (?P<method>[^;\r\n]+); "
+        r"(?:source: retained exact-SHA architecture evidence|exact commit match: (?P<exact>True|False))",
+        str(value or ""),
+    )
+    if current:
+        method = _translate_complexity_method(current["method"])
+        if method is None:
+            return None
+        source = ("fuente: evidencia de arquitectura conservada del SHA exacto" if current["exact"] is None
+                  else f"coincidencia exacta del commit: {'Sí' if current['exact'] == 'True' else 'No'}")
+        return f"Complejidad ciclomática: {current['complexity']} rutas independientes; método: {method}; {source}"
     text = str(value or "").strip()
     if not text:
         return None
@@ -381,11 +397,24 @@ def _translate_canonical_field_v88(value: str, key: str) -> str:
     if original is None:
         raise RuntimeError("Spanish exit-criteria v88 canonical translator is not installed")
 
-    # Roadmap generator emits an immutable package ID and evidence label before
-    # presentation prose. Validate/localize only the prose; preserve both anchors.
-    roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16} \| [A-Za-z0-9_.-]+ \| )([^\r\n]+)", str(value))
+    # Preserve package IDs and legacy machine references; translate only known
+    # current reader labels and validated presentation prose.
+    labels = {
+        "Candidate review summary": "Resumen de revisión de candidatos",
+        "Runtime functional QA": "QA funcional en ejecución",
+        "Authoritative requirements": "Requisitos autorizados",
+        "Device runtime parity": "Paridad de dispositivos en ejecución",
+        "Stakeholder and business authority": "Autoridad de partes interesadas y negocio",
+        "Incident and recovery history": "Historial de incidentes y recuperación",
+    }
+    roadmap = re.fullmatch(r"(NICO-WORK-[0-9A-F]{16}) \| (" + "|".join(re.escape(label) for label in labels) + r"|[A-Za-z0-9_.-]+) \| ([^\r\n]+)", str(value))
     if roadmap is not None:
-        return roadmap.group(1) + _translate_canonical_field_v88(roadmap.group(2), key)
+        prefix = roadmap[1] + " | " + labels.get(roadmap[2], roadmap[2]) + " | "
+        prose = roadmap[3]
+        clauses = prose.split("; ")
+        if len(clauses) > 1 and _COMPLEXITY_ACCEPTANCE_RE.fullmatch(clauses[0]):
+            return prefix + "; ".join(_translate_canonical_field_v88(clause, key) for clause in clauses)
+        return prefix + _translate_canonical_field_v88(prose, key)
 
     targeted = _translate_targeted_presentation_literal(value)
     if targeted is not None:

@@ -156,7 +156,9 @@ def repair_canonical_truth(package: Mapping[str, Any]) -> dict[str, Any]:
             section["assurance_status"] = (
                 "review_limited"
                 if any(section.get("unavailable") or [])
-                else "verified_with_completed_scanners"
+                else "verified_with_completed_scanners" if records and all(
+                    r.get("verified_complete") is True and r.get("applicable") is True for r in records)
+                else "unverified"
             )
         repaired_sections.append(section)
     assessment["sections"] = repaired_sections

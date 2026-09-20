@@ -391,6 +391,11 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Delivery Status", "Estado de entrega"),
     ("Presented score", "Puntuación presentada"),
     ("Evidence readiness", "Preparación de la evidencia"),
+    ("Evidence-adjusted technical score", "Puntuación técnica ajustada por evidencia"),
+    (
+        "This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety.",
+        "Esta señal ponderada de los controles del repositorio evaluados no establece preparación operativa, cobertura exhaustiva, revisión profesional independiente ni seguridad del despliegue.",
+    ),
     ("Immutable commit SHA", "SHA del commit inmutable"),
     ("Evidence ledger ID", "ID del libro mayor de evidencia"),
     ("Customer scope", "Alcance del cliente"),
@@ -588,12 +593,28 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "La evidencia canónica está disponible.",
     ),
     (
+        "Scanner applicability and execution populations are unverified.",
+        "Las poblaciones de aplicabilidad y ejecución de analizadores no están verificadas.",
+    ),
+    (
+        "Scanner execution completeness is unverified.",
+        "La integridad de la ejecución de analizadores no está verificada.",
+    ),
+    (
         "Exact-SHA first-party source archive when available; tests, generated, distribution, dependency, vendor, and minified paths are excluded.",
         "Archivo de código fuente propio del SHA exacto cuando está disponible; se excluyen las rutas de pruebas, código generado, distribución, dependencias, proveedores y archivos minificados.",
     ),
     (
         "Ownership or explicit authorization and the defensive read-only scope were confirmed for this exact Comprehensive run.",
         "Se confirmaron la propiedad o la autorización explícita y el alcance defensivo de solo lectura para esta ejecución integral exacta.",
+    ),
+    (
+        "The requester confirmed authorization for this defensive read-only assessment. Independent NICO verification of ownership or third-party permission is not established.",
+        "El solicitante confirmó su autorización para esta evaluación defensiva de solo lectura. No se ha establecido una verificación independiente de NICO de la propiedad o el permiso de terceros.",
+    ),
+    (
+        "The immutable repository revision was verified, but its size exceeded the scanner execution limit. Scanner execution is unavailable; reporting continues with limited evidence.",
+        "Se verificó la revisión inmutable del repositorio, pero su tamaño superó el límite de ejecución de analizadores. La ejecución de analizadores no está disponible; el informe continúa con evidencia limitada.",
     ),
     (
         "Score effect: assurance-only while authorized human disposition remains pending; NICO automated technical triage is complete.",
@@ -658,6 +679,14 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (
         "Commit, pull-request, workflow, job, and deployment evidence were reviewed as bounded delivery-process history.",
         "La evidencia de commits, solicitudes de incorporación, flujos de trabajo, trabajos y despliegues se revisó como historial acotado del proceso de entrega.",
+    ),
+    (
+        "No delivery-process observations were retained for this stage. Operational history was not assessed.",
+        "No se conservaron observaciones del proceso de entrega para esta etapa. No se evaluó el historial operativo.",
+    ),
+    (
+        "Retained commit, pull-request, and job counts are bounded delivery-process context. Their availability does not establish deployment history, independent review, or operational readiness.",
+        "Los conteos conservados de commits, solicitudes de incorporación y trabajos son contexto acotado del proceso de entrega. Su disponibilidad no establece el historial de despliegue, la revisión independiente ni la preparación operativa.",
     ),
     (
         "Stakeholder and business alignment remains an explicit human-context boundary; NICO did not infer unprovided objectives or approvals.",
@@ -936,6 +965,32 @@ _PRESENTATION_REPLACEMENTS += tuple(_ES_PHRASES.items())
 # as exact source/target pairs so the Spanish renderer preserves every claim,
 # qualifier, and evidence boundary without changing the English providers.
 _PRESENTATION_REPLACEMENTS += (
+    ('Client-supplied engagement metadata and supplied statements are retained as explicit review context. Missing facts are not inferred. These values do not change technical scores or grant approval or delivery authority.', 'Los metadatos del encargo y las declaraciones aportadas por el cliente se conservan como contexto explícito de revisión. Los datos faltantes no se infieren. Estos valores no modifican las puntuaciones técnicas ni conceden aprobación o autoridad de entrega.'),
+    ('These statements were explicitly supplied by people and are retained without repository inference. They do not automatically change technical scores or grant approval or delivery authority.', 'Estas declaraciones fueron aportadas explícitamente por personas y se conservan sin inferencias del repositorio. No modifican automáticamente las puntuaciones técnicas ni conceden aprobación o autoridad de entrega.'),
+
+    ('Analyzer execution coverage (%)', 'Cobertura de ejecución de analizadores (%)'),
+    ('Complexity grade A (functions measured)', 'Grado de complejidad A (funciones medidas)'),
+    ('Complexity grade B (functions measured)', 'Grado de complejidad B (funciones medidas)'),
+    ('Complexity grade C (functions measured)', 'Grado de complejidad C (funciones medidas)'),
+    ('Complexity grade D (functions measured)', 'Grado de complejidad D (funciones medidas)'),
+    ('Complexity grade E (functions measured)', 'Grado de complejidad E (funciones medidas)'),
+    ('Complexity grade F (functions measured)', 'Grado de complejidad F (funciones medidas)'),
+
+    ('Supplied test cases were processed; result text was not supplied.', 'Se procesaron los casos de prueba aportados; no se aportó texto de resultados.'),
+    ('Supplied result text was processed; test cases were not supplied.', 'Se procesó el texto de resultados aportado; no se aportaron casos de prueba.'),
+    ('Optional functional QA was excluded from scope; no journey results were processed.', 'QA funcional opcional se excluyó del alcance; no se procesaron resultados de recorridos.'),
+    ('Supplied claims are not independently verified runtime observations or acceptance.', 'Las afirmaciones aportadas no son observaciones de ejecución verificadas de forma independiente ni aceptación.'),
+    ('Repository test inventory processing does not establish executed runtime journeys; functional QA was not assessed.', 'El procesamiento del inventario de pruebas del repositorio no establece recorridos ejecutados; QA funcional no fue evaluado.'),
+    ('Retained repository activity and workflow context was summarized.', 'Se resumió el contexto conservado de actividad del repositorio y flujos de trabajo.'),
+    ('Repository activity and workflow records were not retained for this synthesis.', 'No se conservaron registros de actividad del repositorio ni flujos de trabajo para esta síntesis.'),
+    ('Supplied incident statements were processed as unverified claims.', 'Las declaraciones de incidentes aportadas se procesaron como afirmaciones sin verificar.'),
+    ('Incident evidence was not supplied.', 'No se aportó evidencia de incidentes.'),
+    ('Activity volume and workflow counts do not establish incident rates or measured recovery.', 'El volumen de actividad y los conteos de flujos de trabajo no establecen tasas de incidentes ni recuperación medida.'),
+
+    ('Supplied test cases and result text were processed into a draft QA synthesis. Supplied claims are not independently verified runtime observations or acceptance.', 'Los casos de prueba y el texto de resultados aportados se procesaron en una síntesis preliminar de QA. Las afirmaciones aportadas no son observaciones de ejecución verificadas de forma independiente ni aceptación.'),
+    ('Optional QA test cases and runtime results were not supplied. No journey results were parsed or reconciled. Repository test inventory processing does not establish executed runtime journeys; functional QA was not assessed.', 'No se aportaron casos de prueba opcionales de QA ni resultados de ejecución. No se analizaron ni conciliaron resultados de recorridos. El procesamiento del inventario de pruebas del repositorio no establece recorridos ejecutados; QA funcional no fue evaluado.'),
+    ('Supplied platform matrix text was parsed for draft divergence candidates. Source path indicators and supplied claims do not establish runtime observations, independent verification, or parity.', 'El texto de la matriz de plataformas aportada se analizó para proponer candidatos de divergencia. Los indicadores de rutas fuente y las afirmaciones aportadas no establecen observaciones de ejecución, verificación independiente ni paridad.'),
+    ('An optional runtime platform matrix was not supplied; no supplied runtime results were parsed or reconciled. Source path indicators, when retained, describe repository paths only. Runtime platform parity was not assessed.', 'No se aportó una matriz opcional de plataformas en ejecución; no se analizaron ni conciliaron resultados de ejecución aportados. Los indicadores de rutas fuente, cuando se conservan, describen únicamente rutas del repositorio. La paridad de plataformas en ejecución no fue evaluada.'),
     (
         "Proceed to human review; do not authorize client delivery until evidence limitations and recommendations are approved.",
         "Proceder a la revisión humana; no autorizar la entrega al cliente hasta que se aprueben las limitaciones de evidencia y las recomendaciones.",
@@ -1103,6 +1158,7 @@ _PRESENTATION_REPLACEMENTS += (
     ("Merged pull requests:", "Solicitudes de incorporación fusionadas:"),
     ("Observed job success rate:", "Tasa de éxito observada de trabajos:"),
     ("Executable code-risk findings:", "Hallazgos de riesgo en código ejecutable:"),
+    ("Executable source-risk observations:", "Observaciones de riesgo en código ejecutable:"),
     ("Excluded non-production observations:", "Observaciones excluidas por no ser de producción:"),
     ("Example placeholder secrets retained separately:", "Secretos de ejemplo conservados por separado:"),
     ("Source analysis:", "Análisis de código fuente:"),
@@ -1609,6 +1665,19 @@ _PRESENTATION_REPLACEMENTS += (
         "Resolve remaining architectural debt, platform/runtime evidence gaps, and supplied stakeholder/requirements objectives.",
         "Resolver la deuda arquitectónica restante, las brechas de evidencia de plataforma y ejecución y los objetivos aportados de partes interesadas y requisitos.",
     ),
+    ("The existing 0-30/31-90/91-180 roadmap framework was drafted from technical priorities and evidence gaps without creating commitments.", "El marco existente de hoja de ruta de 0-30/31-90/91-180 días se redactó a partir de prioridades técnicas y brechas de evidencia, sin crear compromisos."),
+    ("No requirement mappings were retained.", "No se conservaron correspondencias de requisitos."),
+    ("Retained requirement mappings were included.", "Se incluyeron las correspondencias de requisitos conservadas."),
+    ("No stakeholder constraints were retained.", "No se conservaron restricciones de las partes interesadas."),
+    ("Retained stakeholder constraints were included.", "Se incluyeron las restricciones conservadas de las partes interesadas."),
+    ("confirmed material=", "materiales confirmados="),
+    ("review required=", "revisión obligatoria="),
+    ("excluded test only=", "excluidos de pruebas="),
+    ("approved or nonblocking=", "aprobados o no bloqueantes="),
+    ("disposition=review required", "disposición=revisión obligatoria"),
+    ("not actionable=", "no accionables="),
+    ("needs review=", "necesitan revisión="),
+    ("assessment subject exact match", "coincidencia exacta del sujeto de evaluación"),
     (
         "The existing 0-30/31-90/91-180 roadmap framework was drafted from technical priorities, evidence gaps, supplied requirements, and supplied constraints without creating commitments.",
         "El marco existente de hoja de ruta de 0-30/31-90/91-180 días se redactó a partir de prioridades técnicas, brechas de evidencia, requisitos aportados y restricciones aportadas, sin crear compromisos.",
@@ -1691,6 +1760,11 @@ _RAW_CANONICAL_SUBTREES = {
     "source_observation",
     "structured_tables",
     "profile_coverage",
+    "coverage_reconciliation",
+    "coverage_metrics",
+    "source_security_assurance",
+    "authorization_evidence",
+    "execution_limit",
     "candidate_register",
     "canonical_findings",
     "canonical_scanner_finding_register",
@@ -2041,6 +2115,10 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    tool_count = re.fullmatch(r"([A-Za-z0-9_-]+) — (Raw candidates|Review-required candidates): (\d+)", value)
+    if tool_count:
+        label = "Candidatos sin procesar" if tool_count[2] == "Raw candidates" else "Candidatos que requieren revisión"
+        return f"{tool_count[1]} — {label}: {tool_count[3]}"
     # Compact operational stages emit explicit availability and scalar values.
     # Translate that whole contract before legacy prose rules inspect its prefixes.
     label, separator, metric = value.partition(": ")
@@ -2127,6 +2205,15 @@ def _structured_presentation_es(value: str) -> str | None:
     match = re.fullmatch(r"Exact-source locators: (?P<count>\d+) present\.", value)
     if match is not None:
         return f"Localizadores de fuente exacta: {match.group('count')} presentes."
+
+    match = re.fullmatch(
+        r"Collection notes recorded: (?P<count>\d+); informational acquisition notes: (?P<info>\d+); "
+        r"remaining limitation notes: (?P<limits>\d+)\.", value,
+    )
+    if match is not None:
+        return (f"Notas de recopilación registradas: {match.group('count')}; "
+                f"notas informativas de adquisición: {match.group('info')}; "
+                f"notas de limitación restantes: {match.group('limits')}.")
 
     match = re.fullmatch(r"Collection limitations recorded: (?P<count>\d+)\.", value)
     if match is not None:
@@ -2341,24 +2428,24 @@ def _structured_presentation_es(value: str) -> str | None:
 
     match = re.fullmatch(
         r"Technical maturity remains based on exact-commit technical controls\. "
-        r"Evidence-Adjusted readiness is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
+        r"Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
         r"technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
         r"(?P<review>\d+) review-required candidates and (?P<material>\d+) "
         r"confirmed material findings as explicit review context\. Candidate volume, "
-        r"clustering and reviewer workload do not change numeric security or "
-        r"readiness scores\.",
+        r"clustering and reviewer workload do not change numeric (?:security or readiness|technical) "
+        r"scores\.",
         value,
     )
     if match is not None:
         return (
             "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-            f"La preparación ajustada por evidencia es {match.group('adjusted')}/100 "
+            f"La puntuación técnica ajustada por evidencia es {match.group('adjusted')}/100 "
             f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
             f"conserva {match.group('review')} candidatos que requieren revisión y "
             f"{match.group('material')} hallazgos materiales confirmados como contexto "
             "explícito de revisión. El volumen de candidatos, la agrupación y la carga "
             "de trabajo de revisión no modifican las puntuaciones numéricas de "
-            "seguridad ni de preparación."
+            "los controles técnicos."
         )
 
     match = re.fullmatch(
@@ -2405,10 +2492,10 @@ def _structured_presentation_es(value: str) -> str | None:
 
     match = re.fullmatch(
         r"(?P<category>Dependency|Secret|Static): raw=(?P<raw>\d+); "
-        r"confirmed_material=(?P<confirmed>\d+); "
-        r"review_required=(?P<review>\d+); "
-        r"excluded_test_only=(?P<excluded>\d+); "
-        r"approved_or_nonblocking=(?P<nonblocking>\d+)\.",
+        r"confirmed[_ ]material=(?P<confirmed>\d+); "
+        r"review[_ ]required=(?P<review>\d+); "
+        r"excluded[_ ]test[_ ]only=(?P<excluded>\d+); "
+        r"approved[_ ]or[_ ]nonblocking=(?P<nonblocking>\d+)\.",
         value,
         flags=re.IGNORECASE,
     )
@@ -2685,6 +2772,15 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
+    from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
+    if stripped == _STAKEHOLDER_METADATA_SUMMARY[0]:
+        return text.replace(stripped, _STAKEHOLDER_METADATA_SUMMARY[1], 1)
+    if stripped in COPY_ES:
+        return text.replace(stripped, COPY_ES[stripped], 1)
+    footprint = re.fullmatch(r"Architecture footprint source files: (\d+)\.", stripped)
+    if footprint:
+        return f"Archivos del conjunto de arquitectura: {footprint[1]}."
     exact = _CANONICAL_PARITY_EXACT.get(
         stripped,
         _ES_EXTRA_EXACT.get(stripped, ES_EXACT.get(stripped)),
@@ -2911,6 +3007,11 @@ def _translate_presentation(value: Any) -> str:
         text,
     )
     text = re.sub(
+        r"(\d+) of (\d+) required scanner executions completed\. Applicability established: (\d+); applicability unproven: (\d+); not applicable: (\d+)\.",
+        lambda match: f"Se completaron {match[1]} de {match[2]} ejecuciones requeridas de analizadores. Aplicabilidad establecida: {match[3]}; aplicabilidad no comprobada: {match[4]}; no aplicables: {match[5]}.",
+        text,
+    )
+    text = re.sub(
         r"(\d+) of (\d+) applicable scanner executions completed\.",
         lambda match: (
             f"{'Se completó' if int(match.group(2)) == 1 else 'Se completaron'} "
@@ -3044,6 +3145,14 @@ def _translate_presentation(value: Any) -> str:
         lambda match: (
             f"{match.group(1)} "
             f"{'hallazgo de riesgo en código ejecutable propio requiere' if int(match.group(1)) == 1 else 'hallazgos de riesgo en código ejecutable propio requieren'} disposición con fuente exacta."
+        ),
+        text,
+    )
+    text = re.sub(
+        r"(\d+) executable first-party source-risk observation\(s\) require review; canonical finding eligibility is not established by the detector count\.",
+        lambda match: (
+            f"{match.group(1)} observaciones de riesgo en código ejecutable propio requieren revisión; "
+            "el conteo del detector no establece la elegibilidad como hallazgo canónico."
         ),
         text,
     )

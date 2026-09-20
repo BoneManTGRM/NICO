@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import io
 import json
@@ -278,6 +279,70 @@ def test_structured_exports_are_present_and_nonempty() -> None:
     assert len(result["evidence_csv_sha256"]) == 64
     assert len(result["candidate_register_sha256"]) == 64
     assert len(result["remediation_backlog_sha256"]) == 64
+
+
+@pytest.mark.parametrize("human", [{"status": "not_assessed"}, {"provided_module_ids": []}, {"modules": {}}])
+def test_legacy_unverified_human_evidence_keeps_existing_csv_schema(human):
+    package = _package()
+    package["json"]["supplied_human_evidence"] = human
+    result = attach_artifact_manifest(package)
+    assert next(row for row in result["artifact_manifest"]["artifacts"]
+                if row["artifact_type"] == "evidence_csv")["schema_version"] == "nico.evidence-csv.v2"
+
+
+@pytest.mark.parametrize("language", ["en", "es-MX"])
+def test_terminal_evidence_csv_preserves_canonical_truth_populations(language):
+    package = _package()
+    canonical = package["json"]
+    canonical["identity"].update(repository="generic/authorized-control", report_language=language)
+    observation = {"observation_id": "observation-1", "semantic_class": "source_observation",
+        "source_path": "src/runner.py", "line": 7, "column": 2, "rule_id": "dynamic-execution",
+        "source_excerpt": "exec(command)", "repository_revision": COMMIT, "disposition": "unreviewed"}
+    canonical["source_risk_observations"] = [observation]
+    canonical["source_risk_observation_summary"] = {"reported_count": 1, "retained_record_count": 1,
+        "canonical_eligibility_inferred": False}
+    canonical["source_security_assurance"] = {"status": "limited", "unproven_applicability_count": 1,
+        "missing_evidence_is_pass": False, "missing_evidence_is_fail": False,
+        "execution_limit": {"reason": "repository_size_limit", "repository_revision": COMMIT},
+        "coverage_metrics": {
+            "eligible_source_analysis": {"numerator": 5, "denominator": 137, "percentage": 3.65,
+                "numerator_population": "analyzed_eligible_source_files",
+                "denominator_population": "complexity_eligible_supported_source_files"},
+            "observed_supported_source_analysis": {"numerator": 5, "denominator": 484, "percentage": 1.03,
+                "numerator_population": "analyzed_eligible_source_files",
+                "denominator_population": "observed_supported_language_source_files_including_complexity_exclusions"}}}
+    canonical["authorization_evidence"] = {"requester_authorization_attestation": "confirmed",
+        "repository_access_mode": "anonymous_public", "provider_credential_used": False,
+        "independent_authorization_verification": "not_established"}
+    canonical["requested_scanner_records"] = [
+        {"scanner_name": "bandit", "applicability_state": "applicability_unproven", "execution_state": "complete"},
+        {"scanner_name": "typescript", "applicability_state": "not_applicable", "execution_state": "not_requested"}]
+    canonical["assessment"]["nico_release_provenance"] = {"exact_release_readiness": "unverified"}
+    before = deepcopy(package)
+    result = attach_artifact_manifest(package)
+    rows = list(csv.DictReader(io.StringIO(result["evidence_csv"])))
+    by_pointer = {r.get("canonical_pointer"): r for r in rows}
+    expected = {
+        "/source_risk_observations/0": observation,
+        "/source_risk_observation_summary": canonical["source_risk_observation_summary"],
+        "/source_security_assurance": canonical["source_security_assurance"],
+        "/authorization_evidence": canonical["authorization_evidence"],
+        "/assessment/nico_release_provenance": canonical["assessment"]["nico_release_provenance"],
+        **{f"/requested_scanner_records/{i}": value for i, value in enumerate(canonical["requested_scanner_records"])},
+    }
+    for pointer, value in expected.items():
+        assert pointer in by_pointer
+        row = by_pointer[pointer]
+        assert json.loads(row["evidence"]) == value
+        assert row["evidence_status"] == "retained_canonical_evidence"
+        assert row["record_type"] != "scanner_candidate"
+    assert by_pointer["/source_risk_observations/0"]["record_type"] == "source_risk_observation"
+    assert len(json.loads(result["candidate_register_json"])["findings"]) == 1
+    assert len(list(csv.DictReader(io.StringIO(result["findings_csv"])))) == 1
+    assert result["evidence_csv_sha256"] == hashlib.sha256(result["evidence_csv"].encode()).hexdigest()
+    assert next(row for row in result["artifact_manifest"]["artifacts"]
+                if row["artifact_type"] == "evidence_csv")["schema_version"] == "nico.evidence-csv.v2"
+    assert package == before
 
 
 def test_cross_format_readiness_and_manifest_states_match() -> None:

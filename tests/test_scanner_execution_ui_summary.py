@@ -21,7 +21,7 @@ def test_completed_stage_does_not_hide_missing_native_execution():
     result = summary(data)
     assert result['status'] == 'partial'
     assert result['completed_count'] == 7
-    assert result['applicable_count'] == 9
+    assert result['execution_required_count'] == 9
     assert result['percent'] == 78
     assert result['incomplete_tools'] == ['npm-audit', 'typescript']
     assert data == before
@@ -30,7 +30,9 @@ def test_completed_stage_does_not_hide_missing_native_execution():
 def test_valid_native_evidence_is_complete_without_approval_credit():
     result = summary(good())
     assert result['status'] == 'complete'
-    assert result['completed_count'] == result['applicable_count'] == 9
+    assert result['applicable_count'] == 2  # exact Git snapshot establishes the two history scanners
+    assert result['completed_count'] == result['execution_required_count'] == 9
+    assert result['applicability_unproven_count'] == 7
     assert result['percent'] == 100
     assert result['human_approval_proven'] is False
     assert result['client_delivery_allowed'] is False
@@ -66,12 +68,12 @@ def test_verified_inapplicability_is_separate_from_completed():
                 applicability_evidence=observed_no_packages())
     result = summary(data)
     assert result['status'] == 'complete'
-    assert result['completed_count'] == result['applicable_count'] == 8
+    assert result['completed_count'] == result['execution_required_count'] == 8
     assert result['not_applicable_tools'] == ['osv-scanner']
     item['applicability_evidence']['inventory_complete'] = False
     result = summary(data)
     assert result['status'] == 'partial'
-    assert result['applicable_count'] == 9
+    assert result['execution_required_count'] == 9
 
 
 def test_terminal_browser_response_uses_gate_and_preserves_record():

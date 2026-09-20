@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import hashlib
+import pytest
 
 from nico.comprehensive_authoritative_scanner_truth_v62 import (
     reconcile_authoritative_scanner_truth,
@@ -36,9 +37,44 @@ def _record(name: str, *, completed: bool = True, source: str = "json") -> dict:
     }
 
 
+@pytest.mark.parametrize("paths,expected_count,expected_status", [
+    (["src/main.js"], 0, "supported_scope"),
+    ([], 1, "unverified"),
+])
+def test_reconciliation_refreshes_existing_assurance_from_final_applicability(paths, expected_count, expected_status):
+    from nico.comprehensive_score_assurance_ledger_v45 import bind_source_security_assurance
+
+    raw = _record("semgrep")
+    raw.update(applicable=None, applicability_state="applicability_unproven", verified_complete=True)
+    canonical = bind_source_security_assurance({
+        "repository_evidence": {"file_evidence": {"sampled_paths": paths}},
+        "assessment": {"technical_score": 74},
+        "stage_summaries": [{"profile_coverage": {
+            "inventory_complete": True, "observed_source_files": 1,
+            "eligible_source_files": 1, "analyzed_source_files": 1,
+            "unsampled_eligible_source_files": 0,
+        }}],
+        "requested_scanner_records": [raw],
+        "scanner_execution_records": [raw],
+        "live_scanner_evidence": {"tools_requested": ["semgrep"], "tools_run": ["semgrep"]},
+    })
+    assert canonical["source_security_assurance"]["unproven_applicability_count"] == 1
+    result = reconcile_authoritative_scanner_truth(canonical)
+    assurance = result["source_security_assurance"]
+    assert assurance["unproven_applicability_count"] == expected_count
+    assert assurance["status"] == expected_status
+    assert assurance == result["assessment"]["source_security_assurance"]
+    assert assurance["coverage_metrics"] == canonical["source_security_assurance"]["coverage_metrics"]
+    assert result["assessment"]["technical_score"] == 74
+    assert assurance["missing_evidence_is_pass"] is False
+    assert assurance["missing_evidence_is_fail"] is False
+    assert canonical["source_security_assurance"]["unproven_applicability_count"] == 1
+
+
 def test_live_manifest_preserves_failed_bandit_even_if_finalizer_drops_record() -> None:
     records = [_record(name) for name in TOOLS if name != "bandit"]
     canonical = {
+        "repository_evidence": {"file_evidence": {"sampled_paths": ["src/main.py", "requirements.txt", "src/main.ts", "package.json"]}},
         "assessment": {
             "technical_score": 92,
             "maturity_level": "Senior",
@@ -88,6 +124,7 @@ def test_live_manifest_preserves_failed_bandit_even_if_finalizer_drops_record() 
 
 def test_live_manifest_and_exact_records_produce_honest_full_coverage() -> None:
     canonical = {
+        "repository_evidence": {"file_evidence": {"sampled_paths": ["src/main.py", "requirements.txt", "src/main.ts", "package.json"]}},
         "assessment": {
             "technical_score": 92,
             "maturity_level": "Senior",
@@ -123,7 +160,7 @@ def test_live_manifest_and_exact_records_produce_honest_full_coverage() -> None:
     assert contract["maturity_label"] == "Exceptional"
 
 
-def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator() -> None:
+def test_python_sample_keeps_unknown_node_inputs_in_required_execution_denominator() -> None:
     records = [_record(name) for name in TOOLS[:]]
     reasons = {
         "npm-audit": "No package-lock.json with an adjacent package.json was found.",
@@ -185,23 +222,19 @@ def test_python_only_exact_run_excludes_node_tools_from_applicable_denominator()
     result = reconcile_authoritative_scanner_truth(canonical)
     contract = result["client_readiness_contract"]
 
-    assert result["analyzer_execution_coverage"] == 100
+    assert result["analyzer_execution_coverage"] == 67
     assert result["completed_applicable_analyzers"] == 6
     assert result["incomplete_applicable_analyzers"] == 0
     assert len(result["requested_scanner_records"]) == 9
-    assert len(result["scanner_execution_records"]) == 6
-    assert {
-        item["scanner_name"] for item in result["not_applicable_scanner_records"]
-    } == set(reasons)
+    assert len(result["scanner_execution_records"]) == 9
+    assert result["not_applicable_scanner_records"] == []
     assert contract["coverage_numerator"] == 6
-    assert contract["coverage_denominator"] == 6
-    assert contract["incomplete_analyzers"] == []
-    assert contract["not_applicable_exact_run_scanners"] == list(reasons)
-    assert contract["not_applicable_scanners_receive_completion_credit"] is False
-    assert all(
-        not section.get("unavailable")
-        for section in result["assessment"]["sections"]
-    )
+    assert contract["coverage_denominator"] == 9
+    assert set(contract["incomplete_analyzers"]) == set(reasons)
+    assert set(contract["applicability_unproven_scanners"]) == set(reasons)
+    assert contract["not_applicable_exact_run_scanners"] == []
+    assert result["delivery_gate"]["analyzer_evidence_ready"] is False
+    assert all(section.get("unavailable") for section in result["assessment"]["sections"])
 
 
 def test_node_only_run_requires_observed_inventory_before_removing_applicable_blockers(tmp_path) -> None:
@@ -320,12 +353,14 @@ def test_node_only_run_requires_observed_inventory_before_removing_applicable_bl
     }
     assessment = result["assessment"]
     assert assessment["scanner_execution_summary"]["record_count"] == 9
-    assert assessment["scanner_execution_summary"]["applicable_record_count"] == 8
+    assert assessment["scanner_execution_summary"]["applicable_record_count"] == 7
+    assert assessment["scanner_execution_summary"]["applicability_unproven_count"] == 1
     assert assessment["scanner_execution_summary"]["not_applicable_count"] == 1
     assert assessment["scanner_execution_summary"]["completed_count"] == 8
     assert assessment["scanner_execution_summary"]["incomplete_count"] == 0
     assert assessment["evidence_coverage"]["percent"] == 100
-    assert assessment["evidence_coverage"]["applicable_analyzers"] == 8
+    assert assessment["evidence_coverage"]["applicable_analyzers"] == 7
+    assert result["delivery_gate"]["analyzer_evidence_ready"] is False
     assert assessment["evidence_coverage"]["completed_verified_analyzers"] == 8
     assert assessment["evidence_coverage"]["incomplete_analyzer_penalty"] == 0
     assert assessment["evidence_adjusted_score"] == 89

@@ -159,7 +159,9 @@ def test_native_authorization_stage_has_customer_readable_summary_and_evidence()
     )
 
     assert result["status"] == "complete"
-    assert "read-only scope" in result["summary"]
+    assert "defensive read-only assessment" in result["summary"]
+    assert "Independent NICO verification" in result["summary"]
+    assert result["evidence"]["independent_authorization_verification"] == "not_established"
     assert result["evidence"]["authorization_confirmed"] is True
     assert result["evidence"]["repository"] == "BoneManTGRM/NICO"
     assert result["human_review_required"] is True

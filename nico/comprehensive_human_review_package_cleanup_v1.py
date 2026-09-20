@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.scanner_applicability_v1 import scanner_execution_summary
+
 import base64
 import html
 import io
@@ -279,14 +281,15 @@ def build_scanner_execution_stage(
         "dependency_security_static_analysis",
         "Dependency, Security, and Static Analysis",
         (
-            f"{len(completed)} of {len(records)} applicable scanner executions completed. "
-            f"{'No scanner execution remains incomplete. ' if not incomplete else f'{len(incomplete)} scanner execution(s) remain incomplete. '}"
+            scanner_execution_summary(records + not_applicable) + " " +
+            ("Scanner execution completeness is unverified. " if not records else
+             "No scanner execution remains incomplete. " if not incomplete else f"{len(incomplete)} scanner execution(s) remain incomplete. ") +
             f"{totals['review_required']} resulting candidates remain pending human disposition. "
             "Scanner completion does not equal candidate approval."
         ),
         evidence=evidence,
         unavailable=limitations,
-        status="complete" if not incomplete else "review_required",
+        status="complete" if records and not incomplete else "review_required",
     )
 
 

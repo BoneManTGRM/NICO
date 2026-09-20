@@ -91,6 +91,17 @@ def project_operator_report_formats(reports, *, authorized=False, approval_recei
             canonical['operator_approval_receipt'] = deepcopy(approval_receipt)
             rows = _approval_record_rows(approval_receipt, authorized=authorized)
             spanish = approval_receipt['source_identity']['report_language'] == 'es-MX'
+            if canonical.get('reader_reference_schema') == 'nico.reader_references.v1':
+                # The complete receipt is already retained in the generated record.
+                reference = approval_receipt['approval_certificate_sha256']
+                for old, new in (
+                    ('Recorded; see certificate.', f'Approved; approval receipt SHA-256: {reference}.'),
+                    ('Registrada; ver certificado.', f'Aprobada; SHA-256 del recibo de aprobación: {reference}.'),
+                ):
+                    pieces = re.split(r'(<span data-nico-client-literal="true">.*?</span>)', text, flags=re.S)
+                    for index in range(0, len(pieces), 2):
+                        pieces[index] = pieces[index].replace(old, new)
+                    text = ''.join(pieces)
             heading = 'Registro de aprobación del operador' if spanish else 'Operator Report Approval Record'
             replacement = '## ' + heading + '\n\n' + '\n'.join(f'- {label}: {value or ("No conservado" if spanish else "Not retained")}' for label, value in rows) + '\n'
             # Only the renderer-owned trailing manifest section carries this

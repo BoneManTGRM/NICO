@@ -171,6 +171,8 @@ def build_operator_edition(record: dict[str, Any], payload: Mapping[str, Any]) -
     source_identity = assert_expected_review_artifact_identity(record, payload.get("expected_artifact_identity"))
     if validated_operator_edition(record):
         raise ValueError("operator_approval_already_recorded")
+    from nico.comprehensive_client_delivery_contract_v1 import require_new_report_release_readiness
+    require_new_report_release_readiness(record)
     statement = {
         "artifact_schema": VERSION, "decision": "approved", "approval_basis": BASIS,
         "reviewer": str(payload.get("reviewer") or "").strip() or "Authenticated NICO operator",

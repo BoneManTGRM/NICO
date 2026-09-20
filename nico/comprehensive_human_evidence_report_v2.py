@@ -114,6 +114,47 @@ def _canonical_injection_specs(snapshot: Mapping[str, Any]) -> list[dict[str, An
     return output
 
 
+def refresh_stakeholder_classification(canonical: Mapping[str, Any]) -> dict[str, Any]:
+    """Refresh only the new draft's verified stakeholder presentation, not its raw input."""
+    from copy import deepcopy
+
+    output = deepcopy(dict(canonical))
+    if (output.get("client_delivery_allowed") is True
+            or output.get("human_review_completed") is True
+            or output.get("report_finality") in {"approved_final", "operator_approved", "operator_approved_final"}):
+        return output
+    package = v1._verified_human_evidence(output.get("supplied_human_evidence"))
+    if "stakeholder_context" not in (package.get("provided_module_ids") or []):
+        return output
+    stages = output.get("stage_summaries")
+    if not isinstance(stages, list):
+        return output
+    prefix = "client_human_evidence_stakeholder_context"
+    def owned(stage: Mapping[str, Any]) -> bool:
+        stage_id = str(stage.get("stage_id") or "")
+        return stage_id.startswith(prefix) and v1._module_id_from_stage(stage_id) == "stakeholder_context"
+    if not any(isinstance(stage, Mapping) and owned(stage) for stage in stages):
+        return output
+    spanish = str(output.get("report_language") or output.get("locale") or "en") == "es-MX"
+    replacements = [v1._localize_retained_stage(spec, spanish=spanish)
+                    for spec in _canonical_injection_specs({"human_evidence": package})
+                    if str(spec.get("stage_id") or "").startswith(prefix)]
+    projected = []
+    inserted = False
+    for stage in stages:
+        if isinstance(stage, Mapping) and owned(stage):
+            if not inserted:
+                projected.extend(replacements)
+                inserted = True
+        else:
+            projected.append(stage)
+    output["stage_summaries"] = projected
+    assessment = output.get("assessment")
+    if isinstance(assessment, dict) and isinstance(assessment.get("stage_summaries"), list):
+        assessment["stage_summaries"] = deepcopy(projected)
+    return output
+
+
 def _has_verified_human_context(snapshot: Mapping[str, Any]) -> bool:
     display = snapshot.get("display_values")
     if isinstance(display, Mapping) and any(
@@ -170,7 +211,7 @@ def _install_english_retained_titles() -> dict[str, bool]:
         if stage_id == "client_evidence_summary":
             output["title"] = "Client Evidence Summary"
             output["summary"] = (
-                "Client-supplied engagement metadata and human-observed evidence are "
+                "Client-supplied engagement metadata and supplied statements are "
                 "retained as explicit review context. Missing facts are not inferred. "
                 "These values do not change technical scores or grant approval or "
                 "delivery authority."
@@ -183,11 +224,13 @@ def _install_english_retained_titles() -> dict[str, bool]:
             label = str(definition.get("label") or "").strip()
             if not label:
                 label = module_id.replace("_", " ").title()
+            label = v1._human_module_label(module_id, label, spanish=False)
             output["title"] = f"Client Human Evidence — {label}"
             output["summary"] = (
                 "This module was excluded from scope; its retained inputs provide no assessment coverage or approval."
                 if str(output.get("status") or "").casefold() == "excluded"
-                else "These observations were explicitly supplied by people and are retained "
+                else v1._STAKEHOLDER_METADATA_SUMMARY[0] if module_id == "stakeholder_context"
+                else "These statements were explicitly supplied by people and are retained "
                 "without repository inference. They do not automatically change technical "
                 "scores or grant approval or delivery authority."
             )

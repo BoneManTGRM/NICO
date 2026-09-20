@@ -134,7 +134,7 @@ def _patch_candidate_stage() -> bool:
                     "Prior candidate register imported from exact commit "
                     f"{lineage.get('prior_target_commit_sha')}; "
                     f"assessment-subject match={lineage.get('assessment_subject_match')} "
-                    f"({lineage.get('assessment_subject_match_reason')})."
+                    f"({str(lineage.get('assessment_subject_match_reason') or 'not recorded').replace('_', ' ')})."
                 ),
                 (
                     f"Prior candidates: {lineage.get('prior_candidate_count', 0)}; "
@@ -162,7 +162,7 @@ def _patch_candidate_stage() -> bool:
         )
         if ignored:
             rendered = "; ".join(
-                f"{key}={value}" for key, value in sorted(ignored.items())
+                f"{key.replace('_', ' ')}={value}" for key, value in sorted(ignored.items())
             )
             evidence.append(
                 "Non-partitioning NICO placeholder identities were normalized as unsupplied "
@@ -189,8 +189,8 @@ def _patch_candidate_stage() -> bool:
                     ),
                     (
                         "Technical triage outcome totals: "
-                        f"not_actionable={verdicts.get('not_actionable', 0)}, "
-                        f"needs_review={verdicts.get('needs_review', 0)}, "
+                        f"not actionable={verdicts.get('not_actionable', 0)}, "
+                        f"needs review={verdicts.get('needs_review', 0)}, "
                         f"confirmed={verdicts.get('confirmed', 0)}."
                     ),
                     (

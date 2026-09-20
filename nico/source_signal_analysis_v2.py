@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 import re
+from copy import deepcopy
 from pathlib import PurePosixPath
 from typing import Any, Mapping
 
@@ -62,6 +65,25 @@ _PLACEHOLDER_MARKERS = (
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
+
+
+def source_observation_record(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain detector evidence without assigning canonical finding eligibility."""
+    record = deepcopy(dict(raw))
+    identity = {key: record.get(key) for key in ("path", "line", "column", "rule_id", "source_excerpt")}
+    if (
+        _text(record.get("path")) and _text(record.get("rule_id"))
+        and type(record.get("line")) is int and record["line"] > 0
+    ):
+        record.setdefault("observation_id", "source-observation-" + hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        ).hexdigest())
+    record.setdefault("semantic_class", (
+        "excluded_non_production_observation" if record.get("production_scope") is False
+        else "source_observation"
+    ))
+    record.setdefault("disposition_state", record.get("disposition") or "not_dispositioned")
+    return record
 
 
 def _non_production(path: str) -> bool:
@@ -141,6 +163,7 @@ def _python_risks(path: str, text: str) -> list[dict[str, Any]]:
                 {
                     "path": path,
                     "line": line,
+                    "column": int(getattr(node, "col_offset", 0)) + 1,
                     "rule_id": rule,
                     "message": message,
                     "source_excerpt": _source_line(text, line),
@@ -245,6 +268,9 @@ def analyze_source_signals(files: Mapping[str, str]) -> dict[str, Any]:
             continue
         records = _python_risks(path, text) if suffix == ".py" else _javascript_risks(path, text)
         for record in records:
+            # Detector output records an observation, not a review decision. The
+            # acquisition bundle separately binds these records to its revision.
+            record = source_observation_record(record)
             rendered = f"{record['path']}:{record['line']}: {record['rule_id']} — {record['message']}"
             if record.get("production_scope") is True:
                 production_risks.append(rendered)
@@ -268,4 +294,4 @@ def analyze_source_signals(files: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
-__all__ = ["VERSION", "analyze_source_signals"]
+__all__ = ["VERSION", "analyze_source_signals", "source_observation_record"]

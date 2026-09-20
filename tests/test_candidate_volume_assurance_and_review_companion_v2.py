@@ -231,7 +231,7 @@ def test_provider_reports_triage_workload_without_numeric_score_deterioration(mo
     assert contract["candidate_volume_is_triage_workload_not_defect_severity"] is True
     assert contract["candidate_volume_affects_numeric_score"] is False
     assert contract["review_workload_affects_numeric_score"] is False
-    assert "do not change numeric security or readiness scores" in assessment["executive_summary"]
+    assert "do not change numeric technical scores" in assessment["executive_summary"]
 
 
 def test_review_companion_retains_all_eight_sections_across_four_paired_pages() -> None:

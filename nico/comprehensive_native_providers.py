@@ -192,6 +192,25 @@ def repository_evidence_provider(context: dict[str, Any]) -> dict[str, Any]:
     return _result(context, summary="Exact-commit repository, dependency, architecture, workflow, activity, and complexity evidence were attached.", repository_evidence=repository_evidence, complexity_evidence=complexity_evidence, evidence={"repository_evidence_id": repository_evidence.get("evidence_id"), "complexity_evidence_id": complexity_evidence.get("evidence_id"), "snapshot_commit_sha": repository_evidence.get("snapshot_commit_sha"), "files_profiled": files.get("files_profiled", 0), "tree_paths_seen": files.get("tree_paths_seen", 0), "source_file_count": architecture.get("source_file_count", 0), "test_path_count": architecture.get("test_path_count", 0), "workflow_file_count": workflows.get("workflow_file_count", 0)}, unavailable_data_notes=repository_evidence.get("unavailable_data_notes") or [])
 
 
+def verified_execution_limit(scan: dict[str, Any], commit_sha: str) -> bool:
+    """Permit a limited evidence package, never credit an unexecuted scanner."""
+    limit = scan.get("execution_limit")
+    if not isinstance(limit, dict):
+        return False
+    observed, maximum = limit.get("observed_bytes"), limit.get("limit_bytes")
+    return (
+        len(commit_sha) == 40 and all(c in "0123456789abcdef" for c in commit_sha)
+        and scan.get("status") in {"unavailable", "failed", "partial"}
+        and scan.get("snapshot_match") is True
+        and scan.get("actual_commit_sha") == limit.get("commit_sha") == commit_sha
+        and limit.get("reason") == "repository_size_limit_exceeded"
+        and limit.get("scanner_execution_permitted") is False
+        and type(observed) is int and type(maximum) is int
+        and observed > maximum > 0
+        and not scan.get("tools_run")
+    )
+
+
 def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
     snapshot = _snapshot(context)
     if snapshot.get("status") != "attached":
@@ -227,6 +246,18 @@ def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
     status = _text(scan.get("status"), 40).lower()
     if status in {"queued", "running"}:
         return _result(context, "running", summary="The modern scanner suite is executing against the exact immutable commit.", scan_id=scan.get("scan_id"), scanner={"scan_id": scan.get("scan_id"), "status": status, "current_stage": scan.get("current_stage"), "active_tool": scan.get("active_tool"), "progress_percent": scan.get("progress_percent"), "snapshot_commit_sha": scan.get("snapshot_commit_sha")}, evidence={"scan_id": scan.get("scan_id"), "active_tool": scan.get("active_tool"), "progress_percent": scan.get("progress_percent"), "snapshot_commit_sha": scan.get("snapshot_commit_sha")})
+    if verified_execution_limit(scan, context["commit_sha"]):
+        retained = {key: scan.get(key) for key in (
+            "scan_id", "status", "snapshot_match", "actual_commit_sha", "tools_requested",
+            "tools_run", "unavailable_tools", "failed_tools", "timed_out_tools", "execution_limit",
+        )}
+        return _result(context, summary=(
+            "The immutable repository revision was verified, but its size exceeded the scanner execution limit. "
+            "Scanner execution is unavailable; reporting continues with limited evidence."
+        ), scan_id=scan.get("scan_id"), scanner=retained,
+            evidence={"execution_limit": scan["execution_limit"], "snapshot_match": True,
+                "actual_commit_sha": scan["actual_commit_sha"], "tools_run": []},
+            unavailable_data_notes=scan.get("unavailable_data_notes") or [])
     if status != "complete" or scan.get("snapshot_match") is not True:
         return _result(context, "blocked", reason="snapshot_scanner_not_verified", scan_id=scan.get("scan_id"), scanner_status=status or "unavailable", unavailable_data_notes=scan.get("unavailable_data_notes") or ["Scanner output did not verify the immutable snapshot."])
     counts = _counts(scan)
@@ -424,7 +455,20 @@ def delivery_process_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = _repo(context)
     activity = repo.get("activity_evidence") if isinstance(repo.get("activity_evidence"), dict) else {}
     workflow = repo.get("workflow_evidence") if isinstance(repo.get("workflow_evidence"), dict) else {}
-    return _result(context, summary="Commit, pull-request, workflow, job, and deployment evidence were reviewed as bounded delivery-process history.", evidence={"commits_returned": activity.get("commits_returned", 0), "pull_requests_returned": activity.get("pull_requests_returned", 0), "merged_pull_requests": activity.get("merged_pull_requests", 0), "open_pull_requests": activity.get("open_pull_requests", 0), "jobs_observed": workflow.get("jobs_observed", 0), "job_success_rate": workflow.get("job_success_rate")})
+    evidence = {"commits_returned": activity.get("commits_returned", 0), "pull_requests_returned": activity.get("pull_requests_returned", 0), "merged_pull_requests": activity.get("merged_pull_requests", 0), "open_pull_requests": activity.get("open_pull_requests", 0), "jobs_observed": workflow.get("jobs_observed", 0), "job_success_rate": workflow.get("job_success_rate")}
+    return _result(context, summary=delivery_process_summary(evidence), evidence=evidence)
+
+
+def delivery_process_summary(evidence: Any) -> str:
+    """Describe retained counts without turning provider completion into review."""
+    values = evidence if isinstance(evidence, dict) else {}
+    observed = any(isinstance(values.get(key), (int, float)) and not isinstance(values[key], bool) and values[key] > 0
+                   for key in ("commits_returned", "pull_requests_returned", "jobs_observed"))
+    return (
+        "Retained commit, pull-request, and job counts are bounded delivery-process context. Their availability does not establish deployment history, independent review, or operational readiness."
+        if observed else
+        "No delivery-process observations were retained for this stage. Operational history was not assessed."
+    )
 
 
 def stakeholder_alignment_provider(context: dict[str, Any]) -> dict[str, Any]:

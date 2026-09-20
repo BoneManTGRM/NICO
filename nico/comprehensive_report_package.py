@@ -280,7 +280,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    structured_fields = {"source_observation", "structured_tables", "profile_coverage"}
+    structured_fields = {"source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
     def without_structured(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}
@@ -289,6 +289,9 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         return value
     evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
     retained_structure = {key: deepcopy(evidence[key]) for key in structured_fields if key in evidence}
+    if stage_id == "developer_delivery_process":
+        retained_structure.update({key: deepcopy(evidence[key]) for key in (
+            "commits_returned", "pull_requests_returned", "jobs_observed") if key in evidence})
     complexity = result.get("complexity_evidence")
     if isinstance(complexity, dict) and isinstance(complexity.get("profile_coverage"), dict):
         retained_structure.setdefault("profile_coverage", deepcopy(complexity["profile_coverage"]))
@@ -339,6 +342,33 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
 
 
 _SOURCE_COPY_ES = {
+    "Observation ID": "Identificador de observación",
+    "Column": "Columna", "Source excerpt": "Fragmento del código fuente",
+    "Source-risk observations": "Observaciones de riesgo del código fuente",
+    "Retained source-risk observations": "Observaciones de riesgo del código fuente conservadas",
+    "Reported source-risk observations": "Observaciones de riesgo del código fuente reportadas",
+    "Retained observation records": "Registros de observaciones conservados",
+    "Excluded non-production observations": "Observaciones excluidas por no ser de producción",
+    "Observation record retention complete": "Conservación completa de registros de observaciones",
+    "Repository revision": "Revisión del repositorio",
+    "Observation revision matches assessment": "La revisión de las observaciones coincide con la evaluación",
+    "Rule": "Regla", "Classification": "Clasificación", "Disposition": "Disposición",
+    "source_observation": "Observación del código fuente",
+    "excluded_non_production_observation": "Observación excluida por no ser de producción",
+    "not_dispositioned": "Sin disposición",
+    "Authorization and repository access evidence": "Evidencia de autorización y acceso al repositorio",
+    "Requester authorization attestation": "Declaración de autorización del solicitante",
+    "Repository access mode": "Modalidad de acceso al repositorio",
+    "Provider credential used": "Credencial del proveedor utilizada",
+    "Independent NICO verification of ownership or third-party permission": "Verificación independiente de NICO de propiedad o permiso de terceros",
+    "confirmed": "Confirmada",
+    "not_established": "No establecida",
+    "anonymous_public": "Público anónimo",
+    "authenticated_read_only": "Autenticado de solo lectura",
+    "unknown": "Desconocida",
+    "Eligible-source analysis coverage (%)": "Cobertura de análisis del código elegible (%)",
+    "Eligible-source coverage fraction": "Fracción de cobertura del código elegible",
+    "Observed supported-source coverage fraction": "Fracción de cobertura del código compatible observado",
     "Known file paths in configured priority order, then sorted eligible paths, within unchanged file and byte limits.": "Rutas conocidas en el orden de prioridad configurado y después rutas elegibles ordenadas, dentro de los límites existentes de archivos y bytes.",
     "Bounded API priority paths followed by sorted eligible paths; exact-SHA archive sources in sorted path order within existing archive file and byte limits. Overlapping paths are counted once.": "Rutas prioritarias de la API acotada seguidas de rutas elegibles ordenadas; código del archivo del SHA exacto en orden de ruta dentro de sus límites existentes de archivos y bytes. Cada ruta coincidente se cuenta una vez.",
     "Observed source components": "Componentes observados en el código",
@@ -367,17 +397,67 @@ _SOURCE_COPY_ES = {
 }
 
 
+_SOURCE_COPY_EN = {
+    "source_observation": "Source observation",
+    "excluded_non_production_observation": "Excluded non-production observation",
+    "not_dispositioned": "Not dispositioned",
+    "source_module": "Source module",
+    "import": "Import",
+    "http_call": "HTTP call",
+    "storage_call": "Storage call",
+    "process_call": "Process call",
+    "route_declaration": "Route declaration",
+    "declared_container_configuration": "Declared container configuration",
+    "declared_provider_configuration": "Declared provider configuration",
+    "declared_deployment_manifest": "Declared deployment manifest",
+    "outbound_network_destination_unresolved": "Outbound network destination unresolved",
+    "storage_target_and_access_policy_unresolved": "Storage target and access policy unresolved",
+    "child_process_privilege_boundary_unresolved": "Child process privilege boundary unresolved",
+    "incoming_request_authorization_unverified": "Incoming request authorization unverified"
+}
+
+
 def _source_cell(value: Any, *, spanish: bool) -> str:
     if value is None:
         return "No evaluado" if spanish else "Not assessed"
     if isinstance(value, bool):
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     text = str(value)
-    return _SOURCE_COPY_ES.get(text, text) if spanish else text
+    if spanish:
+        from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
+        if text in COPY_ES:
+            return COPY_ES[text]
+    return (_SOURCE_COPY_ES if spanish else _SOURCE_COPY_EN).get(text, text)
 
 
 def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
     tables = deepcopy(stage.get("structured_tables") or [])
+    observations = stage.get("source_risk_observation_summary")
+    if isinstance(observations, dict) and observations:
+        tables.append({"title": "Source-risk observations", "columns": ["Measure", "Value"],
+            "rows": [[label, observations.get(key)] for label, key in (
+                ("Reported source-risk observations", "reported_count"),
+                ("Retained observation records", "retained_record_count"),
+                ("Excluded non-production observations", "excluded_non_production_count"),
+                ("Observation record retention complete", "record_retention_complete"),
+                ("Repository revision", "repository_revision"),
+                ("Observation revision matches assessment", "revision_match"),
+            )]})
+        records = [record for record in stage.get("source_risk_observations") or [] if isinstance(record, dict)]
+        for record in records:
+            # Vertical detail rows preserve long identities/evidence without
+            # compressing nine unrelated fields into narrow PDF columns.
+            tables.append({"title": "Retained source-risk observations",
+                "columns": ["Measure", "Value"],
+                "literal_value_labels": {"Observation ID", "Source", "Rule", "Source excerpt", "Repository revision"},
+                "rows": [[label, record.get(field)] for label, field in (
+                    ("Observation ID", "observation_id"), ("Source", "path"),
+                    ("Line", "line"), ("Column", "column"), ("Rule", "rule_id"),
+                    ("Source excerpt", "source_excerpt"),
+                    ("Repository revision", "repository_revision"),
+                    ("Observation revision matches assessment", "revision_match"),
+                    ("Classification", "semantic_class"), ("Disposition", "disposition_state"),
+                )]})
     coverage = stage.get("profile_coverage")
     if isinstance(coverage, dict) and coverage:
         fields = [
@@ -386,17 +466,30 @@ def _source_tables(stage: dict[str, Any]) -> list[dict[str, Any]]:
             ("Analyzed source files", "analyzed_source_files"), ("Excluded source files", "complexity_excluded_source_files"),
             ("Unsampled eligible source files", "unsampled_eligible_source_files"), ("Unavailable profile files", "unavailable_profile_files"),
             ("Whole supported-source coverage (%)", "whole_repository_coverage_percent"),
+            ("Eligible-source analysis coverage (%)", "eligible_source_coverage_percent"),
             ("File limit", "file_limit"), ("Per-file byte limit", "per_file_byte_limit"),
             ("Selection method", "selection_method"),
         ]
+        reconciliation = stage.get("coverage_reconciliation") or {}
+        from nico.comprehensive_coverage_reconciliation_v1 import VERSION as COVERAGE_RECONCILIATION_VERSION
         tables.append({"title": "Bounded profile coverage", "columns": ["Measure", "Value"],
-                       "rows": [[label, coverage.get(key)] for label, key in fields]})
+                       "rows": [[label, (reconciliation.get("unavailable_file_path_count")
+                                         if key == "unavailable_profile_files" and reconciliation.get("version") == COVERAGE_RECONCILIATION_VERSION
+                                         else coverage.get(key))] for label, key in fields]})
+        tables[-1]["rows"].extend([
+            ["Eligible-source coverage fraction", f"{coverage.get('analyzed_source_files')} / {coverage.get('eligible_source_files')}"],
+            ["Observed supported-source coverage fraction", f"{coverage.get('analyzed_source_files')} / {coverage.get('observed_source_files')}"],
+        ])
         archive_limits = (coverage.get("collection_limits") or {}).get("exact_sha_archive") or {}
         if archive_limits:
             tables[-1]["rows"].append(["Archive total byte limit", archive_limits.get("total_byte_limit")])
         for title, key in [("Unavailable source paths", "unavailable_paths"), ("Unanalyzed sampled source paths", "sampled_unanalyzed_source_paths")]:
             if coverage.get(key):
                 tables.append({"title": title, "columns": ["Source"], "rows": [[path] for path in coverage[key]]})
+    from nico.comprehensive_coverage_reconciliation_v1 import coverage_reconciliation_table
+    reconciliation = coverage_reconciliation_table(stage)
+    if reconciliation:
+        tables.append(reconciliation)
     return [table for table in tables if isinstance(table, dict) and table.get("columns") and isinstance(table.get("rows"), list)]
 
 
@@ -453,10 +546,10 @@ def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
             return html.escape(str(value) if literal else _source_cell(value, spanish=spanish), quote=False).replace("|", "&#124;").replace("\n", " ")
         lines += ["", "#### " + cell(table["title"]), "", "| " + " | ".join(cell(value) for value in columns) + " |",
                   "| " + " | ".join("---" for _ in columns) + " |"]
-        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)) + " |" for row in rows[:24]]
+        lines += ["| " + " | ".join(cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)) + " |" for row in rows]
         lines += [
-            (f"Se muestran {min(24, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa." if spanish else
-             f"Showing {min(24, len(rows))} of {len(rows)} rows; JSON retains the complete observation.")]
+            (f"Se muestran las {len(rows)} filas completas." if spanish else
+             f"Showing all {len(rows)} rows in full.")]
     observed = stage.get("source_observation")
     if isinstance(observed, dict):
         label = "SHA-256 de la observación" if spanish else "Observation SHA-256"
@@ -485,22 +578,41 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
     for table in _source_tables(stage):
         rows = table["rows"]
         columns = table["columns"]
-        flowables.append(cell(table["title"], True))
-        values = [[cell(value) for value in columns]] + [[cell(value, literal=column in {"Source", "Target"}) for column, value in zip(columns, row)] for row in rows[:row_limit]]
-        note = cell(f"Se muestran {min(row_limit, len(rows))} de {len(rows)} filas; el JSON conserva la observación completa."
-                    if spanish else f"Showing {min(row_limit, len(rows))} of {len(rows)} rows; JSON retains the complete observation.")
-        values.append([note] + [""] * (len(columns) - 1))
-        rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1, hAlign="LEFT")
-        rendered.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
-            ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#94a3b8")),
-            ("SPAN", (0, -1), (-1, -1)),
-            ("NOSPLIT", (0, -2), (-1, -1)),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ]))
-        flowables += [rendered, Spacer(1, 5)]
+        # row_limit bounds each layout batch, not the substantive evidence retained.
+        # Existing report page, byte and process-time limits remain unchanged.
+        batch_size = max(1, row_limit)
+        for offset in range(0, max(1, len(rows)), batch_size):
+            batch = rows[offset:offset + batch_size]
+            end = offset + len(batch)
+            heading = table["title"]
+            if offset:
+                heading = _source_cell(heading, spanish=spanish) + (" (continuación)" if spanish else " (continued)")
+            flowables.append(cell(heading, True))
+            values = [[cell(value) for value in columns]] + [
+                [cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
+                for row in batch
+            ]
+            if len(rows) <= batch_size:
+                note_text = (f"Se muestran las {len(rows)} filas completas." if spanish else
+                             f"Showing all {len(rows)} rows in full.")
+            else:
+                note_text = (f"Se muestran las filas {offset + 1}–{end} de {len(rows)}." if spanish else
+                             f"Showing rows {offset + 1}–{end} of {len(rows)}.")
+                note_text += ((" La tabla continúa a continuación." if spanish else " The table continues below.")
+                              if end < len(rows) else (" Fin de la tabla completa." if spanish else " End of complete table."))
+            values.append([cell(note_text)] + [""] * (len(columns) - 1))
+            rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1,
+                             splitInRow=1, hAlign="LEFT")
+            rendered.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
+                ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#94a3b8")),
+                ("SPAN", (0, -1), (-1, -1)),
+                ("NOSPLIT", (0, -2), (-1, -1)),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]))
+            flowables += [rendered, Spacer(1, 5)]
     return flowables
 
 
@@ -542,10 +654,13 @@ def _decision_summary(
         if blocked
         else "Every automated stage represented in this package completed without a terminal execution failure."
     )
+    from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+    assurance = (assurance_headline(assessment, spanish=str(identity.get("report_language") or "").startswith("es"))
+        if assessment.get("source_security_assurance") else "")
     return (
         f"NICO completed a native Comprehensive Technical Assessment for {_text(identity.get('repository'))} "
         f"at immutable commit {_text(identity.get('commit_sha'))}. The evidence-bound maturity signal is "
-        f"{level} ({score_text}). {limited} stage(s) disclose unavailable or limited evidence. {boundary} "
+        f"{level} ({score_text}). {assurance} {limited} stage(s) disclose unavailable or limited evidence. {boundary} "
         "The package is a review-gated draft: automated evidence and recommendations are not client approval or delivery authorization."
     )
 
@@ -599,6 +714,8 @@ def _markdown(
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), dict) else {}
     score = maturity.get("presented_score", maturity.get("score"))
     score_text = f"{int(score)}/100" if isinstance(score, (int, float)) else localized("NOT SCORED")
+    adjusted_score = maturity.get("evidence_readiness_score")
+    adjusted_score_text = f"{adjusted_score}/100" if isinstance(adjusted_score, (int, float)) else localized("Pending")
     constraints = _constraints(assessment, stages)
     from nico.comprehensive_engagement_metadata_v1 import (
         _literal,
@@ -648,7 +765,9 @@ def _markdown(
         f"## {localized('Canonical Maturity Signal')}",
         f"- {localized('Level')}: {localized(_text(maturity.get('level') or 'Pending'))}",
         f"- {localized('Presented score')}: {score_text}",
-        f"- {localized('Evidence readiness')}: {localized(_text(maturity.get('evidence_readiness_score') or 'Pending'))}",
+        f"- {localized('Evidence-adjusted technical score')}: {adjusted_score_text}",
+        "",
+        localized("This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety."),
         "",
         f"## {localized('Technical Scorecard')}",
     ]

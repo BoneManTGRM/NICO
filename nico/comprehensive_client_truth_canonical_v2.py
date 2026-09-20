@@ -109,8 +109,39 @@ def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
             stage["evidence"] = _clean_client_literal_stage_evidence(
                 stage.get("evidence")
             )
+            # The summary is renderer-owned; the supplied evidence below remains literal.
+            if stage_id == "client_evidence_summary":
+                stage["summary"] = "Client-supplied engagement metadata and supplied statements are retained as explicit review context. Missing facts are not inferred. These values do not change technical scores or grant approval or delivery authority."
+            elif (re.fullmatch(r"client_human_evidence_stakeholder_context(?:_\d+)?", stage_id)
+                  and stage.get("status") != "excluded"):
+                from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
+                stage["summary"] = _STAKEHOLDER_METADATA_SUMMARY[0]
+            elif stage.get("status") != "excluded":
+                stage["summary"] = "These statements were explicitly supplied by people and are retained without repository inference. They do not automatically change technical scores or grant approval or delivery authority."
         else:
             stage["evidence"] = _clean_stage_evidence(stage.get("evidence"))
+        if stage_id in {"functional_qa", "platform_parity"}:
+            # Rebuild owned narrative from the retained optional-input snapshot.
+            # This runs before freezing a new source, never against approved bytes.
+            from nico.phase3_evidence_core_v1 import functional_qa_provider, platform_parity_provider
+            identity = output.get("identity") or {}
+            human = output.get("supplied_human_evidence")
+            if isinstance(human, Mapping) and all(identity.get(key) for key in (
+                    "run_id", "repository", "commit_sha", "evidence_ledger_id", "customer_id", "project_id")):
+                provider = functional_qa_provider if stage_id == "functional_qa" else platform_parity_provider
+                stage["summary"] = provider({**identity, "human_evidence": human})["summary"]
+        if stage_id == "historical_trends_and_change_failure" and isinstance(output.get("supplied_human_evidence"), Mapping):
+            from nico.phase3_evidence_core_v1 import _field
+            incidents = _field({"human_evidence": output["supplied_human_evidence"]}, "incident_history", "incidents")
+            stage["summary"] = (
+                "Supplied incident statements were processed as unverified claims. " if incidents
+                else "Incident evidence was not supplied. "
+            ) + "Activity volume and workflow counts do not establish incident rates or measured recovery."
+        if stage_id == "developer_delivery_process":
+            from nico.comprehensive_native_providers import delivery_process_summary
+            retained = (output.get("stage_results") or {}).get(stage_id) or {}
+            evidence = retained.get("evidence") or raw
+            stage["summary"] = delivery_process_summary(evidence)
         if stage_id == "risk_reduction_and_executive_briefing":
             stage["status"] = "review_required"
             stage["summary"] = (
@@ -324,13 +355,13 @@ def install_comprehensive_client_truth_canonical_v2() -> dict[str, Any]:
             if spanish:
                 return (
                     f"NICO generó un borrador automatizado de evaluación técnica integral para {repository}. "
-                    f"La madurez técnica ponderada es {technical} y la preparación ajustada por evidencia es {adjusted}. "
+                    f"La madurez técnica ponderada es {technical} y la puntuación técnica ajustada por evidencia es {adjusted}. Esta señal ponderada de controles evaluados del repositorio no establece preparación operativa, cobertura exhaustiva, revisión profesional independiente ni seguridad de despliegue. "
                     "El paquete conserva salud del repositorio, hallazgos con ubicación exacta, evidencia de arquitectura, "
                     "un marco de hoja de ruta y exportaciones estructuradas para revisión humana; no constituye aprobación ni autorización de entrega."
                 )
             return (
                 f"NICO generated an automated Comprehensive Technical Assessment draft for {repository}. "
-                f"Weighted technical maturity is {technical}; independently evidence-adjusted readiness is {adjusted}. "
+                f"Weighted technical maturity is {technical}; the evidence-adjusted technical score is {adjusted}. This weighted signal of assessed repository controls does not establish operational readiness, exhaustive coverage, independent professional review, or deployment safety. "
                 "The evidence-bound package retains repository health, exact-location findings, architecture evidence, "
                 "a roadmap framework, and structured exports for human review; it is not approval or client-delivery authorization."
             )

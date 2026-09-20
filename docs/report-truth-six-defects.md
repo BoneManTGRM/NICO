@@ -225,3 +225,255 @@ Current and historical delivery tests exercise read/retry ordering, unchanged st
 records/receipts and rejection of altered artifacts or authority. Approval, delivery
 and report-truth suites pass 63 tests. Protected integration and the real production
 companion download remain required; local reconstructed output is not production proof.
+
+
+## Reopened report-content acceptance — 2026-09-15 UTC
+
+D2/D6 and A2 are reopened by inspection of the retained approved artifact.
+Earlier approval/download, release and digest proofs establish narrower facts;
+they do not establish truthful report prose or correct contents grouping. No
+new production acceptance is claimed here. The current repair base is
+`d261dda781e8cbdf9c39e06c7e6b596d355b4d94`. Today has no supplied exact cutoff.
+Original evidence and private identities remain in the existing private checkpoint.
+
+| Repair | Failure → hypothesis → smallest correction | Counterexample / fixed-condition result → next action |
+|---|---|---|
+| R1 / A2 | A bounded technical score was called independently adjusted readiness → shared cover templates overstate meaning → describe scored repository controls and explicit limits, without changing scores | Same retained source keeps both scores at 93; synthetic bilingual assertions reject readiness/professional-review implications → inspect actual new edition |
+| R2 / D2 | Stage not assessed but review label assessed → static default promoted processing → project sections and executive status from retained inputs and exact-source observations | Absent, supplied-unverified, wrong-source, and positive retained execution cases preserve distinct states; all four configured runtime dimensions remain visible → cross-format production proof |
+| R3 / D2 | Absent QA and incident inputs described as reconciled → unconditional provider summaries → derive narrative from actual input population and processing | Omit, supply cases only, supply results only, supply both, clear, exclude; supplied verification labels cannot create independent review → bilingual fixed-source publication |
+| R4 / D6 | One-entry contents continuation after phase box → fixed chunks and first-TOC target → balance entries, reserve legible phase-box geometry, put box on final contents page | Longer/shorter bilingual contents, final record, page references and bookmarks; empty footer-only overflow removed before budget using existing reflow rule; frozen historical matrix location retained → final assembled artifact inspection |
+| R5 | Raw metric paths and vague approval lookup → generated labels and lifecycle placeholders → readable values/units, new-source marker for actual approval-page and receipt references | Literal supplied source remains unchanged; variable record location, missing target rejection, retry determinism and legacy reference behavior tested → final authorized companion/manifest proof |
+| R6 | Operator decision could be mistaken for specialist completion → retain explicit separate states and explanation | Existing operator/delivery suites preserve pending specialist review and no transmission; optional specialist omissions remain nongating → verify actual records |
+
+The fixed-source local reconstruction is an engineering comparison, not a new
+product edition, specialist review, owner approval, or delivered final report.
+The score contract retains seven scored technical sections and named assurance
+deductions; no calculation defect has been demonstrated. Hash goldens change only
+where generated wording/layout changed; cross-language semantic, structure,
+reference, byte-binding, and locale-switch assertions remain required.
+
+Ordering relevant to static wording is edition generation and locale selection;
+static text has no independent permission ordering effect. Existing stale-edition,
+wrong-run, altered-byte, durable-decision retry, and separate authorization checks
+remain required. Changed substantive conclusions require fresh owner review.
+The single ordinary approval/download action and authentication are unchanged.
+
+Engineering verification is in progress. Protected CI, merge, actual serving
+identity, corrected frozen product edition, owner action, final all-page visual
+inspection, exact bytes and receipt/manifest checks remain open. Rollback uses the
+previous qualified commit through the existing providers, preserving the durable
+run store and every source, edition, decision, receipt and artifact; no reset,
+state migration, protection bypass or historical approval reuse is part of this repair.
+
+CI integration continuation (2026-09-15 UTC, PR #1609): the protected checks
+exposed a stale locale-only 35-row guard and a parity-section overwrite of
+explicit scope exclusion. The guard now checks the geometry-derived capacity;
+the existing excluded-scope projection survives dimension rendering. The original
+exclusion tests remain unchanged. The focused integration retest passes 81 tests.
+Other failed expectations required obsolete readiness prose, raw coverage keys,
+processing-only parity completion or the first-page phase box; their replacements
+retain counts, negative cases, source literals and final navigation checks.
+
+The shared narrative audit also reproduced a delivery-history provider claiming
+review with no retained observations and a review section claiming retained workflow
+outcomes at zero observed runs. Small corrections derive those narratives from
+retained counts; a positive retained-count projection remains intact. Thirty-seven
+focused assertions pass. Bilingual fixed-source artifact comparisons and all
+protected checks run again before merge. No new real run, owner decision or
+production acceptance is claimed by these engineering fixtures.
+
+Postmerge counterexample (2026-09-15 UTC): the controlled Spanish publication
+failed on the populated `job_success_rate` field; three dependent acceptance jobs
+then stopped on the failed source workflow. P7 is reopened. Failure → a retained
+rate became an English fallback label in the final Markdown/HTML CI context;
+hypothesis → the compatibility map recognizes only `observed_job_success_rate`;
+smallest correction → map the actual provider alias to the same bilingual label;
+counterexample → absent, zero, partial and full rates plus both aliases preserve
+their distinct values and leave canonical input untouched; evidence → the
+fixed-source bilingual assembly reproduced the production guard failure and the
+minimal test captured three failures before the two-label repair. All 54 affected
+semantic assertions now pass; final assembly and protected production checks
+must pass before P7 can close. No guard, source quotation, score or decision changes.
+
+The same companion inspection also exposed `mutable_operational_trend` and `none`
+as reader-facing CI state values. Two failing bilingual assertions precede a
+field-specific label correction in the same formatter. Structured source values
+and unrelated quoted text remain literal. This affects companion presentation;
+actual reviewable exports must be reinspected before owner approval.
+
+### Shared planning narrative follow-up — 2026-09-15 UTC
+
+The pre-approval UI critique found the planning provider still saying supplied
+requirements and constraints contributed when both retained collections were
+empty. The PDF's canonical roadmap wording was already bounded, but that did not
+prove the stage-history narrative. Four fixed-input assertions failed before the
+change. The provider now names retained requirement mappings and stakeholder
+constraints separately as included or absent; four exact es-MX UI messages and
+owned report translations cover those states. Omit/supply/clear checks preserve
+positive mappings, literal constraints, source input, and proposed-only authority.
+The focused affected suite passes 72 tests. No score, artifact binding, review,
+or delivery control changed. Protected checks and deployed workflow remain the
+next gate; this is not a report acceptance claim.
+
+The same pre-approval R5 inspection also found internal labels in source tables,
+roadmap gap references, workflow outcome text, scanner provenance, candidate
+counts/dispositions and the human-evidence appendix header. Corrections are at the
+owned label constructors. Machine gap references, source paths, retained records,
+counts, digest values and literal evidence remain unchanged. The appendix
+regression now recognizes both historical and corrected renderer-owned headers;
+it still checks every supplied literal and all module boundaries.
+
+Reduced label assertions fail on the prior implementation and pass after repair;
+56 focused checks and47 affected source/provenance/candidate/render checks pass.
+A broader run passed153 checks; its one fixture API/identity error was corrected
+and rerun in the focused suite. Full fixed-source English/es-MX reconstruction
+passes assembly/localization guards at51/50 pages. It retains historical canonical
+sentences and is layout evidence, not a corrected production edition. New-source
+builder tests verify that newly generated roadmap prose uses reader labels while
+retaining exact machine references. Actual replacement-edition inspection and
+fresh owner approval remain mandatory.
+
+Protected CI rejected stale exact-byte English goldens. A detached baseline at
+78d4dd3 reproduced all three old fingerprints exactly. The same input fixtures
+on d62c495 differ in Markdown/HTML only by the owned `timed_out` → `timed out`
+label. Page-by-page PDF comparison proves only that label and the exact updated
+companion digests differ (including wrapped digest text). All 23/48/22 pages and
+outline destinations are unchanged. The capture scripts retained the semantic,
+Spanish parity, manifest and repeat-generation assertions and passed. Only the
+three observed fingerprints were updated; no semantic assertion was removed.
+Protected checks on the resulting head remain required before merge.
+
+## Candidate-label Spanish grammar integration — 2026-09-15
+
+Production Spanish publication on PR1611's merged release was blocked by the
+existing English-copy guard: candidate category count lines still used English.
+Three downstream production proofs consequently did not run. This reopens P7;
+protected CI and serving identity did not establish Spanish production acceptance.
+Failure → the actual renderer now emits readable count/disposition labels, while
+two existing Spanish grammar rules still expected underscores. Smallest correction
+→ those rules accept both retained legacy labels and current reader labels, and
+translate only known disposition field values. Counts, source records, quoted
+titles and source paths remain unchanged. Counterexample → exercise actual current
+renderer output for all three categories and four dispositions, with distinct
+counts and literal title/path assertions:9 failures/1 pass before;24 focused and
+affected passes after. Full publication and evidence-literal tests remain required.
+No English generation, score, approval, finalization or persistence code changed.
+The existing English real run can be retained; this does not justify another
+assessment. Static grammar has no independent ordering effect; full edition and
+locale integration tests retain the existing freeze/identity checks. Next: finish
+required checks, protected merge/deploy and repeat the failed production predicate.
+
+
+## Companion score and remaining reader labels — 2026-09-15 UTC
+
+Actual retained English Markdown/HTML still called the technical-score alias
+“Evidence readiness”. This reopens R1 despite the corrected PDF cover. Six minimal
+EN/es-MX cases fail before correction (93, zero, absent). The shared Markdown
+constructor now names the evidence-adjusted technical score, includes /100 units,
+and explains the weighted repository-control boundary: no operational readiness,
+exhaustive coverage, independent professional review or deployment-safety claim.
+The structured alias and calculations are preserved; zero no longer becomes Pending.
+
+Actual companion inspection also found two owned scanner tool-count field paths,
+a planning status enum, generated human-evidence state and generated complexity
+metric labels. Seven reduced assertions failed. Their existing constructors now
+emit readable labels and complexity units. Tool identifiers, distinct counts,
+source paths, exact facts already retained, supplied literal text and structured
+keys remain intact; EN/es-MX tests include literal lookalikes and input immutability.
+100 focused/affected checks and35 companion/Spanish/literal checks pass. Static
+labels have no independent event ordering; full fixed-source publication and locale
+integration still exercise edition generation and retained deterministic identity.
+This does not change approval, consent, authentication, scoring or finalization.
+
+The earlier Spanish-only conclusion about retaining the pending English edition
+is superseded by this substantive companion correction. The pending source must
+not inherit its old approval or be silently replaced. Existing same-locale controls
+reuse frozen successful sources; alternate-language editions require approved
+sources and reject same-locale requests. Recovery is for actual blocked publication,
+not arbitrary regeneration. A necessary new real source at the original assessed
+commit may be prepared only after all known engineering repairs and deployment
+checks close. Preserve every old source, artifact and decision. Next: qualify exact
+publication comparisons, protected integration and actual production, then inspect
+the corrected reviewable source before requesting genuine owner approval.
+
+
+Fixed-condition publication comparison reproduced the current three English
+fingerprints on the original head. New Markdown/HTML differ only by the bounded
+score label, /100 units when numeric, and explanatory sentence. Every PDF page
+compares identically after substituting only the independently computed old/new
+companion digests; all23/48/22 page totals and outline destinations are unchanged.
+Only those demonstrated exact-byte expectations were updated. The comparison
+script retains semantic, bilingual, manifest and repeat-generation assertions.
+Actual real-source inspection remains a separate gate; this is fixture evidence.
+
+
+The larger retained-source Spanish reconstruction exposed a second grammar gap:
+roadmap prefixes with current reader labels contain spaces, while the existing
+translator recognized only legacy machine anchors. Six label cases failed before
+repair. The existing prefix rule now translates only those six configured labels;
+package IDs, legacy references and validated prose remain protected. Unknown labels
+or prose still fail closed.106 affected checks and17 explicit grammar/negative
+checks pass. CI also caught two obsolete assertions demanding the removed raw
+complexity/state labels; they now require readable wording, exact numeric values,
+method/source/commit meaning, and retain all prior identity/literal assertions.
+No production source or approval was changed by this local reconstruction.
+
+Two CI image builds hit Docker Hub HTTP500 before application execution. A fresh
+anonymous provider check returned200; targeted job retries were deferred by GitHub
+because their parent runs were still active. No protection was bypassed, image
+source changed or infrastructure modified. The next qualified head must pass those
+required builds normally. This provider event is separate from report regressions.
+
+The exact retained-source reconstruction now publishes both English and es-MX
+with current score/scanner labels and no source mutation. It is explicitly local
+reconstruction evidence, not an approved product edition or a final-page proof.
+The source identity, candidate implementation hash and actual generated bytes are
+retained privately. All known companion/translation repairs are now implemented;
+next gate is the protected candidate release and its actual corrected source.
+
+## Locale projection follow-up — 2026-09-15 UTC
+
+PR1612 merged as59ce95c; frontend/backend/renderer served that exact release.
+Protected checks passed, but the production Spanish proof independently reopened
+P7: its Spanish source published, while the same-run English PDF returned409.
+The retained response identifies a compact validator expecting Spanish CI labels.
+No corrected real source was created and no owner approval was requested.
+
+Failure → hypothesis → correction: a minimal English case with retained Spanish
+titles reproduced the exception. The compact validator inferred its language from
+those titles instead of using the renderer's existing canonical resolver. Use that
+resolver. Counterexample: replaying the exact retained production canonical input
+then exposed a second content-based language guess in PDF cleanup. Pass the selected
+render language through the existing sanitizer; legacy callers without context keep
+their prior behavior. Do not suppress the mixed-language guard or rewrite evidence.
+
+The retained-input English replay now passes the full assembler and unchanged truth
+projection comparison; it is a local reconstruction, not a production edition.
+Tests preserve opposite-language quotations, both declared locales, independent
+per-format CI requirements, missing-section rejection and source immutability.
+22 focused sanitizer/locale/literal tests pass. A production-bootstrap test is
+process-isolated so it cannot alter other tests' compatibility bindings. The initial
+combined test attempt demonstrated that isolation requirement; its output is retained.
+Locale ordering is material: Spanish source→English projection is the regression;
+English→Spanish, repeated retrieval and immutable-source behavior remain required.
+Next: affected checks, protected integration, deployed bilingual proof, then the
+corrected real source and genuine owner approval. No final acceptance claimed.
+
+## Reopened final phase lifecycle (2026-09-15 UTC)
+
+Actual post-approval inspection reopened the phase status predicate: canonical
+phase 4 and both durable decisions were authorized, while the PDF's existing
+matrix retained the draft blocked label. Prior source/byte checks did not prove
+final lifecycle truth. Original approved bytes and decisions remain retained.
+
+Failure → matrix-presence short circuit plus changed line wrapping → replace only
+an exact recognized isolated phase overlay after delivery validation → reject
+unknown overlay text/unestablished canonical state; preserve supplied literals,
+other phases, source, decisions and legacy validator rendering → English/es-MX
+minimal regressions, real retained-artifact replay and idempotent retrieval →
+protected deployment and actual same-edition final inspection still required.
+The first local correction exposed font-resource corruption; writer ownership
+fixed it before integration. Production font configuration is held constant in
+retained-artifact replay. No fresh approval, revision or scanning is performed.
+The detached presentation manifest identifies new bytes and the original delivery
+manifest; neither old PDF digest nor historical approval is relabeled.

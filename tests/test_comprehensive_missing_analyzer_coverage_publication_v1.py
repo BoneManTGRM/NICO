@@ -82,9 +82,9 @@ def test_exact_omission_failure_is_repaired_from_canonical_coverage() -> None:
         expected_coverage=100,
     )
 
-    assert "analyzer_execution_coverage: 100" in repaired["markdown"]
-    assert "analyzer_execution_coverage: 100" in repaired["html"]
-    assert "analyzer_execution_coverage: 100" in _pdf_text(repaired)
+    assert "Analyzer execution coverage: 100%" in repaired["markdown"]
+    assert "Analyzer execution coverage: 100%" in repaired["html"]
+    assert "Analyzer execution coverage: 100%" in _pdf_text(repaired)
     assert repaired["coverage_synchronization"]["total_insertions"] == 3
     assert repaired["coverage_synchronization"]["total_replacements"] == 0
     assert repaired["human_review_required"] is True

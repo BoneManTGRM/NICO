@@ -26,11 +26,11 @@ _SCORE_SUMMARY_EN_SOFT_WRAPPED = (
 )
 _SCORE_SUMMARY_ES = (
     "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-    "La preparación ajustada por evidencia es 93/100 frente a una madurez técnica de "
+    "La puntuación técnica ajustada por evidencia es 93/100 frente a una madurez técnica de "
     "93/100. NICO conserva 639 candidatos que requieren revisión y 0 hallazgos "
     "materiales confirmados como contexto explícito de revisión. El volumen de "
     "candidatos, la agrupación y la carga de trabajo de revisión no modifican las "
-    "puntuaciones numéricas de seguridad ni de preparación."
+    "puntuaciones numéricas de los controles técnicos."
 )
 
 

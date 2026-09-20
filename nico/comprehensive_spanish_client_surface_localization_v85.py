@@ -895,9 +895,13 @@ def install_comprehensive_spanish_client_surface_localization_v85() -> dict[str,
     current_sanitizer = completion.sanitize_client_pdf_status
 
     @wraps(current_sanitizer)
-    def sanitize_client_pdf_status(pdf: bytes) -> bytes:
+    def sanitize_client_pdf_status(pdf: bytes, *, spanish: bool | None = None) -> bytes:
         cleaned = current_sanitizer(pdf)
-        if _looks_spanish_pdf(cleaned):
+        # The assembler supplies the selected edition language. Legacy callers
+        # without that context retain detection, but source titles and quotations
+        # cannot redirect an explicitly English artifact into Spanish rewriting.
+        selected_spanish = _looks_spanish_pdf(cleaned) if spanish is None else spanish
+        if selected_spanish:
             return _transform_pdf_text(cleaned, _localize_presentation_text)
         return _transform_pdf_text(cleaned, _english_status_only)
 

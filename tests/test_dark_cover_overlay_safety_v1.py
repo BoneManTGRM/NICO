@@ -55,6 +55,6 @@ def test_machine_readable_overlays_preserve_dark_cover_footer() -> None:
 
     assert "analyzer_execution_coverage" not in cover_text
     assert "Incomplete applicable analyzers" not in cover_text
-    assert "analyzer_execution_coverage: 89" in body_text
+    assert "Analyzer execution coverage: 89%" in body_text
     assert "Incomplete applicable analyzers: 1" in body_text
     assert cover_text.count("AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED") == 1

@@ -13,10 +13,15 @@ from nico.comprehensive_four_phase_model_v1 import (
 )
 
 
+PHASE_BOX_TOP_Y = 286.0
+
 def _overlay(
     canonical: Mapping[str, Any],
     spanish: bool,
     size: tuple[float, float],
+    *,
+    regular_font: str = "Helvetica",
+    bold_font: str = "Helvetica-Bold",
 ) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -46,38 +51,38 @@ def _overlay(
 
     heading = style(
         "fp-heading",
-        "Helvetica-Bold",
+        bold_font,
         8.2,
         9.2,
         colors.HexColor("#0C2740"),
     )
     header = style(
         "fp-header",
-        "Helvetica-Bold",
-        5.2 if spanish else 5.5,
-        6.7,
+        bold_font,
+        6.8,
+        8.4,
         colors.white,
     )
     cell = style(
         "fp-cell",
-        "Helvetica",
-        4.85 if spanish else 5.1,
-        5.7,
+        regular_font,
+        6.8,
+        8.4,
         colors.HexColor("#243B53"),
     )
     status = style(
         "fp-status",
-        "Helvetica-Bold",
-        4.85 if spanish else 5.1,
-        5.7,
+        bold_font,
+        6.8,
+        8.4,
         colors.HexColor("#8A4B08"),
     )
     page.setFillColor(colors.white)
     page.setStrokeColor(colors.HexColor("#AFC5D3"))
-    page.roundRect(48, 46, width - 96, 146, 7, fill=1, stroke=1)
+    page.roundRect(48, 46, width - 96, PHASE_BOX_TOP_Y - 46, 7, fill=1, stroke=1)
     title = Paragraph((_ES if spanish else _EN).upper(), heading)
     title.wrapOn(page, width - 116, 14)
-    title.drawOn(page, 58, 175)
+    title.drawOn(page, 58, PHASE_BOX_TOP_Y - 17)
     headers = (
         ["Fase", "Alcance", "Estado", "Límite de evidencia"]
         if spanish
@@ -118,7 +123,7 @@ def _overlay(
     table = Table(
         data,
         colWidths=[34, 133, 135, width - 418],
-        rowHeights=[13, 25, 25, 25, 25],
+        rowHeights=[17, 47, 47, 47, 47],
     )
     table.setStyle(
         TableStyle(
@@ -140,7 +145,7 @@ def _overlay(
             ]
         )
     )
-    table.wrapOn(page, width - 116, 120)
+    table.wrapOn(page, width - 116, PHASE_BOX_TOP_Y - 70)
     table.drawOn(page, 58, 53)
     page.save()
     return buffer.getvalue()
@@ -155,12 +160,20 @@ def _page_lines(page: Any) -> list[str]:
 
 
 def four_phase_target_page_index(reader: Any, *, spanish: bool) -> int:
-    """Resolve the real final table-of-contents page, not a pre-navigation index."""
+    """Use the final TOC for new sources; retain an already frozen matrix location."""
 
-    exact_titles = {"Índice"} if spanish else {"Table of Contents"}
+    exact_titles = {"Índice", "Tabla de contenido"} if spanish else {"Table of Contents"}
+    targets = []
     for index, page in enumerate(reader.pages):
-        if any(line in exact_titles for line in _page_lines(page)[:12]):
-            return index
+        lines = _page_lines(page)
+        if any(line in exact_titles for line in lines[:1]):
+            # Approved historical sources already contain their matrix. Do not
+            # append another during presentation-only retrieval/finalization.
+            if any(line.casefold() in {_EN.casefold(), _ES.casefold()} for line in lines):
+                return index
+            targets.append(index)
+    if targets:
+        return targets[-1]
     return 1 if len(reader.pages) >= 2 else 0
 
 

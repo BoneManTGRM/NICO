@@ -116,7 +116,7 @@ def synchronize_comprehensive_score_truth(assessment: dict[str, Any]) -> dict[st
             flags=re.I,
         )
         summary = re.sub(
-            r"(Evidence-Adjusted readiness is\s+)(?:not scored|\d{1,3}/100)",
+            r"(Evidence-Adjusted (?:readiness|technical score) is\s+)(?:not scored|\d{1,3}/100)",
             rf"\g<1>{adjusted}/100",
             summary,
             flags=re.I,
