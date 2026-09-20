@@ -337,13 +337,12 @@ def test_retained_complete_input_inventory_proves_applicability_without_report_p
 @pytest.mark.parametrize("has_category_register", [False, True])
 def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatch, language, has_category_register):
     """Catch late canonical/localization/rendering loss of coverage and authorization evidence."""
-    import base64, io
+    import base64, html, io
     from pypdf import PdfReader
     from nico import report_execution_provenance_e6 as provenance
     from nico.comprehensive_canonical_report_source_v1 import build_canonical_report_source
     from nico.comprehensive_production_capabilities import _authorization_provider
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
-    from nico.source_signal_analysis_v2 import analyze_source_signals
     # Platform and scanner-store observations are outside this synthetic report case.
     monkeypatch.setattr(provenance, "capture_frontend_release", lambda *args: {"status": "unavailable",
         "frontend_observation_schema": "nico.frontend-runtime-observation.v2"})
@@ -366,7 +365,9 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
             "provider_access_observed": True, "access_mode": "anonymous_public", "credential_used": False}},
         "repository_and_delivery_evidence": {"status": "complete", "evidence": {"profile_coverage": coverage},
             "repository_evidence": {"code_signal_evidence": {"snapshot_commit_sha": SHA,
-                "risk_pattern_hits": 1, "risk_records": analyze_source_signals({"src/runner.py": "exec(command)\n"})["risk_records"]}}},
+                "risk_pattern_hits": 2, "risk_records": FROZEN_OBSERVATIONS["source_risk_records"],
+                "risk_pattern_samples": [f"{row['path']}:{row['line']}: {row['rule_id']} — {row['message']}"
+                    for row in FROZEN_OBSERVATIONS["source_risk_records"]]}}},
         "dependency_security_static_analysis": {"status": "complete", "evidence": {"execution_limit": _limited_scan()["execution_limit"]},
             "scanner_execution_records": scanner_records},
         "evidence_reconciliation_and_scoring": {"status": "complete", "assessment": {"technical_score": 74,
@@ -383,7 +384,7 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     canonical = source["report_package"]["json"]
     assert canonical["source_security_assurance"]["status"] == "limited"
     assert canonical["authorization_evidence"]["independent_authorization_verification"] == "not_established"
-    assert canonical["source_risk_observation_summary"]["reported_count"] == 1
+    assert canonical["source_risk_observation_summary"]["reported_count"] == 2
     assert canonical["canonical_findings"] == []
     if has_category_register:
         from nico.comprehensive_client_truth_final_v1 import install_comprehensive_client_truth_final_v1
@@ -397,13 +398,16 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
         }
         install_comprehensive_client_truth_final_v1()
     package = rebuild_client_artifacts(source["report_package"])
+    assert package["json"]["canonical_findings"] == []
+    assert package["json"]["decision_grade_finding_count"] == 0
+    assert package["json"]["decision_grade_findings_register"] == []
     dependency = next(s for s in package["json"]["assessment"]["sections"] if s["id"] == "dependency_health")
     assert "Applicable analyzers: pip-audit." in dependency["evidence"]
     assert "Applicability unproven analyzers: npm-audit, osv-scanner." in dependency["evidence"]
     assert "Incomplete applicable analyzers: pip-audit." in dependency["unavailable"]
     assert "Incomplete analyzers with unproven applicability: npm-audit, osv-scanner." in dependency["unavailable"]
     assert "source_risk_observation" in package["evidence_csv"]
-    assert "src/runner.py" in package["evidence_csv"]
+    assert all(row["path"] in package["evidence_csv"] for row in FROZEN_OBSERVATIONS["source_risk_records"])
     assert "complexity_eligible_supported_source_files" in package["evidence_csv"]
     assert "observed_supported_language_source_files_including_complexity_exclusions" in package["evidence_csv"]
     assert "not_established" in package["evidence_csv"]
@@ -422,7 +426,8 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
         assert "5 / 137" in rendered and "5 / 484" in rendered
         assert "132" in rendered
         assert ("Observaciones de riesgo del código fuente" if language == "es-MX" else "Source-risk observations") in rendered
-        assert "src/runner.py" in rendered
+        rendered = html.unescape(rendered)
+        assert all(row["path"] in rendered for row in FROZEN_OBSERVATIONS["source_risk_records"])
         for observation in canonical["source_risk_observations"]:
             assert observation["observation_id"] in "".join(rendered.split())
             assert observation["source_excerpt"] in rendered

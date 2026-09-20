@@ -2117,6 +2117,14 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    source_sample = re.fullmatch(
+        r"(?P<anchor>repository_evidence\.code_signal_evidence\.risk_pattern_samples\[\d+\]: "
+        r"[A-Za-z0-9_@./+\-]+:\d+(?::\d+)?: [A-Za-z0-9_.\-]+ — )"
+        r"Dynamic code execution should be reviewed\.", value,
+    )
+    if source_sample:
+        # Evidence keys, source anchors and rule IDs remain literal evidence.
+        return source_sample["anchor"] + "La ejecución dinámica de código requiere revisión."
     tool_count = re.fullmatch(r"([A-Za-z0-9_-]+) — (Raw candidates|Review-required candidates): (\d+)", value)
     if tool_count:
         label = "Candidatos sin procesar" if tool_count[2] == "Raw candidates" else "Candidatos que requieren revisión"
