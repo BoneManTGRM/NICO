@@ -1,5 +1,233 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Diagnostic repair verified — 2026-09-20 00:23 UTC
+
+This section supersedes prior M5 failure/proposal and owner-discard next-action text; history below is retained. Capability branch remains `feat/large-repository-cpp-comprehensive`; HEAD is the containing checkpoint commit (remote predecessor de77b06bbcb8c88af9f0b2152d6dd1bad5fd8074). No capability PR or capability source implementation. Main/serving application source remains 16ea1be933fdd046eeccd8e6d3431723bfcbe884. No new assessment or human approval.
+
+M4 PASS: original six-item disposition remains as immediately below. Owner deployed item5; exact prior SQL was restored and real one-shot execution verified in a2c3febb-654d-4567-bb25-d020e64613a5. Four query-endpoint additions discarded; proposed diagnostic deletion canceled. No unresolved original patch operation remains.
+
+M5 PASS: existing service cd3816be-b768-477b-87dd-519e9fea674b repaired in place, not deleted. Historical failure 049d03ac-b336-4ddd-b805-714868792b0b was Python interpreted by Bun plus incorrect schema/readiness derivation; prior primary logs retained below. Railway now marks it REMOVED through normal replacement deployment lifecycle, not service/data deletion. Existing service is an unexposed one-shot stored-run diagnostic, not a web server. UI independently established prior default On Failure/10 retries; missing API restart field was not proof of NEVER.
+
+Independent review of the initial proposal identified Important libpq connection semantics: PGDATABASE does not expand a URI environment default. Verified against PostgreSQL REL_18_STABLE fe-connect.c; corrected to separate existing Postgres reference variables. Final script SHA256 e3d0e509d05058fb2e77ee3b6ad93693d7cf8bf65cc08b1f3369e9c4a2cb0879; SQL SHA256 a88e2a86840bc5417fe2b185aae02d1eca72c0996d5f4146b628b85e32fe1120. Focused independent re-review found no unresolved Critical/Important issue. Primary sh -n and three real-shell/stub-psql checks passed: separate environment references/TLS/no argv password/read-only SQL; nonzero psql exit preserved with safe marker; absent reference fails closed. Stub checks were not DB execution evidence.
+
+Exactly eight reviewed fields changed: source.image postgres:18; deploy.startCommand below; restartPolicyType NEVER; five PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE references below. Existing DATABASE_URL preserved. No new principal, public domain, cron, DNS, volume, database mutation or privilege. API applied command/restart and staged five reference variables without deployment. Browser image save required a separately observed Enter action; final full UI delta contained exactly one Image setting for this service. Patch 89584554-108b-44fd-a8e4-7b9ba24c9647 matched API and UI; accepted once. Final native configuration matches exact reviewed command, image postgres:18, NEVER and six variable names, staged=null. No blind bundled apply or unrelated staged discard.
+
+New deployment d1164fc5-c4ce-4587-9795-7f46b673d53e terminal SUCCESS; source image postgres:18; config snapshot 39f37992-af68-424f-8226-6251600aa298. Real runtime at 00:19:39.624195085Z returned probe nico.stored-run-diagnostic.v1, read_only=true, record_count=1 and expected target run, revision66, review_required, terminal=true; human_review_completed=false/client_delivery_allowed=false, unavailable ledger/edition fields null. It explicitly makes no approval-readiness derivation or integrity-verification claim. SQL is SELECT-only BEGIN READ ONLY/ROLLBACK with connection/statement/lock limits. No credentials in command or retained output.
+
+Post-repair environment authority: same NICO deployment b486f62e-607e-40be-ab5d-219d1cd01f89 SUCCESS; Postgres deployment 01275122-0e4b-41d8-80d3-f9f820b1826c SUCCESS; unchanged volume6b1ecddd-0c81-4514-a8a0-df3b6c196bed at /var/lib/postgresql/data, 30000MB; PITR bucket23cc01bb-c12c-49c6-bd91-e552066c0def retained. Main NICO/Postgres UI Online. Diagnostic service has no volume, no cron and no public route. No production historical artifact regenerated or approval modified. This proves bounded infrastructure preservation, not C19's future full artifact gate.
+
+Rollback: recover original service image/command from retained historical config/deployment and remove only these five added PG references if necessary; no deletion required. Because original diagnostic was broken, do not redeploy it simply to restore the crash. Restore a prior known working configuration only upon actual new regression. Raw redacted new configuration/execution identity below permits exact recovery.
+
+```json
+{
+  "deployment": {
+    "id": "d1164fc5-c4ce-4587-9795-7f46b673d53e",
+    "status": "SUCCESS",
+    "createdAt": "2026-09-20T00:19:32.280Z",
+    "updatedAt": "2026-09-20T00:19:39.877Z",
+    "serviceId": "cd3816be-b768-477b-87dd-519e9fea674b",
+    "environmentId": "760805be-2eb2-4ef4-a476-5e10def95786",
+    "url": null,
+    "snapshotId": "39f37992-af68-424f-8226-6251600aa298",
+    "meta": {
+      "reason": "deploy",
+      "image": "postgres:18"
+    }
+  },
+  "runtime": {
+    "deploymentId": "d1164fc5-c4ce-4587-9795-7f46b673d53e",
+    "serviceId": "cd3816be-b768-477b-87dd-519e9fea674b",
+    "environmentId": "760805be-2eb2-4ef4-a476-5e10def95786",
+    "status": "SUCCESS",
+    "deploy": [
+      {
+        "timestamp": "2026-09-20T00:19:38.480871534Z",
+        "severity": "info",
+        "message": "Starting Container",
+        "attributes": [
+          {
+            "key": "level",
+            "value": "\"info\""
+          }
+        ]
+      },
+      {
+        "timestamp": "2026-09-20T00:19:39.624195085Z",
+        "severity": "info",
+        "message": "",
+        "attributes": [
+          {
+            "key": "level",
+            "value": "\"info\""
+          },
+          {
+            "key": "probe",
+            "value": "\"nico.stored-run-diagnostic.v1\""
+          },
+          {
+            "key": "record",
+            "value": "{\"run_id\":\"comprun_82cd4ea2612a46a00f3049f8c1920e2c\",\"status\":\"review_required\",\"revision\":66,\"terminal\":true,\"commit_sha\":\"8d445738e4c5bc2e0238f03572fff565a53d9266\",\"evidence_ledger_id\":\"ledger_comprehensive_82cd4ea2612a46a00f3049f8c1920e2c\",\"stored_integrity_sha256\":\"f15895a9a8eb76f12e1ebbcc05298195de67fa39d99acc9dea02cb0ee177468c\",\"stored_human_review_completed\":false,\"stored_client_delivery_allowed\":false,\"stored_review_work_ledger_type\":null,\"stored_operator_approved_edition_type\":null,\"stored_operator_delivery_edition_type\":null}"
+          },
+          {
+            "key": "read_only",
+            "value": "true"
+          },
+          {
+            "key": "limitation",
+            "value": "\"Stored fields only. No approval readiness derivation or artifact integrity verification.\""
+          },
+          {
+            "key": "record_count",
+            "value": "1"
+          }
+        ]
+      }
+    ]
+  },
+  "configuration": {
+    "source": {
+      "image": "postgres:18"
+    },
+    "deploy": {
+      "startCommand": "sh -c 'umask 077\nif [ -z \"${PGHOST:-}\" ] || [ -z \"${PGPORT:-}\" ] || [ -z \"${PGUSER:-}\" ] || [ -z \"${PGPASSWORD:-}\" ] || [ -z \"${PGDATABASE:-}\" ]; then echo NICO_DIAGNOSTIC_DATABASE_REFERENCE_MISSING; exit 1; fi\nexport PGCONNECT_TIMEOUT=10\nexport PGSSLMODE=require\nexport PGOPTIONS='\"'\"'-c default_transaction_read_only=on -c statement_timeout=15000 -c lock_timeout=2000'\"'\"'\nresult=$(psql --no-password -X -qAt -v ON_ERROR_STOP=1 -c '\"'\"'BEGIN READ ONLY;\nSET LOCAL statement_timeout = '\"'\"'\"'\"'\"'\"'\"'\"'15s'\"'\"'\"'\"'\"'\"'\"'\"';\nSET LOCAL lock_timeout = '\"'\"'\"'\"'\"'\"'\"'\"'2s'\"'\"'\"'\"'\"'\"'\"'\"';\nWITH selected AS (\n SELECT run_id, commit_sha, evidence_ledger_id, status, revision, terminal,\n        integrity_sha256, payload\n FROM nico_comprehensive_runs\n WHERE run_id = '\"'\"'\"'\"'\"'\"'\"'\"'comprun_82cd4ea2612a46a00f3049f8c1920e2c'\"'\"'\"'\"'\"'\"'\"'\"'\n)\nSELECT jsonb_build_object(\n '\"'\"'\"'\"'\"'\"'\"'\"'probe'\"'\"'\"'\"'\"'\"'\"'\"', '\"'\"'\"'\"'\"'\"'\"'\"'nico.stored-run-diagnostic.v1'\"'\"'\"'\"'\"'\"'\"'\"',\n '\"'\"'\"'\"'\"'\"'\"'\"'read_only'\"'\"'\"'\"'\"'\"'\"'\"', current_setting('\"'\"'\"'\"'\"'\"'\"'\"'transaction_read_only'\"'\"'\"'\"'\"'\"'\"'\"') = '\"'\"'\"'\"'\"'\"'\"'\"'on'\"'\"'\"'\"'\"'\"'\"'\"',\n '\"'\"'\"'\"'\"'\"'\"'\"'record_count'\"'\"'\"'\"'\"'\"'\"'\"', (SELECT count(*) FROM selected),\n '\"'\"'\"'\"'\"'\"'\"'\"'record'\"'\"'\"'\"'\"'\"'\"'\"', (SELECT jsonb_build_object(\n   '\"'\"'\"'\"'\"'\"'\"'\"'run_id'\"'\"'\"'\"'\"'\"'\"'\"', run_id, '\"'\"'\"'\"'\"'\"'\"'\"'commit_sha'\"'\"'\"'\"'\"'\"'\"'\"', commit_sha,\n   '\"'\"'\"'\"'\"'\"'\"'\"'evidence_ledger_id'\"'\"'\"'\"'\"'\"'\"'\"', evidence_ledger_id, '\"'\"'\"'\"'\"'\"'\"'\"'status'\"'\"'\"'\"'\"'\"'\"'\"', status,\n   '\"'\"'\"'\"'\"'\"'\"'\"'revision'\"'\"'\"'\"'\"'\"'\"'\"', revision, '\"'\"'\"'\"'\"'\"'\"'\"'terminal'\"'\"'\"'\"'\"'\"'\"'\"', terminal,\n   '\"'\"'\"'\"'\"'\"'\"'\"'stored_integrity_sha256'\"'\"'\"'\"'\"'\"'\"'\"', integrity_sha256,\n   '\"'\"'\"'\"'\"'\"'\"'\"'stored_human_review_completed'\"'\"'\"'\"'\"'\"'\"'\"', payload->'\"'\"'\"'\"'\"'\"'\"'\"'human_review_completed'\"'\"'\"'\"'\"'\"'\"'\"',\n   '\"'\"'\"'\"'\"'\"'\"'\"'stored_client_delivery_allowed'\"'\"'\"'\"'\"'\"'\"'\"', payload->'\"'\"'\"'\"'\"'\"'\"'\"'client_delivery_allowed'\"'\"'\"'\"'\"'\"'\"'\"',\n   '\"'\"'\"'\"'\"'\"'\"'\"'stored_review_work_ledger_type'\"'\"'\"'\"'\"'\"'\"'\"', jsonb_typeof(payload->'\"'\"'\"'\"'\"'\"'\"'\"'review_work_ledger'\"'\"'\"'\"'\"'\"'\"'\"'),\n   '\"'\"'\"'\"'\"'\"'\"'\"'stored_operator_approved_edition_type'\"'\"'\"'\"'\"'\"'\"'\"', jsonb_typeof(payload->'\"'\"'\"'\"'\"'\"'\"'\"'operator_approved_edition'\"'\"'\"'\"'\"'\"'\"'\"'),\n   '\"'\"'\"'\"'\"'\"'\"'\"'stored_operator_delivery_edition_type'\"'\"'\"'\"'\"'\"'\"'\"', jsonb_typeof(payload->'\"'\"'\"'\"'\"'\"'\"'\"'operator_delivery_edition'\"'\"'\"'\"'\"'\"'\"'\"')\n ) FROM selected),\n '\"'\"'\"'\"'\"'\"'\"'\"'limitation'\"'\"'\"'\"'\"'\"'\"'\"', '\"'\"'\"'\"'\"'\"'\"'\"'Stored fields only. No approval readiness derivation or artifact integrity verification.'\"'\"'\"'\"'\"'\"'\"'\"'\n)::text;\nROLLBACK;'\"'\"' 2>/tmp/nico-diagnostic-error)\ncode=$?\nif [ \"$code\" -eq 0 ]; then printf '\"'\"'%s\\n'\"'\"' \"$result\"; else echo NICO_STORED_RUN_DIAGNOSTIC_FAILED; fi\nexit \"$code\"\n'",
+      "restartPolicyType": "NEVER"
+    },
+    "variables": {
+      "PGHOST": "${{Postgres.PGHOST}}",
+      "PGPORT": "${{Postgres.PGPORT}}",
+      "PGUSER": "${{Postgres.PGUSER}}",
+      "PGPASSWORD": "${{Postgres.PGPASSWORD}}",
+      "PGDATABASE": "${{Postgres.PGDATABASE}}"
+    }
+  },
+  "observedConfigurationMatches": true,
+  "environment": {
+    "project": {
+      "id": "4b5ff41e-ec40-486c-8461-83475ffa90a9",
+      "name": "successful-cat",
+      "workspaceName": "Reparodynamics's Projects"
+    },
+    "environment": {
+      "id": "760805be-2eb2-4ef4-a476-5e10def95786",
+      "name": "production",
+      "unmergedChangesCount": null,
+      "stagedChanges": null
+    },
+    "services": [
+      {
+        "id": "d9d51992-d34a-4348-a83d-1f760faaa6a8",
+        "name": "NICO",
+        "numReplicas": null,
+        "cronSchedule": null,
+        "volumes": [],
+        "latestDeployment": {
+          "id": "b486f62e-607e-40be-ab5d-219d1cd01f89",
+          "status": "SUCCESS",
+          "createdAt": "2026-09-19T21:04:14.289Z",
+          "url": null
+        }
+      },
+      {
+        "id": "06b7e8f0-6835-46cf-b94e-5b5682aa8b6a",
+        "name": "Postgres",
+        "numReplicas": 1,
+        "cronSchedule": null,
+        "volumes": [
+          {
+            "id": "6b1ecddd-0c81-4514-a8a0-df3b6c196bed",
+            "name": "postgres-volume",
+            "mountPath": "/var/lib/postgresql/data",
+            "sizeMB": 30000,
+            "region": "europe-west4-drams3a"
+          }
+        ],
+        "latestDeployment": {
+          "id": "01275122-0e4b-41d8-80d3-f9f820b1826c",
+          "status": "SUCCESS",
+          "createdAt": "2026-09-02T09:57:46.720Z",
+          "url": null
+        }
+      },
+      {
+        "id": "ad217bab-49cd-4f1e-b5a0-6e860da2cdad",
+        "name": "nico-release-readonly-diagnostic",
+        "numReplicas": null,
+        "cronSchedule": null,
+        "volumes": [],
+        "latestDeployment": {
+          "id": "a2c3febb-654d-4567-bb25-d020e64613a5",
+          "status": "SUCCESS",
+          "createdAt": "2026-09-20T00:05:38.238Z",
+          "url": null
+        }
+      },
+      {
+        "id": "89a659d8-ce84-43da-a340-69ae9a20a5a0",
+        "name": "nico-release-validation",
+        "numReplicas": null,
+        "cronSchedule": null,
+        "volumes": [],
+        "latestDeployment": {
+          "id": "6686f73f-6cc1-4939-8130-c2375f016926",
+          "status": "SUCCESS",
+          "createdAt": "2026-09-17T11:53:24.087Z",
+          "url": null
+        }
+      },
+      {
+        "id": "744a5ecf-0e23-487c-90d8-a5cc07980606",
+        "name": "nico-recovery-proof-713",
+        "numReplicas": null,
+        "cronSchedule": null,
+        "volumes": [],
+        "latestDeployment": {
+          "id": "66292b26-b557-4909-9502-58dc6f10c568",
+          "status": "SUCCESS",
+          "createdAt": "2026-09-09T01:08:21.287Z",
+          "url": null
+        }
+      },
+      {
+        "id": "cd3816be-b768-477b-87dd-519e9fea674b",
+        "name": "nico-run-diagnostic-comprun82cd4ea2",
+        "numReplicas": null,
+        "cronSchedule": null,
+        "volumes": [],
+        "latestDeployment": {
+          "id": "d1164fc5-c4ce-4587-9795-7f46b673d53e",
+          "status": "SUCCESS",
+          "createdAt": "2026-09-20T00:19:32.280Z",
+          "url": null
+        }
+      }
+    ],
+    "buckets": [
+      {
+        "id": "23cc01bb-c12c-49c6-bd91-e552066c0def",
+        "name": "Postgres-PITR",
+        "region": "ams"
+      }
+    ]
+  }
+}
+```
+
+Review accumulator: verified PGDATABASE-URI issue resolved and focused re-review complete; no material finding remains open. Previous PR1621 identity/security findings remain resolved. All accepted source-dependent handler/security/PDF/Next tests are reused; diagnostic config changes invalidate only diagnostic runtime, now reproven. No expensive duplicate run.
+
+Matrix now: M0 UNPROVEN (all final PR dispositions pending); M1 UNPROVEN (protected preview runtime, merge/production); M2 UNPROVEN (integrated CI/production/historical bytes); M3 UNPROVEN (integrated runtime); M4 PASS (original six-item disposition); M5 PASS (actual repaired one-shot runtime/config and environment evidence above); M6 UNPROVEN (maintenance integration/deployments pending). C0–C19 each UNPROVEN; no expanded capability implementation, frozen compute budget, toolchain/corpus or qualification run. No scanner or build capability claimed.
+
+Latest completed action: verified real repaired diagnostic and preserved main/database. EXACT NEXT ACTION: complete the protected PR1621 preview browser gate using existing candidate87c928416e399ca6f6ef4ca4f9a116195d49bfde / deploymentdpl_GeJHNmiDrNHhVxa73fogst9yWPnH; then serial maintenance integration. Earlier secure Vercel sign-in returned submitted but no authenticated preview, with generic NICO access failure; current verification tab still Vercel login. Do not retry automatic credentials or disable protection. Prepare one supported manual Cloud Browser handoff for owner Vercel authentication into this exact preview, then verify actual session/UI before proceeding. Authentication is not report approval, specialist review or delivery authorization. This is a genuine next-predicate human boundary; other preparatory maintenance tests/review are retained. No active local job or new assessment. Owner's Done/I hit deploy applied Railway only, not preview authentication.
+
+## Owner deployment corrected — 2026-09-20 00:06 UTC
+
+Owner returnedDone, then clarifiedI hit deploy. Primary browser showed0stagedchanges; no discard was inferred. Railway created readonly diagnostic deployment80482f13-784a-4944-b432-d68065460c92 (postgres:18), platformSUCCESS but runtimeNICO_READONLY_QUERY_FAILED. This is failed diagnostic execution despite platform status. Prior deploymentb5905a76 becameREMOVED. Config source/start/restart unchanged; staged SQL was the relevant input. No service/data deletion.
+
+Used authorized bounded rollback: set ONLYNICO_READONLY_DIAGNOSTIC_SQL on existingservicead217bab/environment760805be to the exact prior BEGIN READ ONLY...ROLLBACK query preserved in NICO-Railway-Staged-SQL-Review.json (hash2168f7adc86b0f32115f269393487580a45531c7f47411c73a0c908101671889). Toolreceipt confirms one variable and one affected service; no bulk accept, no unrelated variables read or changed. New deploymenta2c3febb-654d-4567-bb25-d020e64613a5 terminalSUCCESS, postgres:18, snapshotf1bf4f0a-b7f9-4a39-9393-aa342b14fa33. Logs00:05:49 contain expectedhuman_review_request_key rows and storedhuman_review_completed=false with unknown fieldsnull; no query-failure marker. This proves restored one-shot query executed, not approval readiness. Existing ON_ERROR_STOP=1, timeout/read-only settings and restartNEVER retained.
+
+M4PASS for disposition of original6items: four unsafe/unneeded query additions discarded; item5 owner-applied malformed query rolled back to exact preserved current query with successful execution; item6 proposed diagnostic deletion canceled. Zero staged changes observed after owner apply. Historical failed deployment and original before/after preserved. No database mutation was performed: replacement SQLexplicitREADONLY/ROLLBACK. MainNICO andPostgres remainedOnline with volume/PITRvisible. M5stillFAIL: older diagnosticcd3816be remains crashed; rootcausePythonunderBun and incorrectschema known. Prepared a bounded3setting repair for independent review before mutation: postgres:18 image, read-only stored-metadata SQLstartcommand, explicitrestartNEVER. No new service/route/storage or parallel readiness derivation. Proposal scriptSHA256c3809be9a189b80856b55cdba854ee47bd3e370539883824c600f27e1930de43; SQLSHA256a88e2a86840bc5417fe2b185aae02d1eca72c0996d5f4146b628b85e32fe1120. sh-nPASS; actualDBexecution notyetattempted. If review rejects, repair proposalbeforedeployment. All capability predicates and other maintenance runtime/integration predicates remainunproven as recordedbelow.
+
+Humanactioncompleted: ownerdeployedpendingSQL; clarifiedactualaction. No reportapproval, specialistreview or clientdelivery. Exactnextaction: finishread-onlyreview ofM5proposal, verifyexactthree-settingdelta, deployonlyexistingdiagnostic ifreviewpasses, inspectterminalstatusANDrawexecutionreceipt; thenresume1621runtime/serialmaintenanceintegration. ExistingfrontendCItestsremainvalid; SQLrollbackinvalidatesonlyreadonlydiagnosticruntimeproof, nowreverified. No newBitcoinrun.
+
 ## Superseding maintenance evidence and owner boundary — 2026-09-19 23:58 UTC
 
 Capability branch: `feat/large-repository-cpp-comprehensive`; HEAD is this containing checkpoint commit, predecessord3ebb6fe5c657ee4dde867c3174476231045072a. No capability PR or source implementation yet. Last verified main/serving source remains16ea1be933fdd046eeccd8e6d3431723bfcbe884. Existing baseline and prior truth history below are preserved, not rediscovered. No maintenance merge or production deployment was performed, no production assessment or actual human approval created.
