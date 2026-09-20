@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from copy import deepcopy
 
 import pytest
 from pypdf import PdfReader
@@ -180,6 +181,40 @@ def test_current_production_secret_contradiction_is_rebuilt_from_register() -> N
         "disposition_arithmetic_verified": True,
         "evidence_quality_arithmetic_verified": True,
     }
+
+
+@pytest.mark.parametrize("mode", ["mixed", "not_applicable", "missing"])
+def test_late_register_normalization_preserves_scanner_applicability(mode) -> None:
+    canonical = _canonical()
+    canonical["identity"]["repository"] = "example/authorized-control"
+    records = deepcopy(canonical["scanner_execution_records"])
+    for row in records:
+        if mode == "not_applicable":
+            row.update(applicability_state="not_applicable", applicable=False, execution_state="not_requested", completed=False)
+        elif row["scanner_name"] in {"npm-audit", "typescript"}:
+            row.update(applicability_state="not_applicable", applicable=False, execution_state="not_requested", completed=False)
+        elif row["scanner_name"] in {"osv-scanner", "bandit"}:
+            row.update(applicability_state="applicability_unproven", applicable=None)
+    canonical["requested_scanner_records"] = records if mode != "missing" else []
+    canonical["scanner_execution_records"] = []
+    canonical["assessment"]["sections"][0]["evidence"] = ["Applicability was already reconciled upstream."]
+    before = deepcopy(canonical)
+    result = normalize_client_truth(canonical)
+    sections = {s["id"]: s for s in result["assessment"]["sections"]}
+    lines = sections["dependency_health"]["evidence"]
+    if mode == "mixed":
+        assert lines[:2] == ["Applicable analyzers: pip-audit.", "Applicability unproven analyzers: osv-scanner."]
+        assert sections["static_analysis"]["evidence"][:2] == ["Applicable analyzers: semgrep, eslint.", "Applicability unproven analyzers: bandit."]
+    elif mode == "not_applicable":
+        assert not any("analyzers:" in line for line in lines)
+    else:
+        assert lines[0] == "Applicability unproven analyzers: pip-audit, npm-audit, osv-scanner."
+    assert result["requested_scanner_records"] == before["requested_scanner_records"]
+    assert result["assessment"]["canonical_scanner_finding_register"] == before["assessment"]["canonical_scanner_finding_register"]
+    assert result["assessment"]["technical_score"] == before["assessment"]["technical_score"]
+    assert result["assessment"]["evidence_adjusted_score"] == before["assessment"]["evidence_adjusted_score"]
+    assert canonical == before
+    assert normalize_client_truth(result) == result
 
 
 def test_candidate_arithmetic_mismatch_blocks_before_render() -> None:

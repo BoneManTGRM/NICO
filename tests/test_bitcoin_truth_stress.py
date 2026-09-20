@@ -334,7 +334,8 @@ def test_retained_complete_input_inventory_proves_applicability_without_report_p
 
 
 @pytest.mark.parametrize("language", ["en", "es-MX"])
-def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatch, language):
+@pytest.mark.parametrize("has_category_register", [False, True])
+def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatch, language, has_category_register):
     """Catch late canonical/localization/rendering loss of coverage and authorization evidence."""
     import base64, io
     from pypdf import PdfReader
@@ -384,6 +385,17 @@ def test_public_report_builder_retains_limited_truth_across_artifacts(monkeypatc
     assert canonical["authorization_evidence"]["independent_authorization_verification"] == "not_established"
     assert canonical["source_risk_observation_summary"]["reported_count"] == 1
     assert canonical["canonical_findings"] == []
+    if has_category_register:
+        from nico.comprehensive_client_truth_final_v1 import install_comprehensive_client_truth_final_v1
+        zero = {key: 0 for key in (
+            "raw", "material", "review_required", "approved_or_nonblocking",
+            "excluded_test_only", "exact_source", "source_path", "payload_without_source", "count_only",
+        )}
+        canonical["assessment"]["canonical_scanner_finding_register"] = {
+            "totals": dict(zero), "findings": [],
+            "summary_by_category": {key: dict(zero) for key in ("dependency", "secret", "static")},
+        }
+        install_comprehensive_client_truth_final_v1()
     package = rebuild_client_artifacts(source["report_package"])
     dependency = next(s for s in package["json"]["assessment"]["sections"] if s["id"] == "dependency_health")
     assert "Applicable analyzers: pip-audit." in dependency["evidence"]
