@@ -29,7 +29,7 @@ def test_sample_text_cannot_promote_a_classified_source_observation(semantic_cla
         "source_risk_observations": [{"path": "src/runner.py", "line": 7,
             "rule_id": "python_eval_exec", "semantic_class": semantic_class,
             "disposition_state": disposition, "source_excerpt": "exec(command)",
-            "repository_revision": SHA}],
+            "repository_revision": SHA, "revision_match": True}],
         "stage_summaries": [{"evidence": [
             "src/runner.py:7: python_eval_exec — Review execution.",
             "src/other.py:8: python_eval_exec — Review execution.",
@@ -63,6 +63,25 @@ def test_explicit_finding_survives_matching_observation_and_sample_text(source):
     assert retained["source_excerpt"] == finding["source_excerpt"]
     assert retained["exact_commit_sha"] == SHA
     assert retained["human_disposition_required"] is True
+    assert canonical == before
+
+
+@pytest.mark.parametrize("column,revision,revision_match", [
+    (1, SHA, True),
+    (12, "a" * 40, False),
+    (12, "", None),
+])
+def test_different_or_unverified_observation_anchor_does_not_suppress_legacy_evidence(column, revision, revision_match):
+    from nico.client_finding_remediation_register_v5 import build_finding_remediation_register as build
+    canonical = {"identity": {"commit_sha": SHA}, "canonical_findings": [],
+        "source_risk_observations": [{"path": "src/runner.py", "line": 7, "column": column,
+            "rule_id": "python_eval_exec", "semantic_class": "source_observation",
+            "repository_revision": revision, "revision_match": revision_match}],
+        "stage_summaries": [{"evidence": ["src/runner.py:7:12: python_eval_exec — Review execution."]}]}
+    before = deepcopy(canonical)
+    register = build(canonical)
+    assert len(register["code_findings"]) == 1
+    assert register["code_findings"][0]["column"] == 12
     assert canonical == before
 
 
