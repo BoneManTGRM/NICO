@@ -1,5 +1,36 @@
 # NICO — Bitcoin truth-stress closeout
 
+## NEW BITCOIN ARTIFACTS VERIFIED — 2026-09-20
+
+Owner independently ran NICO on their phone with repository URL, operator password and requester attestation, leaving optional inputs blank, and supplied the actual new report files. No browser credential handoff or authentication bypass was used. This satisfies the pending supplemental artifact inspection; it does not reconstruct the original historical run.
+
+IDENTITY: bitcoin/bitcoin at `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`; run `comprun_f61b410c84383ea8523f99e070590728`; generated2026-09-20T11:16:25Z; ledger_comprehensive_f61b410c84383ea8523f99e070590728; manifest NICO-MANIFEST-779F0C23775C532CBEC1. English automated draft, review pending, delivery blocked.
+
+PRIMARY INTEGRITY:7 supplied manifest-listed artifacts verified against exact SHA256 AND byte length: canonicalJSON, findingsCSV, evidenceCSV, remediationbacklogJSON, Markdown, HTML and47-page PDF. artifact-identity.json agrees with canonical, detached manifest and PDF byte digests. Owner's renamed Bitcoin1.pdf is byte-identical to the package PDF.
+- Canonical648681bytes SHA256 `a9f32396fe3c6ec4c8cabb239f694106e6e758fb83ccd13b4b114231d51ec01b`.
+- PDF1860086bytes SHA256 `5da57c9f17531467eeca3d5c34aa4eed8bf459148f0ead256e1ba40c0b0cefb1`.
+- Detached manifest SHA256 `e4d933e2dcefad8eb9f467e5b176734507483a8937a8cc3310fd582311132bf4`.
+- EvidenceCSV SHA256 `e02b5981d347253d38b89606a361de05a934a4550f79c7006cce4a2a54d73201`.
+- Primary verification receipt SHA256 `22c55a7533702c2f37321f2e836ab129ff3d205e9f3ce1285f5610927fbc6f87`. All15 typed canonical truth rows verified by JSON pointer, exact value and normalized SHA256, including2individual observations,9scanner states,observation summary,assurance,authorization,provenance. Original supplied files unchanged.
+
+D1 NEW-RUN PROOF:2 retained source observations,0canonical findings,0review candidates,empty findingsCSV and embedded scanner register. Stable IDs,path,line,column,rule,source excerpt,revision and not_dispositioned states agree across canonicalJSON/evidenceCSV/Markdown/HTML/PDF. Source observation385ab089... is .github/ci-windows-cross.py:175; bdff3540... is .github/ci-windows.py:233; both python_eval_exec. Independent authoritative GitHub reads at SAME assessed revision verify both exact exec expressions and surrounding argparse choices restricting step/ci_type. Blob identities844a3215cc2da13ff8a25c043b9d77bc2f145ed0 and2635682266f52918e907a1603bd526ee929d9ba7. Detector observations alone do not establish a vulnerability or canonical finding; no specialist disposition fabricated.
+
+D2 NEW-RUN PROOF:7applicable(pip-audit,bandit,semgrep,eslint,typescript,gitleaks,trufflehog),2applicability_unproven(npm-audit,osv-scanner),0not_applicable. Retained repository signals Python/Node/TypeScript source=true; manifests/config=false. All9execution states independently unavailable with repository_size_limit_exceeded, no fabricated completion. This differs from earlier supplemental run's applicability counts and is not silently substituted for that run.
+
+D3 NEW-RUN PROOF: observed300810300bytes exceeds unchanged150000000limit; canonical execution_limit scanner_execution_permitted=false; exact repository revision retained;0completed scanners; source_security_assurance limited.
+
+D4/D5 NEW-RUN PROOF:5analyzed/137complexity-eligible supported files=3.65%;5/484observed supported-language files including complexity exclusions=1.03%;132unsampled eligible. Distinct denominator populations retained in canonical metrics and typedCSV. Technical74,evidence-adjusted62unchanged; missing evidence neitherPASSnorFAIL; repository_wide_security_rating=false. Actual PDF cover rendered and inspected: limited assurance and BOTH fractions directly contextualize headline scores. PDF page24 rendered and inspected:both complete observation records legible. All47pages text extracted; affected identity/count/fraction assertions passed across supplied Markdown/HTML/PDF. No es-MX artifact supplied for THIS run; prior release locale evidence preserved, not relabeled.
+
+D6 NEW-RUN PROOF: actual canonical report/Markdown/PDF bind source `2f34019487c4d61fe089ac50884747eeffa0eeda`, Railway `7e14894a-4d8a-4fc3-8885-08bf7b0c6bb6`, frontend `dpl_5Js2m8XSwFoSFxAhETe1pJoSTEux`, agreeing with native deployment evidence already accepted below. Report exact_release_readiness=verified,alignment=aligned,conflict=false. Retained native frontend observation bytes decoded and digest/length checked; SHA2568ea508e0f62e928c37516e158db8d48e0862a44c17c05d45a5c01dd8cfd155fd. No inference from main or configured labels alone.
+
+D7/PROTECTED STATE:confirmed requester attestation;anonymous_public;provider credential=false;independent authorization not_established;public access does not establish authorization. All5optional metadata fields state=not_supplied. Human_review_required=true,completed=false,client_delivery_allowed=false. No owner/specialist approval or delivery represented as performed.
+
+LIMITS:the manifest lists a separate candidate-registerJSON (expected7045cc7b831bef2e4e292b2afb56321986b241f957c82dca86c5232081895b72,13486bytes) that was not attached; its standalone file digest is UNPROVEN, while its canonical embedded register and reported zero populations were inspected. Do not claim all8manifest files were supplied. Original historical comprun_7cc47... at0e9018... remains distinct and inaccessible; this new record-level D1 proof does not prove original D1/R1/R13 historical assertions. No unconditional all-original-predicates SHIPPED declaration.
+
+LATEST COMPLETED ACTION:new Bitcoin structured/artifact verification PASS within supplied-file scope, including actual2source records and primary source corroboration. No additional production defect identified by these bounded checks; no source/test/deployment changes or repeated acceptedCI required.
+EXACT NEXT ACTION:none for inspection of supplied files. If the omitted candidate-register is supplied, verify only its manifest digest and canonical population parity. If original historical records become accessible, verify them separately; never require another new run to reconstruct historical evidence. Existing branch/mergedPR/current-release acceptance preserved.
+
+
 ## New supplemental Bitcoin assessment requested — authentication boundary, 2026-09-20
 
 Owner asked whether a new run could supply current repair evidence, then explicitly instructed “Please procede.” A new run can verify current behavior but cannot recover original historical records or establish original historical integrity. Preserve the original D1/R1/R13 qualification gap.
