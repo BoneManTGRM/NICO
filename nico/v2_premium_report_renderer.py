@@ -98,19 +98,26 @@ def _score_pair(assessment: Mapping[str, Any]) -> tuple[int | None, int | None]:
 
 
 def _score_summary_markdown(assessment: Mapping[str, Any], *, spanish: bool) -> str:
+    from nico.comprehensive_score_assurance_ledger_v45 import assurance_headline
+
     technical, adjusted = _score_pair(assessment)
     technical_text = f"{technical}/100" if technical is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
     adjusted_text = f"{adjusted}/100" if adjusted is not None else ("SIN PUNTUACIÓN" if spanish else "NOT SCORED")
+    # Reuse the PDF cover's canonical disclosure at the Markdown/HTML score
+    # boundary; later executive-copy normalization can replace its own summary.
+    assurance = assurance_headline(assessment, spanish=spanish)
     if spanish:
         return (
             "## Resumen canónico de puntuación\n\n"
             f"- Madurez técnica: {technical_text}\n"
             f"- Ajuste por evidencia: {adjusted_text}\n"
+            f"\n{assurance}\n"
         )
     return (
         "## Canonical Score Summary\n\n"
         f"- Technical maturity: {technical_text}\n"
         f"- Evidence-Adjusted: {adjusted_text}\n"
+        f"\n{assurance}\n"
     )
 
 
