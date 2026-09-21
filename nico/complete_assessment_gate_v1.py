@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 REQUIRED_TOOLS = ("pip-audit", "npm-audit", "osv-scanner", "bandit", "semgrep", "eslint", "typescript", "gitleaks", "trufflehog")
-SCANNER_SUMMARY_POLICY = "source-applicability-execution-v3"
+SCANNER_SUMMARY_POLICY = "source-applicability-execution-v4"
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _COMPLETE = {"completed", "complete", "completed_clean", "completed_with_findings"}
@@ -206,6 +206,36 @@ def require_retained_assessment(canonical: Mapping[str, Any], status: Mapping[st
     return result
 
 
+def _retained_profile_paths(canonical: Mapping[str, Any], expected_commit: str) -> list[str]:
+    """Recover source inventory retained in final report stages, without prose."""
+    assessment = canonical.get('assessment')
+    assessment = assessment if isinstance(assessment, Mapping) else {}
+    stages = canonical.get('stage_summaries')
+    if not isinstance(stages, list):
+        stages = assessment.get('stage_summaries')
+    paths: set[str] = set()
+    for stage in stages if isinstance(stages, list) else []:
+        if not isinstance(stage, Mapping) or stage.get('stage_id') not in (
+            'architecture_and_data_flow', 'repository_and_delivery_evidence',
+        ):
+            continue
+        profile = stage.get('profile_coverage')
+        binding = stage.get('coverage_reconciliation')
+        if (not isinstance(profile, Mapping) or not isinstance(binding, Mapping)
+            or profile.get('version') != 'nico.repository_profile_coverage.v1'
+            or binding.get('version') != 'nico.report-coverage-reconciliation.v1'
+            or binding.get('assessed_commit') != expected_commit):
+            continue
+        # Complexity exclusions still prove observed input presence. Neither
+        # presence nor profile completeness grants execution or absence credit.
+        for field in ('sampled_paths', 'analyzed_source_paths',
+                      'sampled_unanalyzed_source_paths', 'complexity_excluded_paths'):
+            values = profile.get(field)
+            if isinstance(values, list) and all(isinstance(path, str) and path for path in values):
+                paths.update(values)
+    return sorted(paths)
+
+
 def scanner_execution_summary(canonical: Mapping[str, Any], *, expected_commit: str, expected_run: str) -> dict[str, Any]:
     """Bounded current execution projection; never change the retained report.
 
@@ -226,6 +256,7 @@ def scanner_execution_summary(canonical: Mapping[str, Any], *, expected_commit: 
         'repository_evidence', 'file_evidence', 'dependency_evidence',
         'requested_scanner_records', 'scanner_execution_records',
     ) if key in assessment}
+    source['retained_profile_paths'] = _retained_profile_paths(canonical, expected_commit)
     normalized = normalize_scanner_applicability_canonical(source)
     gate = complete_assessment_evidence(
         normalized,

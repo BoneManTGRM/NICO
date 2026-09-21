@@ -61,6 +61,7 @@ export function toneKey(status?: string): "green" | "yellow" | "red" | "gray" {
       "unavailable",
       "skipped",
       "review_limited",
+      "human_review_required",
     ].includes(value)
   ) {
     return "yellow";
@@ -185,6 +186,11 @@ export function formatStatus(status: unknown, copy: Copy): string {
         : "Review limited")
     );
   }
+  if (value === "evidence_bound") {
+    return copy.heroEyebrow.startsWith("EVALUACIÓN")
+      ? "Vinculada a evidencia"
+      : "Evidence linked";
+  }
   if (["review_required", "human_review_required"].includes(value)) {
     return copy.phases.review_required;
   }
@@ -252,18 +258,22 @@ export function sectionPresentation(section: Section, copy: Copy) {
   const assurance = String(
     section.assurance_status ||
       section.assurance_label ||
-      section.presented_status ||
-      section.status ||
-      "unavailable",
-  );
+      "",
+  ).trim();
   const risk = String(section.risk_disposition || "");
+  // Pending review is cautionary evidence, even when the draft lifecycle is complete.
+  const sectionTone = (value: string) =>
+    value.toLowerCase().replace(/[\s-]+/g, "_") === "review_required"
+      ? "yellow"
+      : toneKey(value);
   return {
     score,
     technicalTone: scoreTone(typeof value === "number" ? value : null),
-    assuranceLabel: formatStatus(assurance, copy),
-    assuranceTone: toneKey(assurance),
+    // A score band is technical maturity, never evidence of assurance.
+    assuranceLabel: assurance ? formatStatus(assurance, copy) : copy.notVerified,
+    assuranceTone: sectionTone(assurance),
     risk,
     riskLabel: risk ? formatStatus(risk, copy) : "",
-    riskTone: toneKey(risk),
+    riskTone: sectionTone(risk),
   };
 }

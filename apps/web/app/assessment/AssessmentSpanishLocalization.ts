@@ -267,12 +267,31 @@ function compact(value: string): string {
 
 const NATIVE_COMPREHENSIVE_EXECUTIVE = /^NICO completed a native Comprehensive Technical Assessment for (.+?) at immutable commit ([0-9a-f]{40})\. The evidence-bound maturity signal is (.+?) \(([0-9]{1,3})\/100\)\. ([0-9]+) client-review section\(s\) disclose unavailable, limited, or stakeholder-dependent evidence\. Every automated stage represented in this package completed without a terminal execution failure\. The package is a review-gated automated draft: automated evidence and recommendations are not client approval or delivery authorization\.$/i;
 
+// Match the authored assurance_headline contract without translating evidence
+// identifiers or inferring missing counts. Unknown prose still fails closed.
+const SOURCE_ASSURANCE_HEADLINE = /^Source\/security evidence assurance: (limited|unverified|available for the supported scope)\. Technical maturity is not a repository-wide security rating\.\s*(?:Eligible source analyzed: (\d+) \/ (\d+) \((\d+(?:\.\d+)?%|unverified)\); observed supported source: (\d+|None) \/ (\d+|None) \((\d+(?:\.\d+)?%|unverified)\)\.\s*(?:Unsampled eligible files: (\d+)\.\s*)?)?(Scanner execution is incomplete\.\s*)?/;
+
 function localizedNativeComprehensiveExecutive(source: string): string | null {
-  const match = compact(source).match(NATIVE_COMPREHENSIVE_EXECUTIVE);
+  const normalized = compact(source);
+  const assurance = normalized.match(SOURCE_ASSURANCE_HEADLINE);
+  const narrative = assurance ? normalized.slice(assurance[0].length) : normalized;
+  const match = narrative.match(NATIVE_COMPREHENSIVE_EXECUTIVE);
   if (!match) return null;
   const [, repository, commitSha, maturity, score, limitedSections] = match;
   const localizedMaturity = EXACT_SPANISH.get(compact(maturity).toLowerCase()) || maturity;
-  return `NICO completó una Evaluación Técnica Integral nativa para ${repository} en el commit inmutable ${commitSha}. La señal de madurez vinculada a evidencia es ${localizedMaturity} (${score}/100). ${limitedSections} sección(es) para revisión del cliente declaran evidencia no disponible, limitada o dependiente de las partes interesadas. Todas las etapas automatizadas representadas en este paquete terminaron sin un fallo terminal de ejecución. El paquete es un borrador automatizado sujeto a revisión: la evidencia y las recomendaciones automatizadas no constituyen aprobación del cliente ni autorización de entrega.`;
+  let headline = "";
+  if (assurance) {
+    const [, state, eligibleCount, eligibleTotal, eligiblePercent, observedCount, observedTotal, observedPercent, unsampled, incomplete] = assurance;
+    const label = state === "limited" ? "limitada" : state === "unverified" ? "no verificada" : "disponible para el alcance compatible";
+    const metric = (value: string) => value === "None" || value === "unverified" ? "no verificado" : value;
+    headline = `Garantía de evidencia de código y seguridad: ${label}. La madurez técnica no es una calificación de seguridad del repositorio en su conjunto. `;
+    if (eligibleCount !== undefined) {
+      headline += `Código elegible analizado: ${eligibleCount} / ${eligibleTotal} (${metric(eligiblePercent)}); código compatible observado: ${metric(observedCount)} / ${metric(observedTotal)} (${metric(observedPercent)}). `;
+      if (unsampled !== undefined) headline += `Elegibles sin muestrear: ${unsampled}. `;
+    }
+    if (incomplete) headline += "La ejecución de analizadores está incompleta. ";
+  }
+  return `${headline}NICO completó una Evaluación Técnica Integral nativa para ${repository} en el commit inmutable ${commitSha}. La señal de madurez vinculada a evidencia es ${localizedMaturity} (${score}/100). ${limitedSections} sección(es) para revisión del cliente declaran evidencia no disponible, limitada o dependiente de las partes interesadas. Todas las etapas automatizadas representadas en este paquete terminaron sin un fallo terminal de ejecución. El paquete es un borrador automatizado sujeto a revisión: la evidencia y las recomendaciones automatizadas no constituyen aprobación del cliente ni autorización de entrega.`;
 }
 
 export function localizeExactSpanishText(value: string | null | undefined): string | null {
