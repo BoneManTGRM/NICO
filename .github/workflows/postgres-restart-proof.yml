@@ -128,7 +128,7 @@ jobs:
           assert protocol["analyzer_executed"] is False
           assert protocol["human_approval_proven"] is False
           assert protocol["client_delivery_allowed"] is False
-          assert len(protocol["checks"]) == 16
+          assert len(protocol["checks"]) == 22
           assert all(value is True for value in protocol["checks"].values())
           PY
 

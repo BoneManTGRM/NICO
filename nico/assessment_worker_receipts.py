@@ -31,12 +31,13 @@ def enqueue_snapshot_scan(scan: dict, contract: dict, adapter):
     release = expected_release_sha()
     contract_sha = _digest(contract)
     scan = deepcopy(scan)
+    requested = sorted(set([*(scan.get("tools_requested") or []), "cppcheck"]))
     scan["scan_id"] = "scan_worker_" + _digest({key: scan[key] for key in (
         "customer_id", "project_id", "run_id", "repository", "snapshot_commit_sha")}
-        | {"contract_sha256": contract_sha, "release_revision": release})[:40]
+        | {"contract_sha256": contract_sha, "release_revision": release,
+           "tools_requested": requested})[:40]
     identity = JobIdentity(scan["customer_id"], scan["project_id"], scan["run_id"], scan["scan_id"],
                            scan["repository"], scan["snapshot_commit_sha"], contract_sha, release)
-    requested = list(dict.fromkeys([*(scan.get("tools_requested") or []), "cppcheck"]))
     scan.update(worker_job_id=identity.job_id, tools_requested=requested)
     WorkerJobs(adapter).enqueue(identity, JobLimits(**contract["limits"]), contract=contract, scan=scan)
     return adapter.get("scanner_runs", identity.scan_id)

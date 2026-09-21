@@ -84,7 +84,7 @@ def clean_env(home: Path) -> dict[str, str]:
 
 
 def repository_size_observation(path: Path, *, source_limit: int | None = None,
-                                history_limit: int | None = None) -> dict[str, Any]:
+                                history_limit: int | None = None, bare: bool = False) -> dict[str, Any]:
     """Count separate bounded source/history populations without following links."""
     limits = {"source": MAX_REPO_BYTES if source_limit is None else source_limit,
               "git_history": MAX_GIT_HISTORY_BYTES if history_limit is None else history_limit}
@@ -108,7 +108,7 @@ def repository_size_observation(path: Path, *, source_limit: int | None = None,
                     links += 1
                 elif not stat.S_ISREG(observed.st_mode):
                     continue
-                population = "git_history" if entry.relative_to(path).parts[0] == ".git" else "source"
+                population = "git_history" if bare or entry.relative_to(path).parts[0] == ".git" else "source"
                 counts[population] += observed.st_size
                 if counts[population] > limits[population]:
                     exceeded.add(population)
@@ -120,7 +120,7 @@ def repository_size_observation(path: Path, *, source_limit: int | None = None,
             "git_history_bytes": counts["git_history"], "source_byte_limit": limits["source"],
             "git_history_byte_limit": limits["git_history"], "exceeded_limits": sorted(exceeded),
             "inventory_complete": not errors and not exceeded, "errors": sorted(set(errors)),
-            "byte_count_scope": "lower_bound" if errors or exceeded else "complete_checkout",
+            "byte_count_scope": "lower_bound" if errors or exceeded else "complete_bare_repository" if bare else "complete_checkout",
             "symlink_count": links, "external_symlink_targets_read": False}
 
 
@@ -389,4 +389,20 @@ def get_scan(scan_id: str) -> dict[str, Any]:
         return cached
     # Remote workers publish through PostgreSQL. A serving process's queued copy
     # cannot override a completion, cancellation or disappearance after restart.
-    return STORE.get("scanner_runs", scan_id) or {"status": "not_found", "scan_id": scan_id}
+    scan = STORE.get("scanner_runs", scan_id)
+    if scan and scan.get("worker_job_id") and scan.get("status") in {"queued", "running"}:
+        from nico.assessment_worker_jobs import JobConflict, JobIdentity, WorkerJobs
+        jobs = WorkerJobs(STORE.adapter)
+        job = jobs.get_by_id(scan["worker_job_id"])
+        if job is None:
+            raise JobConflict("worker_job_missing")
+        identity = JobIdentity(**job["identity"])
+        if any(scan.get(key) != value for key, value in {
+            "scan_id": identity.scan_id, "customer_id": identity.customer_id,
+            "project_id": identity.project_id, "run_id": identity.run_id,
+            "repository": identity.repository_id, "snapshot_commit_sha": identity.revision,
+        }.items()):
+            raise JobConflict("worker_scan_binding_mismatch")
+        jobs.poll(identity)
+        scan = STORE.get("scanner_runs", scan_id)
+    return scan or {"status": "not_found", "scan_id": scan_id}

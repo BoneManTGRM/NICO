@@ -220,6 +220,23 @@ class WorkerJobs:
 
         return self._change(identity, operation)
 
+    def poll(self, identity: JobIdentity) -> dict:
+        """Reconcile a vanished owner without dispatching or resetting budgets."""
+        def operation(payload, now, _connection):
+            if payload["status"] in TERMINAL:
+                return payload, False
+            if now >= payload["deadline_epoch"]:
+                payload.update(status="budget_exhausted", failure_code="wall_budget_exhausted",
+                               lease_until_epoch=0)
+            elif payload["status"] == "running" and now >= payload["lease_until_epoch"]:
+                exhausted = payload["attempts"] >= payload["limits"]["max_attempts"]
+                payload.update(status="failed" if exhausted else "queued", lease_until_epoch=0,
+                               failure_code="attempt_budget_exhausted" if exhausted else "worker_lease_expired")
+            else:
+                return payload, False
+            return payload, True
+        return self._change(identity, operation)
+
     @staticmethod
     def _owned(payload, lease_id, now, worker_id=None):
         if (not lease_id or payload["status"] != "running" or payload["lease_id"] != lease_id

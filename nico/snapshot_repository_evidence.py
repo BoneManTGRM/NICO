@@ -223,25 +223,66 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
     if root_error:
         unavailable.append(_safe_note("Captured-commit root listing", root_error))
 
-    blobs = [item for item in tree if isinstance(item, dict) and item.get("type") == "blob" and item.get("path")]
+    valid_entries = {}
+    invalid_paths: set[str] = set()
+    inventory_paths: set[str] = set()
+    seen: set[str] = set()
+    inventory_valid = True
+    for item in tree:
+        path = item.get("path") if isinstance(item, dict) else None
+        if (not isinstance(path, str) or not path or path.startswith("/")
+                or any(part in {"", ".", ".."} for part in path.split("/")) or "\x00" in path):
+            inventory_valid = False
+            continue
+        if item.get("type") != "tree":
+            inventory_paths.add(path)
+        kind, mode, object_id = item.get("type"), item.get("mode"), item.get("sha")
+        modes = {"blob": {"100644", "100755", "120000"}, "commit": {"160000"}, "tree": {"040000"}}
+        valid = (path not in seen and isinstance(kind, str) and isinstance(mode, str)
+                 and mode in modes.get(kind, set())
+                 and isinstance(object_id, str) and snapshot_capture._SHA_RE.fullmatch(object_id)
+                 and (kind != "blob" or (type(item.get("size")) is int and item["size"] >= 0)))
+        seen.add(path)
+        if not valid:
+            inventory_valid = False
+            invalid_paths.add(path)
+            valid_entries.pop(path, None)
+        elif path not in invalid_paths:
+            valid_entries[path] = item
+    blobs = [item for item in valid_entries.values() if item["type"] == "blob"]
+    submodules = [{"path": str(item["path"]), "commit_sha": item.get("sha")}
+                  for item in valid_entries.values() if item["type"] == "commit"]
+    symlink_paths = {str(item["path"]) for item in blobs if item.get("mode") == "120000"}
+    lfs_entries: list[dict[str, Any]] = []
     sizes = {str(item["path"]): int(item.get("size") or 0) for item in blobs}
     candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
     candidates.extend(path for path in sorted(sizes) if path not in candidates and should_fetch_path(path, sizes[path]))
     files: dict[str, str] = {}
-    unavailable_paths: list[str] = []
+    unavailable_paths: list[str] = sorted(invalid_paths | symlink_paths | {row["path"] for row in submodules})
+    from nico.full_source_archive_profile_v1 import lfs_pointer_entry
     for path in candidates[:MAX_TEXT_FILES]:
+        if path in symlink_paths:
+            continue
         text, error = _text_file(client, repository, path, commit_sha)
         if text is not None:
-            files[path] = text
+            pointer = lfs_pointer_entry(path, text)
+            if pointer is not None:
+                lfs_entries.append(pointer)
+                unavailable_paths.append(path)
+            else:
+                files[path] = text
         else:
             unavailable_paths.append(path)
             unavailable.append(_safe_note(f"Captured-commit file {path}", error))
     return {
         "files": files,
-        "tree_paths": list(sizes),
+        "tree_paths": sorted(inventory_paths),
         "root_items": root_items,
         "unavailable": sorted(set(unavailable)),
         "unavailable_paths": sorted(unavailable_paths),
+        "submodule_entries": submodules,
+        "symlink_paths_not_followed": sorted(symlink_paths),
+        "lfs_pointer_entries": lfs_entries,
         "size_excluded_paths": sorted(path for path, size in sizes.items() if size > MAX_FILE_BYTES),
         "tree_sha": (
             str(tree_value.get("sha") or "").strip().lower()
@@ -255,6 +296,7 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
         ),
         "tree_collection_succeeded": (
             tree_error is None
+            and inventory_valid
             and isinstance(tree_value, dict)
             and isinstance(tree_value.get("tree"), list)
         ),
@@ -301,8 +343,11 @@ def _public_git_profile(
                 return None, "public_git_exact_sha_fetch_failed"
             from nico import scanner_worker as scanner_base
 
-            if scanner_base.directory_size(git_dir) > scanner_base.MAX_REPO_BYTES:
-                return None, "public_git_repository_size_limit_exceeded"
+            history_observation = scanner_base.repository_size_observation(git_dir, bare=True)
+            if history_observation["exceeded_limits"]:
+                return None, "public_git_history_size_limit_exceeded"
+            if not history_observation["inventory_complete"]:
+                return None, "public_git_history_size_unverified"
 
             identity = subprocess.run(
                 ["git", "show", "-s", "--format=%H%x00%T", "FETCH_HEAD"],
@@ -343,6 +388,8 @@ def _public_git_profile(
             sizes: dict[str, int] = {}
             blob_ids: dict[str, str] = {}
             symlink_paths: set[str] = set()
+            submodules: list[dict[str, str]] = []
+            inventory_paths: set[str] = set()
             inventory_complete = True
             for raw_record in listing.stdout.split(b"\x00"):
                 if not raw_record:
@@ -355,19 +402,34 @@ def _public_git_profile(
                 if len(fields) != 4:
                     inventory_complete = False
                     continue
-                if fields[1] != b"blob":
-                    continue
                 try:
                     path = raw_path.decode("utf-8", errors="strict")
-                    size = int(fields[3])
+                    object_id = fields[2].decode("ascii")
                 except (UnicodeDecodeError, ValueError):
+                    inventory_complete = False
+                    continue
+                if not path or path in inventory_paths or not snapshot_capture._SHA_RE.fullmatch(object_id):
+                    inventory_complete = False
+                    continue
+                inventory_paths.add(path)
+                if fields[0] == b"160000" and fields[1] == b"commit":
+                    submodules.append({"path": path, "commit_sha": object_id})
+                    continue
+                if fields[1] != b"blob" or fields[0] not in {b"100644", b"100755", b"120000"}:
+                    inventory_complete = False
+                    continue
+                try:
+                    size = int(fields[3])
+                except ValueError:
                     inventory_complete = False
                     continue
                 if path and "\x00" not in path and size >= 0:
                     sizes[path] = size
-                    blob_ids[path] = fields[2].decode('ascii')
+                    blob_ids[path] = object_id
                     if fields[0] == b'120000':
                         symlink_paths.add(path)
+                else:
+                    inventory_complete = False
 
             candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
             candidates.extend(
@@ -379,6 +441,7 @@ def _public_git_profile(
             unavailable: list[str] = []
             unavailable_paths: list[str] = []
             from nico import full_source_archive_profile_v1 as source_policy
+            lfs_entries: list[dict[str, Any]] = []
             selected = {path for path in candidates[:MAX_TEXT_FILES]
                         if sizes[path] <= MAX_FILE_BYTES and path not in symlink_paths}
             source_paths: list[str] = []
@@ -413,17 +476,27 @@ def _public_git_profile(
                     content = stream.read(sizes[path])
                     if len(content) != sizes[path] or stream.read(1) != b'\n':
                         break
-                    files[path] = content.decode('utf-8', errors='replace')
+                    text = content.decode('utf-8', errors='replace')
+                    pointer = source_policy.lfs_pointer_entry(path, text)
+                    if pointer is not None:
+                        lfs_entries.append(pointer)
+                    else:
+                        files[path] = text
                 unavailable_paths = sorted(selected - set(files))
                 unavailable = [f'Exact public Git snapshot file {path} could not be read.' for path in unavailable_paths]
 
-            paths = sorted(sizes)
+            unavailable_paths = sorted(set(unavailable_paths) | symlink_paths | {row["path"] for row in submodules})
+            paths = sorted(inventory_paths)
             return {
                 "files": files,
                 "tree_paths": paths,
                 "root_items": sorted({path.split("/", 1)[0] for path in paths}),
                 "unavailable": unavailable,
                 "unavailable_paths": unavailable_paths,
+                "submodule_entries": submodules,
+                "symlink_paths_not_followed": sorted(symlink_paths),
+                "lfs_pointer_entries": lfs_entries,
+                "git_history_observation": history_observation,
                 "size_excluded_paths": sorted(set(size_excluded) | {path for path in candidates[:MAX_TEXT_FILES] if sizes[path] > MAX_FILE_BYTES and path not in files}),
                 "source_profile": {"source_files_loaded": len(set(source_paths) & set(files)),
                     "source_bytes_loaded": sum(sizes[path] for path in source_paths if path in files),

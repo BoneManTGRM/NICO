@@ -1,5 +1,21 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Independent continuation repairs — 2026-09-21
+
+Permitted slice: generic durable worker polling and complete parent-tree inventory accounting. No Bitcoin build/configuration/test/sanitizer/fuzz/toolchain discovery or target execution is retried. Current published base d2fdcc6; PR1627 remains draft.
+
+C4 reproduction: nine synthetic lifecycle checks fail, including the public `get_scan` retaining running after a worker disappears; `WorkerJobs` enforces deadlines only when another claim arrives. First divergence is durable scanner polling without server-time lease/deadline reconciliation. Repair the existing locked job transition and poll seam, preserving attempts/deadline, terminal receipts, tenant binding and no serving-process execution. Changed recovery proof requires new native PostgreSQL checks; existing unrelated authority/receipt/artifact evidence is preserved.
+
+C1/C9 independent findings independently reproduced: exact-Git/API inventories omit gitlinks; bare-history observation uses the source cap; LFS pointers/symlink bodies count as acquired source. Four initial regression tests FAIL before repair. New parent-tree inventory retains submodule revisions and unavailable contents; LFS identities/declared sizes remain unavailable and cannot enter analysis or be overwritten by archive augmentation; pointer reads consume existing acquisition budgets. Bare-repository observation uses the existing independent history budget with incomplete/error states. No thresholds raised and no external object downloaded. Independent review also reproduced malformed/duplicate API inventory completeness; six negative cases FAIL before strict membership/mode/object-ID/size/path validation. Existing fake API responses now supply required mode/object identity; original assertions remain intact.
+
+C4 requested-population reproduction: changing tools within the same run returned the original smaller scanner request. One deterministic test FAIL before repair; effective sorted tool membership is now part of immutable dispatch identity. Reordering/duplicates reuse the same job; changed populations create distinct jobs without altering old rows. This invalidates dispatch identity and native protocol proof only.
+
+Verification so far: initial affected group231PASS (including historical truth-stress report/approval regressions); final acquisition group76PASS after review correction; worker group82PASS after dispatch correction. Groups overlap and are not summed. Independent read-only worker review found no material defect, with six additional tenant/run/source binding substitutions rejected. Native PostgreSQL proof is extended from16 to22 explicit checks: polling alone expires queued/running jobs, fences vanished owners, preserves retry budgets and immutable terminal receipts, and distinguishes requested-tool populations. Native candidate run is required before accepting these new persistence claims.
+
+Three-regression pre-mortem: changed acquisition must not credit unavailable content (owned Git/archive/API differential fixtures); polling must not mutate terminal evidence or grant another attempt (synthetic transition and native proof); expanded dispatch must not erase requested checks (order/duplicate and changed-population cases). No technical score formula, existing human approval, historical artifact or production configuration changed.
+
+EXACT NEXT ACTION: reproduce and repair these independent generic boundaries, run focused controls, independent review and current-candidate CI on the same PR. C0 and overall capability qualification remain UNPROVEN.
+
 ## Verified worker protocol evidence and active boundary — 2026-09-21 00:59 UTC
 
 **PR1627 remains OPEN / DRAFT / UNMERGED. Capability shipment is not proved.** Verified published source HEAD `87bb0c9fe1b2d2ed1fe4ba47468a7ce1d4df8f88`, tree `7a2990bbd7c0e845383ed51762bc445a0c017ccf`, branch `feat/large-repository-cpp-comprehensive`; main/base `34ddac28cbe18fb0b8d9cbbce0dc2b23df0a20b3`. This evidence-only checkpoint update preserves those application/test/workflow blobs. Its containing publication SHA belongs in the same PR evidence summary; no self-hash commit loop is required.

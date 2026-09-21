@@ -149,3 +149,26 @@ def test_worker_limits_and_summary_have_spanish_projection():
     ):
         result = _translate_presentation(text)
         assert expected in result and result != text
+
+
+def test_worker_dispatch_does_not_reuse_a_different_requested_tool_population(monkeypatch):
+    from nico import assessment_worker_receipts as module
+    from nico.storage import MemoryAdapter
+    adapter = MemoryAdapter()
+    class Jobs:
+        def __init__(self, store):
+            self.store = store
+        def enqueue(self, job, limits, *, contract, scan):
+            if self.store.get("scanner_runs", job.scan_id) is None:
+                self.store.put("scanner_runs", job.scan_id, scan)
+    monkeypatch.setattr(module, "WorkerJobs", Jobs)
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "c" * 40)
+    scan = {"customer_id": "owned", "project_id": "fixture", "run_id": "synthetic",
+            "repository": "owned/control", "snapshot_commit_sha": "a" * 40,
+            "snapshot_id": "owned-snapshot", "tools_requested": ["bandit"]}
+    first = module.enqueue_snapshot_scan(scan, contract(), adapter)
+    expanded = module.enqueue_snapshot_scan({**scan, "tools_requested": ["bandit", "eslint"]}, contract(), adapter)
+    assert expanded["scan_id"] != first["scan_id"]
+    assert set(expanded["tools_requested"]) == {"bandit", "eslint", "cppcheck"}
+    repeated = module.enqueue_snapshot_scan({**scan, "tools_requested": ["eslint", "bandit", "eslint"]}, contract(), adapter)
+    assert repeated == expanded

@@ -59,7 +59,7 @@ class SnapshotClient:
         path = url.split("/repos/owner/repository", 1)[-1]
         if path.startswith("/git/trees/"):
             return {"sha": "b" * 40, "truncated": self.truncated,
-                    "tree": [{"type": "blob", "path": p, "size": len(t.encode())}
+                    "tree": [{"type": "blob", "mode": "100644", "sha": "d" * 40, "path": p, "size": len(t.encode())}
                              for p, t in self.files.items()]}, None
         if path == "/contents":
             return [{"name": p} for p in self.files], None

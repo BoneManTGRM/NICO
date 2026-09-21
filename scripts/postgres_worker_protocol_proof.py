@@ -24,7 +24,7 @@ import jwt
 from nico import assessment_worker_auth as auth
 from nico.assessment_worker_api import PREFIX
 from nico.assessment_worker_jobs import JobConflict, JobIdentity, WorkerJobs, _digest
-from nico.assessment_worker_receipts import publish_receipt
+from nico.assessment_worker_receipts import enqueue_snapshot_scan, publish_receipt
 from nico.comprehensive_retained_scanner_evidence_v1 import compact_scanner_records
 from nico.scanner_raw_artifact_storage_v1 import ScannerArtifactStore, read_scanner_artifact
 from nico.scanner_worker import get_scan
@@ -84,6 +84,11 @@ def run_proof(database_url):
     claimed = post(first, "claim", {}, credential=credential)
     assert post(first, "claim", {}, credential=credential) == claimed
     checks["atomic_enqueue_and_lost_claim_response"] = True
+    different = {**get_scan(first.scan_id), "status": "queued", "tools_requested": ["cppcheck"]}
+    alternative = enqueue_snapshot_scan(different, contract(), adapter)
+    assert alternative["scan_id"] != first.scan_id and alternative["tools_requested"] == ["cppcheck"]
+    assert enqueue_snapshot_scan(different, contract(), adapter) == alternative
+    checks["requested_tool_population_has_distinct_immutable_dispatch"] = True
     assert get_scan(first.scan_id)["status"] == "running"
     beat = post(first, "heartbeat", {"lease_id": claimed["lease_id"]})
     assert beat["lease_until_epoch"] > claimed["lease_until_epoch"]
@@ -235,7 +240,47 @@ def run_proof(database_url):
     post(exhausted, "claim", {}, expected=409)
     assert jobs.get(exhausted)["status"] == "budget_exhausted" and get_scan(exhausted.scan_id)["status"] == "failed"
     checks["server_deadline_exhaustion_reaches_polling"] = True
-    assert len(checks) == 16 and all(checks.values())
+
+    # A vanished worker must not leave an assessment running forever. These
+    # transitions are driven by polling alone, without a replacement claim.
+    queued_expired = enqueue("poll-queued-deadline")
+    with adapter._connect() as connection:
+        connection.execute("UPDATE client_jobs SET payload=jsonb_set(payload,'{deadline_epoch}','0'::jsonb) WHERE job_id=%s", (queued_expired.job_id,))
+    assert get_scan(queued_expired.scan_id)["status"] == "failed"
+    assert jobs.get(queued_expired)["status"] == "budget_exhausted"
+    checks["poll_expires_undispatched_job_without_claim"] = True
+
+    vanished = enqueue("poll-vanished")
+    owner = post(vanished, "claim", {})
+    with adapter._connect() as connection:
+        connection.execute("UPDATE client_jobs SET payload=jsonb_set(payload,'{lease_until_epoch}','0'::jsonb) WHERE job_id=%s", (vanished.job_id,))
+    assert get_scan(vanished.scan_id)["status"] == "queued"
+    recovered = jobs.get(vanished)
+    assert recovered["attempts"] == owner["attempts"] and recovered["deadline_epoch"] == owner["deadline_epoch"]
+    assert get_scan(vanished.scan_id)["status"] == "queued" and jobs.get(vanished) == recovered
+    post(vanished, "heartbeat", {"lease_id": owner["lease_id"]}, expected=409)
+    post(vanished, "receipt", {"lease_id": owner["lease_id"], "receipt": receipt(vanished, owner["lease_id"], worker)}, expected=409)
+    checks["poll_preserves_retry_budget_and_fences_vanished_owner"] = True
+    post(vanished, "claim", {})
+    with adapter._connect() as connection:
+        connection.execute("UPDATE client_jobs SET payload=jsonb_set(payload,'{lease_until_epoch}','0'::jsonb) WHERE job_id=%s", (vanished.job_id,))
+    assert get_scan(vanished.scan_id)["status"] == "failed"
+    assert jobs.get(vanished)["failure_code"] == "attempt_budget_exhausted"
+    checks["poll_exhausted_attempts_are_terminal_without_new_claim"] = True
+
+    deadline = enqueue("poll-running-deadline")
+    owner = post(deadline, "claim", {})
+    with adapter._connect() as connection:
+        connection.execute("UPDATE client_jobs SET payload=jsonb_set(payload,'{deadline_epoch}','0'::jsonb) WHERE job_id=%s", (deadline.job_id,))
+    assert get_scan(deadline.scan_id)["status"] == "failed"
+    assert jobs.get(deadline)["status"] == "budget_exhausted"
+    post(deadline, "heartbeat", {"lease_id": owner["lease_id"]}, expected=409)
+    checks["poll_expires_running_job_without_replacement"] = True
+    terminal = jobs.get(first)
+    assert get_scan(first.scan_id)["receipt_sha256"] == terminal["receipt_sha256"]
+    assert jobs.get(first) == terminal
+    checks["poll_preserves_completed_receipt"] = True
+    assert len(checks) == 22 and all(checks.values())
     return {"schema": "nico.worker-protocol-postgres-proof.v1", "synthetic": True,
         "live_production": False, "repository_executed": False, "analyzer_executed": False,
         "human_approval_proven": False, "client_delivery_allowed": False, "checks": checks,

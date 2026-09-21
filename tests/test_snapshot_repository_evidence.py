@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from datetime import datetime, timezone
 from urllib.parse import unquote
@@ -61,7 +62,8 @@ class FakeSnapshotClient:
                 "sha": self.tree_sha,
                 "truncated": self.tree_truncated,
                 "tree": [
-                    {"type": "blob", "path": path, "size": len(content.encode())}
+                    {"type": "blob", "mode": "100644", "path": path, "size": len(content.encode()),
+                     "sha": hashlib.sha1(f"blob {len(content.encode())}\0".encode() + content.encode()).hexdigest()}
                     for path, content in self.files.items()
                 ],
             }, None
