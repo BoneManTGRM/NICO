@@ -252,15 +252,14 @@ export function sectionPresentation(section: Section, copy: Copy) {
   const assurance = String(
     section.assurance_status ||
       section.assurance_label ||
-      section.presented_status ||
-      section.status ||
-      "unavailable",
-  );
+      "",
+  ).trim();
   const risk = String(section.risk_disposition || "");
   return {
     score,
     technicalTone: scoreTone(typeof value === "number" ? value : null),
-    assuranceLabel: formatStatus(assurance, copy),
+    // A score band is technical maturity, never evidence of assurance.
+    assuranceLabel: assurance ? formatStatus(assurance, copy) : copy.notVerified,
     assuranceTone: toneKey(assurance),
     risk,
     riskLabel: risk ? formatStatus(risk, copy) : "",

@@ -463,7 +463,10 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const pdfAvailable = Boolean(report?.pdf_base64 || report?.pdf_available);
     const reportReady = Boolean(markdownAvailable || pdfAvailable || report?.html || report?.html_available || report?.json || report?.json_available || report?.report_id);
     const finalReportStatus = finalReportLivenessStatus(result, locale);
-    const reportStatus = reportReady ? copy.phases.complete : running ? finalReportStatus || copy.awaitingScanner : copy.awaitingStage;
+    const scannerPending = ["running", "queued", "pending", "planned", "starting"].includes(String(scannerRawStatus || "").toLowerCase());
+    const reportStatus = reportReady ? copy.phases.complete : running
+      ? finalReportStatus || (scannerPending ? copy.awaitingScanner : copy.preparingReport)
+      : copy.awaitingStage;
     return {immutableCommit, scannerStatus, markdownAvailable, pdfAvailable, reportReady, reportStatus};
   }
 
