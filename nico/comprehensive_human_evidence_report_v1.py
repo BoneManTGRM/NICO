@@ -529,39 +529,30 @@ def _retained_human_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]
     return output
 
 
-def _translate_client_literal_line(value: Any) -> str:
+def _translate_client_literal_line(value: Any, *, spanish: bool = True) -> str:
     text = str(value or "")
-    stripped = text.strip()
-    for english, translated in _STAKEHOLDER_ABSENCE_COPY.values():
-        if stripped in (english, translated):
-            return translated
-    if stripped.startswith((_CLIENT_LITERAL_ES_PREFIX, _INTAKE_LITERAL_ES_PREFIX)):
-        return text
-    if stripped.startswith(_INTAKE_LITERAL_EN_PREFIX):
-        source_prefix, target_prefix = _INTAKE_LITERAL_EN_PREFIX, _INTAKE_LITERAL_ES_PREFIX
-    elif stripped.startswith(_CLIENT_LITERAL_EN_PREFIX):
-        source_prefix, target_prefix = _CLIENT_LITERAL_EN_PREFIX, _CLIENT_LITERAL_ES_PREFIX
-    else:
-        return text
-
-    body = stripped[len(source_prefix) :]
-    if ": " not in body:
-        return (
-            target_prefix
-            + body.replace(" (part ", " (parte ")
-        )
-    label, supplied = body.split(": ", 1)
-    translated = label
-    for english, spanish in sorted(
-        _EN_TO_ES_LABELS.items(),
-        key=lambda item: len(item[0]),
-        reverse=True,
-    ):
-        if translated.startswith(english):
-            translated = spanish + translated[len(english) :]
-            break
-    translated = translated.replace(" (part ", " (parte ")
-    return f"{target_prefix}{translated}: {supplied}"
+    for pair in _STAKEHOLDER_ABSENCE_COPY.values():
+        if text in pair:
+            return pair[int(spanish)]
+    prefixes = ((_CLIENT_LITERAL_EN_PREFIX, _CLIENT_LITERAL_ES_PREFIX),
+                (_INTAKE_LITERAL_EN_PREFIX, _INTAKE_LITERAL_ES_PREFIX))
+    labels = tuple(_EN_TO_ES_LABELS.items())
+    for pair in prefixes:
+        source_prefix, target_prefix = pair[int(not spanish)], pair[int(spanish)]
+        if not text.startswith(source_prefix):
+            continue
+        body = text[len(source_prefix):]
+        label, separator, supplied = body.partition(": ")
+        for names in sorted(labels, key=lambda row: len(row[int(not spanish)]), reverse=True):
+            source, target = names[int(not spanish)], names[int(spanish)]
+            if label == source or label.startswith((source + " (", source + ".", source + "[")):
+                label = target + label[len(source):]
+                break
+        label = label.replace(" (part " if spanish else " (parte ",
+                              " (parte " if spanish else " (part ")
+        # The suffix is supplied data: never normalize, translate, or strip it.
+        return target_prefix + label + separator + supplied
+    return text
 
 
 def _module_id_from_stage(stage_id: str) -> str:
@@ -577,59 +568,53 @@ def _localize_retained_stage(
     spanish: bool,
 ) -> dict[str, Any]:
     output = deepcopy(dict(stage))
-    if not spanish:
-        return output
     stage_id = _text(output.get("stage_id"), 180)
+    generated_lines: dict[str, str] = {}
     if stage_id == "client_evidence_summary":
-        output["title"] = "Resumen de evidencia del cliente"
-        output["summary"] = (
-            "Los metadatos del encargo y las declaraciones aportadas por el cliente "
-            "se conservan como contexto explícito de "
-            "revisión. Los datos faltantes no se infieren. Estos valores no "
-            "modifican las puntuaciones técnicas ni conceden aprobación o "
-            "autoridad de entrega."
-        )
-        localized_missing: list[str] = []
-        for raw in output.get("unavailable") or []:
-            line = str(raw or "")
-            for labels in _ENGAGEMENT_LABELS.values():
-                english, translated = labels
-                if line.startswith(f"{english}:"):
-                    line = (
-                        f"{translated}: no proporcionado"
-                        if "not supplied" in line.casefold()
-                        else f"{translated}:{line.split(':', 1)[1]}"
-                    )
-                    break
-            localized_missing.append(line)
-        output["unavailable"] = localized_missing
+        source = _client_summary_stage({}, spanish=not spanish)
+        target = _client_summary_stage({}, spanish=spanish)
+        for field in ("title", "summary"):
+            if output.get(field) == source[field]:
+                output[field] = target[field]
+        # An explicit missing-field record distinguishes generated absence copy
+        # from a client's literal value that happens to say "Not supplied".
+        missing = output.get("unavailable") or []
+        translations = {}
+        for index, labels in enumerate(_ENGAGEMENT_LABELS.values()):
+            source_absence = labels[int(not spanish)] + (": Not supplied" if spanish else ": No proporcionado")
+            target_absence = labels[int(spanish)] + (": No proporcionado" if spanish else ": Not supplied")
+            translations[source_absence] = target_absence
+            if source_absence in missing:
+                generated_lines[source["evidence"][index]] = target["evidence"][index]
+        output["unavailable"] = [translations.get(line, line) for line in missing]
     elif stage_id.startswith("client_human_evidence_"):
+        from nico.strategic_human_evidence_v1 import MODULES
+
         module_id = _module_id_from_stage(stage_id)
-        label = _MODULE_LABEL_ES.get(
-            module_id,
-            module_id.replace("_", " ").title(),
-        )
-        original_title = _text(output.get("title"), 300)
+        if module_id not in MODULES:
+            return output
+        original_title = str(output.get("title") or "")
         chunk_suffix = ""
         if original_title.endswith(")") and " (" in original_title:
-            candidate = original_title[original_title.rfind(" (") :]
+            candidate = original_title[original_title.rfind(" ("):]
             if "/" in candidate:
                 chunk_suffix = candidate
-        output["title"] = (
-            "Evidencia humana aportada por el cliente — "
-            f"{label}{chunk_suffix}"
-        )
-        output["summary"] = (
-            "Este módulo fue excluido del alcance; sus datos conservados no aportan cobertura de evaluación ni aprobación."
-            if str(output.get("status") or "").casefold() == "excluded"
-            else _STAKEHOLDER_METADATA_SUMMARY[1] if module_id == "stakeholder_context"
-            else "Estas declaraciones fueron aportadas explícitamente por personas "
-            "y se conservan sin inferencias del repositorio. No modifican "
-            "automáticamente las puntuaciones técnicas ni conceden aprobación "
-            "o autoridad de entrega."
-        )
+        # Reuse the native producer's known copy with no client input. This does
+        # not rebuild the retained evidence, dispositions, or module population.
+        snapshot = {"human_evidence": {"provided_module_ids": [module_id], "modules": {
+            module_id: {"label": MODULES[module_id]["label"], "status": output.get("status")}
+        }}}
+        source = _human_module_stage_specs(snapshot, spanish=not spanish)[0]
+        target = _human_module_stage_specs(snapshot, spanish=spanish)[0]
+        if original_title in (source["title"] + chunk_suffix, stage_id.replace("_", " ").title()):
+            output["title"] = target["title"] + chunk_suffix
+        if output.get("summary") == source["summary"]:
+            output["summary"] = target["summary"]
+        generated_lines.update(zip(source["evidence"], target["evidence"], strict=True))
+    else:
+        return output
     output["evidence"] = [
-        _translate_client_literal_line(item)
+        generated_lines.get(item, _translate_client_literal_line(item, spanish=spanish))
         for item in output.get("evidence") or []
     ]
     return output
