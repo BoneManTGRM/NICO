@@ -1,11 +1,11 @@
-"""C0 static-analysis contract: no compile, fuzz, or sanitizer execution."""
+"""Static-analysis preparation retains the unfulfilled original C0 contract."""
 from copy import deepcopy
 
 import pytest
 
 from nico.cpp_large_repository_contract_v1 import (
     HISTORICAL_REGRESSION_TARGET,
-    NICO_FORBIDDEN_OPERATIONS,
+    PREPARATION_FORBIDDEN_OPERATIONS,
     QUALIFICATION_TARGET,
     authorize_large_repository_static_analysis,
     frozen_contract,
@@ -25,23 +25,24 @@ def _small_control():
     return measured
 
 
-def test_c0_contract_is_complete_and_stable():
+def test_preparation_profile_is_stable_without_qualifying_c0():
     first = frozen_contract()
     second = frozen_contract()
     assert first["predicate"] == "C0"
-    assert first["status"] == "frozen_static_analysis_only"
+    assert first["status"] == "UNPROVEN"
+    assert first["preparation_status"] == "frozen_static_analysis_only"
     assert first["contract_sha256"] == second["contract_sha256"]
     assert len(first["contract_sha256"]) == 64
     required = {
         "qualification_target", "historical_regression_target",
-        "nico_executed_configuration", "nico_forbidden_operations",
+        "preparation_configuration", "preparation_forbidden_operations",
         "upstream_informational_toolchain", "numeric_budget",
         "isolation_probe_envelope", "small_control",
         "remaining_predicates_unproven", "authorization",
     }
     assert required <= first.keys()
-    assert first["remaining_predicates_unproven"] == [f"C{index}" for index in range(1, 20)]
-    assert "C0" not in first["remaining_predicates_unproven"]
+    assert first["remaining_predicates_unproven"] == [f"C{index}" for index in range(20)]
+    assert "C0" in first["remaining_predicates_unproven"]
 
 
 def test_qualification_target_stays_distinct_from_immutable_history():
@@ -54,12 +55,12 @@ def test_qualification_target_stays_distinct_from_immutable_history():
 
 def test_nico_does_not_claim_build_fuzz_or_sanitizer_execution():
     contract = frozen_contract()
-    config = contract["nico_executed_configuration"]
+    config = contract["preparation_configuration"]
     assert config["cpp_build_verified"] is False
     assert config["preprocessing_complete"] is False
     assert config["configurations_evaluated"] == "none"
     assert config["analyzers"] == ["lizard_token_function_analysis", "cppcheck_standalone"]
-    assert set(NICO_FORBIDDEN_OPERATIONS) <= set(contract["nico_forbidden_operations"])
+    assert set(PREPARATION_FORBIDDEN_OPERATIONS) <= set(contract["preparation_forbidden_operations"])
     toolchain = contract["upstream_informational_toolchain"]
     assert toolchain["executed_by_nico"] is False
     assert toolchain["cmake_minimum"] == "3.22"
@@ -88,12 +89,14 @@ def test_isolation_envelope_cannot_host_upstream_compile():
     assert envelope["external_network"] is False
 
 
-def test_small_control_authorizes_static_analysis_only():
+def test_small_control_establishes_preparation_eligibility_only():
     receipt = authorize_large_repository_static_analysis(
         _small_control(),
         source_bytes=QUALIFICATION_TARGET["summed_blob_bytes"],
     )
-    assert receipt["authorized"] is True
+    assert receipt["authorized"] is False
+    assert receipt["preparation_eligible"] is True
+    assert receipt["authorization_status"] == "not_established_by_preparation"
     assert receipt["mode"] == "static_analysis_only"
     assert receipt["cpp_build_verified"] is False
     assert receipt["client_delivery_allowed"] is False
@@ -146,3 +149,33 @@ def test_authorization_does_not_imply_delivery_or_credential_use():
     assert contract["authorization"]["independent_authorization_verification"] == "not_established"
     assert contract["authorization"]["client_delivery_allowed"] is False
     assert contract["authorization"]["access_mode"] == "anonymous_public"
+
+
+def test_preparation_keeps_original_qualification_requirements_unproven():
+    contract = frozen_contract()
+    assert contract["status"] == "UNPROVEN"
+    assert contract["preparation_status"] == "frozen_static_analysis_only"
+    assert contract["remaining_predicates_unproven"] == [f"C{i}" for i in range(20)]
+    assert set(contract["original_required_execution"]) == {
+        "configuration_aware_static_analysis", "baseline_build", "unit_tests",
+        "integration_tests", "sanitizer_checks", "bounded_fuzz",
+    }
+    assert "nico_forbidden_operations" not in contract
+    assert "preparation_forbidden_operations" in contract
+    assert "nico_executed_configuration" not in contract
+    assert contract["preparation_configuration"]["execution_proven"] is False
+
+
+def test_unmeasured_aggregate_cost_remains_unknown():
+    budget = frozen_contract()["numeric_budget"]
+    assert budget["aggregate_cost_usd"] is None
+    assert budget["aggregate_cost_status"] == "not_measured"
+
+
+def test_synthetic_control_never_grants_assessment_authority():
+    result = authorize_large_repository_static_analysis(
+        _small_control(), source_bytes=100,
+    )
+    assert result["authorized"] is False
+    assert result["preparation_eligible"] is True
+    assert result["authorization_status"] == "not_established_by_preparation"

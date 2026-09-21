@@ -1,8 +1,8 @@
-"""Frozen C0 contract for large-repository C/C++ static analysis.
+"""Frozen static-analysis preparation profile, not completed C0 qualification.
 
-NICO does not compile, fuzz, or sanitizer-instrument assessed C/C++ targets.
-Upstream Bitcoin Core build/fuzz documentation is recorded only as identity
-context for the pinned public revision. It is not an execution plan.
+This preparation does not compile, fuzz, or sanitizer-instrument targets.
+The original qualification still requires configuration-aware analysis, a real
+build and runtime checks. Retained upstream context is not an execution plan.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from nico.scanner_worker import (
     TOTAL_SCAN_TIMEOUT_SECONDS,
 )
 
-VERSION = "nico.cpp_large_repository_contract.v1"
+VERSION = "nico.cpp_large_repository_contract.v2"
 
 HISTORICAL_REGRESSION_TARGET = {
     "repository": "bitcoin/bitcoin",
@@ -47,8 +47,8 @@ UPSTREAM_DOCUMENT_BLOBS = {
     "doc/fuzzing.md": "253f3f12ea23755047070ec94c362055f3389446",
 }
 
-NICO_EXECUTED_ANALYZERS = ("lizard_token_function_analysis", "cppcheck_standalone")
-NICO_FORBIDDEN_OPERATIONS = (
+PREPARATION_ANALYZERS = ("lizard_token_function_analysis", "cppcheck_standalone")
+PREPARATION_FORBIDDEN_OPERATIONS = (
     "cmake_configure",
     "cmake_build",
     "compile_assessed_translation_units",
@@ -57,6 +57,15 @@ NICO_FORBIDDEN_OPERATIONS = (
     "enable_address_undefined_memory_sanitizers",
     "download_qa_assets_corpus",
     "execute_assessed_binaries",
+)
+
+ORIGINAL_REQUIRED_EXECUTION = (
+    "configuration_aware_static_analysis",
+    "baseline_build",
+    "unit_tests",
+    "integration_tests",
+    "sanitizer_checks",
+    "bounded_fuzz",
 )
 
 # Official Bitcoin Core documentation at QUALIFICATION_TARGET.commit_sha.
@@ -89,7 +98,7 @@ SMALL_CONTROL = {
     "cpp_build_verified": False,
 }
 
-REMAINING_UNPROVEN = tuple(f"C{index}" for index in range(1, 20))
+REMAINING_UNPROVEN = tuple(f"C{index}" for index in range(20))
 
 
 def _canonical_json(value: Any) -> str:
@@ -101,30 +110,34 @@ def _sha256(value: Any) -> str:
 
 
 def frozen_contract() -> dict[str, Any]:
-    """Return the complete C0 static-analysis contract. Does not execute a target."""
+    """Return the preparation profile. Does not qualify C0 or execute a target."""
     budget = {
         "source_bytes": MAX_REPO_BYTES,
         "git_history_bytes": MAX_GIT_HISTORY_BYTES,
         "total_scan_timeout_seconds": TOTAL_SCAN_TIMEOUT_SECONDS,
         "tool_timeout_seconds": DEFAULT_TOOL_TIMEOUT_SECONDS,
-        "aggregate_cost_usd": 0,
+        "aggregate_cost_usd": None,
+        "aggregate_cost_status": "not_measured",
         "retry_limit": 0,
     }
     contract = {
         "contract_version": VERSION,
         "predicate": "C0",
-        "status": "frozen_static_analysis_only",
+        "status": "UNPROVEN",
+        "preparation_status": "frozen_static_analysis_only",
+        "original_required_execution": list(ORIGINAL_REQUIRED_EXECUTION),
         "qualification_target": deepcopy(QUALIFICATION_TARGET),
         "historical_regression_target": deepcopy(HISTORICAL_REGRESSION_TARGET),
-        "nico_executed_configuration": {
+        "preparation_configuration": {
             "analysis_method": "lizard_token_function_analysis",
             "optional_static_analyzer": "cppcheck_standalone",
-            "analyzers": list(NICO_EXECUTED_ANALYZERS),
+            "analyzers": list(PREPARATION_ANALYZERS),
+            "execution_proven": False,
             "cpp_build_verified": False,
             "configurations_evaluated": "none",
             "preprocessing_complete": False,
         },
-        "nico_forbidden_operations": list(NICO_FORBIDDEN_OPERATIONS),
+        "preparation_forbidden_operations": list(PREPARATION_FORBIDDEN_OPERATIONS),
         "upstream_informational_toolchain": deepcopy(UPSTREAM_TOOLCHAIN_CONTEXT),
         "upstream_document_blobs": dict(UPSTREAM_DOCUMENT_BLOBS),
         "numeric_budget": budget,
@@ -144,6 +157,10 @@ def frozen_contract() -> dict[str, Any]:
 
 
 def _validate(contract: Mapping[str, Any]) -> None:
+    if contract["status"] != "UNPROVEN":
+        raise ValueError("preparation_must_not_qualify_c0")
+    if contract["original_required_execution"] != list(ORIGINAL_REQUIRED_EXECUTION):
+        raise ValueError("original_required_execution_must_remain_explicit")
     qualification = contract["qualification_target"]
     historical = contract["historical_regression_target"]
     if qualification["commit_sha"] == historical["commit_sha"]:
@@ -152,13 +169,13 @@ def _validate(contract: Mapping[str, Any]) -> None:
         raise ValueError("qualification_source_exceeds_frozen_source_budget")
     if historical["source_bytes"] <= contract["numeric_budget"]["source_bytes"]:
         raise ValueError("historical_oversize_observation_must_remain_over_budget")
-    if contract["nico_executed_configuration"]["cpp_build_verified"] is not False:
+    if contract["preparation_configuration"]["cpp_build_verified"] is not False:
         raise ValueError("cpp_build_must_remain_unverified")
     if contract["upstream_informational_toolchain"]["executed_by_nico"] is not False:
         raise ValueError("upstream_toolchain_must_not_be_executed")
-    if set(contract["nico_executed_configuration"]["analyzers"]) - set(NICO_EXECUTED_ANALYZERS):
+    if set(contract["preparation_configuration"]["analyzers"]) - set(PREPARATION_ANALYZERS):
         raise ValueError("unknown_nico_analyzer")
-    missing = [item for item in NICO_FORBIDDEN_OPERATIONS if item not in contract["nico_forbidden_operations"]]
+    missing = [item for item in PREPARATION_FORBIDDEN_OPERATIONS if item not in contract["preparation_forbidden_operations"]]
     if missing:
         raise ValueError("forbidden_operations_incomplete")
     envelope = contract["isolation_probe_envelope"]
@@ -168,10 +185,8 @@ def _validate(contract: Mapping[str, Any]) -> None:
         raise ValueError("isolation_must_not_claim_compile_capacity")
     if contract["small_control"]["required_before_large_repository"] is not True:
         raise ValueError("small_control_gate_required")
-    if "C0" in contract["remaining_predicates_unproven"]:
-        raise ValueError("c0_must_not_remain_in_unproven_list_after_freeze")
     if contract["remaining_predicates_unproven"] != list(REMAINING_UNPROVEN):
-        raise ValueError("c1_through_c19_must_remain_unproven")
+        raise ValueError("c0_through_c19_must_remain_unproven")
 
 
 def source_fits_budget(source_bytes: int, limit: int | None = None) -> bool:
@@ -185,7 +200,7 @@ def authorize_large_repository_static_analysis(
     source_bytes: int,
     claimed_operations: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """Gate a large-repository static analysis run. Never authorizes compile/fuzz."""
+    """Check preparation eligibility only; this helper grants no run authority."""
     contract = frozen_contract()
     if small_control_receipt.get("cpp_files_analyzed", 0) < 1:
         raise ValueError("small_cpp_control_unproven")
@@ -193,17 +208,19 @@ def authorize_large_repository_static_analysis(
         raise ValueError("small_control_must_not_claim_build_verification")
     if small_control_receipt.get("cpp_analysis_method") != "lizard_token_function_analysis":
         raise ValueError("small_control_requires_lizard_token_analysis")
-    forbidden = [item for item in claimed_operations if item in contract["nico_forbidden_operations"]]
+    forbidden = [item for item in claimed_operations if item in contract["preparation_forbidden_operations"]]
     if forbidden:
         raise ValueError("forbidden_c_cpp_operation_requested")
     if not source_fits_budget(source_bytes, contract["numeric_budget"]["source_bytes"]):
         raise ValueError("repository_size_limit_exceeded")
     return {
-        "authorized": True,
+        "authorized": False,
+        "preparation_eligible": True,
+        "authorization_status": "not_established_by_preparation",
         "mode": "static_analysis_only",
         "cpp_build_verified": False,
         "contract_sha256": contract["contract_sha256"],
         "qualification_commit_sha": contract["qualification_target"]["commit_sha"],
-        "analyzers": list(contract["nico_executed_configuration"]["analyzers"]),
+        "analyzers": list(contract["preparation_configuration"]["analyzers"]),
         "client_delivery_allowed": False,
     }

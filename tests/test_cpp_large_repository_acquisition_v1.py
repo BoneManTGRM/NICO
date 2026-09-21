@@ -79,13 +79,15 @@ def test_c1_population_contract_accepts_synthetic_subproof_only(tmp_path: Path):
     assert summary["predicate"] == "C1"
     assert summary["overall_status"] == OVERALL_C1_STATUS == "unproven_blobs_not_fetched"
     assert summary["accepted_subproof"] == ACCEPTED_SUBPROOF
-    assert summary["authorization_mode"] == "static_analysis_only"
+    assert summary["preparation_mode"] == "static_analysis_only"
+    assert summary["assessment_authorized"] is False
+    assert summary["authorization_status"] == "not_established_by_preparation"
     assert summary["cpp_build_verified"] is False
     assert summary["client_delivery_allowed"] is False
     assert summary["cloned_qualification_target"] is False
-    assert summary["remaining_predicates_unproven"][0] == "C1"
-    assert summary["remaining_predicates_unproven"] == [f"C{index}" for index in range(1, 20)]
-    assert "C0" not in summary["remaining_predicates_unproven"]
+    assert summary["remaining_predicates_unproven"][0] == "C0"
+    assert summary["remaining_predicates_unproven"] == [f"C{index}" for index in range(20)]
+    assert "C1" in summary["remaining_predicates_unproven"]
     assert summary["contract_sha256"] == frozen_contract()["contract_sha256"]
 
 

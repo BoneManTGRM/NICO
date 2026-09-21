@@ -1,7 +1,7 @@
 """C1 acquisition receipts: owned synthetic control plus frozen public inventory.
 
 Does not clone, compile, fuzz, or sanitizer-instrument Bitcoin Core. Qualification
-inventory is the C0 public Git tree identity already frozen on this branch. Blob
+inventory is retained preparation context, not completed C0 qualification. Blob
 contents are not fetched. Overall C1 remains UNPROVEN until those blobs exist
 under the same population contract.
 """
@@ -23,7 +23,7 @@ from nico.cpp_large_repository_contract_v1 import (
 from nico.full_assessment_complexity_evidence import collect_complexity_evidence
 from nico.scanner_worker import MAX_GIT_HISTORY_BYTES, MAX_REPO_BYTES, repository_size_observation
 
-VERSION = "nico.cpp_large_repository_acquisition.v1"
+VERSION = "nico.cpp_large_repository_acquisition.v2"
 
 OWNED_SYNTHETIC_FILES = {
     "src/value.cpp": "int value(int x) { if (x > 1) return x; return 0; }\n",
@@ -188,7 +188,7 @@ def validate_c1_population_contract(
         raise ValueError("historical_oversize_observation_must_remain_over_budget")
     if historical.get("authorized") is not False:
         raise ValueError("historical_regression_must_remain_unauthorized")
-    authorization = authorize_large_repository_static_analysis(
+    eligibility = authorize_large_repository_static_analysis(
         {
             "cpp_files_analyzed": small_control["cpp_files_analyzed"],
             "cpp_build_verified": False,
@@ -204,16 +204,18 @@ def validate_c1_population_contract(
         "synthetic_control_receipt_sha256": small_control.get("receipt_sha256"),
         "qualification_inventory_receipt_sha256": inventory.get("receipt_sha256"),
         "historical_block_receipt_sha256": historical.get("receipt_sha256"),
-        "authorization_mode": authorization["mode"],
+        "preparation_mode": eligibility["mode"],
+        "assessment_authorized": eligibility["authorized"],
+        "authorization_status": eligibility["authorization_status"],
         "cpp_build_verified": False,
         "client_delivery_allowed": False,
         "cloned_qualification_target": False,
         "remaining_predicates_unproven": list(frozen_contract()["remaining_predicates_unproven"]),
         "contract_sha256": frozen_contract()["contract_sha256"],
     }
-    if "C0" in summary["remaining_predicates_unproven"]:
-        raise ValueError("c0_must_remain_frozen")
-    if summary["remaining_predicates_unproven"][0] != "C1":
+    if "C0" not in summary["remaining_predicates_unproven"]:
+        raise ValueError("preparation_must_not_qualify_c0")
+    if "C1" not in summary["remaining_predicates_unproven"]:
         raise ValueError("c1_must_remain_unproven_until_blobs_are_fetched")
     summary["summary_sha256"] = _sha256(summary)
     return summary
