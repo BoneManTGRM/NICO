@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
+import time
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from urllib.parse import parse_qsl, quote, urlparse
 
 import httpx
@@ -243,6 +245,8 @@ class GitHubAcceptanceClient:
         client: httpx.Client,
         retry_policy: RetryPolicy,
         access_mode: ProviderAccessMode | str = ANONYMOUS_PUBLIC,
+        sleeper: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.base_url = str(instance_url or "").rstrip("/")
         self.credential = credential
@@ -250,6 +254,8 @@ class GitHubAcceptanceClient:
         self._client = client
         self.retry_policy = retry_policy
         self.retry_policy.validate()
+        self._sleeper = sleeper
+        self._clock = clock
         self.requested_access_mode = (
             access_mode if isinstance(access_mode, ProviderAccessMode) else ProviderAccessMode(str(access_mode))
         )
@@ -293,9 +299,55 @@ class GitHubAcceptanceClient:
         if value in (None, ""):
             return None
         try:
-            return max(0.0, float(value))
+            seconds = float(value)
+            return seconds if math.isfinite(seconds) and seconds >= 0 else None
         except ValueError:
             return None
+
+    @staticmethod
+    def _rate_limit_state(response: httpx.Response) -> dict[str, int]:
+        state: dict[str, int] = {}
+        for key in ("limit", "remaining", "used", "reset"):
+            value = response.headers.get(f"x-ratelimit-{key}", "")
+            if re.fullmatch(r"[0-9]{1,12}", value):
+                state[key] = int(value)
+        return state
+
+    def _response_error(self, code: str, response: httpx.Response, *,
+                        retryable: bool = False,
+                        retry_after: float | None = None) -> ProviderClientError:
+        return ProviderClientError(
+            code, status_code=response.status_code, retryable=retryable,
+            retry_after_seconds=retry_after, rate_limit_state=self._rate_limit_state(response),
+        )
+
+    def _rate_limit_wait(self, response: httpx.Response) -> tuple[bool, float | None]:
+        state = self._rate_limit_state(response)
+        retry_after = self._retry_after(response)
+        message = ""
+        if response.status_code == 403 and len(response.content) <= 65536:
+            try:
+                body = response.json()
+                message = _text(body.get("message")).lower() if isinstance(body, Mapping) else ""
+            except ValueError:
+                pass
+        limited = response.status_code == 429 or (
+            response.status_code == 403 and (
+                state.get("remaining") == 0 or "retry-after" in response.headers
+                or "secondary rate limit" in message or "api rate limit exceeded" in message
+            )
+        )
+        if not limited:
+            return False, None
+        if "retry-after" in response.headers and retry_after is None:
+            return True, None
+        if state.get("remaining") == 0:
+            # A primary limit cannot safely be retried without its reset time.
+            if "reset" not in state:
+                return True, None
+            return True, max(0.0, state["reset"] - self._clock() + 1, retry_after or 0.0)
+        # GitHub requires at least one minute without an explicit Retry-After.
+        return True, retry_after if retry_after is not None else 60.0
 
     def _get(
         self,
@@ -325,11 +377,25 @@ class GitHubAcceptanceClient:
                 last_error = ProviderClientError("provider_network_unavailable", retryable=True)
                 if attempt >= self.retry_policy.max_attempts:
                     raise last_error from exc
+                self._sleeper(self._delay(attempt))
                 continue
 
             status = response.status_code
+            limited, retry_after = self._rate_limit_wait(response)
+            if limited:
+                last_error = self._response_error(
+                    "provider_rate_limited", response, retryable=True, retry_after=retry_after,
+                )
+                wait = None if retry_after is None else max(
+                    self._delay(attempt), retry_after * (2 ** (attempt - 1))
+                )
+                if (attempt >= self.retry_policy.max_attempts or wait is None
+                        or wait > self.retry_policy.max_delay_seconds):
+                    raise last_error
+                self._sleeper(wait)
+                continue
             if 300 <= status <= 399:
-                raise ProviderClientError("provider_redirect_not_allowed", status_code=status)
+                raise self._response_error("provider_redirect_not_allowed", response)
             if status in {401, 403}:
                 if (
                     required
@@ -342,8 +408,8 @@ class GitHubAcceptanceClient:
                     self._active_credential = self.credential
                     return self._get(url, params=params, required=required)
                 if self._active_credential is None:
-                    raise ProviderClientError("provider_read_only_authentication_required", status_code=status)
-                raise ProviderClientError("provider_auth_failed", status_code=status)
+                    raise self._response_error("provider_read_only_authentication_required", response)
+                raise self._response_error("provider_auth_failed", response)
             if status == 404:
                 if required and self._active_credential is None:
                     if (
@@ -354,34 +420,22 @@ class GitHubAcceptanceClient:
                         self._auth_fallback_attempted = True
                         self._active_credential = self.credential
                         return self._get(url, params=params, required=required)
-                    raise ProviderClientError("provider_repository_not_publicly_accessible", status_code=status)
-                raise ProviderClientError("provider_repository_not_found", status_code=status)
-            if status == 429:
-                retry_after = self._retry_after(response)
-                last_error = ProviderClientError(
-                    "provider_rate_limited",
-                    status_code=status,
-                    retryable=True,
-                    retry_after_seconds=retry_after,
-                )
-                if attempt >= self.retry_policy.max_attempts:
-                    raise last_error
-                continue
+                    raise self._response_error("provider_repository_not_publicly_accessible", response)
+                raise self._response_error("provider_repository_not_found", response)
             if 500 <= status <= 599:
-                last_error = ProviderClientError(
-                    "provider_service_unavailable",
-                    status_code=status,
-                    retryable=True,
+                last_error = self._response_error(
+                    "provider_service_unavailable", response, retryable=True,
                 )
                 if attempt >= self.retry_policy.max_attempts:
                     raise last_error
+                self._sleeper(self._delay(attempt))
                 continue
             if status < 200 or status >= 300:
-                raise ProviderClientError("provider_request_failed", status_code=status)
+                raise self._response_error("provider_request_failed", response)
             try:
                 return response.json(), response.headers
             except ValueError as exc:
-                raise ProviderClientError("provider_response_not_json", status_code=status) from exc
+                raise self._response_error("provider_response_not_json", response) from exc
         if last_error is not None:
             raise last_error
         raise ProviderClientError("provider_request_failed")
@@ -960,12 +1014,24 @@ def _failed_payload(args: argparse.Namespace, exc: Exception) -> dict[str, Any]:
     code = _text(getattr(exc, "code", ""))
     if not code.startswith("provider_"):
         code = _text(exc) if _text(exc).startswith("provider_") else "provider_acceptance_failed"
+    status = getattr(exc, "status_code", None)
+    delay = getattr(exc, "retry_after_seconds", None)
+    rate_state = getattr(exc, "rate_limit_state", {})
+    safe_rate_state = {
+        key: value for key, value in rate_state.items()
+        if key in {"limit", "remaining", "used", "reset"}
+        and type(value) is int and 0 <= value < 10**12
+    } if isinstance(rate_state, Mapping) else {}
     return {
         "artifact_schema": ARTIFACT_SCHEMA, "status": "failed",
         "provider_support_maturity": ProviderSupportMaturity.IMPLEMENTED_BUT_UNPROVEN.value,
         "provider": args.provider, "repository": args.repository,
         "access_mode": args.access_mode, "expected_outcome": args.expected_outcome,
         "error_type": type(exc).__name__, "error_code": code,
+        "http_status": status if type(status) is int and 100 <= status <= 599 else None,
+        "retryable": getattr(exc, "retryable", False) is True,
+        "retry_after_seconds": delay if type(delay) in (int, float) and math.isfinite(delay) and delay >= 0 else None,
+        "rate_limit_state": safe_rate_state,
         "workflow_identity": {"sha": _text(args.workflow_sha),
                               "run_id": _text(args.workflow_run_id),
                               "run_attempt": _text(args.workflow_run_attempt)},

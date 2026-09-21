@@ -1,5 +1,17 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Provider acceptance diagnostics and bounded retries — 2026-09-21
+
+Continuation base484bbc82d1a819b513434064086fc74d2f60f0a0/treee10e5c481ec196f28b62ec2953190f52d56f1478 remains the last verified14-file independent repair. Native22 protocol/13 ownership checks,93 scanner tests, both full CI gates and security audit PASS; final inventory54 successful/6 skipped/1 failed. The failed GitHub anonymous proof35553369957/job106192153236 omitted its exact401/403 response status; its underlying cause remains UNKNOWN.
+
+This independently permitted correction addresses the proof client's demonstrated failure semantics only: documented403 throttling was classified as authentication, retry loops ignored server waits, and the failed artifact omitted safe HTTP/rate metadata. Owned fixtures reproduced12 failures/2 controls before repair. GitHub's primary documentation https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api (retrieved2026-09-21) supplies403/429/reset/Retry-After/backoff semantics. The client retains numeric metadata, honors increasing waits within the existing30-second per-wait cap and attempt budget, and stops when a required wait is unknown or exceeds that cap. No raw response body, cookies, credentials or arbitrary headers enter diagnostics; anonymous expectations remain success and credentials remain absent.
+
+Independent review found malformed Retry-After could still resolve an AUTO credential. Five negative cases reproduced before correction; explicit unreadable retry instructions now stop with unknown wait before any credential fallback. Final affected54PASS; independent focused5PASS. No unresolved material finding remains in the three provider files. Actual previous network cause is not retroactively inferred. Review supports bounded publication only, not overall capability/merge approval.
+
+Concurrent frontend work was preserved by isolating this provider change in a detached checkout; no other agent's edits were committed. Only provider error metadata, GitHub acceptance retry handling, focused fixtures and this checkpoint change. Unchanged worker/source/approval evidence retains its prior scope. Highest-risk controls: no credential fallback on throttling, no early/unbounded retry, no unsafe failure telemetry or acceptance downgrade.
+
+EXACT NEXT ACTION: publish this reviewed correction to the same draftPR1627 and inspect its new native anonymous proof and candidate CI. Preserve any real provider failure with the new diagnostics; do not rerun blindly or weaken expected outcomes. The recorded Bitcoin/toolchain platform rejection remains binding, supported escalation has no confirmed clearance/ETA, and fullC0-C19/executor/Bitcoin report/production acceptance remain UNPROVEN. No merge or deployment.
+
 ## Independent continuation repairs — 2026-09-21
 
 Permitted slice: generic durable worker polling and complete parent-tree inventory accounting. No Bitcoin build/configuration/test/sanitizer/fuzz/toolchain discovery or target execution is retried. Current published base d2fdcc6; PR1627 remains draft.
