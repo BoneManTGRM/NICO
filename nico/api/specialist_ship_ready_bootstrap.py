@@ -44,6 +44,8 @@ SPECIALIST_ACCESS = install_specialist_access(app)
 REVIEW_SESSION_BRIDGE = install_specialist_review_session_bridge(app)
 SCANNER_EVIDENCE_INVENTORY = install_comprehensive_scanner_inventory(app)
 install_scanner_checkout_recovery(app)
+from nico.assessment_worker_api import install_assessment_worker_api  # noqa: E402
+install_assessment_worker_api(app)
 
 if APPROVED_LIFECYCLE_CONSISTENCY.get("installed") is not True:
     raise RuntimeError("NICO approved lifecycle consistency binding was not installed")

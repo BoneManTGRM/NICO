@@ -22,6 +22,11 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "The dedicated worker retained native scanner evidence. Individual tool records state completion and limitations.": "El trabajador dedicado conservó evidencia nativa de los analizadores. Cada registro indica el estado de ejecución y sus limitaciones.",
+    "The selected worker profile does not execute this requested tool.": "El perfil seleccionado del trabajador no ejecuta esta herramienta solicitada.",
+    "Native target execution or parsing is incomplete; retained observations require review.": "La ejecución o el análisis nativo de los objetivos está incompleto; las observaciones conservadas requieren revisión.",
+    "Native XML was not completely parsed.": "El XML nativo no se analizó por completo.",
+    "Native target is outside the frozen population.": "El objetivo nativo está fuera de la población fijada.",
     "Workflow configuration exact-SHA match: not assessed.": "Coincidencia de SHA exacto de la configuración de flujos de trabajo: sin evaluar.",
     "Delivery capacity is not scored because immutable CI configuration was not assessed.": "La capacidad de entrega no se puntúa porque no se evaluó la configuración inmutable de CI.",
     "Comprehensive": "Integral",

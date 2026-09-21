@@ -11,6 +11,18 @@ import pytest
 def sha(value): return hashlib.sha256(value).hexdigest()
 
 
+def test_artifact_insert_rolls_back_with_owning_job_transaction(artifacts):
+    m, store, reopen, root, path, binding, record, raw, compressed = artifacts
+    with pytest.raises(RuntimeError, match="simulated_job_publication_failure"):
+        with store.connect() as connection:
+            artifact_id = store.put_in_transaction(connection, binding, compressed, sha(raw))
+            assert connection.execute("SELECT count(*) FROM scanner_raw_artifacts").fetchone()[0] == 1
+            raise RuntimeError("simulated_job_publication_failure")
+    assert reopen().get(artifact_id, limit=10000) is None
+    # The failed owner must not occupy the immutable slot for a subsequent owner.
+    assert store.put(binding, compressed, sha(raw)) == artifact_id
+
+
 @pytest.fixture
 def artifacts(tmp_path, monkeypatch):
     from nico import scanner_raw_artifact_storage_v1 as module

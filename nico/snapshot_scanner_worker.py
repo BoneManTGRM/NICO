@@ -461,7 +461,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
     )
 
 
-def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
+def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None = None) -> dict[str, Any]:
     if not payload.get("authorized"):
         return {"status": "blocked", "error": "Explicit authorization is required before snapshot-bound scanner execution."}
     repository = str(payload.get("repository") or "")
@@ -544,6 +544,13 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "max_repo_bytes": base.MAX_REPO_BYTES,
         "human_review_required": True,
     }
+    if worker_contract is not None:
+        # Internal profile selection only. Public payload fields cannot
+        # choose a contract or cause a serving process to execute assessed code.
+        from nico.assessment_worker_receipts import enqueue_snapshot_scan
+        job = enqueue_snapshot_scan(job, worker_contract, STORE.adapter)
+        base.SCAN_JOBS[job["scan_id"]] = job
+        return job
     base.SCAN_JOBS[scan_id] = job
     STORE.put("scanner_runs", scan_id, job)
     STORE.audit(

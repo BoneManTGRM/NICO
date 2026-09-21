@@ -96,10 +96,20 @@ def scanner_is_stale(
     stale_seconds: int | None = None,
     now: datetime | None = None,
 ) -> bool:
-    if str(record.get("status") or "") not in ACTIVE_SCANNER_STATUSES:
+    if worker_managed_scan(record) or str(record.get("status") or "") not in ACTIVE_SCANNER_STATUSES:
         return False
     age = scanner_age_seconds(record, now=now)
     return age is None or age >= float(stale_seconds or configured_stale_seconds())
+
+
+def worker_managed_scan(record: dict[str, Any]) -> bool:
+    """Dedicated ownership never falls back to serving-process recovery."""
+    return "worker_job_id" in record or str(record.get("scan_id") or "").startswith("scan_worker_")
+
+
+def worker_lifecycle_blocked(scan_id: str) -> dict[str, Any]:
+    return {"status": "blocked", "code": "worker_lifecycle_requires_dedicated_job",
+            "scan_id": scan_id, "automatic_resume": False, "client_delivery_allowed": False}
 
 
 def _safe_scan_summary(record: dict[str, Any]) -> dict[str, Any]:
@@ -190,6 +200,8 @@ def _bounded_scanner_records(
                 payload ->> 'completed_at' AS completed_at
             FROM scanner_runs
             WHERE status = ANY(%s)
+              AND NOT (payload ? 'worker_job_id')
+              AND LEFT(scan_id, 12) <> 'scan_worker_'
             ORDER BY updated_at DESC
             LIMIT %s
             """,
@@ -199,7 +211,8 @@ def _bounded_scanner_records(
     return [
         record
         for record in active.list("scanner_runs")[:MAX_RECONCILE_RECORDS]
-        if isinstance(record, dict) and str(record.get("status") or "") in statuses
+        if isinstance(record, dict) and not worker_managed_scan(record)
+        and str(record.get("status") or "") in statuses
     ][:limit]
 
 
@@ -229,6 +242,8 @@ def _postgres_atomic_transition(
             updated_at=%s
         WHERE scan_id=%s
           AND status = ANY(%s)
+          AND NOT (payload ? 'worker_job_id')
+          AND LEFT(scan_id, 12) <> 'scan_worker_'
         """
     parameters = (
             new_status,
@@ -261,7 +276,7 @@ def atomic_scanner_transition(
 
     with _MEMORY_TRANSITION_LOCK:
         current = active.get("scanner_runs", scan_id)
-        if not isinstance(current, dict):
+        if not isinstance(current, dict) or worker_managed_scan(current):
             return None
         if str(current.get("status") or "") not in expected_statuses:
             return None
@@ -496,6 +511,8 @@ def resume_interrupted_scanner_run(
             "code": "scanner_run_not_found",
             "scan_id": normalized_scan_id,
         }
+    if worker_managed_scan(current):
+        return worker_lifecycle_blocked(normalized_scan_id)
     current_status = str(current.get("status") or "unknown")
     if current_status in ACTIVE_SCANNER_STATUSES | TERMINAL_SCANNER_STATUSES:
         return {
@@ -682,6 +699,8 @@ def close_interrupted_scanner_run(
             "code": "scanner_run_not_found",
             "scan_id": normalized_scan_id,
         }
+    if worker_managed_scan(current):
+        return worker_lifecycle_blocked(normalized_scan_id)
     current_status = str(current.get("status") or "unknown")
     current_recovery = current.get("recovery") if isinstance(current.get("recovery"), dict) else {}
     if current_status == "cancelled" and current_recovery.get("state") == "closed_by_operator":

@@ -384,4 +384,9 @@ def start_scan(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_scan(scan_id: str) -> dict[str, Any]:
-    return SCAN_JOBS.get(scan_id) or STORE.get("scanner_runs", scan_id) or {"status": "not_found", "scan_id": scan_id}
+    cached = SCAN_JOBS.get(scan_id)
+    if cached and not cached.get("worker_job_id"):
+        return cached
+    # Remote workers publish through PostgreSQL. A serving process's queued copy
+    # cannot override a completion, cancellation or disappearance after restart.
+    return STORE.get("scanner_runs", scan_id) or {"status": "not_found", "scan_id": scan_id}

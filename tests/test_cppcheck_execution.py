@@ -113,3 +113,18 @@ def test_cppcheck_partial_receipt_hashes_the_final_state(monkeypatch, tmp_path):
     assert result['deterministic_fingerprint'] == pipeline._deterministic_fingerprint(result, target)
     canonical = {key: value for key, value in result.items() if key not in {'artifact_hash', '_raw_artifact_blob'}}
     assert result['artifact_hash'] == hashlib.sha256(json.dumps(canonical, sort_keys=True, default=str, separators=(',', ':')).encode()).hexdigest()
+
+
+def test_prepared_cppcheck_rejects_decoded_secrets_before_raw_artifact_retention(monkeypatch, tmp_path):
+    target = workspace(tmp_path)
+    monkeypatch.setattr(pipeline.shutil, 'which', lambda name: '/tools/cppcheck')
+    monkeypatch.setattr(pipeline, '_scanner_version', lambda *args: 'Cppcheck 2.17.1')
+    encoded = XML.replace('Out of bounds', 'gh&#112;_' + 'x' * 36)
+    def runner(args, *, cwd, limits, stdout_path, extra_env):
+        Path(next(a.split('=', 1)[1] for a in args if a.startswith('--output-file='))).write_text(encoded)
+        stdout_path.write_text('Checking src/value.cpp ...\n')
+        return WorkerCommandResult(tuple(args), 0, '', '')
+    result = pipeline._run_cppcheck(ScannerToolSpec('cppcheck', ('cppcheck',), 'static'), target, runner)
+    assert result['status'] == 'failed' and not result['verified_for_this_report']
+    assert not result['_raw_artifact_blob'] and not result['raw_artifact_capture_complete']
+    assert result['findings'] == [] and 'redaction' in result['reason']

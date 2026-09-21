@@ -46,7 +46,7 @@ def complete_assessment_tools(requested: Any) -> list[str]:
     return list(dict.fromkeys([*REQUIRED_EXACT_SNAPSHOT_TOOLS, *normalized]))
 
 
-def start_snapshot_scan_with_required_tools(payload: dict[str, Any]) -> dict[str, Any]:
+def start_snapshot_scan_with_required_tools(payload: dict[str, Any], *, worker_contract: dict | None = None) -> dict[str, Any]:
     request = deepcopy(payload)
     original = request.get("tools") if isinstance(request.get("tools"), list) else []
     missing = [tool for tool in REQUIRED_EXACT_SNAPSHOT_TOOLS if tool not in original]
@@ -54,7 +54,12 @@ def start_snapshot_scan_with_required_tools(payload: dict[str, Any]) -> dict[str
     # current client payload merely because it contains a harmless duplicate while
     # still repairing every stale or incomplete tool list deterministically.
     request["tools"] = list(original) if not missing else complete_assessment_tools(original)
-    result = _ORIGINAL_START_SNAPSHOT_SCAN(request)
+    if worker_contract is not None:
+        # An explicit internal dispatch profile is not a replacement for this
+        # assessment's required scanner set. Missing tools must remain visible.
+        result = _ORIGINAL_START_SNAPSHOT_SCAN(request, worker_contract=worker_contract)
+    else:
+        result = _ORIGINAL_START_SNAPSHOT_SCAN(request)
     if isinstance(result, dict):
         result = deepcopy(result)
         result["tool_policy"] = {

@@ -832,6 +832,7 @@ def _run_cppcheck(spec: ScannerToolSpec, workspace: WorkerWorkspace,
     repository configuration, addon or inline suppression is requested here.
     """
     import xml.etree.ElementTree as ET
+    from nico.cppcheck_native_output import NativeOutputRedactionRequired, parse_native
     from nico.node_scanner_applicability_v1 import valid_input_inventory
     from nico.scanner_execution_receipt_v1 import write_generated_config
 
@@ -868,30 +869,15 @@ def _run_cppcheck(spec: ScannerToolSpec, workspace: WorkerWorkspace,
             raise ValueError('cppcheck_output_limit_exceeded')
         native_xml = xml_file.read_text(encoding='utf-8')
         progress_text = progress.read_text(encoding='utf-8')
-        if '<!DOCTYPE' in native_xml or '<!ENTITY' in native_xml:
-            raise ValueError('cppcheck_xml_external_content_rejected')
-        document = ET.fromstring(native_xml)
-        if document.tag != 'results' or document.get('version') != '2' or document.find('errors') is None or document.find('cppcheck') is None:
-            raise ValueError('cppcheck_output_schema_invalid')
-        for error in document.findall('errors/error'):
-            locations = []
-            for row in error.findall('location'):
-                path = str(row.get('file') or '').removeprefix('./')
-                line = int(row.get('line') or 0)
-                if path in targets and line > 0:
-                    locations.append({'path': path, 'line': line, 'column': int(row.get('column') or 0)})
-            rule = error.get('id') or ''
-            limited = error.get('severity') == 'information' or rule in {'syntaxError', 'internalError', 'internalAstError', 'cppcheckError', 'preprocessorError', 'unknownMacro'}
-            if limited or not locations:
-                limitations.append({'rule_id': rule, 'message': error.get('msg') or '', 'locations': locations})
-                continue
-            severity = {'error': 'high', 'warning': 'medium', 'style': 'low', 'performance': 'low', 'portability': 'low'}.get(error.get('severity'), 'unknown')
-            findings.append({'rule_id': rule, **locations[0], 'locations': locations,
-                'message': error.get('msg') or '', 'severity': severity, 'native_severity': error.get('severity'),
-                'cwe': error.get('cwe'), 'inconclusive': error.get('inconclusive') == 'true',
-                'classification': 'review_required_candidate', 'specialist_review_completed': False,
-                'commit_sha': inventory['commit_sha']})
+        findings, limitations, _ = parse_native(native_xml, progress_text, targets)
+        for finding in findings:
+            finding['commit_sha'] = inventory['commit_sha']
         parse_complete = True
+    except NativeOutputRedactionRequired:
+        from dataclasses import replace
+        return _tool_payload(spec, replace(result, stdout='', stderr=''), findings=[], capture_complete=False,
+            reason='Cppcheck native output requires redaction before retention.', raw_blob={},
+            execution_source='cppcheck_standalone', workspace=workspace, valid_returncodes={0})
     except (OSError, UnicodeError, ValueError, ET.ParseError):
         pass
     observed = sorted({match.group(1).removeprefix('./') for match in re.finditer(r'^Checking (.+?) \.\.\.$', progress_text, re.M)} & set(targets))

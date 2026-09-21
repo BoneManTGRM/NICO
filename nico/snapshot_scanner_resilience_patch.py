@@ -116,6 +116,8 @@ def _resume_snapshot_scanner_run(
             "scan_id": normalized_scan_id,
         }
 
+    if recovery.worker_managed_scan(current):
+        return recovery.worker_lifecycle_blocked(normalized_scan_id)
     current_status = str(current.get("status") or "unknown")
     if current_status in recovery.ACTIVE_SCANNER_STATUSES | recovery.TERMINAL_SCANNER_STATUSES:
         return {
