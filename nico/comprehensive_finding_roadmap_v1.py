@@ -81,6 +81,57 @@ def _base(binding: Mapping[str, str], kind: str, refs: list[dict[str, Any]]) -> 
     }
 
 
+_PACKAGE_PROSE = {'finding_review_and_remediation': {'action': ('Validate the retained finding; implement its retained '
+                                               'correction only when the disposition and change scope '
+                                               'authorize remediation.',
+                                               'Validar el hallazgo conservado; aplicar su corrección '
+                                               'conservada únicamente cuando la disposición y el alcance del '
+                                               'cambio autoricen la remediación.'),
+                                    'rationale': ('The proposal addresses this retained finding and '
+                                                  'preserves its current review state.',
+                                                  'La propuesta atiende este hallazgo conservado y mantiene '
+                                                  'su estado actual de revisión.'),
+                                    'verification': ('Retain the exact remediation revision, the '
+                                                     'finding-specific verification evidence, and regression '
+                                                     'results; obtain the required specialist disposition.',
+                                                     'Conservar la revisión exacta de remediación, la '
+                                                     'evidencia de verificación específica del hallazgo y '
+                                                     'los resultados de regresión; obtener la disposición '
+                                                     'profesional requerida.')},
+ 'evidence_gap_resolution': {'action': ('Obtain the specified missing input within authorized scope and '
+                                        'assess the limitation again; absence is not a confirmed '
+                                        'vulnerability.',
+                                        'Obtener el insumo faltante especificado dentro del alcance '
+                                        'autorizado y reevaluar la limitación; su ausencia no constituye una '
+                                        'vulnerabilidad confirmada.'),
+                             'rationale': ('This retained evidence gap limits the supported conclusion.',
+                                           'Esta brecha de evidencia conservada limita la conclusión '
+                                           'sustentada.'),
+                             'verification': ('Bind the supplied evidence to its source and run, check its '
+                                              'adequacy, and retain the revised limitation and review '
+                                              'decision.',
+                                              'Vincular la evidencia aportada con su fuente y ejecución, '
+                                              'comprobar su suficiencia y conservar la limitación revisada y '
+                                              'la decisión de revisión.')},
+ 'candidate_disposition': {'action': ('Review the retained scanner candidates and record evidence-linked '
+                                      'dispositions; candidate counts are not confirmed defect counts.',
+                                      'Revisar los candidatos conservados de los analizadores y registrar '
+                                      'disposiciones vinculadas a evidencia; los recuentos de candidatos no '
+                                      'son recuentos de defectos confirmados.'),
+                           'rationale': ('The retained candidate summary records unresolved professional '
+                                         'review work.',
+                                         'El resumen de candidatos conservado registra trabajo de revisión '
+                                         'profesional pendiente.'),
+                           'verification': ('Reconcile each required disposition with the retained candidate '
+                                            'population and preserve independent QC where required.',
+                                            'Conciliar cada disposición requerida con la población de '
+                                            'candidatos conservada y mantener el control de calidad '
+                                            'independiente donde corresponda.')}}
+
+def _package_prose(kind: str, spanish: bool) -> dict[str, str]:
+    return {field: values[int(spanish)] for field, values in _PACKAGE_PROSE[kind].items()}
+
+
 def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapping[str, Any]) -> dict[str, Any]:
     """Derive new report projections after restoration, leaving retained input untouched.
 
@@ -130,9 +181,7 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
             "evidence_scope": "retained_canonical_record",
             "suggested_role_type": _role(finding),
             "dependencies": [{"gate": "qualified_specialist_disposition", "source_ref": reference}, {"gate": "authorized_change_scope"}],
-            "action": _copy("Validate the retained finding; implement its retained correction only when the disposition and change scope authorize remediation.", "Validar el hallazgo conservado; aplicar su corrección conservada únicamente cuando la disposición y el alcance del cambio autoricen la remediación.", spanish),
-            "rationale": _copy("The proposal addresses this retained finding and preserves its current review state.", "La propuesta atiende este hallazgo conservado y mantiene su estado actual de revisión.", spanish),
-            "verification": _copy("Retain the exact remediation revision, the finding-specific verification evidence, and regression results; obtain the required specialist disposition.", "Conservar la revisión exacta de remediación, la evidencia de verificación específica del hallazgo y los resultados de regresión; obtener la disposición profesional requerida.", spanish),
+            **_package_prose("finding_review_and_remediation", spanish),
         })
         packages.append(item)
 
@@ -166,9 +215,7 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
             "evidence_scope": "retained_gap_record",
             "suggested_role_type": "authorized_evidence_custodian",
             "dependencies": [{"gate": "authorized_input_scope"}, {"gate": "evidence_source_availability"}],
-            "action": _copy("Obtain the specified missing input within authorized scope and assess the limitation again; absence is not a confirmed vulnerability.", "Obtener el insumo faltante especificado dentro del alcance autorizado y reevaluar la limitación; su ausencia no constituye una vulnerabilidad confirmada.", spanish),
-            "rationale": _copy("This retained evidence gap limits the supported conclusion.", "Esta brecha de evidencia conservada limita la conclusión sustentada.", spanish),
-            "verification": _copy("Bind the supplied evidence to its source and run, check its adequacy, and retain the revised limitation and review decision.", "Vincular la evidencia aportada con su fuente y ejecución, comprobar su suficiencia y conservar la limitación revisada y la decisión de revisión.", spanish),
+            **_package_prose("evidence_gap_resolution", spanish),
         })
         packages.append(item)
 
@@ -182,9 +229,7 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
             "evidence_scope": "retained_candidate_summary",
             "suggested_role_type": "cybersecurity_specialist",
             "dependencies": [{"gate": "retained_scanner_artifact_availability"}, {"gate": "qualified_specialist_review"}],
-            "action": _copy("Review the retained scanner candidates and record evidence-linked dispositions; candidate counts are not confirmed defect counts.", "Revisar los candidatos conservados de los analizadores y registrar disposiciones vinculadas a evidencia; los recuentos de candidatos no son recuentos de defectos confirmados.", spanish),
-            "rationale": _copy("The retained candidate summary records unresolved professional review work.", "El resumen de candidatos conservado registra trabajo de revisión profesional pendiente.", spanish),
-            "verification": _copy("Reconcile each required disposition with the retained candidate population and preserve independent QC where required.", "Conciliar cada disposición requerida con la población de candidatos conservada y mantener el control de calidad independiente donde corresponda.", spanish),
+            **_package_prose("candidate_disposition", spanish),
         })
         packages.append(item)
 
@@ -217,6 +262,36 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
     assessment["roadmap_truth"] = deepcopy(truth)
     output["assessment"] = assessment
 
+    presentation = _roadmap_presentation(packages, spanish)
+    roles = presentation["roles"]
+    for stage in output.get("stage_summaries") or []:
+        if not isinstance(stage, dict):
+            continue
+        if stage.get("stage_id") == "six_month_roadmap":
+            planning_inputs = [line for line in stage.get("evidence") or [] if _has_projected_field(line, {"constraints", "requirements"})]
+            stage.update({"summary": presentation["summary"], "evidence": [*presentation["roadmap"], *planning_inputs], "roadmap": deepcopy(packages), "roadmap_truth": deepcopy(truth)})
+        elif stage.get("stage_id") == "staffing_sequencing_and_cost":
+            capacity_inputs = [line for line in stage.get("evidence") or [] if _has_projected_field(line, {"client_capacity_inputs_state", "supplied_capacity_constraints"})]
+            stage.update({"summary": presentation["summary"], "evidence": [*presentation["staffing"], *capacity_inputs], "suggested_role_types": roles, "source_package_ids": [item["package_id"] for item in packages]})
+        elif stage.get("stage_id") == "risk_reduction_and_executive_briefing":
+            retained = [line for line in stage.get("evidence") or [] if not _has_projected_field(line, {"quick_wins", "medium_term_actions", "recommended_roles"})]
+            stage.update({"evidence": [*retained, *presentation["executive"]], "source_package_ids": [item["package_id"] for item in packages], "suggested_role_types": roles})
+    return output
+
+def _roadmap_presentation(
+    packages: list[dict[str, Any]], spanish: bool, *, retained_literal_fallback: bool = False,
+) -> dict[str, Any]:
+    def display(value: Any, field: str) -> str:
+        try:
+            return _display(value, field, spanish)
+        except ValueError:
+            if not retained_literal_fallback:
+                raise
+            # A comparison against known generated copy must not require a new
+            # translation of native retained input. Keep unmatched literals; the
+            # ordinary target renderer's translation checks remain unchanged.
+            return _display(value, field, False)
+
     role_names = {
         "architecture_engineering": ("Architecture / engineering", "Arquitectura / ingeniería"),
         "cybersecurity_specialist": ("Cybersecurity specialist", "Especialista en ciberseguridad"),
@@ -248,31 +323,68 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
         details.append(prefix + " | " + item["action"])
         correction = item.get("retained_correction") or item.get("retained_required_input")
         if correction:
-            details.append(prefix + " | " + _display(correction, "recommendation", spanish))
+            details.append(prefix + " | " + display(correction, "recommendation"))
         if item.get("retained_rationale"):
-            details.append(prefix + " | " + _display(item["retained_rationale"], "why_it_matters", spanish))
+            details.append(prefix + " | " + display(item["retained_rationale"], "why_it_matters"))
         details.append(prefix + " | " + item["verification"])
         if item.get("retained_verification"):
-            details.append(prefix + " | " + _display(item["retained_verification"], "verification", spanish))
+            details.append(prefix + " | " + display(item["retained_verification"], "verification"))
         details.append(prefix + " | " + _copy("Suggested role type", "Tipo de función sugerida", spanish) + ": " + _copy(*role_names[item["suggested_role_type"]], spanish) + " | " + _copy("Dependencies", "Dependencias", spanish) + ": " + ", ".join(_copy(*dependency_names[dep["gate"]], spanish) for dep in item["dependencies"]))
     boundary = _copy("Work packages are provisional and bound to retained findings or evidence gaps. The 0-30/31-90/91-180 windows are illustrative; no owner, capacity, cost, date, approval, or delivery commitment is created.", "Los paquetes de trabajo son provisionales y están vinculados a hallazgos conservados o brechas de evidencia. Las ventanas 0-30/31-90/91-180 son ilustrativas; no se crea compromiso de responsable, capacidad, costo, fecha, aprobación ni entrega.", spanish)
     no_work = _copy("No retained finding or explicit evidence gap supports a work package; an empty planning window does not establish a clean assessment.", "Ningún hallazgo conservado ni brecha de evidencia explícita sustenta un paquete de trabajo; una ventana de planificación vacía no establece una evaluación sin hallazgos.", spanish)
     roles = sorted({item["suggested_role_type"] for item in packages})
-    for stage in output.get("stage_summaries") or []:
-        if not isinstance(stage, dict):
+    role_lines = [_copy("Suggested role types", "Tipos de función sugeridos", spanish) + ": " + ", ".join(_copy(*role_names[role], spanish) for role in roles)] if roles else [no_work]
+    package_line = _copy("Proposed work packages", "Paquetes de trabajo propuestos", spanish) + ": " + ", ".join(item["package_id"] for item in packages)
+    return {"summary": boundary, "roadmap": details or [no_work], "staffing": role_lines, "executive": [package_line if packages else no_work, boundary], "roles": roles}
+
+
+
+
+def localize_retained_roadmap(canonical: Mapping[str, Any], *, spanish: bool) -> dict[str, Any]:
+    """Reproject known generated copy, without deriving or rebinding any work package."""
+    output = deepcopy(dict(canonical))
+    truth = output.get("roadmap_truth")
+    packages = output.get("roadmap")
+    identity = output.get("identity") or {}
+    binding = {key: _text(identity.get(key)) for key in _IDENTITY}
+    if (not isinstance(truth, Mapping) or truth.get("version") != VERSION
+            or not all(binding.values()) or truth.get("source_binding") != binding
+            or not isinstance(packages, list) or truth.get("work_package_count") != len(packages)
+            or any(not isinstance(item, dict) or item.get("kind") not in _PACKAGE_PROSE
+                   or item.get("source_binding") != binding for item in packages)):
+        return output
+
+    def localized_packages(target: bool) -> list[dict[str, Any]]:
+        result = deepcopy(packages)
+        for item in result:
+            for field, pair in _PACKAGE_PROSE[item["kind"]].items():
+                if item.get(field) in pair:
+                    item[field] = pair[int(target)]
+        return result
+
+    source_presentation = _roadmap_presentation(localized_packages(not spanish), not spanish, retained_literal_fallback=True)
+    target_packages = localized_packages(spanish)
+    target_presentation = _roadmap_presentation(target_packages, spanish, retained_literal_fallback=True)
+    stage_keys = {"six_month_roadmap": "roadmap", "staffing_sequencing_and_cost": "staffing",
+                  "risk_reduction_and_executive_briefing": "executive"}
+    for container in (output, output.get("assessment")):
+        if not isinstance(container, dict):
             continue
-        if stage.get("stage_id") == "six_month_roadmap":
-            planning_inputs = [line for line in stage.get("evidence") or [] if _has_projected_field(line, {"constraints", "requirements"})]
-            stage.update({"summary": boundary, "evidence": [*(details or [no_work]), *planning_inputs], "roadmap": deepcopy(packages), "roadmap_truth": deepcopy(truth)})
-        elif stage.get("stage_id") == "staffing_sequencing_and_cost":
-            capacity_inputs = [line for line in stage.get("evidence") or [] if _has_projected_field(line, {"client_capacity_inputs_state", "supplied_capacity_constraints"})]
-            role_lines = [_copy("Suggested role types", "Tipos de función sugeridos", spanish) + ": " + ", ".join(_copy(*role_names[role], spanish) for role in roles)] if roles else [no_work]
-            stage.update({"summary": boundary, "evidence": [*role_lines, *capacity_inputs], "suggested_role_types": roles, "source_package_ids": [item["package_id"] for item in packages]})
-        elif stage.get("stage_id") == "risk_reduction_and_executive_briefing":
-            retained = [line for line in stage.get("evidence") or [] if not _has_projected_field(line, {"quick_wins", "medium_term_actions", "recommended_roles"})]
-            package_line = _copy("Proposed work packages", "Paquetes de trabajo propuestos", spanish) + ": " + ", ".join(item["package_id"] for item in packages)
-            stage.update({"evidence": [*retained, package_line if packages else no_work, boundary], "source_package_ids": [item["package_id"] for item in packages], "suggested_role_types": roles})
+        if container.get("roadmap") == packages and container.get("roadmap_truth") == truth:
+            container["roadmap"] = deepcopy(target_packages)
+        for stage in container.get("stage_summaries") or []:
+            if not isinstance(stage, dict) or stage.get("stage_id") not in stage_keys:
+                continue
+            # Only complete, exact generated lines are replaced. Client planning
+            # inputs and unknown prose are retained; no recursive text replacement.
+            key = stage_keys[stage["stage_id"]]
+            translations = dict(zip(source_presentation[key], target_presentation[key], strict=True))
+            stage["evidence"] = [translations.get(line, line) if isinstance(line, str) else line
+                                 for line in stage.get("evidence") or []]
+            if stage.get("summary") == source_presentation["summary"]:
+                stage["summary"] = target_presentation["summary"]
+            if stage.get("roadmap") == packages and stage.get("roadmap_truth") == truth:
+                stage["roadmap"] = deepcopy(target_packages)
     return output
 
-
-__all__ = ["VERSION", "bind_final_finding_roadmap"]
+__all__ = ["VERSION", "bind_final_finding_roadmap", "localize_retained_roadmap"]

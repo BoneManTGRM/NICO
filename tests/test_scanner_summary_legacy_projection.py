@@ -63,7 +63,7 @@ def legacy_run(tmp_path, *, partial=False, stale_summary=False):
     assert projection['response_projection']['artifact_integrity_valid'] is True
     assert projection['scanner_execution_summary']['status'] == ('partial' if partial else 'complete')
     if stale_summary:
-        projection['scanner_execution_summary'].pop('evaluation_policy', None)
+        projection['scanner_execution_summary']['evaluation_policy'] = 'source-applicability-execution-v3'
         projection['scanner_execution_summary']['percent'] = 88
     else:
         projection.pop('scanner_execution_summary', None)
@@ -125,7 +125,7 @@ def test_old_policy_projection_is_refreshed_without_rewriting_history(tmp_path):
     response = TestClient(app).get(f'/assessment/comprehensive-run/{RUN}', headers=HEADERS)
     assert response.status_code == 200
     assert response.json()['scanner_execution_summary']['percent'] == 0  # No native bytes exist in this metadata-only fixture.
-    assert response.json()['scanner_execution_summary']['evaluation_policy'] == 'source-applicability-execution-v3'
+    assert response.json()['scanner_execution_summary']['evaluation_policy'] == 'source-applicability-execution-v4'
     assert store.load(RUN) == before
 
 

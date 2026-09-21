@@ -481,7 +481,10 @@ def _localized_draft_view(
 ) -> dict[str, Any]:
     """Create a locale-only render input without carrying exact-artifact approval."""
 
-    view = deepcopy(dict(canonical))
+    from nico.comprehensive_finding_roadmap_v1 import localize_retained_roadmap
+    from nico.comprehensive_human_evidence_report_v1 import _localize_retained_stage
+
+    view = localize_retained_roadmap(canonical, spanish=report_language.startswith("es"))
     identity = (
         deepcopy(dict(view.get("identity") or {}))
         if isinstance(view.get("identity"), Mapping)
@@ -498,6 +501,19 @@ def _localized_draft_view(
     view["identity"] = identity
     view["assessment"] = assessment
     _localize_provider_access_evidence(view, report_language)
+    # Later report layers restore these retained stages. Localize their known
+    # wrappers at the canonical projection boundary, not only in a renderer.
+    for container in (view, assessment):
+        stages = container.get("stage_summaries")
+        if isinstance(stages, list):
+            container["stage_summaries"] = [
+                _localize_retained_stage(stage, spanish=report_language.startswith("es"))
+                if isinstance(stage, Mapping) and (
+                    stage.get("stage_id") == "client_evidence_summary"
+                    or str(stage.get("stage_id") or "").startswith("client_human_evidence_")
+                ) else stage
+                for stage in stages
+            ]
 
     # These objects bind one exact byte set. A localized regeneration is a new draft.
     for field in (
