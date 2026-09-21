@@ -44,7 +44,7 @@ function loadModules(controller = {}, compactMobile = false) {
 }
 const modules = loadModules();
 const {localizeExactSpanishText} = modules('AssessmentSpanishLocalization.ts');
-const {sectionPresentation} = modules('assessmentStatus.ts');
+const {sectionPresentation, toneKey} = modules('assessmentStatus.ts');
 const {copyFor} = modules('assessmentCopy.ts');
 function text(node) {
   if (node == null || typeof node === 'boolean') return '';
@@ -98,6 +98,30 @@ test('legacy summary still translates and unrecognized assurances fail closed', 
   assert.equal(localizeExactSpanishText(headline + narrative + ' Approved for delivery.'), null);
 });
 for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: pending section assurance and risk stay cautionary without changing lifecycle colors`, () => {
+    const copy = copyFor(locale);
+    for (const status of ['review_required', 'Review Required', 'review-required', 'human_review_required']) {
+      const view = sectionPresentation({score: 96, assurance_status: status, risk_disposition: status}, copy);
+      assert.equal(view.assuranceLabel, copy.phases.review_required);
+      assert.equal(view.riskLabel, copy.phases.review_required);
+      assert.equal(view.assuranceTone, 'yellow');
+      assert.equal(view.riskTone, 'yellow');
+    }
+    assert.equal(toneKey('review_required'), 'green', 'completed draft lifecycle color remains unchanged');
+    assert.equal(sectionPresentation({risk_disposition: 'critical'}, copy).riskTone, 'red');
+    assert.equal(sectionPresentation({risk_disposition: 'unknown'}, copy).riskTone, 'gray');
+  });
+  test(`${locale}: retained evidence linkage and required human review have distinct localized assurance`, () => {
+    const copy = copyFor(locale);
+    const linked = sectionPresentation({score: 96, status: 'strong', assurance_status: 'evidence_bound'}, copy);
+    assert.equal(linked.assuranceLabel, locale === 'en' ? 'Evidence linked' : 'Vinculada a evidencia');
+    assert.equal(linked.assuranceTone, 'gray');
+    assert.notEqual(linked.assuranceLabel, copy.verifiedLabel);
+    const review = sectionPresentation({score: 96, status: 'strong', assurance_status: 'human_review_required'}, copy);
+    assert.equal(review.assuranceLabel, copy.phases.review_required);
+    assert.equal(review.assuranceTone, 'yellow');
+    assert.equal(sectionPresentation({score: 96, assurance_label: 'review_limited'}, copy).assuranceLabel, copy.reviewLimitedLabel);
+  });
   test(`${locale}: score bands never supply missing evidence assurance`, () => {
     for (const score of [20, 96]) {
       const section = {score, status: score > 80 ? 'strong' : 'critical', presented_status: 'STRONG'};
