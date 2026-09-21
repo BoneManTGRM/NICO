@@ -499,14 +499,17 @@ class ComprehensiveRunService:
 
         projection = self._store.load_browser_projection(run_id)
         from nico.complete_assessment_gate_v1 import SCANNER_SUMMARY_POLICY
+        from nico.comprehensive_api_controller import SECTION_ASSURANCE_POLICY
 
         summary = (projection or {}).get("scanner_execution_summary")
         summary_is_current = isinstance(summary, dict) and summary.get("evaluation_policy") == SCANNER_SUMMARY_POLICY
+        response_projection = (projection or {}).get("response_projection") or {}
+        assurance_is_current = response_projection.get("section_assurance_policy") == SECTION_ASSURANCE_POLICY
         if (
             projection
             and projection.get("terminal") is True
             and projection.get("reports")
-            and not summary_is_current
+            and not (summary_is_current and assurance_is_current)
         ):
             # Legacy terminal projections are valid historical transport data.
             # Refresh only that derived row, once, from the validated exact run.

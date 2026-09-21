@@ -38,6 +38,88 @@ def test_valid_native_evidence_is_complete_without_approval_credit():
     assert result['client_delivery_allowed'] is False
 
 
+def retained_source_stage():
+    # The source-text sample is JS/TS; the observed Python paths were excluded
+    # from complexity measurement, not from scanner applicability.
+    return {
+        'stage_id': 'architecture_and_data_flow',
+        'profile_coverage': {
+            'version': 'nico.repository_profile_coverage.v1',
+            'inventory_complete': True,
+            'sampled_paths': ['pyproject.toml', 'requirements.txt', 'apps/web/package.json',
+                              'apps/web/tsconfig.json', 'apps/web/app/page.tsx'],
+            'complexity_excluded_paths': ['tests/test_widget.py'],
+            'analyzed_source_files': 1,
+            'eligible_source_files': 100,
+        },
+        'coverage_reconciliation': {
+            'version': 'nico.report-coverage-reconciliation.v1',
+            'assessed_commit': SHA,
+        },
+    }
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_retained_report_source_inventory_preserves_applicability(nested):
+    data = good()
+    target = data.setdefault('assessment', {}) if nested else data
+    target['stage_summaries'] = [retained_source_stage()]
+    before = deepcopy(data)
+    result = summary(data)
+    assert result['applicable_count'] == 9
+    assert result['applicability_unproven_count'] == 0
+    assert result['completed_count'] == result['execution_required_count'] == 9
+    assert result['human_approval_proven'] is False
+    assert result['client_delivery_allowed'] is False
+    assert data == before
+
+
+@pytest.mark.parametrize('change', ['wrong_commit', 'missing_binding', 'wrong_profile_schema',
+                                   'wrong_stage', 'prose_only', 'malformed_paths'])
+def test_unbound_or_noninventory_report_paths_do_not_establish_applicability(change):
+    data = good()
+    stage = retained_source_stage()
+    if change == 'wrong_commit':
+        stage['coverage_reconciliation']['assessed_commit'] = 'c' * 40
+    elif change == 'missing_binding':
+        stage.pop('coverage_reconciliation')
+    elif change == 'wrong_profile_schema':
+        stage['profile_coverage']['version'] = 'unverified'
+    elif change == 'wrong_stage':
+        stage['stage_id'] = 'six_month_roadmap'
+    elif change == 'prose_only':
+        stage['recommendation'] = stage.pop('profile_coverage')
+        stage['evidence'] = ['Add package.json, src/index.ts, and requirements.txt.']
+    else:
+        stage['profile_coverage']['sampled_paths'] = {'path': 'package.json'}
+        stage['profile_coverage']['complexity_excluded_paths'] = [None, {'path': 'src/core.py'}]
+    data['stage_summaries'] = [stage]
+    result = summary(data)
+    assert result['applicable_count'] == 2
+    assert result['applicability_unproven_count'] == 7
+    assert result['completed_count'] == 9
+
+
+def test_source_inventory_does_not_grant_missing_execution_credit():
+    data = good()
+    data['stage_summaries'] = [retained_source_stage()]
+    data['requested_scanner_records'][0].update(state='failed', completed=False, verified=False)
+    result = summary(data)
+    assert result['applicable_count'] == 9
+    assert result['completed_count'] == 8
+    assert result['status'] == 'partial'
+
+
+@pytest.mark.parametrize('field,value', [('run_id', 'another_run'), ('commit_sha', 'c' * 40)])
+def test_retained_source_paths_cannot_rebind_another_assessment(field, value):
+    data = good()
+    data['stage_summaries'] = [retained_source_stage()]
+    data['identity'][field] = value
+    result = summary(data)
+    assert result['status'] == 'unknown'
+    assert result['applicable_count'] == result['completed_count'] == 0
+
+
 @pytest.mark.parametrize('change', [
     {'raw_artifact_sha256': ''}, {'raw_artifact_retention_complete': False},
     {'exact_commit_match': False}, {'commit_sha': 'c'*40}, {'timed_out': True},

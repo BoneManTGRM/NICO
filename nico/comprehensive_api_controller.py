@@ -21,6 +21,7 @@ from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.decision_grade_accepted_edition_guard_v1 import validate_accepted_edition
 
 VERSION = "nico.comprehensive_api_controller.v8"
+SECTION_ASSURANCE_POLICY = "retained-section-assurance-v1"
 MAX_PROJECTED_STRING_CHARS = 1_200
 MAX_PROJECTED_LIST_ITEMS = 24
 MAX_PROJECTED_OBJECT_ITEMS = 24
@@ -979,6 +980,10 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
                 "presented_score",
                 "status",
                 "presented_status",
+                "assurance_status",
+                "assurance_label",
+                "source_assurance_status",
+                "risk_disposition",
                 "summary",
                 "evidence",
                 "findings",
@@ -1315,6 +1320,7 @@ class ComprehensiveApiController:
             "record": projected_record,
             "response_projection": {
                 "version": VERSION,
+                "section_assurance_policy": SECTION_ASSURANCE_POLICY,
                 "bounded": True,
                 "terminal_report_attached": terminal_report_available
                 and not browser_projection,
