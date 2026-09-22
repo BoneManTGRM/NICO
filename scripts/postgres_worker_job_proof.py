@@ -170,7 +170,7 @@ def run_proof(database_url: str) -> dict:
     dispatch_initial = jobs.enqueue(dispatch_identity, limits)
     with ThreadPoolExecutor(max_workers=8) as pool:
         reservations = list(pool.map(lambda _: WorkerJobs(adapter).reserve_dispatch(
-            dispatch_identity, 'BoneManTGRM/NICO'), range(8)))
+            dispatch_identity, 'BoneManTGRM/NICO', authentication_mode='server_token'), range(8)))
     reservations = [value for value in reservations if value is not None]
     assert len(reservations) == 1
     reservation = reservations[0]
@@ -180,6 +180,7 @@ def run_proof(database_url: str) -> dict:
     for field in ('status', 'lease_id', 'worker_id', 'attempts'):
         assert dispatch_result[field] == dispatch_claim[field]
     assert dispatch_result['deadline_epoch'] == dispatch_initial['deadline_epoch']
+    assert dispatch_result['dispatch']['authentication_mode'] == 'server_token'
     assert jobs.finish_dispatch(dispatch_identity, reservation, 'accepted', run_id=123456) == dispatch_result
     try:
         jobs.finish_dispatch(dispatch_identity, reservation, 'unknown')

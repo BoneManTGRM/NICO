@@ -188,13 +188,14 @@ class WorkerJobs:
                                        "WHERE scan_id=%s", (scan["status"], self.adapter._jsonb(scan), identity.scan_id))
             return result
 
-    def reserve_dispatch(self, identity: JobIdentity, repository: str) -> str | None:
+    def reserve_dispatch(self, identity: JobIdentity, repository: str, *, authentication_mode=None) -> str | None:
         """Commit one launch reservation before any external submission.
 
         A crashed pending reservation is ambiguous, never permission to resend.
         Explicit operator recovery must reconcile the provider run first.
         """
-        if not isinstance(repository, str) or not re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', repository):
+        if (not isinstance(repository, str) or not re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', repository)
+                or authentication_mode not in {None, 'github_app_installation', 'server_token', 'unavailable'}):
             raise ValueError('worker_dispatch_repository_invalid')
 
         def operation(payload, now, _connection):
@@ -203,7 +204,8 @@ class WorkerJobs:
                 return None, False
             nonce = uuid4().hex
             payload['dispatch'] = {'nonce': nonce, 'repository': repository,
-                'state': 'pending', 'reserved_epoch': now, 'run_id': None}
+                'state': 'pending', 'reserved_epoch': now, 'run_id': None,
+                'authentication_mode': authentication_mode}
             return nonce, True
         return self._change(identity, operation)
 

@@ -26,22 +26,28 @@ backend validates its job revision, population, sizes and image binding, retains
 original receipt in PostgreSQL, and projects the attestation under worker provenance.
 Existing receipts without this member retain their prior bytes and semantics.
 
-The backend dispatcher requests an installation token restricted to the configured
-NICO repository ID and `actions:write`, using the existing GitHub App JWT signer.
-There is no PAT or operator-token fallback. A durable reservation precedes HTTP.
+The backend dispatcher uses configured GitHub App authentication when present,
+requesting an installation token restricted to the NICO repository and Actions write.
+When no App configuration exists, it can use the existing `NICO_GITHUB_TOKEN` after
+verifying the destination repository's numeric ID and name. The server-token mode
+does not downscope that token or prove Actions permission; GitHub must accept the
+fixed workflow/main/job-ID request. The chosen mode is retained before submission.
+No operator credential or ambient `GITHUB_TOKEN` is used. An App failure never falls
+back to another credential. A durable reservation precedes HTTP.
 `accepted` means GitHub accepted submission, not that execution completed. `unknown`
 and abandoned `pending` reservations require provider reconciliation; repeated intake
 never resubmits them automatically. A rejection is terminal for an unclaimed job.
 Late dispatch responses cannot replace an active lease or a completed receipt.
 
 Activation requires a qualified, available image and profile mapping, actual
-protected-main OIDC evidence on the serving release, and existing installation
-permission for Actions write on this repository. Required configuration is:
+protected-main OIDC evidence on the serving release, and existing dispatch permission
+on this repository. Do not grant new permissions merely because a credential is
+present. Required configuration is:
 
 | Location | Configuration |
 | --- | --- |
 | GitHub repository variables | `NICO_PRODUCTION_BACKEND_URL`, `NICO_ASSESSMENT_WORKER_IMAGE` as `ghcr.io/<owner>/<repo>/assessment-cppcheck@sha256:<manifest>` |
-| Backend | Existing `NICO_GITHUB_APP_ID`, `NICO_GITHUB_APP_PRIVATE_KEY`, `NICO_GITHUB_APP_INSTALLATION_ID`; `NICO_ASSESSMENT_WORKER_REPOSITORY_ID`; optional repository name override |
+| Backend | Existing App configuration or `NICO_GITHUB_TOKEN`; `NICO_ASSESSMENT_WORKER_REPOSITORY_ID`; optional repository name override |
 | Backend activation | `NICO_ASSESSMENT_WORKER_DISPATCH_ENABLED=1` only after qualification and release alignment |
 
 The implementation does not publish an image, install an App, grant new external
