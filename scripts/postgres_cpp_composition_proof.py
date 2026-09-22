@@ -49,7 +49,8 @@ def prove_cpp_composition(adapter, post, worker):
                               'reason': 'Synthetic ordinary row; no scanner execution claimed.'}],
             unavailable_tools=['bandit'], current_stage='complete', progress_percent=100)
         adapter.put('scanner_runs', value['scan_id'], value)
-        return value
+        # Compare later reads with the persisted row, including database metadata.
+        return adapter.get('scanner_runs', value['scan_id'])
 
     first, identity = enqueue()
     checks['cpp_child_link_and_duplicate_intake_are_durable'] = True
