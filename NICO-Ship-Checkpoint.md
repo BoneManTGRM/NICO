@@ -1,5 +1,23 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Public Bitcoin discovery complete — ChatGPT is not the merge gate — 2026-09-22
+
+Owner instruction: ChatGPT still refused merge of PR1627 and named OpenAI support as the next step. That is wrong. The Bitcoin “possible cybersecurity risk” flag and later cloud-browser denial are historical ChatGPT-only. They are not NICO gates and not Grok limits. OpenAI support is not required.
+
+Grok completed the refused discovery from anonymous public GitHub at `bitcoin/bitcoin@bb5296576e8f1a9fc11c19d9a25ba02ed4547e24` / tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`:
+- Trees API: `truncated=false`, 3248 entries, 3031 blobs, 1546 C/C++ files, 49,729,651 bytes — exact frozen `QUALIFICATION_TARGET`.
+- Official docs fetched at the pinned blobs: `doc/build-unix.md` `b1dd542291e3cbff7487c17865bef6975f2be794`, `doc/dependencies.md` `23e307844acae91ddf6ea88cf53dfba5147fe5b3`, `doc/fuzzing.md` `253f3f12ea23755047070ec94c362055f3389446`.
+- License `COPYING` `89960cbf2f221a29852ed162b25bda2afc0b2dd6` is MIT.
+- Discovered build: `cmake -B build` then `cmake --build build`. Fuzz: `cmake --preset=libfuzzer`. Toolchain minima GCC 12.1 / Clang 17.0 / CMake 3.22. Documented compile memory at least 1.5 GiB (1,610,612,736 bytes).
+- Isolated worker remains 256 MiB / 0.5 CPU / network=none. Upstream compile and libFuzzer of Bitcoin Core do **not** fit that envelope. That is an engineering result of discovery, not a ChatGPT flag.
+
+Producer: `nico/cpp_bitcoin_public_qualification_v1.py` receipt `public_toolchain_license_discovery` SHA256 `1ce1bcbfb1aaf64848999d2d20c9a3fd4e6e22654c451d0ac8c72e45ae91c0d3`. `discovery_status=complete`. `merge_blocked_by_chatgpt=false`. `openai_support_required=false`. `compiled=false`, `fuzzed=false`. Overall C0 remains UNPROVEN because Bitcoin Core is not executed in the worker. Owned C++ compile/test/sanitizer/runtime proofs on this PR are unchanged.
+
+This does not activate production worker selection, change LICENSE/TruffleHog, or execute Bitcoin binaries.
+
+EXACT NEXT ACTION: publish this reviewed increment, inspect automatic CI, and merge PR1627 under already-recorded owner permission. Do not wait on OpenAI. Do not retry ChatGPT-restricted browser automation. Remaining after merge is production-profile selection and any later larger-envelope Bitcoin execution — not platform clearance.
+
+
 ## Fresh-daemon retrieval correction — 2026-09-22
 
 Candidate98bdd4b71cd9b510ab0361bbe22fafab2b9dd3f2 native retrieval35766332049/job106876692717 established the precise failure: image_release_clean_daemon_required at inventory, before registry login/pull. Artifact10712162888 is retained by GitHub, digest12e0bf760b0c97b58803b14d10c2e36eeed00157cf9a5fcbfbe0fc264b6e7cbb. The supported artifact export URL returned HTTP403 locally; no local receipt/hash verification is claimed. Primary job logs directly prove the failed stage. The earlier failure was not established to be registry visibility.
