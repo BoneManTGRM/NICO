@@ -3,6 +3,7 @@ import hashlib
 import json
 import pickle
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -213,7 +214,24 @@ def test_source_substitution_and_partial_population_are_never_published(tmp_path
     assert not (tmp_path / 'source').exists()
     assert not list(tmp_path.glob('.nico-source-*'))
     if change not in {'digest', 'blob', 'lfs'}:
-        assert not any('raw.githubusercontent.com' in url for url in requested)
+        assert all(urlsplit(url).scheme == 'https' and urlsplit(url).netloc == 'api.github.com'
+                   for url in requested)
+
+
+@pytest.mark.parametrize('url', [
+    'https://untrusted.invalid/raw.githubusercontent.com/file',
+    'https://raw.githubusercontent.com.untrusted.invalid/file',
+    'https://raw.githubusercontent.com@untrusted.invalid/file',
+    'http://raw.githubusercontent.com/owned/control/file',
+])
+def test_source_host_lookalikes_are_rejected_before_a_download_starts(monkeypatch, tmp_path, url):
+    from nico import assessment_worker_source as source
+    import time
+    monkeypatch.setattr(source.multiprocessing, 'get_context', lambda *_: pytest.fail('download process reached'))
+    with pytest.raises(ValueError, match='worker_source_request_invalid'):
+        source.download_public(url, tmp_path / 'blob', limit=64,
+            checkpoint=lambda: pytest.fail('checkpoint reached'), deadline=time.monotonic() + 5)
+    assert not (tmp_path / 'blob').exists()
 
 
 def blocked_download(url, destination, limit):
