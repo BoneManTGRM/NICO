@@ -170,3 +170,11 @@ def test_late_ordinary_write_cannot_replace_durable_operator_close(monkeypatch):
     current = store.get('scanner_runs', parent['scan_id'])
     assert current['status'] == 'cancelled'
     assert current['recovery']['state'] == 'closed_by_operator'
+
+
+def test_resumed_parent_preserves_anonymous_acquisition_mode():
+    from nico.snapshot_scanner_resilience_patch import _snapshot_resume_payload
+    parent, _, _ = population(parent_status='recovery_required', child_status='running')
+    payload = _snapshot_resume_payload(parent)
+    assert payload['provider_access_mode'] == 'anonymous_public'
+    assert payload['provider_credential_used'] is False

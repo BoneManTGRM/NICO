@@ -134,6 +134,8 @@ def prove_cpp_composition(adapter, post, worker):
     result = _resume_snapshot_scanner_run(resumed['scan_id'], actor='synthetic-operator', store=STORE,
         thread_factory=lambda **kwargs: SimpleNamespace(start=lambda: launches.append(kwargs)))
     assert result['status'] == 'queued' and len(launches) == 1
+    assert launches[0]['args'][1]['provider_access_mode'] == 'anonymous_public'
+    assert launches[0]['args'][1]['provider_credential_used'] is False
     stale = {**deepcopy(resumed), 'status': 'complete'}
     assert snapshot_scanner_worker._persist_snapshot_scan(stale, STORE) is False
     new_generation = launches[0]['kwargs']['execution_record']

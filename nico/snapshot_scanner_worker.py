@@ -107,9 +107,8 @@ def clone_repository_at_snapshot(
     return repo_path, actual_sha, []
 
 
-def _requested_specs(payload: dict[str, Any]) -> list[tool_runners.ScannerToolSpec]:
+def _requested_tool_names(payload: dict[str, Any]) -> list[str]:
     requested = [str(item or "").strip().lower() for item in payload.get("tools") or [] if str(item or "").strip()]
-    by_name = {spec.name: spec for spec in tool_runners.TOOL_SPECS}
     names = requested or [
         "pip-audit",
         "npm-audit",
@@ -121,6 +120,12 @@ def _requested_specs(payload: dict[str, Any]) -> list[tool_runners.ScannerToolSp
         "gitleaks",
         "trufflehog",
     ]
+    return list(dict.fromkeys(names))
+
+
+def _requested_specs(payload: dict[str, Any]) -> list[tool_runners.ScannerToolSpec]:
+    by_name = {spec.name: spec for spec in tool_runners.TOOL_SPECS}
+    names = _requested_tool_names(payload)
     return [by_name[name] for name in names if name in by_name]
 
 
@@ -294,6 +299,7 @@ def _persist_snapshot_scan(record: dict[str, Any], store=None) -> bool:
 
 def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_record=None) -> None:
     job = deepcopy(execution_record if execution_record is not None else base.SCAN_JOBS[scan_id])
+    job.setdefault('scan_id', scan_id)
     customer_id = payload.get("customer_id") or "default_customer"
     project_id = payload.get("project_id") or "default_project"
     job["status"] = "running"
@@ -310,6 +316,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
     execution_limit: dict[str, Any] = {}
     actual_commit_sha = ""
     specs = _requested_specs(payload)
+    requested_names = _requested_tool_names(payload)
     started = time.monotonic()
 
     with tempfile.TemporaryDirectory(prefix="nico-snapshot-scan-") as workspace_name:
@@ -397,6 +404,16 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
         except Exception as exc:  # pragma: no cover - defensive worker boundary
             unavailable_notes.append(f"Snapshot-bound worker failed safely: {type(exc).__name__}")
 
+    supported_names = {spec.name for spec in specs}
+    for name in requested_names:
+        if name not in supported_names:
+            results.append({'tool': name, 'scanner_name': name, 'status': 'unavailable',
+                'execution_state': 'unavailable', 'applicability_state': 'unproven',
+                'completed': False, 'verified_complete': False, 'verified_for_this_report': False,
+                'execution_observed_for_this_report': False, 'findings': [],
+                'raw_artifact_retention_complete': False,
+                'reason': 'This requested tool is not supported by the snapshot scanner runner.',
+                'human_review_required': True, 'client_delivery_allowed': False})
     unavailable = [_tool_name(item) for item in results if item.get("status") == "unavailable"]
     failed = [_tool_name(item) for item in results if item.get("status") in {"failed", "error"}]
     timed_out = [_tool_name(item) for item in results if item.get("status") == "timeout"]
@@ -422,7 +439,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
             "snapshot_commit_sha": payload.get("snapshot_commit_sha") or "",
             "actual_commit_sha": actual_commit_sha,
             "snapshot_match": snapshot_match,
-            "tools_requested": [spec.name for spec in specs],
+            "tools_requested": requested_names,
             "tools_run": completed,
             "unavailable_tools": unavailable,
             "failed_tools": failed,
@@ -444,7 +461,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
                 "snapshot_match": snapshot_match,
                 "repo_size_bytes": repo_size,
                 "execution_limit": dict(execution_limit),
-                "tools_requested": len(specs),
+                "tools_requested": len(requested_names),
                 "tools_run": len(completed),
                 "unavailable_tools": len(unavailable),
                 "failed_tools": len(failed),
@@ -528,7 +545,6 @@ def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None
         or payload.get("provider_credential_used") is not False
     ):
         return {"status": "blocked", "error": "The worker profile requires explicit anonymous source access."}
-    specs = _requested_specs(payload)
     scan_id = f"scan_snapshot_{uuid4().hex[:16]}"
     job = {
         "scan_id": scan_id,
@@ -555,7 +571,7 @@ def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None
         "authorization_scope": payload.get("authorization_scope"),
         "code_modification_allowed": False,
         "draft_pr_creation_allowed": False,
-        "tools_requested": [spec.name for spec in specs],
+        "tools_requested": _requested_tool_names(payload),
         "tools_run": [],
         "unavailable_tools": [],
         "failed_tools": [],

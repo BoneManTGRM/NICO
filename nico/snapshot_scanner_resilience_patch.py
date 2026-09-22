@@ -97,6 +97,7 @@ def _snapshot_resume_payload(record: dict[str, Any]) -> dict[str, Any]:
         "tools": [str(item) for item in (record.get("tools_requested") or [])[:40]],
         "snapshot_id": str(record.get("snapshot_id") or ""),
         "snapshot_commit_sha": str(record.get("snapshot_commit_sha") or ""),
+        **{key: record[key] for key in ('provider_access_mode', 'provider_credential_used') if key in record},
         "draft_pr_creation_allowed": False,
     }
 

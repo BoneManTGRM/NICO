@@ -69,3 +69,31 @@ def test_ordinary_snapshot_worker_still_reaches_existing_acquisition(monkeypatch
         'provider_credential_used': True})
     assert observed == ['a'*40]
     assert scanner_worker.SCAN_JOBS['owned-legacy']['status'] != 'running'
+
+
+def test_snapshot_preserves_unavailable_requested_tools_from_queue_to_completion(monkeypatch):
+    from types import SimpleNamespace
+    from nico import snapshot_scanner_worker as snapshot
+    from nico.assessment_required_tools import REQUIRED_EXACT_SNAPSHOT_TOOLS
+    from nico.storage import STORE
+    monkeypatch.setattr(STORE, 'adapter', MemoryAdapter())
+    monkeypatch.setattr(scanner_worker, 'SCAN_JOBS', {})
+    launched = []
+    monkeypatch.setattr(snapshot.threading, 'Thread', lambda **kwargs: SimpleNamespace(start=lambda: launched.append(kwargs)))
+    plan = {'authorized': True, 'authorized_by': 'owned_fixture',
+        'authorization_scope': 'synthetic no-execution fixture', 'repository': 'example/owned-control',
+        'snapshot_id': 'fixture', 'snapshot_commit_sha': 'a' * 40,
+        'provider_access_mode': 'anonymous_public', 'provider_credential_used': False,
+        'tools': list(REQUIRED_EXACT_SNAPSHOT_TOOLS)}
+    queued = snapshot.start_snapshot_scan(plan)
+    assert queued['tools_requested'] == list(REQUIRED_EXACT_SNAPSHOT_TOOLS)
+    monkeypatch.setattr(snapshot, 'clone_repository_at_snapshot', lambda *_args: (None, '', ['No remote execution.']))
+    launched[0]['target'](*launched[0]['args'])
+    finished = STORE.get('scanner_runs', queued['scan_id'])
+    assert finished['tools_requested'] == queued['tools_requested']
+    records = {row['tool']: row for row in finished['scanner_results']}
+    for name in ('nico-secrets', 'nico-static'):
+        assert name in finished['unavailable_tools'] and name not in finished['tools_run']
+        assert records[name]['execution_state'] == 'unavailable'
+        assert records[name]['verified_complete'] is False
+        assert records[name]['applicability_state'] == 'unproven'
