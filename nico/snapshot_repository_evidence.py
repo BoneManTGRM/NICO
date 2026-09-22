@@ -3,8 +3,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+import re
+import selectors
+import signal
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -34,6 +39,192 @@ DEPENDENCY_MANIFEST_NAMES = {
 LOCKFILE_NAMES = {"Pipfile.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
 DEPLOYMENT_NAMES = {"Dockerfile", "Procfile", "render.yaml", "railway.json", "railway.toml", "fly.toml", "vercel.json"}
 WORKFLOW_COMMANDS = ["pytest", "npm test", "npm run lint", "npm run build", "next build", "eslint", "mypy", "ruff", "semgrep", "bandit"]
+
+
+def _bounded_git_bytes(git_dir, environment, arguments, *, limit, deadline, data=None):
+    """Read trusted Git output with a byte ceiling and one aggregate deadline."""
+    if time.monotonic() >= deadline:
+        raise ValueError("input_acquisition_timed_out")
+    process = subprocess.Popen(
+        ["git", "--no-replace-objects", "--no-lazy-fetch", *arguments], cwd=str(git_dir),
+        env=environment, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
+        shell=False, bufsize=0,
+    )
+    result = bytearray()
+    pending = memoryview(data or b"")
+    try:
+        with selectors.DefaultSelector() as ready:
+            os.set_blocking(process.stdout.fileno(), False)
+            ready.register(process.stdout, selectors.EVENT_READ)
+            if process.stdin is not None:
+                if pending:
+                    os.set_blocking(process.stdin.fileno(), False)
+                    ready.register(process.stdin, selectors.EVENT_WRITE)
+                else:
+                    process.stdin.close()
+            while ready.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError("input_acquisition_timed_out")
+                for key, _ in ready.select(min(remaining, 0.1)):
+                    if key.fileobj is process.stdout:
+                        chunk = os.read(key.fd, min(65536, limit - len(result) + 1))
+                        if not chunk:
+                            ready.unregister(key.fileobj)
+                        else:
+                            result.extend(chunk)
+                            if len(result) > limit:
+                                raise ValueError("input_output_budget_exceeded")
+                    else:
+                        try:
+                            count = os.write(key.fd, pending[:65536])
+                        except BrokenPipeError:
+                            count = len(pending)
+                        pending = pending[count:]
+                        if not pending:
+                            ready.unregister(key.fileobj)
+                            process.stdin.close()
+            if process.wait(timeout=max(0.001, deadline - time.monotonic())) != 0:
+                raise ValueError("input_git_read_failed")
+        return bytes(result)
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("input_acquisition_timed_out") from exc
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=5)
+        process.stdout.close()
+        if process.stdin is not None:
+            process.stdin.close()
+
+
+def materialize_exact_git_inputs(
+    *, git_dir: Path, commit_sha: str,
+    expected_tree_sha: str, inputs: dict[str, str], destination: Path,
+    max_files: int, max_file_bytes: int, max_total_bytes: int, timeout_seconds: int,
+) -> dict[str, Any]:
+    """Materialize required raw blobs from an acquired Git store, without checkout.
+
+    The caller owns the private destination parent and authorizes acquisition
+    separately. This does not fetch, execute source, follow links or grant run
+    authority. The input population is not an analyzed-target denominator.
+    Existing report-text profiling remains a separate projection of Git bytes.
+    """
+    from pathlib import PurePosixPath
+    import io
+
+    if (not isinstance(commit_sha, str) or not snapshot_capture._EXACT_SHA_RE.fullmatch(commit_sha)
+            or not isinstance(expected_tree_sha, str)
+            or not snapshot_capture._EXACT_SHA_RE.fullmatch(expected_tree_sha)):
+        raise ValueError("input_revision_or_tree_invalid")
+    ceilings = ((max_files, 20000), (max_file_bytes, 16 * 1024 * 1024),
+                (max_total_bytes, 150_000_000), (timeout_seconds, 300))
+    if any(type(value) is not int or not 1 <= value <= maximum for value, maximum in ceilings):
+        raise ValueError("input_budget_invalid")
+    if not isinstance(inputs, dict) or not inputs or len(inputs) > max_files:
+        raise ValueError("input_budget_exceeded")
+    inputs = dict(inputs)
+    for path, digest in inputs.items():
+        if (not isinstance(path, str) or not path or len(path) > 1000
+                or path.startswith("/") or ":" in path or "\\" in path
+                or any(ord(char) < 32 or ord(char) == 127 for char in path)
+                or PurePosixPath(path).as_posix() != path
+                or any(part in {".", "..", ".git"} for part in path.split("/"))
+                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+            raise ValueError("input_path_or_digest_invalid")
+    destination = Path(destination)
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("input_destination_exists")
+    parent = destination.parent.resolve(strict=True)
+    owner = parent.stat()
+    if owner.st_uid != os.getuid() or owner.st_mode & 0o022:
+        raise ValueError("input_destination_parent_not_private")
+    deadline = time.monotonic() + timeout_seconds
+    environment = snapshot_capture._git_environment(parent)
+    # This stage reads the already acquired object database only. Missing Git
+    # objects must fail rather than silently invoking transport during handoff.
+    environment["GIT_NO_LAZY_FETCH"] = "1"
+
+    def git(*arguments, limit, data=None):
+        return _bounded_git_bytes(git_dir, environment, arguments, limit=limit,
+                                  deadline=deadline, data=data)
+
+    identity = git("show", "-s", "--format=%H%x00%T", commit_sha, limit=200).strip().split(b"\0")
+    if identity != [commit_sha.lower().encode(), expected_tree_sha.lower().encode()]:
+        raise ValueError("input_revision_or_tree_mismatch")
+    listing = git("ls-tree", "-r", "-z", "-l", commit_sha, limit=8 * 1024 * 1024)
+    if not listing.endswith(b"\0"):
+        raise ValueError("input_tree_listing_incomplete")
+    entries = {}
+    for row in listing.split(b"\0")[:-1]:
+        try:
+            metadata, raw_path = row.split(b"\t", 1)
+            mode, kind, oid, size = metadata.split()
+            path = raw_path.decode("utf-8", errors="strict")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError("input_tree_listing_invalid") from exc
+        if path in entries or not re.fullmatch(b"[0-9a-f]{40}", oid):
+            raise ValueError("input_tree_listing_invalid")
+        entries[path] = (mode, kind, oid, size)
+    selected = []
+    total = 0
+    for path in sorted(inputs):
+        if path not in entries:
+            raise ValueError("input_required_path_missing")
+        mode, kind, oid, size = entries[path]
+        if mode not in {b"100644", b"100755"} or kind != b"blob":
+            raise ValueError("input_type_unsupported")
+        if not size.isdigit():
+            raise ValueError("input_blob_size_invalid")
+        size = int(size)
+        total += size
+        if size > max_file_bytes or total > max_total_bytes:
+            raise ValueError("input_budget_exceeded")
+        selected.append((path, oid, size))
+    raw = git("cat-file", "--batch", limit=total + len(selected) * 128,
+              data=b"\n".join(oid for _, oid, _ in selected) + b"\n")
+    stream = io.BytesIO(raw)
+    with tempfile.TemporaryDirectory(prefix=".nico-inputs-", dir=parent) as temporary:
+        stage = Path(temporary) / "inputs"
+        stage.mkdir(mode=0o700)
+        for path, oid, size in selected:
+            if stream.readline() != oid + b" blob " + str(size).encode() + b"\n":
+                raise ValueError("input_blob_header_mismatch")
+            content = stream.read(size)
+            if len(content) != size or stream.read(1) != b"\n":
+                raise ValueError("input_blob_truncated")
+            actual_object = hashlib.sha1(b"blob " + str(size).encode() + b"\0" + content).hexdigest()
+            if actual_object.encode() != oid or hashlib.sha256(content).hexdigest() != inputs[path]:
+                raise ValueError("input_digest_mismatch")
+            if content.startswith(b"version https://git-lfs.github.com/spec/v1"):
+                raise ValueError("input_type_unsupported")
+            output = stage / path
+            output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with output.open("xb") as handle:
+                handle.write(content)
+            output.chmod(0o444)
+        if stream.read(1):
+            raise ValueError("input_blob_population_mismatch")
+        if time.monotonic() >= deadline:
+            raise ValueError("input_acquisition_timed_out")
+        try:
+            destination.mkdir(mode=0o700)  # exclusive reservation; never reuse caller data
+        except FileExistsError as exc:
+            raise ValueError("input_destination_exists") from exc
+        try:
+            os.replace(stage, destination)
+        except BaseException:
+            destination.rmdir()
+            raise
+    membership = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()
+    return {"schema": "nico.exact_git_input_materialization.v1",
+        "commit_sha": commit_sha.lower(), "tree_sha": expected_tree_sha.lower(),
+        "inputs": inputs, "population_sha256": hashlib.sha256(membership).hexdigest(),
+        "required_count": len(inputs), "materialized_count": len(inputs), "source_bytes": total,
+        "analyzed_count": None, "authorized": False, "assessed_code_executed": False}
 
 
 def _store(store: StorageAdapter | None = None) -> StorageAdapter:

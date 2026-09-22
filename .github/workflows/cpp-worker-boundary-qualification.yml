@@ -6,10 +6,18 @@ on:
     paths:
       - scripts/qualify_cpp_worker_container.py
       - .github/workflows/cpp-worker-boundary-qualification.yml
+      - nico/assessment_worker_container.py
+      - nico/snapshot_repository_evidence.py
+      - scripts/qualify_cppcheck_worker_control.py
+      - docker/assessment-cppcheck.Dockerfile
   pull_request:
     paths:
       - scripts/qualify_cpp_worker_container.py
       - .github/workflows/cpp-worker-boundary-qualification.yml
+      - nico/assessment_worker_container.py
+      - nico/snapshot_repository_evidence.py
+      - scripts/qualify_cppcheck_worker_control.py
+      - docker/assessment-cppcheck.Dockerfile
   workflow_dispatch:
 
 permissions:
@@ -35,5 +43,55 @@ jobs:
         with:
           name: cpp-worker-boundary-${{ github.sha }}-${{ github.run_id }}
           path: cpp-worker-boundary-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  native-static-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Acquire exact official analyzer source without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cppcheck-opensource/cppcheck
+          ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
+          path: toolchain/cppcheck
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install existing controller dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Build trusted pinned analyzer and retain native tool identity
+        run: |
+          set -euo pipefail
+          test "$(git -C toolchain/cppcheck rev-parse HEAD)" = ac9db3069b9f90e81e126a090b99ad456e122cf8
+          g++ --version > cppcheck-build-toolchain.txt
+          /usr/bin/time -v -o cppcheck-build-resources.txt timeout 180s make -C toolchain/cppcheck -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG'
+          mkdir -p toolchain/image
+          cp toolchain/cppcheck/cppcheck toolchain/cppcheck/COPYING toolchain/image/
+          cp -R toolchain/cppcheck/cfg toolchain/cppcheck/platforms toolchain/image/
+          cp "$(g++ -print-file-name=libstdc++.so.6)" toolchain/image/libstdc++.so.6
+          cp "$(gcc -print-file-name=libgcc_s.so.1)" toolchain/image/libgcc_s.so.1
+          sha256sum toolchain/image/cppcheck toolchain/image/libstdc++.so.6 toolchain/image/libgcc_s.so.1 > cppcheck-tool-bytes.sha256
+          docker build --network=none --iidfile cppcheck-image-id.txt -f docker/assessment-cppcheck.Dockerfile toolchain/image
+          docker image inspect "$(cat cppcheck-image-id.txt)" > cppcheck-image-metadata.json
+      - name: Execute actual owned clean and diagnostic sources inside isolated image
+        run: python -m scripts.qualify_cppcheck_worker_control --image "$(cat cppcheck-image-id.txt)"
+      - name: Retain native control and resource evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cppcheck-native-control-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            cppcheck-worker-control.json
+            cppcheck-build-toolchain.txt
+            cppcheck-build-resources.txt
+            cppcheck-tool-bytes.sha256
+            cppcheck-image-id.txt
+            cppcheck-image-metadata.json
           if-no-files-found: error
           retention-days: 30
