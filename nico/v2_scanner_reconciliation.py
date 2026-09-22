@@ -7,7 +7,7 @@ from typing import Any, Iterable, Mapping
 
 KNOWN_SCANNERS = {
     "bandit", "eslint", "gitleaks", "trufflehog", "semgrep", "typescript",
-    "npm-audit", "pip-audit", "osv-scanner",
+    "npm-audit", "pip-audit", "osv-scanner", "cppcheck",
 }
 FINDINGS_EXIT_SCANNERS = {"bandit", "eslint", "gitleaks"}
 
@@ -24,6 +24,7 @@ SCANNER_PROVENANCE_FIELDS = (
     "applicable", "evidence_required", "applicability_reason",
     "applicability_evidence", "native_json_output", "no_vulnerabilities_claimed",
     "scanner_tool_version", "coverage_scope",
+    "worker_provenance", "cppcheck_source_coverage", "cpp_build_evidence",
 )
 
 

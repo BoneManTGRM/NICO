@@ -8,7 +8,8 @@ from collections import Counter, defaultdict
 from statistics import mean, median
 from typing import Any
 
-SOURCE_SUFFIXES = (".py", ".js", ".jsx", ".ts", ".tsx")
+CPP_SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx")
+SOURCE_SUFFIXES = (".py", ".js", ".jsx", ".ts", ".tsx", *CPP_SOURCE_SUFFIXES)
 TEST_PATH_MARKERS = ("/test/", "/tests/", "test_", "_test.", ".test.", ".spec.")
 MIN_DUPLICATE_WINDOW = 6
 MAX_DUPLICATE_SAMPLES = 20
@@ -385,6 +386,27 @@ def _duplicate_evidence(files: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def _analyze_cpp(path: str, text: str) -> dict[str, Any]:
+    """Measure source tokens/functions; never claim compilation or security proof."""
+    try:
+        import lizard
+        measured = lizard.analyze_file.analyze_source_code(path, text)
+    except (ImportError, ValueError, RecursionError) as exc:
+        return {"status": "parse_failed", "path": path,
+                "note": f"{path}: C/C++ token analysis unavailable ({type(exc).__name__}); no measurement inferred."}
+    includes = re.findall(r'^\s*#\s*include\s*[<\"]([^>\"]+)[>\"]', text, re.MULTILINE)
+    local_includes = re.findall(r'^\s*#\s*include\s*\"([^\"]+)\"', text, re.MULTILINE)
+    return {"status": "analyzed", "path": path, "language": "c-cpp",
+            "method": "lizard_token_function_analysis", "source_loc": measured.nloc,
+            "imports": sorted(set(includes)), "internal_imports": sorted(set(local_includes)),
+            "fan_out": len(set(includes)), "internal_fan_out": len(set(local_includes)),
+            "functions": [{"path": path, "name": item.name, "line": item.start_line,
+                "end_line": item.end_line, "loc": item.nloc, "span_loc": item.end_line - item.start_line + 1,
+                "loc_method": "lizard_non_comment_token_lines", "cyclomatic_complexity": item.cyclomatic_complexity,
+                "grade": _grade(item.cyclomatic_complexity), "max_nesting": None,
+                "language": "c-cpp", "method": "lizard_token_function_analysis"} for item in measured.function_list]}
+
+
 def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
     """Measure bounded source complexity from the authorized repository sample."""
 
@@ -392,7 +414,10 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
     analyses: list[dict[str, Any]] = []
     parse_notes: list[str] = []
     for path, text in sorted(source_files.items()):
-        analysis = _analyze_python(path, text) if path.lower().endswith(".py") else _analyze_javascript(path, text)
+        if path.lower().endswith(CPP_SOURCE_SUFFIXES):
+            analysis = _analyze_cpp(path, text)
+        else:
+            analysis = _analyze_python(path, text) if path.lower().endswith(".py") else _analyze_javascript(path, text)
         if analysis.get("status") == "parse_failed":
             parse_notes.append(str(analysis.get("note") or f"Could not parse {path}."))
             continue
@@ -401,7 +426,7 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
     functions = [item for analysis in analyses for item in analysis.get("functions") or [] if isinstance(item, dict)]
     complexities = [int(item.get("cyclomatic_complexity") or 0) for item in functions]
     lengths = [int(item.get("loc") or 0) for item in functions]
-    nesting = [int(item.get("max_nesting") or 0) for item in functions]
+    nesting = [int(item["max_nesting"]) for item in functions if item.get("max_nesting") is not None]
     fan_outs = [int(analysis.get("fan_out") or 0) for analysis in analyses]
     internal_fan_outs = [int(analysis.get("internal_fan_out") or 0) for analysis in analyses]
     grades = Counter(str(item.get("grade") or "unknown") for item in functions)
@@ -432,6 +457,7 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
     duplicate = _duplicate_evidence(source_files)
     python_files = sum(1 for item in analyses if item.get("language") == "python")
     js_files = sum(1 for item in analyses if item.get("language") == "javascript-typescript")
+    cpp_files = sum(1 for item in analyses if item.get("language") == "c-cpp")
     total_loc = sum(int(item.get("source_loc") or 0) for item in analyses)
     high_complexity = sum(1 for value in complexities if value >= 11)
     very_high_complexity = sum(1 for value in complexities if value >= 21)
@@ -445,7 +471,9 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
             "JavaScript and TypeScript complexity uses a bounded lexical heuristic because a full parser artifact was not attached; those module-level values are lower-confidence than Python AST metrics."
         )
     if parse_notes:
-        unavailable.append(f"{len(parse_notes)} Python source file(s) could not be parsed and were excluded from complexity metrics.")
+        unavailable.append(f"{len(parse_notes)} source file(s) could not be analyzed and were excluded from complexity metrics.")
+    if cpp_files:
+        unavailable.append("C/C++ function complexity uses Lizard token analysis, not a compiler or security assessment. Include edges are textual; nesting, all preprocessing configurations and a successful build are not established.")
     if not source_files:
         unavailable.append("No eligible source files were present in the authorized repository text-file sample.")
 
@@ -458,7 +486,10 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
         "analyzed_source_paths": sorted(str(item["path"]) for item in analyses),
         "python_files_analyzed": python_files,
         "javascript_typescript_files_analyzed": js_files,
-        "python_parse_failures": len(parse_notes),
+        "cpp_files_analyzed": cpp_files,
+        "cpp_analysis_method": "lizard_token_function_analysis" if cpp_files else None,
+        "cpp_build_verified": False,
+        "python_parse_failures": sum(1 for path in source_files if path.lower().endswith('.py') and path not in {item['path'] for item in analyses}),
         "total_source_loc": total_loc,
         "functions_measured": len(functions),
         "average_cyclomatic_complexity": round(mean(complexities), 2) if complexities else None,
@@ -472,8 +503,9 @@ def collect_complexity_evidence(files: dict[str, str]) -> dict[str, Any]:
         "average_function_loc": round(mean(lengths), 2) if lengths else None,
         "median_function_loc": round(median(lengths), 2) if lengths else None,
         "long_functions": long_functions,
-        "deep_nesting_functions": deep_nesting,
+        "deep_nesting_functions": deep_nesting if nesting else None,
         "maximum_nesting": max(nesting) if nesting else None,
+        "nesting_measured_functions": len(nesting),
         "import_edges": sum(fan_outs),
         "internal_import_edges": sum(internal_fan_outs),
         "average_fan_out": round(mean(fan_outs), 2) if fan_outs else 0.0,

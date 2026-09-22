@@ -3,8 +3,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+import re
+import selectors
+import signal
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -12,7 +17,7 @@ from urllib.parse import quote
 
 from nico import repository_snapshot as snapshot_capture
 from nico.full_assessment_ci_evidence import collect_ci_runtime_evidence
-from nico.full_assessment_complexity_evidence import collect_complexity_evidence
+from nico.full_assessment_complexity_evidence import SOURCE_SUFFIXES, collect_complexity_evidence
 from nico.hosted_assessment import (
     KNOWN_FILE_PATHS,
     MAX_FILE_BYTES,
@@ -34,6 +39,206 @@ DEPENDENCY_MANIFEST_NAMES = {
 LOCKFILE_NAMES = {"Pipfile.lock", "poetry.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
 DEPLOYMENT_NAMES = {"Dockerfile", "Procfile", "render.yaml", "railway.json", "railway.toml", "fly.toml", "vercel.json"}
 WORKFLOW_COMMANDS = ["pytest", "npm test", "npm run lint", "npm run build", "next build", "eslint", "mypy", "ruff", "semgrep", "bandit"]
+
+
+def _bounded_git_bytes(git_dir, environment, arguments, *, limit, deadline, data=None, checkpoint=None):
+    """Read trusted Git output with a byte ceiling and one aggregate deadline."""
+    if checkpoint is not None:
+        checkpoint()
+    if time.monotonic() >= deadline:
+        raise ValueError("input_acquisition_timed_out")
+    process = subprocess.Popen(
+        ["git", "--no-replace-objects", "--no-lazy-fetch", *arguments], cwd=str(git_dir),
+        env=environment, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
+        shell=False, bufsize=0,
+    )
+    result = bytearray()
+    pending = memoryview(data or b"")
+    try:
+        with selectors.DefaultSelector() as ready:
+            os.set_blocking(process.stdout.fileno(), False)
+            ready.register(process.stdout, selectors.EVENT_READ)
+            if process.stdin is not None:
+                if pending:
+                    os.set_blocking(process.stdin.fileno(), False)
+                    ready.register(process.stdin, selectors.EVENT_WRITE)
+                else:
+                    process.stdin.close()
+            while ready.get_map():
+                if checkpoint is not None:
+                    checkpoint()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError("input_acquisition_timed_out")
+                for key, _ in ready.select(min(remaining, 0.1)):
+                    if key.fileobj is process.stdout:
+                        chunk = os.read(key.fd, min(65536, limit - len(result) + 1))
+                        if not chunk:
+                            ready.unregister(key.fileobj)
+                        else:
+                            result.extend(chunk)
+                            if len(result) > limit:
+                                raise ValueError("input_output_budget_exceeded")
+                    else:
+                        try:
+                            count = os.write(key.fd, pending[:65536])
+                        except BrokenPipeError:
+                            count = len(pending)
+                        pending = pending[count:]
+                        if not pending:
+                            ready.unregister(key.fileobj)
+                            process.stdin.close()
+            if process.wait(timeout=max(0.001, deadline - time.monotonic())) != 0:
+                raise ValueError("input_git_read_failed")
+        if checkpoint is not None:
+            checkpoint()
+        return bytes(result)
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("input_acquisition_timed_out") from exc
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=5)
+        process.stdout.close()
+        if process.stdin is not None:
+            process.stdin.close()
+
+
+def materialize_exact_git_inputs(
+    *, git_dir: Path, commit_sha: str,
+    expected_tree_sha: str, inputs: dict[str, str], destination: Path,
+    max_files: int, max_file_bytes: int, max_total_bytes: int, timeout_seconds: int,
+    checkpoint=None,
+) -> dict[str, Any]:
+    """Materialize required raw blobs from an acquired Git store, without checkout.
+
+    The caller owns the private destination parent and authorizes acquisition
+    separately. This does not fetch, execute source, follow links or grant run
+    authority. The input population is not an analyzed-target denominator.
+    Existing report-text profiling remains a separate projection of Git bytes.
+    """
+    from pathlib import PurePosixPath
+    import io
+
+    if (not isinstance(commit_sha, str) or not snapshot_capture._EXACT_SHA_RE.fullmatch(commit_sha)
+            or not isinstance(expected_tree_sha, str)
+            or not snapshot_capture._EXACT_SHA_RE.fullmatch(expected_tree_sha)):
+        raise ValueError("input_revision_or_tree_invalid")
+    ceilings = ((max_files, 20000), (max_file_bytes, 16 * 1024 * 1024),
+                (max_total_bytes, 150_000_000), (timeout_seconds, 300))
+    if any(type(value) is not int or not 1 <= value <= maximum for value, maximum in ceilings):
+        raise ValueError("input_budget_invalid")
+    if not isinstance(inputs, dict) or not inputs or len(inputs) > max_files:
+        raise ValueError("input_budget_exceeded")
+    inputs = dict(inputs)
+    for path, digest in inputs.items():
+        if (not isinstance(path, str) or not path or len(path) > 1000
+                or path.startswith("/") or ":" in path or "\\" in path
+                or any(ord(char) < 32 or ord(char) == 127 for char in path)
+                or PurePosixPath(path).as_posix() != path
+                or any(part in {".", "..", ".git"} for part in path.split("/"))
+                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+            raise ValueError("input_path_or_digest_invalid")
+    destination = Path(destination)
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("input_destination_exists")
+    parent = destination.parent.resolve(strict=True)
+    owner = parent.stat()
+    if owner.st_uid != os.getuid() or owner.st_mode & 0o022:
+        raise ValueError("input_destination_parent_not_private")
+    deadline = time.monotonic() + timeout_seconds
+    environment = snapshot_capture._git_environment(parent)
+    # This stage reads the already acquired object database only. Missing Git
+    # objects must fail rather than silently invoking transport during handoff.
+    environment["GIT_NO_LAZY_FETCH"] = "1"
+
+    def git(*arguments, limit, data=None):
+        return _bounded_git_bytes(git_dir, environment, arguments, limit=limit,
+                                  deadline=deadline, data=data, checkpoint=checkpoint)
+
+    identity = git("show", "-s", "--format=%H%x00%T", commit_sha, limit=200).strip().split(b"\0")
+    if identity != [commit_sha.lower().encode(), expected_tree_sha.lower().encode()]:
+        raise ValueError("input_revision_or_tree_mismatch")
+    listing = git("ls-tree", "-r", "-z", "-l", commit_sha, limit=8 * 1024 * 1024)
+    if not listing.endswith(b"\0"):
+        raise ValueError("input_tree_listing_incomplete")
+    entries = {}
+    for row in listing.split(b"\0")[:-1]:
+        try:
+            metadata, raw_path = row.split(b"\t", 1)
+            mode, kind, oid, size = metadata.split()
+            path = raw_path.decode("utf-8", errors="strict")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError("input_tree_listing_invalid") from exc
+        if path in entries or not re.fullmatch(b"[0-9a-f]{40}", oid):
+            raise ValueError("input_tree_listing_invalid")
+        entries[path] = (mode, kind, oid, size)
+    selected = []
+    total = 0
+    for path in sorted(inputs):
+        if path not in entries:
+            raise ValueError("input_required_path_missing")
+        mode, kind, oid, size = entries[path]
+        if mode not in {b"100644", b"100755"} or kind != b"blob":
+            raise ValueError("input_type_unsupported")
+        if not size.isdigit():
+            raise ValueError("input_blob_size_invalid")
+        size = int(size)
+        total += size
+        if size > max_file_bytes or total > max_total_bytes:
+            raise ValueError("input_budget_exceeded")
+        selected.append((path, oid, size))
+    raw = git("cat-file", "--batch", limit=total + len(selected) * 128,
+              data=b"\n".join(oid for _, oid, _ in selected) + b"\n")
+    stream = io.BytesIO(raw)
+    with tempfile.TemporaryDirectory(prefix=".nico-inputs-", dir=parent) as temporary:
+        stage = Path(temporary) / "inputs"
+        stage.mkdir(mode=0o700)
+        for path, oid, size in selected:
+            if checkpoint is not None:
+                checkpoint()
+            if stream.readline() != oid + b" blob " + str(size).encode() + b"\n":
+                raise ValueError("input_blob_header_mismatch")
+            content = stream.read(size)
+            if len(content) != size or stream.read(1) != b"\n":
+                raise ValueError("input_blob_truncated")
+            # Git's existing object format uses SHA1 for compatibility. The
+            # separately frozen SHA256 below remains the content security check.
+            actual_object = hashlib.sha1(b"blob " + str(size).encode() + b"\0" + content,
+                                         usedforsecurity=False).hexdigest()
+            if actual_object.encode() != oid or hashlib.sha256(content).hexdigest() != inputs[path]:
+                raise ValueError("input_digest_mismatch")
+            if content.startswith(b"version https://git-lfs.github.com/spec/v1"):
+                raise ValueError("input_type_unsupported")
+            output = stage / path
+            output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with output.open("xb") as handle:
+                handle.write(content)
+            output.chmod(0o444)
+        if stream.read(1):
+            raise ValueError("input_blob_population_mismatch")
+        if checkpoint is not None:
+            checkpoint()
+        if time.monotonic() >= deadline:
+            raise ValueError("input_acquisition_timed_out")
+        try:
+            destination.mkdir(mode=0o700)  # exclusive reservation; never reuse caller data
+        except FileExistsError as exc:
+            raise ValueError("input_destination_exists") from exc
+        try:
+            os.replace(stage, destination)
+        except BaseException:
+            destination.rmdir()
+            raise
+    membership = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()
+    return {"schema": "nico.exact_git_input_materialization.v1",
+        "commit_sha": commit_sha.lower(), "tree_sha": expected_tree_sha.lower(),
+        "inputs": inputs, "population_sha256": hashlib.sha256(membership).hexdigest(),
+        "required_count": len(inputs), "materialized_count": len(inputs), "source_bytes": total,
+        "analyzed_count": None, "authorized": False, "assessed_code_executed": False}
 
 
 def _store(store: StorageAdapter | None = None) -> StorageAdapter:
@@ -193,7 +398,7 @@ def _contents(client: Any, repository: str, path: str, ref: str) -> tuple[Any | 
     return _get_json(client, repository, suffix, {"ref": ref})
 
 
-def _text_file(client: Any, repository: str, path: str, ref: str) -> tuple[str | None, str | None]:
+def _raw_file(client: Any, repository: str, path: str, ref: str) -> tuple[bytes | None, str | None]:
     value, error = _contents(client, repository, path, ref)
     if error:
         return None, error
@@ -202,12 +407,17 @@ def _text_file(client: Any, repository: str, path: str, ref: str) -> tuple[str |
     if int(value.get("size") or 0) > MAX_FILE_BYTES:
         return None, f"{path} exceeds the hosted text-inspection limit."
     try:
-        raw = base64.b64decode(value.get("content") or "")
+        raw = base64.b64decode(''.join((value.get("content") or "").split()), validate=True)
         if len(raw) > MAX_FILE_BYTES:
             return None, f"{path} exceeds the hosted text-inspection limit."
-        return raw.decode("utf-8", errors="replace"), None
+        return raw, None
     except Exception:
         return None, f"{path} could not be decoded at the captured commit."
+
+
+def _text_file(client: Any, repository: str, path: str, ref: str) -> tuple[str | None, str | None]:
+    raw, error = _raw_file(client, repository, path, ref)
+    return (raw.decode('utf-8', errors='replace') if raw is not None else None), error
 
 
 def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -223,25 +433,77 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
     if root_error:
         unavailable.append(_safe_note("Captured-commit root listing", root_error))
 
-    blobs = [item for item in tree if isinstance(item, dict) and item.get("type") == "blob" and item.get("path")]
+    valid_entries = {}
+    invalid_paths: set[str] = set()
+    inventory_paths: set[str] = set()
+    seen: set[str] = set()
+    inventory_valid = True
+    for item in tree:
+        path = item.get("path") if isinstance(item, dict) else None
+        if (not isinstance(path, str) or not path or path.startswith("/")
+                or any(part in {"", ".", ".."} for part in path.split("/")) or "\x00" in path):
+            inventory_valid = False
+            continue
+        if item.get("type") != "tree":
+            inventory_paths.add(path)
+        kind, mode, object_id = item.get("type"), item.get("mode"), item.get("sha")
+        modes = {"blob": {"100644", "100755", "120000"}, "commit": {"160000"}, "tree": {"040000"}}
+        valid = (path not in seen and isinstance(kind, str) and isinstance(mode, str)
+                 and mode in modes.get(kind, set())
+                 and isinstance(object_id, str) and snapshot_capture._SHA_RE.fullmatch(object_id)
+                 and (kind != "blob" or (type(item.get("size")) is int and item["size"] >= 0)))
+        seen.add(path)
+        if not valid:
+            inventory_valid = False
+            invalid_paths.add(path)
+            valid_entries.pop(path, None)
+        elif path not in invalid_paths:
+            valid_entries[path] = item
+    blobs = [item for item in valid_entries.values() if item["type"] == "blob"]
+    submodules = [{"path": str(item["path"]), "commit_sha": item.get("sha")}
+                  for item in valid_entries.values() if item["type"] == "commit"]
+    symlink_paths = {str(item["path"]) for item in blobs if item.get("mode") == "120000"}
+    lfs_entries: list[dict[str, Any]] = []
     sizes = {str(item["path"]): int(item.get("size") or 0) for item in blobs}
+    from nico.full_source_archive_profile_v1 import _eligible
     candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
-    candidates.extend(path for path in sorted(sizes) if path not in candidates and should_fetch_path(path, sizes[path]))
+    candidates.extend(path for path in sorted(sizes) if path not in candidates
+                      and (should_fetch_path(path, sizes[path]) or (_eligible(path) and sizes[path] <= MAX_FILE_BYTES)))
     files: dict[str, str] = {}
-    unavailable_paths: list[str] = []
+    raw_records: dict[str, dict] = {}
+    from nico.snapshot_execution_inputs import raw_input_record, matches_tree
+    unavailable_paths: list[str] = sorted(invalid_paths | symlink_paths | {row["path"] for row in submodules})
+    from nico.full_source_archive_profile_v1 import lfs_pointer_entry
     for path in candidates[:MAX_TEXT_FILES]:
-        text, error = _text_file(client, repository, path, commit_sha)
-        if text is not None:
-            files[path] = text
+        if path in symlink_paths:
+            continue
+        raw, error = _raw_file(client, repository, path, commit_sha)
+        if raw is not None:
+            text = raw.decode('utf-8', errors='replace')
+            pointer = lfs_pointer_entry(path, text)
+            if pointer is not None:
+                lfs_entries.append(pointer)
+                unavailable_paths.append(path)
+            else:
+                files[path] = text
+                record = raw_input_record(raw)
+                if matches_tree(record, valid_entries[path]):
+                    raw_records[path] = record
         else:
             unavailable_paths.append(path)
             unavailable.append(_safe_note(f"Captured-commit file {path}", error))
     return {
         "files": files,
-        "tree_paths": list(sizes),
+        "raw_input_records": raw_records,
+        "raw_input_selected_paths": sorted(candidates[:MAX_TEXT_FILES]),
+        "raw_blob_inventory": valid_entries,
+        "tree_paths": sorted(inventory_paths),
         "root_items": root_items,
         "unavailable": sorted(set(unavailable)),
         "unavailable_paths": sorted(unavailable_paths),
+        "submodule_entries": submodules,
+        "symlink_paths_not_followed": sorted(symlink_paths),
+        "lfs_pointer_entries": lfs_entries,
         "size_excluded_paths": sorted(path for path, size in sizes.items() if size > MAX_FILE_BYTES),
         "tree_sha": (
             str(tree_value.get("sha") or "").strip().lower()
@@ -255,6 +517,7 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
         ),
         "tree_collection_succeeded": (
             tree_error is None
+            and inventory_valid
             and isinstance(tree_value, dict)
             and isinstance(tree_value.get("tree"), list)
         ),
@@ -301,8 +564,11 @@ def _public_git_profile(
                 return None, "public_git_exact_sha_fetch_failed"
             from nico import scanner_worker as scanner_base
 
-            if scanner_base.directory_size(git_dir) > scanner_base.MAX_REPO_BYTES:
-                return None, "public_git_repository_size_limit_exceeded"
+            history_observation = scanner_base.repository_size_observation(git_dir, bare=True)
+            if history_observation["exceeded_limits"]:
+                return None, "public_git_history_size_limit_exceeded"
+            if not history_observation["inventory_complete"]:
+                return None, "public_git_history_size_unverified"
 
             identity = subprocess.run(
                 ["git", "show", "-s", "--format=%H%x00%T", "FETCH_HEAD"],
@@ -341,6 +607,10 @@ def _public_git_profile(
                 return None, "public_git_tree_listing_failed"
 
             sizes: dict[str, int] = {}
+            blob_ids: dict[str, str] = {}
+            symlink_paths: set[str] = set()
+            submodules: list[dict[str, str]] = []
+            inventory_paths: set[str] = set()
             inventory_complete = True
             for raw_record in listing.stdout.split(b"\x00"):
                 if not raw_record:
@@ -353,16 +623,34 @@ def _public_git_profile(
                 if len(fields) != 4:
                     inventory_complete = False
                     continue
-                if fields[1] != b"blob":
-                    continue
                 try:
                     path = raw_path.decode("utf-8", errors="strict")
-                    size = int(fields[3])
+                    object_id = fields[2].decode("ascii")
                 except (UnicodeDecodeError, ValueError):
+                    inventory_complete = False
+                    continue
+                if not path or path in inventory_paths or not snapshot_capture._SHA_RE.fullmatch(object_id):
+                    inventory_complete = False
+                    continue
+                inventory_paths.add(path)
+                if fields[0] == b"160000" and fields[1] == b"commit":
+                    submodules.append({"path": path, "commit_sha": object_id})
+                    continue
+                if fields[1] != b"blob" or fields[0] not in {b"100644", b"100755", b"120000"}:
+                    inventory_complete = False
+                    continue
+                try:
+                    size = int(fields[3])
+                except ValueError:
                     inventory_complete = False
                     continue
                 if path and "\x00" not in path and size >= 0:
                     sizes[path] = size
+                    blob_ids[path] = object_id
+                    if fields[0] == b'120000':
+                        symlink_paths.add(path)
+                else:
+                    inventory_complete = False
 
             candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
             candidates.extend(
@@ -371,42 +659,83 @@ def _public_git_profile(
                 if path not in candidates and should_fetch_path(path, sizes[path])
             )
             files: dict[str, str] = {}
+            raw_records: dict[str, dict] = {}
+            from nico.snapshot_execution_inputs import raw_input_record
             unavailable: list[str] = []
             unavailable_paths: list[str] = []
-            for path in candidates[:MAX_TEXT_FILES]:
-                if sizes[path] > MAX_FILE_BYTES:
+            from nico import full_source_archive_profile_v1 as source_policy
+            lfs_entries: list[dict[str, Any]] = []
+            selected = {path for path in candidates[:MAX_TEXT_FILES]
+                        if sizes[path] <= MAX_FILE_BYTES and path not in symlink_paths}
+            source_paths: list[str] = []
+            source_bytes = 0
+            size_excluded: list[str] = []
+            limit_excluded: list[str] = []
+            for path in sorted(sizes):
+                if not source_policy._eligible(path) or path in symlink_paths:
                     continue
-                blob = subprocess.run(
-                    [
-                        "git",
-                        "--no-pager",
-                        "show",
-                        "--no-textconv",
-                        f"FETCH_HEAD:{path}",
-                    ],
-                    cwd=str(git_dir),
-                    capture_output=True,
-                    timeout=20,
-                    check=False,
-                    shell=False,
-                    env=environment,
-                )
-                if blob.returncode == 0 and len(blob.stdout) <= MAX_FILE_BYTES:
-                    files[path] = blob.stdout.decode("utf-8", errors="replace")
-                else:
-                    unavailable_paths.append(path)
-                    unavailable.append(
-                        f"Exact public Git snapshot file {path} could not be read."
-                    )
+                if sizes[path] > source_policy.MAX_SOURCE_FILE_BYTES:
+                    size_excluded.append(path)
+                    continue
+                if len(source_paths) >= source_policy.MAX_SOURCE_FILES or source_bytes + sizes[path] > source_policy.MAX_TOTAL_SOURCE_BYTES:
+                    limit_excluded.append(path)
+                    continue
+                source_paths.append(path)
+                source_bytes += sizes[path]
+            selected.update(source_paths)
+            ordered = sorted(selected)
+            if ordered:
+                # Object IDs from the verified tree avoid newline/path ambiguity
+                # and process-per-file overhead; requested byte sizes are bounded.
+                batch = subprocess.run(['git', 'cat-file', '--batch'], cwd=str(git_dir),
+                    input=('\n'.join(blob_ids[path] for path in ordered) + '\n').encode('ascii'),
+                    capture_output=True, timeout=90, check=False, shell=False, env=environment)
+                import io
+                stream = io.BytesIO(batch.stdout if batch.returncode == 0 else b'')
+                for path in ordered:
+                    header = stream.readline().split()
+                    if header != [blob_ids[path].encode('ascii'), b'blob', str(sizes[path]).encode('ascii')]:
+                        break
+                    content = stream.read(sizes[path])
+                    if len(content) != sizes[path] or stream.read(1) != b'\n':
+                        break
+                    text = content.decode('utf-8', errors='replace')
+                    pointer = source_policy.lfs_pointer_entry(path, text)
+                    if pointer is not None:
+                        lfs_entries.append(pointer)
+                    else:
+                        files[path] = text
+                        record = raw_input_record(content)
+                        if record['blob_sha'] == blob_ids[path]:
+                            raw_records[path] = record
+                unavailable_paths = sorted(selected - set(files))
+                unavailable = [f'Exact public Git snapshot file {path} could not be read.' for path in unavailable_paths]
 
-            paths = sorted(sizes)
+            unavailable_paths = sorted(set(unavailable_paths) | symlink_paths | {row["path"] for row in submodules})
+            paths = sorted(inventory_paths)
             return {
                 "files": files,
+                "raw_input_records": raw_records,
+                "raw_input_selected_paths": ordered,
                 "tree_paths": paths,
                 "root_items": sorted({path.split("/", 1)[0] for path in paths}),
                 "unavailable": unavailable,
                 "unavailable_paths": unavailable_paths,
-                "size_excluded_paths": sorted(path for path, size in sizes.items() if size > MAX_FILE_BYTES),
+                "submodule_entries": submodules,
+                "symlink_paths_not_followed": sorted(symlink_paths),
+                "lfs_pointer_entries": lfs_entries,
+                "git_history_observation": history_observation,
+                "size_excluded_paths": sorted(set(size_excluded) | {path for path in candidates[:MAX_TEXT_FILES] if sizes[path] > MAX_FILE_BYTES and path not in files}),
+                "source_profile": {"source_files_loaded": len(set(source_paths) & set(files)),
+                    "source_bytes_loaded": sum(sizes[path] for path in source_paths if path in files),
+                    "limit_excluded_paths": limit_excluded, "size_excluded_paths": size_excluded,
+                    "symlink_paths_not_followed": sorted(symlink_paths), "snapshot_commit_sha": actual_commit,
+                    "acquisition_method": "exact_tree_git_blob_batch"},
+                "profile_limits": {"file_limit": MAX_TEXT_FILES + source_policy.MAX_SOURCE_FILES,
+                    "per_file_byte_limit": max(MAX_FILE_BYTES, source_policy.MAX_SOURCE_FILE_BYTES),
+                    "source_total_byte_limit": source_policy.MAX_TOTAL_SOURCE_BYTES,
+                    "source_file_limit": source_policy.MAX_SOURCE_FILES,
+                    "selection_method": "Bounded priority metadata and sorted exact-revision source blobs within the existing full-source file and byte budgets."},
                 "tree_sha": actual_tree,
                 "tree_truncated": False,
                 "tree_collection_succeeded": inventory_complete,
@@ -665,7 +994,7 @@ def collect_snapshot_repository_evidence(
     ci = collect_ci_runtime_evidence(github, repository, workflows, bounded_runs)
     file_scan, dependencies = analyze_source_signals(files), collect_dependencies(files)
     paths = profile["tree_paths"]
-    source_paths = [path for path in paths if path.endswith((".py", ".ts", ".tsx", ".js", ".jsx")) and not path.startswith("tests/") and "test" not in path.rsplit("/", 1)[-1].lower()]
+    source_paths = [path for path in paths if path.lower().endswith(SOURCE_SUFFIXES) and not path.startswith("tests/") and "test" not in path.rsplit("/", 1)[-1].lower()]
     notes = list(profile["unavailable"]) + workflow_unavailable + list(ci.get("unavailable_data_notes") or [])
     for label, error in (("Commit history", commit_error), ("Pull-request history", pull_error), ("Workflow-run history", run_error)):
         if error:
@@ -897,6 +1226,8 @@ def collect_snapshot_repository_evidence(
         "retention_note": "Only summarized repository evidence and bounded sampled-file analysis are retained; credentials and raw CI logs are not retained.",
         "idempotent_reuse": False, "human_review_required": True,
     }
+    from nico.snapshot_execution_inputs import execution_input_manifest
+    bundle['execution_input_manifest'] = execution_input_manifest(profile, snapshot)
     bundle["architecture_evidence"]["source_observation"] = analyze_source_architecture(
         files, run_id=run_id, repository=repository, commit_sha=snapshot_sha, snapshot_id=snapshot_id,
     )

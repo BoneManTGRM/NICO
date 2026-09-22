@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -821,6 +822,87 @@ def _run_trufflehog(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: C
             invalid += 1
     blob = _raw_blob(spec.name, raw, "jsonl")
     return _tool_payload(spec, result, findings=findings, capture_complete=invalid == 0, reason="" if invalid == 0 else f"{invalid} TruffleHog output line(s) were not valid JSON", raw_blob=blob, execution_source="canonical_trufflehog_full_history", workspace=workspace, valid_returncodes={0, 183}, full_history_verified=bool(history["full_history_verified"]), extra={**history, "invalid_json_lines": invalid})
+
+
+def _run_cppcheck(spec: ScannerToolSpec, workspace: WorkerWorkspace,
+                  runner: Callable[..., WorkerCommandResult]) -> dict[str, Any]:
+    """Prepared evidence handler; deliberately absent from production dispatch.
+
+    Activation requires the separately qualified isolated worker. No build,
+    repository configuration, addon or inline suppression is requested here.
+    """
+    import xml.etree.ElementTree as ET
+    from nico.cppcheck_native_output import NativeOutputRedactionRequired, parse_native
+    from nico.node_scanner_applicability_v1 import valid_input_inventory
+    from nico.scanner_execution_receipt_v1 import write_generated_config
+
+    inventory = workspace.node_input_inventory or {}
+    targets = inventory.get('cpp_input_paths') or []
+    if not valid_input_inventory(inventory, str(inventory.get('commit_sha') or '')) or not isinstance(targets, list) or not targets or len(targets) > 20_000:
+        return _unavailable(spec, 'Complete source-bound C/C++ input inventory is unavailable.', source='cppcheck_source_inventory')
+    root = workspace.repo_dir.resolve()
+    if any(not isinstance(path, str) or '\n' in path or '\r' in path or
+           (root / path).is_symlink() or not (root / path).resolve().is_relative_to(root) for path in targets):
+        return _unavailable(spec, 'C/C++ target boundary is unverified.', source='cppcheck_source_inventory')
+    executable = shutil.which('cppcheck')
+    if not executable:
+        payload = _unavailable(spec, 'Cppcheck is not installed.', source='cppcheck_standalone')
+        payload['applicability_evidence'] = inventory
+        return payload
+    raw_dir = workspace.root / 'scanner-raw'
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    file_list, xml_file, progress = (raw_dir / name for name in ('cppcheck-inputs.txt', 'cppcheck.xml', 'cppcheck-progress.txt'))
+    xml_file.unlink(missing_ok=True)
+    progress.unlink(missing_ok=True)
+    write_generated_config(file_list, ''.join('./' + path + '\n' for path in targets))
+    command = (executable, '--xml', '--enable=warning,style,performance,portability,information',
+               '--check-level=normal', '--max-configs=12', '--std=c++20', '--std=c11',
+               '--platform=unix64', '-j2', '--file-list=' + str(file_list), '--output-file=' + str(xml_file))
+    result = _run(runner, command, cwd=workspace.repo_dir,
+        limits=WorkerLimits(spec.timeout_seconds, spec.max_output_chars), stdout_path=progress)
+    native_xml = progress_text = ''
+    parse_complete = False
+    findings: list[dict[str, Any]] = []
+    limitations: list[dict[str, Any]] = []
+    try:
+        if xml_file.stat().st_size > MAX_PARSE_BYTES or progress.stat().st_size > MAX_PARSE_BYTES:
+            raise ValueError('cppcheck_output_limit_exceeded')
+        native_xml = xml_file.read_text(encoding='utf-8')
+        progress_text = progress.read_text(encoding='utf-8')
+        findings, limitations, _ = parse_native(native_xml, progress_text, targets)
+        for finding in findings:
+            finding['commit_sha'] = inventory['commit_sha']
+        parse_complete = True
+    except NativeOutputRedactionRequired:
+        from dataclasses import replace
+        return _tool_payload(spec, replace(result, stdout='', stderr=''), findings=[], capture_complete=False,
+            reason='Cppcheck native output requires redaction before retention.', raw_blob={},
+            execution_source='cppcheck_standalone', workspace=workspace, valid_returncodes={0})
+    except (OSError, UnicodeError, ValueError, ET.ParseError):
+        pass
+    observed = sorted({match.group(1).removeprefix('./') for match in re.finditer(r'^Checking (.+?) \.\.\.$', progress_text, re.M)} & set(targets))
+    coverage = {'requested_targets': targets, 'requested_target_count': len(targets),
+        'observed_targets': observed, 'observed_target_count': len(observed),
+        'unobserved_targets': sorted(set(targets) - set(observed)),
+        'observation_scope': 'native_checking_messages; process and diagnostics retained separately',
+        'all_repository_configurations_analyzed': False, 'repository_build_executed': False,
+        'profile': 'standalone C11/C++20 unix64, at most 12 preprocessing configurations per file',
+        'limitations': limitations, 'input_inventory_sha256': inventory['inventory_sha256']}
+    envelope = raw_dir / 'cppcheck-native.json'
+    envelope.write_text(json.dumps({'native_xml': native_xml, 'progress_log': progress_text,
+        'coverage': coverage}, sort_keys=True), encoding='utf-8')
+    extra = {'cppcheck_source_coverage': coverage, 'applicability_evidence': inventory}
+    if parse_complete and not result.timed_out and result.returncode == 0 and (
+        len(observed) != len(targets) or any(item['rule_id'] != 'checkersReport' for item in limitations)
+    ):
+        partial_reason = 'Native C/C++ target or preprocessing limitations remain; retained findings require review.'
+        extra.update(status='partial', verified_for_this_report=False,
+            reason=partial_reason, failure_or_unavailable_reason=partial_reason)
+    return _tool_payload(spec, result, findings=findings, capture_complete=parse_complete,
+        reason='' if parse_complete else 'Cppcheck XML output could not be captured and parsed completely.',
+        raw_blob=_raw_blob(spec.name, envelope, 'json'), execution_source='cppcheck_standalone', workspace=workspace,
+        valid_returncodes={0},
+        extra=extra)
 
 
 def _run_problem_tool(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:

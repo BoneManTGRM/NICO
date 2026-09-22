@@ -33,7 +33,9 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
     sampled = set(files)
     if not sampled <= paths:
         raise ValueError("profile_sample_outside_inventory")
-    source = {path for path in paths if path.lower().endswith(SOURCE_SUFFIXES)}
+    submodules = list(profile.get("submodule_entries") or [])
+    non_files = {row["path"] for row in submodules}
+    source = {path for path in paths - non_files if path.lower().endswith(SOURCE_SUFFIXES)}
     eligible = {path for path in source if _is_source_path(path)}
     sampled_eligible = sampled & eligible
     analyzed = int(measured.get("files_analyzed") or 0)
@@ -75,6 +77,12 @@ def profile_coverage(profile: Mapping[str, Any], measured: Mapping[str, Any]) ->
         "inventory_complete": complete,
         "coverage_denominator_scope": "complete_source_inventory" if complete else "observed_paths_only",
         "observed_repository_paths": len(paths),
+        "inventory_scope": "parent_repository_tree",
+        "submodule_entries": submodules,
+        "submodule_contents_acquired": False,
+        "lfs_pointer_entries": list(profile.get("lfs_pointer_entries") or []),
+        "symlink_paths_not_followed": list(profile.get("symlink_paths_not_followed") or []),
+        "git_history_observation": profile.get("git_history_observation"),
         "observed_source_files": len(source),
         "eligible_source_files": len(eligible),
         "sampled_eligible_source_files": len(sampled_eligible),

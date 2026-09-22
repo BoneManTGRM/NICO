@@ -1,0 +1,252 @@
+name: C++ Worker Boundary Qualification
+
+on:
+  push:
+    branches: [feat/large-repository-cpp-comprehensive]
+    paths:
+      - scripts/qualify_cpp_worker_container.py
+      - .github/workflows/cpp-worker-boundary-qualification.yml
+      - nico/assessment_worker_container.py
+      - nico/assessment_cpp_configuration.py
+      - nico/assessment_cpp_execution.py
+      - nico/cppcheck_native_output.py
+      - nico/assessment_worker_consumer.py
+      - nico/assessment_worker_receipts.py
+      - nico/assessment_worker_api.py
+      - nico/assessment_worker_jobs.py
+      - nico/snapshot_repository_evidence.py
+      - scripts/qualify_cppcheck_worker_control.py
+      - scripts/export_qualified_cpp_worker_image.py
+      - scripts/promote_cpp_worker_image.py
+      - scripts/cpp_worker_image_release.py
+      - docker/assessment-cppcheck.Dockerfile
+  pull_request:
+    paths:
+      - scripts/qualify_cpp_worker_container.py
+      - .github/workflows/cpp-worker-boundary-qualification.yml
+      - nico/assessment_worker_container.py
+      - nico/assessment_cpp_configuration.py
+      - nico/assessment_cpp_execution.py
+      - nico/cppcheck_native_output.py
+      - nico/assessment_worker_consumer.py
+      - nico/assessment_worker_receipts.py
+      - nico/assessment_worker_api.py
+      - nico/assessment_worker_jobs.py
+      - nico/snapshot_repository_evidence.py
+      - scripts/qualify_cppcheck_worker_control.py
+      - scripts/export_qualified_cpp_worker_image.py
+      - scripts/promote_cpp_worker_image.py
+      - scripts/cpp_worker_image_release.py
+      - docker/assessment-cppcheck.Dockerfile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-worker-boundary-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Qualify disposable container with no project code or credentials
+        run: python3 scripts/qualify_cpp_worker_container.py
+      - name: Retain actual runtime boundary evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cpp-worker-boundary-${{ github.sha }}-${{ github.run_id }}
+          path: cpp-worker-boundary-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  native-static-control:
+    outputs:
+      handoff_sha256: ${{ steps.handoff-anchor.outputs.sha256 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nico
+          POSTGRES_PASSWORD: nico
+          POSTGRES_DB: nico
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U nico -d nico"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      NICO_TEST_DATABASE_URL: postgresql://nico:nico@127.0.0.1:5432/nico
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Acquire exact official analyzer source without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cppcheck-opensource/cppcheck
+          ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
+          path: toolchain/cppcheck
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install existing controller dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Build trusted pinned analyzer and retain native tool identity
+        run: |
+          set -euo pipefail
+          test "$(git -C toolchain/cppcheck rev-parse HEAD)" = ac9db3069b9f90e81e126a090b99ad456e122cf8
+          python -c "from pathlib import Path; Path('toolchain/cppcheck/.dockerignore').write_text('.git\n')"
+          /usr/bin/time -v -o cppcheck-build-resources.txt timeout 240s docker build --network=none --iidfile cppcheck-image-id.txt -f docker/assessment-cppcheck.Dockerfile toolchain/cppcheck
+          docker image inspect "$(cat cppcheck-image-id.txt)" > cppcheck-image-metadata.json
+          docker run --rm --network=none --read-only --entrypoint=g++ "$(cat cppcheck-image-id.txt)" --version > cppcheck-build-toolchain.txt
+          docker run --rm --network=none --read-only --entrypoint=sha256sum "$(cat cppcheck-image-id.txt)" /usr/local/bin/cppcheck /usr/local/bin/gcc /usr/local/bin/g++ > cppcheck-tool-bytes.sha256
+          docker run --rm --network=none --read-only --entrypoint=sh "$(cat cppcheck-image-id.txt)" -c 'sha256sum "$(gcc -print-file-name=libasan.so)" "$(gcc -print-file-name=libubsan.so)"' > cppcheck-sanitizer-runtime.sha256
+      - name: Execute actual owned clean and diagnostic sources inside isolated image
+        run: python -m scripts.qualify_cppcheck_worker_control --image "$(cat cppcheck-image-id.txt)"
+      - name: Retain native control and resource evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cppcheck-native-control-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            cppcheck-worker-control.json
+            cppcheck-build-toolchain.txt
+            cppcheck-build-resources.txt
+            cppcheck-tool-bytes.sha256
+            cppcheck-sanitizer-runtime.sha256
+            cppcheck-image-id.txt
+            cppcheck-image-metadata.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Export the same qualified local image within the existing job budget
+        if: github.event_name != 'pull_request'
+        env:
+          QUALIFIED_SOURCE_SHA: ${{ github.sha }}
+        run: python scripts/export_qualified_cpp_worker_image.py --source-sha "$QUALIFIED_SOURCE_SHA"
+      - name: Anchor original handoff independently of the downloaded archive
+        id: handoff-anchor
+        if: success() && github.event_name != 'pull_request'
+        run: |
+          python - <<'PYTHON'
+          import hashlib, os
+          from pathlib import Path
+          digest = hashlib.sha256(Path('cppcheck-image-handoff/handoff.json').read_bytes()).hexdigest()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('sha256=' + digest + '\n')
+          PYTHON
+      - name: Retain exact image bytes for later trusted publication
+        timeout-minutes: 2
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cppcheck-image-handoff-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cppcheck-image-handoff/
+          compression-level: 6
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-image:
+    needs: [boundary, native-static-control]
+    if: github.event_name == 'push' && github.repository == 'BoneManTGRM/NICO' && github.ref == 'refs/heads/feat/large-repository-cpp-comprehensive' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[publish-worker-image]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NICO_IMAGE_HANDOFF_SHA256: ${{ needs.native-static-control.outputs.handoff_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install existing controller dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: cppcheck-image-handoff-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cppcheck-image-handoff
+      - name: Record publication reservation before any registry operation
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.cpp_worker_image_release import identity
+          revision, anchor = identity('publish')
+          Path('image-publication-intent.json').write_text(json.dumps({
+              'source_sha': revision, 'handoff_sha256': anchor,
+              'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': 1,
+              'state': 'reserved', 'production_qualified': False,
+              'recovery': 'If a terminal receipt is absent, publication outcome is unknown; do not retry.'
+          }, sort_keys=True) + '\n')
+          PY
+      - name: Retain reservation before publication
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-image-publication-intent-${{ github.sha }}-${{ github.run_id }}
+          path: image-publication-intent.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish exact owned-control image
+        env:
+          NICO_IMAGE_RELEASE_MODE: publish
+          NICO_IMAGE_PUBLICATION_TOKEN: ${{ github.token }}
+        run: python -m scripts.cpp_worker_image_release
+      - name: Retain publication outcome including uncertain pushes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-image-publication-${{ github.sha }}-${{ github.run_id }}
+          path: image-publication/publication.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  verify-image:
+    needs: [native-static-control, publish-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      NICO_IMAGE_HANDOFF_SHA256: ${{ needs.native-static-control.outputs.handoff_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install existing controller dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: cpp-image-publication-${{ github.sha }}-${{ github.run_id }}
+          path: image-publication
+      - name: Verify anonymous retrieval on a separate clean daemon
+        env:
+          NICO_IMAGE_RELEASE_MODE: verify
+        run: python -m scripts.cpp_worker_image_release
+      - name: Retain anonymous retrieval outcome
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-image-retrieval-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: image-retrieval/verification.json
+          if-no-files-found: warn
+          retention-days: 30

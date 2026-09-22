@@ -96,26 +96,30 @@ class ScannerArtifactStore:
             connection.commit()
 
     def put(self, binding: Mapping[str, str], compressed: bytes, raw_sha256: str) -> str:
+        with self.connect() as connection:
+            artifact_id = self.put_in_transaction(connection, binding, compressed, raw_sha256)
+            connection.commit()
+        return artifact_id
+
+    def put_in_transaction(self, connection, binding: Mapping[str, str], compressed: bytes, raw_sha256: str) -> str:
+        """Insert without committing; caller owns the lease/publication transaction."""
         source = _binding(binding)
         artifact_id = _artifact_id(source)
         values = (artifact_id, *source.values(), raw_sha256, _sha(compressed), compressed, datetime.now(UTC).isoformat())
         placeholders = ",".join([self.placeholder] * len(values))
-        with self.connect() as connection:
-            cursor = connection.cursor()
-            cursor.execute(
-                "INSERT INTO scanner_raw_artifacts (artifact_id,run_id,scan_id,customer_id,project_id,repository,commit_sha,scanner_name,raw_sha256,gzip_sha256,gzip_blob,created_at) "
-                f"VALUES ({placeholders}) ON CONFLICT DO NOTHING", values,
-            )
-            cursor.execute(
-                f"SELECT raw_sha256,gzip_sha256,gzip_blob FROM scanner_raw_artifacts WHERE artifact_id={self.placeholder}", (artifact_id,),
-            )
-            row = cursor.fetchone()
-            if isinstance(row, Mapping):
-                row = (row["raw_sha256"], row["gzip_sha256"], row["gzip_blob"])
-            if row is None or (row[0], row[1], bytes(row[2])) != (raw_sha256, _sha(compressed), compressed):
-                connection.rollback()
-                raise ImmutableArtifactConflict("immutable_artifact_conflict")
-            connection.commit()
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO scanner_raw_artifacts (artifact_id,run_id,scan_id,customer_id,project_id,repository,commit_sha,scanner_name,raw_sha256,gzip_sha256,gzip_blob,created_at) "
+            f"VALUES ({placeholders}) ON CONFLICT DO NOTHING", values,
+        )
+        cursor.execute(
+            f"SELECT raw_sha256,gzip_sha256,gzip_blob FROM scanner_raw_artifacts WHERE artifact_id={self.placeholder}", (artifact_id,),
+        )
+        row = cursor.fetchone()
+        if isinstance(row, Mapping):
+            row = (row["raw_sha256"], row["gzip_sha256"], row["gzip_blob"])
+        if row is None or (row[0], row[1], bytes(row[2])) != (raw_sha256, _sha(compressed), compressed):
+            raise ImmutableArtifactConflict("immutable_artifact_conflict")
         return artifact_id
 
     def get(self, artifact_id: str, *, limit: int) -> dict[str, Any] | None:

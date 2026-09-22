@@ -1,0 +1,55 @@
+from fastapi.testclient import TestClient
+import pytest
+from test_assessment_worker_auth import signed_worker, JOB
+
+
+@pytest.mark.parametrize("operation", ["claim", "heartbeat", "receipt", "fail"])
+def test_production_worker_routes_require_their_own_authentication(operation):
+    from nico.api.specialist_ship_ready_bootstrap import app
+    with TestClient(app) as client:
+        response = client.post(
+            "/internal/assessment-workers/workerjob_" + "a" * 64 + "/" + operation,
+            headers={"X-NICO-Admin-Token": "not-worker-authority"}, json={},
+        )
+    assert response.status_code == 401
+    assert response.json() == {"detail": "worker_authentication_required"}
+
+
+@pytest.fixture
+def worker_client(signed_worker):
+    from nico.api.specialist_ship_ready_bootstrap import app
+    sign, _, _ = signed_worker
+    with TestClient(app) as client:
+        yield client, {"Authorization": "Bearer " + sign()}
+
+
+@pytest.mark.parametrize("body", [b'{"lease_id":"one","lease_id":"two"}', b'{"x":NaN}', b'[]', b'null', b'\xff'])
+def test_authenticated_malformed_body_is_rejected_before_any_storage_operation(worker_client, body):
+    client, headers = worker_client
+    response = client.post("/internal/assessment-workers/" + JOB + "/heartbeat", headers=headers, content=body)
+    assert response.status_code == 422
+
+
+def test_bounded_stream_and_encoded_body_rejected(worker_client):
+    client, headers = worker_client
+    path = "/internal/assessment-workers/" + JOB + "/heartbeat"
+    assert client.post(path, headers=headers, content=(b"x" * 4097)).status_code == 413
+    assert client.post(path, headers={**headers, "Content-Length": "9" * 5000}, content=b"{}").status_code == 413
+    assert client.post(path, headers={**headers, "Content-Encoding": "gzip"}, content=b"{}").status_code == 415
+
+
+def test_job_scoped_worker_token_cannot_call_operator_review_or_approval(worker_client):
+    client, headers = worker_client
+    for action in ("review", "authorize-delivery"):
+        response = client.post("/assessment/comprehensive-run/synthetic-run/" + action, headers=headers, json={})
+        assert response.status_code in {401, 403}
+
+
+def test_worker_http_operations_require_postgres_even_with_valid_signature(worker_client, monkeypatch):
+    from nico import assessment_worker_api as api
+    from nico.storage import MemoryAdapter
+    monkeypatch.setattr(api.STORE, "adapter", MemoryAdapter())
+    client, headers = worker_client
+    response = client.post("/internal/assessment-workers/" + JOB + "/claim", headers=headers, json={})
+    assert response.status_code == 503
+    assert response.json() == {"detail": "worker_durable_storage_unavailable"}

@@ -276,6 +276,7 @@ def test_node_only_repository_requires_complete_retained_python_inventory(tmp_pa
             "typescript_config": False,
             "python_manifest": False,
             "python_source": False,
+            "cpp_source": False,
         },
         "requested_scanners": 1,
         "applicable_scanners": 0,

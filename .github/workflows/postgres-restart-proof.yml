@@ -63,6 +63,13 @@ jobs:
 
       - name: Prove original scanner BYTEA survives filesystem loss and reconnect
         run: python scripts/postgres_scanner_artifact_proof.py --output audit-results/postgres-scanner-artifact-proof.json
+      - name: Prove durable worker ownership, restart and cancellation on real Postgres
+        run: |
+          python scripts/postgres_worker_job_proof.py \
+            --database-url "$NICO_TEST_DATABASE_URL" \
+            --output audit-results/postgres-worker-job-proof.json
+      - name: Prove authenticated worker receipt publication and durable polling
+        run: python scripts/postgres_worker_protocol_proof.py --evidence audit-results/postgres-worker-protocol-proof.json
       - name: Verify evidence is bounded and passing
         run: |
           python - <<'PY'
@@ -105,6 +112,24 @@ jobs:
           scanner_serialized = json.dumps(scanner)
           assert "postgresql://" not in scanner_serialized
           assert "NICO_TEST_DATABASE_URL" not in scanner_serialized
+          worker = json.loads(Path("audit-results/postgres-worker-job-proof.json").read_text(encoding="utf-8"))
+          assert worker["status"] == "passed"
+          assert worker["synthetic"] is True
+          assert worker["live_production_claim"] is False
+          assert worker["repository_executed"] is False
+          assert worker["human_approval"] is False
+          assert worker["client_delivery_authorized"] is False
+          assert len(worker["checks"]) == 18
+          assert all(value is True for value in worker["checks"].values())
+          protocol = json.loads(Path("audit-results/postgres-worker-protocol-proof.json").read_text())
+          assert protocol["synthetic"] is True
+          assert protocol["live_production"] is False
+          assert protocol["repository_executed"] is False
+          assert protocol["analyzer_executed"] is False
+          assert protocol["human_approval_proven"] is False
+          assert protocol["client_delivery_allowed"] is False
+          assert len(protocol["checks"]) == 33
+          assert all(value is True for value in protocol["checks"].values())
           PY
 
       - name: Upload restart proof evidence
@@ -116,5 +141,7 @@ jobs:
             audit-results/postgres-restart-proof.json
             audit-results/postgres-intake-reservation-proof.json
             audit-results/postgres-scanner-artifact-proof.json
+            audit-results/postgres-worker-job-proof.json
+            audit-results/postgres-worker-protocol-proof.json
           if-no-files-found: error
           retention-days: 30

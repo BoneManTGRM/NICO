@@ -38,6 +38,11 @@ ARTIFACT_EVIDENCE_PATTERNS = {
 SUPPORTED_EXPORT_FORMATS = {"json", "markdown", "html", "pdf"}
 
 
+def _worker_job_id(job_id: str) -> bool:
+    # Shared persistence does not grant the public package API worker authority.
+    return str(job_id).startswith("workerjob_")
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -134,6 +139,8 @@ def provider_gate_root_cause_prompts() -> list[str]:
 
 
 def build_client_job_package(payload: dict[str, Any]) -> dict[str, Any]:
+    if _worker_job_id(payload.get("job_id", "")):
+        return {"status": "blocked", "code": "reserved_job_namespace", "job_id": payload["job_id"]}
     quote_text = str(payload.get("quote_text") or "")
     product_evidence_text = str(payload.get("product_evidence_text") or "")
     assessment = payload.get("assessment") if isinstance(payload.get("assessment"), dict) else {}
@@ -188,14 +195,18 @@ def build_client_job_package(payload: dict[str, Any]) -> dict[str, Any]:
 
 def create_client_job_package(payload: dict[str, Any]) -> dict[str, Any]:
     package = build_client_job_package(payload)
+    if package.get("status") != "ok":
+        return package
     STORE.put("client_jobs", package["job_id"], package)
     STORE.audit("client_job.created", {"job_id": package["job_id"], "delivery_verdict": package["delivery_verdict"]}, customer_id=package["customer_id"], project_id=package["project_id"])
     return package
 
 
 def get_client_job_package(job_id: str) -> dict[str, Any]:
+    if _worker_job_id(job_id):
+        return {"status": "not_found", "job_id": job_id}
     package = STORE.get("client_jobs", job_id)
-    if not package:
+    if not package or package.get("workflow") == "assessment_worker_job.v1":
         return {"status": "not_found", "job_id": job_id}
     return package
 
@@ -276,6 +287,8 @@ def client_job_pdf_base64(package: dict[str, Any]) -> str:
 
 
 def render_client_job_export(package: dict[str, Any], export_format: str = "json") -> dict[str, Any]:
+    if _worker_job_id(package.get("job_id", "")) or package.get("workflow") == "assessment_worker_job.v1":
+        return {"status": "blocked", "code": "reserved_job_namespace", "job_id": package.get("job_id")}
     fmt = (export_format or "json").lower()
     if fmt not in SUPPORTED_EXPORT_FORMATS:
         return {"status": "unavailable", "job_id": package.get("job_id"), "format": fmt, "available_formats": sorted(SUPPORTED_EXPORT_FORMATS)}
@@ -313,9 +326,13 @@ def export_client_job_package(job_id: str, export_format: str = "json") -> dict[
 
 def export_client_job_payload(payload: dict[str, Any], export_format: str = "json") -> dict[str, Any]:
     package = create_client_job_package(payload)
+    if package.get("status") != "ok":
+        return package
     return render_client_job_export(package, export_format)
 
 
 def list_client_job_exports(job_id: str) -> dict[str, Any]:
+    if _worker_job_id(job_id):
+        return {"status": "not_found", "job_id": job_id}
     exports = [item for item in STORE.list("client_job_exports") if item.get("job_id") == job_id]
     return {"status": "ok", "job_id": job_id, "exports": exports, "available_formats": sorted(SUPPORTED_EXPORT_FORMATS)}

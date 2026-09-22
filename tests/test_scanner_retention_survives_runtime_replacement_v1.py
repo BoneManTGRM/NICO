@@ -128,10 +128,9 @@ def test_original_scanner_bytes_remain_verified_after_runtime_file_loss_and_stor
         return repo, commit, []
 
     monkeypatch.setattr(worker, "clone_repository_at_snapshot", clone)
-    monkeypatch.setattr(worker, "_requested_specs", lambda payload: [SimpleNamespace(name="semgrep")])
     monkeypatch.setattr(worker.tool_runners, "run_scanner_tool", lambda *args: deepcopy(native_result))
     monkeypatch.setattr(worker.base, "SCAN_JOBS", {scan_id: {**identity, "scan_id": scan_id}})
-    worker._run_snapshot_scan(scan_id, {**identity, "snapshot_commit_sha": commit})
+    worker._run_snapshot_scan(scan_id, {**identity, "snapshot_commit_sha": commit, "tools": ["semgrep"]})
     published = STORE.get("scanner_runs", scan_id)
     assert published["tools_run"] == ["semgrep"]
     assert published["scanner_results"][0]["raw_artifact_retention_complete"] is True

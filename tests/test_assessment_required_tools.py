@@ -92,3 +92,33 @@ def test_installer_patches_snapshot_entry_points_idempotently() -> None:
     assert first["required_dependency_tool"] == "osv-scanner"
     assert snapshot_worker.start_snapshot_scan is policy.start_snapshot_scan_with_required_tools
     assert snapshot_handlers.start_snapshot_scan is policy.start_snapshot_scan_with_required_tools
+
+
+def test_internal_worker_contract_does_not_erase_required_tool_request(monkeypatch):
+    captured = {}
+    plan = {"synthetic": True}
+    def start(payload, *, worker_contract):
+        captured.update(payload=payload, contract=worker_contract)
+        return {"status": "queued", "tools_requested": [*payload["tools"], "cppcheck"]}
+    monkeypatch.setattr(policy, "_ORIGINAL_START_SNAPSHOT_SCAN", start)
+    result = policy.start_snapshot_scan_with_required_tools({"authorized": True}, worker_contract=plan)
+    assert captured["contract"] is plan
+    assert set(policy.REQUIRED_EXACT_SNAPSHOT_TOOLS) <= set(result["tools_requested"])
+    assert "cppcheck" in result["tools_requested"]
+
+
+def test_internal_cpp_child_contract_passes_through_installed_entry_point(monkeypatch):
+    captured = {}
+    plan = {"synthetic": True}
+    def start(payload, *, cpp_contract):
+        captured.update(payload=payload, contract=cpp_contract)
+        return {"status": "queued", "tools_requested": payload["tools"]}
+    monkeypatch.setattr(policy, "_ORIGINAL_START_SNAPSHOT_SCAN", start)
+    monkeypatch.setattr(snapshot_worker, 'start_snapshot_scan', snapshot_worker.start_snapshot_scan)
+    monkeypatch.setattr(snapshot_handlers, 'start_snapshot_scan', snapshot_handlers.start_snapshot_scan)
+    policy.install_required_assessment_tools()
+    result = snapshot_worker.start_snapshot_scan({'authorized': True}, cpp_contract=plan)
+    assert captured['contract'] is plan
+    assert captured['payload']['tools'] == list(policy.REQUIRED_EXACT_SNAPSHOT_TOOLS)
+    assert 'cppcheck' not in captured['payload']['tools']
+    assert result['tool_policy']['required_tools'] == list(policy.REQUIRED_EXACT_SNAPSHOT_TOOLS)

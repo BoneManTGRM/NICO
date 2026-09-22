@@ -40,12 +40,14 @@ class ProviderClientError(RuntimeError):
         status_code: int | None = None,
         retryable: bool = False,
         retry_after_seconds: float | None = None,
+        rate_limit_state: Mapping[str, int] | None = None,
     ) -> None:
         super().__init__(code)
         self.code = code
         self.status_code = status_code
         self.retryable = retryable
         self.retry_after_seconds = retry_after_seconds
+        self.rate_limit_state = dict(rate_limit_state or {})
 
 
 @dataclass(frozen=True)

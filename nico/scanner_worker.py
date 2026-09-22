@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -24,6 +25,7 @@ MAX_OUTPUT_CHARS = int(os.getenv("NICO_MAX_TOOL_OUTPUT", "12000"))
 DEFAULT_TOOL_TIMEOUT_SECONDS = int(os.getenv("NICO_TOOL_TIMEOUT_SECONDS", "45"))
 TOTAL_SCAN_TIMEOUT_SECONDS = int(os.getenv("NICO_TOTAL_SCAN_TIMEOUT_SECONDS", "300"))
 MAX_REPO_BYTES = int(os.getenv("NICO_MAX_REPO_BYTES", "150000000"))
+MAX_GIT_HISTORY_BYTES = int(os.getenv("NICO_MAX_GIT_HISTORY_BYTES", str(1024 * 1024 * 1024)))
 
 TOOL_CATALOG: dict[str, dict[str, Any]] = {
     "pip-audit": {"binary": "pip-audit", "intent": "Python dependency review", "tier": "dependency"},
@@ -79,6 +81,47 @@ def safe_repo_url(repository: str) -> str:
 
 def clean_env(home: Path) -> dict[str, str]:
     return {"PATH": os.getenv("PATH", ""), "HOME": str(home), "TMPDIR": str(home), "PYTHONUNBUFFERED": "1"}
+
+
+def repository_size_observation(path: Path, *, source_limit: int | None = None,
+                                history_limit: int | None = None, bare: bool = False) -> dict[str, Any]:
+    """Count separate bounded source/history populations without following links."""
+    limits = {"source": MAX_REPO_BYTES if source_limit is None else source_limit,
+              "git_history": MAX_GIT_HISTORY_BYTES if history_limit is None else history_limit}
+    counts = {"source": 0, "git_history": 0}
+    errors: list[str] = []
+    links = entries = 0
+    exceeded: set[str] = set()
+    if not path.is_dir() or path.is_symlink():
+        errors.append("repository_directory_unavailable")
+    for current, directories, files in os.walk(path, followlinks=False,
+            onerror=lambda error: errors.append("repository_size_read_failed")):
+        for name in sorted([*directories, *files]):
+            entry = Path(current) / name
+            entries += 1
+            if entries > 1_000_000:
+                errors.append("repository_size_inventory_limit_exceeded")
+                break
+            try:
+                observed = entry.lstat()
+                if stat.S_ISLNK(observed.st_mode):
+                    links += 1
+                elif not stat.S_ISREG(observed.st_mode):
+                    continue
+                population = "git_history" if bare or entry.relative_to(path).parts[0] == ".git" else "source"
+                counts[population] += observed.st_size
+                if counts[population] > limits[population]:
+                    exceeded.add(population)
+            except OSError:
+                errors.append("repository_size_read_failed")
+        if errors or exceeded:
+            break
+    return {"schema": "nico.repository-size-populations.v1", "source_bytes": counts["source"],
+            "git_history_bytes": counts["git_history"], "source_byte_limit": limits["source"],
+            "git_history_byte_limit": limits["git_history"], "exceeded_limits": sorted(exceeded),
+            "inventory_complete": not errors and not exceeded, "errors": sorted(set(errors)),
+            "byte_count_scope": "lower_bound" if errors or exceeded else "complete_bare_repository" if bare else "complete_checkout",
+            "symlink_count": links, "external_symlink_targets_read": False}
 
 
 def directory_size(path: Path) -> int:
@@ -341,4 +384,28 @@ def start_scan(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_scan(scan_id: str) -> dict[str, Any]:
-    return SCAN_JOBS.get(scan_id) or STORE.get("scanner_runs", scan_id) or {"status": "not_found", "scan_id": scan_id}
+    cached = SCAN_JOBS.get(scan_id)
+    if cached and not cached.get("worker_job_id") and not cached.get('cpp_worker_child'):
+        return cached
+    # Remote workers publish through PostgreSQL. A serving process's queued copy
+    # cannot override a completion, cancellation or disappearance after restart.
+    scan = STORE.get("scanner_runs", scan_id)
+    if scan and scan.get('cpp_worker_child'):
+        from nico.assessment_cpp_integration import read_cpp_composition
+        return read_cpp_composition(scan, STORE, get_scan)
+    if scan and scan.get("worker_job_id") and scan.get("status") in {"queued", "running"}:
+        from nico.assessment_worker_jobs import JobConflict, JobIdentity, WorkerJobs
+        jobs = WorkerJobs(STORE.adapter)
+        job = jobs.get_by_id(scan["worker_job_id"])
+        if job is None:
+            raise JobConflict("worker_job_missing")
+        identity = JobIdentity(**job["identity"])
+        if any(scan.get(key) != value for key, value in {
+            "scan_id": identity.scan_id, "customer_id": identity.customer_id,
+            "project_id": identity.project_id, "run_id": identity.run_id,
+            "repository": identity.repository_id, "snapshot_commit_sha": identity.revision,
+        }.items()):
+            raise JobConflict("worker_scan_binding_mismatch")
+        jobs.poll(identity)
+        scan = STORE.get("scanner_runs", scan_id)
+    return scan or {"status": "not_found", "scan_id": scan_id}

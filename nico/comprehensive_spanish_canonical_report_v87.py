@@ -22,6 +22,11 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "The dedicated worker retained native scanner evidence. Individual tool records state completion and limitations.": "El trabajador dedicado conservó evidencia nativa de los analizadores. Cada registro indica el estado de ejecución y sus limitaciones.",
+    "The selected worker profile does not execute this requested tool.": "El perfil seleccionado del trabajador no ejecuta esta herramienta solicitada.",
+    "Native target execution or parsing is incomplete; retained observations require review.": "La ejecución o el análisis nativo de los objetivos está incompleto; las observaciones conservadas requieren revisión.",
+    "Native XML was not completely parsed.": "El XML nativo no se analizó por completo.",
+    "Native target is outside the frozen population.": "El objetivo nativo está fuera de la población fijada.",
     "Workflow configuration exact-SHA match: not assessed.": "Coincidencia de SHA exacto de la configuración de flujos de trabajo: sin evaluar.",
     "Delivery capacity is not scored because immutable CI configuration was not assessed.": "La capacidad de entrega no se puntúa porque no se evaluó la configuración inmutable de CI.",
     "Comprehensive": "Integral",
@@ -159,6 +164,12 @@ _OSV_APPLICABILITY_ES = {
 _CANONICAL_PARITY_EXACT.update({
     "Processing complete; assessment coverage and specialist review are reported separately.":
         "Procesamiento completo; la cobertura de evaluación y la revisión especializada se informan por separado.",
+    "Velocity / Complexity combines bounded traceability with same-run measured source metrics. Nesting coverage is incomplete and contributes no score adjustment.":
+        "Velocidad / Complejidad combina trazabilidad acotada con métricas de código fuente medidas en la misma ejecución. El anidamiento queda sin ajuste de puntuación por cobertura incompleta.",
+    "C/C++ function complexity uses Lizard token analysis, not a compiler or security assessment. Include edges are textual; nesting, all preprocessing configurations and a successful build are not established.":
+        "La complejidad de funciones C/C++ utiliza el análisis de tokens de Lizard, sin compilación ni evaluación de seguridad. Las relaciones de inclusión son textuales; no se han establecido el anidamiento, todas las configuraciones de preprocesamiento ni una compilación correcta.",
+    "Repository size could not be established; scanner execution is unavailable.":
+        "No se pudo establecer el tamaño del repositorio; la ejecución de analizadores no está disponible.",
 })
 _CANONICAL_PARITY_EXACT.update({
     prefix + source: prefix + translated
@@ -2797,6 +2808,25 @@ def _translate_presentation(value: Any) -> str:
     )
     if exact is not None:
         return text.replace(stripped, exact, 1)
+    nesting = re.fullmatch(r"Deep nesting regions: (not available|[0-9]+)(?: \(nesting measured for ([0-9]+)/([0-9]+) functions\))?\.", stripped)
+    if nesting:
+        count = "no disponible" if nesting[1] == "not available" else nesting[1]
+        scope = f" (anidamiento medido en {nesting[2]}/{nesting[3]} funciones)" if nesting[2] else ""
+        return f"Regiones con anidamiento profundo: {count}{scope}."
+    hotspots = re.fullmatch(r"Complexity hotspots: long functions=([0-9]+), deep-nesting functions=(unavailable|[0-9]+)(?: \(nesting measured for ([0-9]+)/([0-9]+) functions\))?, maximum import fan-out=([0-9]+)\.", stripped)
+    if hotspots:
+        count = "no disponible" if hotspots[2] == "unavailable" else hotspots[2]
+        scope = f" (anidamiento medido en {hotspots[3]}/{hotspots[4]} funciones)" if hotspots[3] else ""
+        return f"Puntos críticos de complejidad: funciones largas={hotspots[1]}, funciones con anidamiento profundo={count}{scope}, máximo de dependencias de importación={hotspots[5]}."
+    size_limit = re.fullmatch(r"Repository (source|git_history|checkout) exceeds scanner size limit: ([0-9]+) observed bytes, ([0-9]+) byte limit\.", stripped)
+    if size_limit:
+        population = {"source": "código fuente", "git_history": "historial Git", "checkout": "copia de trabajo"}[size_limit[1]]
+        return f"El {population} del repositorio supera el límite de tamaño del analizador: {size_limit[2]} bytes observados, límite de {size_limit[3]} bytes."
+    cpp_unavailable = re.fullmatch(r"(.+): C/C\+\+ token analysis unavailable \((ImportError|ValueError|RecursionError)\); no measurement inferred\.", stripped)
+    if cpp_unavailable:
+        return f"{cpp_unavailable[1]}: análisis de tokens C/C++ no disponible ({cpp_unavailable[2]}); no se infirió ninguna medición."
+    if stripped.startswith(("Deep nesting regions:", "Complexity hotspots:")):
+        raise ValueError("unrecognized Spanish nesting presentation contract")
     configuration_failure = re.fullmatch(
         r"(eslint): \1 produced ([0-9]+) configuration error\(s\); the analyzer result is not valid source-code evidence\.",
         stripped,

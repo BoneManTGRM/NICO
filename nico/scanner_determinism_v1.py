@@ -194,10 +194,12 @@ def clone_repository_at_snapshot(
     if refs.returncode != 0 or retained:
         shutil.rmtree(repo_dir, ignore_errors=True)
         return None, actual, ["Snapshot checkout retained mutable branch, remote, or tag refs."]
-    size = base.directory_size(repo_dir)
-    if size > base.MAX_REPO_BYTES:
+    size_observation = base.repository_size_observation(repo_dir)
+    if size_observation["exceeded_limits"] or not size_observation["inventory_complete"]:
         shutil.rmtree(repo_dir, ignore_errors=True)
-        raise snapshot.RepositoryExecutionLimit(actual, size, base.MAX_REPO_BYTES)
+        population = next(iter(size_observation["exceeded_limits"]), "source")
+        raise snapshot.RepositoryExecutionLimit(actual, size_observation[population + "_bytes"],
+            size_observation[population + "_byte_limit"], size_observation=size_observation)
     return repo_dir, actual, []
 
 

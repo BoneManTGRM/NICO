@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import os
+import re
+import stat
 import zipfile
 from functools import wraps
 from pathlib import PurePosixPath
@@ -16,8 +18,20 @@ MAX_ARCHIVE_BYTES = int(os.getenv("NICO_MAX_SOURCE_ARCHIVE_BYTES", str(120 * 102
 MAX_SOURCE_FILES = int(os.getenv("NICO_MAX_ARCHIVE_SOURCE_FILES", "2500"))
 MAX_SOURCE_FILE_BYTES = int(os.getenv("NICO_MAX_ARCHIVE_SOURCE_FILE_BYTES", str(600_000)))
 MAX_TOTAL_SOURCE_BYTES = int(os.getenv("NICO_MAX_ARCHIVE_SOURCE_TOTAL_BYTES", str(90 * 1024 * 1024)))
-SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
+from nico.full_assessment_complexity_evidence import SOURCE_SUFFIXES as _SOURCE_SUFFIXES
+SOURCE_SUFFIXES = set(_SOURCE_SUFFIXES)
 SKIP_PARTS = {".git", ".venv", "venv", "node_modules", ".next", "dist", "build", "vendor", "coverage", "coverage_html", "__pycache__"}
+
+
+def lfs_pointer_entry(path: str, text: str) -> dict[str, Any] | None:
+    """Retain pointer identity, never credit it as acquired external content."""
+    if not text.startswith("version https://git-lfs.github.com/spec/v1\n") and not text.startswith("version https://git-lfs.github.com/spec/v1\r\n"):
+        return None
+    lines = text.splitlines()
+    oids = [line[4:] for line in lines if re.fullmatch(r"oid sha256:[0-9a-f]{64}", line)]
+    sizes = [int(line[5:]) for line in lines if re.fullmatch(r"size [0-9]{1,20}", line)]
+    return {"path": path, "oid": oids[0] if len(oids) == 1 else None,
+            "size_bytes": sizes[0] if len(sizes) == 1 else None}
 
 
 def _eligible(path: str) -> bool:
@@ -48,12 +62,18 @@ def _download_archive(client: Any, repository: str, ref: str) -> bytes:
 
 def _archive_sources(data: bytes) -> tuple[dict[str, str], dict[str, Any]]:
     files: dict[str, str] = {}
+    raw_records: dict[str, dict] = {}
+    from nico.snapshot_execution_inputs import raw_input_record
     total_bytes = 0
     skipped_large = 0
     skipped_limit = 0
     inventory: set[str] = set()
     size_excluded: list[str] = []
     limit_excluded: list[str] = []
+    symlinks: list[str] = []
+    lfs_entries: list[dict[str, Any]] = []
+    inspected_files = inspected_bytes = 0
+    source_file_bytes: dict[str, int] = {}
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         members = sorted((item for item in archive.infolist() if not item.is_dir()), key=lambda item: item.filename)
         for member in members:
@@ -64,20 +84,36 @@ def _archive_sources(data: bytes) -> tuple[dict[str, str], dict[str, Any]]:
             if ".." in parts or member.filename.startswith("/") or relative in inventory:
                 raise ValueError("unsafe or duplicate source archive path")
             inventory.add(relative)
+            if stat.S_ISLNK(member.external_attr >> 16):
+                symlinks.append(relative)
+                continue
             if member.file_size > MAX_SOURCE_FILE_BYTES:
                 skipped_large += 1
                 size_excluded.append(relative)
                 continue
-            if len(files) >= MAX_SOURCE_FILES or total_bytes + member.file_size > MAX_TOTAL_SOURCE_BYTES:
+            if inspected_files >= MAX_SOURCE_FILES or inspected_bytes + member.file_size > MAX_TOTAL_SOURCE_BYTES:
                 skipped_limit += 1
                 limit_excluded.append(relative)
                 continue
             raw = archive.read(member)
-            files[relative] = raw.decode("utf-8", errors="replace")
+            inspected_files += 1
+            inspected_bytes += len(raw)
+            text = raw.decode("utf-8", errors="replace")
+            pointer = lfs_pointer_entry(relative, text)
+            if pointer is not None:
+                lfs_entries.append(pointer)
+                continue
+            files[relative] = text
+            raw_records[relative] = raw_input_record(raw)
+            source_file_bytes[relative] = len(raw)
             total_bytes += len(raw)
     return files, {
         "source_files_loaded": len(files),
+        "source_raw_input_records": raw_records,
         "source_bytes_loaded": total_bytes,
+        "source_file_bytes": source_file_bytes,
+        "source_files_inspected": inspected_files,
+        "source_bytes_inspected": inspected_bytes,
         "source_files_skipped_large": skipped_large,
         "source_files_skipped_limit": skipped_limit,
         "source_file_limit": MAX_SOURCE_FILES,
@@ -86,6 +122,9 @@ def _archive_sources(data: bytes) -> tuple[dict[str, str], dict[str, Any]]:
         "source_inventory_paths": sorted(inventory),
         "source_size_excluded_paths": size_excluded,
         "source_limit_excluded_paths": limit_excluded,
+        "symlink_paths_not_followed": symlinks,
+        "lfs_pointer_entries": lfs_entries,
+        "unavailable_paths": sorted(set(symlinks) | {row["path"] for row in lfs_entries}),
         "exact_sha_archive": True,
     }
 
@@ -120,13 +159,37 @@ def install_full_source_archive_profile_v1() -> dict[str, Any]:
             return result
 
         existing = result.get("files") if isinstance(result.get("files"), dict) else {}
+        unavailable_content = set(result.get("symlink_paths_not_followed") or []) | {
+            row["path"] for row in result.get("submodule_entries") or []} | {
+            row["path"] for row in result.get("lfs_pointer_entries") or []} | set(metadata["unavailable_paths"])
+        for path in unavailable_content:
+            existing.pop(path, None)
+            source_files.pop(path, None)
         existing.update(source_files)
+        metadata["source_files_loaded"] = len(source_files)
+        metadata["source_bytes_loaded"] = sum(metadata["source_file_bytes"][path] for path in source_files)
+        metadata["source_file_bytes"] = {path: metadata["source_file_bytes"][path] for path in source_files}
         result["files"] = existing
+        from nico.snapshot_execution_inputs import matches_tree
+        records = result.setdefault('raw_input_records', {})
+        inventory = result.get('raw_blob_inventory') or {}
+        # Archive bytes are usable only when they match the exact Git inventory;
+        # replacement-decoded report text never supplies execution hashes.
+        for path in unavailable_content | set(source_files):
+            records.pop(path, None)
+        for path, record in metadata['source_raw_input_records'].items():
+            if path in source_files and matches_tree(record, inventory.get(path, {})):
+                records[path] = record
+        result['raw_input_selected_paths'] = sorted(set(result.get('raw_input_selected_paths') or []) | set(source_files))
         # Archive sampling can extend a truncated API inventory. Retain the
         # observed paths before coverage validates membership, without claiming
         # that an incomplete API inventory became a complete repository tree.
         result["tree_paths"] = sorted(set(result.get("tree_paths") or []) | set(metadata["source_inventory_paths"]))
-        result["unavailable_paths"] = sorted(set(result.get("unavailable_paths") or []) - set(source_files))
+        result["unavailable_paths"] = sorted((set(result.get("unavailable_paths") or []) | unavailable_content) - set(source_files))
+        result["symlink_paths_not_followed"] = sorted(set(result.get("symlink_paths_not_followed") or []) | set(metadata["symlink_paths_not_followed"]))
+        pointers = {row["path"]: row for row in result.get("lfs_pointer_entries") or []}
+        pointers.update({row["path"]: row for row in metadata["lfs_pointer_entries"]})
+        result["lfs_pointer_entries"] = [pointers[path] for path in sorted(pointers)]
         result["size_excluded_paths"] = sorted((set(result.get("size_excluded_paths") or []) | set(metadata["source_size_excluded_paths"])) - set(existing))
         from nico.hosted_assessment import MAX_FILE_BYTES, MAX_TEXT_FILES
         result["profile_limits"] = {

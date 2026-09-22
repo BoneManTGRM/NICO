@@ -99,7 +99,9 @@ def _complexity_artifact(assessment: dict[str, Any], complexity: dict[str, Any])
             "maximum_cyclomatic_complexity": complexity.get("maximum_cyclomatic_complexity"),
             "high_complexity_functions": _int(complexity.get("high_complexity_functions")),
             "long_functions": _int(complexity.get("long_functions")),
-            "deep_nesting_functions": _int(complexity.get("deep_nesting_functions")),
+            "deep_nesting_functions": complexity.get("deep_nesting_functions"),
+            "nesting_measured_functions": _int(complexity.get("nesting_measured_functions",
+                complexity.get("functions_measured") if complexity.get("deep_nesting_functions") is not None else 0)),
             "call_graph_edge_count": _int(complexity.get("internal_import_edges")),
             "import_edge_count": _int(complexity.get("import_edges")),
             "duplicate_block_groups": _int(duplicate.get("duplicate_block_groups")),
@@ -143,7 +145,8 @@ def apply_complexity_score(assessment: dict[str, Any], complexity: dict[str, Any
     very_high = _int(complexity.get("very_high_complexity_functions"))
     high_ratio = _float(complexity.get("high_complexity_ratio"))
     long_functions = _int(complexity.get("long_functions"))
-    deep_nesting = _int(complexity.get("deep_nesting_functions"))
+    deep_nesting = _int(complexity["deep_nesting_functions"]) if complexity.get("deep_nesting_functions") is not None else None
+    nesting_measured = _int(complexity.get("nesting_measured_functions", functions if deep_nesting is not None else 0))
     maximum_fan_out = _int(complexity.get("maximum_fan_out"))
     parse_failures = _int(complexity.get("python_parse_failures"))
     duplicate = _dict(complexity.get("duplicate_evidence"))
@@ -204,15 +207,16 @@ def apply_complexity_score(assessment: dict[str, Any], complexity: dict[str, Any
             increment -= 3
             reasons.append(f"-3 duplicate-line ratio is {duplicate_ratio:.1%}")
 
-    if functions:
+    if functions and nesting_measured == functions and deep_nesting is not None:
         deep_ratio = deep_nesting / functions
-        long_ratio = long_functions / functions
         if deep_ratio <= 0.03:
             increment += 1
             reasons.append(f"+1 deep-nesting function ratio is {deep_ratio:.1%}")
         elif deep_ratio > 0.15:
             increment -= 2
             reasons.append(f"-2 deep-nesting function ratio is {deep_ratio:.1%}")
+    if functions:
+        long_ratio = long_functions / functions
         if long_ratio > 0.20:
             increment -= 2
             reasons.append(f"-2 long-function ratio is {long_ratio:.1%}")
@@ -233,10 +237,16 @@ def apply_complexity_score(assessment: dict[str, Any], complexity: dict[str, Any
     velocity["status"] = "green" if score >= 80 else "yellow" if score >= 55 else "red"
     velocity["confidence"] = (
         "ast-and-sampled-source-bound"
-        if _int(complexity.get("javascript_typescript_files_analyzed")) == 0
+        if _int(complexity.get("javascript_typescript_files_analyzed")) == 0 and _int(complexity.get("cpp_files_analyzed")) == 0
         else "mixed-ast-and-lexical-sample"
     )
+    if _int(complexity.get("cpp_files_analyzed")) and not (
+        _int(complexity.get("python_files_analyzed")) or _int(complexity.get("javascript_typescript_files_analyzed"))
+    ):
+        velocity["confidence"] = "token-and-sampled-source-bound"
     velocity["summary"] = "Velocity / Complexity combines bounded commit and pull-request traceability with same-run source complexity, nesting, duplication, and import-coupling evidence."
+    if nesting_measured < functions:
+        velocity["summary"] = "Velocity / Complexity combines bounded traceability with same-run measured source metrics. Nesting coverage is incomplete and contributes no score adjustment."
 
     evidence = velocity.setdefault("evidence", [])
     _append_unique(
@@ -247,9 +257,12 @@ def apply_complexity_score(assessment: dict[str, Any], complexity: dict[str, Any
         evidence,
         f"Cyclomatic complexity: average={average_complexity if average_complexity is not None else 'unavailable'}, maximum={maximum_complexity or 'unavailable'}, high-complexity functions={high_complexity}, very-high-complexity functions={very_high}.",
     )
+    nesting_text = str(deep_nesting) if deep_nesting is not None else 'unavailable'
+    if nesting_measured < functions:
+        nesting_text += f" (nesting measured for {nesting_measured}/{functions} functions)"
     _append_unique(
         evidence,
-        f"Complexity hotspots: long functions={long_functions}, deep-nesting functions={deep_nesting}, maximum import fan-out={maximum_fan_out}.",
+        f"Complexity hotspots: long functions={long_functions}, deep-nesting functions={nesting_text}, maximum import fan-out={maximum_fan_out}.",
     )
     _append_unique(
         evidence,

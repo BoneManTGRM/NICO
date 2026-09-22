@@ -37,7 +37,14 @@ def test_size_limited_checkout_keeps_identity_without_scanner_completion(monkeyp
 
     monkeypatch.setattr(worker, "_git", fake_git)
     monkeypatch.setattr(worker, "clone_repository_at_snapshot", clone_repository_at_snapshot)
-    monkeypatch.setattr(base, "directory_size", lambda path: 291563274)
+    # Synthetic source-population oversize; historical mixed source/history
+    # observations remain unchanged in the frozen fixture and artifacts.
+    monkeypatch.setattr(base, "repository_size_observation", lambda path: {
+        "source_bytes": 291563274, "source_byte_limit": base.MAX_REPO_BYTES,
+        "git_history_bytes": 0, "git_history_byte_limit": base.MAX_GIT_HISTORY_BYTES,
+        "exceeded_limits": ["source"], "inventory_complete": False,
+        "byte_count_scope": "lower_bound", "errors": [],
+    })
     monkeypatch.setattr(worker, "STORE", MemoryAdapter())
     monkeypatch.setattr(base, "SCAN_JOBS", {"synthetic_size_limit": {}})
     monkeypatch.setattr(worker.tool_runners, "run_scanner_tool", lambda *args: pytest.fail("oversized checkout must not execute scanners"))

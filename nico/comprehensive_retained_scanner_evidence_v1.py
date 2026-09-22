@@ -194,6 +194,13 @@ def compact_scanner_records(
         artifact_hash = _text(normalized.get("artifact_hash"), 160)
         exact = normalized.get("exact_commit_match") is True
         observed_commit = _text(normalized.get("commit_sha"), 80).casefold()
+        origin_scan_id = scan_id
+        child_identity = _mapping(_mapping(scan.get('cpp_worker_child')).get('identity'))
+        if name == 'cppcheck' and child_identity:
+            if (raw.get('scan_id') != child_identity.get('scan_id')
+                    or observed_commit != child_identity.get('revision')):
+                raise ValueError('cpp_child_compact_binding_mismatch')
+            origin_scan_id = _text(child_identity.get('scan_id'), 160)
         tool_summary = dict(_mapping(by_tool.get(name)))
         output.append(
             {
@@ -246,13 +253,14 @@ def compact_scanner_records(
                         "applicability_state", "execution_state", "execution_reason", "execution_limit",
                         "applicability_evidence", "native_json_output",
                         "no_vulnerabilities_claimed",
+                        "worker_provenance", "cppcheck_source_coverage", "cpp_build_evidence", "scanner_tool_version",
                     )
                     if key in raw
                 },
                 "evidence_reference": (
-                    f"scanner_runs/{scan_id}" if scan_id else ""
+                    f"scanner_runs/{origin_scan_id}" if origin_scan_id else ""
                 ),
-                "scan_id": scan_id,
+                "scan_id": origin_scan_id,
                 "finding_count": len(findings),
                 "finding_summary": tool_summary,
                 "duration_seconds": raw.get("duration_seconds"),

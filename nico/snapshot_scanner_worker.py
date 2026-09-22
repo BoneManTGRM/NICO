@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -24,8 +25,7 @@ _EXCLUDED_PATH_PARTS = {"tests", "test", "fixtures", "fixture", "examples", "exa
 class RepositoryExecutionLimit(Exception):
     """Retain an exact-source execution boundary after checkout cleanup."""
 
-    def __init__(self, commit_sha: str, observed_bytes: int, limit_bytes: int):
-        super().__init__(f"Repository exceeds scanner size limit: {observed_bytes} bytes.")
+    def __init__(self, commit_sha: str, observed_bytes: int, limit_bytes: int, *, size_observation: dict | None = None):
         self.commit_sha = commit_sha
         self.evidence = {
             "reason": "repository_size_limit_exceeded",
@@ -34,6 +34,16 @@ class RepositoryExecutionLimit(Exception):
             "commit_sha": commit_sha,
             "scanner_execution_permitted": False,
         }
+        if size_observation is not None:
+            self.evidence["size_observation"] = size_observation
+            self.evidence["size_population"] = next(iter(size_observation.get("exceeded_limits") or []), "unverified")
+            if not size_observation.get("exceeded_limits"):
+                self.evidence["reason"] = "repository_size_unverified"
+        population = self.evidence.get("size_population", "checkout")
+        message = ("Repository size could not be established; scanner execution is unavailable."
+                   if self.evidence["reason"] == "repository_size_unverified" else
+                   f"Repository {population} exceeds scanner size limit: {observed_bytes} observed bytes, {limit_bytes} byte limit.")
+        super().__init__(message)
 
 
 def _git(command: list[str], *, cwd: Path | None, env: dict[str, str], timeout: int = 90) -> subprocess.CompletedProcess[str]:
@@ -97,9 +107,8 @@ def clone_repository_at_snapshot(
     return repo_path, actual_sha, []
 
 
-def _requested_specs(payload: dict[str, Any]) -> list[tool_runners.ScannerToolSpec]:
+def _requested_tool_names(payload: dict[str, Any]) -> list[str]:
     requested = [str(item or "").strip().lower() for item in payload.get("tools") or [] if str(item or "").strip()]
-    by_name = {spec.name: spec for spec in tool_runners.TOOL_SPECS}
     names = requested or [
         "pip-audit",
         "npm-audit",
@@ -111,6 +120,12 @@ def _requested_specs(payload: dict[str, Any]) -> list[tool_runners.ScannerToolSp
         "gitleaks",
         "trufflehog",
     ]
+    return list(dict.fromkeys(names))
+
+
+def _requested_specs(payload: dict[str, Any]) -> list[tool_runners.ScannerToolSpec]:
+    by_name = {spec.name: spec for spec in tool_runners.TOOL_SPECS}
+    names = _requested_tool_names(payload)
     return [by_name[name] for name in names if name in by_name]
 
 
@@ -267,14 +282,32 @@ def _finding_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
+def _persist_snapshot_scan(record: dict[str, Any], store=None) -> bool:
+    active = store if store is not None else STORE
+    if record.get('cpp_worker_child'):
+        from nico.assessment_cpp_integration import publish_cpp_parent
+        if not publish_cpp_parent(record, getattr(active, 'adapter', active)):
+            return False
+        base.SCAN_JOBS[record['scan_id']] = deepcopy(record)
+    else:
+        record.update({key: data for key, data in base.SCAN_JOBS.get(record['scan_id'], {}).items()
+                       if key.startswith('heartbeat_') or key.startswith('tool_')})
+        active.put('scanner_runs', record['scan_id'], record)
+        base.SCAN_JOBS[record['scan_id']] = deepcopy(record)
+    return True
+
+
+def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_record=None) -> None:
+    job = deepcopy(execution_record if execution_record is not None else base.SCAN_JOBS[scan_id])
+    job.setdefault('scan_id', scan_id)
     customer_id = payload.get("customer_id") or "default_customer"
     project_id = payload.get("project_id") or "default_project"
-    base.SCAN_JOBS[scan_id]["status"] = "running"
-    base.SCAN_JOBS[scan_id]["current_stage"] = "snapshot_checkout"
-    base.SCAN_JOBS[scan_id]["progress_percent"] = 10
-    base.SCAN_JOBS[scan_id]["updated_at"] = base.now_iso()
-    STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+    job["status"] = "running"
+    job["current_stage"] = "snapshot_checkout"
+    job["progress_percent"] = 10
+    job["updated_at"] = base.now_iso()
+    if not _persist_snapshot_scan(job):
+        return
 
     results: list[dict[str, Any]] = []
     unavailable_notes: list[str] = []
@@ -283,6 +316,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
     execution_limit: dict[str, Any] = {}
     actual_commit_sha = ""
     specs = _requested_specs(payload)
+    requested_names = _requested_tool_names(payload)
     started = time.monotonic()
 
     with tempfile.TemporaryDirectory(prefix="nico-snapshot-scan-") as workspace_name:
@@ -303,7 +337,9 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             )
             unavailable_notes.extend(clone_notes)
             if repo_path:
-                repo_size = base.directory_size(repo_path)
+                size_observation = base.repository_size_observation(repo_path)
+                repo_size = size_observation["source_bytes"]
+                job["repository_size_observation"] = size_observation
                 from nico.node_scanner_applicability_v1 import inspect_node_inputs
                 from nico.scanner_package_inventory_v1 import inspect_package_sources
                 workspace = WorkerWorkspace(
@@ -311,14 +347,16 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
                     node_input_inventory=inspect_node_inputs(repo_path, actual_commit_sha),
                     package_input_inventory=inspect_package_sources(repo_path, actual_commit_sha),
                 )
-                base.SCAN_JOBS[scan_id]["current_stage"] = "scanner_suite"
-                base.SCAN_JOBS[scan_id]["progress_percent"] = 20
-                STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+                job["current_stage"] = "scanner_suite"
+                job["progress_percent"] = 20
+                if not _persist_snapshot_scan(job):
+                    return
                 for index, spec in enumerate(specs, start=1):
-                    base.SCAN_JOBS[scan_id]["active_tool"] = spec.name
-                    base.SCAN_JOBS[scan_id]["progress_percent"] = 20 + round((index - 1) / max(1, len(specs)) * 70)
-                    base.SCAN_JOBS[scan_id]["updated_at"] = base.now_iso()
-                    STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+                    job["active_tool"] = spec.name
+                    job["progress_percent"] = 20 + round((index - 1) / max(1, len(specs)) * 70)
+                    job["updated_at"] = base.now_iso()
+                    if not _persist_snapshot_scan(job):
+                        return
                     try:
                         result = tool_runners.run_scanner_tool(spec, workspace)
                     except Exception as exc:  # pragma: no cover - defensive per-tool boundary
@@ -354,7 +392,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             results = [{
                 "tool": spec.name, "category": spec.category,
                 "status": "unavailable", "execution_state": "unavailable",
-                "reason": "repository_size_limit_exceeded",
+                "reason": execution_limit["reason"],
                 "execution_limit": dict(execution_limit),
                 "applicability_state": "applicability_unproven",
                 "applicability_reason": "Scanner target inventory was not established before the execution limit.",
@@ -366,6 +404,16 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
         except Exception as exc:  # pragma: no cover - defensive worker boundary
             unavailable_notes.append(f"Snapshot-bound worker failed safely: {type(exc).__name__}")
 
+    supported_names = {spec.name for spec in specs}
+    for name in requested_names:
+        if name not in supported_names:
+            results.append({'tool': name, 'scanner_name': name, 'status': 'unavailable',
+                'execution_state': 'unavailable', 'applicability_state': 'unproven',
+                'completed': False, 'verified_complete': False, 'verified_for_this_report': False,
+                'execution_observed_for_this_report': False, 'findings': [],
+                'raw_artifact_retention_complete': False,
+                'reason': 'This requested tool is not supported by the snapshot scanner runner.',
+                'human_review_required': True, 'client_delivery_allowed': False})
     unavailable = [_tool_name(item) for item in results if item.get("status") == "unavailable"]
     failed = [_tool_name(item) for item in results if item.get("status") in {"failed", "error"}]
     timed_out = [_tool_name(item) for item in results if item.get("status") == "timeout"]
@@ -377,7 +425,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
         for item in results
         if item.get("scans_git_history") and item.get("status") == "completed" and item.get("full_history_verified") is True
     ]
-    base.SCAN_JOBS[scan_id].update(
+    job.update(
         {
             "status": "complete" if snapshot_match and not execution_limit else "unavailable",
             "current_stage": "execution_limited" if execution_limit else "complete" if snapshot_match else "snapshot_verification_failed",
@@ -386,12 +434,12 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             "updated_at": base.now_iso(),
             "completed_at": base.now_iso(),
             "duration_seconds": round(time.monotonic() - started, 2),
-            "run_id": payload.get("run_id") or base.SCAN_JOBS[scan_id].get("run_id") or "",
+            "run_id": payload.get("run_id") or job.get("run_id") or "",
             "snapshot_id": payload.get("snapshot_id") or "",
             "snapshot_commit_sha": payload.get("snapshot_commit_sha") or "",
             "actual_commit_sha": actual_commit_sha,
             "snapshot_match": snapshot_match,
-            "tools_requested": [spec.name for spec in specs],
+            "tools_requested": requested_names,
             "tools_run": completed,
             "unavailable_tools": unavailable,
             "failed_tools": failed,
@@ -406,14 +454,14 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             "evidence_summary": {
                 "mode": "snapshot_bound_modern_scanner_worker",
                 "repository": payload.get("repository"),
-                "run_id": payload.get("run_id") or base.SCAN_JOBS[scan_id].get("run_id") or "",
+                "run_id": payload.get("run_id") or job.get("run_id") or "",
                 "snapshot_id": payload.get("snapshot_id") or "",
                 "snapshot_commit_sha": payload.get("snapshot_commit_sha") or "",
                 "actual_commit_sha": actual_commit_sha,
                 "snapshot_match": snapshot_match,
                 "repo_size_bytes": repo_size,
                 "execution_limit": dict(execution_limit),
-                "tools_requested": len(specs),
+                "tools_requested": len(requested_names),
                 "tools_run": len(completed),
                 "unavailable_tools": len(unavailable),
                 "failed_tools": len(failed),
@@ -430,12 +478,13 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             "draft_pr_creation_allowed": False,
         }
     )
-    STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+    if not _persist_snapshot_scan(job):
+        return
     STORE.audit(
         "scanner.snapshot_completed",
         {
             "scan_id": scan_id,
-            "status": base.SCAN_JOBS[scan_id]["status"],
+            "status": job["status"],
             "snapshot_id": payload.get("snapshot_id") or "",
             "snapshot_commit_sha": payload.get("snapshot_commit_sha") or "",
             "actual_commit_sha": actual_commit_sha,
@@ -450,7 +499,10 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
     )
 
 
-def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
+def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None = None,
+                        cpp_contract: dict | None = None) -> dict[str, Any]:
+    if worker_contract is not None and cpp_contract is not None:
+        raise ValueError('mutually_exclusive_worker_profiles')
     if not payload.get("authorized"):
         return {"status": "blocked", "error": "Explicit authorization is required before snapshot-bound scanner execution."}
     repository = str(payload.get("repository") or "")
@@ -488,7 +540,11 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         except ValueError as exc:
             return {"status": "blocked", "error": str(exc)}
 
-    specs = _requested_specs(payload)
+    if (worker_contract is not None or cpp_contract is not None) and (
+        payload.get("provider_access_mode") != "anonymous_public"
+        or payload.get("provider_credential_used") is not False
+    ):
+        return {"status": "blocked", "error": "The worker profile requires explicit anonymous source access."}
     scan_id = f"scan_snapshot_{uuid4().hex[:16]}"
     job = {
         "scan_id": scan_id,
@@ -515,7 +571,7 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "authorization_scope": payload.get("authorization_scope"),
         "code_modification_allowed": False,
         "draft_pr_creation_allowed": False,
-        "tools_requested": [spec.name for spec in specs],
+        "tools_requested": _requested_tool_names(payload),
         "tools_run": [],
         "unavailable_tools": [],
         "failed_tools": [],
@@ -533,8 +589,22 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "max_repo_bytes": base.MAX_REPO_BYTES,
         "human_review_required": True,
     }
+    if worker_contract is not None:
+        # Internal profile selection only. Public payload fields cannot
+        # choose a contract or cause a serving process to execute assessed code.
+        from nico.assessment_worker_receipts import enqueue_snapshot_scan
+        job = enqueue_snapshot_scan(job, worker_contract, STORE.adapter)
+        base.SCAN_JOBS[job["scan_id"]] = job
+        return job
+    if cpp_contract is not None:
+        from nico.assessment_cpp_integration import enqueue_cpp_child
+        job, created = enqueue_cpp_child(job, cpp_contract, STORE.adapter)
+        scan_id = job['scan_id']
+        if not created:
+            return base.get_scan(scan_id)
+    else:
+        STORE.put("scanner_runs", scan_id, job)
     base.SCAN_JOBS[scan_id] = job
-    STORE.put("scanner_runs", scan_id, job)
     STORE.audit(
         "scanner.snapshot_queued",
         {
@@ -548,7 +618,8 @@ def start_snapshot_scan(payload: dict[str, Any]) -> dict[str, Any]:
         customer_id=job["customer_id"],
         project_id=job["project_id"],
     )
-    threading.Thread(target=_run_snapshot_scan, args=(scan_id, dict(payload)), daemon=True).start()
+    thread_options = {'kwargs': {'execution_record': deepcopy(job)}} if job.get('cpp_worker_child') else {}
+    threading.Thread(target=_run_snapshot_scan, args=(scan_id, dict(payload)), daemon=True, **thread_options).start()
     return job
 
 

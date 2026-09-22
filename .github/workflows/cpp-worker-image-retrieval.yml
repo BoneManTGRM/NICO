@@ -1,0 +1,84 @@
+name: C++ Published Image Retrieval
+
+on:
+  push:
+    branches: [feat/large-repository-cpp-comprehensive]
+    paths:
+      - .github/workflows/cpp-worker-image-retrieval.yml
+      - scripts/cpp_worker_image_release.py
+      - scripts/cpp_worker_published_image.json
+      - nico/assessment_worker_launch.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-image-retrieval-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    env:
+      NICO_IMAGE_HANDOFF_SHA256: 5311d1fc8ebba1aefbd378a0d384e4fa09c54d689887aa5e20c09bc685ad2165
+      NICO_IMAGE_QUALIFIED_SOURCE_SHA: bb4914b9f8ba94ccea0d4fb256630580a53301b6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install existing controller dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Restore the original retained publication receipt
+        run: |
+          mkdir image-publication
+          cp scripts/cpp_worker_published_image.json image-publication/publication.json
+      - name: Retrieve published immutable image using job-scoped package access
+        env:
+          NICO_IMAGE_RELEASE_MODE: verify
+          NICO_IMAGE_PULL_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Hosted images can contain preloaded Docker images. Preserve that
+          # store and use a newly created daemon root for this retrieval only.
+          retrieval_root=$(mktemp -d "$RUNNER_TEMP/nico-image-retrieval.XXXXXX")
+          printf '{}\n' > "$retrieval_root/daemon.json"
+          sudo --non-interactive systemctl stop docker.service docker.socket
+          cleanup() {
+            if [ -f "$retrieval_root/daemon.pid" ]; then
+              sudo --non-interactive kill -TERM "$(sudo --non-interactive cat "$retrieval_root/daemon.pid")" || true
+            fi
+          }
+          trap cleanup EXIT
+          sudo --non-interactive env -i PATH="$PATH" dockerd \
+            --config-file "$retrieval_root/daemon.json" \
+            --data-root "$retrieval_root/data" \
+            --exec-root "$retrieval_root/exec" \
+            --pidfile "$retrieval_root/daemon.pid" \
+            --host unix:///var/run/docker.sock \
+            --bridge none --iptables=false --ip6tables=false --ip-forward=false --ip-masq=false \
+            > "$retrieval_root/daemon.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if docker --host unix:///var/run/docker.sock info > /dev/null 2>&1; then
+              break
+            fi
+            sleep 0.5
+          done
+          actual_root=$(docker --host unix:///var/run/docker.sock info --format '{{.DockerRootDir}}')
+          test "$actual_root" = "$retrieval_root/data"
+          python -m scripts.cpp_worker_image_release
+      - name: Retain actual registry access and retrieval result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-image-retrieval-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: image-retrieval/verification.json
+          if-no-files-found: warn
+          retention-days: 30

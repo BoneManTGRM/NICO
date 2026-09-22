@@ -29,7 +29,8 @@ PYTHON_INPUT_NAMES = frozenset({
     'pyproject.toml', 'poetry.lock', 'pipfile', 'pipfile.lock', 'uv.lock',
     'pdm.lock', 'setup.py', 'setup.cfg', 'environment.yml', 'environment.yaml',
 })
-SOURCE_REASONS = {**REASONS, 'pip-audit':
+SOURCE_REASONS = {**REASONS, 'cppcheck':
+    'The complete assessed checkout contains no C/C++ source or header inputs; Cppcheck is not applicable.', 'pip-audit':
     'The complete assessed checkout contains no Python source, dependency manifest, or lockfile; pip-audit is not applicable. Other applicable scanners remain in scope.'}
 
 
@@ -43,6 +44,7 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
     dependencies: list[str] = []
     typescript: list[str] = []
     python: list[str] = []
+    cpp: list[str] = []
     manifests: list[dict[str, str]] = []
     errors: list[str] = []
     root = repo.resolve()
@@ -67,6 +69,9 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
                 errors.append('checkout_symlink_not_inspected')
                 continue
             lower = name.casefold()
+            from nico.full_assessment_complexity_evidence import CPP_SOURCE_SUFFIXES
+            if lower.endswith(CPP_SOURCE_SUFFIXES) and path.is_file():
+                cpp.append(relative)
             if lower.endswith(('.py', '.pyi', '.pyx')) or lower in PYTHON_INPUT_NAMES or any(
                 fnmatch.fnmatchcase(lower, pattern) for pattern in ('requirements*.txt', 'requirements*.in')
             ):
@@ -113,6 +118,7 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
         'node_dependency_paths': sorted(set(dependencies)),
         'typescript_input_paths': sorted(set(typescript)),
         'python_input_paths': sorted(set(python)),
+        'cpp_input_paths': sorted(set(cpp)),
         'package_manifests': sorted(manifests, key=lambda item: item['path']),
         'errors': sorted(set(errors)),
         'submodule_content_scope': 'only_content_present_in_the_assessed_checkout',
@@ -141,7 +147,7 @@ def justified_inapplicability(value: Any, scanner: str, expected_commit: str) ->
     if scanner not in SOURCE_REASONS or not valid_input_inventory(value, expected_commit):
         return False
     field = {'npm-audit': 'node_dependency_paths', 'typescript': 'typescript_input_paths',
-             'pip-audit': 'python_input_paths'}[scanner]
+             'pip-audit': 'python_input_paths', 'cppcheck': 'cpp_input_paths'}[scanner]
     return value.get(field) == []
 
 

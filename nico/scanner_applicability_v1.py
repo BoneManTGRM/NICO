@@ -133,6 +133,7 @@ def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
         "typescript_config": any(name.startswith("tsconfig") and name.endswith(".json") for name in basenames),
         "python_manifest": python_manifest,
         "python_source": python_source,
+        "cpp_source": any(path.endswith(('.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx')) for path in paths),
     }
 
 
@@ -173,6 +174,7 @@ def _normalize_record(
     positive = {
         "pip-audit": signals.get("python_manifest") or signals.get("python_source"),
         "bandit": signals.get("python_source"),
+        "cppcheck": signals.get("cpp_source"),
         "npm-audit": signals.get("node_manifest"),
         "eslint": signals.get("node_source"),
         "typescript": signals.get("typescript_source") or signals.get("typescript_config"),
@@ -183,7 +185,7 @@ def _normalize_record(
         "trufflehog": record.get("exact_commit_match") is True,
     }.get(scanner, False)
     if valid_input_inventory(inventory, str(record.get("commit_sha") or record.get("target_commit_sha") or "")):
-        field = {"npm-audit": "node_dependency_paths", "typescript": "typescript_input_paths", "pip-audit": "python_input_paths"}.get(scanner)
+        field = {"npm-audit": "node_dependency_paths", "typescript": "typescript_input_paths", "pip-audit": "python_input_paths", "cppcheck": "cpp_input_paths"}.get(scanner)
         if field and isinstance(inventory.get(field), list) and inventory[field]:
             positive = True
     conflicting = bool(absent and positive)

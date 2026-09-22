@@ -5,6 +5,7 @@ import time
 import nico.snapshot_scanner_heartbeat_patch as heartbeat
 from nico import scanner_tool_runners, scanner_worker, snapshot_scanner_worker
 from nico.storage import MemoryAdapter
+import pytest
 
 
 def test_heartbeat_updates_durable_scanner_record(monkeypatch) -> None:
@@ -63,3 +64,21 @@ def test_heartbeat_installer_wraps_source_and_snapshot_worker_module_alias(monke
     assert scanner_tool_runners.run_scanner_tool is snapshot_scanner_worker.tool_runners.run_scanner_tool
     assert snapshot_scanner_worker._run_snapshot_scan.__name__ == "fake_worker"
     assert scanner_tool_runners.run_scanner_tool.__name__ == "fake_tool"
+
+
+@pytest.mark.parametrize('heartbeat_first', [True, False])
+def test_installed_worker_wrappers_forward_frozen_execution_record(monkeypatch, heartbeat_first):
+    import nico.snapshot_scanner_resilience_patch as resilience
+    from nico import scanner_recovery
+    observed = []
+    def worker(scan_id, payload, *, execution_record):
+        observed.append((scan_id, execution_record))
+    monkeypatch.setattr(snapshot_scanner_worker, '_run_snapshot_scan', worker)
+    monkeypatch.setattr(scanner_recovery, 'resume_interrupted_scanner_run', scanner_recovery.resume_interrupted_scanner_run)
+    monkeypatch.setattr(scanner_tool_runners, 'run_scanner_tool', scanner_tool_runners.run_scanner_tool)
+    installers = [heartbeat.install_snapshot_scanner_heartbeat, resilience.install_snapshot_scanner_resilience]
+    for install in installers if heartbeat_first else reversed(installers):
+        install()
+    record = {'recovery': {'attempt': 3}, 'cpp_worker_child': {'synthetic': True}}
+    snapshot_scanner_worker._run_snapshot_scan('synthetic-linked-scan', {}, execution_record=record)
+    assert observed == [('synthetic-linked-scan', record)]
