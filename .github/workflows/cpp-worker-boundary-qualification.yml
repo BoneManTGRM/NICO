@@ -136,6 +136,6 @@ jobs:
         with:
           name: cppcheck-image-handoff-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: cppcheck-image-handoff/
-          compression-level: 1
+          compression-level: 6
           if-no-files-found: error
           retention-days: 7
