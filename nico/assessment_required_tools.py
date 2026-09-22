@@ -46,7 +46,10 @@ def complete_assessment_tools(requested: Any) -> list[str]:
     return list(dict.fromkeys([*REQUIRED_EXACT_SNAPSHOT_TOOLS, *normalized]))
 
 
-def start_snapshot_scan_with_required_tools(payload: dict[str, Any], *, worker_contract: dict | None = None) -> dict[str, Any]:
+def start_snapshot_scan_with_required_tools(payload: dict[str, Any], *, worker_contract: dict | None = None,
+                                            cpp_contract: dict | None = None) -> dict[str, Any]:
+    if worker_contract is not None and cpp_contract is not None:
+        raise ValueError('worker_profiles_are_mutually_exclusive')
     request = deepcopy(payload)
     original = request.get("tools") if isinstance(request.get("tools"), list) else []
     missing = [tool for tool in REQUIRED_EXACT_SNAPSHOT_TOOLS if tool not in original]
@@ -58,6 +61,8 @@ def start_snapshot_scan_with_required_tools(payload: dict[str, Any], *, worker_c
         # An explicit internal dispatch profile is not a replacement for this
         # assessment's required scanner set. Missing tools must remain visible.
         result = _ORIGINAL_START_SNAPSHOT_SCAN(request, worker_contract=worker_contract)
+    elif cpp_contract is not None:
+        result = _ORIGINAL_START_SNAPSHOT_SCAN(request, cpp_contract=cpp_contract)
     else:
         result = _ORIGINAL_START_SNAPSHOT_SCAN(request)
     if isinstance(result, dict):

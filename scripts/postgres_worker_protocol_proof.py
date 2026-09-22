@@ -318,7 +318,9 @@ def run_proof(database_url):
     assert get_scan(first.scan_id)["receipt_sha256"] == terminal["receipt_sha256"]
     assert jobs.get(first) == terminal
     checks["poll_preserves_completed_receipt"] = True
-    assert len(checks) == 25 and all(checks.values())
+    from scripts.postgres_cpp_composition_proof import prove_cpp_composition
+    checks.update(prove_cpp_composition(adapter, post, worker))
+    assert len(checks) == 33 and all(checks.values())
     return {"schema": "nico.worker-protocol-postgres-proof.v1", "synthetic": True,
         "live_production": False, "repository_executed": False, "analyzer_executed": False,
         "human_approval_proven": False, "client_delivery_allowed": False, "checks": checks,

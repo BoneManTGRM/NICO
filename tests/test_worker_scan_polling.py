@@ -36,17 +36,19 @@ def test_public_payload_cannot_select_a_worker_contract(monkeypatch):
     from types import SimpleNamespace
     from nico import snapshot_scanner_worker as snapshot
     from nico import assessment_worker_receipts as receipts
+    from nico import assessment_cpp_integration as cpp
     from nico.storage import STORE
     monkeypatch.setattr(STORE, "adapter", MemoryAdapter())
     monkeypatch.setattr(scanner_worker, "SCAN_JOBS", {})
     launched = []
     monkeypatch.setattr(snapshot.threading, "Thread", lambda **kwargs: SimpleNamespace(start=lambda: launched.append(kwargs)))
     monkeypatch.setattr(receipts, "enqueue_snapshot_scan", lambda *args: pytest.fail("public payload selected internal worker authority"))
+    monkeypatch.setattr(cpp, 'enqueue_cpp_child', lambda *args: pytest.fail('public payload selected additive worker authority'))
     result = snapshot.start_snapshot_scan({"authorized": True, "authorized_by": "owned_fixture",
         "authorization_scope": "synthetic no-execution fixture", "repository": "example/owned-control",
         "snapshot_id": "fixture", "snapshot_commit_sha": "a" * 40,
         "provider_access_mode": "anonymous_public", "provider_credential_used": False,
-        "worker_contract": {"arbitrary": "command"}})
+        "worker_contract": {"arbitrary": "command"}, "cpp_contract": {"arbitrary": "command"}})
     assert result["status"] == "queued" and "worker_job_id" not in result
     assert len(launched) == 1
 

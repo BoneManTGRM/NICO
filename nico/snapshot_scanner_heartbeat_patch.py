@@ -120,11 +120,11 @@ def install_snapshot_scanner_heartbeat() -> dict[str, Any]:
     current_worker: Callable[..., Any] = snapshot_scanner_worker._run_snapshot_scan
     if not getattr(current_worker, _WORKER_MARKER, False):
         @wraps(current_worker)
-        def worker_with_context(scan_id: str, payload: dict[str, Any]) -> Any:
+        def worker_with_context(scan_id: str, payload: dict[str, Any], **kwargs: Any) -> Any:
             previous = getattr(_CONTEXT, "scan_id", None)
             _CONTEXT.scan_id = scan_id
             try:
-                return current_worker(scan_id, payload)
+                return current_worker(scan_id, payload, **kwargs)
             finally:
                 if previous is None:
                     try:

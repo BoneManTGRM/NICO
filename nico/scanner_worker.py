@@ -385,11 +385,14 @@ def start_scan(payload: dict[str, Any]) -> dict[str, Any]:
 
 def get_scan(scan_id: str) -> dict[str, Any]:
     cached = SCAN_JOBS.get(scan_id)
-    if cached and not cached.get("worker_job_id"):
+    if cached and not cached.get("worker_job_id") and not cached.get('cpp_worker_child'):
         return cached
     # Remote workers publish through PostgreSQL. A serving process's queued copy
     # cannot override a completion, cancellation or disappearance after restart.
     scan = STORE.get("scanner_runs", scan_id)
+    if scan and scan.get('cpp_worker_child'):
+        from nico.assessment_cpp_integration import read_cpp_composition
+        return read_cpp_composition(scan, STORE, get_scan)
     if scan and scan.get("worker_job_id") and scan.get("status") in {"queued", "running"}:
         from nico.assessment_worker_jobs import JobConflict, JobIdentity, WorkerJobs
         jobs = WorkerJobs(STORE.adapter)

@@ -28,8 +28,8 @@ CONFIGURATION = {"platform": "unix64", "c_standard": "c11", "cpp_standard": "c++
                  "max_configs": 12, "checks": ["warning", "style", "performance", "portability", "information"]}
 
 
-def enqueue_snapshot_scan(scan: dict, contract: dict, adapter):
-    """Internal typed dispatch, never selected from a public request's dictionary."""
+def prepare_snapshot_scan(scan: dict, contract: dict):
+    """Build a validated internal identity without dispatching external work."""
     from nico.github_actions_proof_auth_v1 import expected_release_sha
     contract = validate_contract(contract)
     if (scan.get("provider_access_mode") != "anonymous_public"
@@ -39,13 +39,22 @@ def enqueue_snapshot_scan(scan: dict, contract: dict, adapter):
     contract_sha = _digest(contract)
     scan = deepcopy(scan)
     requested = sorted(set([*(scan.get("tools_requested") or []), "cppcheck"]))
-    scan["scan_id"] = "scan_worker_" + _digest({key: scan[key] for key in (
+    binding = {key: scan[key] for key in (
         "customer_id", "project_id", "run_id", "repository", "snapshot_commit_sha")}
-        | {"contract_sha256": contract_sha, "release_revision": release,
-           "tools_requested": requested})[:40]
+    if scan.get('parent_scan_id'):
+        binding['parent_scan_id'] = scan['parent_scan_id']
+    scan["scan_id"] = "scan_worker_" + _digest(binding | {
+        "contract_sha256": contract_sha, "release_revision": release,
+        "tools_requested": requested})[:40]
     identity = JobIdentity(scan["customer_id"], scan["project_id"], scan["run_id"], scan["scan_id"],
                            scan["repository"], scan["snapshot_commit_sha"], contract_sha, release)
     scan.update(worker_job_id=identity.job_id, tools_requested=requested)
+    return scan, contract, identity
+
+
+def enqueue_snapshot_scan(scan: dict, contract: dict, adapter):
+    """Internal typed dispatch, never selected from a public request's dictionary."""
+    scan, contract, identity = prepare_snapshot_scan(scan, contract)
     WorkerJobs(adapter).enqueue(identity, JobLimits(**contract["limits"]), contract=contract, scan=scan)
     from nico.assessment_worker_dispatch import dispatch_if_enabled
     return dispatch_if_enabled(adapter.get("scanner_runs", identity.scan_id), adapter)

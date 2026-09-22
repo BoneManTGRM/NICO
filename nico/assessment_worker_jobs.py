@@ -112,7 +112,7 @@ class WorkerJobs:
             raise JobConflict("worker_job_identity_conflict")
         return self.get(identity)
 
-    def enqueue(self, identity: JobIdentity, limits: JobLimits, *, contract=None, scan=None) -> dict:
+    def enqueue(self, identity: JobIdentity, limits: JobLimits, *, contract=None, scan=None, parent_scan=None) -> dict:
         if contract is not None and (not isinstance(contract, dict) or _digest(contract) != identity.contract_sha256):
             raise ValueError("worker_job_contract_mismatch")
         if scan is not None:
@@ -123,6 +123,12 @@ class WorkerJobs:
                 "worker_job_id": identity.job_id, "status": "queued",
             }.items()):
                 raise ValueError("worker_job_scan_mismatch")
+        if parent_scan is not None:
+            from nico.assessment_cpp_integration import _identity
+            if scan is None or parent_scan.get('status') != 'queued':
+                raise ValueError('worker_job_parent_invalid')
+            _identity(parent_scan, scan, {'job_id': identity.job_id,
+                      'identity': asdict(identity), 'contract': contract})
         with self.adapter._connect() as connection:
             now = self._now(connection)
             payload = {
@@ -160,6 +166,22 @@ class WorkerJobs:
                                             (identity.scan_id,)).fetchone()
                 if stored is None or stored["payload"].get("worker_job_id") != identity.job_id:
                     raise JobConflict("worker_job_scan_conflict")
+                if parent_scan is not None:
+                    from nico.assessment_cpp_integration import _identity
+                    _identity(parent_scan, stored['payload'], existing)
+                    inserted = connection.execute(
+                        "INSERT INTO scanner_runs(scan_id,customer_id,project_id,status,payload,created_at,updated_at) "
+                        "VALUES(%s,%s,%s,'queued',%s,clock_timestamp(),clock_timestamp()) "
+                        "ON CONFLICT DO NOTHING RETURNING scan_id",
+                        (parent_scan['scan_id'], identity.customer_id, identity.project_id,
+                         self.adapter._jsonb(parent_scan)),
+                    ).fetchone()
+                    parent_row = connection.execute("SELECT payload FROM scanner_runs WHERE scan_id=%s FOR UPDATE",
+                                                    (parent_scan['scan_id'],)).fetchone()
+                    if parent_row is None:
+                        raise JobConflict('worker_job_parent_missing')
+                    _identity(parent_row['payload'], stored['payload'], existing)
+                    return {**existing, 'parent_created': inserted is not None}
             return existing
 
     def _change(self, identity: JobIdentity, operation: Callable):
@@ -334,8 +356,10 @@ class WorkerJobs:
             return payload, True
         return self._change(identity, operation)
 
-    def cancel(self, identity: JobIdentity) -> bool:
-        def operation(payload, _now, _connection):
+    def cancel(self, identity: JobIdentity, *, publish=None) -> bool:
+        def operation(payload, _now, connection):
+            if publish is not None:
+                publish(connection, payload)
             if payload["status"] in TERMINAL:
                 return payload["status"] == "cancelled", False
             payload.update(status="cancelled", lease_until_epoch=0)

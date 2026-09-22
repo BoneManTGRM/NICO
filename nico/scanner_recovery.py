@@ -271,6 +271,15 @@ def atomic_scanner_transition(
     require_absent_field: str | None = None,
 ) -> dict[str, Any] | None:
     active = _store(store)
+    if new_status == 'cancelled':
+        current = active.get('scanner_runs', scan_id)
+        if isinstance(current, dict) and current.get('cpp_worker_child'):
+            from nico.assessment_cpp_integration import close_cpp_parent
+            from nico.assessment_worker_jobs import JobConflict
+            try:
+                return close_cpp_parent(current, active.adapter, expected_statuses, patch, require_absent_field)
+            except JobConflict:
+                return None
     if _adapter_name(active) == "postgres" and _persistence_available(active):
         return _postgres_atomic_transition(active, scan_id, expected_statuses, new_status, patch, require_absent_field)
 

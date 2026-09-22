@@ -20,11 +20,13 @@ def _terminalize_worker_failure(
     exc: Exception,
     *,
     store: StorageAdapter | None = None,
+    execution_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from nico import scanner_worker as base
 
     active = _store(store)
-    current = deepcopy(base.SCAN_JOBS.get(scan_id) or active.get("scanner_runs", scan_id) or {})
+    current = deepcopy(execution_record if execution_record is not None else (
+        base.SCAN_JOBS.get(scan_id) or active.get("scanner_runs", scan_id) or {}))
     now_text = utc_now()
     current.update(
         {
@@ -39,8 +41,9 @@ def _terminalize_worker_failure(
             "client_delivery_allowed": False,
         }
     )
-    base.SCAN_JOBS[scan_id] = current
-    active.put("scanner_runs", scan_id, current)
+    from nico.snapshot_scanner_worker import _persist_snapshot_scan
+    if not _persist_snapshot_scan(current, store=active):
+        return active.get('scanner_runs', scan_id) or {}
     try:
         active.audit(
             "scanner.snapshot_failed",
@@ -66,11 +69,14 @@ def _run_with_failure_boundary(
     payload: dict[str, Any],
     *,
     store: StorageAdapter | None = None,
+    execution_record: dict[str, Any] | None = None,
 ) -> Any:
     try:
+        if execution_record is not None:
+            return original(scan_id, payload, execution_record=execution_record)
         return original(scan_id, payload)
     except Exception as exc:
-        _terminalize_worker_failure(scan_id, exc, store=store)
+        _terminalize_worker_failure(scan_id, exc, store=store, execution_record=execution_record)
         return None
 
 
@@ -214,6 +220,7 @@ def _resume_snapshot_scanner_run(
             target=snapshot_scanner_worker._run_snapshot_scan,
             args=(normalized_scan_id, payload),
             daemon=True,
+            **({'kwargs': {'execution_record': deepcopy(claimed)}} if claimed.get('cpp_worker_child') else {}),
         )
         thread.start()
     except Exception as exc:
@@ -291,12 +298,13 @@ def install_snapshot_scanner_resilience() -> dict[str, Any]:
 
     current_worker = snapshot_scanner_worker._run_snapshot_scan
     if not getattr(current_worker, _WORKER_MARKER, False):
-        def guarded_worker(scan_id: str, payload: dict[str, Any]) -> Any:
+        def guarded_worker(scan_id: str, payload: dict[str, Any], *, execution_record=None) -> Any:
             return _run_with_failure_boundary(
                 current_worker,
                 scan_id,
                 payload,
                 store=snapshot_scanner_worker.STORE,
+                execution_record=execution_record,
             )
 
         setattr(guarded_worker, _WORKER_MARKER, True)

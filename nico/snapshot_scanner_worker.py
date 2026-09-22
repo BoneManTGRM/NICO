@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -276,14 +277,31 @@ def _finding_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
+def _persist_snapshot_scan(record: dict[str, Any], store=None) -> bool:
+    active = store if store is not None else STORE
+    if record.get('cpp_worker_child'):
+        from nico.assessment_cpp_integration import publish_cpp_parent
+        if not publish_cpp_parent(record, getattr(active, 'adapter', active)):
+            return False
+        base.SCAN_JOBS[record['scan_id']] = deepcopy(record)
+    else:
+        record.update({key: data for key, data in base.SCAN_JOBS.get(record['scan_id'], {}).items()
+                       if key.startswith('heartbeat_') or key.startswith('tool_')})
+        active.put('scanner_runs', record['scan_id'], record)
+        base.SCAN_JOBS[record['scan_id']] = deepcopy(record)
+    return True
+
+
+def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_record=None) -> None:
+    job = deepcopy(execution_record if execution_record is not None else base.SCAN_JOBS[scan_id])
     customer_id = payload.get("customer_id") or "default_customer"
     project_id = payload.get("project_id") or "default_project"
-    base.SCAN_JOBS[scan_id]["status"] = "running"
-    base.SCAN_JOBS[scan_id]["current_stage"] = "snapshot_checkout"
-    base.SCAN_JOBS[scan_id]["progress_percent"] = 10
-    base.SCAN_JOBS[scan_id]["updated_at"] = base.now_iso()
-    STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+    job["status"] = "running"
+    job["current_stage"] = "snapshot_checkout"
+    job["progress_percent"] = 10
+    job["updated_at"] = base.now_iso()
+    if not _persist_snapshot_scan(job):
+        return
 
     results: list[dict[str, Any]] = []
     unavailable_notes: list[str] = []
@@ -314,7 +332,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             if repo_path:
                 size_observation = base.repository_size_observation(repo_path)
                 repo_size = size_observation["source_bytes"]
-                base.SCAN_JOBS[scan_id]["repository_size_observation"] = size_observation
+                job["repository_size_observation"] = size_observation
                 from nico.node_scanner_applicability_v1 import inspect_node_inputs
                 from nico.scanner_package_inventory_v1 import inspect_package_sources
                 workspace = WorkerWorkspace(
@@ -322,14 +340,16 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
                     node_input_inventory=inspect_node_inputs(repo_path, actual_commit_sha),
                     package_input_inventory=inspect_package_sources(repo_path, actual_commit_sha),
                 )
-                base.SCAN_JOBS[scan_id]["current_stage"] = "scanner_suite"
-                base.SCAN_JOBS[scan_id]["progress_percent"] = 20
-                STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+                job["current_stage"] = "scanner_suite"
+                job["progress_percent"] = 20
+                if not _persist_snapshot_scan(job):
+                    return
                 for index, spec in enumerate(specs, start=1):
-                    base.SCAN_JOBS[scan_id]["active_tool"] = spec.name
-                    base.SCAN_JOBS[scan_id]["progress_percent"] = 20 + round((index - 1) / max(1, len(specs)) * 70)
-                    base.SCAN_JOBS[scan_id]["updated_at"] = base.now_iso()
-                    STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+                    job["active_tool"] = spec.name
+                    job["progress_percent"] = 20 + round((index - 1) / max(1, len(specs)) * 70)
+                    job["updated_at"] = base.now_iso()
+                    if not _persist_snapshot_scan(job):
+                        return
                     try:
                         result = tool_runners.run_scanner_tool(spec, workspace)
                     except Exception as exc:  # pragma: no cover - defensive per-tool boundary
@@ -388,7 +408,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
         for item in results
         if item.get("scans_git_history") and item.get("status") == "completed" and item.get("full_history_verified") is True
     ]
-    base.SCAN_JOBS[scan_id].update(
+    job.update(
         {
             "status": "complete" if snapshot_match and not execution_limit else "unavailable",
             "current_stage": "execution_limited" if execution_limit else "complete" if snapshot_match else "snapshot_verification_failed",
@@ -397,7 +417,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             "updated_at": base.now_iso(),
             "completed_at": base.now_iso(),
             "duration_seconds": round(time.monotonic() - started, 2),
-            "run_id": payload.get("run_id") or base.SCAN_JOBS[scan_id].get("run_id") or "",
+            "run_id": payload.get("run_id") or job.get("run_id") or "",
             "snapshot_id": payload.get("snapshot_id") or "",
             "snapshot_commit_sha": payload.get("snapshot_commit_sha") or "",
             "actual_commit_sha": actual_commit_sha,
@@ -417,7 +437,7 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             "evidence_summary": {
                 "mode": "snapshot_bound_modern_scanner_worker",
                 "repository": payload.get("repository"),
-                "run_id": payload.get("run_id") or base.SCAN_JOBS[scan_id].get("run_id") or "",
+                "run_id": payload.get("run_id") or job.get("run_id") or "",
                 "snapshot_id": payload.get("snapshot_id") or "",
                 "snapshot_commit_sha": payload.get("snapshot_commit_sha") or "",
                 "actual_commit_sha": actual_commit_sha,
@@ -441,12 +461,13 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
             "draft_pr_creation_allowed": False,
         }
     )
-    STORE.put("scanner_runs", scan_id, base.SCAN_JOBS[scan_id])
+    if not _persist_snapshot_scan(job):
+        return
     STORE.audit(
         "scanner.snapshot_completed",
         {
             "scan_id": scan_id,
-            "status": base.SCAN_JOBS[scan_id]["status"],
+            "status": job["status"],
             "snapshot_id": payload.get("snapshot_id") or "",
             "snapshot_commit_sha": payload.get("snapshot_commit_sha") or "",
             "actual_commit_sha": actual_commit_sha,
@@ -461,7 +482,10 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any]) -> None:
     )
 
 
-def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None = None) -> dict[str, Any]:
+def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None = None,
+                        cpp_contract: dict | None = None) -> dict[str, Any]:
+    if worker_contract is not None and cpp_contract is not None:
+        raise ValueError('mutually_exclusive_worker_profiles')
     if not payload.get("authorized"):
         return {"status": "blocked", "error": "Explicit authorization is required before snapshot-bound scanner execution."}
     repository = str(payload.get("repository") or "")
@@ -499,7 +523,7 @@ def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None
         except ValueError as exc:
             return {"status": "blocked", "error": str(exc)}
 
-    if worker_contract is not None and (
+    if (worker_contract is not None or cpp_contract is not None) and (
         payload.get("provider_access_mode") != "anonymous_public"
         or payload.get("provider_credential_used") is not False
     ):
@@ -556,8 +580,15 @@ def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None
         job = enqueue_snapshot_scan(job, worker_contract, STORE.adapter)
         base.SCAN_JOBS[job["scan_id"]] = job
         return job
+    if cpp_contract is not None:
+        from nico.assessment_cpp_integration import enqueue_cpp_child
+        job, created = enqueue_cpp_child(job, cpp_contract, STORE.adapter)
+        scan_id = job['scan_id']
+        if not created:
+            return base.get_scan(scan_id)
+    else:
+        STORE.put("scanner_runs", scan_id, job)
     base.SCAN_JOBS[scan_id] = job
-    STORE.put("scanner_runs", scan_id, job)
     STORE.audit(
         "scanner.snapshot_queued",
         {
@@ -571,7 +602,8 @@ def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None
         customer_id=job["customer_id"],
         project_id=job["project_id"],
     )
-    threading.Thread(target=_run_snapshot_scan, args=(scan_id, dict(payload)), daemon=True).start()
+    thread_options = {'kwargs': {'execution_record': deepcopy(job)}} if job.get('cpp_worker_child') else {}
+    threading.Thread(target=_run_snapshot_scan, args=(scan_id, dict(payload)), daemon=True, **thread_options).start()
     return job
 
 
