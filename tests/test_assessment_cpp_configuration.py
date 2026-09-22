@@ -109,7 +109,7 @@ def test_configured_receipt_requires_all_native_populations():
     assert coverage['header_context_verified'] and coverage['configuration_aware']
     assert coverage['observed_headers'] == ['include/value.h']
     assert {row['translation_unit'] for row in coverage['header_contexts']} == {'main.cpp', 'value.cpp'}
-    assert record['cpp_build_evidence']['native_test'] == {'required': 1, 'executed': 1, 'passed': 1}
+    assert record['cpp_build_evidence']['native_test'] == {'required': 1, 'attempted': 1, 'executed': 1, 'passed': 1}
     assert not record['cpp_build_evidence']['sanitizers_executed']
     assert not record['client_delivery_allowed']
 
@@ -151,6 +151,7 @@ def test_native_failure_or_omission_cannot_become_complete(change):
         assert record['status'] == 'failed'
         assert record['cpp_build_evidence']['build_completed']
         assert record['cpp_build_evidence']['native_test']['passed'] == 0
+        assert record['cpp_build_evidence']['native_test']['executed'] is None
 
 
 @pytest.mark.parametrize('change', ['command', 'database', 'missing_step', 'compiler', 'binary_hash', 'duration', 'schema'])
@@ -222,6 +223,8 @@ def test_native_test_is_separate_and_its_nonzero_exit_is_preserved(configured_do
     rows = [json.loads(line) for line in events.read_text().splitlines()]
     creates = [row for row in rows if row[0] == 'create']
     assert len(creates) == 2 and creates[0][2] != creates[1][2]
+    assert any(arg.startswith('--tmpfs=') and ',noexec,' in arg for arg in creates[0])
+    assert any(arg.startswith('--tmpfs=') and ',exec,' in arg for arg in creates[1])
     assert len([row for row in rows if row[:2] == ['rm', '--force']]) == 2
     second = json.loads((events.parent / 'payload-2.json').read_text())
     assert set(second['inputs']) == {'native-test'}

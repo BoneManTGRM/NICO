@@ -263,7 +263,7 @@ def main():
             assert configured_record['cppcheck_source_coverage']['configuration_aware']
             assert configured_record['cppcheck_source_coverage']['header_context_verified']
             assert configured_record['cpp_build_evidence']['build_completed']
-            assert configured_record['cpp_build_evidence']['native_test'] == {'required': 1, 'executed': 1, 'passed': 1}
+            assert configured_record['cpp_build_evidence']['native_test'] == {'required': 1, 'attempted': 1, 'executed': 1, 'passed': 1}
             assert any(f['rule_id'] == 'nullPointer' and f['path'] == 'value.cpp' for f in configured_record['findings'])
             assert not any(f['path'] == 'main.cpp' for f in configured_record['findings'])
             # Same exact source, only the frozen macro changes. A successful
@@ -276,6 +276,7 @@ def main():
             assert negative['canonical_record']['status'] == 'failed'
             assert negative['canonical_record']['cpp_build_evidence']['build_completed']
             assert negative['canonical_record']['cpp_build_evidence']['native_test']['passed'] == 0
+            assert negative['canonical_record']['cpp_build_evidence']['native_test']['executed'] is None
             assert negative['receipt']['native']['steps'][-1]['exit_code'] == 47
             assert not any(f['rule_id'] == 'nullPointer' for f in negative['canonical_record']['findings'])
             evidence.update(compilation_database_verified=True, header_context_verified=True,

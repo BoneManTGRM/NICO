@@ -226,7 +226,7 @@ def _configured_record(identity, contract, receipt, encoded):
         'duration_seconds': result['duration_ms'] / 1000, 'findings': result['findings'],
         'finding_count': len(result['findings']), 'scanner_tool_version': contract['tool_version'],
         'applicable': True, 'evidence_required': True,
-        'reason': '' if complete else 'Required configured build, native test, header or analyzer evidence is incomplete.',
+        'reason': '' if complete else 'Native target execution or parsing is incomplete; retained observations require review.',
         'worker_provenance': {'job_id': identity.job_id, 'worker_id': receipt['worker_id'],
             'release_revision': identity.release_revision, 'image_digest': contract['image_digest'],
             'contract_sha256': identity.contract_sha256, 'configuration_sha256': receipt['configuration_sha256'],

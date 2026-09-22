@@ -14,6 +14,9 @@ from nico.assessment_worker_container import SETUP_PROGRAM, _command, _read_inpu
 
 IMPORTS = 'import base64, hashlib, json, os, pathlib, resource, signal, socket, subprocess, sys, time\n'
 BUILD_PROGRAM = IMPORTS + SETUP_PROGRAM + r'''
+mount = next(line.split() for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines()
+             if line.split()[4] == '/work')
+assert {'noexec', 'nosuid', 'nodev'} <= set(mount[5].split(','))
 os.chdir(root)
 tool_env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'TMPDIR': '/work',
             'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
@@ -72,6 +75,9 @@ print(json.dumps({'steps': steps, 'tool_versions': versions,
 # This helper is replaced by the assessed native executable. There is no
 # compiler/analyzer controller or prior evidence in the executable's container.
 TEST_PROGRAM = IMPORTS + SETUP_PROGRAM + r'''
+mount = next(line.split() for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines()
+             if line.split()[4] == '/work')
+assert 'noexec' not in mount[5].split(',') and {'nosuid', 'nodev'} <= set(mount[5].split(','))
 path = root / 'native-test'
 path.chmod(0o500)
 os.chdir(root)
@@ -82,11 +88,12 @@ os.execve(str(path), [str(path)], {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG
 
 def _container(image, program, payload, *, checkpoint, timeout, limit, native_exit=False):
     name = 'nico-assessment-' + uuid4().hex
+    mount = '--tmpfs=/work:rw,nosuid,nodev,' + ('exec' if native_exit else 'noexec') + ',size=33554432,mode=1777'
     try:
         _command(['docker', 'create', '--name', name, '--interactive', '--network=none',
             '--read-only', '--user=1000:1000', '--cap-drop=ALL', '--security-opt=no-new-privileges',
             '--cpus=0.5', '--memory=256m', '--memory-swap=256m', '--pids-limit=32',
-            '--tmpfs=/work:rw,nosuid,nodev,size=33554432,mode=1777', '--log-driver=none',
+            mount, '--log-driver=none',
             '--entrypoint=python3', image, '-I', '-S', '-c', program], checkpoint=checkpoint)
         return _command(['docker', 'start', '--attach', '--interactive', name], checkpoint=checkpoint,
             input_bytes=json.dumps(payload).encode(), timeout=timeout, limit=limit, native_exit=native_exit)
