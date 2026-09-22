@@ -258,6 +258,11 @@ def build_scanner_execution_stage(
     for item in records:
         name = _text(item.get("scanner_name") or item.get("tool") or "unnamed scanner")
         state = _text(item.get("state") or item.get("status") or "unknown")
+        # Localize this authored status label, never the retained native record.
+        from nico.v2_premium_report_renderer import _is_spanish
+        if _is_spanish(canonical):
+            from nico.comprehensive_spanish_canonical_report_v87 import _SCANNER_STATUS_ES
+            state = _SCANNER_STATUS_ES.get(state.casefold(), state)
         evidence.append(
             f"{name}: {state}; "
             f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
@@ -277,7 +282,7 @@ def build_scanner_execution_stage(
         f"{_text(item.get('failure_reason') or item.get('reason') or 'scanner execution evidence incomplete')}"
         for item in incomplete
     ]
-    return renderer._stage(
+    stage = renderer._stage(
         "dependency_security_static_analysis",
         "Dependency, Security, and Static Analysis",
         (
@@ -291,6 +296,8 @@ def build_scanner_execution_stage(
         unavailable=limitations,
         status="complete" if records and not incomplete else "review_required",
     )
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    return enrich_scanner_stage(canonical, stage)
 
 
 def _percent(numerator: int, denominator: int) -> str:

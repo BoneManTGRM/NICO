@@ -83,7 +83,14 @@ def validate_contract(contract: dict) -> dict:
                 or any(part in {".", ".."} for part in path.split("/"))
                 or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ValueError("worker_contract_path_or_digest_invalid")
-    if contract['profile'] in {'cpp-configured-v1', 'cpp-sanitized-v1', 'cpp-runtime-cases-v1'}:
+    if contract['profile'] == 'cpp-full-project-v1':
+        from nico.assessment_cpp_full_project import validate_configuration
+        validate_configuration(contract['configuration'], targets)
+        if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int
+                or not 1 <= contract['limits']['wall_seconds'] <= 300
+                or contract['limits'].get('max_attempts') != 1):
+            raise ValueError('worker_full_project_budget_invalid')
+    elif contract['profile'] in {'cpp-configured-v1', 'cpp-sanitized-v1', 'cpp-runtime-cases-v1'}:
         from nico.assessment_cpp_configuration import validate_configuration
         validate_configuration(contract['configuration'], targets,
             sanitized=contract['profile'] == 'cpp-sanitized-v1',
@@ -112,7 +119,9 @@ def _validate_provisioning(identity, contract, value):
             or value['population_sha256'] != _digest(contract['targets'])
             or type(value['required_count']) is not int or value['required_count'] != count
             or type(value['materialized_count']) is not int or value['materialized_count'] != count
-            or type(value['source_bytes']) is not int or not 0 <= value['source_bytes'] <= 16 * 1024 * 1024
+            or type(value['source_bytes']) is not int or not 0 <= value['source_bytes'] <= (
+                contract['configuration']['source_byte_limit'] if contract['profile'] == 'cpp-full-project-v1'
+                else 16 * 1024 * 1024)
             or value['image_config_id'] != contract['image_digest']
             or not isinstance(value['image_manifest'], str)
             or not re.fullmatch(re.escape(image_prefix) + r'[0-9a-f]{64}', value['image_manifest'])):
@@ -129,13 +138,15 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
         raise ValueError("worker_receipt_schema_invalid")
     if 'provisioning' in receipt:
         _validate_provisioning(identity, contract, receipt['provisioning'])
-    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3", "nico.worker-native-receipt.v4", "nico.worker-native-receipt.v5"}:
+    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3", "nico.worker-native-receipt.v4", "nico.worker-native-receipt.v5", "nico.worker-native-receipt.v6"}:
         raise ValueError("worker_receipt_schema_invalid")
     if (receipt['schema'].endswith('.v3')) != (contract['profile'] == 'cpp-configured-v1'):
         raise ValueError('worker_receipt_profile_mismatch')
     if (receipt['schema'].endswith('.v4')) != (contract['profile'] == 'cpp-sanitized-v1'):
         raise ValueError('worker_receipt_profile_mismatch')
     if (receipt['schema'].endswith('.v5')) != (contract['profile'] == 'cpp-runtime-cases-v1'):
+        raise ValueError('worker_receipt_profile_mismatch')
+    if (receipt['schema'].endswith('.v6')) != (contract['profile'] == 'cpp-full-project-v1'):
         raise ValueError('worker_receipt_profile_mismatch')
     expected = {"identity": asdict(identity),
         "lease_id": lease, "worker_id": worker, "image_digest": contract["image_digest"],
@@ -147,7 +158,7 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     if len(encoded) > contract["max_receipt_bytes"]:
         raise ValueError("worker_receipt_size_invalid")
     native = receipt["native"]
-    if receipt['schema'].endswith(('.v3', '.v4', '.v5')):
+    if receipt['schema'].endswith(('.v3', '.v4', '.v5', '.v6')):
         if _digest(native) != receipt['native_sha256']:
             raise ValueError('worker_native_digest_or_schema_invalid')
         return _configured_record(identity, contract, receipt, encoded)
@@ -245,7 +256,10 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
 
 
 def _configured_record(identity, contract, receipt, encoded):
-    from nico.assessment_cpp_configuration import validate_native
+    if contract['profile'] == 'cpp-full-project-v1':
+        from nico.assessment_cpp_full_project import validate_native
+    else:
+        from nico.assessment_cpp_configuration import validate_native
     result = validate_native(receipt['native'], contract)
     receipt_sha = hashlib.sha256(encoded).hexdigest()
     binding = {'run_id': identity.run_id, 'scan_id': identity.scan_id, 'customer_id': identity.customer_id,
@@ -272,6 +286,7 @@ def _configured_record(identity, contract, receipt, encoded):
             'release_revision': identity.release_revision, 'image_digest': contract['image_digest'],
             'contract_sha256': identity.contract_sha256, 'configuration_sha256': receipt['configuration_sha256'],
             'receipt_sha256': receipt_sha, 'profile': contract['profile'],
+            **({'identity': asdict(identity)} if contract['profile'] == 'cpp-full-project-v1' else {}),
             **({'provisioning': deepcopy(receipt['provisioning'])} if 'provisioning' in receipt else {})},
         'cppcheck_source_coverage': result['coverage'], 'cpp_build_evidence': result['build'],
         'human_review_required': True, 'client_delivery_allowed': False}

@@ -95,7 +95,13 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
             or job.get('source_access') != {'mode': 'anonymous_public', 'credential_used': False}
             or job['source_access']['credential_used'] is not False):
         raise ValueError('worker_source_repository_unsupported')
-    population = dict(job['contract']['targets'])
+    contract = job['contract']
+    maximum = MAX_BYTES
+    if contract.get('profile') == 'cpp-full-project-v1':
+        from nico.assessment_worker_receipts import validate_contract
+        contract = validate_contract(contract)
+        maximum = contract['configuration']['source_byte_limit']
+    population = dict(contract['targets'])
     if not 1 <= len(population) <= 20000:
         raise ValueError('worker_source_population_invalid')
     for path, digest in population.items():
@@ -147,7 +153,7 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
                     or type(size) is not int or not 0 <= size <= MAX_BYTES):
                 raise ValueError('worker_source_type_or_size_invalid')
             total += size
-        if total > MAX_BYTES:
+        if total > maximum:
             raise ValueError('worker_source_budget_exceeded')
         inputs = stage / 'inputs'
         inputs.mkdir(mode=0o700)
@@ -164,7 +170,7 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
                 raise ValueError('worker_source_digest_mismatch')
             if raw.startswith(b'version https://git-lfs.github.com/spec/v1'):
                 raise ValueError('worker_source_type_unsupported')
-            output.chmod(0o444)
+            output.chmod(0o555 if contract.get('profile') == 'cpp-full-project-v1' and entry['mode'] == '100755' else 0o444)
         checkpoint()
         if time.monotonic() >= deadline:
             raise ValueError('worker_source_deadline')

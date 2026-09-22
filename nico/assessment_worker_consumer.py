@@ -197,7 +197,9 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
         destination = root / "source"
         evidence = materialize_exact_git_inputs(git_dir=git_dir, commit_sha=job["identity"]["revision"],
             expected_tree_sha=expected_tree_sha, inputs=job["contract"]["targets"], destination=destination,
-            max_files=20000, max_file_bytes=16 * 1024 * 1024, max_total_bytes=16 * 1024 * 1024,
+            max_files=20000, max_file_bytes=16 * 1024 * 1024,
+            max_total_bytes=(job['contract']['configuration']['source_byte_limit']
+                if job['contract']['profile'] == 'cpp-full-project-v1' else 16 * 1024 * 1024),
             timeout_seconds=min(300, remaining), checkpoint=checkpoint)
         return destination, evidence
     return acquire
@@ -206,7 +208,9 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
 def _receipt(job, result, *, acquisition=None):
     native = result.get("native")
     schema = "nico.worker-native-receipt.v1"
-    if job['contract']['profile'] == 'cpp-runtime-cases-v1':
+    if job['contract']['profile'] == 'cpp-full-project-v1':
+        schema = 'nico.worker-native-receipt.v6'
+    elif job['contract']['profile'] == 'cpp-runtime-cases-v1':
         schema = 'nico.worker-native-receipt.v5'
     elif job['contract']['profile'] == 'cpp-sanitized-v1':
         schema = 'nico.worker-native-receipt.v4'

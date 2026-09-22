@@ -209,6 +209,9 @@ def run_isolated_cppcheck(contract, source: Path, *, checkpoint, timeout_seconds
     """Use one preprovisioned image by digest; cancellation always removes it."""
     from nico.assessment_worker_receipts import validate_contract
     contract = validate_contract(contract)
+    if contract['profile'] == 'cpp-full-project-v1':
+        from nico.assessment_cpp_full_project_execution import run_full_project
+        return run_full_project(contract, source, checkpoint=checkpoint, timeout_seconds=timeout_seconds)
     if contract['profile'] in {'cpp-configured-v1', 'cpp-sanitized-v1', 'cpp-runtime-cases-v1'}:
         from nico.assessment_cpp_execution import run_configured
         return run_configured(contract, source, checkpoint=checkpoint, timeout_seconds=timeout_seconds)
