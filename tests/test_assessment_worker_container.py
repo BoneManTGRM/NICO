@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 import pytest
 
@@ -30,7 +31,7 @@ def test_version_and_analysis_use_the_same_trusted_runtime_libraries():
                 environments.append(ast.literal_eval(value))
     assert len(environments) == 2
     assert environments[0] == environments[1]
-    assert environments[0]['LD_LIBRARY_PATH'] == '/usr/local/lib'
+    assert environments[0]['LD_LIBRARY_PATH'] == '/usr/local/lib64:/usr/local/lib'
 
 
 def test_malformed_native_bytes_are_retained_without_successful_decoding():
@@ -167,3 +168,27 @@ def test_input_pipe_rejection_still_removes_container(harness):
     with pytest.raises(ValueError, match='control_failed|input_rejected'):
         worker.run_isolated_cppcheck(plan, source, checkpoint=lambda: None, timeout_seconds=10)
     assert any(c[:2] == ['rm', '--force'] for c in calls(events))
+
+
+def test_native_eof_before_hang_retains_timeout_and_reaps_process(tmp_path):
+    pidfile = tmp_path / 'pid'
+    program = ("import os,pathlib,time; " + f"pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid())); "
+               + "os.close(1); os.close(2); time.sleep(30)")
+    result = worker._command([sys.executable, '-c', program], checkpoint=lambda: None,
+        timeout=0.2, native_exit=True)
+    assert result == {'exit_code': 124, 'timed_out': True, 'output_truncated': False, 'output': b''}
+    with pytest.raises(ProcessLookupError): os.kill(int(pidfile.read_text()), 0)
+
+
+def test_native_eof_still_checks_cancellation(tmp_path):
+    pidfile = tmp_path / 'pid'
+    program = ("import os,pathlib,time; " + f"pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid())); "
+               + "os.close(1); os.close(2); time.sleep(30)")
+    start = time.monotonic()
+    def checkpoint():
+        if pidfile.exists() and time.monotonic() - start > 0.1:
+            raise ValueError('lease_lost')
+    with pytest.raises(ValueError, match='lease_lost'):
+        worker._command([sys.executable, '-c', program], checkpoint=checkpoint, timeout=0.7, native_exit=True)
+    assert time.monotonic() - start < 0.6
+    with pytest.raises(ProcessLookupError): os.kill(int(pidfile.read_text()), 0)

@@ -246,7 +246,7 @@ def compact_scanner_records(
                         "applicability_state", "execution_state", "execution_reason", "execution_limit",
                         "applicability_evidence", "native_json_output",
                         "no_vulnerabilities_claimed",
-                        "worker_provenance", "cppcheck_source_coverage", "scanner_tool_version",
+                        "worker_provenance", "cppcheck_source_coverage", "cpp_build_evidence", "scanner_tool_version",
                     )
                     if key in raw
                 },

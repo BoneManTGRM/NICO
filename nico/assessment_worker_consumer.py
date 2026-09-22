@@ -206,7 +206,9 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
 def _receipt(job, result):
     native = result.get("native")
     schema = "nico.worker-native-receipt.v1"
-    if isinstance(result.get("raw_streams"), dict):
+    if job['contract']['profile'] == 'cpp-configured-v1':
+        schema = 'nico.worker-native-receipt.v3'
+    elif isinstance(result.get("raw_streams"), dict):
         schema = "nico.worker-native-receipt.v2"
         native = {**result["execution"], **result["raw_streams"], "encoding": "base64"}
     elif result.get("native_decoding_failed"):

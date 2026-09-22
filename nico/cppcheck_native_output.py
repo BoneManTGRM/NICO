@@ -9,7 +9,8 @@ class NativeOutputRedactionRequired(ValueError):
     """Decoded native content is unsafe to retain as a redacted artifact."""
 
 
-def parse_native(native_xml: str, progress: str, targets: list[str], *, version: str | None = None):
+def parse_native(native_xml: str, progress: str, targets: list[str], *, version: str | None = None,
+                 source_prefix: str = ''):
     if "<!DOCTYPE" in native_xml or "<!ENTITY" in native_xml:
         raise ValueError("cppcheck_xml_external_content_rejected")
     document = ET.fromstring(native_xml)
@@ -28,7 +29,7 @@ def parse_native(native_xml: str, progress: str, targets: list[str], *, version:
     for error in document.findall("errors/error"):
         locations = []
         for row in error.findall("location"):
-            path = str(row.get("file") or "").removeprefix("./")
+            path = str(row.get("file") or "").removeprefix(source_prefix).removeprefix("./")
             line = int(row.get("line") or 0)
             if path in members and line > 0:
                 locations.append({"path": path, "line": line, "column": int(row.get("column") or 0)})
@@ -44,7 +45,7 @@ def parse_native(native_xml: str, progress: str, targets: list[str], *, version:
             "message": error.get("msg") or "", "severity": severity, "native_severity": error.get("severity"),
             "cwe": error.get("cwe"), "inconclusive": error.get("inconclusive") == "true",
             "classification": "review_required_candidate", "specialist_review_completed": False})
-    checked = {match.group(1).removeprefix("./")
+    checked = {match.group(1).removeprefix(source_prefix).removeprefix("./")
         for match in re.finditer(r"^Checking (.+?) \.\.\.$", progress, re.M)}
     if checked - members:
         limitations.append({"rule_id": "unexpected_target", "message": "Native target is outside the frozen population.",

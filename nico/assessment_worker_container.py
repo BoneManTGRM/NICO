@@ -39,8 +39,7 @@ def _native_result(xml, stdout, stderr, *, exit_code, timed_out, output_truncate
 # Only this trusted program, never repository commands, is the entry point.
 # One serializer is used locally and in the disposable image; target files
 # cannot supply or replace controller functions.
-PROGRAM = ('import base64, hashlib, json, os, pathlib, resource, signal, socket, subprocess, sys, time\n'
-           + inspect.getsource(_native_result) + r'''
+SETUP_PROGRAM = r'''
 request = json.loads(sys.stdin.buffer.read(24 * 1024 * 1024 + 1))
 status = dict(line.split(':', 1) for line in pathlib.Path('/proc/self/status').read_text().splitlines() if ':' in line)
 assert os.getuid() == os.getgid() == 1000
@@ -68,8 +67,12 @@ for name, item in request['inputs'].items():
     assert hashlib.sha256(data).hexdigest() == item['sha256']
     output = root / path; output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)
+'''
+
+PROGRAM = ('import base64, hashlib, json, os, pathlib, resource, signal, socket, subprocess, sys, time\n'
+           + inspect.getsource(_native_result) + SETUP_PROGRAM + r'''
 os.chdir(root)
-tool_env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LD_LIBRARY_PATH': '/usr/local/lib'}
+tool_env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
 version = subprocess.run(['cppcheck', '--version'], capture_output=True, check=True, timeout=5, env=tool_env)
 assert version.stdout.decode().strip() == 'Cppcheck ' + request['tool_version']
 pathlib.Path('/work/cppcheck-inputs.txt').write_text(''.join('./' + p + '\n' for p in sorted(request['inputs'])))
@@ -108,7 +111,7 @@ def invocation():
         "-j2", "--file-list=/work/cppcheck-inputs.txt", "--output-file=/work/cppcheck.xml"]
 
 
-def _command(args, *, checkpoint, timeout=15, input_bytes=None, limit=131072):
+def _command(args, *, checkpoint, timeout=15, input_bytes=None, limit=131072, native_exit=False):
     """Bound Docker CLI output while it is emitted, and always reap the CLI."""
     checkpoint()
     process = subprocess.Popen(args, stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
@@ -130,6 +133,8 @@ def _command(args, *, checkpoint, timeout=15, input_bytes=None, limit=131072):
             while ready.get_map():
                 checkpoint()
                 if time.monotonic() >= deadline:
+                    if native_exit:
+                        return {'exit_code': 124, 'timed_out': True, 'output_truncated': False, 'output': bytes(output)}
                     raise ValueError("worker_container_timed_out")
                 for key, _ in ready.select(0.1):
                     if key.fileobj is process.stdin:
@@ -146,8 +151,28 @@ def _command(args, *, checkpoint, timeout=15, input_bytes=None, limit=131072):
                             ready.unregister(key.fileobj)
                         output.extend(raw)
                         if len(output) > limit:
+                            if native_exit:
+                                return {'exit_code': 125, 'timed_out': False, 'output_truncated': True,
+                                        'output': bytes(output[:limit])}
                             raise ValueError("worker_container_output_limit")
-        if process.wait(timeout=max(0.01, deadline-time.monotonic())) != 0:
+        # EOF does not imply process exit. Keep the same lease/cancellation
+        # checkpoints active even when the executable closes both streams.
+        while process.poll() is None:
+            checkpoint()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if native_exit:
+                    return {'exit_code': 124, 'timed_out': True, 'output_truncated': False, 'output': bytes(output)}
+                raise ValueError('worker_container_timed_out')
+            try:
+                process.wait(timeout=min(0.1, remaining))
+            except subprocess.TimeoutExpired:
+                continue
+        returncode = process.returncode
+        if native_exit:
+            checkpoint()
+            return {'exit_code': returncode, 'timed_out': False, 'output_truncated': False, 'output': bytes(output)}
+        if returncode != 0:
             raise ValueError("worker_container_control_failed")
         checkpoint()
         return bytes(output)
@@ -182,6 +207,9 @@ def run_isolated_cppcheck(contract, source: Path, *, checkpoint, timeout_seconds
     """Use one preprovisioned image by digest; cancellation always removes it."""
     from nico.assessment_worker_receipts import validate_contract
     contract = validate_contract(contract)
+    if contract['profile'] == 'cpp-configured-v1':
+        from nico.assessment_cpp_execution import run_configured
+        return run_configured(contract, source, checkpoint=checkpoint, timeout_seconds=timeout_seconds)
     if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= min(300, contract['limits']['wall_seconds']):
         raise ValueError("worker_execution_budget_invalid")
     image = contract["image_digest"]

@@ -27,6 +27,24 @@ SOURCES = {
     'diagnostic.cpp': b'int dereference_null() { int* p = nullptr; return *p; }\n',
 }
 
+CONFIGURED_SOURCES = {
+    'main.cpp': b'#include "value.h"\nint main() { return add_value(2, 3) == 7 ? 0 : 47; }\n',
+    'value.cpp': b'#include "value.h"\nint add_value(int a, int b) { return a + b + BIAS; }\n'
+                 b'#if BIAS == 2\nint diagnostic() { int* p = nullptr; return *p; }\n'
+                 b'#else\nint diagnostic() { return 0; }\n#endif\n',
+    'include/value.h': b'#ifndef OWNED_VALUE_H\n#define OWNED_VALUE_H\nint add_value(int, int);\n#endif\n',
+}
+
+
+def configured_plan(image, sources=CONFIGURED_SOURCES, bias='2'):
+    return {'profile': 'cpp-configured-v1', 'tool_version': '2.17.1', 'image_digest': image,
+        'configuration': {'platform': 'unix64', 'compiler_version': '14.2.0',
+            'translation_units': [{'path': path, 'language': 'c++', 'standard': 'c++20',
+                'defines': {'BIAS': bias}, 'include_dirs': ['include']} for path in ['main.cpp', 'value.cpp']],
+            'headers': ['include/value.h']},
+        'targets': {path: hashlib.sha256(raw).hexdigest() for path, raw in sources.items()},
+        'limits': {'max_attempts': 1, 'wall_seconds': 60, 'lease_seconds': 30}, 'max_receipt_bytes': 1048576}
+
 
 
 @dataclass
@@ -140,7 +158,7 @@ def consume_control(plan, git_dir, tree, revision, source_sha, evidence):
     auth._jwk_client = lambda: SimpleNamespace(get_signing_key_from_jwt=lambda _: SimpleNamespace(key=signing_key.public_key()))
     app = FastAPI(); install_assessment_worker_api(app)
     scan = start_snapshot_scan({'authorized': True, 'authorized_by': 'owned_native_control',
-        'authorization_scope': 'owned two-translation-unit native analyzer control',
+        'authorization_scope': 'owned C/C++ native control with frozen source and configuration',
         'repository': 'owned/in-memory-control', 'customer_id': 'owned-ci-control',
         'project_id': 'cppcheck-smoke', 'run_id': 'owned-control-' + uuid4().hex,
         'snapshot_id': 'owned-snapshot', 'snapshot_commit_sha': revision,
@@ -188,7 +206,7 @@ def main():
     evidence = {'schema': 'nico.cppcheck_worker_control.v1', 'status': 'UNPROVEN',
         'source_sha': source_sha, 'tool_source': 'cppcheck-opensource/cppcheck',
         'tool_revision': 'ac9db3069b9f90e81e126a090b99ad456e122cf8',
-        'scope': 'owned two-translation-unit analyzer smoke control; not full qualification',
+        'scope': 'owned standalone and configured C/C++ controls; not Bitcoin qualification',
         'production_dispatch_exercised': False, 'compilation_database_verified': False,
         'header_context_verified': False, 'build_runtime_executed': False,
         'human_approval': False, 'bitcoin_executed': False}
@@ -205,8 +223,17 @@ def main():
                 return subprocess.run(['git', *argv], cwd=git_dir, env=env, input=data,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=10).stdout.strip().decode()
             git('init', '--bare', '.')
-            objects = {path: git('hash-object', '-w', '--stdin', data=raw) for path, raw in SOURCES.items()}
-            tree = git('mktree', data=''.join(f'100644 blob {sha}\t{path}\n' for path, sha in sorted(objects.items())).encode())
+            def source_tree(sources):
+                def subtree(entries):
+                    rows, directories = [], {}
+                    for path, raw in sorted(entries.items()):
+                        name, sep, rest = path.partition('/')
+                        if sep: directories.setdefault(name, {})[rest] = raw
+                        else: rows.append(f"100644 blob {git('hash-object', '-w', '--stdin', data=raw)}\t{name}\n")
+                    rows += [f'040000 tree {subtree(entries)}\t{name}\n' for name, entries in sorted(directories.items())]
+                    return git('mktree', data=''.join(rows).encode())
+                return subtree(sources)
+            tree = source_tree(SOURCES)
             revision = git('commit-tree', tree, data=b'Owned analyzer smoke control\n')
             targets = {path: hashlib.sha256(raw).hexdigest() for path, raw in SOURCES.items()}
             plan = {'profile': 'cppcheck-standalone-v1', 'tool_version': '2.17.1',
@@ -221,7 +248,35 @@ def main():
             assert any(f['rule_id']=='nullPointer' and f['path']=='diagnostic.cpp' for f in record['findings'])
             assert not any(f['path']=='clean.cpp' for f in record['findings'])
             assert record['cppcheck_source_coverage']['configuration_aware'] is False
-            evidence['status'] = 'PASS_ANALYZER_SMOKE_ONLY'
+            configured_tree = source_tree(CONFIGURED_SOURCES)
+            configured_revision = git('commit-tree', configured_tree, data=b'Owned configured C++ control\n')
+            configured_evidence = {}
+            configured = consume_control(configured_plan(args.image), git_dir, configured_tree,
+                configured_revision, source_sha, configured_evidence)
+            configured_record = configured['canonical_record']
+            assert configured_record['completed'], 'configured owned control incomplete'
+            assert configured_record['cppcheck_source_coverage']['configuration_aware']
+            assert configured_record['cppcheck_source_coverage']['header_context_verified']
+            assert configured_record['cpp_build_evidence']['build_completed']
+            assert configured_record['cpp_build_evidence']['native_test'] == {'required': 1, 'executed': 1, 'passed': 1}
+            assert any(f['rule_id'] == 'nullPointer' and f['path'] == 'value.cpp' for f in configured_record['findings'])
+            assert not any(f['path'] == 'main.cpp' for f in configured_record['findings'])
+            evidence['configured_control'] = {**configured_evidence, **configured,
+                'contract': configured_plan(args.image), 'revision': configured_revision, 'tree': configured_tree}
+            # Same exact source, only the frozen macro changes. A successful
+            # build/analyzer cannot conceal the intentionally failing test.
+            negative_evidence = {}
+            negative_plan = configured_plan(args.image, bias='3')
+            negative = consume_control(negative_plan, git_dir, configured_tree,
+                configured_revision, source_sha, negative_evidence)
+            assert negative['canonical_record']['status'] == 'failed'
+            assert negative['canonical_record']['cpp_build_evidence']['build_completed']
+            assert negative['canonical_record']['cpp_build_evidence']['native_test']['passed'] == 0
+            assert negative['receipt']['native']['steps'][-1]['exit_code'] == 47
+            assert not any(f['rule_id'] == 'nullPointer' for f in negative['canonical_record']['findings'])
+            evidence['configured_negative'] = {**negative_evidence, **negative, 'contract': negative_plan}
+            evidence.update(compilation_database_verified=True, header_context_verified=True,
+                build_runtime_executed=True, status='PASS_OWNED_CONFIGURED_CONTROL')
     except Exception as error:
         evidence.update(status='FAIL', error_type=type(error).__name__)
         raise

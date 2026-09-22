@@ -24,7 +24,7 @@ SCANNER_PROVENANCE_FIELDS = (
     "applicable", "evidence_required", "applicability_reason",
     "applicability_evidence", "native_json_output", "no_vulnerabilities_claimed",
     "scanner_tool_version", "coverage_scope",
-    "worker_provenance", "cppcheck_source_coverage",
+    "worker_provenance", "cppcheck_source_coverage", "cpp_build_evidence",
 )
 
 

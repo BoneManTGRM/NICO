@@ -57,8 +57,7 @@ def validate_contract(contract: dict) -> dict:
     required = {"profile", "tool_version", "image_digest", "configuration", "targets", "limits", "max_receipt_bytes"}
     if not isinstance(contract, dict) or set(contract) != required:
         raise ValueError("worker_contract_invalid")
-    if (contract["profile"] != "cppcheck-standalone-v1" or contract["configuration"] != CONFIGURATION
-            or not isinstance(contract["tool_version"], str)
+    if (not isinstance(contract["tool_version"], str)
             or not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", contract["tool_version"])
             or not isinstance(contract["image_digest"], str)
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", contract["image_digest"])):
@@ -73,6 +72,11 @@ def validate_contract(contract: dict) -> dict:
                 or any(part in {".", ".."} for part in path.split("/"))
                 or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ValueError("worker_contract_path_or_digest_invalid")
+    if contract['profile'] == 'cpp-configured-v1':
+        from nico.assessment_cpp_configuration import validate_configuration
+        validate_configuration(contract['configuration'], targets)
+    elif contract['profile'] != 'cppcheck-standalone-v1' or contract['configuration'] != CONFIGURATION:
+        raise ValueError('worker_contract_tool_invalid')
     JobLimits(**contract["limits"])
     if (type(contract["max_receipt_bytes"]) is not int
             or not 1024 <= contract["max_receipt_bytes"] <= MAX_RECEIPT_BYTES
@@ -89,8 +93,10 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
                 "configuration_sha256", "target_hashes", "native", "native_sha256"}
     if not isinstance(receipt, dict) or set(receipt) != required:
         raise ValueError("worker_receipt_schema_invalid")
-    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2"}:
+    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3"}:
         raise ValueError("worker_receipt_schema_invalid")
+    if (receipt['schema'].endswith('.v3')) != (contract['profile'] == 'cpp-configured-v1'):
+        raise ValueError('worker_receipt_profile_mismatch')
     expected = {"identity": asdict(identity),
         "lease_id": lease, "worker_id": worker, "image_digest": contract["image_digest"],
         "tool_version": contract["tool_version"], "configuration_sha256": _digest(contract["configuration"]),
@@ -101,6 +107,10 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     if len(encoded) > contract["max_receipt_bytes"]:
         raise ValueError("worker_receipt_size_invalid")
     native = receipt["native"]
+    if receipt['schema'].endswith('.v3'):
+        if _digest(native) != receipt['native_sha256']:
+            raise ValueError('worker_native_digest_or_schema_invalid')
+        return _configured_record(identity, contract, receipt, encoded)
     execution_keys = {"exit_code", "timed_out", "output_truncated", "duration_ms", "invocation"}
     streams = ({"xml", "progress"} if receipt["schema"].endswith(".v1")
                else {"xml", "stdout", "stderr", "encoding"})
@@ -190,6 +200,39 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
             "header_context_verified": False, "repository_build_executed": False,
             "all_repository_configurations_analyzed": False},
         "human_review_required": True, "client_delivery_allowed": False}
+    return encoded, record, binding
+
+
+def _configured_record(identity, contract, receipt, encoded):
+    from nico.assessment_cpp_configuration import validate_native
+    result = validate_native(receipt['native'], contract)
+    receipt_sha = hashlib.sha256(encoded).hexdigest()
+    binding = {'run_id': identity.run_id, 'scan_id': identity.scan_id, 'customer_id': identity.customer_id,
+        'project_id': identity.project_id, 'repository': identity.repository_id,
+        'commit_sha': identity.revision, 'scanner_name': 'cppcheck'}
+    for finding in result['findings']:
+        finding.update(commit_sha=identity.revision, configuration_sha256=receipt['configuration_sha256'],
+                       evidence_reference='worker_receipt:' + receipt_sha)
+        finding['observation_id'] = 'cppcheck_' + _digest({key: finding[key] for key in (
+            'rule_id', 'path', 'line', 'column', 'commit_sha', 'configuration_sha256',
+            'translation_unit', 'unit_configuration_sha256')})
+    complete = result['complete']
+    record = {**binding, 'tool': 'cppcheck', 'category': 'static', 'status': result['status'],
+        'completed': complete, 'verified_complete': complete, 'verified_for_this_report': complete,
+        'current_run': True, 'execution_observed_for_this_report': True, 'exact_commit_match': True,
+        'snapshot_commit_sha': identity.revision, 'output_capture_complete': not result['output_truncated'],
+        'raw_artifact_capture_complete': True, 'returncode_valid': complete, 'exit_code': 0 if complete else None,
+        'timed_out': result['status'] == 'timed_out', 'output_truncated': result['output_truncated'],
+        'duration_seconds': result['duration_ms'] / 1000, 'findings': result['findings'],
+        'finding_count': len(result['findings']), 'scanner_tool_version': contract['tool_version'],
+        'applicable': True, 'evidence_required': True,
+        'reason': '' if complete else 'Required configured build, native test, header or analyzer evidence is incomplete.',
+        'worker_provenance': {'job_id': identity.job_id, 'worker_id': receipt['worker_id'],
+            'release_revision': identity.release_revision, 'image_digest': contract['image_digest'],
+            'contract_sha256': identity.contract_sha256, 'configuration_sha256': receipt['configuration_sha256'],
+            'receipt_sha256': receipt_sha, 'profile': contract['profile']},
+        'cppcheck_source_coverage': result['coverage'], 'cpp_build_evidence': result['build'],
+        'human_review_required': True, 'client_delivery_allowed': False}
     return encoded, record, binding
 
 
