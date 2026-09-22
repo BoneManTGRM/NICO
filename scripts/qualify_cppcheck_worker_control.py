@@ -253,7 +253,12 @@ def main():
             configured_evidence = {}
             configured = consume_control(configured_plan(args.image), git_dir, configured_tree,
                 configured_revision, source_sha, configured_evidence)
+            evidence['configured_control'] = {**configured_evidence, **configured,
+                'contract': configured_plan(args.image), 'revision': configured_revision, 'tree': configured_tree}
             configured_record = configured['canonical_record']
+            print(json.dumps({'configured_status': configured_record['status'],
+                'coverage': configured_record['cppcheck_source_coverage'],
+                'build': configured_record['cpp_build_evidence']}, sort_keys=True))
             assert configured_record['completed'], 'configured owned control incomplete'
             assert configured_record['cppcheck_source_coverage']['configuration_aware']
             assert configured_record['cppcheck_source_coverage']['header_context_verified']
@@ -261,20 +266,18 @@ def main():
             assert configured_record['cpp_build_evidence']['native_test'] == {'required': 1, 'executed': 1, 'passed': 1}
             assert any(f['rule_id'] == 'nullPointer' and f['path'] == 'value.cpp' for f in configured_record['findings'])
             assert not any(f['path'] == 'main.cpp' for f in configured_record['findings'])
-            evidence['configured_control'] = {**configured_evidence, **configured,
-                'contract': configured_plan(args.image), 'revision': configured_revision, 'tree': configured_tree}
             # Same exact source, only the frozen macro changes. A successful
             # build/analyzer cannot conceal the intentionally failing test.
             negative_evidence = {}
             negative_plan = configured_plan(args.image, bias='3')
             negative = consume_control(negative_plan, git_dir, configured_tree,
                 configured_revision, source_sha, negative_evidence)
+            evidence['configured_negative'] = {**negative_evidence, **negative, 'contract': negative_plan}
             assert negative['canonical_record']['status'] == 'failed'
             assert negative['canonical_record']['cpp_build_evidence']['build_completed']
             assert negative['canonical_record']['cpp_build_evidence']['native_test']['passed'] == 0
             assert negative['receipt']['native']['steps'][-1]['exit_code'] == 47
             assert not any(f['rule_id'] == 'nullPointer' for f in negative['canonical_record']['findings'])
-            evidence['configured_negative'] = {**negative_evidence, **negative, 'contract': negative_plan}
             evidence.update(compilation_database_verified=True, header_context_verified=True,
                 build_runtime_executed=True, status='PASS_OWNED_CONFIGURED_CONTROL')
     except Exception as error:
