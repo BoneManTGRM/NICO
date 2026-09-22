@@ -1,0 +1,40 @@
+name: Assessment Worker
+run-name: Assessment worker ${{ inputs.job_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Already-authorized immutable NICO worker job ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: assessment-worker-${{ inputs.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  consume:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install trusted controller dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Consume one authorized job using its dedicated OIDC audience
+        env:
+          NICO_WORKER_JOB_ID: ${{ inputs.job_id }}
+          NICO_PRODUCTION_BACKEND_URL: ${{ vars.NICO_PRODUCTION_BACKEND_URL }}
+          NICO_ASSESSMENT_WORKER_IMAGE: ${{ vars.NICO_ASSESSMENT_WORKER_IMAGE }}
+        run: python -m nico.assessment_worker_launch

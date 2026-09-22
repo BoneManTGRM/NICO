@@ -203,7 +203,7 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
     return acquire
 
 
-def _receipt(job, result):
+def _receipt(job, result, *, acquisition=None):
     native = result.get("native")
     schema = "nico.worker-native-receipt.v1"
     if job['contract']['profile'] == 'cpp-runtime-cases-v1':
@@ -218,10 +218,16 @@ def _receipt(job, result):
     elif result.get("native_decoding_failed"):
         raise ValueError("worker_native_failure_evidence_missing")
     plan = job["contract"]
-    return {"schema": schema, "identity": job["identity"], "lease_id": job["lease_id"],
+    receipt = {"schema": schema, "identity": job["identity"], "lease_id": job["lease_id"],
         "worker_id": job["worker_id"], "image_digest": plan["image_digest"],
         "tool_version": plan["tool_version"], "configuration_sha256": _digest(plan["configuration"]),
         "target_hashes": plan["targets"], "native": native, "native_sha256": _digest(native)}
+    if isinstance(acquisition, dict) and acquisition.get('schema') == 'nico.github_https_input_materialization.v1':
+        receipt['provisioning'] = {key: acquisition[key] for key in (
+            'commit_sha', 'tree_sha', 'population_sha256', 'required_count', 'materialized_count',
+            'source_bytes', 'image_manifest', 'image_config_id')}
+        receipt['provisioning'].update(schema='nico.worker-provisioning.v1', source_method=acquisition['schema'])
+    return receipt
 
 
 def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck):
@@ -268,7 +274,7 @@ def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck):
                 raise ValueError("worker_local_deadline")
             result = execute(job["contract"], source, checkpoint=checkpoint, timeout_seconds=remaining)
             checkpoint(force=True)
-            receipt = _receipt(job, result)
+            receipt = _receipt(job, result, acquisition=acquisition)
             raw, record, _ = validate_receipt(identity, job["contract"], job["lease_id"], job["worker_id"], receipt)
             receipt_hash = hashlib.sha256(raw).hexdigest()
             terminal = transport.post("receipt", {"lease_id": job["lease_id"], "receipt": receipt},

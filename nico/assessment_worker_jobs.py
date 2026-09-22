@@ -188,6 +188,47 @@ class WorkerJobs:
                                        "WHERE scan_id=%s", (scan["status"], self.adapter._jsonb(scan), identity.scan_id))
             return result
 
+    def reserve_dispatch(self, identity: JobIdentity, repository: str) -> str | None:
+        """Commit one launch reservation before any external submission.
+
+        A crashed pending reservation is ambiguous, never permission to resend.
+        Explicit operator recovery must reconcile the provider run first.
+        """
+        if not isinstance(repository, str) or not re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', repository):
+            raise ValueError('worker_dispatch_repository_invalid')
+
+        def operation(payload, now, _connection):
+            if (payload.get('dispatch') is not None or payload['status'] != 'queued'
+                    or now >= payload['deadline_epoch']):
+                return None, False
+            nonce = uuid4().hex
+            payload['dispatch'] = {'nonce': nonce, 'repository': repository,
+                'state': 'pending', 'reserved_epoch': now, 'run_id': None}
+            return nonce, True
+        return self._change(identity, operation)
+
+    def finish_dispatch(self, identity: JobIdentity, nonce: str, state: str, *, run_id=None) -> dict:
+        if (not isinstance(nonce, str) or not re.fullmatch(r'[0-9a-f]{32}', nonce)
+                or state not in {'accepted', 'rejected', 'unknown'}
+                or (run_id is not None and (type(run_id) is not int or not 1 <= run_id < 10**20))
+                or (run_id is not None and state != 'accepted')):
+            raise ValueError('worker_dispatch_result_invalid')
+
+        def operation(payload, now, _connection):
+            dispatch = payload.get('dispatch') or {}
+            if dispatch.get('nonce') != nonce:
+                raise JobConflict('worker_dispatch_reservation_conflict')
+            if dispatch.get('state') != 'pending':
+                if dispatch.get('state') == state and dispatch.get('run_id') == run_id:
+                    return payload, False
+                raise JobConflict('worker_dispatch_result_conflict')
+            # Mutate the freshly locked row; never replace a racing lease or receipt.
+            payload['dispatch'] = {**dispatch, 'state': state, 'finished_epoch': now, 'run_id': run_id}
+            if state == 'rejected' and payload['status'] == 'queued' and payload['attempts'] == 0:
+                payload.update(status='failed', failure_code='worker_dispatch_rejected')
+            return payload, True
+        return self._change(identity, operation)
+
     def claim(self, identity: JobIdentity, worker_id: str, *, claim_nonce: str | None = None) -> dict | None:
         if not isinstance(worker_id, str) or not worker_id.strip() or len(worker_id) > 256:
             raise ValueError("worker_id_invalid")

@@ -164,6 +164,37 @@ def run_proof(database_url: str) -> dict:
     assert jobs.claim(deadline_identity, "late-worker") is None
     assert jobs.get(deadline_identity)["status"] == "budget_exhausted"
 
+    # A dispatch reservation survives crashes and concurrent intake. Provider
+    # responses merge into the current row without undoing a racing claim.
+    dispatch_identity = replace(identity, scan_id='dispatch-scan')
+    dispatch_initial = jobs.enqueue(dispatch_identity, limits)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        reservations = list(pool.map(lambda _: WorkerJobs(adapter).reserve_dispatch(
+            dispatch_identity, 'BoneManTGRM/NICO'), range(8)))
+    reservations = [value for value in reservations if value is not None]
+    assert len(reservations) == 1
+    reservation = reservations[0]
+    assert WorkerJobs(PostgresAdapter(database_url)).reserve_dispatch(dispatch_identity, 'BoneManTGRM/NICO') is None
+    dispatch_claim = jobs.claim(dispatch_identity, 'dispatch-race-worker')
+    dispatch_result = jobs.finish_dispatch(dispatch_identity, reservation, 'accepted', run_id=123456)
+    for field in ('status', 'lease_id', 'worker_id', 'attempts'):
+        assert dispatch_result[field] == dispatch_claim[field]
+    assert dispatch_result['deadline_epoch'] == dispatch_initial['deadline_epoch']
+    assert jobs.finish_dispatch(dispatch_identity, reservation, 'accepted', run_id=123456) == dispatch_result
+    try:
+        jobs.finish_dispatch(dispatch_identity, reservation, 'unknown')
+    except JobConflict:
+        pass
+    else:
+        raise AssertionError('dispatch result replaced')
+    rejected_identity = replace(identity, scan_id='dispatch-rejected-scan')
+    rejected_initial = jobs.enqueue(rejected_identity, limits)
+    rejected_nonce = jobs.reserve_dispatch(rejected_identity, 'BoneManTGRM/NICO')
+    rejected = jobs.finish_dispatch(rejected_identity, rejected_nonce, 'rejected')
+    assert rejected['status'] == 'failed' and rejected['attempts'] == 0
+    assert rejected['deadline_epoch'] == rejected_initial['deadline_epoch']
+    assert jobs.claim(rejected_identity, 'late-worker') is None
+
     return {
         "schema": "nico.worker_job_postgres_proof.v1", "status": "passed",
         "synthetic": True, "live_production_claim": False,
@@ -176,6 +207,11 @@ def run_proof(database_url: str) -> dict:
             "tenant_identity_separate": True, "cancellation_fences_completion": True,
             "retry_budget_enforced": True, "crash_retry_budget_enforced": True,
             "wall_budget_enforced": True,
+            "single_durable_dispatch_reservation": True,
+            "crashed_dispatch_not_resubmitted": True,
+            "dispatch_response_preserves_racing_claim": True,
+            "dispatch_does_not_reset_wall_budget": True,
+            "dispatch_rejection_is_terminal": True,
         },
         "repository_executed": False, "human_approval": False,
         "client_delivery_authorized": False,

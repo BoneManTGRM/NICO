@@ -127,6 +127,20 @@ def run_proof(database_url):
     checks["legacy_recovery_cannot_mutate_or_execute_worker_scans"] = True
 
     native = receipt(first, claimed["lease_id"], worker)
+    # Synthetic provisioning statements exercise retention, not a real registry
+    # pull, GitHub acquisition, analyzer run or protected-main OIDC identity.
+    native['provisioning'] = {'schema': 'nico.worker-provisioning.v1',
+        'source_method': 'nico.github_https_input_materialization.v1', 'commit_sha': first.revision,
+        'tree_sha': 'b' * 40, 'population_sha256': _digest(contract()['targets']),
+        'required_count': len(contract()['targets']), 'materialized_count': len(contract()['targets']),
+        'source_bytes': 24, 'image_config_id': contract()['image_digest'],
+        'image_manifest': 'ghcr.io/bonemantgrm/nico/assessment-cppcheck@sha256:' + 'e' * 64}
+    for field, replacement in [('commit_sha', 'f' * 40), ('population_sha256', 'f' * 64),
+                               ('image_config_id', 'sha256:' + 'f' * 64)]:
+        substituted = deepcopy(native)
+        substituted['provisioning'][field] = replacement
+        post(first, 'receipt', {'lease_id': claimed['lease_id'], 'receipt': substituted}, expected=422)
+    checks['substituted_provisioning_rejected_before_publication'] = True
     wrong = deepcopy(native)
     wrong["identity"]["customer_id"] = "different-tenant"
     post(first, "receipt", {"lease_id": claimed["lease_id"], "receipt": wrong}, expected=422)
@@ -175,10 +189,14 @@ def run_proof(database_url):
     second_read = read_scanner_artifact(record, binding=binding)
     assert first_read.metadata["availability"] == "verified" and first_read.raw == second_read.raw
     assert hashlib.sha256(first_read.raw).hexdigest() == result["receipt_sha256"]
+    assert json.loads(first_read.raw)['provisioning'] == native['provisioning']
+    assert record['worker_provenance']['provisioning'] == native['provisioning']
+    checks['provisioning_retained_in_immutable_receipt'] = True
     checks["verified_native_bytes_and_idempotent_retrieval"] = True
     compact = compact_scanner_records(scan, commit_sha=first.revision)
     cpp = next(row for row in compact if row["scanner_name"] == "cppcheck")
     assert cpp["worker_provenance"]["job_id"] == first.job_id
+    assert cpp['worker_provenance']['provisioning'] == native['provisioning']
     assert cpp["finding_count"] == 1 and not cpp["findings"]
     assert cpp["cppcheck_source_coverage"]["configuration_aware"] is False
     assert set(scan["tools_requested"]) == {row["tool"] for row in scan["scanner_results"]}
@@ -194,12 +212,32 @@ def run_proof(database_url):
         "identity=JobIdentity(**data['identity'])", "job=WorkerJobs(STORE.adapter).get(identity)",
         "assert job['status']=='completed' and job['receipt_sha256']==data['receipt_sha256']",
         "assert get_scan(identity.scan_id)['receipt_sha256']==data['receipt_sha256']",
+        "from nico.scanner_raw_artifact_storage_v1 import read_scanner_artifact",
+        "record=get_scan(identity.scan_id)['scanner_results'][0]",
+        "binding={key:record[key] for key in ('run_id','scan_id','customer_id','project_id','repository','commit_sha','scanner_name')}",
+        "artifact=read_scanner_artifact(record,binding=binding)",
+        "assert artifact.metadata['availability']=='verified'",
+        "assert json.loads(artifact.raw)['provisioning']==data['provisioning']",
         "print('fresh_process_protocol_verified')",
-    ])], input=json.dumps({"identity": asdict(first), "receipt_sha256": result["receipt_sha256"]}),
+    ])], input=json.dumps({"identity": asdict(first), "receipt_sha256": result["receipt_sha256"],
+                          'provisioning': native['provisioning']}),
         text=True, capture_output=True, timeout=30,
         env={**os.environ, "NICO_TEST_DATABASE_URL": database_url})
     assert child.returncode == 0 and child.stdout.strip() == "fresh_process_protocol_verified"
     checks["fresh_process_job_scan_recovery"] = True
+
+    dispatch_race = enqueue('dispatch-receipt-race')
+    dispatch_nonce = jobs.reserve_dispatch(dispatch_race, 'BoneManTGRM/NICO')
+    assert dispatch_nonce
+    dispatch_owner = post(dispatch_race, 'claim', {})
+    dispatch_done = post(dispatch_race, 'receipt', {'lease_id': dispatch_owner['lease_id'],
+        'receipt': receipt(dispatch_race, dispatch_owner['lease_id'], worker)})
+    dispatch_scan = deepcopy(get_scan(dispatch_race.scan_id))
+    finished = jobs.finish_dispatch(dispatch_race, dispatch_nonce, 'accepted', run_id=12345)
+    assert finished['status'] == 'completed' and finished['receipt_sha256'] == dispatch_done['receipt_sha256']
+    assert get_scan(dispatch_race.scan_id) == dispatch_scan
+    assert jobs.reserve_dispatch(dispatch_race, 'BoneManTGRM/NICO') is None
+    checks['dispatch_response_preserves_already_published_receipt'] = True
 
     second = enqueue("stale")
     old_token = token(second)

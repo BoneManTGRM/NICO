@@ -14,6 +14,7 @@ import gzip
 import hashlib
 import html
 import json
+import os
 import re
 from pathlib import PurePosixPath
 import xml.etree.ElementTree as ET
@@ -46,7 +47,8 @@ def enqueue_snapshot_scan(scan: dict, contract: dict, adapter):
                            scan["repository"], scan["snapshot_commit_sha"], contract_sha, release)
     scan.update(worker_job_id=identity.job_id, tools_requested=requested)
     WorkerJobs(adapter).enqueue(identity, JobLimits(**contract["limits"]), contract=contract, scan=scan)
-    return adapter.get("scanner_runs", identity.scan_id)
+    from nico.assessment_worker_dispatch import dispatch_if_enabled
+    return dispatch_if_enabled(adapter.get("scanner_runs", identity.scan_id), adapter)
 
 
 def canonical_bytes(value):
@@ -87,14 +89,37 @@ def validate_contract(contract: dict) -> dict:
     return deepcopy(contract)
 
 
+def _validate_provisioning(identity, contract, value):
+    required = {'schema', 'source_method', 'commit_sha', 'tree_sha', 'population_sha256',
+        'required_count', 'materialized_count', 'source_bytes', 'image_manifest', 'image_config_id'}
+    count = len(contract['targets'])
+    repository = os.getenv('NICO_ASSESSMENT_WORKER_REPOSITORY', 'BoneManTGRM/NICO')
+    image_prefix = 'ghcr.io/' + repository.lower() + '/assessment-cppcheck@sha256:'
+    if (not isinstance(value, dict) or set(value) != required
+            or value['schema'] != 'nico.worker-provisioning.v1'
+            or value['source_method'] != 'nico.github_https_input_materialization.v1'
+            or value['commit_sha'] != identity.revision
+            or not isinstance(value['tree_sha'], str) or not re.fullmatch(r'[0-9a-f]{40}', value['tree_sha'])
+            or value['population_sha256'] != _digest(contract['targets'])
+            or type(value['required_count']) is not int or value['required_count'] != count
+            or type(value['materialized_count']) is not int or value['materialized_count'] != count
+            or type(value['source_bytes']) is not int or not 0 <= value['source_bytes'] <= 16 * 1024 * 1024
+            or value['image_config_id'] != contract['image_digest']
+            or not isinstance(value['image_manifest'], str)
+            or not re.fullmatch(re.escape(image_prefix) + r'[0-9a-f]{64}', value['image_manifest'])):
+        raise ValueError('worker_provisioning_binding_invalid')
+
+
 def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: str, receipt: dict):
     contract = validate_contract(contract)
     if _digest(contract) != identity.contract_sha256:
         raise ValueError("worker_contract_digest_mismatch")
     required = {"schema", "identity", "lease_id", "worker_id", "image_digest", "tool_version",
                 "configuration_sha256", "target_hashes", "native", "native_sha256"}
-    if not isinstance(receipt, dict) or set(receipt) != required:
+    if not isinstance(receipt, dict) or set(receipt) not in (required, required | {'provisioning'}):
         raise ValueError("worker_receipt_schema_invalid")
+    if 'provisioning' in receipt:
+        _validate_provisioning(identity, contract, receipt['provisioning'])
     if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3", "nico.worker-native-receipt.v4", "nico.worker-native-receipt.v5"}:
         raise ValueError("worker_receipt_schema_invalid")
     if (receipt['schema'].endswith('.v3')) != (contract['profile'] == 'cpp-configured-v1'):
@@ -198,7 +223,8 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
         "worker_provenance": {"job_id": identity.job_id, "worker_id": worker,
             "release_revision": identity.release_revision, "image_digest": contract["image_digest"],
             "contract_sha256": identity.contract_sha256, "configuration_sha256": receipt["configuration_sha256"],
-            "receipt_sha256": receipt_sha, "profile": contract["profile"]},
+            "receipt_sha256": receipt_sha, "profile": contract["profile"],
+            **({'provisioning': deepcopy(receipt['provisioning'])} if 'provisioning' in receipt else {})},
         "cppcheck_source_coverage": {"requested_targets": paths, "requested_target_count": len(paths),
             "observed_targets": observed, "observed_target_count": len(observed),
             "unobserved_targets": sorted(set(paths) - set(observed)), "limitations": limitations,
@@ -236,7 +262,8 @@ def _configured_record(identity, contract, receipt, encoded):
         'worker_provenance': {'job_id': identity.job_id, 'worker_id': receipt['worker_id'],
             'release_revision': identity.release_revision, 'image_digest': contract['image_digest'],
             'contract_sha256': identity.contract_sha256, 'configuration_sha256': receipt['configuration_sha256'],
-            'receipt_sha256': receipt_sha, 'profile': contract['profile']},
+            'receipt_sha256': receipt_sha, 'profile': contract['profile'],
+            **({'provisioning': deepcopy(receipt['provisioning'])} if 'provisioning' in receipt else {})},
         'cppcheck_source_coverage': result['coverage'], 'cpp_build_evidence': result['build'],
         'human_review_required': True, 'client_delivery_allowed': False}
     return encoded, record, binding
