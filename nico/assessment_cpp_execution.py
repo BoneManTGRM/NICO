@@ -14,6 +14,7 @@ from nico.assessment_cpp_configuration import (
     COMPILER_VERSION, MAX_CORPUS_BYTES)
 
 from nico.assessment_worker_container import SETUP_PROGRAM, _command, _read_input
+from nico.assessment_worker_capacity_v1 import docker_resource_args
 
 IMPORTS = 'import base64, hashlib, json, os, pathlib, resource, signal, socket, subprocess, sys, time\n'
 BUILD_PROGRAM = IMPORTS + SETUP_PROGRAM + r'''
@@ -101,14 +102,12 @@ os.execve(str(path), [str(path), *extra], runtime)
 '''
 
 
-def _container(image, program, payload, *, checkpoint, timeout, limit, native_exit=False):
+def _container(image, program, payload, *, checkpoint, timeout, limit, native_exit=False, profile='cpp-configured-v1'):
     name = 'nico-assessment-' + uuid4().hex
-    mount = '--tmpfs=/work:rw,nosuid,nodev,' + ('exec' if native_exit else 'noexec') + ',size=33554432,mode=1777'
     try:
         _command(['docker', 'create', '--name', name, '--interactive', '--network=none',
             '--read-only', '--user=1000:1000', '--cap-drop=ALL', '--security-opt=no-new-privileges',
-            '--cpus=0.5', '--memory=256m', '--memory-swap=256m', '--pids-limit=32',
-            mount, '--log-driver=none',
+            *docker_resource_args(profile, executable=native_exit), '--log-driver=none',
             '--entrypoint=python3', image, '-I', '-S', '-c', program], checkpoint=checkpoint)
         return _command(['docker', 'start', '--attach', '--interactive', name], checkpoint=checkpoint,
             input_bytes=json.dumps(payload).encode(), timeout=timeout, limit=limit, native_exit=native_exit)
@@ -157,7 +156,8 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
     if len(json.dumps(payload).encode()) > 24 * 1024 * 1024:
         raise ValueError('worker_input_budget_exceeded')
     raw = _container(contract['image_digest'], BUILD_PROGRAM, payload, checkpoint=checkpoint,
-        timeout=max(0.01, deadline-time.monotonic()), limit=contract['max_receipt_bytes'] + 3 * 1024 * 1024)
+        timeout=max(0.01, deadline-time.monotonic()), limit=contract['max_receipt_bytes'] + 3 * 1024 * 1024,
+        profile=contract['profile'])
     result = json.loads(raw)
     if instrument:
         result['instrumentation'] = instrument
@@ -175,7 +175,7 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
             {'inputs': {'native-test': {'base64': base64.b64encode(binary).decode('ascii'), 'sha256': result['binary_sha256']}},
              **({'runtime_options': instrument['runtime_options']} if instrument else {})},
             checkpoint=checkpoint, timeout=max(0.01, deadline-time.monotonic()),
-            limit=payload['output_limit'], native_exit=True)
+            limit=payload['output_limit'], native_exit=True, profile=contract['profile'])
         test.update(attempted=True, exit_code=observed['exit_code'], timed_out=observed['timed_out'],
             output_truncated=observed['output_truncated'], duration_ms=int((time.monotonic()-started)*1000),
             stdout=base64.b64encode(observed['output']).decode('ascii'))
@@ -197,7 +197,7 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
                  'argv': case['argv'], 'stdin': base64.b64encode(stdin_bytes).decode('ascii'),
                  **runtime_env},
                 checkpoint=checkpoint, timeout=max(0.01, deadline - time.monotonic()),
-                limit=payload['output_limit'], native_exit=True)
+                limit=payload['output_limit'], native_exit=True, profile=contract['profile'])
             row.update(attempted=True, exit_code=observed['exit_code'], timed_out=observed['timed_out'],
                        output_truncated=observed['output_truncated'],
                        duration_ms=int((time.monotonic() - started) * 1000),

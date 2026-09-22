@@ -1,5 +1,13 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Full-project worker capacity — 2026-09-22 (declared; Bitcoin not executed)
+
+Immediate priority from the owner: raise worker capacity and declare a full-project profile. Existing bounded proofs stay at 0.5 CPU / 256 MiB / 32 pids. New class `full-project-v1` is 2 CPU / 2 GiB / 256 pids, which is above Bitcoin Core's documented 1,610,612,736-byte compile minimum. Sanitizer and fuzz memory budgets are `not_measured`; they are not invented. Profile `cpp-full-project-v1` lists cmake configure, build, dependencies, unit, integration, sanitizer, and bounded fuzz. `bitcoin_executed` stays false. Production selection attaches that profile only after a controlled-project receipt and still refuses a Bitcoin run whose report is unverified. The normal assessment flow does not turn the profile on by itself.
+
+Not done in this increment: the merge-commit Security Audit Evidence failure is not cleared and the TruffleHog gate is not weakened; mobile/production observation checks are not treated as acceptance; Bitcoin Core is not configured, compiled, tested, sanitized, or fuzzed; C0 remains unproven for execution.
+
+EXACT NEXT ACTION: publish this branch, inspect CI, then qualify the expanded worker on the owned C++ control before any pinned Bitcoin execution. Do not claim a Bitcoin assessment from this capacity change.
+
 ## Public Bitcoin discovery complete — ChatGPT is not the merge gate — 2026-09-22
 
 Owner instruction: ChatGPT still refused merge of PR1627 and named OpenAI support as the next step. That is wrong. The Bitcoin “possible cybersecurity risk” flag and later cloud-browser denial are historical ChatGPT-only. They are not NICO gates and not Grok limits. OpenAI support is not required.

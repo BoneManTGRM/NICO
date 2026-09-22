@@ -181,12 +181,19 @@ def dispatch_existing_job(jobs, job, repository, repository_id, *, submit=submit
     return jobs.finish_dispatch(identity, reservation, result['state'], run_id=result['run_id'])
 
 
-def dispatch_if_enabled(scan, adapter):
+def dispatch_if_enabled(scan, adapter, qualification=None):
     """Trusted deployment switch only; public intake still cannot select a profile.
 
     Activation requires separately retained profile/image qualification and the
     real protected-main/backend-release proof. A flag is not that evidence.
+    The full-project profile is attached only when select_production_profile
+    accepts a controlled-project receipt. Bitcoin execution is not implied.
     """
+    from nico.assessment_worker_capacity_v1 import select_production_profile
+    selected = select_production_profile(qualification)
+    if selected is not None and isinstance(scan, dict):
+        scan = {**scan, "cpp_worker_profile": selected["profile"],
+                "cpp_worker_resource_class": selected["resource_class"]}
     if os.getenv('NICO_ASSESSMENT_WORKER_DISPATCH_ENABLED') != '1':
         return scan
     repository = os.getenv('NICO_ASSESSMENT_WORKER_REPOSITORY', 'BoneManTGRM/NICO')

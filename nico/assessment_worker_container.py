@@ -18,6 +18,8 @@ import subprocess
 import time
 from uuid import uuid4
 
+from nico.assessment_worker_capacity_v1 import docker_resource_args
+
 
 def _native_result(xml, stdout, stderr, *, exit_code, timed_out, output_truncated, duration_ms, invocation):
     """Preserve original bounded bytes even when canonical text cannot be parsed."""
@@ -249,8 +251,8 @@ def run_isolated_cppcheck(contract, source: Path, *, checkpoint, timeout_seconds
     try:
         _command(["docker", "create", "--name", name, "--interactive", "--network=none",
             "--read-only", "--user=1000:1000", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-            "--cpus=0.5", "--memory=256m", "--memory-swap=256m", "--pids-limit=32",
-            "--tmpfs=/work:rw,nosuid,nodev,size=33554432,mode=1777", "--log-driver=none",
+            *docker_resource_args(contract["profile"]),
+            "--log-driver=none",
             "--entrypoint=python", image, "-I", "-S", "-c", PROGRAM], checkpoint=checkpoint)
         output = _command(["docker", "start", "--attach", "--interactive", name], checkpoint=checkpoint,
             input_bytes=data, timeout=timeout_seconds+10, limit=contract['max_receipt_bytes'])
