@@ -41,8 +41,10 @@ DEPLOYMENT_NAMES = {"Dockerfile", "Procfile", "render.yaml", "railway.json", "ra
 WORKFLOW_COMMANDS = ["pytest", "npm test", "npm run lint", "npm run build", "next build", "eslint", "mypy", "ruff", "semgrep", "bandit"]
 
 
-def _bounded_git_bytes(git_dir, environment, arguments, *, limit, deadline, data=None):
+def _bounded_git_bytes(git_dir, environment, arguments, *, limit, deadline, data=None, checkpoint=None):
     """Read trusted Git output with a byte ceiling and one aggregate deadline."""
+    if checkpoint is not None:
+        checkpoint()
     if time.monotonic() >= deadline:
         raise ValueError("input_acquisition_timed_out")
     process = subprocess.Popen(
@@ -64,6 +66,8 @@ def _bounded_git_bytes(git_dir, environment, arguments, *, limit, deadline, data
                 else:
                     process.stdin.close()
             while ready.get_map():
+                if checkpoint is not None:
+                    checkpoint()
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise ValueError("input_acquisition_timed_out")
@@ -87,6 +91,8 @@ def _bounded_git_bytes(git_dir, environment, arguments, *, limit, deadline, data
                             process.stdin.close()
             if process.wait(timeout=max(0.001, deadline - time.monotonic())) != 0:
                 raise ValueError("input_git_read_failed")
+        if checkpoint is not None:
+            checkpoint()
         return bytes(result)
     except subprocess.TimeoutExpired as exc:
         raise ValueError("input_acquisition_timed_out") from exc
@@ -105,6 +111,7 @@ def materialize_exact_git_inputs(
     *, git_dir: Path, commit_sha: str,
     expected_tree_sha: str, inputs: dict[str, str], destination: Path,
     max_files: int, max_file_bytes: int, max_total_bytes: int, timeout_seconds: int,
+    checkpoint=None,
 ) -> dict[str, Any]:
     """Materialize required raw blobs from an acquired Git store, without checkout.
 
@@ -150,7 +157,7 @@ def materialize_exact_git_inputs(
 
     def git(*arguments, limit, data=None):
         return _bounded_git_bytes(git_dir, environment, arguments, limit=limit,
-                                  deadline=deadline, data=data)
+                                  deadline=deadline, data=data, checkpoint=checkpoint)
 
     identity = git("show", "-s", "--format=%H%x00%T", commit_sha, limit=200).strip().split(b"\0")
     if identity != [commit_sha.lower().encode(), expected_tree_sha.lower().encode()]:
@@ -191,12 +198,17 @@ def materialize_exact_git_inputs(
         stage = Path(temporary) / "inputs"
         stage.mkdir(mode=0o700)
         for path, oid, size in selected:
+            if checkpoint is not None:
+                checkpoint()
             if stream.readline() != oid + b" blob " + str(size).encode() + b"\n":
                 raise ValueError("input_blob_header_mismatch")
             content = stream.read(size)
             if len(content) != size or stream.read(1) != b"\n":
                 raise ValueError("input_blob_truncated")
-            actual_object = hashlib.sha1(b"blob " + str(size).encode() + b"\0" + content).hexdigest()
+            # Git's existing object format uses SHA1 for compatibility. The
+            # separately frozen SHA256 below remains the content security check.
+            actual_object = hashlib.sha1(b"blob " + str(size).encode() + b"\0" + content,
+                                         usedforsecurity=False).hexdigest()
             if actual_object.encode() != oid or hashlib.sha256(content).hexdigest() != inputs[path]:
                 raise ValueError("input_digest_mismatch")
             if content.startswith(b"version https://git-lfs.github.com/spec/v1"):
@@ -208,6 +220,8 @@ def materialize_exact_git_inputs(
             output.chmod(0o444)
         if stream.read(1):
             raise ValueError("input_blob_population_mismatch")
+        if checkpoint is not None:
+            checkpoint()
         if time.monotonic() >= deadline:
             raise ValueError("input_acquisition_timed_out")
         try:

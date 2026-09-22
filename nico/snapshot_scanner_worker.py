@@ -499,6 +499,11 @@ def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None
         except ValueError as exc:
             return {"status": "blocked", "error": str(exc)}
 
+    if worker_contract is not None and (
+        payload.get("provider_access_mode") != "anonymous_public"
+        or payload.get("provider_credential_used") is not False
+    ):
+        return {"status": "blocked", "error": "The worker profile requires explicit anonymous source access."}
     specs = _requested_specs(payload)
     scan_id = f"scan_snapshot_{uuid4().hex[:16]}"
     job = {

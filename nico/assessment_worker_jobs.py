@@ -136,6 +136,9 @@ class WorkerJobs:
             }
             if contract is not None:
                 payload["contract"] = contract
+            if scan is not None:
+                payload["source_access"] = {"mode": scan.get("provider_access_mode"),
+                                            "credential_used": scan.get("provider_credential_used")}
             connection.execute(
                 "INSERT INTO client_jobs(job_id,customer_id,project_id,status,payload,created_at,updated_at) "
                 "VALUES(%s,%s,%s,%s,%s,clock_timestamp(),clock_timestamp()) "
@@ -144,7 +147,8 @@ class WorkerJobs:
             )
             existing = self._read(connection, identity, lock=True)
             if (existing is None or existing["limits"] != asdict(limits)
-                    or existing.get("contract") != contract):
+                    or existing.get("contract") != contract
+                    or existing.get("source_access") != payload.get("source_access")):
                 raise JobConflict("worker_job_enqueue_conflict")
             if scan is not None:
                 connection.execute(

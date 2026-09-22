@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict
+import base64
+import binascii
 import gzip
 import hashlib
+import html
 import json
 import re
 from pathlib import PurePosixPath
@@ -28,6 +31,9 @@ def enqueue_snapshot_scan(scan: dict, contract: dict, adapter):
     """Internal typed dispatch, never selected from a public request's dictionary."""
     from nico.github_actions_proof_auth_v1 import expected_release_sha
     contract = validate_contract(contract)
+    if (scan.get("provider_access_mode") != "anonymous_public"
+            or scan.get("provider_credential_used") is not False):
+        raise ValueError("worker_source_access_unsupported")
     release = expected_release_sha()
     contract_sha = _digest(contract)
     scan = deepcopy(scan)
@@ -83,7 +89,9 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
                 "configuration_sha256", "target_hashes", "native", "native_sha256"}
     if not isinstance(receipt, dict) or set(receipt) != required:
         raise ValueError("worker_receipt_schema_invalid")
-    expected = {"schema": "nico.worker-native-receipt.v1", "identity": asdict(identity),
+    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2"}:
+        raise ValueError("worker_receipt_schema_invalid")
+    expected = {"identity": asdict(identity),
         "lease_id": lease, "worker_id": worker, "image_digest": contract["image_digest"],
         "tool_version": contract["tool_version"], "configuration_sha256": _digest(contract["configuration"]),
         "target_hashes": contract["targets"]}
@@ -93,10 +101,34 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     if len(encoded) > contract["max_receipt_bytes"]:
         raise ValueError("worker_receipt_size_invalid")
     native = receipt["native"]
-    if not isinstance(native, dict) or set(native) != {
-        "xml", "progress", "exit_code", "timed_out", "output_truncated", "duration_ms", "invocation",
-    } or _digest(native) != receipt["native_sha256"]:
+    execution_keys = {"exit_code", "timed_out", "output_truncated", "duration_ms", "invocation"}
+    streams = ({"xml", "progress"} if receipt["schema"].endswith(".v1")
+               else {"xml", "stdout", "stderr", "encoding"})
+    if (not isinstance(native, dict) or set(native) != execution_keys | streams
+            or _digest(native) != receipt["native_sha256"]):
         raise ValueError("worker_native_digest_or_schema_invalid")
+    decoding_failed = False
+    if receipt["schema"].endswith(".v2"):
+        if native["encoding"] != "base64":
+            raise ValueError("worker_native_encoding_invalid")
+        decoded = {}
+        from nico.scanner_tool_runners import redact_text
+        for key in ("xml", "stdout", "stderr"):
+            if not isinstance(native[key], str):
+                raise ValueError("worker_native_encoding_invalid")
+            try:
+                raw_stream = base64.b64decode(native[key], validate=True)
+                text = raw_stream.decode("utf-8")
+            except (binascii.Error, ValueError) as error:
+                if not isinstance(error, UnicodeDecodeError):
+                    raise ValueError("worker_native_encoding_invalid") from None
+                text = raw_stream.decode("utf-8", errors="replace")
+                decoding_failed = True
+            if redact_text(text) != text or redact_text(html.unescape(text)) != html.unescape(text):
+                raise ValueError("worker_native_redaction_required")
+            decoded[key] = text
+        native = {**{key: native[key] for key in execution_keys}, "xml": decoded["xml"],
+                  "progress": decoded["stdout"] + decoded["stderr"]}
     invocation = ["cppcheck", "--xml", "--enable=warning,style,performance,portability,information",
         "--check-level=normal", "--max-configs=12", "--std=c++20", "--std=c11", "--platform=unix64",
         "-j2", "--file-list=/work/cppcheck-inputs.txt", "--output-file=/work/cppcheck.xml"]
@@ -114,6 +146,8 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     findings, limitations, observed = [], [], []
     parsed = False
     try:
+        if decoding_failed:
+            raise ValueError("native_output_encoding_invalid")
         findings, limitations, observed = parse_native(native["xml"], native["progress"], paths,
                                                        version=contract["tool_version"])
         parsed = True

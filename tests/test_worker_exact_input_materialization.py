@@ -63,6 +63,31 @@ def test_wrong_digest_fails_without_publishing_partial_inputs(frozen_git, tmp_pa
     assert not output.exists()
 
 
+def test_lost_worker_lease_interrupts_git_acquisition_without_partial_publication(frozen_git, tmp_path):
+    calls = []
+    def checkpoint():
+        calls.append(True)
+        if len(calls) == 3:
+            raise ValueError('synthetic_lease_lost')
+    destination = tmp_path / 'cancelled-input'
+    with pytest.raises(ValueError, match='synthetic_lease_lost'):
+        materialize(frozen_git, destination, checkpoint=checkpoint)
+    assert len(calls) == 3 and not destination.exists()
+
+
+def test_git_object_compatibility_digest_works_when_security_sha1_is_disabled(frozen_git, tmp_path, monkeypatch):
+    original = hashlib.sha1
+    def restricted_sha1(data=b'', *, usedforsecurity=True):
+        if usedforsecurity:
+            raise ValueError('security_sha1_disabled')
+        return original(data, usedforsecurity=False)
+    monkeypatch.setattr(hashlib, 'sha1', restricted_sha1)
+    output = tmp_path / 'fips-input'
+    assert materialize(frozen_git, output)['materialized_count'] == 2
+    with pytest.raises(ValueError, match='input_digest_mismatch'):
+        materialize(frozen_git, tmp_path / 'wrong-input', inputs={'raw.cpp': '0' * 64})
+
+
 @pytest.mark.parametrize("corruption", ["truncate", "append", "header", "bytes"])
 def test_corrupted_batch_never_publishes_inputs(frozen_git, tmp_path, monkeypatch, corruption):
     original = evidence._bounded_git_bytes

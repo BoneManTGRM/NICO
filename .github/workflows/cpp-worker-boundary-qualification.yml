@@ -7,6 +7,10 @@ on:
       - scripts/qualify_cpp_worker_container.py
       - .github/workflows/cpp-worker-boundary-qualification.yml
       - nico/assessment_worker_container.py
+      - nico/assessment_worker_consumer.py
+      - nico/assessment_worker_receipts.py
+      - nico/assessment_worker_api.py
+      - nico/assessment_worker_jobs.py
       - nico/snapshot_repository_evidence.py
       - scripts/qualify_cppcheck_worker_control.py
       - docker/assessment-cppcheck.Dockerfile
@@ -15,6 +19,10 @@ on:
       - scripts/qualify_cpp_worker_container.py
       - .github/workflows/cpp-worker-boundary-qualification.yml
       - nico/assessment_worker_container.py
+      - nico/assessment_worker_consumer.py
+      - nico/assessment_worker_receipts.py
+      - nico/assessment_worker_api.py
+      - nico/assessment_worker_jobs.py
       - nico/snapshot_repository_evidence.py
       - scripts/qualify_cppcheck_worker_control.py
       - docker/assessment-cppcheck.Dockerfile
@@ -49,6 +57,22 @@ jobs:
   native-static-control:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nico
+          POSTGRES_PASSWORD: nico
+          POSTGRES_DB: nico
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U nico -d nico"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      NICO_TEST_DATABASE_URL: postgresql://nico:nico@127.0.0.1:5432/nico
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

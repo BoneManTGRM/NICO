@@ -165,10 +165,53 @@ def test_worker_dispatch_does_not_reuse_a_different_requested_tool_population(mo
     monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "c" * 40)
     scan = {"customer_id": "owned", "project_id": "fixture", "run_id": "synthetic",
             "repository": "owned/control", "snapshot_commit_sha": "a" * 40,
-            "snapshot_id": "owned-snapshot", "tools_requested": ["bandit"]}
+            "snapshot_id": "owned-snapshot", "tools_requested": ["bandit"],
+            "provider_access_mode": "anonymous_public", "provider_credential_used": False}
     first = module.enqueue_snapshot_scan(scan, contract(), adapter)
     expanded = module.enqueue_snapshot_scan({**scan, "tools_requested": ["bandit", "eslint"]}, contract(), adapter)
     assert expanded["scan_id"] != first["scan_id"]
     assert set(expanded["tools_requested"]) == {"bandit", "eslint", "cppcheck"}
     repeated = module.enqueue_snapshot_scan({**scan, "tools_requested": ["eslint", "bandit", "eslint"]}, contract(), adapter)
     assert repeated == expanded
+
+
+@pytest.mark.parametrize('mode,used', [('', False), ('anonymous_public', None),
+    ('anonymous_public', 0), ('authenticated_read_only', True)])
+def test_dispatch_requires_explicit_supported_access_before_storage(mode, used):
+    from nico.assessment_worker_receipts import enqueue_snapshot_scan
+    with pytest.raises(ValueError, match='source_access'):
+        enqueue_snapshot_scan({'provider_access_mode': mode, 'provider_credential_used': used}, contract(), None)
+
+
+def test_raw_non_utf8_native_receipt_is_retained_as_failed_without_coverage():
+    import base64
+    from scripts.worker_protocol_fixture import contract, identity, receipt
+    from nico.assessment_worker_jobs import _digest
+    from nico.assessment_worker_receipts import validate_receipt
+    value = receipt()
+    execution = {k: v for k, v in value['native'].items() if k not in {'xml', 'progress'}}
+    value['schema'] = 'nico.worker-native-receipt.v2'
+    value['native'] = {**execution, 'encoding': 'base64', 'xml': base64.b64encode(b'\xff<results/>').decode(),
+        'stdout': base64.b64encode(b'Checking src/control.cpp ...\n').decode(), 'stderr': ''}
+    value['native_sha256'] = _digest(value['native'])
+    raw, record, _ = validate_receipt(identity(), contract(), value['lease_id'], value['worker_id'], value)
+    assert b'/zxyZXN1bHRzLz4=' in raw
+    assert record['status'] == 'failed' and record['completed'] is False
+    assert record['raw_artifact_capture_complete'] is True
+    assert record['cppcheck_source_coverage']['observed_targets'] == []
+
+
+def test_base64_native_secret_cannot_bypass_redaction():
+    import base64
+    import pytest
+    from scripts.worker_protocol_fixture import contract, identity, receipt
+    from nico.assessment_worker_jobs import _digest
+    from nico.assessment_worker_receipts import validate_receipt
+    value = receipt()
+    execution = {k: v for k, v in value['native'].items() if k not in {'xml', 'progress'}}
+    value['schema'] = 'nico.worker-native-receipt.v2'
+    value['native'] = {**execution, 'encoding': 'base64', 'xml': '',
+        'stdout': base64.b64encode(('gh'+'p_'+'x'*36).encode()).decode(), 'stderr': ''}
+    value['native_sha256'] = _digest(value['native'])
+    with pytest.raises(ValueError, match='redaction'):
+        validate_receipt(identity(), contract(), value['lease_id'], value['worker_id'], value)

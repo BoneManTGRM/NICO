@@ -49,3 +49,21 @@ def test_public_payload_cannot_select_a_worker_contract(monkeypatch):
         "worker_contract": {"arbitrary": "command"}})
     assert result["status"] == "queued" and "worker_job_id" not in result
     assert len(launched) == 1
+
+
+def test_ordinary_snapshot_worker_still_reaches_existing_acquisition(monkeypatch):
+    from nico import snapshot_scanner_worker as snapshot
+    from nico.storage import STORE
+    monkeypatch.setattr(STORE, 'adapter', MemoryAdapter())
+    monkeypatch.setattr(scanner_worker, 'SCAN_JOBS', {'owned-legacy': {'scan_id': 'owned-legacy'}})
+    observed = []
+    def acquire(*args):
+        observed.append(args[1])
+        return None, '', ['Owned fixture has no remote source.']
+    monkeypatch.setattr(snapshot, 'clone_repository_at_snapshot', acquire)
+    monkeypatch.setattr(snapshot, '_requested_specs', lambda payload: [])
+    snapshot._run_snapshot_scan('owned-legacy', {'repository': 'example/owned-control',
+        'snapshot_commit_sha': 'a'*40, 'provider_access_mode': 'authenticated_read_only',
+        'provider_credential_used': True})
+    assert observed == ['a'*40]
+    assert scanner_worker.SCAN_JOBS['owned-legacy']['status'] != 'running'

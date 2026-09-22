@@ -61,7 +61,8 @@ def _invoke(operation, authority, body):
             raise ValueError("worker_request_invalid")
     # Return only the job's immutable dispatch contract, ownership and terminal receipt.
     return {key: result[key] for key in ("job_id", "identity", "contract", "limits", "status",
-        "attempts", "deadline_epoch", "lease_id", "lease_until_epoch", "receipt_sha256") if key in result}
+        "attempts", "deadline_epoch", "lease_id", "lease_until_epoch", "receipt_sha256",
+        "worker_id", "source_access") if key in result}
 
 
 async def _endpoint(request: Request, job_id: str, operation: str):
