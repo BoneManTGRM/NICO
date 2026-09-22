@@ -1,0 +1,44 @@
+name: C++ Full Project Integration
+
+on:
+  pull_request:
+    paths:
+      - 'nico/assessment_*'
+      - 'scripts/*cpp*'
+      - 'tests/*cpp*'
+      - 'tests/test_assessment_worker*'
+      - '.github/workflows/cpp-full-project-integration.yml'
+      - 'docker/assessment-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-full-project-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retain tracked source for exact-revision integration review
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cpp-integration-source"
+          git rev-parse HEAD > "$RUNNER_TEMP/cpp-integration-source/commit.txt"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/cpp-integration-source/tree.txt"
+          git archive --format=tar HEAD nico scripts tests docker .github requirements.txt | gzip -n > "$RUNNER_TEMP/cpp-integration-source/source.tar.gz"
+          test "$(stat -c %s "$RUNNER_TEMP/cpp-integration-source/source.tar.gz")" -le 67108864
+          cd "$RUNNER_TEMP/cpp-integration-source"
+          sha256sum source.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-integration-source-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/cpp-integration-source/
+          if-no-files-found: error
+          retention-days: 7
