@@ -119,7 +119,7 @@ jobs:
           assert worker["repository_executed"] is False
           assert worker["human_approval"] is False
           assert worker["client_delivery_authorized"] is False
-          assert len(worker["checks"]) == 13
+          assert len(worker["checks"]) == 18
           assert all(value is True for value in worker["checks"].values())
           protocol = json.loads(Path("audit-results/postgres-worker-protocol-proof.json").read_text())
           assert protocol["synthetic"] is True
@@ -128,7 +128,7 @@ jobs:
           assert protocol["analyzer_executed"] is False
           assert protocol["human_approval_proven"] is False
           assert protocol["client_delivery_allowed"] is False
-          assert len(protocol["checks"]) == 22
+          assert len(protocol["checks"]) == 25
           assert all(value is True for value in protocol["checks"].values())
           PY
 
