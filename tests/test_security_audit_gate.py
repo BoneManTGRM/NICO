@@ -268,6 +268,7 @@ def test_trufflehog_verified_or_non_fixture_finding_blocks(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize("path,deployment_id", [
+    ("NICO-Ship-Checkpoint.md", "97d2fb09-0716-4cd7-b1ae-51509755dc50"),
     ("NICO-Ship-Checkpoint.md", "132496a3-be53-42f2-aab2-3f812583528a"),
     ("NICO-Ship-Checkpoint.md", "5ef9587d-d432-4246-8ea3-e382c5275860"),
     ("NICO-Ship-Checkpoint.md", "b486f62e-607e-40be-ab5d-219d1cd01f89"),
