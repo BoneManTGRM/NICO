@@ -62,6 +62,8 @@ def _download_archive(client: Any, repository: str, ref: str) -> bytes:
 
 def _archive_sources(data: bytes) -> tuple[dict[str, str], dict[str, Any]]:
     files: dict[str, str] = {}
+    raw_records: dict[str, dict] = {}
+    from nico.snapshot_execution_inputs import raw_input_record
     total_bytes = 0
     skipped_large = 0
     skipped_limit = 0
@@ -102,10 +104,12 @@ def _archive_sources(data: bytes) -> tuple[dict[str, str], dict[str, Any]]:
                 lfs_entries.append(pointer)
                 continue
             files[relative] = text
+            raw_records[relative] = raw_input_record(raw)
             source_file_bytes[relative] = len(raw)
             total_bytes += len(raw)
     return files, {
         "source_files_loaded": len(files),
+        "source_raw_input_records": raw_records,
         "source_bytes_loaded": total_bytes,
         "source_file_bytes": source_file_bytes,
         "source_files_inspected": inspected_files,
@@ -166,6 +170,17 @@ def install_full_source_archive_profile_v1() -> dict[str, Any]:
         metadata["source_bytes_loaded"] = sum(metadata["source_file_bytes"][path] for path in source_files)
         metadata["source_file_bytes"] = {path: metadata["source_file_bytes"][path] for path in source_files}
         result["files"] = existing
+        from nico.snapshot_execution_inputs import matches_tree
+        records = result.setdefault('raw_input_records', {})
+        inventory = result.get('raw_blob_inventory') or {}
+        # Archive bytes are usable only when they match the exact Git inventory;
+        # replacement-decoded report text never supplies execution hashes.
+        for path in unavailable_content | set(source_files):
+            records.pop(path, None)
+        for path, record in metadata['source_raw_input_records'].items():
+            if path in source_files and matches_tree(record, inventory.get(path, {})):
+                records[path] = record
+        result['raw_input_selected_paths'] = sorted(set(result.get('raw_input_selected_paths') or []) | set(source_files))
         # Archive sampling can extend a truncated API inventory. Retain the
         # observed paths before coverage validates membership, without claiming
         # that an incomplete API inventory became a complete repository tree.

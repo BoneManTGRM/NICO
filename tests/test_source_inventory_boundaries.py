@@ -70,7 +70,7 @@ def test_api_inventory_preserves_unavailable_parent_entries(monkeypatch):
     monkeypatch.setattr(snapshot, "_get_json", lambda *a: ({"tree": entries, "sha": "b" * 40}, None))
     monkeypatch.setattr(snapshot, "_contents", lambda *a: ([], None))
     monkeypatch.setattr(snapshot, "should_fetch_path", lambda *a: True)
-    monkeypatch.setattr(snapshot, "_text_file", lambda c, r, p, ref: (POINTER if p == "source.cpp" else "README.md", None))
+    monkeypatch.setattr(snapshot, "_raw_file", lambda c, r, p, ref: ((POINTER if p == "source.cpp" else "README.md").encode(), None))
     function = snapshot._profile
     while hasattr(function, "__wrapped__"):
         function = function.__wrapped__
@@ -112,7 +112,7 @@ def test_malformed_api_inventory_cannot_claim_completeness(monkeypatch, mutation
         row["path"] = "../README.md"
     monkeypatch.setattr(snapshot, "_get_json", lambda *a: ({"tree": entries, "sha": "b" * 40}, None))
     monkeypatch.setattr(snapshot, "_contents", lambda *a: ([], None))
-    monkeypatch.setattr(snapshot, "_text_file", lambda *a: ("abc", None))
+    monkeypatch.setattr(snapshot, "_raw_file", lambda *a: (b"abc", None))
     function = snapshot._profile
     while hasattr(function, "__wrapped__"):
         function = function.__wrapped__

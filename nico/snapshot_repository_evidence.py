@@ -398,7 +398,7 @@ def _contents(client: Any, repository: str, path: str, ref: str) -> tuple[Any | 
     return _get_json(client, repository, suffix, {"ref": ref})
 
 
-def _text_file(client: Any, repository: str, path: str, ref: str) -> tuple[str | None, str | None]:
+def _raw_file(client: Any, repository: str, path: str, ref: str) -> tuple[bytes | None, str | None]:
     value, error = _contents(client, repository, path, ref)
     if error:
         return None, error
@@ -407,12 +407,17 @@ def _text_file(client: Any, repository: str, path: str, ref: str) -> tuple[str |
     if int(value.get("size") or 0) > MAX_FILE_BYTES:
         return None, f"{path} exceeds the hosted text-inspection limit."
     try:
-        raw = base64.b64decode(value.get("content") or "")
+        raw = base64.b64decode(''.join((value.get("content") or "").split()), validate=True)
         if len(raw) > MAX_FILE_BYTES:
             return None, f"{path} exceeds the hosted text-inspection limit."
-        return raw.decode("utf-8", errors="replace"), None
+        return raw, None
     except Exception:
         return None, f"{path} could not be decoded at the captured commit."
+
+
+def _text_file(client: Any, repository: str, path: str, ref: str) -> tuple[str | None, str | None]:
+    raw, error = _raw_file(client, repository, path, ref)
+    return (raw.decode('utf-8', errors='replace') if raw is not None else None), error
 
 
 def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -460,27 +465,38 @@ def _profile(client: Any, repository: str, snapshot: dict[str, Any]) -> dict[str
     symlink_paths = {str(item["path"]) for item in blobs if item.get("mode") == "120000"}
     lfs_entries: list[dict[str, Any]] = []
     sizes = {str(item["path"]): int(item.get("size") or 0) for item in blobs}
+    from nico.full_source_archive_profile_v1 import _eligible
     candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
-    candidates.extend(path for path in sorted(sizes) if path not in candidates and should_fetch_path(path, sizes[path]))
+    candidates.extend(path for path in sorted(sizes) if path not in candidates
+                      and (should_fetch_path(path, sizes[path]) or (_eligible(path) and sizes[path] <= MAX_FILE_BYTES)))
     files: dict[str, str] = {}
+    raw_records: dict[str, dict] = {}
+    from nico.snapshot_execution_inputs import raw_input_record, matches_tree
     unavailable_paths: list[str] = sorted(invalid_paths | symlink_paths | {row["path"] for row in submodules})
     from nico.full_source_archive_profile_v1 import lfs_pointer_entry
     for path in candidates[:MAX_TEXT_FILES]:
         if path in symlink_paths:
             continue
-        text, error = _text_file(client, repository, path, commit_sha)
-        if text is not None:
+        raw, error = _raw_file(client, repository, path, commit_sha)
+        if raw is not None:
+            text = raw.decode('utf-8', errors='replace')
             pointer = lfs_pointer_entry(path, text)
             if pointer is not None:
                 lfs_entries.append(pointer)
                 unavailable_paths.append(path)
             else:
                 files[path] = text
+                record = raw_input_record(raw)
+                if matches_tree(record, valid_entries[path]):
+                    raw_records[path] = record
         else:
             unavailable_paths.append(path)
             unavailable.append(_safe_note(f"Captured-commit file {path}", error))
     return {
         "files": files,
+        "raw_input_records": raw_records,
+        "raw_input_selected_paths": sorted(candidates[:MAX_TEXT_FILES]),
+        "raw_blob_inventory": valid_entries,
         "tree_paths": sorted(inventory_paths),
         "root_items": root_items,
         "unavailable": sorted(set(unavailable)),
@@ -643,6 +659,8 @@ def _public_git_profile(
                 if path not in candidates and should_fetch_path(path, sizes[path])
             )
             files: dict[str, str] = {}
+            raw_records: dict[str, dict] = {}
+            from nico.snapshot_execution_inputs import raw_input_record
             unavailable: list[str] = []
             unavailable_paths: list[str] = []
             from nico import full_source_archive_profile_v1 as source_policy
@@ -687,6 +705,9 @@ def _public_git_profile(
                         lfs_entries.append(pointer)
                     else:
                         files[path] = text
+                        record = raw_input_record(content)
+                        if record['blob_sha'] == blob_ids[path]:
+                            raw_records[path] = record
                 unavailable_paths = sorted(selected - set(files))
                 unavailable = [f'Exact public Git snapshot file {path} could not be read.' for path in unavailable_paths]
 
@@ -694,6 +715,8 @@ def _public_git_profile(
             paths = sorted(inventory_paths)
             return {
                 "files": files,
+                "raw_input_records": raw_records,
+                "raw_input_selected_paths": ordered,
                 "tree_paths": paths,
                 "root_items": sorted({path.split("/", 1)[0] for path in paths}),
                 "unavailable": unavailable,
@@ -1203,6 +1226,8 @@ def collect_snapshot_repository_evidence(
         "retention_note": "Only summarized repository evidence and bounded sampled-file analysis are retained; credentials and raw CI logs are not retained.",
         "idempotent_reuse": False, "human_review_required": True,
     }
+    from nico.snapshot_execution_inputs import execution_input_manifest
+    bundle['execution_input_manifest'] = execution_input_manifest(profile, snapshot)
     bundle["architecture_evidence"]["source_observation"] = analyze_source_architecture(
         files, run_id=run_id, repository=repository, commit_sha=snapshot_sha, snapshot_id=snapshot_id,
     )
