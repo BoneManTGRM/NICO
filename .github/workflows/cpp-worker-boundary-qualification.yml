@@ -16,6 +16,7 @@ on:
       - nico/assessment_worker_jobs.py
       - nico/snapshot_repository_evidence.py
       - scripts/qualify_cppcheck_worker_control.py
+      - scripts/export_qualified_cpp_worker_image.py
       - docker/assessment-cppcheck.Dockerfile
   pull_request:
     paths:
@@ -31,6 +32,7 @@ on:
       - nico/assessment_worker_jobs.py
       - nico/snapshot_repository_evidence.py
       - scripts/qualify_cppcheck_worker_control.py
+      - scripts/export_qualified_cpp_worker_image.py
       - docker/assessment-cppcheck.Dockerfile
   workflow_dispatch:
 
@@ -122,3 +124,18 @@ jobs:
             cppcheck-image-metadata.json
           if-no-files-found: error
           retention-days: 30
+      - name: Export the same qualified local image within the existing job budget
+        if: github.event_name != 'pull_request'
+        env:
+          QUALIFIED_SOURCE_SHA: ${{ github.sha }}
+        run: python scripts/export_qualified_cpp_worker_image.py --source-sha "$QUALIFIED_SOURCE_SHA"
+      - name: Retain exact image bytes for later trusted publication
+        timeout-minutes: 2
+        if: success() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cppcheck-image-handoff-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cppcheck-image-handoff/
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 7

@@ -5,6 +5,18 @@ already-authorized durable job. Its sole dispatch input is `job_id`. Public inta
 cannot choose commands, an image, a backend, a contract or worker credentials.
 Automatic profile selection remains separate and inactive.
 
+The existing native qualification workflow also exports its exact local image on
+push/manual runs after all owned controls pass. Its separate seven-day artifact
+contains the Docker archive, archive hash, verified config ID, source/recipe hashes
+and the native qualification record. The Docker export subprocess is capped at
+2 GiB and 45 seconds; archive verification and the two-minute artifact transfer
+remain inside the unchanged five-minute job limit. Small native evidence is uploaded
+before export so an image-transfer timeout cannot prevent its retention. PR checks
+retain that same small artifact. This handoff neither publishes to GHCR nor activates a profile;
+later trusted publication must promote these bytes and prove manifest/config-ID
+correspondence and anonymous availability. It must not rebuild an assumed equivalent
+image or interpret owned-control success as full-project qualification.
+
 The workflow obtains GitHub OIDC directly for the existing per-job worker audience.
 The backend requires the dedicated workflow path, GitHub-hosted execution, main,
 and both signed release SHAs to match the serving backend. No operator session or
