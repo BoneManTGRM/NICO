@@ -132,6 +132,9 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
         if path.is_file(): paths.add(path.relative_to(source).as_posix())
     if paths != set(contract['targets']):
         raise ValueError('worker_input_population_mismatch')
+    config = contract['configuration']
+    corpus_paths = {case['stdin_target'] for case in config.get('runtime_cases') or []
+                    if case['kind'] == 'corpus'}
     encoded, size = {}, 0
     fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -141,10 +144,11 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
             size += len(raw)
             if size > 16 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
                 raise ValueError('worker_input_digest_or_budget_mismatch')
+            if path in corpus_paths and len(raw) > MAX_CORPUS_BYTES:
+                raise ValueError('worker_runtime_corpus_budget_invalid')
             encoded[path] = {'base64': base64.b64encode(raw).decode('ascii'), 'sha256': digest}
     finally:
         os.close(fd)
-    config = contract['configuration']
     instrument = instrumentation(config)
     payload = {'inputs': encoded, 'database': compilation_database(config), 'commands': commands(config),
         'tool_versions': {'gcc': COMPILER_VERSION, 'g++': COMPILER_VERSION, 'cppcheck': contract['tool_version']},
@@ -186,8 +190,6 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
             stdin_bytes = b''
             if case['stdin_target']:
                 stdin_bytes = base64.b64decode(encoded[case['stdin_target']]['base64'], validate=True)
-                if len(stdin_bytes) > MAX_CORPUS_BYTES:
-                    raise ValueError('worker_runtime_corpus_budget_invalid')
             started = time.monotonic()
             observed = _container(contract['image_digest'], TEST_PROGRAM,
                 {'inputs': {'native-test': {'base64': base64.b64encode(binary).decode('ascii'),

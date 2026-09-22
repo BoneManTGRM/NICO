@@ -43,6 +43,14 @@ def test_typed_runtime_contract_is_supported():
     assert validate_contract(plan) == plan
 
 
+@pytest.mark.parametrize('expected', [1, 127, 255])
+def test_nonzero_expected_exit_cannot_mask_sandbox_startup_failure(expected):
+    plan = runtime_plan()
+    plan['configuration']['runtime_cases'][-1]['expected_exit'] = expected
+    with pytest.raises(ValueError, match='worker_runtime_case_invalid'):
+        validate_contract(plan)
+
+
 def test_original_profiles_cannot_silently_request_runtime_cases():
     plan = runtime_plan()
     plan['profile'] = 'cpp-configured-v1'
@@ -141,12 +149,45 @@ def test_mismatched_corpus_exit_cannot_complete_or_claim_fuzz():
     assert record['status'] == 'failed' and not record['completed']
     runtime = record['cpp_build_evidence']['runtime_cases']
     assert runtime['passed'] == 2 and runtime['executed'] is None
-    assert runtime['corpus_assurance']
+    assert runtime['corpus_assurance'] is False
+    assert runtime['corpus_replayed'] is None
     assert not runtime['cases'][-1]['matched']
     assert runtime['cases'][-1]['original_output_retained']
     assert record['cpp_build_evidence']['native_test']['passed'] == 1
     assert record['cpp_build_evidence']['fuzz_executed'] is False
     assert record['findings'] == [] or all(row.get('rule_id') != 'corpus' for row in record['findings'])
+
+
+@pytest.mark.parametrize('exit_code', [1, 127])
+def test_failed_sandbox_startup_does_not_establish_corpus_replay(exit_code):
+    plan, _, receipt = runtime_receipt()
+    receipt['native']['steps'][-1].update(exit_code=exit_code, stdout=base64.b64encode(
+        b'PermissionError: [Errno 13] Permission denied: /work/source/native-test\n').decode())
+    record = validate_configured(plan, receipt)
+    runtime = record['cpp_build_evidence']['runtime_cases']
+    assert not record['completed']
+    assert runtime['passed'] == 2 and runtime['executed'] is None
+    assert runtime['corpus_assurance'] is False
+    assert runtime['corpus_replayed'] is None
+    assert runtime['cases'][-1]['original_output_retained']
+
+
+def test_oversized_corpus_is_rejected_before_any_native_execution(tmp_path, monkeypatch):
+    from nico import assessment_cpp_execution as execution
+    from nico.assessment_worker_container import run_isolated_cppcheck
+    plan = runtime_plan()
+    source = tmp_path / 'source'
+    source.mkdir()
+    for name in plan['targets']:
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = b'x' * 4097 if name == 'corpus/seed-seven.bin' else name.encode()
+        path.write_bytes(data)
+        plan['targets'][name] = hashlib.sha256(data).hexdigest()
+    monkeypatch.setattr(execution, '_command', lambda *a, **kw: json.dumps([{'Id': plan['image_digest']}]).encode())
+    monkeypatch.setattr(execution, '_container', lambda *a, **kw: pytest.fail('oversized corpus reached native execution'))
+    with pytest.raises(ValueError, match='worker_runtime_corpus_budget_invalid'):
+        run_isolated_cppcheck(plan, source, checkpoint=lambda: None, timeout_seconds=10)
 
 
 @pytest.mark.parametrize('failure,expected_passed', [

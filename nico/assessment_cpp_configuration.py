@@ -43,7 +43,9 @@ def _validate_runtime_cases(cases, unit_paths, headers):
                 or not isinstance(case['argv'], list) or not 1 <= len(case['argv']) <= 8
                 or any(not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_./=-]{1,64}', token)
                        for token in case['argv'])
-                or type(case['expected_exit']) is not int or not 0 <= case['expected_exit'] <= 255):
+                # A nonzero boundary exit can originate in Docker or the
+                # trusted setup helper before the assessed executable starts.
+                or type(case['expected_exit']) is not int or case['expected_exit'] != 0):
             raise ValueError('worker_runtime_case_invalid')
         if case['kind'] == 'corpus':
             if (not isinstance(case['stdin_target'], str) or not _path(case['stdin_target'])
@@ -305,8 +307,7 @@ def validate_native(native, contract):
         for case in cases:
             row = steps[case['id']]
             by_kind[case['kind']]['required'] += 1
-            matched = (row['attempted'] and row['exit_code'] == case['expected_exit']
-                       and not row['timed_out'] and not row['output_truncated'])
+            matched = succeeded(case['id']) and case['expected_exit'] == 0
             if row['attempted']:
                 attempted += 1
             if matched:
@@ -319,14 +320,16 @@ def validate_native(native, contract):
                          'original_output_retained': row['attempted'] and not row['output_truncated'],
                          'independently_verified_finding': False})
         corpus_targets = [case['stdin_target'] for case in cases if case['kind'] == 'corpus']
-        corpus_assurance = bool(corpus_targets) and all(
-            steps[case['id']]['attempted'] and not steps[case['id']]['timed_out']
-            and not steps[case['id']]['output_truncated']
-            for case in cases if case['kind'] == 'corpus')
+        corpus_cases = [case for case in cases if case['kind'] == 'corpus']
+        corpus_assurance = bool(corpus_cases) and all(succeeded(case['id']) for case in corpus_cases)
+        # The boundary observes a launch attempt, not executable entry. A
+        # failed launch cannot prove that any supplied corpus was replayed.
+        corpus_replayed = (True if corpus_assurance else None
+            if any(steps[case['id']]['attempted'] for case in corpus_cases) else False)
         runtime = {'required': len(cases), 'attempted': attempted,
                    'executed': passed if attempted == len(cases) and not uncertain else None if attempted else 0,
                    'passed': passed, 'by_kind': by_kind, 'cases': rows, 'corpus_seeds': corpus_targets,
-                   'corpus_replayed': corpus_assurance, 'corpus_assurance': corpus_assurance,
+                   'corpus_replayed': corpus_replayed, 'corpus_assurance': corpus_assurance,
                    'diagnostic_origin': 'untrusted_native_program_output'}
         runtime_ok = passed == len(cases) and corpus_assurance
     complete = (test_complete and runtime_ok and analyzed == required_paths and header_paths == config['headers']

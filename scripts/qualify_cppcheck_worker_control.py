@@ -402,7 +402,8 @@ def main():
                              sort_keys=True))
             assert mismatch_record['status'] == 'failed' and not mismatch_record['completed']
             assert mismatch_record['cpp_build_evidence']['build_completed']
-            assert mismatch_record['cpp_build_evidence']['runtime_cases']['corpus_assurance']
+            assert mismatch_record['cpp_build_evidence']['runtime_cases']['corpus_assurance'] is False
+            assert mismatch_record['cpp_build_evidence']['runtime_cases']['corpus_replayed'] is None
             assert mismatch_record['cpp_build_evidence']['runtime_cases']['passed'] == 2
             assert mismatch['receipt']['native']['steps'][-1]['exit_code'] == 2
             evidence['status'] = 'PASS_OWNED_RUNTIME_CASES'
