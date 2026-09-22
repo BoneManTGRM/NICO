@@ -18,6 +18,8 @@ def trusted(monkeypatch):
     for key, value in values.items(): monkeypatch.setenv(key, value)
     monkeypatch.delenv('GITHUB_TOKEN', raising=False)
     monkeypatch.delenv('NICO_IMAGE_PUBLICATION_TOKEN', raising=False)
+    monkeypatch.delenv('NICO_IMAGE_PULL_TOKEN', raising=False)
+    monkeypatch.delenv('NICO_IMAGE_QUALIFIED_SOURCE_SHA', raising=False)
 
 
 @pytest.fixture
@@ -134,3 +136,70 @@ def test_cli_does_not_disclose_credential_bearing_failures(trusted, monkeypatch,
     assert release.main() == 1
     output = capsys.readouterr().out
     assert 'owned-inert-token' not in output and json.loads(output)['production_qualified'] is False
+
+
+def test_authenticated_retrieval_does_not_claim_anonymous_or_rebind_image_source(trusted, receipt, tmp_path, monkeypatch):
+    monkeypatch.setenv('GITHUB_SHA', 'e' * 40)
+    monkeypatch.setenv('GITHUB_WORKFLOW_SHA', 'e' * 40)
+    monkeypatch.setenv('GITHUB_WORKFLOW_REF', release.RETRIEVAL_WORKFLOW)
+    monkeypatch.setenv('NICO_IMAGE_QUALIFIED_SOURCE_SHA', 'a' * 40)
+    monkeypatch.setenv('NICO_IMAGE_PULL_TOKEN', 'owned-inert-pull-token')
+    configs = []
+    def command(argv, **kwargs):
+        assert 'NICO_IMAGE_PULL_TOKEN' not in release.os.environ
+        assert 'owned-inert-pull-token' not in ' '.join(argv)
+        if 'login' in argv:
+            assert kwargs['input_bytes'] == b'owned-inert-pull-token\n'
+            configs.append(Path(argv[2]))
+        if 'inspect' in argv:
+            return json.dumps([{'Id': receipt[1]['image_config_id'], 'Os': 'linux', 'Architecture': 'amd64'}]).encode()
+        return b''
+    result = release.verify(receipt[0], tmp_path / 'result', command=command, registry_probe=lambda: 403)
+    assert result['image_pull_verified'] is True and result['anonymous_pull_verified'] is False
+    assert result['registry_access_mode'] == 'actions_package_token' and result['anonymous_token_http_status'] == 403
+    assert result['source_sha'] == 'a' * 40 and result['controller_source_sha'] == 'e' * 40
+    assert result['production_qualified'] is False and all(not path.exists() for path in configs)
+    assert 'owned-inert-pull-token' not in (tmp_path / 'result/verification.json').read_text()
+
+
+def test_failure_stage_and_safe_code_are_retained_without_raw_error(trusted, receipt, tmp_path):
+    def command(argv, **kwargs):
+        if 'pull' in argv: raise ValueError('secret-bearing remote output')
+        return b''
+    with pytest.raises(ValueError): release.verify(receipt[0], tmp_path / 'result', command=command)
+    result = json.loads((tmp_path / 'result/verification.json').read_text())
+    assert result['failure_stage'] == 'pull' and result['error_code'] == 'image_release_failed'
+    assert result['image_pull_verified'] is False and 'secret-bearing' not in json.dumps(result)
+
+
+def test_retrieval_workflow_cannot_publish_and_ordinary_changes_do_not_republish():
+    import yaml
+    workflow = yaml.safe_load(Path('.github/workflows/cpp-worker-image-retrieval.yml').read_text())
+    job = workflow['jobs']['verify-image']
+    assert job['permissions'] == {'contents': 'read', 'packages': 'read'}
+    assert job['timeout-minutes'] == 5 and set(workflow['jobs']) == {'verify-image'}
+    publication = json.loads(Path('scripts/cpp_worker_published_image.json').read_text())
+    assert publication['source_sha'] == job['env']['NICO_IMAGE_QUALIFIED_SOURCE_SHA']
+    assert publication['handoff_sha256'] == job['env']['NICO_IMAGE_HANDOFF_SHA256']
+    assert all('NICO_IMAGE_PUBLICATION_TOKEN' not in step.get('env', {}) for step in job['steps'])
+    qualification = yaml.safe_load(Path('.github/workflows/cpp-worker-boundary-qualification.yml').read_text())
+    assert "contains(github.event.head_commit.message, '[publish-worker-image]')" in qualification['jobs']['publish-image']['if']
+
+
+def test_anonymous_probe_has_no_credentials_redirects_or_retained_token(monkeypatch):
+    class Response:
+        status_code = 403
+        closed = False
+        def close(self): self.closed = True
+    response = Response()
+    class Session:
+        trust_env = True
+        def get(self, url, **kwargs):
+            assert self.trust_env is False and url == 'https://ghcr.io/token'
+            assert kwargs['allow_redirects'] is False and kwargs['stream'] is True
+            assert kwargs['timeout'] == (3, 5)
+            assert 'headers' not in kwargs and 'auth' not in kwargs
+            return response
+        def close(self): pass
+    monkeypatch.setattr(release.requests, 'Session', Session)
+    assert release.anonymous_registry_status() == 403 and response.closed

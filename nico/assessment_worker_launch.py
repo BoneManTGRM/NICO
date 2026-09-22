@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 import time
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -101,21 +102,30 @@ def image_reference(value, repository):
     return value
 
 
-def provision_image(expected_id, reference, repository, root, checkpoint, *, command=_command):
+def provision_image(expected_id, reference, repository, root, checkpoint, *, command=_command, registry_token=None):
     reference = image_reference(reference, repository)
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', expected_id):
         raise ValueError('worker_image_identity_invalid')
-    config = Path(root) / 'docker-config'
-    config.mkdir(mode=0o700, exist_ok=True)
-    # No registry login, credential helper, ambient Docker context or secrets.
-    args = ['docker', '--config', str(config), '--host', 'unix:///var/run/docker.sock']
-    command([*args, 'pull', '--quiet', '--platform=linux/amd64', reference],
-            checkpoint=checkpoint, timeout=240, limit=65536)
-    metadata = json.loads(command([*args, 'image', 'inspect', reference], checkpoint=checkpoint))
-    if (not isinstance(metadata, list) or len(metadata) != 1 or metadata[0].get('Id') != expected_id
-            or metadata[0].get('Os') != 'linux' or metadata[0].get('Architecture') != 'amd64'):
-        raise ValueError('worker_image_identity_mismatch')
-    checkpoint()
+    if registry_token is not None and (not isinstance(registry_token, str)
+            or not 0 < len(registry_token) <= 16384 or not registry_token.isascii()
+            or any(char.isspace() for char in registry_token)):
+        raise ValueError('worker_image_credential_invalid')
+    # Registry authority is controller-only, explicit and never inherited from
+    # ambient Docker auth. Remove the private config before returning to source
+    # acquisition, including all failure, timeout and cancellation paths.
+    with tempfile.TemporaryDirectory(prefix='image-auth-', dir=root) as config:
+        args = ['docker', '--config', config, '--host', 'unix:///var/run/docker.sock']
+        if registry_token is not None:
+            command([*args, 'login', 'ghcr.io', '--username', repository.split('/')[0], '--password-stdin'],
+                checkpoint=checkpoint, timeout=15, input_bytes=(registry_token + '\n').encode(), limit=65536)
+        command([*args, 'pull', '--quiet', '--platform=linux/amd64', reference],
+                checkpoint=checkpoint, timeout=240, limit=65536)
+        metadata = json.loads(command([*args, 'image', 'inspect', reference], checkpoint=checkpoint))
+        if (not isinstance(metadata, list) or len(metadata) != 1 or not isinstance(metadata[0], dict)
+                or metadata[0].get('Id') != expected_id
+                or metadata[0].get('Os') != 'linux' or metadata[0].get('Architecture') != 'amd64'):
+            raise ValueError('worker_image_identity_mismatch')
+        checkpoint()
     return {'image_manifest': reference, 'image_config_id': expected_id}
 
 

@@ -153,6 +153,35 @@ def test_image_provisioning_binds_manifest_reference_to_config_id(tmp_path):
         provision_image('sha256:' + 'f' * 64, reference, 'BoneManTGRM/NICO', tmp_path, lambda: None, command=command)
 
 
+@pytest.mark.parametrize('failure', [None, 'login', 'pull', 'inspect'])
+def test_private_image_credential_and_config_never_survive_provisioning(tmp_path, failure):
+    from nico.assessment_worker_launch import provision_image
+    image = 'sha256:' + 'd' * 64
+    reference = 'ghcr.io/bonemantgrm/nico/assessment-cppcheck@sha256:' + 'e' * 64
+    calls = []; configurations = []
+    def command(args, **kwargs):
+        calls.append((args, kwargs))
+        config = Path(args[2]); configurations.append(config)
+        assert config.is_dir() and config.stat().st_mode & 0o777 == 0o700
+        assert 'owned-inert-pull-token' not in ' '.join(args)
+        if 'login' in args:
+            assert kwargs['input_bytes'] == b'owned-inert-pull-token\n'
+            (config / 'config.json').write_text('owned-inert-pull-token')
+        if failure in args: raise ValueError('worker_container_control_failed')
+        if 'inspect' in args:
+            return json.dumps([{'Id': image, 'Os': 'linux', 'Architecture': 'amd64'}]).encode()
+        return b''
+    if failure:
+        with pytest.raises(ValueError):
+            provision_image(image, reference, 'BoneManTGRM/NICO', tmp_path, lambda: None,
+                command=command, registry_token='owned-inert-pull-token')
+    else:
+        assert provision_image(image, reference, 'BoneManTGRM/NICO', tmp_path, lambda: None,
+            command=command, registry_token='owned-inert-pull-token')['image_config_id'] == image
+    assert calls and all(not path.exists() for path in configurations)
+    assert not any(path.is_file() for path in tmp_path.rglob('*'))
+
+
 @pytest.mark.parametrize('reference', [
     'ghcr.io/bonemantgrm/nico/assessment-cppcheck:latest',
     'ghcr.io/other/repo@sha256:' + 'd' * 64,

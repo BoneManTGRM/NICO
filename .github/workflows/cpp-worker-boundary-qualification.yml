@@ -159,7 +159,7 @@ jobs:
 
   publish-image:
     needs: [boundary, native-static-control]
-    if: github.event_name == 'push' && github.repository == 'BoneManTGRM/NICO' && github.ref == 'refs/heads/feat/large-repository-cpp-comprehensive' && github.run_attempt == 1
+    if: github.event_name == 'push' && github.repository == 'BoneManTGRM/NICO' && github.ref == 'refs/heads/feat/large-repository-cpp-comprehensive' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[publish-worker-image]')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
