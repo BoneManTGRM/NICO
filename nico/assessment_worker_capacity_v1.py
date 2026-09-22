@@ -1,8 +1,9 @@
 """Worker resource classes. Bounded proofs stay at 256 MiB.
 
 The full-project class is sized above Bitcoin Core's documented 1.5 GiB
-compile requirement. Sanitizer and fuzz memory are recorded separately and
-stay unmeasured until a real run produces them. Production selection requires
+compile requirement; that comparison is not measured capacity qualification.
+Compile, sanitizer and fuzz memory stay unmeasured until a real run produces
+them. Production selection requires
 a controlled-project qualification receipt and does not claim Bitcoin execution.
 """
 from __future__ import annotations
@@ -35,7 +36,9 @@ FULL_PROJECT_RESOURCES = {
     "memory_swap": "2g",
     "pids": "256",
     "tmpfs_bytes": 2_147_483_648,
-    "sufficient_for_bitcoin_compile": True,
+    "sufficient_for_bitcoin_compile": None,
+    "compile_memory_bytes": None,
+    "compile_budget_status": "not_measured",
     "documented_compile_memory_bytes": 1_610_612_736,
     "sanitizer_memory_bytes": None,
     "sanitizer_budget_status": "not_measured",
@@ -126,9 +129,12 @@ def select_production_profile(qualification: Mapping[str, Any] | None) -> dict[s
             or qualification["resource_class"] != FULL_PROJECT_CLASS
             or qualification["controlled_project_passed"] is not True):
         return None
-    if qualification["bitcoin_executed"] is True and qualification["report_verified"] is not True:
+    # This gate is exclusively for controlled-project qualification, never a
+    # Bitcoin execution claim. Reject strings, integers and missing evidence
+    # rather than silently projecting them into a false execution/report state.
+    if qualification["bitcoin_executed"] is not False:
         return None
-    if qualification["bitcoin_executed"] is True:
+    if not isinstance(qualification["report_verified"], bool):
         return None
     return {
         "profile": FULL_PROJECT_PROFILE,

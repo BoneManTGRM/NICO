@@ -1,4 +1,8 @@
 """Full-project worker capacity stays separate from the 256 MiB proofs."""
+from copy import deepcopy
+
+import pytest
+
 from nico.assessment_worker_capacity_v1 import (
     BOUNDED_RESOURCES,
     FULL_PROJECT_PROFILE,
@@ -28,7 +32,9 @@ def test_full_project_capacity_exceeds_documented_bitcoin_compile():
     resources = FULL_PROJECT_RESOURCES
     assert resources["memory_bytes"] == 2_147_483_648
     assert resources["memory_bytes"] > resources["documented_compile_memory_bytes"] == 1_610_612_736
-    assert resources["sufficient_for_bitcoin_compile"] is True
+    assert resources["sufficient_for_bitcoin_compile"] is None
+    assert resources["compile_memory_bytes"] is None
+    assert resources["compile_budget_status"] == "not_measured"
     assert resources["sanitizer_memory_bytes"] is None
     assert resources["sanitizer_budget_status"] == "not_measured"
     assert resources["fuzz_memory_bytes"] is None
@@ -86,3 +92,61 @@ def test_compiler_workspace_stays_noexec_and_native_test_is_exec():
         assert "worker_resource_profile_unknown" in str(exc)
     else:
         raise AssertionError("unknown profile must fail")
+
+
+def _controlled_qualification():
+    return {
+        "profile": FULL_PROJECT_PROFILE,
+        "resource_class": "full-project-v1",
+        "controlled_project_passed": True,
+        "bitcoin_executed": False,
+        "report_verified": False,
+    }
+
+
+@pytest.mark.parametrize("claim", [True, None, 0, 1, "false", "true", "", [], {}])
+def test_selection_rejects_non_false_bitcoin_claims(claim):
+    qualification = _controlled_qualification()
+    qualification["bitcoin_executed"] = claim
+    assert select_production_profile(qualification) is None
+
+
+@pytest.mark.parametrize("claim", [None, 0, 1, "false", "true", "", [], {}])
+def test_selection_rejects_non_boolean_report_claims(claim):
+    qualification = _controlled_qualification()
+    qualification["report_verified"] = claim
+    assert select_production_profile(qualification) is None
+
+
+@pytest.mark.parametrize("claim", [False, None, 0, 1, "true"])
+def test_selection_rejects_non_true_controlled_project_claims(claim):
+    qualification = _controlled_qualification()
+    qualification["controlled_project_passed"] = claim
+    assert select_production_profile(qualification) is None
+
+
+def test_plan_does_not_turn_declared_memory_into_measured_capacity():
+    plan = full_project_plan()
+    assert plan["resources"]["sufficient_for_bitcoin_compile"] is None
+    assert plan["resources"]["compile_budget_status"] == "not_measured"
+    assert plan["resources"]["compile_memory_bytes"] is None
+    assert plan["executed_stages"] == []
+    assert plan["production_selected"] is False
+
+
+def test_resource_plan_returns_independent_copies():
+    plan = full_project_plan()
+    plan["resources"]["memory"] = "changed"
+    plan["stages"].clear()
+    fresh = full_project_plan()
+    assert fresh["resources"]["memory"] == "2g"
+    assert fresh["stages"]
+
+
+def test_selection_preserves_qualification_and_bitcoin_report_state():
+    qualification = _controlled_qualification()
+    before = deepcopy(qualification)
+    selected = select_production_profile(qualification)
+    assert qualification == before
+    assert selected["bitcoin_executed"] is False
+    assert selected["report_verified"] is False
