@@ -34,11 +34,12 @@ def _save_image(image, archive):
                    check=True, timeout=45, preexec_fn=limits)
 
 
-def _verify_archive_config(archive, image):
+def _verify_archive_config(archive, image, *, checkpoint=lambda: None):
     config_names = {image[7:] + '.json', 'blobs/sha256/' + image[7:]}
     retained = {}
     with tarfile.open(archive, 'r:') as source:
         for count, member in enumerate(source, 1):
+            checkpoint()
             if count > 4096:
                 raise ValueError('image_handoff_archive_members')
             if member.name not in config_names | {'manifest.json'}:
@@ -60,8 +61,8 @@ def _verify_archive_config(archive, image):
         raise ValueError('image_handoff_archive_config_mismatch')
 
 
-def export_qualified_image(proof, metadata, recipe, output, *, source_sha, exporter=_save_image):
-    """Bind trusted native proof and Docker export without expanding its scope."""
+def validate_control_proof(proof, *, source_sha, image):
+    """Verify owned-control bindings; this never grants production qualification."""
     proof = dict(proof)
     proof_hash = proof.pop('evidence_sha256', None)
     if (not re.fullmatch(r'[0-9a-f]{40}', source_sha)
@@ -70,14 +71,6 @@ def export_qualified_image(proof, metadata, recipe, output, *, source_sha, expor
             or proof.get('status') != 'PASS_OWNED_RUNTIME_CASES'
             or hashlib.sha256(_canonical(proof)).hexdigest() != proof_hash):
         raise ValueError('image_handoff_qualification_invalid')
-    if (not isinstance(metadata, list) or len(metadata) != 1
-            or metadata[0].get('Os') != 'linux' or metadata[0].get('Architecture') != 'amd64'
-            or type(metadata[0].get('Size')) is not int
-            or not 0 < metadata[0]['Size'] <= MAX_ARCHIVE_BYTES):
-        raise ValueError('image_handoff_metadata_invalid')
-    image = metadata[0].get('Id', '')
-    if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
-        raise ValueError('image_handoff_image_invalid')
     try:
         controls = [proof, *(proof[key] for key in ('configured_control', 'configured_negative',
                     'runtime_control', 'runtime_negative')), *proof['sanitizer_controls']]
@@ -88,6 +81,20 @@ def export_qualified_image(proof, metadata, recipe, output, *, source_sha, expor
             raise ValueError('image_handoff_control_mismatch')
     except (KeyError, TypeError) as error:
         raise ValueError('image_handoff_control_mismatch') from error
+    return proof_hash, sorted(profiles)
+
+
+def export_qualified_image(proof, metadata, recipe, output, *, source_sha, exporter=_save_image):
+    """Bind trusted native proof and Docker export without expanding its scope."""
+    if (not isinstance(metadata, list) or len(metadata) != 1
+            or metadata[0].get('Os') != 'linux' or metadata[0].get('Architecture') != 'amd64'
+            or type(metadata[0].get('Size')) is not int
+            or not 0 < metadata[0]['Size'] <= MAX_ARCHIVE_BYTES):
+        raise ValueError('image_handoff_metadata_invalid')
+    image = metadata[0].get('Id', '')
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+        raise ValueError('image_handoff_image_invalid')
+    proof_hash, profiles = validate_control_proof(proof, source_sha=source_sha, image=image)
     recipe = Path(recipe)
     if not 0 < recipe.stat().st_size <= 65536:
         raise ValueError('image_handoff_recipe_invalid')
