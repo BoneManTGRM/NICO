@@ -1,8 +1,8 @@
 """Typed source-bound compiler configuration, never repository command strings.
 
-This initial configured profile builds and runs one native test executable.
-It does not discover project build systems, qualify sanitizer/fuzz campaigns,
-or enable production selection. Required units and headers cannot be dropped.
+Versioned configured profiles build and run one native test executable.
+They do not discover project build systems or enable production selection.
+Required units and headers cannot be dropped.
 """
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ import json
 import re
 
 PROFILE = 'cpp-configured-v1'
+SANITIZED_PROFILE = 'cpp-sanitized-v1'
+CONFIGURED_PROFILES = {PROFILE, SANITIZED_PROFILE}
 COMPILER_VERSION = '14.2.0'
 CHECKS = 'warning,style,performance,portability,information'
 
@@ -22,12 +24,18 @@ def _path(value):
         and all(part not in {'', '.', '..', '.git'} for part in value.split('/')))
 
 
-def validate_configuration(configuration, targets):
+def validate_configuration(configuration, targets, *, sanitized=False):
+    fields = {'platform', 'compiler_version', 'translation_units', 'headers'}
+    if sanitized:
+        fields.add('sanitizer')
     if (not isinstance(configuration, dict)
-            or set(configuration) != {'platform', 'compiler_version', 'translation_units', 'headers'}
+            or set(configuration) != fields
             or configuration['platform'] != 'unix64'
             or configuration['compiler_version'] != COMPILER_VERSION):
         raise ValueError('worker_configuration_invalid')
+    if sanitized and (not isinstance(configuration['sanitizer'], str)
+                      or configuration['sanitizer'] not in {'address', 'undefined'}):
+        raise ValueError('worker_sanitizer_configuration_invalid')
     units, headers = configuration['translation_units'], configuration['headers']
     if (not isinstance(units, list) or not 1 <= len(units) <= 64
             or not isinstance(headers, list) or len(headers) > 256
@@ -55,13 +63,34 @@ def validate_configuration(configuration, targets):
         raise ValueError('worker_configuration_input_mismatch')
 
 
+def instrumentation(configuration):
+    """Fixed, source-bound instrumentation; callers cannot supply environment/options."""
+    kind = configuration.get('sanitizer')
+    if kind is None:
+        return None
+    if kind not in {'address', 'undefined'}:
+        raise ValueError('worker_sanitizer_configuration_invalid')
+    common = ['-fsanitize=' + kind, '-fno-sanitize-recover=all']
+    runtime = ({'ASAN_OPTIONS': 'detect_leaks=0:halt_on_error=1:abort_on_error=0:exitcode=86:'
+                'quarantine_size_mb=16:thread_local_quarantine_size_kb=64:malloc_context_size=12:'
+                'detect_stack_use_after_return=0:allow_addr2line=1'} if kind == 'address' else
+               {'UBSAN_OPTIONS': 'halt_on_error=1:print_stacktrace=0:exitcode=87'})
+    return {'kind': kind, 'compile_options': common + ['-g1', '-fno-omit-frame-pointer'],
+            'link_options': common, 'runtime_options': runtime,
+            'excluded_checks': ['leaks', 'stack_use_after_return'] if kind == 'address' else [],
+            'instrumented_coverage_measured': False}
+
+
 def commands(configuration):
     """One compiler invocation and one analyzer invocation per frozen unit."""
     result = []
+    instrument = instrumentation(configuration)
     for index, unit in enumerate(configuration['translation_units']):
         prefix = '/work/unit-' + str(index)
         compiler = 'gcc' if unit['language'] == 'c' else 'g++'
         argv = [compiler, '-x', unit['language'], '-std=' + unit['standard'], '-O0', '-g0']
+        if instrument:
+            argv += instrument['compile_options']
         argv += ['-D' + key + '=' + value for key, value in sorted(unit['defines'].items())]
         argv += ['-I./' + directory for directory in unit['include_dirs']]
         argv += ['-MMD', '-MF', prefix + '.d', '-MT', 'unit-' + str(index),
@@ -73,6 +102,7 @@ def commands(configuration):
             'artifact': prefix + '.xml'})
     result.append({'id': 'link', 'invocation': ['g++'] +
         ['/work/unit-' + str(index) + '.o' for index in range(len(configuration['translation_units']))]
+        + (instrument['link_options'] if instrument else [])
         + ['-o', '/work/native-test'], 'artifact': None})
     return result
 
@@ -118,7 +148,12 @@ def validate_native(native, contract):
     from nico.assessment_worker_jobs import _digest
     from xml.etree.ElementTree import ParseError
     config = contract['configuration']
-    if (not isinstance(native, dict) or set(native) != {'steps', 'compilation_database', 'tool_versions', 'binary_sha256'}
+    instrument = instrumentation(config)
+    native_fields = {'steps', 'compilation_database', 'tool_versions', 'binary_sha256'}
+    if instrument:
+        native_fields.add('instrumentation')
+    if (not isinstance(native, dict) or set(native) != native_fields
+            or (instrument and native['instrumentation'] != instrument)
             or native['tool_versions'] != {'gcc': COMPILER_VERSION, 'g++': COMPILER_VERSION, 'cppcheck': contract['tool_version']}
             or decode_stream(native['compilation_database']) != database_bytes(config)
             or not isinstance(native['steps'], list)):
@@ -187,6 +222,27 @@ def validate_native(native, contract):
     header_paths = sorted({row['path'] for row in headers})
     build_complete = compiled == required_paths and succeeded('link') and binary_valid
     test_complete = build_complete and succeeded('test')
+    sanitizer = None
+    if instrument:
+        runtime_output = (raw_steps['test']['stdout'] + raw_steps['test']['stderr']).decode('utf-8', errors='replace')
+        # Program output is untrusted. These are reported diagnostic patterns,
+        # never independently verified findings or proof of entry after failure.
+        reported = (bool(re.search(r'ERROR: AddressSanitizer: [a-z][a-z-]+', runtime_output))
+                    if instrument['kind'] == 'address' else
+                    bool(re.search(r':\d+:\d+: runtime error: ', runtime_output)))
+        test = steps['test']
+        exit_expected = 86 if instrument['kind'] == 'address' else 87
+        outcome = ('not_attempted' if not test['attempted'] else
+                   'timed_out' if test['timed_out'] else
+                   'output_truncated' if test['output_truncated'] else
+                   'diagnostic_reported' if build_complete and reported and test['exit_code'] == exit_expected else
+                   'clean' if test_complete and not reported else 'execution_failed')
+        sanitizer = {**instrument, 'required': 1, 'attempted': int(test['attempted']),
+                     'executed': 1 if succeeded('test') else None if test['attempted'] else 0,
+                     'outcome': outcome, 'diagnostic_reported': reported,
+                     'diagnostic_origin': 'untrusted_native_program_output',
+                     'independently_verified_finding': False}
+        test_complete = test_complete and outcome == 'clean'
     complete = (test_complete and analyzed == required_paths and header_paths == config['headers']
                 and not any(row['rule_id'] != 'checkersReport' for row in limitations))
     status = ('completed' if complete else 'timed_out' if any(row['timed_out'] for row in steps.values())
@@ -205,5 +261,8 @@ def validate_native(native, contract):
             'executed': 1 if succeeded('test') else None if steps['test']['attempted'] else 0,
             'passed': int(test_complete)}, 'binary_sha256': native['binary_sha256'],
             'compilation_database_sha256': hashlib.sha256(database_bytes(config)).hexdigest(),
-            'sanitizers_executed': False, 'fuzz_executed': False, 'project_build_system_executed': False},
+            'sanitizers_executed': (bool(sanitizer['executed']) if sanitizer['executed'] is not None else None)
+                if sanitizer else False,
+            **({'sanitizer': sanitizer} if sanitizer else {}),
+            'fuzz_executed': False, 'project_build_system_executed': False},
         'output_truncated': any(row['output_truncated'] for row in steps.values())}

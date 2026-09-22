@@ -35,6 +35,16 @@ CONFIGURED_SOURCES = {
     'include/value.h': b'#ifndef OWNED_VALUE_H\n#define OWNED_VALUE_H\nint add_value(int, int);\n#endif\n',
 }
 
+SANITIZER_SOURCES = {
+    'main.cpp': b'#include "value.h"\nint main() { return probe() == 7 ? 0 : 47; }\n',
+    'value.cpp': b'#include "value.h"\nint probe() {\n#if TRIGGER && ADDRESS\n'
+                 b'  int* values = new int[1]{7}; volatile int index = 1;\n'
+                 b'  int result = values[index]; delete[] values; return result;\n'
+                 b'#elif TRIGGER\n  volatile int maximum = 2147483647; return maximum + 1;\n'
+                 b'#else\n  return 7;\n#endif\n}\n',
+    'include/value.h': b'#ifndef OWNED_VALUE_H\n#define OWNED_VALUE_H\nint probe();\n#endif\n',
+}
+
 
 def configured_plan(image, sources=CONFIGURED_SOURCES, bias='2'):
     return {'profile': 'cpp-configured-v1', 'tool_version': '2.17.1', 'image_digest': image,
@@ -44,6 +54,15 @@ def configured_plan(image, sources=CONFIGURED_SOURCES, bias='2'):
             'headers': ['include/value.h']},
         'targets': {path: hashlib.sha256(raw).hexdigest() for path, raw in sources.items()},
         'limits': {'max_attempts': 1, 'wall_seconds': 60, 'lease_seconds': 30}, 'max_receipt_bytes': 1048576}
+
+
+def sanitizer_plan(image, kind, trigger):
+    plan = configured_plan(image, sources=SANITIZER_SOURCES)
+    plan['profile'] = 'cpp-sanitized-v1'
+    plan['configuration']['sanitizer'] = kind
+    for unit in plan['configuration']['translation_units']:
+        unit['defines'] = {'ADDRESS': '1' if kind == 'address' else '0', 'TRIGGER': str(int(trigger))}
+    return plan
 
 
 
@@ -281,6 +300,36 @@ def main():
             assert not any(f['rule_id'] == 'nullPointer' for f in negative['canonical_record']['findings'])
             evidence.update(compilation_database_verified=True, header_context_verified=True,
                 build_runtime_executed=True, status='PASS_OWNED_CONFIGURED_CONTROL')
+            sanitizer_tree = source_tree(SANITIZER_SOURCES)
+            sanitizer_revision = git('commit-tree', sanitizer_tree, data=b'Owned sanitizer controls\n')
+            evidence['sanitizer_controls'] = []
+            for kind in ('address', 'undefined'):
+                for trigger in (False, True):
+                    plan = sanitizer_plan(args.image, kind, trigger)
+                    observations = {}
+                    result = consume_control(plan, git_dir, sanitizer_tree, sanitizer_revision,
+                                             source_sha, observations)
+                    evidence['sanitizer_controls'].append({**observations, **result, 'contract': plan,
+                        'revision': sanitizer_revision, 'tree': sanitizer_tree, 'owned_trigger': trigger})
+                    record = result['canonical_record']
+                    sanitizer = record['cpp_build_evidence']['sanitizer']
+                    print(json.dumps({'sanitizer': kind, 'owned_trigger': trigger, 'result': sanitizer}, sort_keys=True))
+                    assert record['cpp_build_evidence']['build_completed']
+                    assert record['cppcheck_source_coverage']['observed_target_count'] == 2
+                    assert record['cppcheck_source_coverage']['header_context_verified']
+                    assert sanitizer['kind'] == kind
+                    if trigger:
+                        assert record['status'] == 'failed' and not record['completed']
+                        assert sanitizer['outcome'] == 'diagnostic_reported'
+                        assert sanitizer['executed'] is None  # generic failed-entry count stays conservative
+                        output = result['receipt']['native']['steps'][-1]['stdout']
+                        import base64
+                        diagnostic = base64.b64decode(output).decode('utf-8')
+                        assert ('heap-buffer-overflow' if kind == 'address' else 'signed integer overflow') in diagnostic
+                    else:
+                        assert record['completed'] and sanitizer['outcome'] == 'clean'
+                        assert sanitizer['executed'] == 1
+            evidence['status'] = 'PASS_OWNED_SANITIZER_CONTROLS'
     except Exception as error:
         evidence.update(status='FAIL', error_type=type(error).__name__)
         raise

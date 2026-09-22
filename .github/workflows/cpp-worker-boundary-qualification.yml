@@ -104,6 +104,7 @@ jobs:
           docker image inspect "$(cat cppcheck-image-id.txt)" > cppcheck-image-metadata.json
           docker run --rm --network=none --read-only --entrypoint=g++ "$(cat cppcheck-image-id.txt)" --version > cppcheck-build-toolchain.txt
           docker run --rm --network=none --read-only --entrypoint=sha256sum "$(cat cppcheck-image-id.txt)" /usr/local/bin/cppcheck /usr/local/bin/gcc /usr/local/bin/g++ > cppcheck-tool-bytes.sha256
+          docker run --rm --network=none --read-only --entrypoint=sh "$(cat cppcheck-image-id.txt)" -c 'sha256sum "$(gcc -print-file-name=libasan.so)" "$(gcc -print-file-name=libubsan.so)"' > cppcheck-sanitizer-runtime.sha256
       - name: Execute actual owned clean and diagnostic sources inside isolated image
         run: python -m scripts.qualify_cppcheck_worker_control --image "$(cat cppcheck-image-id.txt)"
       - name: Retain native control and resource evidence
@@ -116,6 +117,7 @@ jobs:
             cppcheck-build-toolchain.txt
             cppcheck-build-resources.txt
             cppcheck-tool-bytes.sha256
+            cppcheck-sanitizer-runtime.sha256
             cppcheck-image-id.txt
             cppcheck-image-metadata.json
           if-no-files-found: error

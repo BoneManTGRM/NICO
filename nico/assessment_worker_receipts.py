@@ -72,9 +72,9 @@ def validate_contract(contract: dict) -> dict:
                 or any(part in {".", ".."} for part in path.split("/"))
                 or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ValueError("worker_contract_path_or_digest_invalid")
-    if contract['profile'] == 'cpp-configured-v1':
+    if contract['profile'] in {'cpp-configured-v1', 'cpp-sanitized-v1'}:
         from nico.assessment_cpp_configuration import validate_configuration
-        validate_configuration(contract['configuration'], targets)
+        validate_configuration(contract['configuration'], targets, sanitized=contract['profile'] == 'cpp-sanitized-v1')
     elif contract['profile'] != 'cppcheck-standalone-v1' or contract['configuration'] != CONFIGURATION:
         raise ValueError('worker_contract_tool_invalid')
     JobLimits(**contract["limits"])
@@ -93,9 +93,11 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
                 "configuration_sha256", "target_hashes", "native", "native_sha256"}
     if not isinstance(receipt, dict) or set(receipt) != required:
         raise ValueError("worker_receipt_schema_invalid")
-    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3"}:
+    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3", "nico.worker-native-receipt.v4"}:
         raise ValueError("worker_receipt_schema_invalid")
     if (receipt['schema'].endswith('.v3')) != (contract['profile'] == 'cpp-configured-v1'):
+        raise ValueError('worker_receipt_profile_mismatch')
+    if (receipt['schema'].endswith('.v4')) != (contract['profile'] == 'cpp-sanitized-v1'):
         raise ValueError('worker_receipt_profile_mismatch')
     expected = {"identity": asdict(identity),
         "lease_id": lease, "worker_id": worker, "image_digest": contract["image_digest"],
@@ -107,7 +109,7 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     if len(encoded) > contract["max_receipt_bytes"]:
         raise ValueError("worker_receipt_size_invalid")
     native = receipt["native"]
-    if receipt['schema'].endswith('.v3'):
+    if receipt['schema'].endswith(('.v3', '.v4')):
         if _digest(native) != receipt['native_sha256']:
             raise ValueError('worker_native_digest_or_schema_invalid')
         return _configured_record(identity, contract, receipt, encoded)

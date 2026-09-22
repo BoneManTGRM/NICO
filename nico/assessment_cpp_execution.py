@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 from uuid import uuid4
 
-from nico.assessment_cpp_configuration import commands, compilation_database, database_bytes, COMPILER_VERSION
+from nico.assessment_cpp_configuration import commands, compilation_database, database_bytes, instrumentation, COMPILER_VERSION
 from nico.assessment_worker_container import SETUP_PROGRAM, _command, _read_input
 
 IMPORTS = 'import base64, hashlib, json, os, pathlib, resource, signal, socket, subprocess, sys, time\n'
@@ -81,8 +81,10 @@ assert 'noexec' not in mount[5].split(',') and {'nosuid', 'nodev'} <= set(mount[
 path = root / 'native-test'
 path.chmod(0o500)
 os.chdir(root)
-os.execve(str(path), [str(path)], {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8',
-    'TMPDIR': '/work', 'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'})
+runtime = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8',
+    'TMPDIR': '/work', 'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
+runtime.update(request.get('runtime_options', {}))
+os.execve(str(path), [str(path)], runtime)
 '''
 
 
@@ -130,6 +132,7 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
     finally:
         os.close(fd)
     config = contract['configuration']
+    instrument = instrumentation(config)
     payload = {'inputs': encoded, 'database': compilation_database(config), 'commands': commands(config),
         'tool_versions': {'gcc': COMPILER_VERSION, 'g++': COMPILER_VERSION, 'cppcheck': contract['tool_version']},
         'output_limit': max(32, contract['max_receipt_bytes'] // (16 * (len(commands(config)) + 1))),
@@ -139,6 +142,8 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
     raw = _container(contract['image_digest'], BUILD_PROGRAM, payload, checkpoint=checkpoint,
         timeout=max(0.01, deadline-time.monotonic()), limit=contract['max_receipt_bytes'] + 3 * 1024 * 1024)
     result = json.loads(raw)
+    if instrument:
+        result['instrumentation'] = instrument
     binary = base64.b64decode(result.pop('binary'), validate=True)
     if (len(binary) > 2 * 1024 * 1024 or result.get('tool_versions') != payload['tool_versions']
             or base64.b64decode(result['compilation_database'], validate=True) != database_bytes(config)
@@ -150,7 +155,8 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
         checkpoint()
         started = time.monotonic()
         observed = _container(contract['image_digest'], TEST_PROGRAM,
-            {'inputs': {'native-test': {'base64': base64.b64encode(binary).decode('ascii'), 'sha256': result['binary_sha256']}}},
+            {'inputs': {'native-test': {'base64': base64.b64encode(binary).decode('ascii'), 'sha256': result['binary_sha256']}},
+             **({'runtime_options': instrument['runtime_options']} if instrument else {})},
             checkpoint=checkpoint, timeout=max(0.01, deadline-time.monotonic()),
             limit=payload['output_limit'], native_exit=True)
         test.update(attempted=True, exit_code=observed['exit_code'], timed_out=observed['timed_out'],
