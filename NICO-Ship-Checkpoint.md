@@ -1,5 +1,13 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Fresh-daemon retrieval correction — 2026-09-22
+
+Candidate98bdd4b71cd9b510ab0361bbe22fafab2b9dd3f2 native retrieval35766332049/job106876692717 established the precise failure: image_release_clean_daemon_required at inventory, before registry login/pull. Artifact10712162888 is retained by GitHub, digest12e0bf760b0c97b58803b14d10c2e36eeed00157cf9a5fcbfbe0fc264b6e7cbb. The supported artifact export URL returned HTTP403 locally; no local receipt/hash verification is claimed. Primary job logs directly prove the failed stage. The earlier failure was not established to be registry visibility.
+
+Smallest repair is the verification job's environment producer: preserve the hosted runner's preloaded store; stop its disposable default daemon and start a replacement with fresh data/execution/config paths, no bridge or firewall changes, stripped daemon environment and explicit DockerRootDir assertion. The original strict empty-cache assertion, registry/manifest/config checks, five-minute job bound and packages:read scope are unchanged. Terminate the temporary daemon on exit. No source image execution or production change is performed.
+
+Workflow shell syntax and diff checks PASS. Independent bounded review found no material issue; workflow SHA25688c097183bcae2aa30619a0d3618205bf21e27e69f46a7e21e8f1bef46b5afc4. Earlier108 focused/80 independent source tests remain applicable to unchanged Python. Native startup/retrieval is pending this correction. Reuse the original published image; do not republish. Exact next action: inspect fresh native retrieval and candidate CI, then resume only independently permitted work. Full-project/Bitcoin and production/report gates remain unproved under the retained platform boundaries.
+
 ## Published image retained; diagnose and qualify scoped retrieval — 2026-09-22
 
 Candidate `bb4914b9f8ba94ccea0d4fb256630580a53301b6`, tree `2ad7c1975a3a88624fa34e3684cd635dd42aa0c7`, successfully completed native boundary/control/export and actual registry publication. Run35763726582/job106869494961 had Packages:write and retained remote intent10711267599 before pushing. Publication artifact10710704918 SHA256 `e0b1196acc7ee755a0ff185a14ee56230a35c4f8b75626a6b68e1e4096710e81` was downloaded/hash-verified. Immutable reference `ghcr.io/bonemantgrm/nico/assessment-cppcheck@sha256:a1846903cd6a11ec08b74a2e9eac5392af3fd53e589723afdd01b8327b1ca7cc`; config `sha256:971af791cbe21cb5acf5bcbc4a85585f84e6d6514a4cdbf0584f7e7e39c83ab3`; handoff hash `5311d1fc8ebba1aefbd378a0d384e4fa09c54d689887aa5e20c09bc685ad2165`. This is an actual completed push, not unknown; do not repeat it.

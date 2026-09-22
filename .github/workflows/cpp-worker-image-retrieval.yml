@@ -44,7 +44,36 @@ jobs:
         env:
           NICO_IMAGE_RELEASE_MODE: verify
           NICO_IMAGE_PULL_TOKEN: ${{ github.token }}
-        run: python -m scripts.cpp_worker_image_release
+        run: |
+          set -euo pipefail
+          # Hosted images can contain preloaded Docker images. Preserve that
+          # store and use a newly created daemon root for this retrieval only.
+          retrieval_root=$(mktemp -d "$RUNNER_TEMP/nico-image-retrieval.XXXXXX")
+          printf '{}\n' > "$retrieval_root/daemon.json"
+          sudo --non-interactive systemctl stop docker.service docker.socket
+          cleanup() {
+            if [ -f "$retrieval_root/daemon.pid" ]; then
+              sudo --non-interactive kill -TERM "$(sudo --non-interactive cat "$retrieval_root/daemon.pid")" || true
+            fi
+          }
+          trap cleanup EXIT
+          sudo --non-interactive env -i PATH="$PATH" dockerd \
+            --config-file "$retrieval_root/daemon.json" \
+            --data-root "$retrieval_root/data" \
+            --exec-root "$retrieval_root/exec" \
+            --pidfile "$retrieval_root/daemon.pid" \
+            --host unix:///var/run/docker.sock \
+            --bridge none --iptables=false --ip6tables=false --ip-forward=false --ip-masq=false \
+            > "$retrieval_root/daemon.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if docker --host unix:///var/run/docker.sock info > /dev/null 2>&1; then
+              break
+            fi
+            sleep 0.5
+          done
+          actual_root=$(docker --host unix:///var/run/docker.sock info --format '{{.DockerRootDir}}')
+          test "$actual_root" = "$retrieval_root/data"
+          python -m scripts.cpp_worker_image_release
       - name: Retain actual registry access and retrieval result
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
