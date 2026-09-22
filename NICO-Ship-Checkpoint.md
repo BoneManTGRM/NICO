@@ -1,5 +1,15 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Native consumer proof and TLS correction — 2026-09-22
+
+Parent `911eabe18d79ed21a0a7f7fa3905622de46c2f95`, tree `0c0756c8e67295e0b3e8543f8958ea0c5fcb0d59`, preserves the independently reviewed consumer below. Push native run35675119719/job106579892324 and PR run35675122159/job106579899976 both PASS. The push artifact10672970335 is 7422 bytes, SHA256 `c8fc2f447e69ba02b28fb49d8a79f70409b9db0b6897eb2e705ffddb5f6ec1b0`; actual JSON and hashes were inspected. Real PostgreSQL, verified loopback TLS, spawned transport and isolated Cppcheck complete both owned source targets in 4821ms; committed-response loss is idempotent and the retained receipt is retrieved twice identically. Clean source has no finding; diagnostic source has the expected nullPointer. Receipt v2 SHA256 `fe46bd26a0d6852d03a7b0622660ca2f772d8e4069a620dc8f27b1c454863955`. The signer is synthetic, objects are owned/preprovisioned, and configuration/header/build/production/Bitcoin qualification remains explicitly false.
+
+Security run35675122013/job106579900309 PASS with zero blockers. Artifact10672593252 is 175562 bytes, SHA256 `11c1b6100be6a09996e2db5ff60258e224307c9b2b5107b36439c1b4ed49e38d`; exact bytes inspected. All 85 TruffleHog observations remain (43 confirmed nonsecret identifiers, 42 test placeholders); native Bandit has zero high findings. The direct artifact transfer returned403; supported authenticated file materialization returned the exact matching artifact bytes. No restriction was changed or bypassed.
+
+**CODEQL-TLS-1 — High, repaired in source:** check106580227609's primary annotation identifies the owned qualification server's implicit TLS protocol floor at script line107. The first divergence is that server context. Set its explicit minimum to TLS1.2 before loading the certificate. No scanner, query, severity or suppression changes. The actual TLS/response-loss and hard-timeout group passes 3 cases (24 deselected), log SHA256 `b9c5ef68f0589a29b8436952e5ae9ea48339260d6f1146d9e9ae350ef30e4bc9`. Independent focused review reruns the real TLS test and approves corrected harness blob `59cc232b9c456830a065d08cba88f7d572fab9e4`; all other reviewed application/test blobs are unchanged. Exact-candidate CodeQL and native CI after this source correction remain PENDING until recorded in the PR evidence block.
+
+EXACT NEXT ACTION: publish this one-line reviewed correction on the same PR, inspect automatic exact-candidate checks and artifacts, and preserve their identities in the PR evidence block. PR remains draft; full C0–C19 and production/Bitcoin prerequisites below are unchanged.
+
 ## Resumed consumer integration — 2026-09-22, reviewed source
 
 Publication parent is `1b09a95b23cbeb73fac6ed43e1b622e6c09156ef`; main/base remains `d5b3de33e19b38ad659fceb15f02435bfc105eb6`. PR1627 remains OPEN / DRAFT / UNMERGED. Containing commit/tree/check identities belong in the existing PR evidence block, avoiding a self-hash documentation commit.
