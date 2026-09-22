@@ -206,7 +206,9 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
 def _receipt(job, result):
     native = result.get("native")
     schema = "nico.worker-native-receipt.v1"
-    if job['contract']['profile'] == 'cpp-sanitized-v1':
+    if job['contract']['profile'] == 'cpp-runtime-cases-v1':
+        schema = 'nico.worker-native-receipt.v5'
+    elif job['contract']['profile'] == 'cpp-sanitized-v1':
         schema = 'nico.worker-native-receipt.v4'
     elif job['contract']['profile'] == 'cpp-configured-v1':
         schema = 'nico.worker-native-receipt.v3'

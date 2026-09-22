@@ -45,6 +45,36 @@ SANITIZER_SOURCES = {
     'include/value.h': b'#ifndef OWNED_VALUE_H\n#define OWNED_VALUE_H\nint probe();\n#endif\n',
 }
 
+RUNTIME_SOURCES = {
+    'main.cpp': b'#include "value.h"\n#include <cstdio>\n#include <cstring>\n'
+                b'int main(int argc, char** argv) {\n'
+                b'  if (argc == 1) return add_value(2, 3) == 7 ? 0 : 47;\n'
+                b'  if (argc == 3 && std::strcmp(argv[1], "--case") == 0) {\n'
+                b'    if (std::strcmp(argv[2], "add") == 0) return add_value(2, 3) == 7 ? 0 : 47;\n'
+                b'    if (std::strcmp(argv[2], "chain") == 0) return add_value(add_value(1, 1), 1) == 7 ? 0 : 47;\n'
+                b'    return 3;\n  }\n'
+                b'  if (argc == 2 && std::strcmp(argv[1], "--corpus") == 0) {\n'
+                b'    char buffer[32]; int n = (int)std::fread(buffer, 1, sizeof buffer, stdin);\n'
+                b'    return replay(buffer, n);\n  }\n  return 4;\n}\n',
+    'value.cpp': b'#include "value.h"\nint add_value(int a, int b) { return a + b + BIAS; }\n'
+                 b'int replay(const char* data, int length) {\n'
+                 b'  if (length < 1) return 1;\n  int total = 0;\n'
+                 b'  for (int i = 0; i < length; ++i) total += (unsigned char)data[i];\n'
+                 b'  return total == 7 ? 0 : 2;\n}\n',
+    'include/value.h': b'#ifndef OWNED_VALUE_H\n#define OWNED_VALUE_H\n'
+                       b'int add_value(int, int);\nint replay(const char*, int);\n#endif\n',
+    'corpus/seed-seven.bin': bytes([1, 2, 4]),
+}
+
+RUNTIME_CASES = [
+    {'id': 'unit-add', 'kind': 'unit', 'argv': ['--case', 'add'], 'stdin_target': None, 'expected_exit': 0},
+    {'id': 'integration-chain', 'kind': 'integration', 'argv': ['--case', 'chain'],
+     'stdin_target': None, 'expected_exit': 0},
+    {'id': 'corpus-seven', 'kind': 'corpus', 'argv': ['--corpus'],
+     'stdin_target': 'corpus/seed-seven.bin', 'expected_exit': 0},
+]
+
+
 
 def configured_plan(image, sources=CONFIGURED_SOURCES, bias='2'):
     return {'profile': 'cpp-configured-v1', 'tool_version': '2.17.1', 'image_digest': image,
@@ -62,6 +92,14 @@ def sanitizer_plan(image, kind, trigger):
     plan['configuration']['sanitizer'] = kind
     for unit in plan['configuration']['translation_units']:
         unit['defines'] = {'ADDRESS': '1' if kind == 'address' else '0', 'TRIGGER': str(int(trigger))}
+    return plan
+
+
+def runtime_plan(image, sources=None):
+    sources = sources or RUNTIME_SOURCES
+    plan = configured_plan(image, sources=sources)
+    plan['profile'] = 'cpp-runtime-cases-v1'
+    plan['configuration']['runtime_cases'] = [dict(case) for case in RUNTIME_CASES]
     return plan
 
 
@@ -225,7 +263,7 @@ def main():
     evidence = {'schema': 'nico.cppcheck_worker_control.v1', 'status': 'UNPROVEN',
         'source_sha': source_sha, 'tool_source': 'cppcheck-opensource/cppcheck',
         'tool_revision': 'ac9db3069b9f90e81e126a090b99ad456e122cf8',
-        'scope': 'owned standalone and configured C/C++ controls; not Bitcoin qualification',
+        'scope': 'owned standalone, configured, sanitizer and runtime-case C/C++ controls; not Bitcoin qualification',
         'production_dispatch_exercised': False, 'compilation_database_verified': False,
         'header_context_verified': False, 'build_runtime_executed': False,
         'human_approval': False, 'bitcoin_executed': False}
@@ -329,7 +367,45 @@ def main():
                     else:
                         assert record['completed'] and sanitizer['outcome'] == 'clean'
                         assert sanitizer['executed'] == 1
-            evidence['status'] = 'PASS_OWNED_SANITIZER_CONTROLS'
+            runtime_tree = source_tree(RUNTIME_SOURCES)
+            runtime_revision = git('commit-tree', runtime_tree, data=b'Owned runtime-case controls\n')
+            runtime_evidence = {}
+            runtime_result = consume_control(runtime_plan(args.image), git_dir, runtime_tree,
+                runtime_revision, source_sha, runtime_evidence)
+            evidence['runtime_control'] = {**runtime_evidence, **runtime_result,
+                'contract': runtime_plan(args.image), 'revision': runtime_revision, 'tree': runtime_tree}
+            runtime_record = runtime_result['canonical_record']
+            runtime_build = runtime_record['cpp_build_evidence']['runtime_cases']
+            print(json.dumps({'runtime_status': runtime_record['status'], 'runtime_cases': runtime_build},
+                             sort_keys=True))
+            assert runtime_record['completed'], 'owned runtime cases incomplete'
+            assert runtime_build['required'] == runtime_build['passed'] == 3
+            assert runtime_build['by_kind']['unit']['passed'] == 1
+            assert runtime_build['by_kind']['integration']['passed'] == 1
+            assert runtime_build['by_kind']['corpus']['passed'] == 1
+            assert runtime_build['corpus_assurance']
+            assert runtime_record['cpp_build_evidence']['fuzz_executed'] is False
+            assert runtime_record['cpp_build_evidence']['native_test']['passed'] == 1
+            negative_sources = dict(RUNTIME_SOURCES)
+            negative_sources['corpus/seed-seven.bin'] = bytes([0])
+            negative_tree = source_tree(negative_sources)
+            negative_revision = git('commit-tree', negative_tree, data=b'Owned runtime corpus mismatch\n')
+            mismatch_evidence = {}
+            mismatch = consume_control(runtime_plan(args.image, sources=negative_sources), git_dir,
+                negative_tree, negative_revision, source_sha, mismatch_evidence)
+            evidence['runtime_negative'] = {**mismatch_evidence, **mismatch,
+                'contract': runtime_plan(args.image, sources=negative_sources),
+                'revision': negative_revision, 'tree': negative_tree}
+            mismatch_record = mismatch['canonical_record']
+            print(json.dumps({'runtime_negative': mismatch_record['status'],
+                             'runtime_cases': mismatch_record['cpp_build_evidence']['runtime_cases']},
+                             sort_keys=True))
+            assert mismatch_record['status'] == 'failed' and not mismatch_record['completed']
+            assert mismatch_record['cpp_build_evidence']['build_completed']
+            assert mismatch_record['cpp_build_evidence']['runtime_cases']['corpus_assurance']
+            assert mismatch_record['cpp_build_evidence']['runtime_cases']['passed'] == 2
+            assert mismatch['receipt']['native']['steps'][-1]['exit_code'] == 2
+            evidence['status'] = 'PASS_OWNED_RUNTIME_CASES'
     except Exception as error:
         evidence.update(status='FAIL', error_type=type(error).__name__)
         raise

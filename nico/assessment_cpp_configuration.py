@@ -2,7 +2,8 @@
 
 Versioned configured profiles build and run one native test executable.
 They do not discover project build systems or enable production selection.
-Required units and headers cannot be dropped.
+Required units and headers cannot be dropped. The runtime-cases profile adds
+frozen named unit/integration steps and bounded source-bound corpus replay.
 """
 from __future__ import annotations
 
@@ -13,9 +14,12 @@ import re
 
 PROFILE = 'cpp-configured-v1'
 SANITIZED_PROFILE = 'cpp-sanitized-v1'
-CONFIGURED_PROFILES = {PROFILE, SANITIZED_PROFILE}
+RUNTIME_PROFILE = 'cpp-runtime-cases-v1'
+CONFIGURED_PROFILES = {PROFILE, SANITIZED_PROFILE, RUNTIME_PROFILE}
 COMPILER_VERSION = '14.2.0'
 CHECKS = 'warning,style,performance,portability,information'
+MAX_CORPUS_BYTES = 4096
+RUNTIME_KINDS = {'unit', 'integration', 'corpus'}
 
 
 def _path(value):
@@ -24,11 +28,49 @@ def _path(value):
         and all(part not in {'', '.', '..', '.git'} for part in value.split('/')))
 
 
-def validate_configuration(configuration, targets, *, sanitized=False):
+def _validate_runtime_cases(cases, unit_paths, headers):
+    if not isinstance(cases, list) or not 1 <= len(cases) <= 16:
+        raise ValueError('worker_runtime_cases_invalid')
+    reserved = {'test', 'link'}
+    seen, kinds, corpus = [], set(), []
+    for case in cases:
+        if (not isinstance(case, dict)
+                or set(case) != {'id', 'kind', 'argv', 'stdin_target', 'expected_exit'}
+                or not isinstance(case['id'], str)
+                or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,47}', case['id'])
+                or case['id'] in reserved or case['id'].startswith(('compile-', 'analyze-'))
+                or case['kind'] not in RUNTIME_KINDS
+                or not isinstance(case['argv'], list) or not 1 <= len(case['argv']) <= 8
+                or any(not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_./=-]{1,64}', token)
+                       for token in case['argv'])
+                or type(case['expected_exit']) is not int or not 0 <= case['expected_exit'] <= 255):
+            raise ValueError('worker_runtime_case_invalid')
+        if case['kind'] == 'corpus':
+            if (not isinstance(case['stdin_target'], str) or not _path(case['stdin_target'])
+                    or case['stdin_target'] in unit_paths or case['stdin_target'] in headers):
+                raise ValueError('worker_runtime_corpus_unbound')
+            corpus.append(case['stdin_target'])
+        elif case['stdin_target'] is not None:
+            raise ValueError('worker_runtime_case_invalid')
+        seen.append(case['id'])
+        kinds.add(case['kind'])
+    if len(seen) != len(set(seen)):
+        raise ValueError('worker_runtime_case_duplicate')
+    if kinds != RUNTIME_KINDS:
+        raise ValueError('worker_runtime_population_invalid')
+    if not corpus or len(corpus) != len(set(corpus)):
+        raise ValueError('worker_runtime_corpus_unbound')
+    return corpus
+
+
+def validate_configuration(configuration, targets, *, sanitized=False, runtime=False):
     fields = {'platform', 'compiler_version', 'translation_units', 'headers'}
     if sanitized:
         fields.add('sanitizer')
-    if (not isinstance(configuration, dict)
+    if runtime:
+        fields.add('runtime_cases')
+    if (sanitized and runtime
+            or not isinstance(configuration, dict)
             or set(configuration) != fields
             or configuration['platform'] != 'unix64'
             or configuration['compiler_version'] != COMPILER_VERSION):
@@ -58,8 +100,10 @@ def validate_configuration(configuration, targets, *, sanitized=False):
                 or len(unit['include_dirs']) != len(set(unit['include_dirs']))):
             raise ValueError('worker_translation_unit_invalid')
         paths.append(unit['path'])
+    extra = set(_validate_runtime_cases(configuration['runtime_cases'], paths, headers) if runtime else [])
     if (len(paths) != len(set(paths)) or set(paths) & set(headers)
-            or set(targets) != set(paths) | set(headers)):
+            or extra & set(paths) or extra & set(headers)
+            or set(targets) != set(paths) | set(headers) | extra):
         raise ValueError('worker_configuration_input_mismatch')
 
 
@@ -105,6 +149,14 @@ def commands(configuration):
         + (instrument['link_options'] if instrument else [])
         + ['-o', '/work/native-test'], 'artifact': None})
     return result
+
+
+def native_steps(configuration):
+    """Compile/analyze/link, the default native test, then frozen named runtime cases."""
+    steps = commands(configuration) + [{'id': 'test', 'invocation': ['/work/source/native-test'], 'artifact': None}]
+    for case in configuration.get('runtime_cases') or []:
+        steps.append({'id': case['id'], 'invocation': ['/work/source/native-test', *case['argv']], 'artifact': None})
+    return steps
 
 
 def compilation_database(configuration):
@@ -158,7 +210,7 @@ def validate_native(native, contract):
             or decode_stream(native['compilation_database']) != database_bytes(config)
             or not isinstance(native['steps'], list)):
         raise ValueError('worker_configured_native_invalid')
-    expected = commands(config) + [{'id': 'test', 'invocation': ['/work/source/native-test'], 'artifact': None}]
+    expected = native_steps(config)
     if len(native['steps']) != len(expected):
         raise ValueError('worker_configured_step_population_invalid')
     steps = {}
@@ -243,10 +295,45 @@ def validate_native(native, contract):
                      'diagnostic_origin': 'untrusted_native_program_output',
                      'independently_verified_finding': False}
         test_complete = test_complete and outcome == 'clean'
-    complete = (test_complete and analyzed == required_paths and header_paths == config['headers']
+    runtime = None
+    cases = list(config.get('runtime_cases') or [])
+    case_exit = {case['id']: case['expected_exit'] for case in cases}
+    runtime_ok = True
+    if cases:
+        by_kind = {kind: {'required': 0, 'passed': 0} for kind in ('unit', 'integration', 'corpus')}
+        rows, passed, attempted, uncertain = [], 0, 0, False
+        for case in cases:
+            row = steps[case['id']]
+            by_kind[case['kind']]['required'] += 1
+            matched = (row['attempted'] and row['exit_code'] == case['expected_exit']
+                       and not row['timed_out'] and not row['output_truncated'])
+            if row['attempted']:
+                attempted += 1
+            if matched:
+                passed += 1
+                by_kind[case['kind']]['passed'] += 1
+            else:
+                uncertain = True
+            rows.append({'id': case['id'], 'kind': case['kind'], 'expected_exit': case['expected_exit'],
+                         'matched': matched, 'stdin_target': case['stdin_target'],
+                         'original_output_retained': row['attempted'] and not row['output_truncated'],
+                         'independently_verified_finding': False})
+        corpus_targets = [case['stdin_target'] for case in cases if case['kind'] == 'corpus']
+        corpus_assurance = bool(corpus_targets) and all(
+            steps[case['id']]['attempted'] and not steps[case['id']]['timed_out']
+            and not steps[case['id']]['output_truncated']
+            for case in cases if case['kind'] == 'corpus')
+        runtime = {'required': len(cases), 'attempted': attempted,
+                   'executed': passed if attempted == len(cases) and not uncertain else None if attempted else 0,
+                   'passed': passed, 'by_kind': by_kind, 'cases': rows, 'corpus_seeds': corpus_targets,
+                   'corpus_replayed': corpus_assurance, 'corpus_assurance': corpus_assurance,
+                   'diagnostic_origin': 'untrusted_native_program_output'}
+        runtime_ok = passed == len(cases) and corpus_assurance
+    complete = (test_complete and runtime_ok and analyzed == required_paths and header_paths == config['headers']
                 and not any(row['rule_id'] != 'checkersReport' for row in limitations))
     status = ('completed' if complete else 'timed_out' if any(row['timed_out'] for row in steps.values())
-              else 'failed' if any(row['attempted'] and row['exit_code'] != 0 for row in steps.values()) else 'partial')
+              else 'failed' if any(row['attempted'] and row['exit_code'] != case_exit.get(row['id'], 0)
+                                   for row in steps.values()) else 'partial')
     return {'status': status, 'complete': complete, 'findings': findings, 'duration_ms': duration,
         'coverage': {'requested_targets': required_paths, 'requested_target_count': len(required_paths),
             'observed_targets': analyzed, 'observed_target_count': len(analyzed),
@@ -259,10 +346,12 @@ def validate_native(native, contract):
             'build_completed': build_complete, 'native_test': {'required': 1,
             'attempted': int(steps['test']['attempted']),
             'executed': 1 if succeeded('test') else None if steps['test']['attempted'] else 0,
-            'passed': int(test_complete)}, 'binary_sha256': native['binary_sha256'],
+            'passed': int(test_complete)},
+            'binary_sha256': native['binary_sha256'],
             'compilation_database_sha256': hashlib.sha256(database_bytes(config)).hexdigest(),
             'sanitizers_executed': (bool(sanitizer['executed']) if sanitizer['executed'] is not None else None)
                 if sanitizer else False,
             **({'sanitizer': sanitizer} if sanitizer else {}),
+            **({'runtime_cases': runtime} if runtime else {}),
             'fuzz_executed': False, 'project_build_system_executed': False},
         'output_truncated': any(row['output_truncated'] for row in steps.values())}

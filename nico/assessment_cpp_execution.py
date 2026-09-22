@@ -9,7 +9,10 @@ from pathlib import Path
 import time
 from uuid import uuid4
 
-from nico.assessment_cpp_configuration import commands, compilation_database, database_bytes, instrumentation, COMPILER_VERSION
+from nico.assessment_cpp_configuration import (
+    commands, compilation_database, database_bytes, instrumentation, native_steps,
+    COMPILER_VERSION, MAX_CORPUS_BYTES)
+
 from nico.assessment_worker_container import SETUP_PROGRAM, _command, _read_input
 
 IMPORTS = 'import base64, hashlib, json, os, pathlib, resource, signal, socket, subprocess, sys, time\n'
@@ -84,7 +87,17 @@ os.chdir(root)
 runtime = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8',
     'TMPDIR': '/work', 'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
 runtime.update(request.get('runtime_options', {}))
-os.execve(str(path), [str(path)], runtime)
+extra = request.get('argv') or []
+assert isinstance(extra, list) and len(extra) <= 8
+assert all(isinstance(item, str) and 1 <= len(item) <= 64 for item in extra)
+raw_stdin = base64.b64decode(request['stdin'], validate=True) if request.get('stdin') else b''
+assert len(raw_stdin) <= 4096
+reader, writer = os.pipe()
+os.write(writer, raw_stdin)
+os.close(writer)
+os.dup2(reader, 0)
+os.close(reader)
+os.execve(str(path), [str(path), *extra], runtime)
 '''
 
 
@@ -135,7 +148,7 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
     instrument = instrumentation(config)
     payload = {'inputs': encoded, 'database': compilation_database(config), 'commands': commands(config),
         'tool_versions': {'gcc': COMPILER_VERSION, 'g++': COMPILER_VERSION, 'cppcheck': contract['tool_version']},
-        'output_limit': max(32, contract['max_receipt_bytes'] // (16 * (len(commands(config)) + 1))),
+        'output_limit': max(32, contract['max_receipt_bytes'] // (16 * len(native_steps(config)))),
         'timeout_seconds': max(0.01, deadline - time.monotonic() - 5)}
     if len(json.dumps(payload).encode()) > 24 * 1024 * 1024:
         raise ValueError('worker_input_budget_exceeded')
@@ -163,4 +176,29 @@ def run_configured(contract, source: Path, *, checkpoint, timeout_seconds):
             output_truncated=observed['output_truncated'], duration_ms=int((time.monotonic()-started)*1000),
             stdout=base64.b64encode(observed['output']).decode('ascii'))
     result['steps'].append(test)
+    runtime_env = {'runtime_options': instrument['runtime_options']} if instrument else {}
+    for case in config.get('runtime_cases') or []:
+        row = {'id': case['id'], 'invocation': ['/work/source/native-test', *case['argv']],
+               'attempted': False, 'exit_code': None, 'timed_out': False, 'output_truncated': False,
+               'duration_ms': 0, 'stdout': '', 'stderr': '', 'artifact': ''}
+        if binary and time.monotonic() < deadline:
+            checkpoint()
+            stdin_bytes = b''
+            if case['stdin_target']:
+                stdin_bytes = base64.b64decode(encoded[case['stdin_target']]['base64'], validate=True)
+                if len(stdin_bytes) > MAX_CORPUS_BYTES:
+                    raise ValueError('worker_runtime_corpus_budget_invalid')
+            started = time.monotonic()
+            observed = _container(contract['image_digest'], TEST_PROGRAM,
+                {'inputs': {'native-test': {'base64': base64.b64encode(binary).decode('ascii'),
+                                           'sha256': result['binary_sha256']}},
+                 'argv': case['argv'], 'stdin': base64.b64encode(stdin_bytes).decode('ascii'),
+                 **runtime_env},
+                checkpoint=checkpoint, timeout=max(0.01, deadline - time.monotonic()),
+                limit=payload['output_limit'], native_exit=True)
+            row.update(attempted=True, exit_code=observed['exit_code'], timed_out=observed['timed_out'],
+                       output_truncated=observed['output_truncated'],
+                       duration_ms=int((time.monotonic() - started) * 1000),
+                       stdout=base64.b64encode(observed['output']).decode('ascii'))
+        result['steps'].append(row)
     return {'native': result, 'tool_version': contract['tool_version']}
