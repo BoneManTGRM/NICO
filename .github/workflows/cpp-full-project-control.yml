@@ -1,0 +1,66 @@
+name: C++ Full Project Control
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/cpp-full-project-control.yml
+      - docker/assessment-cmake-control.Dockerfile
+      - scripts/qualify_cpp_full_project_control.py
+      - tests/test_cpp_full_project_control.py
+      - nico/assessment_worker_capacity_v1.py
+      - nico/assessment_worker_container.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cpp-full-project-control.yml
+      - docker/assessment-cmake-control.Dockerfile
+      - scripts/qualify_cpp_full_project_control.py
+      - tests/test_cpp_full_project_control.py
+      - nico/assessment_worker_capacity_v1.py
+      - nico/assessment_worker_container.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-full-project-control-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  owned-cmake-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install existing controller dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Test the qualification controller
+        run: python -m pytest -q tests/test_cpp_full_project_control.py tests/test_assessment_worker_capacity_v1.py
+      - name: Provision pinned CMake wheel without executing project code
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cmake-control-input"
+          python -m pip download --disable-pip-version-check --only-binary=:all: --no-deps --platform manylinux2014_x86_64 --implementation py --abi none cmake==3.31.6 --dest "$RUNNER_TEMP/cmake-control-input"
+          mv "$RUNNER_TEMP/cmake-control-input/cmake-3.31.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl" "$RUNNER_TEMP/cmake-control-input/cmake.whl"
+          echo "1c8b05df0602365da91ee6a3336fe57525b137706c4ab5675498f662ae1dbcec  $RUNNER_TEMP/cmake-control-input/cmake.whl" | sha256sum -c -
+          timeout 120s docker build --network=none --iidfile cmake-control-image-id.txt -f docker/assessment-cmake-control.Dockerfile "$RUNNER_TEMP/cmake-control-input"
+          docker image inspect "$(cat cmake-control-image-id.txt)" > cmake-control-image.json
+      - name: Run owned project in the actual 2 CPU and 2 GiB envelope
+        run: python -m scripts.qualify_cpp_full_project_control --image "$(cat cmake-control-image-id.txt)" --source-sha "$(git rev-parse HEAD)"
+      - name: Retain native results even on qualification failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-full-project-control-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            cpp-full-project-control.json
+            cmake-control-image-id.txt
+            cmake-control-image.json
+          if-no-files-found: error
+          retention-days: 30
