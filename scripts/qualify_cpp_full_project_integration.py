@@ -45,17 +45,26 @@ def fixture(*, generated_headers=False, bounded_fuzz=False, project_dependencies
         result['src/library/CMakeLists.txt'] = (
             'find_package(Boost 1.74.0 EXACT CONFIG REQUIRED)\n'
             'find_package(SQLite3 3.40 REQUIRED)\n'
+            'find_library(NICO_EVENT_LIBRARY NAMES event REQUIRED)\n'
+            'find_library(NICO_EVENT_THREADS_LIBRARY NAMES event_pthreads REQUIRED)\n'
             'add_library(control_sum STATIC sum.cpp)\n'
             'target_include_directories(control_sum PUBLIC "${PROJECT_SOURCE_DIR}")\n'
-            'target_link_libraries(control_sum PUBLIC Boost::headers SQLite::SQLite3)\n')
+            'target_link_libraries(control_sum PUBLIC Boost::headers SQLite::SQLite3)\n'
+            'target_link_libraries(control_sum PUBLIC "${NICO_EVENT_THREADS_LIBRARY}" "${NICO_EVENT_LIBRARY}")\n')
         del result['sum.cpp']
         result['src/library/sum.cpp'] = (
             '#include "sum.hpp"\n#include "generated/config.h"\n'
             '#include <boost/array.hpp>\n#include <boost/version.hpp>\n#include <sqlite3.h>\n'
+            '#include <event2/event.h>\n#include <event2/thread.h>\n'
             'static_assert(BOOST_VERSION == 107400, "Pinned Boost headers required");\n'
             'static_assert(SQLITE_VERSION_NUMBER == 3040001, "Pinned SQLite headers required");\n'
             'int control_sum(int a, int b) {\n'
             '    if (sqlite3_libversion_number() != 3040001) return -100;\n'
+            '    if (event_get_version_number() != LIBEVENT_VERSION_NUMBER) return -101;\n'
+            '    if (evthread_use_pthreads() != 0) return -102;\n'
+            '    event_base* base = event_base_new();\n'
+            '    if (!base) return -103;\n'
+            '    event_base_free(base);\n'
             '    boost::array<int, 2> values = {{a, b}};\n'
             '    return values[0] + values[1] + NICO_CONFIGURED_OFFSET;\n}\n')
     if bounded_fuzz:
@@ -257,7 +266,8 @@ def main():
                         assert sorted(proof['captured_generated_header_hashes']) == ['generated/config.h']
                         assert proof['toolchain_image_digest'] == contract['image_digest']
                     if args.project_dependencies:
-                        assert {'/usr/include/boost/array.hpp', '/usr/include/sqlite3.h'}.issubset(
+                        assert {'/usr/include/boost/array.hpp', '/usr/include/sqlite3.h',
+                                '/usr/include/event2/event.h', '/usr/include/event2/thread.h'}.issubset(
                             proof['toolchain_header_paths']), 'project_dependency_header_evidence_missing'
                     if group != 'baseline':
                         assert proof['object_instrumentation_observed_units'], 'instrumented_object_symbols_missing'

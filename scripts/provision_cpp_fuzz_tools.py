@@ -25,6 +25,11 @@ def validate_project_lock(value):
     """Fixed reviewed dependency families, not a public package-install interface."""
     parents = {'libboost1.74-dev': 'b/boost1.74',
                'libsqlite3-0': 's/sqlite3', 'libsqlite3-dev': 's/sqlite3'}
+    expanded = value.get('schema') == 'nico.cpp-project-dependencies.v2'
+    if expanded:
+        parents.update({name: 'libe/libevent' for name in (
+            'libevent-2.1-7', 'libevent-core-2.1-7', 'libevent-dev',
+            'libevent-extra-2.1-7', 'libevent-openssl-2.1-7', 'libevent-pthreads-2.1-7')})
     rows = value.get('packages')
     if (not isinstance(rows, list) or len(rows) != len(parents)
             or any(not isinstance(row, dict) or not isinstance(row.get('package'), str) for row in rows)
@@ -35,7 +40,12 @@ def validate_project_lock(value):
         name, version = row['package'], row.get('version')
         if not isinstance(version, str) or re.fullmatch(r'[0-9][A-Za-z0-9.+~\-]{0,99}', version) is None:
             raise ValueError('cpp_dependency_version_invalid')
-        expected = ('https://deb.debian.org/debian/pool/main/' + parents[name]
+        event = name.startswith('libevent')
+        if event and version != '2.1.12-stable-8+deb12u1':
+            raise ValueError('cpp_dependency_version_invalid')
+        origin = ('https://security.debian.org/debian-security/pool/updates/main/' if event
+                  else 'https://deb.debian.org/debian/pool/main/')
+        expected = (origin + parents[name]
                     + '/' + name + '_' + version + '_amd64.deb')
         size = row.get('bytes')
         if (row.get('url') != expected or row.get('architecture') != 'amd64'
@@ -51,7 +61,7 @@ def validate_project_lock(value):
 
 
 def validate_lock(value):
-    if isinstance(value, dict) and value.get('schema') == 'nico.cpp-project-dependencies.v1':
+    if isinstance(value, dict) and value.get('schema') in ('nico.cpp-project-dependencies.v1', 'nico.cpp-project-dependencies.v2'):
         return validate_project_lock(value)
     if not isinstance(value, dict) or value.get('schema') != 'nico.llvm17-package-lock.v1':
         raise ValueError('fuzz_tool_lock_invalid')
@@ -85,14 +95,25 @@ def provision(destination, *, run=subprocess.run, project_dependencies=False):
     lock = PROJECT_LOCK if project_dependencies else LOCK
     lock_bytes = lock.read_bytes()
     value = json.loads(lock_bytes); rows = validate_lock(value)
-    project = value['schema'] == 'nico.cpp-project-dependencies.v1'
+    project = value['schema'] in ('nico.cpp-project-dependencies.v1', 'nico.cpp-project-dependencies.v2')
     destination = Path(destination)
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
     result = {'schema':('nico.cpp-project-dependency-provisioning.v1' if project else
                        'nico.cpp-fuzz-tool-provisioning.v1'),'status':'UNPROVEN',
         'lock_sha256':hashlib.sha256(lock_bytes).hexdigest(), 'packages':[],
         'installed':False,'target_executed':False}
+    (destination / 'lock.json').write_bytes(lock_bytes)
+
+    def retain():
+        temporary = destination / 'receipt.json.tmp'
+        with temporary.open('wb') as output:
+            output.write((json.dumps(result, sort_keys=True, indent=2) + '\n').encode())
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, destination / 'receipt.json')
+
     deadline = time.monotonic() + (30 if project else 90)
+    retain()
     try:
         for row in rows:
             left = min(30, int(deadline-time.monotonic()))
@@ -109,10 +130,11 @@ def provision(destination, *, run=subprocess.run, project_dependencies=False):
             if digest != row['sha256']: raise ValueError('fuzz_tool_download_hash_invalid')
             result['packages'].append({'package':row['package'],'sha256':digest,'bytes':row['bytes'],
                 **({'version': row['version']} if project else {})})
+            retain()
         (destination / 'SHA256SUMS').write_text(''.join(r['sha256']+'  '+r['package']+'.deb\n' for r in rows))
         result['status']='VERIFIED_TOOL_INPUTS'
     finally:
-        (destination / 'receipt.json').write_text(json.dumps(result,sort_keys=True,indent=2)+'\n')
+        retain()
     return result
 
 

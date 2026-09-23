@@ -7,7 +7,7 @@ COPY cmake.whl /opt/cmake.whl
 RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && for package in *.deb; do dpkg-deb --extract "$package" /; done \
     && mkdir -p /opt/nico-project-dependencies \
-    && cp receipt.json SHA256SUMS /opt/nico-project-dependencies/ \
+    && cp lock.json receipt.json SHA256SUMS /opt/nico-project-dependencies/ \
     && cd / && rm -rf /opt/project-dependency-inputs \
     && cd /opt/llvm-inputs && sha256sum -c SHA256SUMS \
     && for package in *.deb; do dpkg-deb --extract "$package" /; done \
