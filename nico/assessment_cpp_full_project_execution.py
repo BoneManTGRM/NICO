@@ -227,10 +227,23 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
         if contract['configuration'].get('native_test_evidence') == 'bound-binary-replay-v1':
             from nico.assessment_cpp_native_tests import SETUP_PROGRAM
             require(['docker', 'exec', '--user=0:0', name, 'python3', '-I', '-S', '-c', SETUP_PROGRAM])
+        if contract['configuration'].get('bounded_fuzz') is not None:
+            from nico.assessment_cpp_fuzz_runtime import SETUP_PROGRAM as FUZZ_SETUP
+            require(['docker', 'exec', '--user=0:0', '--interactive', name, 'python3', '-I', '-S', '-c', FUZZ_SETUP],
+                data=json.dumps(contract['configuration']['bounded_fuzz']).encode())
         successful = {}
         for spec, row in zip(specs, result['steps']):
             if not all(successful.get(key, False) for key in spec['needs']):
                 successful[spec['id']] = False
+                continue
+            if spec.get('fuzz_execution'):
+                from nico.assessment_cpp_fuzz_runtime import run_fuzz
+                before = time.monotonic()
+                observed = run_fuzz(invoke, name, contract['configuration']['bounded_fuzz'], contract['targets'])
+                row.update(attempted=True, exit_code=0, duration_ms=int((time.monotonic() - before) * 1000),
+                    output=base64.b64encode(json.dumps(observed, sort_keys=True).encode()).decode('ascii'))
+                successful[spec['id']] = observed['error'] is None
+                if observed['error'] == 'worker_fuzz_interrupted': break
                 continue
             if 'native_test_configuration' in spec:
                 from nico.assessment_cpp_native_tests import run_bound_tests
@@ -244,7 +257,7 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                 successful[spec['id']] = observed['error'] is None
                 if observed['error'] == 'worker_native_test_interrupted': break
                 continue
-            analysis_step = (spec['id'] in {'analyzer-version', 'static-analysis'}
+            analysis_step = (spec['id'] in {'analyzer-version', 'static-analysis', 'fuzz-compiler-version'}
                              or 'compiler_configuration' in spec or 'generated_configuration' in spec)
             prefix = ['docker', 'exec', *(['--user=' + ANALYSIS_USER] if analysis_step else []), name]
             if spec['id'] == 'static-analysis':

@@ -32,7 +32,8 @@ def enrich_scanner_stage(canonical, stage):
               'compiler-evidence': 'evidencia del compilador', 'generated-context': 'captura de encabezados generados',
               'static-analysis': 'análisis estático', 'cmake-version': 'versión de CMake',
               'compiler-version': 'versión del compilador', 'analyzer-version': 'versión del analizador',
-              'native-test-evidence': 'verificación del binario de prueba'}
+              'native-test-evidence': 'verificación del binario de prueba',
+              'fuzz': 'fuzzing', 'native-evidence': 'evidencia de ejecución acotada'}
     for record in records:
         provenance = record.get('worker_provenance')
         provenance = provenance if isinstance(provenance, Mapping) else {}
@@ -123,8 +124,26 @@ def enrich_scanner_stage(canonical, stage):
             digest = context.get('capture_sha256')
             if isinstance(digest, str):
                 evidence.append(('SHA-256 de la captura de encabezados generados: ' if es else 'Generated-header capture SHA-256: ') + digest)
+        fuzz = build.get('bounded_fuzz_evidence')
+        if isinstance(fuzz, Mapping):
+            from nico.assessment_cpp_fuzz import LIMITATION
+            total = len(fuzz.get('required_targets') or [])
+            bound = len(fuzz.get('executed_targets') or []) if build.get('fuzz_executed') is True else 0
+            completed = len(fuzz.get('completed_targets') or []) if fuzz.get('complete') is True else 0
+            line = (f'Fuzzing acotado: {bound}/{total} objetivos vinculados al binario; {completed}/{total} completos.' if es
+                    else f'Bounded fuzzing: {bound}/{total} binary-bound targets; {completed}/{total} completed.')
+            summaries.append(line); evidence.append(line)
+            for target in fuzz.get('targets') or []:
+                for phase in target.get('phases') or []:
+                    kind = ('corpus original' if phase.get('phase') == 'replay' else 'campaña') if es else phase.get('phase')
+                    code = phase.get('exit_code'); name = str(target.get('name') or '')
+                    evidence.append((f'Fuzzing / {name} / {kind}: salida nativa={code}.' if es
+                        else f'Fuzzing / {name} / {kind}: native exit={code}.'))
+            gaps.append(COPY_ES[LIMITATION] if es else LIMITATION)
         header_verified = (record.get('cppcheck_source_coverage') or {}).get('header_context_verified') is True
-        if es:
+        if isinstance(fuzz, Mapping):
+            gaps.append('La calificación integral del proyecto sigue incompleta.' if es else 'Full-project qualification remains incomplete.')
+        elif es:
             gaps.append('La ejecución de libFuzzer no está verificada; la calificación integral sigue incompleta.' if header_verified else
                 'La ejecución de libFuzzer y la cobertura de inclusión de encabezados no están verificadas; la calificación integral sigue incompleta.')
             gaps.append('La pertenencia a la base de datos de compilación no demuestra cobertura de ejecución del compilador. La finalización de Cppcheck no implica pruebas aprobadas ni aprobación humana.')

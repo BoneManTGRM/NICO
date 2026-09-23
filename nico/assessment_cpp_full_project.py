@@ -23,7 +23,7 @@ CMAKE_VERSION = '3.31.6'
 
 
 def configuration(*, units, unit_tests, integration_tests, compiler_evidence=False,
-                  native_test_evidence=False, generated_headers=None):
+                  native_test_evidence=False, generated_headers=None, bounded_fuzz=None):
     """Create a bounded configuration, not an authorization/qualification flag."""
     if type(compiler_evidence) is not bool or type(native_test_evidence) is not bool or (native_test_evidence and not compiler_evidence):
         raise ValueError('worker_compiler_mode_invalid')
@@ -46,6 +46,11 @@ def configuration(*, units, unit_tests, integration_tests, compiler_evidence=Fal
         result.update(schema='nico.cpp-cmake-configuration.v4', compiler_evidence=MODE,
                       generated_headers=validate_header_paths(generated_headers),
                       native_test_evidence=('bound-binary-replay-v1' if native_test_evidence else 'not_requested'))
+    if bounded_fuzz is not None:
+        if not native_test_evidence:
+            raise ValueError('worker_fuzz_native_binding_required')
+        result.update(fuzz_base_schema=result['schema'], schema='nico.cpp-cmake-configuration.v5',
+                      bounded_fuzz=deepcopy(bounded_fuzz))
     return result
 
 
@@ -62,6 +67,19 @@ def _names(values, *, empty=False):
 
 
 def validate_configuration(config, targets):
+    if isinstance(config, dict) and config.get('schema') == 'nico.cpp-cmake-configuration.v5':
+        from nico.assessment_cpp_fuzz import validate_plan
+        base = deepcopy(config)
+        schema = base.pop('fuzz_base_schema', None)
+        fuzz = base.pop('bounded_fuzz', None)
+        if schema not in {'nico.cpp-cmake-configuration.v3', 'nico.cpp-cmake-configuration.v4'}:
+            raise ValueError('worker_fuzz_base_configuration_invalid')
+        base['schema'] = schema
+        validate_configuration(base, targets)
+        if base.get('native_test_evidence') != 'bound-binary-replay-v1':
+            raise ValueError('worker_fuzz_native_binding_required')
+        validate_plan(fuzz, targets)
+        return deepcopy(config)
     fields = {'schema', 'platform', 'cmake_version', 'compiler_version', 'translation_units',
         'unit_tests', 'integration_tests', 'project_options', 'build_targets', 'parallel',
         'source_byte_limit', 'sanitizers'}
@@ -111,7 +129,7 @@ def validate_configuration(config, targets):
 
 def execution_steps(contract):
     config = contract['configuration']
-    generated = config.get('schema') == 'nico.cpp-cmake-configuration.v4'
+    generated = config.get('fuzz_base_schema', config.get('schema')) == 'nico.cpp-cmake-configuration.v4'
     steps = []
     def add(key, args, needs=(), artifacts=None, **extra):
         steps.append({'id': key, 'invocation': args, 'needs': list(needs),
@@ -164,6 +182,11 @@ def execution_steps(contract):
         for group in config['sanitizers']:
             add(group + '-native-test-evidence', ['nico-controller:bound-native-tests-v1', group],
                 (group + '-discover',), native_test_configuration=group)
+    if config.get('bounded_fuzz') is not None:
+        from nico.assessment_cpp_fuzz import build_steps
+        for key, argv, needs in build_steps(config['bounded_fuzz']):
+            add(key, argv, needs)
+        add('fuzz-native-evidence', ['nico-controller:bounded-fuzz-v1'], ('fuzz-build',), fuzz_execution=True)
     return steps
 
 
@@ -283,6 +306,7 @@ def validate_native(native, contract):
         okay = row['attempted'] and row['exit_code'] == 0 and not row['timed_out'] and not row['output_truncated']
         if row['id'] == 'cmake-version': okay &= streams['output'].splitlines()[:1] == [b'cmake version 3.31.6']
         if row['id'] == 'compiler-version': okay &= streams['output'].strip() == COMPILER_VERSION.encode()
+        if row['id'] == 'fuzz-compiler-version': okay &= streams['output'].strip() == b'17.0.6'
         if row['id'] == 'analyzer-version': okay &= streams['output'].strip() == ('Cppcheck ' + contract['tool_version']).encode()
         okay &= all(success.get(key, False) for key in spec['needs'])
         success[row['id']] = bool(okay)
@@ -290,11 +314,11 @@ def validate_native(native, contract):
             else 'failed' if row['exit_code'] != 0 else 'completed' if okay else 'partial')
         stages.append({'id': row['id'], 'status': status, 'attempted': row['attempted'],
             'exit_code': row['exit_code'], 'duration_ms': row['duration_ms'],
-            **({'observation_kind': 'controller'} if 'native_test_configuration' in spec else {}),
+            **({'observation_kind': 'controller'} if 'native_test_configuration' in spec or spec.get('fuzz_execution') else {}),
             'artifact_sha256': {key: hashlib.sha256(data).hexdigest() for key, data in streams.items() if key != 'output'}})
     gaps, databases, discovered = [], {}, {}
     generated_contexts = {}
-    if config.get('schema') == 'nico.cpp-cmake-configuration.v4':
+    if config.get('fuzz_base_schema', config.get('schema')) == 'nico.cpp-cmake-configuration.v4':
         from nico.assessment_cpp_generated_context import validate_snapshot, validate_failure
         for group in ('baseline', *config['sanitizers']):
             key = group + '-generated-context'
@@ -425,6 +449,23 @@ def validate_native(native, contract):
     headers = sorted(p for p in contract['targets'] if PurePosixPath(p).suffix.lower() in {'.h', '.hh', '.hpp', '.hxx', '.inc'})
     header_verified = bool(baseline_compiler and baseline_compiler['complete']
         and set(headers) <= set(baseline_compiler['header_inclusions']))
+    fuzz_evidence = None
+    if config.get('bounded_fuzz') is not None:
+        from nico.assessment_cpp_fuzz import validate_evidence, LIMITATION
+        key = 'fuzz-native-evidence'
+        if rows[key]['attempted'] and raw[key]['output'] and not rows[key]['output_truncated']:
+            fuzz_evidence = validate_evidence(_json(raw[key]['output']), config['bounded_fuzz'], contract['targets'])
+        if fuzz_evidence is not None:
+            if fuzz_evidence['duration_ms'] > rows[key]['duration_ms'] + 2:
+                raise ValueError('worker_fuzz_duration_contradiction')
+            fuzz_evidence['execution_chain_verified'] = bool(stable and success['fuzz-build'])
+            fuzz_evidence['complete'] &= fuzz_evidence['execution_chain_verified']
+        success[key] &= bool(stable and fuzz_evidence and fuzz_evidence['complete'])
+        stage = next(s for s in stages if s['id'] == key)
+        stage.update(required_fuzz_targets=[t['name'] for t in config['bounded_fuzz']['targets']],
+            executed_fuzz_targets=fuzz_evidence['executed_targets'] if fuzz_evidence else [],
+            completed_fuzz_targets=fuzz_evidence['completed_targets'] if fuzz_evidence else [])
+        if stage['status'] == 'completed' and not success[key]: stage['status'] = 'partial'
     requested_complete = bool(static_complete and all(success.values()) and all(databases.values()))
     static = rows['static-analysis']
     status = ('completed' if static_complete else 'timed_out' if static['timed_out'] else
@@ -475,11 +516,13 @@ def validate_native(native, contract):
             'memory_peak_bytes': native['memory_peak_bytes'], 'resource_class': 'full-project-v1',
             'cleanup_verified': native['cleanup_verified'], 'controller_error': native['error'],
             'analysis_artifact_isolation_verified': bool(stable and analysis_input_frozen),
-            'source_read_only_verified': bool(stable), 'fuzz_executed': False,
+            'source_read_only_verified': bool(stable),
+            'fuzz_executed': bool(stable and fuzz_evidence and fuzz_evidence['executed_targets']),
+            **({'bounded_fuzz_evidence': fuzz_evidence} if config.get('bounded_fuzz') is not None else {}),
             'full_project_qualified': False,
             'limitations': [*([] if header_verified else ['Header inclusion coverage has not been established.']),
                 'Compilation database membership is not measured compiler execution coverage.',
                 ORIGINAL_CTEST_LIMIT if config.get('native_test_evidence') == 'bound-binary-replay-v1' else 'Sanitizer flags are verified in configuration; independent binary instrumentation is not established.',
                 'Dependencies must be present in the pinned image or captured source; no runtime downloads.',
-                'Bounded libFuzzer execution is not implemented by this profile revision.',
+                LIMITATION if config.get('bounded_fuzz') is not None else 'Bounded libFuzzer execution is not implemented by this profile revision.',
                 'Build/test/sanitizer evidence is not an independent security finding or human approval.']}}

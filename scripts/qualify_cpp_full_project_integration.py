@@ -24,7 +24,7 @@ from scripts.qualify_cpp_full_project_control import FIXTURE
 from scripts.qualify_cppcheck_worker_control import consume_control
 
 
-def fixture(*, generated_headers=False):
+def fixture(*, generated_headers=False, bounded_fuzz=False):
     """Retain the original fixture by default; opt in to a real configured header."""
     result = dict(FIXTURE)
     if generated_headers:
@@ -35,18 +35,43 @@ def fixture(*, generated_headers=False):
             'target_include_directories(control_sum PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")\n')
         result['sum.cpp'] = ('#include "sum.hpp"\n#include "generated/config.h"\n'
             'int control_sum(int a, int b) { return a + b + NICO_CONFIGURED_OFFSET; }\n')
+    if bounded_fuzz:
+        result['corpus/seed'] = 'X'
+        result['fuzz.cpp'] = """#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+#ifdef NICO_FUZZ_FAILURE
+    if (size == 0) abort();
+#endif
+    volatile uint64_t sum = 0;
+    for (size_t i = 0; i < size; ++i) sum = sum * 33 + data[i];
+    return 0;
+}
+"""
+        result['CMakeLists.txt'] = ("cmake_minimum_required(VERSION 3.22)\n"
+            "if(NICO_FUZZ_ONLY)\nproject(OwnedFuzz C CXX)\nadd_executable(fuzz_control fuzz.cpp)\n"
+            "if(NICO_FUZZ_FAILURE)\ntarget_compile_definitions(fuzz_control PRIVATE NICO_FUZZ_FAILURE=1)\nendif()\n"
+            "return()\nendif()\n" + result['CMakeLists.txt'])
     return result
 
 
-def plan(image, *, negative=False, generated_headers=False):
+def plan(image, *, negative=False, generated_headers=False, bounded_fuzz=False):
+    fuzz = None
+    if bounded_fuzz:
+        from nico.assessment_cpp_fuzz import fuzz_plan
+        fuzz = fuzz_plan(build_targets=['fuzz_control'],
+            cmake_options={'NICO_FUZZ_ONLY': 'ON', 'NICO_FUZZ_FAILURE': 'ON' if negative else 'OFF'},
+            targets=[{'name': 'control', 'binary': 'fuzz_control', 'corpus': ['corpus/seed'], 'environment': {}}],
+            runs=128, seconds=2, seed=7)
     return {'profile': PROFILE, 'tool_version': '2.17.1', 'image_digest': image,
         'configuration': configuration(units=['main.cpp', 'sum.cpp'],
             unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True, native_test_evidence=True,
-            generated_headers=['generated/config.h'] if generated_headers else None),
+            generated_headers=['generated/config.h'] if generated_headers else None, bounded_fuzz=fuzz),
         'targets': {path: hashlib.sha256(text.encode()).hexdigest()
-                    for path, text in fixture(generated_headers=generated_headers).items()},
+                    for path, text in fixture(generated_headers=generated_headers, bounded_fuzz=bounded_fuzz).items()},
         'limits': {'max_attempts': 1, 'wall_seconds': 180, 'lease_seconds': 30},
-        'max_receipt_bytes': 2 * 1024 * 1024}
+        'max_receipt_bytes': (8 if bounded_fuzz else 2) * 1024 * 1024}
 
 
 def render_result(result, output, language):
@@ -90,6 +115,7 @@ def render_result(result, output, language):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
+    parser.add_argument('--bounded-fuzz', action='store_true')
     parser.add_argument('--generated-headers', action='store_true', help='Qualify the opt-in frozen generated-header configuration.')
     parser.add_argument('--output', type=Path, default=Path('cpp-full-project-integration'))
     args = parser.parse_args(); args.output.mkdir(parents=True, exist_ok=True)
@@ -110,11 +136,11 @@ def main():
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=10).stdout.strip().decode()
             git('init', '--bare', '.')
             rows = [f"100644 blob {git('hash-object', '-w', '--stdin', data=text.encode())}\t{path}\n"
-                    for path, text in sorted(fixture(generated_headers=args.generated_headers).items())]
+                    for path, text in sorted(fixture(generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz).items())]
             tree = git('mktree', data=''.join(rows).encode())
             revision = git('commit-tree', tree, data=b'Owned CMake integration fixture\n')
             for negative in (False, True):
-                contract = plan(args.image, negative=negative, generated_headers=args.generated_headers); observations = {}
+                contract = plan(args.image, negative=negative, generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz); observations = {}
                 result = consume_control(contract, git_dir, tree, revision, release, observations)
                 from nico.scanner_worker import get_scan
                 persisted = get_scan(result['canonical_record']['scan_id'])
@@ -144,7 +170,19 @@ def main():
                 assert build['analysis_artifact_isolation_verified'] is True
                 assert build['implemented_command_scope_complete'] is (not negative), 'test_truth_changed'
                 assert build['requested_scope_complete'] is False
-                assert build['fuzz_executed'] is False and build['full_project_qualified'] is False
+                assert build['full_project_qualified'] is False
+                if args.bounded_fuzz:
+                    proof = build['bounded_fuzz_evidence']
+                    assert build['fuzz_executed'] is True, 'fuzz_execution_not_bound'
+                    assert proof['complete'] is (not negative), 'fuzz_outcome_changed'
+                    campaign = proof['targets'][0]['phases'][-1]
+                    if negative:
+                        assert campaign['phase'] == 'campaign' and campaign['status'] == 'failed' and campaign['exit_code'] != 0
+                        assert campaign['retained_failure_input']['present'] is True, 'fuzz_failure_input_missing'
+                    else:
+                        assert proof['completed_targets'] == ['control'], 'fuzz_target_incomplete'
+                else:
+                    assert build['fuzz_executed'] is False
                 assert record['client_delivery_allowed'] is False
                 if negative:
                     row = next(r for r in build['stages'] if r['id'] == 'baseline-unit')

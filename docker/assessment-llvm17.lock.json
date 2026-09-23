@@ -1,0 +1,97 @@
+{
+  "llvm_index_sha256": "4dd28c18bba8053b8416e937300567a7aecb2af9025a7dc17133fe152c015ade",
+  "llvm_inrelease_sha256": "957627b9fb99bf7267a1949316c5b35e5fda7a425b2ebb0b90fb063df2552c8f",
+  "llvm_inventory_artifact": 10728994945,
+  "llvm_signing_key_fingerprint": "6084F3CF814B57C1CF12EFD515CF4D18AF4F7421",
+  "packages": [
+    {
+      "architecture": "amd64",
+      "bytes": 110660,
+      "depends": "libc6 (>= 2.34), libclang-cpp17 (>= 1:17.0.6~++20231208085813+6009708b4367), libgcc-s1 (>= 3.0), libllvm17, libstdc++6 (>= 11), libstdc++-12-dev, libgcc-12-dev, libobjc-12-dev, libclang-common-17-dev (= 1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81), llvm-17-linker-tools (= 1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81), libclang1-17 (= 1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81), libc6-dev, binutils",
+      "package": "clang-17",
+      "pre_depends": "",
+      "sha256": "563174a1c70ebe8ea481ffcd01556e74e991d5c7c2ce7dfc36ad944dc77a2d4b",
+      "url": "https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/clang-17_17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81_amd64.deb",
+      "version": "1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 11740608,
+      "depends": "libc6 (>= 2.34), libgcc-s1 (>= 3.0), libllvm17 (= 1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81), libstdc++6 (>= 12)",
+      "package": "libclang-cpp17",
+      "pre_depends": "",
+      "sha256": "32cc099fdf1117782b6d247f3205ac38079c28b3bb300e92174ce8638811e017",
+      "url": "https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/libclang-cpp17_17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81_amd64.deb",
+      "version": "1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 23662904,
+      "depends": "libc6 (>= 2.36), libedit2 (>= 2.11-20080614-0), libffi8 (>= 3.4), libgcc-s1 (>= 3.3), libstdc++6 (>= 12), libtinfo6 (>= 6), libxml2 (>= 2.7.4), libz3-4 (>= 4.8.12), libzstd1 (>= 1.5.2), zlib1g (>= 1:1.2.0)",
+      "package": "libllvm17",
+      "pre_depends": "",
+      "sha256": "c89b4c0a7ed12e5461fd4eb0d701af2985e5be1c02ea2788667fb176aa489eef",
+      "url": "https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/libllvm17_17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81_amd64.deb",
+      "version": "1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 680868,
+      "depends": "libllvm17 (= 1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81)",
+      "package": "libclang-common-17-dev",
+      "pre_depends": "",
+      "sha256": "9bde5d314dd0fa74ae83eaf9e560641d6e4782b6bad90a08632e693584a368d0",
+      "url": "https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/libclang-common-17-dev_17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81_amd64.deb",
+      "version": "1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 6667888,
+      "depends": "libc6 (>= 2.34), libgcc-s1 (>= 3.0), libllvm17, libstdc++6 (>= 11)",
+      "package": "libclang1-17",
+      "pre_depends": "",
+      "sha256": "9fda1f971bfe2008fbf72fe64e2393d600a9338708046fbd0c54f214786a57a0",
+      "url": "https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/libclang1-17_17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81_amd64.deb",
+      "version": "1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 3450176,
+      "depends": "lib32stdc++6 (>= 4.1.1), libc6 (>= 2.34), libc6-i386 (>= 2.34), libstdc++6 (>= 4.1.1)",
+      "package": "libclang-rt-17-dev",
+      "pre_depends": "",
+      "sha256": "20c947be54d683e9cf692657b51d452a3bd573b2179d80504c0933d2ccf0b286",
+      "url": "https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/libclang-rt-17-dev_17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81_amd64.deb",
+      "version": "1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 1244076,
+      "depends": "libc6 (>= 2.34), libgcc-s1 (>= 3.0), libllvm17, libstdc++6 (>= 11)",
+      "package": "llvm-17-linker-tools",
+      "pre_depends": "",
+      "sha256": "f106a78b732bfc1a53592ea4f84c7e6949c9f15782e34240cdbb09d46ae70347",
+      "url": "https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/llvm-17-linker-tools_17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81_amd64.deb",
+      "version": "1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 7216172,
+      "package": "libz3-4",
+      "provenance": "https://packages.debian.org/bookworm/amd64/libz3-4/download",
+      "sha256": "6221ca25ad5abcfbe1965801029d85a88b4775320384b4b716de8fab7a4d2f7a",
+      "url": "https://deb.debian.org/debian/pool/main/z/z3/libz3-4_4.8.12-3.1_amd64.deb",
+      "version": "4.8.12-3.1"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 92992,
+      "package": "libedit2",
+      "provenance": "https://packages.debian.org/bookworm/amd64/libedit2/download",
+      "sha256": "1cf14abf2716d3279db12d0657a5737cf70074a1e71d3bdf73206625e3c89ce6",
+      "url": "https://deb.debian.org/debian/pool/main/libe/libedit/libedit2_3.1-20221030-2_amd64.deb",
+      "version": "3.1-20221030-2"
+    }
+  ],
+  "schema": "nico.llvm17-package-lock.v1"
+}
