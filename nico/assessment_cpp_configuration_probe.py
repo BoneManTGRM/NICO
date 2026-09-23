@@ -73,9 +73,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
     Returned records survive later failure through the caller's atomic sink.
     """
     import re
-    import shlex
     from pathlib import PurePosixPath
-    from nico.assessment_cpp_full_project import CMAKE_VERSION, MAX_SOURCE_BYTES, _json
+    from nico.assessment_cpp_full_project import CMAKE_VERSION, MAX_SOURCE_BYTES, _json, _database
     from nico.assessment_cpp_configuration import COMPILER_VERSION
     from nico.assessment_worker_receipts import canonical_bytes
     if (not isinstance(image, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', image) is None
@@ -124,7 +123,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
     deadline = start + execution_seconds
     name = 'nico-project-configure-' + uuid4().hex
     created = False
-    result = {'schema': 'nico.cpp-project-configuration-probe.v1', 'status': 'UNPROVEN',
+    result = {'schema': 'nico.cpp-project-configuration-probe.v3', 'status': 'UNPROVEN',
+        'preparation_mode': 'baseline_execution' if baseline_execution is not None else 'configuration_only',
+        'compilation_contexts': None,
         'image_config_digest': image, 'source_population_sha256': hashlib.sha256(canonical_bytes(targets)).hexdigest(),
         'project_options': dict(project_options), 'operations': [], 'boundary': None,
         'boundary_verified': False, 'memory_peak_bytes': None, 'cleanup_verified': False,
@@ -135,8 +136,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
         'error': None, 'wall_budget_seconds': 90, 'execution_budget_seconds': 80, 'duration_ms': 0}
 
     if baseline_execution is not None:
-        result.update(schema='nico.cpp-project-configuration-probe.v2',
-            baseline_execution=dict(baseline_execution), tests_discovered=[], tests_passed=False,
+        result.update(baseline_execution=dict(baseline_execution), tests_discovered=[], tests_passed=False,
             scratch_capacity_verified=False, scratch_capacity_bytes=None,
             tests_result=None, native_test_discovery=None, unit_test_data=None,
             wall_budget_seconds=1810, execution_budget_seconds=execution_seconds)
@@ -256,34 +256,13 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raw = base64.b64decode(artifact['data'], validate=True)
         if not 0 < len(raw) <= 4*1024*1024:
             raise ValueError('worker_configuration_probe_database_invalid')
-        rows = _json(raw)
-        if not isinstance(rows, list) or not 1 <= len(rows) <= 20000:
-            raise ValueError('worker_configuration_probe_database_invalid')
-        originals, generated = set(), set()
-        for row in rows:
-            checkpoint()
-            if not isinstance(row, dict) or not isinstance(row.get('file'), str):
-                raise ValueError('worker_configuration_probe_database_invalid')
-            path, directory = row['file'], row.get('directory')
-            if (not isinstance(directory, str) or not (directory == '/work/build' or directory.startswith('/work/build/'))
-                    or any(part in {'', '.', '..'} for part in directory.split('/')[1:])
-                    or any(part in {'', '.', '..'} for part in path.split('/')[1:])):
-                raise ValueError('worker_configuration_probe_database_path_invalid')
-            if path.startswith('/work/source/') and path.removeprefix('/work/source/') in targets:
-                originals.add(path.removeprefix('/work/source/'))
-            elif path.startswith('/work/build/'):
-                generated.add(path.removeprefix('/work/build/'))
-            else:
-                raise ValueError('worker_configuration_probe_database_path_invalid')
-            arguments = row.get('arguments')
-            if arguments is None and isinstance(row.get('command'), str):
-                arguments = shlex.split(row['command'])
-            if (not isinstance(arguments, list) or not 1 <= len(arguments) <= 4096
-                    or any(not isinstance(a, str) or not a or len(a) > 16384 for a in arguments)):
-                raise ValueError('worker_configuration_probe_database_invalid')
-        result.update(compilation_database=artifact['data'], compilation_database_sha256=hashlib.sha256(raw).hexdigest(),
-            configured_translation_units=sorted(originals), configured_generated_units=sorted(generated),
-            configured_invocations=len(rows))
+        try:
+            contexts = _database(raw, None, '/work/build', nested=True, source_targets=targets)
+        except ValueError as exc:
+            raise ValueError('worker_configuration_probe_contexts_invalid') from exc
+        result.update(compilation_database=artifact['data'], compilation_database_sha256=contexts['database_sha256'],
+            configured_translation_units=contexts['original_units'], configured_generated_units=contexts['generated_units'],
+            configured_invocations=contexts['context_count'], compilation_contexts=contexts)
         result['status'] = 'CONFIGURATION_CAPTURED'
         if baseline_execution is not None:
             if result['compilation_database_sha256'] != baseline_execution['compilation_database_sha256']:

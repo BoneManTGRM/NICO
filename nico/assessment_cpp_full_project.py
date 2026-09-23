@@ -222,8 +222,130 @@ def _json(raw):
         parse_constant=lambda _: (_ for _ in ()).throw(ValueError('worker_full_project_nonfinite')))
 
 
-def _database(raw, units, build_dir, sanitizer=None, *, nested=False):
-    """Inspect data only; never execute commands from compilation databases."""
+def compilation_contexts(raw, targets, build_dir, *, sanitizer=None, nested=True):
+    """Capture every source-bound command, not permission or proof to execute it.
+
+    Original and generated paths occupy different namespaces. Repeated original
+    files retain distinct argument/output contexts. Generated hashes remain
+    unknown until a separate immutable-byte capture; headers are not inferred
+    from include flags. The executable compiler allowlist remains mandatory at
+    replay time: this data-only inventory never replaces it.
+    """
+    from nico.assessment_cpp_generated_context import valid_build_directory
+    from nico.assessment_worker_receipts import canonical_bytes
+    if (not isinstance(raw, bytes) or not 0 < len(raw) <= 4 * 1024 * 1024
+            or build_dir not in ('/work/build', '/work/address', '/work/undefined')
+            or type(nested) is not bool or sanitizer not in (None, 'address', 'undefined')
+            or not isinstance(targets, dict) or not 1 <= len(targets) <= 20000):
+        raise ValueError('worker_full_project_context_input_invalid')
+    for path, digest in targets.items():
+        if (not isinstance(path, str) or not path or len(path) > 1000
+                or PurePosixPath(path).is_absolute() or PurePosixPath(path).as_posix() != path
+                or any(p in {'', '.', '..', '.git'} for p in path.split('/'))
+                or ':' in path or '\\' in path or any(ord(c) < 32 for c in path)
+                or not isinstance(digest, str) or re.fullmatch(r'[0-9a-f]{64}', digest) is None):
+            raise ValueError('worker_full_project_context_source_invalid')
+    rows = _json(raw)
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 20000:
+        raise ValueError('worker_full_project_database_invalid')
+    contexts, originals, generated, identities = [], set(), set(), set()
+
+    def output_path(value, directory):
+        if not isinstance(value, str) or not value:
+            raise ValueError('worker_full_project_context_output_invalid')
+        if value.startswith('/'):
+            if value == build_dir or not valid_build_directory(value, build_dir):
+                raise ValueError('worker_full_project_context_output_invalid')
+            return value
+        if not _path(value):
+            raise ValueError('worker_full_project_context_output_invalid')
+        return directory + '/' + value
+
+    for index, row in enumerate(rows):
+        if (not isinstance(row, dict) or not set(row) <= {'directory', 'file', 'arguments', 'command', 'output'}
+                or not (valid_build_directory(row.get('directory'), build_dir)
+                        if nested else row.get('directory') == build_dir)):
+            raise ValueError('worker_full_project_database_invalid')
+        path = row.get('file')
+        if not isinstance(path, str):
+            raise ValueError('worker_full_project_database_path_invalid')
+        if path.startswith('/work/source/'):
+            origin, relative = 'original', path[len('/work/source/'):]
+            if relative not in targets:
+                raise ValueError('worker_full_project_database_path_invalid')
+            source_sha256 = targets[relative]
+            originals.add(relative)
+        elif path.startswith(build_dir + '/'):
+            origin, relative = 'generated', path[len(build_dir) + 1:]
+            source_sha256 = None
+            generated.add(relative)
+        else:
+            raise ValueError('worker_full_project_database_path_invalid')
+        if not _path(relative):
+            raise ValueError('worker_full_project_database_path_invalid')
+        argv = row.get('arguments')
+        if 'arguments' in row and not isinstance(argv, list):
+            raise ValueError('worker_full_project_database_command_invalid')
+        if 'command' in row:
+            if not isinstance(row['command'], str) or not row['command']:
+                raise ValueError('worker_full_project_database_command_invalid')
+            parsed = shlex.split(row['command'])
+            if argv is not None and argv != parsed:
+                raise ValueError('worker_full_project_context_command_ambiguous')
+            argv = parsed if argv is None else argv
+        if (not isinstance(argv, list) or not 1 <= len(argv) <= 4096
+                or any(not isinstance(a, str) or not a or len(a) > 16384
+                       or any(ord(c) < 32 for c in a) for a in argv)
+                or argv[0] not in {'/usr/local/bin/gcc', '/usr/local/bin/g++'}
+                or argv.count('-c') != 1 or argv.count(path) != 1 or argv.count('-o') != 1
+                or argv.index('-c') + 1 >= len(argv) or argv[argv.index('-c') + 1] != path
+                or argv.index('-o') + 1 >= len(argv)
+                or (sanitizer and '-fsanitize=' + sanitizer not in argv)):
+            raise ValueError('worker_full_project_database_command_invalid')
+        output = output_path(argv[argv.index('-o') + 1], row['directory'])
+        if 'output' in row:
+            # CMake's optional output metadata may be build-root relative;
+            # retain its literal value and bind it to the actual -o operand.
+            options = {output_path(row['output'], row['directory']),
+                       output_path(row['output'], build_dir)}
+            if output not in options:
+                raise ValueError('worker_full_project_context_output_mismatch')
+        identity = {'origin': origin, 'path': relative, 'file': path,
+            'source_sha256': source_sha256, 'directory': row['directory'],
+            'arguments': list(argv), 'output': row.get('output'), 'output_path': output}
+        # Literal output metadata is retained, but equivalent relative/absolute
+        # spelling must not inflate the number of distinct semantic contexts.
+        digest = hashlib.sha256(canonical_bytes({k: v for k, v in identity.items()
+                                                if k != 'output'})).hexdigest()
+        if digest in identities:
+            raise ValueError('worker_full_project_context_duplicate')
+        identities.add(digest)
+        contexts.append({'index': index, 'context_id': digest, **identity})
+    result = {'schema': 'nico.cpp-compilation-contexts.v1',
+        'database_sha256': hashlib.sha256(raw).hexdigest(),
+        'source_population_sha256': hashlib.sha256(canonical_bytes(targets)).hexdigest(),
+        'build_directory': build_dir, 'contexts': contexts, 'context_count': len(contexts),
+        'context_membership_sha256': hashlib.sha256(canonical_bytes(sorted(identities))).hexdigest(),
+        'original_units': sorted(originals), 'generated_units': sorted(generated),
+        'generated_bytes_captured': False, 'analysis_executed': False,
+        'header_dependencies_verified': False, 'execution_authorized': False}
+    if len(canonical_bytes(result)) > 8 * 1024 * 1024:
+        raise ValueError('worker_full_project_context_budget_exceeded')
+    return result
+
+
+def _database(raw, units, build_dir, sanitizer=None, *, nested=False, source_targets=None):
+    """Inspect data only; legacy callers retain their original-only contract.
+
+    Explicit source_targets selects versioned context inventory. It grants no
+    static-analysis, generated-byte or execution proof to legacy consumers.
+    """
+    if source_targets is not None:
+        result = compilation_contexts(raw, source_targets, build_dir,
+                                      sanitizer=sanitizer, nested=nested)
+        if units is not None and result['original_units'] != sorted(units):
+            raise ValueError('worker_full_project_database_population_invalid')
+        return result
     from nico.assessment_cpp_generated_context import valid_build_directory
     rows = _json(raw)
     if not isinstance(rows, list) or not 1 <= len(rows) <= 20000:
