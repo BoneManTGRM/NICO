@@ -116,8 +116,7 @@ _SCANNER_STATE_RE = re.compile(
 )
 _SCANNER_EXECUTION_SUMMARY_RE = re.compile(
     r"(?P<prefix>(?:^|\n)[^\n:]{1,100}: )"
-    r"(?P<state>execution completed|completed|complete|succeeded|success|passed|failed|"
-    r"not_applicable|not applicable|unavailable|unknown); "
+    r"(?P<state>[^;\r\n]{1,80}); "
     r"exact commit=(?P<commit>yes|no); "
     r"artifact=(?P<artifact>retained|missing); "
     r"confirmed material finding count=(?P<count>\d+); "
@@ -367,15 +366,40 @@ def _translate_structured_current_report_copy(text: str) -> str:
     def scanner_execution_summary(match: re.Match[str]) -> str:
         boolean = {"yes": "sí", "no": "no"}
         artifact = {"retained": "conservado", "missing": "faltante"}
-        state = _STATE_ES[match.group("state").casefold()]
+        raw_state = match.group("state")
+        # The stage producer may have localized an ordinary label already.
+        # Translate the complete sentence before layout, preserving any raw
+        # machine identifier and rejecting unregistered status text.
+        from nico.comprehensive_spanish_canonical_report_v87 import (
+            _SCANNER_STATUS_ES,
+            _scanner_status_visible,
+        )
+        key = raw_state.casefold()
+        if "_" in raw_state:
+            if key in _SCANNER_STATUS_ES:
+                state = _scanner_status_visible(raw_state)
+            else:
+                label = {**_STATE_ES, "review_required": "revisión requerida"}.get(key)
+                if label is None:
+                    state = _scanner_status_visible(raw_state)
+                else:
+                    state = f"{raw_state} ({label})"
+        elif key == "completada":
+            state = "ejecución completada"
+        elif key in _SCANNER_STATUS_ES.values() or key in _STATE_ES.values():
+            state = raw_state
+        else:
+            state = _STATE_ES.get(key)
+            if state is None:
+                state = _scanner_status_visible(raw_state)
         return (
             f"{match.group('prefix')}{state}; "
             f"commit exacto={boolean[match.group('commit').casefold()]}; "
             f"artefacto={artifact[match.group('artifact').casefold()]}; "
             "conteo de hallazgos materiales confirmados="
             f"{match.group('count')}; carga de hallazgos sin procesar incluida="
-            f"{boolean[match.group('raw').casefold()]}."
-        )
+            f"{boolean[match.group('raw').casefold()]}.",
+        )[0]
 
     def candidate_summary(match: re.Match[str]) -> str:
         category = _CANDIDATE_CATEGORY_ES[match.group("category").casefold()]
