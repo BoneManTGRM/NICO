@@ -49,6 +49,8 @@ def native(plan_value=None):
                     for unit in p['configuration']['translation_units']]
             artifacts['compilation_database'] = encoded(json.dumps(data).encode())
         if step == 'static-analysis':
+            artifacts['compilation_database'] = next(
+                row['artifacts']['compilation_database'] for row in rows if row['id'] == 'baseline-configure')
             out = b'Checking /work/source/main.cpp ...\nChecking /work/source/sum.cpp ...\n'
             artifacts['analysis_xml'] = encoded(b'<results version="2"><cppcheck version="2.17.1"/><errors/></results>')
         if step.endswith('-discover'):
@@ -64,7 +66,7 @@ def native(plan_value=None):
             'output': encoded(out), 'artifacts': artifacts})
     return {'schema': 'nico.cpp-full-project-native.v1', 'steps': rows,
         'source_hashes': deepcopy(p['targets']), 'boundary_verified': True,
-        'boundary': {'source_read_only': True, 'work_root_owned_sticky': True, 'uid': 1000, 'gid': 1000, 'no_new_privileges': True,
+        'boundary': {'analysis_write_denied': True, 'analysis_private': True, 'source_read_only': True, 'work_root_owned_sticky': True, 'uid': 1000, 'gid': 1000, 'no_new_privileges': True,
             'effective_capabilities': 0, 'cpu_max': '200000 100000', 'memory_max': '2147483648',
             'pids_max': '256', 'swap_max': '0', 'work_mount': ['rw', 'nosuid', 'nodev'],
             'root_read_only': True, 'docker_socket_absent': True,
@@ -215,10 +217,17 @@ class FakeDocker:
 
     def __call__(self, args, **kwargs):
         from nico.assessment_cpp_full_project_execution import BOUNDARY_PROGRAM, INPUT_PROGRAM, READ_PROGRAM
+        from nico.assessment_cpp_analysis_boundary import ANALYSIS_SETUP_PROGRAM, ANALYSIS_INPUT_PROGRAM
         self.calls.append((args, kwargs))
         out, exit_code, timeout, truncated = b'', 0, False, False
         if args[:3] == ['docker', 'image', 'inspect']:
             out = json.dumps([{'Id': self.plan['image_digest']}]).encode()
+        elif ANALYSIS_SETUP_PROGRAM in args:
+            assert '--user=1001:1001' in args
+            out = json.dumps({'uid': 1001, 'gid': 1001, 'private': True}).encode()
+        elif ANALYSIS_INPUT_PROGRAM in args:
+            assert '--user=1001:1001' in args
+            out = json.dumps({'sha256': json.loads(kwargs['input_bytes'])['sha256'], 'uid': 1001}).encode()
         elif BOUNDARY_PROGRAM in args:
             self.boundary_count += 1
             out = json.dumps(self.native['boundary']).encode()
@@ -236,7 +245,8 @@ class FakeDocker:
             if args[-1] == '/sys/fs/cgroup/memory.peak':
                 out = b'350000000\n'
             else:
-                row = next(r for r in self.native['steps'] if args[3:] == r['invocation'])
+                command = args[4:] if '--user=1001:1001' in args else args[3:]
+                row = next(r for r in self.native['steps'] if command == r['invocation'])
                 out = base64.b64decode(row['output'])
                 if row['id'] == self.fail_id:
                     exit_code = 124 if self.fail_kind == 'timeout' else 125

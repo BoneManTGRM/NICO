@@ -78,7 +78,7 @@ jobs:
       - name: Test the actual profile and receipt integration
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pytest -q tests/test_assessment_cpp_full_project.py tests/test_assessment_worker_capacity_v1.py
+          python -m pytest -q tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_assessment_worker_capacity_v1.py
       - name: Provision exact tools without assessed source or runtime network
         run: |
           set -euo pipefail

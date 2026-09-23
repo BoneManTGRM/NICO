@@ -107,6 +107,7 @@ def main():
                 assert record['completed'] is True, 'configuration_aware_static_analysis_incomplete'
                 assert build['build_completed'] is True, 'project_build_incomplete'
                 assert build['source_read_only_verified'] is True
+                assert build['analysis_artifact_isolation_verified'] is True
                 assert build['implemented_command_scope_complete'] is (not negative), 'test_truth_changed'
                 assert build['requested_scope_complete'] is False
                 assert build['fuzz_executed'] is False and build['full_project_qualified'] is False

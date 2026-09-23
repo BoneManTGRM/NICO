@@ -17,6 +17,9 @@ from uuid import uuid4
 from nico.assessment_cpp_full_project import PROFILE, MAX_FILE_BYTES, execution_steps
 from nico.assessment_worker_capacity_v1 import docker_resource_args
 from nico.assessment_worker_container import _command, _read_input
+from nico.assessment_cpp_analysis_boundary import (
+    ANALYSIS_USER, ANALYSIS_SETUP_PROGRAM, ANALYSIS_INPUT_PROGRAM,
+)
 
 BOUNDARY_PROGRAM = r'''
 import errno, json, os, pathlib, socket, stat
@@ -31,13 +34,26 @@ try: probe.connect(('192.0.2.1', 443))
 except OSError as error: blocked = error.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH)
 finally: probe.close()
 work_stat = pathlib.Path('/work').stat()
+analysis = pathlib.Path('/work/analysis')
+analysis_info = analysis.stat() if analysis.exists() else None
+analysis_private = bool(analysis_info and analysis_info.st_uid == 1001
+    and stat.S_IMODE(analysis_info.st_mode) == 0o700
+    and not any(os.access(analysis, mode) for mode in (os.R_OK, os.W_OK, os.X_OK)))
+analysis_write_denied = False
+try:
+    write_fd = os.open('/work/analysis/target-write-probe', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+except PermissionError:
+    analysis_write_denied = True
+else:
+    os.close(write_fd)
 source = pathlib.Path('/work/source')
 source_stat = source.stat() if source.exists() else None
 source_read_only = bool(source_stat and source_stat.st_uid == 0
     and stat.S_IMODE(source_stat.st_mode) == 0o555 and not os.access(source, os.W_OK))
 print(json.dumps({'uid':os.getuid(), 'gid':os.getgid(),
  'work_root_owned_sticky':work_stat.st_uid == 0 and stat.S_IMODE(work_stat.st_mode) == 0o1777,
- 'source_read_only':source_read_only,
+ 'source_read_only':source_read_only, 'analysis_private':analysis_private,
+ 'analysis_write_denied':analysis_write_denied,
  'no_new_privileges':status['NoNewPrivs'].strip() == '1',
  'effective_capabilities':int(status['CapEff'].strip(),16),
  'cpu_max':cgroup('cpu.max'), 'memory_max':cgroup('memory.max'),
@@ -110,6 +126,7 @@ def boundary_valid(value, *, source_required=True):
             and type(value['gid']) is int and value['gid'] == 1000
             and value['no_new_privileges'] is True
             and value['work_root_owned_sticky'] is True
+            and value.get('analysis_private') is True and value.get('analysis_write_denied') is True
             and (not source_required or value['source_read_only'] is True)
             and type(value['effective_capabilities']) is int and value['effective_capabilities'] == 0
             and period > 0 and quota == 2 * period
@@ -192,6 +209,10 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
             '--env=TMPDIR=/work', '--env=HOME=/work', '--env=ASAN_OPTIONS=detect_leaks=0:halt_on_error=1',
             '--env=UBSAN_OPTIONS=halt_on_error=1', '--entrypoint=sleep', image, str(timeout_seconds + 15)])
         require(['docker', 'start', name])
+        private = json.loads(require(['docker', 'exec', '--user=' + ANALYSIS_USER, name,
+            'python3', '-I', '-S', '-c', ANALYSIS_SETUP_PROGRAM]))
+        if private != {'uid': 1001, 'gid': 1001, 'private': True}:
+            raise ValueError('worker_full_project_control_failed')
         result['boundary'] = json.loads(require(['docker', 'exec', name, 'python3', '-I', '-S', '-c', BOUNDARY_PROGRAM]))
         result['boundary_verified'] = boundary_valid(result['boundary'], source_required=False)
         if not result['boundary_verified']: raise ValueError('worker_full_project_control_failed')
@@ -208,8 +229,25 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
             if not all(successful.get(key, False) for key in spec['needs']):
                 successful[spec['id']] = False
                 continue
+            analysis_step = spec['id'] in {'analyzer-version', 'static-analysis'}
+            prefix = ['docker', 'exec', *(['--user=' + ANALYSIS_USER] if analysis_step else []), name]
+            if spec['id'] == 'static-analysis':
+                from nico.assessment_cpp_full_project import _database
+                configured = next(r for r in result['steps'] if r['id'] == 'baseline-configure')
+                encoded_db = configured['artifacts'].get('compilation_database')
+                if not isinstance(encoded_db, str):
+                    successful[spec['id']] = False
+                    continue
+                database = base64.b64decode(encoded_db, validate=True)
+                _database(database, contract['configuration']['translation_units'], '/work/build')
+                digest = hashlib.sha256(database).hexdigest()
+                transfer = json.dumps({'data': encoded_db, 'sha256': digest}).encode()
+                proof = json.loads(require(['docker', 'exec', '--user=' + ANALYSIS_USER, '--interactive',
+                    name, 'python3', '-I', '-S', '-c', ANALYSIS_INPUT_PROGRAM, str(len(transfer))], data=transfer))
+                if proof != {'sha256': digest, 'uid': 1001}:
+                    raise ValueError('worker_full_project_control_failed')
             before = time.monotonic()
-            response = invoke(['docker', 'exec', name, *spec['invocation']], max_output=limit, seconds=timeout_seconds)
+            response = invoke([*prefix, *spec['invocation']], max_output=limit, seconds=timeout_seconds)
             row.update(attempted=True, exit_code=response['exit_code'], timed_out=response['timed_out'],
                 output_truncated=response['output_truncated'], duration_ms=int((time.monotonic() - before) * 1000),
                 output=base64.b64encode(response['output']).decode('ascii'))
@@ -217,7 +255,7 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
             if row['timed_out'] or row['output_truncated']:
                 break  # stopping the Docker CLI alone does not stop the assessed process; remove container next.
             for key, path in spec['artifacts'].items():
-                observed = invoke(['docker', 'exec', name, 'python3', '-I', '-S', '-c', READ_PROGRAM,
+                observed = invoke([*prefix, 'python3', '-I', '-S', '-c', READ_PROGRAM,
                                    path, str(limit)], max_output=limit * 2 + 1024)
                 if observed['exit_code'] or observed['timed_out'] or observed['output_truncated']:
                     continue  # artifact absent/unreadable remains missing, never successful evidence.

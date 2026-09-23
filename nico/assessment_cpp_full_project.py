@@ -101,9 +101,10 @@ def execution_steps(contract):
         add(group + '-build', build, (group + '-configure',))
         if group == 'baseline':
             add('static-analysis', ['cppcheck', '--xml', '--enable=' + CHECKS,
-                '--check-level=normal', '--max-configs=1', '--platform=unix64', '-j1',
-                '--project=/work/build/compile_commands.json', '--output-file=/work/analysis.xml'],
-                ('baseline-build', 'analyzer-version'), {'analysis_xml': '/work/analysis.xml'})
+                '--check-level=exhaustive', '--max-configs=1', '--platform=unix64', '-j1',
+                '--project=/work/analysis/compile_commands.json', '--output-file=/work/analysis/cppcheck.xml'],
+                ('baseline-build', 'analyzer-version'), {'analysis_xml': '/work/analysis/cppcheck.xml',
+                    'compilation_database': '/work/analysis/compile_commands.json'})
         add(group + '-discover', ['ctest', '--test-dir', directory, '--show-only=json-v1'], (group + '-build',))
         for kind in ('unit', 'integration'):
             names = config[kind + '_tests']
@@ -200,7 +201,8 @@ def validate_native(native, contract):
             or type(native['boundary_verified']) is not bool or type(native['cleanup_verified']) is not bool
             or (native['memory_peak_bytes'] is not None and (type(native['memory_peak_bytes']) is not int
                 or not 0 < native['memory_peak_bytes'] <= 2147483648))
-            or native['error'] not in {None, 'worker_full_project_control_failed', 'worker_full_project_cleanup_failed'}
+            or (native['error'] is not None and (not isinstance(native['error'], str) or native['error'] not in {
+                'worker_full_project_control_failed', 'worker_full_project_cleanup_failed'}))
             or not isinstance(native['steps'], list)):
         raise ValueError('worker_full_project_native_invalid')
     expected = execution_steps(contract)
@@ -283,7 +285,9 @@ def validate_native(native, contract):
     stable = (native['boundary_verified'] and boundary_valid(native['boundary']) and native['cleanup_verified'] and native['error'] is None
               and native['memory_peak_bytes'] is not None)
     units = config['translation_units']
-    static_complete = (stable and databases['baseline'] and success['static-analysis'] and parsed
+    analysis_input_frozen = (bool(raw['static-analysis'].get('compilation_database')) and
+        raw['static-analysis'].get('compilation_database') == raw['baseline-configure'].get('compilation_database'))
+    static_complete = (stable and analysis_input_frozen and databases['baseline'] and success['static-analysis'] and parsed
         and observed == units and not any(item['rule_id'] != 'checkersReport' for item in limits))
     build_complete = bool(stable and databases['baseline'] and success['baseline-build'])
     requested_complete = bool(static_complete and all(success.values()) and all(databases.values()))
@@ -321,6 +325,7 @@ def validate_native(native, contract):
             'compilation_database_sha256': hashlib.sha256(raw['baseline-configure'].get('compilation_database', b'')).hexdigest(),
             'memory_peak_bytes': native['memory_peak_bytes'], 'resource_class': 'full-project-v1',
             'cleanup_verified': native['cleanup_verified'], 'controller_error': native['error'],
+            'analysis_artifact_isolation_verified': bool(stable and analysis_input_frozen),
             'source_read_only_verified': bool(stable), 'fuzz_executed': False,
             'full_project_qualified': False,
             'limitations': ['Header inclusion coverage has not been established.',
