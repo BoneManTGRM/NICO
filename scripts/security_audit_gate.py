@@ -201,6 +201,28 @@ def _summary_tool(root: Path, summary_name: str) -> dict[str, Any]:
     )
 
 
+def _known_public_signing_fingerprint(finding: dict[str, Any]) -> bool:
+    """Disposition one reviewed immutable observation, never a class of keys.
+
+    Native artifact 10731003280 identifies this exact line in commit 684e5af5.
+    That line contains LLVM's PUBLIC signing-key fingerprint, independently
+    published at https://apt.llvm.org/#install (6084 F3CF ... AF4F 7421).
+    The scanner redacts its value, so require the immutable source locator and
+    complete matching context. New commits/paths/rules/values still block.
+    """
+    commit = '684e5af5074c6e1c0cf4b67fa263b0d79b8beabf'
+    path = 'docker/assessment-llvm17.lock.json'
+    expected = {
+        'File': path, 'Commit': commit, 'RuleID': 'generic-api-key',
+        'Secret': 'REDACTED', 'Match': 'llvm_signing_key_fingerprint": "REDACTED"',
+        'Fingerprint': commit + ':' + path + ':generic-api-key:5',
+        'StartLine': 5, 'EndLine': 5, 'StartColumn': 5, 'EndColumn': 77,
+    }
+    return (all(type(finding.get(key)) is type(value) and finding[key] == value
+                for key, value in expected.items())
+            and finding.get('Verified', False) is False)
+
+
 def _gitleaks(root: Path) -> dict[str, Any]:
     data, error = _read_json(root, "gitleaks.json")
     summary, summary_error = _read_json(root, "gitleaks-summary.json")
@@ -222,6 +244,7 @@ def _gitleaks(root: Path) -> dict[str, Any]:
     blocking = 0
     approved_test_placeholders = 0
     approved_public_verifiers = 0
+    approved_public_signing_fingerprints = 0
     triage: list[dict[str, Any]] = []
     for finding in data:
         if not isinstance(finding, dict):
@@ -250,6 +273,9 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         elif approved_public_verifier:
             approved_public_verifiers += 1
             disposition = "approved_public_verifier_digest"
+        elif _known_public_signing_fingerprint(finding):
+            approved_public_signing_fingerprints += 1
+            disposition = "approved_public_signing_fingerprint"
         else:
             blocking += 1
             disposition = "blocking"
@@ -271,6 +297,8 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         needs_review=0,
         approved_test_placeholders=approved_test_placeholders,
         approved_public_verifiers=approved_public_verifiers,
+        **({'approved_public_signing_fingerprints': approved_public_signing_fingerprints}
+           if approved_public_signing_fingerprints else {}),
         triage=triage[:200],
         summary_artifact_hash=_digest(root, "gitleaks-summary.json"),
     )

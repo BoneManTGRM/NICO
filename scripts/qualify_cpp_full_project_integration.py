@@ -112,6 +112,46 @@ def render_result(result, output, language):
         'automated_draft': True, 'production_report': False}
 
 
+def write_fixture_tree(git, files):
+    """Write owned nested fixtures as Git trees, without checkout or an index.
+
+    mktree takes immediate child names, not slash-separated paths. Build child
+    trees first so source/corpus names and exact blob bytes stay unchanged.
+    Validate the entire population before writing any objects.
+    """
+    if not isinstance(files, dict) or not files:
+        raise ValueError('owned_fixture_population_invalid')
+    root = {}
+    for path, text in files.items():
+        if (not isinstance(path, str) or not path or len(path) > 1000
+                or any(ord(char) < 32 or char == '\\' for char in path)
+                or any(part in {'', '.', '..', '.git'} for part in path.split('/'))
+                or not isinstance(text, str)):
+            raise ValueError('owned_fixture_path_or_content_invalid')
+        parts = path.split('/')
+        node = root
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+            if not isinstance(node, dict):
+                raise ValueError('owned_fixture_path_collision')
+        if parts[-1] in node:
+            raise ValueError('owned_fixture_path_collision')
+        node[parts[-1]] = text
+
+    def write(node):
+        entries = []
+        for name, value in sorted(node.items()):
+            if isinstance(value, dict):
+                mode, kind, oid = '040000', 'tree', write(value)
+            else:
+                mode, kind = '100644', 'blob'
+                oid = git('hash-object', '-w', '--stdin', data=value.encode())
+            entries.append((mode + ' ' + kind + ' ' + oid + '\t' + name).encode() + b'\0')
+        return git('mktree', '-z', data=b''.join(entries))
+
+    return write(root)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
@@ -135,9 +175,8 @@ def main():
                 return subprocess.run(['git', *argv], cwd=git_dir, env=env, input=data,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=10).stdout.strip().decode()
             git('init', '--bare', '.')
-            rows = [f"100644 blob {git('hash-object', '-w', '--stdin', data=text.encode())}\t{path}\n"
-                    for path, text in sorted(fixture(generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz).items())]
-            tree = git('mktree', data=''.join(rows).encode())
+            tree = write_fixture_tree(git, fixture(
+                generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz))
             revision = git('commit-tree', tree, data=b'Owned CMake integration fixture\n')
             for negative in (False, True):
                 contract = plan(args.image, negative=negative, generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz); observations = {}
