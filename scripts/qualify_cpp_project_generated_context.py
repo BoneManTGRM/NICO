@@ -90,7 +90,7 @@ def qualify(image, output):
                     row['baseline'] = value; save()
                 result = probe_project_configuration(root, targets, image,
                     project_options={'BUILD_TESTS': 'ON'}, baseline_execution=execution,
-                    capture_generated_context=True, retain=keep_baseline,
+                    capture_generated_context=True, project_compiler_evidence=True, retain=keep_baseline,
                     retain_artifact=lambda key, raw: persist_project_artifact(directory, key, raw))
                 if (not result['compiled'] or not result['tests_passed'] or not result['cleanup_verified']
                         or result['tests_discovered'] != ['owned_generated']
@@ -119,6 +119,12 @@ def qualify(image, output):
                                 'include/config.h': targets['config.h.in']}
                     if {p: v['sha256'] for p, v in snapshot['files'].items()} != expected:
                         raise ValueError('qualification_control_generated_bytes_mismatch')
+                    compiler = result['project_compiler']
+                    if (not compiler or not compiler['complete'] or len(compiler['checked_contexts']) != 4
+                            or 'include/config.h' not in compiler['generated_header_inclusions']
+                            or compiler['static_analysis_executed'] or compiler['object_code_generated']
+                            or compiler['production_qualified']):
+                        raise ValueError('qualification_control_compiler_unproven')
                     if snapshot['header_dependencies_verified'] or snapshot['analysis_executed']:
                         raise ValueError('qualification_control_false_analysis')
                 row['expected_outcome_verified'] = True; save()

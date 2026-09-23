@@ -64,7 +64,7 @@ print(json.dumps(result, sort_keys=True))
 def probe_project_configuration(source, targets, image, *, project_options,
                                 retain=lambda result: None, command=None, baseline_execution=None,
                                 unit_test_data=None, capture_generated_context=False,
-                                retain_artifact=None):
+                                retain_artifact=None, project_compiler_evidence=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -97,6 +97,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if (type(capture_generated_context) is not bool
             or (capture_generated_context and (baseline_execution is None or not callable(retain_artifact)))):
         raise ValueError('worker_configuration_probe_capture_contract_invalid')
+    if type(project_compiler_evidence) is not bool or (project_compiler_evidence and not capture_generated_context):
+        raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:
         fields = {'schema', 'profile', 'compilation_database_sha256', 'build_seconds',
@@ -142,6 +144,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if capture_generated_context:
         result.update(schema='nico.cpp-project-configuration-probe.v4',
             generated_context=None, generated_context_verified=False)
+
+    if project_compiler_evidence:
+        result.update(schema='nico.cpp-project-configuration-probe.v5', project_compiler=None)
 
     if baseline_execution is not None:
         result.update(baseline_execution=dict(baseline_execution), tests_discovered=[], tests_passed=False,
@@ -407,6 +412,28 @@ def probe_project_configuration(source, targets, image, *, project_options,
                     'artifact': result['operations'][-1]['output_artifact']}
                 result['generated_context_verified'] = True
                 save()
+            if project_compiler_evidence:
+                from nico.assessment_cpp_project_compiler import (PROGRAM, STREAM_LIMIT,
+                    project_compiler_request, validate_project_compiler)
+                try:
+                    request = project_compiler_request(raw, targets, snapshot)
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise ValueError('worker_configuration_probe_compiler_plan_invalid') from exc
+                compiler_observed = observe('project-compiler-evidence',
+                    ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive', name,
+                     'python3', '-I', '-S', '-c', PROGRAM],
+                    data=canonical_bytes(request), limit=STREAM_LIMIT, seconds=550, external=True)
+                if (compiler_observed['exit_code'] != 0 or compiler_observed['timed_out']
+                        or compiler_observed['output_truncated']):
+                    raise ValueError('worker_configuration_probe_compiler_failed')
+                try:
+                    proof = validate_project_compiler(compiler_observed['output'], request)
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise ValueError('worker_configuration_probe_compiler_evidence_invalid') from exc
+                result['project_compiler'] = {**proof, 'artifact': result['operations'][-1]['output_artifact']}
+                save()
+                if not proof['complete']:
+                    raise ValueError('worker_configuration_probe_compiler_incomplete')
             result['status'] = 'BASELINE_EXECUTED'
 
     except (Exception, KeyboardInterrupt) as exc:
