@@ -258,9 +258,10 @@ def build_scanner_execution_stage(
     for item in records:
         name = _text(item.get("scanner_name") or item.get("tool") or "unnamed scanner")
         state = _text(item.get("state") or item.get("status") or "unknown")
-        # Localize this authored status label, never the retained native record.
+        # Structured machine states are retained evidence identifiers, not prose.
+        # Preserve them exactly; only plain display labels are localized here.
         from nico.v2_premium_report_renderer import _is_spanish
-        if _is_spanish(canonical):
+        if _is_spanish(canonical) and "_" not in state:
             from nico.comprehensive_spanish_canonical_report_v87 import _SCANNER_STATUS_ES
             state = _SCANNER_STATUS_ES.get(state.casefold(), state)
         evidence.append(
