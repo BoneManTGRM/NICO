@@ -257,10 +257,14 @@ def run_bound_tests(invoke, container, group, discovery, config):
     return result
 
 
-def validate_evidence(value, discovery, config, group):
+def validate_evidence(value, discovery, config, group, *, enclosing_duration_ms=None):
     """Reconstruct binary identity, instrumentation observations and test outcomes."""
     from nico.assessment_cpp_configuration import decode_stream
     from nico.assessment_cpp_full_project import _json
+    if enclosing_duration_ms is not None and (type(enclosing_duration_ms) is not int
+            or not 0 <= enclosing_duration_ms <= 302000):
+        raise ValueError('worker_native_test_duration_invalid')
+    observed_duration_ms = 0
     fields = {'schema', 'configuration', 'discovery_sha256', 'snapshot_operation', 'snapshots',
               'inspections', 'tests', 'error'}
     if (not isinstance(value, dict) or set(value) != fields
@@ -271,6 +275,7 @@ def validate_evidence(value, discovery, config, group):
                 (not isinstance(value['error'], str) or not re.fullmatch(r'worker_native_test_[a-z_]+', value['error'])))):
         raise ValueError('worker_native_test_evidence_invalid')
     def read(row, argv, user):
+        nonlocal observed_duration_ms
         if (not isinstance(row, dict) or set(row) != {'invocation', 'user', 'exit_code', 'timed_out',
                 'output_truncated', 'duration_ms', 'output', 'output_sha256'}
                 or row['invocation'] != argv or row['user'] != user
@@ -278,6 +283,12 @@ def validate_evidence(value, discovery, config, group):
                 or type(row['timed_out']) is not bool or type(row['output_truncated']) is not bool
                 or type(row['duration_ms']) is not int or not 0 <= row['duration_ms'] <= 32000):
             raise ValueError('worker_native_test_operation_invalid')
+        observed_duration_ms += row['duration_ms']
+        # These operations are serial children of the enclosing controller.
+        # The same two-millisecond allowance as bounded fuzz preserves rounding
+        # without letting individually valid operations hide aggregate runtime.
+        if enclosing_duration_ms is not None and observed_duration_ms > enclosing_duration_ms + 2:
+            raise ValueError('worker_native_test_duration_contradiction')
         raw = decode_stream(row['output'])
         if len(raw) > 65536 or hashlib.sha256(raw).hexdigest() != row['output_sha256']:
             raise ValueError('worker_native_test_output_mismatch')

@@ -430,7 +430,8 @@ def validate_native(native, contract):
             stage = next(s for s in stages if s['id'] == key)
             proof = None
             if raw[key]['output'] and not rows[key]['output_truncated']:
-                proof = validate_evidence(_json(raw[key]['output']), raw[group + '-discover']['output'], config, group)
+                proof = validate_evidence(_json(raw[key]['output']), raw[group + '-discover']['output'], config, group,
+                    enclosing_duration_ms=rows[key]['duration_ms'])
             if stable and success[key] and proof is not None:
                 native_test_evidence[group] = proof
                 success[key] &= proof['tests_passed']

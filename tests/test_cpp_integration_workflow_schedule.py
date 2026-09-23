@@ -14,7 +14,8 @@ REQUIRED_TEST_FILES = {
     'tests/test_cpp_combined_configuration.py', 'tests/test_cpp_compiler_evidence.py',
     'tests/test_assessment_cpp_full_project.py', 'tests/test_cpp_analysis_phase_boundary.py',
     'tests/test_cpp_native_test_binding.py', 'tests/test_assessment_worker_capacity_v1.py',
-    'tests/test_cpp_fuzz_workspace.py',
+    'tests/test_cpp_fuzz_workspace.py', 'tests/test_cpp_native_test_timing.py',
+    'tests/test_assessment_worker_archive.py',
 }
 
 
