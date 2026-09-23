@@ -26,7 +26,11 @@ def test_contract_tests_do_not_consume_the_native_job_execution_budget():
     regression = jobs['contract-regressions']
     native = jobs['owned-project-integration']
     assert native['needs'] == ['contract-regressions']
-    assert all(job['timeout-minutes'] == 5 for job in jobs.values())
+    assert all(jobs[name]['timeout-minutes'] == 5 for name in (
+        'contract-regressions', 'owned-project-integration', 'exact-source', 'llvm-toolchain-inventory'))
+    assert set(jobs) == {'contract-regressions', 'owned-project-integration', 'exact-source',
+                         'llvm-toolchain-inventory', 'project-baseline-qualification'}
+    assert jobs['project-baseline-qualification']['timeout-minutes'] == 40
     assert 'if' not in native and native.get('continue-on-error', False) is False
     assert 'services' not in regression
     commands = '\n'.join(step.get('run', '') for step in regression['steps'])

@@ -118,9 +118,12 @@ finally:
 '''
 
 
-def boundary_valid(value, *, source_required=True):
+def boundary_valid(value, *, source_required=True, profile=PROFILE):
     if not isinstance(value, dict): return False
+    from nico.assessment_worker_capacity_v1 import resources_for, BASELINE_QUALIFICATION_PROFILE
+    if profile not in {PROFILE, BASELINE_QUALIFICATION_PROFILE}: return False
     try:
+        resources = resources_for(profile)
         quota, period = map(int, value['cpu_max'].split())
         return (type(value['uid']) is int and value['uid'] == 1000
             and type(value['gid']) is int and value['gid'] == 1000
@@ -129,8 +132,8 @@ def boundary_valid(value, *, source_required=True):
             and value.get('analysis_private') is True and value.get('analysis_write_denied') is True
             and (not source_required or value['source_read_only'] is True)
             and type(value['effective_capabilities']) is int and value['effective_capabilities'] == 0
-            and period > 0 and quota == 2 * period
-            and value['memory_max'] == '2147483648' and value['pids_max'] == '256'
+            and period > 0 and quota == int(resources['cpus']) * period
+            and value['memory_max'] == str(resources['memory_bytes']) and value['pids_max'] == resources['pids']
             and value['swap_max'] == '0' and {'rw', 'nosuid', 'nodev'} <= set(value['work_mount'])
             and 'noexec' not in value['work_mount']
             and all(value[k] is True for k in ('root_read_only', 'docker_socket_absent',

@@ -14,6 +14,7 @@ from typing import Any, Mapping
 BOUNDED_CLASS = "bounded-owned-v1"
 FULL_PROJECT_CLASS = "full-project-v1"
 FULL_PROJECT_PROFILE = "cpp-full-project-v1"
+BASELINE_QUALIFICATION_PROFILE = "cpp-baseline-qualification-v1"
 
 # Existing owned compile/test/sanitizer proofs were taken inside this envelope.
 BOUNDED_RESOURCES = {
@@ -46,6 +47,16 @@ FULL_PROJECT_RESOURCES = {
     "fuzz_budget_status": "not_measured",
 }
 
+# Explicit initial qualification envelope for the observed 475-command Debug
+# workload. Existing profiles remain byte-for-byte equivalent. This is not
+# production selection or a claim the workload fits; actual measurements decide.
+BASELINE_QUALIFICATION_RESOURCES = {
+    "resource_class": "baseline-qualification-v1", "cpus": "4",
+    "memory": "12g", "memory_bytes": 12_884_901_888, "memory_swap": "12g",
+    "pids": "256", "tmpfs_bytes": 9_663_676_416,
+    "sufficient_for_bitcoin_compile": None, "compile_budget_status": "not_measured",
+}
+
 FULL_PROJECT_STAGES = (
     "cmake_configure",
     "baseline_build",
@@ -65,6 +76,8 @@ BOUNDED_PROFILES = {
 
 
 def resources_for(profile: str) -> dict[str, Any]:
+    if profile == BASELINE_QUALIFICATION_PROFILE:
+        return deepcopy(BASELINE_QUALIFICATION_RESOURCES)
     if profile == FULL_PROJECT_PROFILE:
         return deepcopy(FULL_PROJECT_RESOURCES)
     if profile in BOUNDED_PROFILES:

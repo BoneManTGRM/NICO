@@ -1,7 +1,8 @@
 """Frozen public-checkout configuration qualification, not production acceptance.
 
-Source capture uses the complete local Git tree. Target CMake runs only inside
-an existing digest-bound disposable image. No target build/test is requested.
+Source capture uses the complete local Git tree. Target commands run only
+inside a digest-bound disposable image. Configure-only is the default; the
+explicit baseline contract adds a bounded complete build and discovered tests.
 """
 from __future__ import annotations
 
@@ -145,16 +146,25 @@ def qualify_configuration_checkout(args):
         if len(raw)>16384: raise ValueError('qualification_manifest_size')
         manifest=_json(raw)
         evidence['benchmark_sha256']=hashlib.sha256(raw).hexdigest()
+        execution_contract = None
+        if getattr(args, 'baseline_execution_contract', None) is not None:
+            raw_execution = args.baseline_execution_contract.read_bytes()
+            if len(raw_execution) > 16384: raise ValueError('qualification_execution_contract_size')
+            execution_contract = _json(raw_execution)
+            evidence['execution_contract_sha256'] = hashlib.sha256(raw_execution).hexdigest()
         with tempfile.TemporaryDirectory(prefix='nico-project-qualification-') as temporary:
             root=Path(temporary)/'source'
             evidence['source']=freeze_configuration_checkout(args.qualification_source,root,manifest)
             evidence['stage']='source_frozen'; retain()
             def save_probe(value):
-                evidence.update(stage='isolated_configuration',probe=value); retain()
+                evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
+                    probe=value, compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,
-                project_options=manifest['project_options'],retain=save_probe)
+                project_options=manifest['project_options'],retain=save_probe, baseline_execution=execution_contract)
             evidence['status']=result['status']
-            evidence['stage']='completed' if result['status']=='CONFIGURATION_CAPTURED' else 'configuration_unproven'
+            evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
+            success = 'BASELINE_EXECUTED' if execution_contract is not None else 'CONFIGURATION_CAPTURED'
+            evidence['stage']='completed' if result['status']==success else 'execution_unproven' if execution_contract is not None else 'configuration_unproven'
     except (Exception, KeyboardInterrupt) as exc:
         import re
         code=str(exc) if isinstance(exc,ValueError) else ''
@@ -163,8 +173,8 @@ def qualify_configuration_checkout(args):
     finally:
         retain()
         print(json.dumps({'status':evidence['status'],'stage':evidence['stage'],
-                          'compiled':False,'tests_executed':False,'production_qualified':False}))
-    if evidence['status']!='CONFIGURATION_CAPTURED':
+                          'compiled':evidence['compiled'],'tests_executed':evidence['tests_executed'],'production_qualified':False}))
+    if evidence['stage']!='completed':
         raise ValueError('qualification_configuration_unproven')
 
 
@@ -173,6 +183,7 @@ def main():
     parser.add_argument('--image', required=True)
     parser.add_argument('--qualification-source', type=Path, required=True)
     parser.add_argument('--qualification-manifest', type=Path, required=True)
+    parser.add_argument('--baseline-execution-contract', type=Path)
     parser.add_argument('--output', type=Path, default=Path('cpp-configuration-qualification'))
     qualify_configuration_checkout(parser.parse_args())
 
