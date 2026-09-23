@@ -43,7 +43,7 @@ def fixture(*, generated_headers=False, bounded_fuzz=False, project_dependencies
         result['CMakeLists.txt'] = result['CMakeLists.txt'].replace(
             'add_library(control_sum STATIC sum.cpp)', 'add_subdirectory(src/library)')
         result['src/library/CMakeLists.txt'] = (
-            'find_package(Boost 1.74 EXACT CONFIG REQUIRED)\n'
+            'find_package(Boost 1.74.0 EXACT CONFIG REQUIRED)\n'
             'find_package(SQLite3 3.40 REQUIRED)\n'
             'add_library(control_sum STATIC sum.cpp)\n'
             'target_include_directories(control_sum PUBLIC "${PROJECT_SOURCE_DIR}")\n'

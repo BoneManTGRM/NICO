@@ -104,7 +104,7 @@ def test_dependency_control_selects_nested_build_and_real_library_use():
     assert 'sum.cpp' not in files
     assert 'src/library/sum.cpp' in files and 'src/library/CMakeLists.txt' in files
     assert 'add_subdirectory(src/library)' in files['CMakeLists.txt']
-    assert 'find_package(Boost 1.74 EXACT CONFIG REQUIRED)' in files['src/library/CMakeLists.txt']
+    assert 'find_package(Boost 1.74.0 EXACT CONFIG REQUIRED)' in files['src/library/CMakeLists.txt']
     assert 'SQLite::SQLite3' in files['src/library/CMakeLists.txt']
     assert 'BOOST_VERSION == 107400' in files['src/library/sum.cpp']
     assert 'sqlite3_libversion_number()' in files['src/library/sum.cpp']
@@ -142,3 +142,16 @@ def test_dependency_fixture_preserves_original_control_and_failure_scope():
 def test_malformed_dependency_name_is_rejected_before_any_io(value):
     contract = project_lock(); contract['packages'][0]['package'] = value
     with pytest.raises(ValueError): tool.validate_lock(contract)
+
+
+def test_owned_control_exact_boost_request_matches_pinned_upstream_version():
+    """Native configure rejected 1.74 EXACT against the installed 1.74.0 package."""
+    from scripts.qualify_cpp_full_project_integration import fixture
+    root = Path(__file__).resolve().parents[1]
+    lock = json.loads((root / 'docker/assessment-project-dependencies.lock.json').read_text())
+    package = next(row for row in lock['packages'] if row['package'] == 'libboost1.74-dev')
+    upstream = package['version'].split('+', 1)[0]
+    assert upstream.count('.') == 2
+    cmake = fixture(generated_headers=True, project_dependencies=True)['src/library/CMakeLists.txt']
+    assert 'find_package(Boost ' + upstream + ' EXACT CONFIG REQUIRED)' in cmake
+    assert 'Boost::headers' in cmake and 'SQLite::SQLite3' in cmake
