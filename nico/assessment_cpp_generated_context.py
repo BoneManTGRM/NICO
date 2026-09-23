@@ -293,6 +293,70 @@ def derive_nested_database(raw, units, group, headers):
     return json.dumps(result, sort_keys=True, separators=(',', ':')).encode()
 
 
+
+def _project_option(arg):
+    """Reviewed GCC 14 option forms with no file, plugin or subprocess operand.
+
+    These retain requested compile semantics; accepting a flag is not proof
+    that the resulting binary implements or benefits from a mitigation.
+    """
+    return arg in {
+        '-fstack-protector', '-fstack-protector-all', '-fstack-protector-strong',
+        '-fstack-protector-explicit', '-fstack-clash-protection',
+        '-fvisibility=default', '-fvisibility=hidden', '-fvisibility=internal',
+        '-fvisibility=protected', '-fvisibility-inlines-hidden',
+        '-fstack-reuse=all', '-fstack-reuse=named_vars', '-fstack-reuse=none',
+    } or re.fullmatch(r'-W(?:no-)?error=[A-Za-z][A-Za-z0-9_-]{0,99}', arg) is not None
+
+
+def derive_project_database(raw, units, group, headers):
+    """Preserve reviewed options through the unchanged source/include allowlist.
+
+    Internal placeholders keep each flag in its original position. They cannot
+    be provided by source input and are removed before any tool invocation.
+    Operand errors still go through the old parser; nothing is silently dropped.
+    """
+    rows = _strict_json(raw)
+    if not isinstance(rows, list) or len(rows) != len(units) or not rows:
+        raise ValueError('worker_generated_database_invalid')
+    replacements = {}
+    prefix = '-D__NICO_PROJECT_OPTION_'
+    for row_index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise ValueError('worker_generated_database_invalid')
+        argv = row.get('arguments')
+        if argv is None and isinstance(row.get('command'), str):
+            argv = shlex.split(row['command'])
+        if (not isinstance(argv, list) or not argv or len(argv) > 4096
+                or any(not isinstance(arg, str) or prefix in arg for arg in argv)):
+            raise ValueError('worker_generated_project_invocation_invalid')
+        args = list(argv)
+        for index in range(1, len(args)):
+            if _project_option(args[index]):
+                marker = prefix + str(row_index) + '_' + str(index) + '=1'
+                replacements[marker] = args[index]
+                args[index] = marker
+        row['arguments'] = args
+    normalized = derive_nested_database(
+        json.dumps(rows, sort_keys=True, separators=(',', ':')).encode(), units, group, headers)
+    result = _strict_json(normalized)
+    for row in result:
+        row['arguments'] = [replacements.get(arg, arg) for arg in row['arguments']]
+    return json.dumps(result, sort_keys=True, separators=(',', ':')).encode()
+
+
+def configured_database_parser(config):
+    """Select an explicit supported dialect; preserve legacy program meanings."""
+    mode = config.get('cmake_layout')
+    if mode == 'nested-source-v2-gcc-options':
+        return derive_project_database
+    if mode == 'nested-source-v1':
+        return derive_nested_database
+    if mode is None:
+        return derive_database
+    raise ValueError('worker_generated_configuration_invalid')
+
+
 def collect_compiler(request):
     """Compile captured configuration, retaining original/generated populations."""
     import resource
@@ -409,7 +473,7 @@ def validate_generated_compiler(raw, database, context_raw, contract, group):
     from nico.assessment_cpp_configuration import decode_stream
     units, headers = contract['configuration']['translation_units'], contract['configuration']['generated_headers']
     _database(database, units, build_directory(group), None if group == 'baseline' else group,
-              nested=contract['configuration'].get('cmake_layout') == 'nested-source-v1')
+              nested=contract['configuration'].get('cmake_layout') in ('nested-source-v1', 'nested-source-v2-gcc-options'))
     context = validate_snapshot(_strict_json(context_raw), group, headers, decoder=decode_stream)
     evidence = _strict_json(raw)
     if isinstance(evidence, dict) and evidence.get('schema') == 'nico.cpp-generated-failure.v1':
@@ -419,7 +483,7 @@ def validate_generated_compiler(raw, database, context_raw, contract, group):
             'generated_header_inclusions': {}, 'object_instrumentation_observed_units': [],
             'test_binary_instrumentation_verified': False,
             'native_evidence_sha256': hashlib.sha256(raw).hexdigest(), 'error': evidence['error']}
-    derive = derive_nested_database if contract['configuration'].get('cmake_layout') == 'nested-source-v1' else derive_database
+    derive = configured_database_parser(contract['configuration'])
     derived = derive(database, units, group, headers)
     plans = _strict_json(derived)
     fields = {'schema', 'configuration', 'database_sha256', 'analysis_database_sha256',
@@ -523,3 +587,11 @@ NESTED_COMPILER_PROGRAM = COMPILER_PROGRAM.replace(
     inspect.getsource(derive_database),
     inspect.getsource(valid_build_directory) + '\n' + inspect.getsource(derive_nested_database).replace(
         'def derive_nested_database(', 'def derive_database(', 1), 1)
+
+
+# The opt-in dialect is a separate program. Neither prior embedded program is
+# regenerated with different semantics, so old native receipts remain verifiable.
+PROJECT_COMPILER_PROGRAM = NESTED_COMPILER_PROGRAM.replace(
+    inspect.getsource(derive_nested_database).replace('def derive_nested_database(', 'def derive_database(', 1),
+    inspect.getsource(derive_nested_database) + '\n' + inspect.getsource(_project_option) + '\n' +
+    inspect.getsource(derive_project_database).replace('def derive_project_database(', 'def derive_database(', 1), 1)

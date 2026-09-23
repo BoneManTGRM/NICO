@@ -24,10 +24,12 @@ from scripts.qualify_cpp_full_project_control import FIXTURE
 from scripts.qualify_cppcheck_worker_control import consume_control
 
 
-def fixture(*, generated_headers=False, bounded_fuzz=False, project_dependencies=False):
+def fixture(*, generated_headers=False, bounded_fuzz=False, project_dependencies=False, project_compiler_options=False):
     """Retain the original fixture by default; opt in to a real configured header."""
     if type(project_dependencies) is not bool or (project_dependencies and not generated_headers):
         raise ValueError('owned_dependency_generated_context_required')
+    if type(project_compiler_options) is not bool or (project_compiler_options and not project_dependencies):
+        raise ValueError('owned_project_compiler_context_required')
     result = dict(FIXTURE)
     if generated_headers:
         result['config.h.in'] = '#pragma once\n#define NICO_CONFIGURED_OFFSET @NICO_CONFIGURED_OFFSET@\n'
@@ -67,6 +69,21 @@ def fixture(*, generated_headers=False, bounded_fuzz=False, project_dependencies
             '    event_base_free(base);\n'
             '    boost::array<int, 2> values = {{a, b}};\n'
             '    return values[0] + values[1] + NICO_CONFIGURED_OFFSET;\n}\n')
+    if project_compiler_options:
+        result['src/library/CMakeLists.txt'] += (
+            'target_compile_options(control_sum PRIVATE -fstack-protector-strong '
+            '-fstack-clash-protection -fvisibility=hidden -Werror=return-type)\n')
+        result['src/library/CMakeLists.txt'] = result['src/library/CMakeLists.txt'].replace(
+            'add_library(control_sum STATIC sum.cpp)', 'add_library(control_sum STATIC sum.cpp helper.c)')
+        result['src/library/CMakeLists.txt'] += 'target_compile_features(control_sum PRIVATE c_std_11 cxx_std_20)\n'
+        result['sum.hpp'] += '\n#ifdef __cplusplus\nextern "C"\n#endif\nint control_identity(int value);\n'
+        result['src/library/helper.c'] = (
+            '#include "sum.hpp"\nint control_identity(int value) {\n'
+            '    volatile int saved[4] = {value, 0, 0, 0};\n    return saved[0];\n}\n')
+        result['src/library/sum.cpp'] = result['src/library/sum.cpp'].replace(
+            'return values[0] + values[1] + NICO_CONFIGURED_OFFSET;',
+            'return control_identity(values[0] + values[1] + NICO_CONFIGURED_OFFSET);')
+
     if bounded_fuzz:
         result['corpus/seed'] = 'X'
         result['fuzz.cpp'] = """#include <stddef.h>
@@ -88,7 +105,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     return result
 
 
-def plan(image, *, negative=False, generated_headers=False, bounded_fuzz=False, project_dependencies=False):
+def plan(image, *, negative=False, generated_headers=False, bounded_fuzz=False, project_dependencies=False, project_compiler_options=False):
     fuzz = None
     if bounded_fuzz:
         from nico.assessment_cpp_fuzz import fuzz_plan
@@ -97,12 +114,14 @@ def plan(image, *, negative=False, generated_headers=False, bounded_fuzz=False, 
             targets=[{'name': 'control', 'binary': 'fuzz_control', 'corpus': ['corpus/seed'], 'environment': {}}],
             runs=128, seconds=2, seed=7)
     return {'profile': PROFILE, 'tool_version': '2.17.1', 'image_digest': image,
-        'configuration': configuration(units=['main.cpp', 'src/library/sum.cpp' if project_dependencies else 'sum.cpp'],
+        'configuration': configuration(units=['main.cpp', 'src/library/sum.cpp' if project_dependencies else 'sum.cpp',
+            *(['src/library/helper.c'] if project_compiler_options else [])],
             unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True, native_test_evidence=True,
-            generated_headers=['generated/config.h'] if generated_headers else None, bounded_fuzz=fuzz, nested_cmake=project_dependencies),
+            generated_headers=['generated/config.h'] if generated_headers else None, bounded_fuzz=fuzz, nested_cmake=project_dependencies, project_compiler_options=project_compiler_options),
         'targets': {path: hashlib.sha256(text.encode()).hexdigest()
                     for path, text in fixture(generated_headers=generated_headers, bounded_fuzz=bounded_fuzz,
-                                              project_dependencies=project_dependencies).items()},
+                                              project_dependencies=project_dependencies,
+                                              project_compiler_options=project_compiler_options).items()},
         'limits': {'max_attempts': 1, 'wall_seconds': 180, 'lease_seconds': 30},
         'max_receipt_bytes': (8 if bounded_fuzz else 2) * 1024 * 1024}
 
@@ -189,6 +208,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
     parser.add_argument('--bounded-fuzz', action='store_true')
+    parser.add_argument('--project-compiler-options', action='store_true',
+                        help='Require source-bound GCC hardening and diagnostic options in the owned control.')
     parser.add_argument('--project-dependencies', action='store_true',
                         help='Exercise pinned Boost/SQLite in the owned nested CMake control.')
     parser.add_argument('--generated-headers', action='store_true', help='Qualify the opt-in frozen generated-header configuration.')
@@ -227,11 +248,11 @@ def main():
             git('init', '--bare', '.')
             tree = write_fixture_tree(git, fixture(
                 generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz,
-                project_dependencies=args.project_dependencies))
+                project_dependencies=args.project_dependencies, project_compiler_options=args.project_compiler_options))
             revision = git('commit-tree', tree, data=b'Owned CMake integration fixture\n')
             for negative in (False, True):
                 contract = plan(args.image, negative=negative, generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz,
-                    project_dependencies=args.project_dependencies); observations = {}
+                    project_dependencies=args.project_dependencies, project_compiler_options=args.project_compiler_options); observations = {}
                 evidence.update(stage='control_requested', active_control_negative=negative)
                 retain()
                 result = consume_control(contract, git_dir, tree, revision, release, observations)
@@ -269,6 +290,17 @@ def main():
                         assert {'/usr/include/boost/array.hpp', '/usr/include/sqlite3.h',
                                 '/usr/include/event2/event.h', '/usr/include/event2/thread.h'}.issubset(
                             proof['toolchain_header_paths']), 'project_dependency_header_evidence_missing'
+                    if args.project_compiler_options:
+                        native_step = next(r for r in result['receipt']['native']['steps']
+                                           if r['id'] == group + '-compiler-evidence')
+                        native_proof = json.loads(base64.b64decode(native_step['output'], validate=True))
+                        records = {r['unit']: r for r in native_proof['records']}
+                        options = ['-fstack-protector-strong', '-fstack-clash-protection',
+                                   '-fvisibility=hidden', '-Werror=return-type']
+                        for unit in ('src/library/helper.c', library_unit):
+                            assert [a for a in records[unit]['invocation'] if a in options] == options, 'project_compiler_options_not_preserved'
+                        symbols = base64.b64decode(records['src/library/helper.c']['nm']['output'], validate=True)
+                        assert any(line.split()[-1:] == [b'__stack_chk_fail'] for line in symbols.splitlines()), 'owned_stack_protector_symbol_missing'
                     if group != 'baseline':
                         assert proof['object_instrumentation_observed_units'], 'instrumented_object_symbols_missing'
                     assert proof['test_binary_instrumentation_verified'] is False

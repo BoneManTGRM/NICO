@@ -23,7 +23,7 @@ CMAKE_VERSION = '3.31.6'
 
 
 def configuration(*, units, unit_tests, integration_tests, compiler_evidence=False,
-                  native_test_evidence=False, generated_headers=None, bounded_fuzz=None, nested_cmake=False):
+                  native_test_evidence=False, generated_headers=None, bounded_fuzz=None, nested_cmake=False, project_compiler_options=False):
     """Create a bounded configuration, not an authorization/qualification flag."""
     if type(compiler_evidence) is not bool or type(native_test_evidence) is not bool or (native_test_evidence and not compiler_evidence):
         raise ValueError('worker_compiler_mode_invalid')
@@ -53,11 +53,13 @@ def configuration(*, units, unit_tests, integration_tests, compiler_evidence=Fal
                       bounded_fuzz=deepcopy(bounded_fuzz))
     if type(nested_cmake) is not bool:
         raise ValueError('worker_nested_cmake_mode_invalid')
+    if type(project_compiler_options) is not bool or (project_compiler_options and not nested_cmake):
+        raise ValueError('worker_project_compiler_options_invalid')
     if nested_cmake:
         if generated_headers is None:
             raise ValueError('worker_nested_cmake_generated_context_required')
         result.update(nested_base_schema=result['schema'], schema='nico.cpp-cmake-configuration.v6',
-                      cmake_layout='nested-source-v1')
+                      cmake_layout=('nested-source-v2-gcc-options' if project_compiler_options else 'nested-source-v1'))
     return result
 
 
@@ -79,7 +81,7 @@ def validate_configuration(config, targets):
         schema = base.pop('nested_base_schema', None)
         mode = base.pop('cmake_layout', None)
         if (not isinstance(schema, str) or schema not in {'nico.cpp-cmake-configuration.v4', 'nico.cpp-cmake-configuration.v5'}
-                or mode != 'nested-source-v1' or not base.get('generated_headers')):
+                or mode not in ('nested-source-v1', 'nested-source-v2-gcc-options') or not base.get('generated_headers')):
             raise ValueError('worker_nested_cmake_configuration_invalid')
         base['schema'] = schema
         validate_configuration(base, targets)
@@ -173,8 +175,9 @@ def execution_steps(contract):
         add(group + '-build', build, (group + '-configure',))
         if config.get('compiler_evidence'):
             if generated:
-                from nico.assessment_cpp_generated_context import SNAPSHOT_PROGRAM, COMPILER_PROGRAM, NESTED_COMPILER_PROGRAM
-                PROGRAM = (NESTED_COMPILER_PROGRAM if config.get('cmake_layout') == 'nested-source-v1' else COMPILER_PROGRAM)
+                from nico.assessment_cpp_generated_context import SNAPSHOT_PROGRAM, COMPILER_PROGRAM, NESTED_COMPILER_PROGRAM, PROJECT_COMPILER_PROGRAM
+                PROGRAM = (PROJECT_COMPILER_PROGRAM if config.get('cmake_layout') == 'nested-source-v2-gcc-options' else
+                           NESTED_COMPILER_PROGRAM if config.get('cmake_layout') == 'nested-source-v1' else COMPILER_PROGRAM)
                 add(group + '-generated-context', ['python3', '-I', '-S', '-c', SNAPSHOT_PROGRAM],
                     (group + '-build',), generated_configuration=group)
             else:
@@ -364,7 +367,7 @@ def validate_native(native, contract):
             if not success[key]: raise ValueError('configure_incomplete')
             _database(raw[key].get('compilation_database', b''), config['translation_units'], directory,
                       None if group == 'baseline' else group,
-                      nested=config.get('cmake_layout') == 'nested-source-v1')
+                      nested=config.get('cmake_layout') in ('nested-source-v1', 'nested-source-v2-gcc-options'))
             databases[group] = True
         except (ValueError, TypeError, UnicodeError):
             databases[group] = False
@@ -406,8 +409,8 @@ def validate_native(native, contract):
     analysis_input_frozen = (bool(raw['static-analysis'].get('compilation_database')) and
         raw['static-analysis'].get('compilation_database') == raw['baseline-configure'].get('compilation_database'))
     if generated_contexts:
-        from nico.assessment_cpp_generated_context import derive_database, derive_nested_database
-        derive = derive_nested_database if config.get('cmake_layout') == 'nested-source-v1' else derive_database
+        from nico.assessment_cpp_generated_context import configured_database_parser
+        derive = configured_database_parser(config)
         try:
             expected_database = derive(raw['baseline-configure'].get('compilation_database', b''),
                 units, 'baseline', config['generated_headers'])
