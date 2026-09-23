@@ -1981,13 +1981,25 @@ def _historical_failure_rate_es(match: re.Match[str]) -> str:
     return f"Tasa histórica de fallos reales: {rendered}"
 
 
+def _scanner_status_visible(status: str) -> str:
+    """Keep machine identifiers and still show the Spanish display label.
+
+    Ordinary one-word labels such as completed/failed stay translated.
+    Identifiers such as completed_with_findings stay exact, with the label
+    beside them. Scores, evidence, and execution decisions are untouched.
+    """
+    raw = str(status or "").strip()
+    label = _SCANNER_STATUS_ES.get(raw.casefold())
+    if label is None:
+        raise ValueError(f"missing Spanish scanner status translation: {raw[:120]}")
+    if "_" in raw:
+        return f"{raw} ({label})"
+    return label
+
+
 def _scanner_execution_line_es(match: re.Match[str]) -> str:
     status = match.group("status")
-    translated_status = _SCANNER_STATUS_ES.get(status.casefold())
-    if translated_status is None:
-        raise ValueError(
-            f"missing Spanish scanner status translation: {status[:120]}"
-        )
+    translated_status = _scanner_status_visible(status)
     artifact_hash = match.group("artifact_hash")
     rendered_hash = (
         "no disponible"
@@ -2015,11 +2027,7 @@ def _scanner_limitation_es(match: re.Match[str]) -> str:
     scanner = match.group("scanner")
     status = match.group("status").strip()
     reason = match.group("reason").strip()
-    translated_status = _SCANNER_STATUS_ES.get(status.casefold())
-    if translated_status is None:
-        raise ValueError(
-            f"missing Spanish scanner status translation: {status[:120]}"
-        )
+    translated_status = _scanner_status_visible(status)
     translated_reasons: list[str] = []
     for raw_clause in reason.split(";"):
         clause = raw_clause.strip()
@@ -2029,11 +2037,8 @@ def _scanner_limitation_es(match: re.Match[str]) -> str:
         )
         if status_clause is not None:
             raw_status = status_clause.group("status")
-            clause_status = _SCANNER_STATUS_ES.get(raw_status.casefold())
-            if clause_status is not None:
-                translated_reasons.append(
-                    "estado=" + clause_status
-                )
+            if raw_status.casefold() in _SCANNER_STATUS_ES:
+                translated_reasons.append("estado=" + _scanner_status_visible(raw_status))
                 continue
         missing_binary = re.fullmatch(
             r"(?P<binary>[A-Za-z0-9_.+-]+)(?: binary)? is not installed in "

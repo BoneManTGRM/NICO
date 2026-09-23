@@ -1,5 +1,9 @@
 # Active mission — Comprehensive Bitcoin capability qualification
 
+## Spanish scanner identifiers retained — 2026-09-22
+
+Published on `feat/cpp-full-project-capacity`. Spanish scanner lines still translate ordinary one-word labels (`completed` → completada, `failed` → fallida). Machine identifiers such as `completed_with_findings` stay exact, with the Spanish label beside them. Native evidence, scores, approval rules, worker limits, and execution decisions are unchanged. This does not finish dependency handling, bounded fuzzing, Bitcoin qualification, or production acceptance.
+
 ## Full-project worker capacity — 2026-09-22 (declared; Bitcoin not executed)
 
 Immediate priority from the owner: raise worker capacity and declare a full-project profile. Existing bounded proofs stay at 0.5 CPU / 256 MiB / 32 pids. New class `full-project-v1` is 2 CPU / 2 GiB / 256 pids, which is above Bitcoin Core's documented 1,610,612,736-byte compile minimum. Sanitizer and fuzz memory budgets are `not_measured`; they are not invented. Profile `cpp-full-project-v1` lists cmake configure, build, dependencies, unit, integration, sanitizer, and bounded fuzz. `bitcoin_executed` stays false. Production selection attaches that profile only after a controlled-project receipt and still refuses a Bitcoin run whose report is unverified. The normal assessment flow does not turn the profile on by itself.
