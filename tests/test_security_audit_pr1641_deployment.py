@@ -120,3 +120,49 @@ def test_mixed_population_retains_verified_and_unknown_blockers(tmp_path: Path) 
 def test_known_identifier_cannot_make_incomplete_scanner_pass(tmp_path: Path, status: str) -> None:
     _write(tmp_path, [_finding()], status=status)
     assert _trufflehog(tmp_path)["status"] == "unavailable"
+
+
+SERVING_DEPLOYMENT_ID = 'c6d476c4-e692-4030-9e6b-831df24231ff'
+
+
+def _serving_finding():
+    finding = _finding()
+    finding['Raw'] = SERVING_DEPLOYMENT_ID
+    return finding
+
+
+def test_current_serving_deployment_is_retained_as_exact_nonsecret(tmp_path):
+    finding = _serving_finding()
+    raw = _write(tmp_path, [finding])
+    result = _trufflehog(tmp_path)
+    assert result['blocking'] == 0
+    assert result['finding_count'] == 1
+    assert result['approved_nonsecret_identifiers'] == 1
+    assert result['triage'][0]['disposition'] == 'approved_nonsecret_deployment_identifier'
+    assert result['artifact_hash'] == hashlib.sha256(raw).hexdigest()
+    assert (tmp_path / 'trufflehog.json').read_bytes() == raw
+    assert SERVING_DEPLOYMENT_ID not in json.dumps(result)
+
+
+@pytest.mark.parametrize('field,value', [
+    ('Verified', True), ('Verified', None), ('Verified', 'false'), ('Verified', 0),
+    ('DetectorName', 'Other'), ('DetectorName', None),
+    ('Raw', SERVING_DEPLOYMENT_ID.upper()), ('Raw', 'unreviewed-value'),
+    ('path', 'README.md'), ('path', './NICO-Ship-Checkpoint.md'),
+])
+def test_serving_deployment_disposition_does_not_expand_scope(tmp_path, field, value):
+    finding = _serving_finding()
+    if field == 'path': finding['SourceMetadata']['Data']['Git']['file'] = value
+    else: finding[field] = value
+    _write(tmp_path, [finding])
+    assert _trufflehog(tmp_path)['blocking'] == 1
+
+
+def test_serving_identifier_does_not_hide_a_mixed_secret_population(tmp_path):
+    known, verified, unknown = _serving_finding(), _serving_finding(), _serving_finding()
+    verified['Verified'] = True
+    unknown['Raw'] = 'unreviewed-value'
+    raw = _write(tmp_path, [known, verified, unknown])
+    value = _trufflehog(tmp_path)
+    assert value['finding_count'] == 3 and value['blocking'] == 2
+    assert (tmp_path / 'trufflehog.json').read_bytes() == raw

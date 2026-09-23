@@ -24,7 +24,9 @@ from nico.assessment_cpp_generated_context import (
 # Project-wide snapshots are opt-in. The earlier header-only contract and all
 # four earlier embedded programs above retain their exact bytes and limits.
 PROJECT_GENERATED_MAX_FILES = 2048
-PROJECT_GENERATED_MAX_FILE_BYTES = 8 * 1024 * 1024
+# Byte-table headers can expand well beyond their raw asset size. This
+# per-file bound shares, rather than raises, the existing aggregate allowance.
+PROJECT_GENERATED_MAX_FILE_BYTES = 32 * 1024 * 1024
 PROJECT_GENERATED_MAX_BYTES = 32 * 1024 * 1024
 PROJECT_GENERATED_SCAN_LIMIT = 40000
 PROJECT_GENERATED_STREAM_LIMIT = 48 * 1024 * 1024

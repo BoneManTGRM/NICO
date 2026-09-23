@@ -21,7 +21,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nico.assessment_cpp_compiler_evidence import _source_path, safe_compile_argv, _regular_bytes, _run
 from nico.assessment_cpp_generated_context import _project_option, _stable_bytes
-from nico.assessment_cpp_project_snapshot import PROJECT_HEADER_SUFFIXES
+from nico.assessment_cpp_project_snapshot import PROJECT_HEADER_SUFFIXES, PROJECT_GENERATED_MAX_FILE_BYTES
+
+GENERATED_FILE_LIMIT = PROJECT_GENERATED_MAX_FILE_BYTES
 
 LIMITS = {'wall_seconds': 540, 'case_seconds': 90, 'parallel': 4}
 STREAM_LIMIT = 48 * 1024 * 1024
@@ -176,7 +178,7 @@ def _dependency_populations(raw, request):
 def _verify_input(root, relative, digest, size=None, generated=False):
     path = Path(root) / relative
     info = path.lstat()
-    maximum = 8 * 1024 * 1024 if generated else 16 * 1024 * 1024
+    maximum = GENERATED_FILE_LIMIT if generated else 16 * 1024 * 1024
     raw = _stable_bytes(root, relative, maximum)
     if (info.st_uid != (1001 if generated else 0) or stat.S_IMODE(info.st_mode) & 0o222
             or (size is not None and len(raw) != size) or _digest(raw) != digest):
@@ -349,6 +351,7 @@ def run_project_compiler():
 PROGRAM = ('import base64, hashlib, json, os, posixpath, re, shlex, stat, subprocess, time\n'
     'from pathlib import Path\nfrom concurrent.futures import ThreadPoolExecutor\n'
     + f'LIMITS={LIMITS!r}\nSTREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\n'
+    + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
     + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _source_path, safe_compile_argv,
         _regular_bytes, _run, _project_option, _stable_bytes, _extra_option, _syntax_argv,
         _dependency_populations, _verify_input, collect_project_compiler, run_project_compiler))

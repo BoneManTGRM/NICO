@@ -422,6 +422,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
                 "2b28038ac24e811f5f664df493ecd9296b09c7917b51a54974bcb5cbcfb5ddce",
                 "6fca1bec657f5f87061bb05e4f689a3f669c66ddd8d93f1bdb90da530db2e452",
                 "ef9eb96c9686e4314a4a0dfed94e8c026ca73e7e350895ac129ce57164da3d10",
+                "ab6604b5617b61f4670629e75f542f1d93c433174affb467e76d73a5eda1d642",
             }
         ):
             # Artifact10589039830 and authenticated Railway deployment metadata
@@ -444,6 +445,8 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             # PR1641 artifact10717384136 and authenticated Railway metadata
             # identify the added digest as the replaced initial d5b3de33 deployment.
             # Its REMOVED status does not make the deployment ID a credential.
+            # PR1641 artifact10780830520 and authenticated Railway metadata
+            # identify the final digest as the SUCCESS faaa10b0 deployment ID.
             disposition = "approved_nonsecret_deployment_identifier"
             approved_nonsecret_identifiers += 1
         elif (
