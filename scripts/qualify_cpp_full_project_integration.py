@@ -27,7 +27,7 @@ from scripts.qualify_cppcheck_worker_control import consume_control
 def plan(image, *, negative=False):
     return {'profile': PROFILE, 'tool_version': '2.17.1', 'image_digest': image,
         'configuration': configuration(units=['main.cpp', 'sum.cpp'],
-            unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True),
+            unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True, native_test_evidence=True),
         'targets': {path: hashlib.sha256(text.encode()).hexdigest() for path, text in FIXTURE.items()},
         'limits': {'max_attempts': 1, 'wall_seconds': 180, 'lease_seconds': 30},
         'max_receipt_bytes': 2 * 1024 * 1024}
@@ -107,6 +107,10 @@ def main():
                 assert record['completed'] is True, 'configuration_aware_static_analysis_incomplete'
                 assert build['build_completed'] is True, 'project_build_incomplete'
                 assert build['source_read_only_verified'] is True
+                for group in ('address', 'undefined'):
+                    proof = build['native_test_binary_evidence'][group]
+                    assert proof['binary_instrumentation_verified'] is True, 'native_test_binary_binding_incomplete'
+                    assert proof['tests_passed'] is (not negative), 'native_test_binary_outcome_changed'
                 assert build['compiled_translation_units'] == ['main.cpp', 'sum.cpp'], 'direct_compiler_population_incomplete'
                 assert record['cppcheck_source_coverage']['header_context_verified'] is True, 'compiler_header_context_incomplete'
                 for group in ('baseline', 'address', 'undefined'):

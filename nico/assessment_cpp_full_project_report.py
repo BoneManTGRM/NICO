@@ -31,7 +31,8 @@ def enrich_scanner_stage(canonical, stage):
               'unit': 'pruebas unitarias', 'integration': 'pruebas de integración',
               'compiler-evidence': 'evidencia del compilador',
               'static-analysis': 'análisis estático', 'cmake-version': 'versión de CMake',
-              'compiler-version': 'versión del compilador', 'analyzer-version': 'versión del analizador'}
+              'compiler-version': 'versión del compilador', 'analyzer-version': 'versión del analizador',
+              'native-test-evidence': 'verificación del binario de prueba'}
     for record in records:
         provenance = record.get('worker_provenance')
         provenance = provenance if isinstance(provenance, Mapping) else {}
@@ -73,7 +74,8 @@ def enrich_scanner_stage(canonical, stage):
             shown = states.get(state, 'desconocido') if es else state
             code = row.get('exit_code')
             code_text = str(code) if type(code) is int else ('no disponible' if es else 'unavailable')
-            line = f'{title}: {shown}; ' + ('salida nativa=' if es else 'native exit=') + code_text
+            exit_label = ('resultado del controlador=' if es else 'controller result=') if row.get('observation_kind') == 'controller' else ('salida nativa=' if es else 'native exit=')
+            line = f'{title}: {shown}; ' + exit_label + code_text
             selected = row.get('required_tests')
             if isinstance(selected, list):
                 executed, passed = row.get('executed_tests'), row.get('passed_tests')
@@ -95,6 +97,21 @@ def enrich_scanner_stage(canonical, stage):
             evidence.append(line)
             evidence.append('Los símbolos de los objetos compilados no verifican la instrumentación de los ejecutables de las pruebas.' if es
                             else 'Compiled-object symbols do not verify instrumentation of the test executables.')
+        for group, proof in (build.get('native_test_binary_evidence') or {}).items():
+            if not isinstance(proof, Mapping): continue
+            required = len(proof.get('required_tests') or [])
+            bound = len(proof.get('binary_bound_tests') or [])
+            passed = len(proof.get('passed_tests') or [])
+            line = (f'Repeticiones aisladas de binarios / {labels.get(group, group)}: {bound}/{required} vinculadas; {passed}/{required} aprobadas.' if es
+                    else f'Isolated binary replays / {group}: {bound}/{required} bound; {passed}/{required} passed.')
+            summaries.append(line)
+            evidence.append(line)
+            for outcome in proof.get('native_outcomes') or []:
+                name = str(outcome.get('name') or '')
+                code = outcome.get('exit_code')
+                timed_out = outcome.get('timed_out') is True
+                evidence.append((f'Prueba aislada / {labels.get(group, group)} / {name}: salida nativa={code}; tiempo agotado=' + ('sí' if timed_out else 'no') + '.' if es
+                    else f'Isolated test / {group} / {name}: native exit={code}; timed out=' + ('yes' if timed_out else 'no') + '.'))
         header_verified = (record.get('cppcheck_source_coverage') or {}).get('header_context_verified') is True
         if es:
             gaps.append('La ejecución de libFuzzer no está verificada; la calificación integral sigue incompleta.' if header_verified else
@@ -107,8 +124,13 @@ def enrich_scanner_stage(canonical, stage):
         peak = build.get('memory_peak_bytes')
         if type(peak) is int:
             evidence.append(('Pico de memoria del contenedor: ' if es else 'Container memory peak: ') + str(peak) + ' bytes.')
-    gaps.append(COPY_ES['Sanitizer flags are verified in configuration; independent binary instrumentation is not established.'] if es
-        else 'Sanitizer flags are verified in configuration; independent binary instrumentation is not established.')
+    has_replays = any(isinstance(r['cpp_build_evidence'].get('native_test_binary_evidence'), Mapping) for r in records)
+    if has_replays:
+        from nico.assessment_cpp_native_tests import ORIGINAL_CTEST_LIMIT
+        gaps.append(COPY_ES[ORIGINAL_CTEST_LIMIT] if es else ORIGINAL_CTEST_LIMIT)
+    else:
+        gaps.append(COPY_ES['Sanitizer flags are verified in configuration; independent binary instrumentation is not established.'] if es
+            else 'Sanitizer flags are verified in configuration; independent binary instrumentation is not established.')
     out['summary'] = ' '.join([out.get('summary', ''), *summaries])
     out['evidence'] = [*(out.get('evidence') or []), *evidence]
     out['unavailable'] = [*(out.get('unavailable') or []), *dict.fromkeys(gaps)]

@@ -22,9 +22,9 @@ MAX_FILE_BYTES = 16 * 1024 * 1024
 CMAKE_VERSION = '3.31.6'
 
 
-def configuration(*, units, unit_tests, integration_tests, compiler_evidence=False):
+def configuration(*, units, unit_tests, integration_tests, compiler_evidence=False, native_test_evidence=False):
     """Create a bounded configuration, not an authorization/qualification flag."""
-    if type(compiler_evidence) is not bool:
+    if type(compiler_evidence) is not bool or type(native_test_evidence) is not bool or (native_test_evidence and not compiler_evidence):
         raise ValueError('worker_compiler_mode_invalid')
     result = {'schema': 'nico.cpp-cmake-configuration.v1', 'platform': 'linux/amd64',
         'cmake_version': CMAKE_VERSION, 'compiler_version': COMPILER_VERSION,
@@ -34,6 +34,8 @@ def configuration(*, units, unit_tests, integration_tests, compiler_evidence=Fal
         'sanitizers': ['address', 'undefined']}
     if compiler_evidence:
         result.update(schema='nico.cpp-cmake-configuration.v2', compiler_evidence='isolated-recompile-v1')
+    if native_test_evidence:
+        result.update(schema='nico.cpp-cmake-configuration.v3', native_test_evidence='bound-binary-replay-v1')
     return result
 
 
@@ -53,12 +55,16 @@ def validate_configuration(config, targets):
     fields = {'schema', 'platform', 'cmake_version', 'compiler_version', 'translation_units',
         'unit_tests', 'integration_tests', 'project_options', 'build_targets', 'parallel',
         'source_byte_limit', 'sanitizers'}
-    direct = isinstance(config, dict) and config.get('schema') == 'nico.cpp-cmake-configuration.v2'
+    direct = isinstance(config, dict) and config.get('schema') in {'nico.cpp-cmake-configuration.v2', 'nico.cpp-cmake-configuration.v3'}
+    bound_tests = isinstance(config, dict) and config.get('schema') == 'nico.cpp-cmake-configuration.v3'
     if direct:
         fields = fields | {'compiler_evidence'}
+    if bound_tests:
+        fields = fields | {'native_test_evidence'}
     if (not isinstance(config, dict) or set(config) != fields
-            or config['schema'] not in {'nico.cpp-cmake-configuration.v1', 'nico.cpp-cmake-configuration.v2'}
+            or config['schema'] not in {'nico.cpp-cmake-configuration.v1', 'nico.cpp-cmake-configuration.v2', 'nico.cpp-cmake-configuration.v3'}
             or (direct and config['compiler_evidence'] != 'isolated-recompile-v1')
+            or (bound_tests and config['native_test_evidence'] != 'bound-binary-replay-v1')
             or config['platform'] != 'linux/amd64' or config['cmake_version'] != CMAKE_VERSION
             or config['compiler_version'] != COMPILER_VERSION
             or type(config['parallel']) is not int or not 1 <= config['parallel'] <= 2
@@ -126,6 +132,10 @@ def execution_steps(contract):
             add(group + '-' + kind, ['ctest', '--test-dir', directory, '--no-tests=error',
                 '--output-on-failure', '--parallel', '1', '--timeout', '30', '-R', pattern,
                 '--output-junit', output], (group + '-discover',), {'junit': output}, tests=names)
+    if config.get('native_test_evidence') == 'bound-binary-replay-v1':
+        for group in config['sanitizers']:
+            add(group + '-native-test-evidence', ['nico-controller:bound-native-tests-v1', group],
+                (group + '-discover',), native_test_configuration=group)
     return steps
 
 
@@ -252,6 +262,7 @@ def validate_native(native, contract):
             else 'failed' if row['exit_code'] != 0 else 'completed' if okay else 'partial')
         stages.append({'id': row['id'], 'status': status, 'attempted': row['attempted'],
             'exit_code': row['exit_code'], 'duration_ms': row['duration_ms'],
+            **({'observation_kind': 'controller'} if 'native_test_configuration' in spec else {}),
             'artifact_sha256': {key: hashlib.sha256(data).hexdigest() for key, data in streams.items() if key != 'output'}})
     gaps, databases, discovered = [], {}, {}
     for group in ('baseline', *config['sanitizers']):
@@ -323,6 +334,25 @@ def validate_native(native, contract):
                 success[key] = False
             if stage['status'] == 'completed' and not success[key]:
                 stage['status'] = 'partial'
+    native_test_evidence = {}
+    if config.get('native_test_evidence') == 'bound-binary-replay-v1':
+        from nico.assessment_cpp_native_tests import validate_evidence, ORIGINAL_CTEST_LIMIT
+        for group in config['sanitizers']:
+            key = group + '-native-test-evidence'
+            stage = next(s for s in stages if s['id'] == key)
+            proof = None
+            if raw[key]['output'] and not rows[key]['output_truncated']:
+                proof = validate_evidence(_json(raw[key]['output']), raw[group + '-discover']['output'], config, group)
+            if stable and success[key] and proof is not None:
+                native_test_evidence[group] = proof
+                success[key] &= proof['tests_passed']
+                stage.update(required_tests=proof['required_tests'], executed_tests=proof['executed_tests'],
+                    passed_tests=proof['passed_tests'], binary_bound_tests=proof['binary_bound_tests'])
+                if not proof['binary_instrumentation_verified']: stage['status'] = 'partial'
+            else:
+                native_test_evidence[group] = None
+                success[key] = False
+                if stage['status'] == 'completed': stage['status'] = 'partial'
     baseline_compiler = compiler_evidence.get('baseline')
     headers = sorted(p for p in contract['targets'] if PurePosixPath(p).suffix.lower() in {'.h', '.hh', '.hpp', '.hxx', '.inc'})
     header_verified = bool(baseline_compiler and baseline_compiler['complete']
@@ -353,8 +383,11 @@ def validate_native(native, contract):
             'project_build_system_executed': rows['baseline-configure']['attempted'],
             'implemented_command_scope_complete': requested_complete,
             'requested_scope_complete': False, 'stages': stages,
-            'discovered_tests': discovered, 'sanitizers': {s: {
+            'discovered_tests': discovered,
+            **({'native_test_binary_evidence': native_test_evidence} if config.get('native_test_evidence') else {}),
+            'sanitizers': {s: {
                 'instrumentation_verified': False,
+                **({'isolated_binary_replay_verified': bool(native_test_evidence.get(s) and native_test_evidence[s]['binary_instrumentation_verified'])} if config.get('native_test_evidence') else {}),
                 'instrumentation_configuration_verified': databases[s],
                 'executed': bool(stable and databases[s] and all(
                     next(r for r in stages if r['id'] == s + '-' + kind).get('executed_tests')
@@ -372,7 +405,7 @@ def validate_native(native, contract):
             'full_project_qualified': False,
             'limitations': [*([] if header_verified else ['Header inclusion coverage has not been established.']),
                 'Compilation database membership is not measured compiler execution coverage.',
-                'Sanitizer flags are verified in configuration; independent binary instrumentation is not established.',
+                ORIGINAL_CTEST_LIMIT if config.get('native_test_evidence') else 'Sanitizer flags are verified in configuration; independent binary instrumentation is not established.',
                 'Dependencies must be present in the pinned image or captured source; no runtime downloads.',
                 'Bounded libFuzzer execution is not implemented by this profile revision.',
                 'Build/test/sanitizer evidence is not an independent security finding or human approval.']}}

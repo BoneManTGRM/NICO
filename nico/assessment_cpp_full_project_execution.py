@@ -224,10 +224,25 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
         result['boundary'] = json.loads(require(['docker', 'exec', name, 'python3', '-I', '-S', '-c', BOUNDARY_PROGRAM]))
         result['boundary_verified'] = boundary_valid(result['boundary'])
         if not result['boundary_verified']: raise ValueError('worker_full_project_control_failed')
+        if contract['configuration'].get('native_test_evidence') == 'bound-binary-replay-v1':
+            from nico.assessment_cpp_native_tests import SETUP_PROGRAM
+            require(['docker', 'exec', '--user=0:0', name, 'python3', '-I', '-S', '-c', SETUP_PROGRAM])
         successful = {}
         for spec, row in zip(specs, result['steps']):
             if not all(successful.get(key, False) for key in spec['needs']):
                 successful[spec['id']] = False
+                continue
+            if 'native_test_configuration' in spec:
+                from nico.assessment_cpp_native_tests import run_bound_tests
+                group = spec['native_test_configuration']
+                discovered = next(r for r in result['steps'] if r['id'] == group + '-discover')
+                before = time.monotonic()
+                observed = run_bound_tests(invoke, name, group,
+                    base64.b64decode(discovered['output'], validate=True), contract['configuration'])
+                row.update(attempted=True, exit_code=0, duration_ms=int((time.monotonic() - before) * 1000),
+                    output=base64.b64encode(json.dumps(observed, sort_keys=True).encode()).decode('ascii'))
+                successful[spec['id']] = observed['error'] is None
+                if observed['error'] == 'worker_native_test_interrupted': break
                 continue
             analysis_step = spec['id'] in {'analyzer-version', 'static-analysis'} or 'compiler_configuration' in spec
             prefix = ['docker', 'exec', *(['--user=' + ANALYSIS_USER] if analysis_step else []), name]
