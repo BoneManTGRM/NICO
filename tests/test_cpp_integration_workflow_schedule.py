@@ -26,8 +26,9 @@ def test_contract_tests_do_not_consume_the_native_job_execution_budget():
     regression = jobs['contract-regressions']
     native = jobs['owned-project-integration']
     assert native['needs'] == ['contract-regressions']
+    assert native['timeout-minutes'] == 10
     assert all(jobs[name]['timeout-minutes'] == 5 for name in (
-        'contract-regressions', 'owned-project-integration', 'exact-source', 'llvm-toolchain-inventory'))
+        'contract-regressions', 'exact-source', 'llvm-toolchain-inventory'))
     assert set(jobs) == {'contract-regressions', 'owned-project-integration', 'exact-source',
                          'llvm-toolchain-inventory', 'project-baseline-qualification'}
     assert jobs['project-baseline-qualification']['timeout-minutes'] == 40
@@ -40,7 +41,7 @@ def test_contract_tests_do_not_consume_the_native_job_execution_budget():
     native_commands = '\n'.join(step.get('run', '') for step in native['steps'])
     assert 'pytest' not in native_commands
     assert '--generated-headers --bounded-fuzz' in native_commands
-    assert 'docker build --network=none' in native_commands
+    assert 'timeout 210s docker build --network=none' in native_commands
     assert 'services' in native and native['services']['postgres']
     assert not any(s.get('continue-on-error') for job in jobs.values() for s in job['steps'])
 
