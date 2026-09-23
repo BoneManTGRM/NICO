@@ -156,11 +156,24 @@ def qualify_configuration_checkout(args):
             root=Path(temporary)/'source'
             evidence['source']=freeze_configuration_checkout(args.qualification_source,root,manifest)
             evidence['stage']='source_frozen'; retain()
+            unit_test_data = None
+            if getattr(args, 'unit_test_data', None) is not None:
+                data_root = Path(args.unit_test_data)
+                if data_root.is_symlink() or not data_root.is_dir():
+                    raise ValueError('qualification_unit_test_data_invalid')
+                unit_test_data = {}
+                for path in sorted(data_root.iterdir()):
+                    if path.is_symlink() or not path.is_file() or not path.name.isascii():
+                        raise ValueError('qualification_unit_test_data_invalid')
+                    unit_test_data[path.name] = path.read_bytes()
+                if not unit_test_data:
+                    raise ValueError('qualification_unit_test_data_invalid')
             def save_probe(value):
                 evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
                     probe=value, compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,
-                project_options=manifest['project_options'],retain=save_probe, baseline_execution=execution_contract)
+                project_options=manifest['project_options'],retain=save_probe,
+                baseline_execution=execution_contract, unit_test_data=unit_test_data)
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
             success = 'BASELINE_EXECUTED' if execution_contract is not None else 'CONFIGURATION_CAPTURED'
@@ -184,6 +197,7 @@ def main():
     parser.add_argument('--qualification-source', type=Path, required=True)
     parser.add_argument('--qualification-manifest', type=Path, required=True)
     parser.add_argument('--baseline-execution-contract', type=Path)
+    parser.add_argument('--unit-test-data', type=Path)
     parser.add_argument('--output', type=Path, default=Path('cpp-configuration-qualification'))
     qualify_configuration_checkout(parser.parse_args())
 

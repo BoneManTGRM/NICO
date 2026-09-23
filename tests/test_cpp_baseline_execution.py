@@ -39,13 +39,24 @@ class Native(Docker):
             if self.fault == 'boundary': b['memory_max'] = 'max'
             return {'exit_code':0,'timed_out':False,'output_truncated':False,
                     'output':json.dumps(b).encode()}
+        if probe.UNIT_TEST_DATA_PROGRAM in args:
+            self.calls.append((args, kwargs))
+            files = json.loads(kwargs['input_bytes'])
+            return {'exit_code':0,'timed_out':False,'output_truncated':False,
+                    'output':json.dumps({name: value['sha256'] for name, value in files.items()}).encode()}
         if 'ctest' in args:
             self.calls.append((args, kwargs))
-            raw = (json.dumps({'kind':'ctestInfo','version':{'major':1,'minor':0},
+            if '--show-only=json-v1' in args and self.fault == 'placeholder':
+                raw = json.dumps({'kind':'ctestInfo','version':{'major':1,'minor':0},
+                    'tests':[{'name':'owned_suite_DISCOVERY_FAILURE'}]}).encode()
+            else:
+                raw = (json.dumps({'kind':'ctestInfo','version':{'major':1,'minor':0},
                                'tests':[{'name':'owned_suite','command':['/work/build/owned']}]}).encode()
-                   if '--show-only=json-v1' in args else b'1/1 passed\n')
+                   if '--show-only=json-v1' in args else b'')
             return {'exit_code':8 if self.fault == 'test' and '--show-only=json-v1' not in args else 0,
-                    'timed_out':False,'output_truncated':False,'output':raw}
+                    'timed_out':False,
+                    'output_truncated': self.fault == 'truncated' and '--output-junit' in args,
+                    'output':raw}
         if probe.READ_PROGRAM in args and '/work/build/nico-baseline-junit.xml' in args:
             self.calls.append((args, kwargs))
             outcome = '<failure/>' if self.fault == 'junit' else ''
@@ -59,14 +70,14 @@ class Native(Docker):
         return super().__call__(args, **kwargs)
 
 
-def execute(tmp_path, fault=None, spec=None):
+def execute(tmp_path, fault=None, spec=None, unit_test_data=None):
     assert 'baseline_execution' in inspect.signature(probe.probe_project_configuration).parameters, 'missing actual baseline execution'
     root, targets = source(tmp_path)
     docker = Native(targets, fault)
     saved = []
     result = probe.probe_project_configuration(root, targets, 'sha256:'+'a'*64,
         project_options={'BUILD_TESTS':'ON'}, baseline_execution=spec or contract(),
-        command=docker, retain=lambda r:saved.append(deepcopy(r)))
+        command=docker, retain=lambda r:saved.append(deepcopy(r)), unit_test_data=unit_test_data)
     return result, docker, saved
 
 
@@ -88,6 +99,11 @@ def test_whole_build_and_all_discovered_tests_use_frozen_capacity(tmp_path):
     assert kwargs['timeout'] <= 1200 and '--target' not in build
     test = next(a for a,k in docker.calls if 'ctest' in a and '--output-junit' in a)
     assert not any(v in test for v in ('-R','-E','--exclude-regex'))
+    assert 'DIR_UNIT_TEST_DATA=/work/unit_test_data' not in test
+    assert probe.CTEST_EXEC_PROGRAM in test
+    ids = [row['id'] for row in result['operations']]
+    assert ids.index('baseline-build') < ids.index('post-build-database') < ids.index('baseline-test-discovery') < ids.index('baseline-tests')
+    assert ids.index('baseline-tests') < ids.index('baseline-test-log') < ids.index('baseline-junit')
     assert saved[-1] == result
 
 
@@ -114,8 +130,8 @@ def test_wrong_frozen_database_stops_before_build(tmp_path):
 
 
 @pytest.mark.parametrize('field,value',[('profile','cpp-full-project-v1'),('parallel',True),
-    ('parallel',8),('build_seconds',1201),('test_seconds',481),('test_case_seconds',0),
-    ('compilation_database_sha256','bogus')])
+    ('parallel',8),('build_seconds',1201),('test_seconds',901),('test_case_seconds',0),
+    ('test_case_seconds',301),('compilation_database_sha256','bogus')])
 def test_unbounded_or_unknown_execution_contract_is_rejected_before_docker(tmp_path,field,value):
     spec=contract(); spec[field]=value
     with pytest.raises(ValueError): execute(tmp_path,spec=spec)
@@ -163,3 +179,44 @@ def test_timeout_remains_unproven_even_when_container_cleanup_fails(tmp_path):
         project_options={'BUILD_TESTS':'ON'}, baseline_execution=contract(), command=failed_cleanup)
     assert result['cleanup_verified'] is False
     assert result['status']=='UNPROVEN' and result['compiled'] is False
+
+
+def test_discovery_placeholders_are_not_a_runnable_population(tmp_path):
+    result, docker, saved = execute(tmp_path, 'placeholder')
+    assert result['status'] == 'UNPROVEN'
+    assert result['compiled'] is True and result['tests_executed'] is False
+    assert result['error'] == 'worker_configuration_probe_tests_incomplete'
+    assert not any('--output-junit' in a for a, k in docker.calls)
+
+
+def test_truncated_test_stream_still_records_execution_and_junit(tmp_path):
+    result, docker, saved = execute(tmp_path, 'truncated')
+    assert result['status'] == 'UNPROVEN'
+    assert result['compiled'] is True and result['tests_executed'] is True
+    assert result['tests_passed'] is False
+    assert result['error'] == 'worker_configuration_probe_native_tests_failed'
+    assert any(row['id'] == 'baseline-junit' for row in result['operations'])
+    assert result['tests_result']['junit']
+
+
+def test_external_unit_test_data_is_staged_outside_source_and_exported_to_ctest_only(tmp_path):
+    blob = b'{"assets":true}\n'
+    result, docker, saved = execute(tmp_path, unit_test_data={'script_assets_test.json': blob})
+    assert result['status'] == 'BASELINE_EXECUTED'
+    assert result['unit_test_data'] == {'script_assets_test.json': hashlib.sha256(blob).hexdigest()}
+    test = next(a for a, k in docker.calls if '--output-junit' in a)
+    assert 'DIR_UNIT_TEST_DATA=/work/unit_test_data' in test
+    build = next(a for a, k in docker.calls if '--build' in a)
+    assert 'DIR_UNIT_TEST_DATA=/work/unit_test_data' not in build
+    assert not any('/work/source/script_assets_test.json' in str(a) for a, k in docker.calls)
+
+
+def test_published_baseline_contract_raises_the_measured_debug_test_budget():
+    root = Path(__file__).resolve().parents[1]
+    spec = json.loads((root/'tests/fixtures/cpp/bitcoin-baseline-execution.json').read_text())
+    assert spec['test_case_seconds'] == 180 and spec['test_seconds'] == 720
+    assert spec['build_seconds'] == 1200 and spec['parallel'] == 4
+    workflow = (root/'.github/workflows/cpp-full-project-integration.yml').read_text()
+    assert '--unit-test-data qualification-unit-test-data' in workflow
+    assert 'cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095' in workflow
+    assert 'b33d85102d169b54d966ea315ad81a636680aefa' in workflow

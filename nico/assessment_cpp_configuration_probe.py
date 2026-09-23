@@ -21,9 +21,49 @@ from nico.assessment_cpp_full_project_execution import (
 
 SCRATCH_PROGRAM = "import json, os; s=os.statvfs('/work'); print(json.dumps({'capacity_bytes':s.f_blocks*s.f_frsize,'available_bytes':s.f_bavail*s.f_frsize}))"
 
+# ctest's console log can exceed the controller stream budget while the process
+# is still producing the JUnit file. Keep that log on the work tmpfs and let
+# the test process finish; retain a bounded copy afterwards.
+CTEST_EXEC_PROGRAM = r'''
+import os, sys
+log_path, argv = sys.argv[1], sys.argv[2:]
+if (not argv or os.path.basename(argv[0]) != 'ctest' or not log_path.startswith('/work/build/')
+        or os.path.basename(log_path) != 'nico-baseline-ctest.log'):
+    raise SystemExit(2)
+fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+os.dup2(fd, 1)
+os.dup2(fd, 2)
+if fd > 2: os.close(fd)
+os.execvp(argv[0], argv)
+'''
+
+UNIT_TEST_DATA_PROGRAM = r'''
+import base64, hashlib, json, os, pathlib, sys
+limit = int(sys.argv[1])
+raw = sys.stdin.buffer.read(limit + 1)
+if len(raw) > limit: raise SystemExit('input_limit')
+files = json.loads(raw)
+if os.getuid() != 0: raise SystemExit('provisioning_identity')
+root = pathlib.Path('/work/unit_test_data')
+root.mkdir(mode=0o755)
+result = {}
+for name, value in files.items():
+    if '/' in name or name in ('', '.', '..') or len(name) > 80:
+        raise SystemExit('input_path')
+    data = base64.b64decode(value['base64'], validate=True)
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != value['sha256']: raise SystemExit('input_digest')
+    output = root / name
+    with output.open('xb') as handle: handle.write(data)
+    output.chmod(0o444)
+    result[name] = digest
+print(json.dumps(result, sort_keys=True))
+'''
+
 
 def probe_project_configuration(source, targets, image, *, project_options,
-                                retain=lambda result: None, command=None, baseline_execution=None):
+                                retain=lambda result: None, command=None, baseline_execution=None,
+                                unit_test_data=None):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -64,9 +104,18 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 or not isinstance(baseline_execution['compilation_database_sha256'], str)
                 or re.fullmatch(r'[a-f0-9]{64}', baseline_execution['compilation_database_sha256']) is None
                 or any(type(baseline_execution[k]) is not int or not 1 <= baseline_execution[k] <= maximum
-                       for k, maximum in (('build_seconds', 1200), ('test_seconds', 480),
-                                          ('test_case_seconds', 120), ('parallel', 4)))):
+                       for k, maximum in (('build_seconds', 1200), ('test_seconds', 900),
+                                          ('test_case_seconds', 300), ('parallel', 4)))):
             raise ValueError('worker_configuration_probe_execution_contract_invalid')
+    staged_data = None
+    if unit_test_data is not None:
+        if (baseline_execution is None or not isinstance(unit_test_data, dict)
+                or not 1 <= len(unit_test_data) <= 4
+                or any(not isinstance(name, str) or re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', name) is None
+                    or not isinstance(blob, (bytes, bytearray)) or not 1 <= len(blob) <= 20_000_000
+                    for name, blob in unit_test_data.items())):
+            raise ValueError('worker_configuration_probe_unit_test_data_invalid')
+        staged_data = {name: bytes(blob) for name, blob in sorted(unit_test_data.items())}
     profile = BASELINE_QUALIFICATION_PROFILE if baseline_execution is not None else PROFILE
     resources = resources_for(profile)
     execution_seconds = 1800 if baseline_execution is not None else 80
@@ -89,7 +138,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
         result.update(schema='nico.cpp-project-configuration-probe.v2',
             baseline_execution=dict(baseline_execution), tests_discovered=[], tests_passed=False,
             scratch_capacity_verified=False, scratch_capacity_bytes=None,
-            tests_result=None, native_test_discovery=None,
+            tests_result=None, native_test_discovery=None, unit_test_data=None,
             wall_budget_seconds=1810, execution_budget_seconds=execution_seconds)
 
     def save():
@@ -100,7 +149,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
         if time.monotonic() >= deadline:
             raise ValueError('worker_configuration_probe_deadline')
 
-    def invoke(key, argv, *, data=None, limit=65536, seconds=15, allow_failure=False):
+    def observe(key, argv, *, data=None, limit=65536, seconds=15):
         checkpoint()
         before = time.monotonic()
         observed = command(argv, checkpoint=checkpoint, timeout=min(seconds, deadline-before),
@@ -111,10 +160,14 @@ def probe_project_configuration(source, targets, image, *, project_options,
             'output_truncated': observed['output_truncated'], 'duration_ms': int((time.monotonic()-before)*1000),
             'output': base64.b64encode(raw).decode('ascii'), 'output_sha256': hashlib.sha256(raw).hexdigest()})
         save()  # Retain returned bytes before parsing, assertions, or next command.
+        return observed
+
+    def invoke(key, argv, *, data=None, limit=65536, seconds=15, allow_failure=False):
+        observed = observe(key, argv, data=data, limit=limit, seconds=seconds)
         if ((observed['exit_code'] != 0 and not allow_failure) or observed['timed_out']
                 or observed['output_truncated']):
             raise ValueError('worker_configuration_probe_operation_failed')
-        return raw
+        return observed['output']
 
     save()
     try:
@@ -235,23 +288,19 @@ def probe_project_configuration(source, targets, image, *, project_options,
         if baseline_execution is not None:
             if result['compilation_database_sha256'] != baseline_execution['compilation_database_sha256']:
                 raise ValueError('worker_configuration_probe_frozen_database_mismatch')
-            # Freeze the entire CTest name population before any project build.
-            # Discovery output is retained as target-produced planning evidence.
-            discovered = invoke('baseline-test-discovery', [*prefix, 'ctest', '--test-dir',
-                '/work/build', '--show-only=json-v1'], limit=2*1024*1024, seconds=30)
-            names = _json(discovered)
-            rows = names.get('tests') if isinstance(names, dict) else None
-            if (not isinstance(rows, list) or not 1 <= len(rows) <= 10000
-                    or any(not isinstance(row, dict) or not isinstance(row.get('name'), str)
-                        or re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.:/+-]{0,249}', row['name']) is None
-                        for row in rows)):
-                raise ValueError('worker_configuration_probe_tests_invalid')
-            names = sorted(row['name'] for row in rows)
-            if len(set(names)) != len(names):
-                raise ValueError('worker_configuration_probe_tests_duplicate')
-            result.update(status='UNPROVEN', tests_discovered=names,
-                          native_test_discovery=base64.b64encode(discovered).decode('ascii'))
-            save()
+            if staged_data is not None:
+                payload = canonical_bytes({name: {
+                    'base64': base64.b64encode(blob).decode('ascii'),
+                    'sha256': hashlib.sha256(blob).hexdigest()} for name, blob in staged_data.items()})
+                transferred = _json(invoke('unit-test-data', ['docker', 'exec', '--user=0:0', '--interactive',
+                    name, 'python3', '-I', '-S', '-c', UNIT_TEST_DATA_PROGRAM, str(len(payload))],
+                    data=payload, limit=65536, seconds=30))
+                expected = {item: hashlib.sha256(blob).hexdigest() for item, blob in staged_data.items()}
+                if transferred != expected:
+                    raise ValueError('worker_configuration_probe_unit_test_data_invalid')
+                result['unit_test_data'] = expected
+                save()
+                del payload
             invoke('baseline-build', [*prefix, 'cmake', '--build', '/work/build', '--parallel',
                 str(baseline_execution['parallel'])], seconds=baseline_execution['build_seconds'],
                 limit=1024*1024)
@@ -265,25 +314,73 @@ def probe_project_configuration(source, targets, image, *, project_options,
                     or hashlib.sha256(base64.b64decode(after['data'], validate=True)).hexdigest()
                        != result['compilation_database_sha256']):
                 raise ValueError('worker_configuration_probe_frozen_database_mismatch')
-            # The command is fixed: execute every predeclared CTest entry. No
-            # post-failure exclusion, chosen passing subset or arbitrary command.
-            invoke('baseline-tests', [*prefix, 'ctest', '--test-dir', '/work/build',
+            # Generated CTest includes (secp256k1 discover_tests) only expand
+            # after the test binaries exist. Freeze that runnable population
+            # before testing. A leftover DISCOVERY_FAILURE is not a test.
+            discovered = invoke('baseline-test-discovery', [*prefix, 'ctest', '--test-dir',
+                '/work/build', '--show-only=json-v1'], limit=4*1024*1024, seconds=60)
+            names = _json(discovered)
+            rows = names.get('tests') if isinstance(names, dict) else None
+            if (not isinstance(rows, list) or not 1 <= len(rows) <= 10000
+                    or any(not isinstance(row, dict) or not isinstance(row.get('name'), str)
+                        or re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.:/+-]{0,249}', row['name']) is None
+                        for row in rows)):
+                raise ValueError('worker_configuration_probe_tests_invalid')
+            names = sorted(row['name'] for row in rows)
+            if len(set(names)) != len(names):
+                raise ValueError('worker_configuration_probe_tests_duplicate')
+            if any('DISCOVERY_FAILURE' in item for item in names):
+                raise ValueError('worker_configuration_probe_tests_incomplete')
+            result.update(status='UNPROVEN', tests_discovered=names,
+                          native_test_discovery=base64.b64encode(discovered).decode('ascii'))
+            save()
+            # The command is fixed: execute every post-build CTest entry. No
+            # regex exclusion, chosen passing subset or arbitrary command.
+            # Stdout stays in the container so a verbose failure cannot kill
+            # ctest before it writes JUnit.
+            test_argv = ['docker', 'exec']
+            if result['unit_test_data'] is not None:
+                test_argv += ['-e', 'DIR_UNIT_TEST_DATA=/work/unit_test_data']
+            test_argv += [name, 'python3', '-I', '-S', '-c', CTEST_EXEC_PROGRAM,
+                '/work/build/nico-baseline-ctest.log', 'ctest', '--test-dir', '/work/build',
                 '--parallel', str(baseline_execution['parallel']), '--timeout',
                 str(baseline_execution['test_case_seconds']), '--output-on-failure',
-                '--output-junit', '/work/build/nico-baseline-junit.xml'],
-                seconds=baseline_execution['test_seconds'], limit=1024*1024, allow_failure=True)
+                '--output-junit', '/work/build/nico-baseline-junit.xml']
+            observed = observe('baseline-tests', test_argv, seconds=baseline_execution['test_seconds'],
+                               limit=65536)
             result['tests_executed'] = True
-            native_success = result['operations'][-1]['exit_code'] == 0
+            native_success = observed['exit_code'] == 0 and not observed['timed_out'] and not observed['output_truncated']
             save()
-            junit = _json(invoke('baseline-junit', [*prefix, 'python3', '-I', '-S', '-c', READ_PROGRAM,
-                '/work/build/nico-baseline-junit.xml', str(2*1024*1024)], limit=3*1024*1024))
-            if (not isinstance(junit, dict) or set(junit) != {'data','truncated'} or junit['truncated']):
-                raise ValueError('worker_configuration_probe_junit_invalid')
+
+            def bounded_artifact(key, path, file_limit, stream_limit):
+                artifact_observed = observe(key, [*prefix, 'python3', '-I', '-S', '-c', READ_PROGRAM,
+                    path, str(file_limit)], limit=stream_limit)
+                if (artifact_observed['exit_code'] != 0 or artifact_observed['timed_out']
+                        or artifact_observed['output_truncated']):
+                    return None
+                parsed = _json(artifact_observed['output'])
+                if not isinstance(parsed, dict) or set(parsed) != {'data', 'truncated'}:
+                    return None
+                return parsed
+
+            log = bounded_artifact('baseline-test-log', '/work/build/nico-baseline-ctest.log',
+                                   1024*1024, 2*1024*1024)
+            junit = bounded_artifact('baseline-junit', '/work/build/nico-baseline-junit.xml',
+                                     2*1024*1024, 4*1024*1024)
+            log_ok = bool(log and log['truncated'] is False)
             from nico.assessment_cpp_full_project import _junit
-            executed, passed, skipped = _junit(base64.b64decode(junit['data'], validate=True), names)
-            result['tests_result'] = {'executed':executed, 'passed':passed, 'skipped':skipped,
-                                      'junit':junit['data']}
-            result['tests_passed'] = native_success and passed == names and not skipped
+            executed, passed, skipped, junit_data = [], [], [], None
+            if junit and junit['truncated'] is False:
+                junit_data = junit['data']
+                try:
+                    executed, passed, skipped = _junit(base64.b64decode(junit_data, validate=True), names)
+                except ValueError:
+                    executed, passed, skipped = [], [], []
+            result['tests_result'] = {'executed': executed, 'passed': passed, 'skipped': skipped,
+                                      'junit': junit_data, 'log_truncated': not log_ok,
+                                      'junit_truncated': junit_data is None}
+            result['tests_passed'] = (native_success and log_ok and junit_data is not None
+                                      and passed == names and not skipped)
             if not result['tests_passed']:
                 raise ValueError('worker_configuration_probe_native_tests_failed')
             result['status'] = 'BASELINE_EXECUTED'

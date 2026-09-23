@@ -183,12 +183,21 @@ jobs:
           persist-credentials: false
           submodules: false
           lfs: false
+      - name: Stage the pinned unit-test asset outside the assessed source
+        run: |
+          set -euo pipefail
+          mkdir -p qualification-unit-test-data
+          curl --location --fail --retry 3 --retry-delay 2 -o qualification-unit-test-data/script_assets_test.json \
+            https://github.com/bitcoin-core/qa-assets/raw/b33d85102d169b54d966ea315ad81a636680aefa/unit_test_data/script_assets_test.json
+          echo 'cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095  qualification-unit-test-data/script_assets_test.json' | sha256sum -c -
+          test "$(wc -c < qualification-unit-test-data/script_assets_test.json)" -eq 9243520
       - name: Execute the complete frozen baseline build and discovered native tests
         run: >-
           python -m scripts.qualify_cpp_project_configuration
           --qualification-source qualification-input
           --qualification-manifest tests/fixtures/cpp/bitcoin-configuration-benchmark.json
           --baseline-execution-contract tests/fixtures/cpp/bitcoin-baseline-execution.json
+          --unit-test-data qualification-unit-test-data
           --output cpp-baseline-qualification
           --image "$(cat full-project-image-id.txt)"
       - name: Retain native success and failure evidence
