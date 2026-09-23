@@ -156,7 +156,7 @@ def test_published_baseline_job_is_serial_bounded_and_has_no_production_credenti
     assert job['needs']==['owned-project-integration'] and job['timeout-minutes']==40
     assert job['runs-on']=='ubuntu-24.04'
     assert workflow['permissions']=={'contents':'read'}
-    assert workflow['jobs']['owned-project-integration']['timeout-minutes']==5
+    assert workflow['jobs']['owned-project-integration']['timeout-minutes']==10
     assert not job.get('services') and not job.get('env')
     text=json.dumps(job)
     assert 'baseline-execution-contract' in text and 'secrets.' not in text
