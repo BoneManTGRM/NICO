@@ -27,7 +27,7 @@ from scripts.qualify_cppcheck_worker_control import consume_control
 def plan(image, *, negative=False):
     return {'profile': PROFILE, 'tool_version': '2.17.1', 'image_digest': image,
         'configuration': configuration(units=['main.cpp', 'sum.cpp'],
-            unit_tests=['negative' if negative else 'unit'], integration_tests=['integration']),
+            unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True),
         'targets': {path: hashlib.sha256(text.encode()).hexdigest() for path, text in FIXTURE.items()},
         'limits': {'max_attempts': 1, 'wall_seconds': 180, 'lease_seconds': 30},
         'max_receipt_bytes': 2 * 1024 * 1024}
@@ -107,6 +107,15 @@ def main():
                 assert record['completed'] is True, 'configuration_aware_static_analysis_incomplete'
                 assert build['build_completed'] is True, 'project_build_incomplete'
                 assert build['source_read_only_verified'] is True
+                assert build['compiled_translation_units'] == ['main.cpp', 'sum.cpp'], 'direct_compiler_population_incomplete'
+                assert record['cppcheck_source_coverage']['header_context_verified'] is True, 'compiler_header_context_incomplete'
+                for group in ('baseline', 'address', 'undefined'):
+                    proof = build['compiler_evidence'][group]
+                    assert proof['complete'] is True, 'compiler_configuration_incomplete'
+                    assert proof['header_inclusions']['sum.hpp'] == ['main.cpp', 'sum.cpp']
+                    if group != 'baseline':
+                        assert proof['object_instrumentation_observed_units'], 'instrumented_object_symbols_missing'
+                    assert proof['test_binary_instrumentation_verified'] is False
                 assert build['analysis_artifact_isolation_verified'] is True
                 assert build['implemented_command_scope_complete'] is (not negative), 'test_truth_changed'
                 assert build['requested_scope_complete'] is False

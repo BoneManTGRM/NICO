@@ -229,7 +229,7 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
             if not all(successful.get(key, False) for key in spec['needs']):
                 successful[spec['id']] = False
                 continue
-            analysis_step = spec['id'] in {'analyzer-version', 'static-analysis'}
+            analysis_step = spec['id'] in {'analyzer-version', 'static-analysis'} or 'compiler_configuration' in spec
             prefix = ['docker', 'exec', *(['--user=' + ANALYSIS_USER] if analysis_step else []), name]
             if spec['id'] == 'static-analysis':
                 from nico.assessment_cpp_full_project import _database
@@ -246,8 +246,24 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                     name, 'python3', '-I', '-S', '-c', ANALYSIS_INPUT_PROGRAM, str(len(transfer))], data=transfer))
                 if proof != {'sha256': digest, 'uid': 1001}:
                     raise ValueError('worker_full_project_control_failed')
+            compiler_input = None
+            if 'compiler_configuration' in spec:
+                configured = next(r for r in result['steps'] if r['id'] == spec['compiler_configuration'] + '-configure')
+                database = configured['artifacts'].get('compilation_database')
+                if not isinstance(database, str):
+                    successful[spec['id']] = False
+                    continue
+                from nico.assessment_cpp_full_project import _database
+                group = spec['compiler_configuration']
+                _database(base64.b64decode(database, validate=True), contract['configuration']['translation_units'],
+                          '/work/build' if group == 'baseline' else '/work/' + group,
+                          None if group == 'baseline' else group)
+                compiler_input = json.dumps({'database': database, 'configuration': group,
+                    'units': contract['configuration']['translation_units'], 'targets': contract['targets']}).encode()
+                prefix = ['docker', 'exec', '--user=' + ANALYSIS_USER, '--interactive', name]
             before = time.monotonic()
-            response = invoke([*prefix, *spec['invocation']], max_output=limit, seconds=timeout_seconds)
+            stream_limit = min(262144, max(1024, contract['max_receipt_bytes'] // 24)) if compiler_input is not None else limit
+            response = invoke([*prefix, *spec['invocation']], data=compiler_input, max_output=stream_limit, seconds=timeout_seconds)
             row.update(attempted=True, exit_code=response['exit_code'], timed_out=response['timed_out'],
                 output_truncated=response['output_truncated'], duration_ms=int((time.monotonic() - before) * 1000),
                 output=base64.b64encode(response['output']).decode('ascii'))

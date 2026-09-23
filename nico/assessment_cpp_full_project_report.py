@@ -29,6 +29,7 @@ def enrich_scanner_stage(canonical, stage):
     labels = {'baseline': 'base', 'address': 'direcciones', 'undefined': 'comportamiento indefinido',
               'configure': 'configuración', 'build': 'compilación', 'discover': 'descubrimiento',
               'unit': 'pruebas unitarias', 'integration': 'pruebas de integración',
+              'compiler-evidence': 'evidencia del compilador',
               'static-analysis': 'análisis estático', 'cmake-version': 'versión de CMake',
               'compiler-version': 'versión del compilador', 'analyzer-version': 'versión del analizador'}
     for record in records:
@@ -83,11 +84,25 @@ def enrich_scanner_stage(canonical, stage):
                 if key.startswith('baseline-'):
                     summaries.append(line + '.')
             evidence.append(line)
+        compiler = (build.get('compiler_evidence') or {}).get('baseline')
+        if isinstance(compiler, Mapping):
+            required = compiler.get('required_translation_units') or []
+            completed = compiler.get('compiled_translation_units') or []
+            count = len(compiler.get('header_inclusions') or {})
+            line = (f'Compilación directa verificada: {len(completed)}/{len(required)} unidades; encabezados originales incluidos: {count}.' if es
+                    else f'Direct compiler verification: {len(completed)}/{len(required)} units; original headers included: {count}.')
+            summaries.append(line)
+            evidence.append(line)
+            evidence.append('Los símbolos de los objetos compilados no verifican la instrumentación de los ejecutables de las pruebas.' if es
+                            else 'Compiled-object symbols do not verify instrumentation of the test executables.')
+        header_verified = (record.get('cppcheck_source_coverage') or {}).get('header_context_verified') is True
         if es:
-            gaps.append('La ejecución de libFuzzer y la cobertura de inclusión de encabezados no están verificadas; la calificación integral sigue incompleta.')
+            gaps.append('La ejecución de libFuzzer no está verificada; la calificación integral sigue incompleta.' if header_verified else
+                'La ejecución de libFuzzer y la cobertura de inclusión de encabezados no están verificadas; la calificación integral sigue incompleta.')
             gaps.append('La pertenencia a la base de datos de compilación no demuestra cobertura de ejecución del compilador. La finalización de Cppcheck no implica pruebas aprobadas ni aprobación humana.')
         else:
-            gaps.append('LibFuzzer execution and header inclusion coverage are not verified; full-project qualification remains incomplete.')
+            gaps.append('LibFuzzer execution is not verified; full-project qualification remains incomplete.' if header_verified else
+                'LibFuzzer execution and header inclusion coverage are not verified; full-project qualification remains incomplete.')
             gaps.append('Compilation database membership is not compiler execution coverage. Cppcheck completion does not imply passing tests or human approval.')
         peak = build.get('memory_peak_bytes')
         if type(peak) is int:

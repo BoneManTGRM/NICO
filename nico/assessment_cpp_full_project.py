@@ -22,14 +22,19 @@ MAX_FILE_BYTES = 16 * 1024 * 1024
 CMAKE_VERSION = '3.31.6'
 
 
-def configuration(*, units, unit_tests, integration_tests):
+def configuration(*, units, unit_tests, integration_tests, compiler_evidence=False):
     """Create a bounded configuration, not an authorization/qualification flag."""
-    return {'schema': 'nico.cpp-cmake-configuration.v1', 'platform': 'linux/amd64',
+    if type(compiler_evidence) is not bool:
+        raise ValueError('worker_compiler_mode_invalid')
+    result = {'schema': 'nico.cpp-cmake-configuration.v1', 'platform': 'linux/amd64',
         'cmake_version': CMAKE_VERSION, 'compiler_version': COMPILER_VERSION,
         'translation_units': sorted(units), 'unit_tests': sorted(unit_tests),
         'integration_tests': sorted(integration_tests), 'project_options': {},
         'build_targets': [], 'parallel': 1, 'source_byte_limit': MAX_SOURCE_BYTES,
         'sanitizers': ['address', 'undefined']}
+    if compiler_evidence:
+        result.update(schema='nico.cpp-cmake-configuration.v2', compiler_evidence='isolated-recompile-v1')
+    return result
 
 
 def _path(value):
@@ -48,8 +53,12 @@ def validate_configuration(config, targets):
     fields = {'schema', 'platform', 'cmake_version', 'compiler_version', 'translation_units',
         'unit_tests', 'integration_tests', 'project_options', 'build_targets', 'parallel',
         'source_byte_limit', 'sanitizers'}
+    direct = isinstance(config, dict) and config.get('schema') == 'nico.cpp-cmake-configuration.v2'
+    if direct:
+        fields = fields | {'compiler_evidence'}
     if (not isinstance(config, dict) or set(config) != fields
-            or config['schema'] != 'nico.cpp-cmake-configuration.v1'
+            or config['schema'] not in {'nico.cpp-cmake-configuration.v1', 'nico.cpp-cmake-configuration.v2'}
+            or (direct and config['compiler_evidence'] != 'isolated-recompile-v1')
             or config['platform'] != 'linux/amd64' or config['cmake_version'] != CMAKE_VERSION
             or config['compiler_version'] != COMPILER_VERSION
             or type(config['parallel']) is not int or not 1 <= config['parallel'] <= 2
@@ -99,6 +108,10 @@ def execution_steps(contract):
         build = ['cmake', '--build', directory, '--parallel', str(config['parallel'])]
         if config['build_targets']: build += ['--target', *config['build_targets']]
         add(group + '-build', build, (group + '-configure',))
+        if config.get('compiler_evidence') == 'isolated-recompile-v1':
+            from nico.assessment_cpp_compiler_evidence import PROGRAM
+            add(group + '-compiler-evidence', ['python3', '-I', '-S', '-c', PROGRAM],
+                (group + '-build',), compiler_configuration=group)
         if group == 'baseline':
             add('static-analysis', ['cppcheck', '--xml', '--enable=' + CHECKS,
                 '--check-level=exhaustive', '--max-configs=1', '--platform=unix64', '-j1',
@@ -290,6 +303,30 @@ def validate_native(native, contract):
     static_complete = (stable and analysis_input_frozen and databases['baseline'] and success['static-analysis'] and parsed
         and observed == units and not any(item['rule_id'] != 'checkersReport' for item in limits))
     build_complete = bool(stable and databases['baseline'] and success['baseline-build'])
+    compiler_evidence = {}
+    if config.get('compiler_evidence') == 'isolated-recompile-v1':
+        from nico.assessment_cpp_compiler_evidence import validate_compiler_evidence
+        for group in ('baseline', *config['sanitizers']):
+            key = group + '-compiler-evidence'
+            stage = next(s for s in stages if s['id'] == key)
+            # A malformed nested base64 payload is not a redacted retained receipt.
+            # Validate even failure output before deciding whether it grants coverage.
+            verified_compiler = None
+            if raw[key]['output'] and not rows[key]['output_truncated']:
+                verified_compiler = validate_compiler_evidence(raw[key]['output'],
+                    raw[group + '-configure'].get('compilation_database', b''), contract, group)
+            if stable and success[key] and databases[group] and verified_compiler is not None:
+                compiler_evidence[group] = verified_compiler
+                success[key] &= verified_compiler['complete']
+            else:
+                compiler_evidence[group] = None
+                success[key] = False
+            if stage['status'] == 'completed' and not success[key]:
+                stage['status'] = 'partial'
+    baseline_compiler = compiler_evidence.get('baseline')
+    headers = sorted(p for p in contract['targets'] if PurePosixPath(p).suffix.lower() in {'.h', '.hh', '.hpp', '.hxx', '.inc'})
+    header_verified = bool(baseline_compiler and baseline_compiler['complete']
+        and set(headers) <= set(baseline_compiler['header_inclusions']))
     requested_complete = bool(static_complete and all(success.values()) and all(databases.values()))
     static = rows['static-analysis']
     status = ('completed' if static_complete else 'timed_out' if static['timed_out'] else
@@ -303,10 +340,15 @@ def validate_native(native, contract):
             'observed_targets': observed, 'observed_target_count': len(observed),
             'unobserved_targets': sorted(set(units) - set(observed)), 'limitations': [*gaps, *limits],
             'population_sha256': _digest(units), 'configuration_aware': bool(static_complete),
-            'header_context_verified': False, 'repository_build_executed': build_complete,
+            'header_context_verified': header_verified, 'repository_build_executed': build_complete,
+            **({'required_source_headers': headers, 'compiler_header_inclusions': baseline_compiler['header_inclusions']
+                if baseline_compiler else {}, 'header_coverage_basis': 'direct compiler dependency files; immutable original headers only'}
+               if config.get('compiler_evidence') else {}),
             'all_repository_configurations_analyzed': False},
         'build': {'profile': PROFILE, 'required_translation_units': units,
-            'compiled_translation_units': None, 'build_completed': build_complete,
+            'compiled_translation_units': baseline_compiler['compiled_translation_units'] if baseline_compiler else None,
+            **({'compiler_evidence': compiler_evidence} if config.get('compiler_evidence') else {}),
+            'build_completed': build_complete,
             'compilation_database_translation_units': units if databases['baseline'] else [],
             'project_build_system_executed': rows['baseline-configure']['attempted'],
             'implemented_command_scope_complete': requested_complete,
@@ -328,7 +370,7 @@ def validate_native(native, contract):
             'analysis_artifact_isolation_verified': bool(stable and analysis_input_frozen),
             'source_read_only_verified': bool(stable), 'fuzz_executed': False,
             'full_project_qualified': False,
-            'limitations': ['Header inclusion coverage has not been established.',
+            'limitations': [*([] if header_verified else ['Header inclusion coverage has not been established.']),
                 'Compilation database membership is not measured compiler execution coverage.',
                 'Sanitizer flags are verified in configuration; independent binary instrumentation is not established.',
                 'Dependencies must be present in the pinned image or captured source; no runtime downloads.',
