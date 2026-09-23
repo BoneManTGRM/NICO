@@ -61,7 +61,7 @@ jobs:
   owned-project-integration:
     needs: [contract-regressions]
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16-alpine
