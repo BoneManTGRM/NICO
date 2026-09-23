@@ -78,7 +78,7 @@ jobs:
       - name: Test the actual profile and receipt integration
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pytest -q tests/test_cpp_compiler_evidence.py tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_cpp_native_test_binding.py tests/test_assessment_worker_capacity_v1.py
+          python -m pytest -q tests/test_cpp_generated_context.py tests/test_cpp_combined_configuration.py tests/test_cpp_compiler_evidence.py tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_cpp_native_test_binding.py tests/test_assessment_worker_capacity_v1.py
       - name: Provision exact tools without assessed source or runtime network
         run: |
           set -euo pipefail
@@ -90,7 +90,7 @@ jobs:
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-control.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
       - name: Exercise owned project through worker lease, receipt and report
-        run: python -m scripts.qualify_cpp_full_project_integration --image "$(cat full-project-image-id.txt)"
+        run: python -m scripts.qualify_cpp_full_project_integration --generated-headers --image "$(cat full-project-image-id.txt)"
       - name: Retain native success and failure evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -24,11 +24,27 @@ from scripts.qualify_cpp_full_project_control import FIXTURE
 from scripts.qualify_cppcheck_worker_control import consume_control
 
 
-def plan(image, *, negative=False):
+def fixture(*, generated_headers=False):
+    """Retain the original fixture by default; opt in to a real configured header."""
+    result = dict(FIXTURE)
+    if generated_headers:
+        result['config.h.in'] = '#pragma once\n#define NICO_CONFIGURED_OFFSET @NICO_CONFIGURED_OFFSET@\n'
+        result['CMakeLists.txt'] += (
+            '\nset(NICO_CONFIGURED_OFFSET 0)\n'
+            'configure_file(config.h.in generated/config.h @ONLY)\n'
+            'target_include_directories(control_sum PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")\n')
+        result['sum.cpp'] = ('#include "sum.hpp"\n#include "generated/config.h"\n'
+            'int control_sum(int a, int b) { return a + b + NICO_CONFIGURED_OFFSET; }\n')
+    return result
+
+
+def plan(image, *, negative=False, generated_headers=False):
     return {'profile': PROFILE, 'tool_version': '2.17.1', 'image_digest': image,
         'configuration': configuration(units=['main.cpp', 'sum.cpp'],
-            unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True, native_test_evidence=True),
-        'targets': {path: hashlib.sha256(text.encode()).hexdigest() for path, text in FIXTURE.items()},
+            unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True, native_test_evidence=True,
+            generated_headers=['generated/config.h'] if generated_headers else None),
+        'targets': {path: hashlib.sha256(text.encode()).hexdigest()
+                    for path, text in fixture(generated_headers=generated_headers).items()},
         'limits': {'max_attempts': 1, 'wall_seconds': 180, 'lease_seconds': 30},
         'max_receipt_bytes': 2 * 1024 * 1024}
 
@@ -74,6 +90,7 @@ def render_result(result, output, language):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
+    parser.add_argument('--generated-headers', action='store_true', help='Qualify the opt-in frozen generated-header configuration.')
     parser.add_argument('--output', type=Path, default=Path('cpp-full-project-integration'))
     args = parser.parse_args(); args.output.mkdir(parents=True, exist_ok=True)
     release = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
@@ -93,11 +110,11 @@ def main():
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=10).stdout.strip().decode()
             git('init', '--bare', '.')
             rows = [f"100644 blob {git('hash-object', '-w', '--stdin', data=text.encode())}\t{path}\n"
-                    for path, text in sorted(FIXTURE.items())]
+                    for path, text in sorted(fixture(generated_headers=args.generated_headers).items())]
             tree = git('mktree', data=''.join(rows).encode())
             revision = git('commit-tree', tree, data=b'Owned CMake integration fixture\n')
             for negative in (False, True):
-                contract = plan(args.image, negative=negative); observations = {}
+                contract = plan(args.image, negative=negative, generated_headers=args.generated_headers); observations = {}
                 result = consume_control(contract, git_dir, tree, revision, release, observations)
                 from nico.scanner_worker import get_scan
                 persisted = get_scan(result['canonical_record']['scan_id'])
@@ -117,6 +134,10 @@ def main():
                     proof = build['compiler_evidence'][group]
                     assert proof['complete'] is True, 'compiler_configuration_incomplete'
                     assert proof['header_inclusions']['sum.hpp'] == ['main.cpp', 'sum.cpp']
+                    if args.generated_headers:
+                        assert proof['generated_header_inclusions'] == {'generated/config.h': ['sum.cpp']}, 'generated_header_inclusion_missing'
+                        assert sorted(proof['captured_generated_header_hashes']) == ['generated/config.h']
+                        assert proof['toolchain_image_digest'] == contract['image_digest']
                     if group != 'baseline':
                         assert proof['object_instrumentation_observed_units'], 'instrumented_object_symbols_missing'
                     assert proof['test_binary_instrumentation_verified'] is False

@@ -244,7 +244,8 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                 successful[spec['id']] = observed['error'] is None
                 if observed['error'] == 'worker_native_test_interrupted': break
                 continue
-            analysis_step = spec['id'] in {'analyzer-version', 'static-analysis'} or 'compiler_configuration' in spec
+            analysis_step = (spec['id'] in {'analyzer-version', 'static-analysis'}
+                             or 'compiler_configuration' in spec or 'generated_configuration' in spec)
             prefix = ['docker', 'exec', *(['--user=' + ANALYSIS_USER] if analysis_step else []), name]
             if spec['id'] == 'static-analysis':
                 from nico.assessment_cpp_full_project import _database
@@ -255,6 +256,11 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                     continue
                 database = base64.b64decode(encoded_db, validate=True)
                 _database(database, contract['configuration']['translation_units'], '/work/build')
+                if contract['configuration'].get('generated_headers'):
+                    from nico.assessment_cpp_generated_context import derive_database
+                    database = derive_database(database, contract['configuration']['translation_units'],
+                        'baseline', contract['configuration']['generated_headers'])
+                    encoded_db = base64.b64encode(database).decode('ascii')
                 digest = hashlib.sha256(database).hexdigest()
                 transfer = json.dumps({'data': encoded_db, 'sha256': digest}).encode()
                 proof = json.loads(require(['docker', 'exec', '--user=' + ANALYSIS_USER, '--interactive',
@@ -273,11 +279,23 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                 _database(base64.b64decode(database, validate=True), contract['configuration']['translation_units'],
                           '/work/build' if group == 'baseline' else '/work/' + group,
                           None if group == 'baseline' else group)
-                compiler_input = json.dumps({'database': database, 'configuration': group,
-                    'units': contract['configuration']['translation_units'], 'targets': contract['targets']}).encode()
+                request = {'database': database, 'configuration': group,
+                    'units': contract['configuration']['translation_units'], 'targets': contract['targets']}
+                if contract['configuration'].get('generated_headers'):
+                    captured = next(r for r in result['steps'] if r['id'] == group + '-generated-context')
+                    request.update(generated_context=captured['output'],
+                                   headers=contract['configuration']['generated_headers'])
+                compiler_input = json.dumps(request).encode()
+                prefix = ['docker', 'exec', '--user=' + ANALYSIS_USER, '--interactive', name]
+            if 'generated_configuration' in spec:
+                compiler_input = json.dumps({'configuration': spec['generated_configuration'],
+                    'headers': contract['configuration']['generated_headers']}).encode()
                 prefix = ['docker', 'exec', '--user=' + ANALYSIS_USER, '--interactive', name]
             before = time.monotonic()
             stream_limit = min(262144, max(1024, contract['max_receipt_bytes'] // 24)) if compiler_input is not None else limit
+            if 'generated_configuration' in spec:
+                # Snapshot bytes and path/hash metadata have a separate, bounded share of the receipt.
+                stream_limit = min(524288, max(1024, contract['max_receipt_bytes'] // 4))
             response = invoke([*prefix, *spec['invocation']], data=compiler_input, max_output=stream_limit, seconds=timeout_seconds)
             row.update(attempted=True, exit_code=response['exit_code'], timed_out=response['timed_out'],
                 output_truncated=response['output_truncated'], duration_ms=int((time.monotonic() - before) * 1000),

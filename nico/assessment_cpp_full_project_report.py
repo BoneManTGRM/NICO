@@ -29,7 +29,7 @@ def enrich_scanner_stage(canonical, stage):
     labels = {'baseline': 'base', 'address': 'direcciones', 'undefined': 'comportamiento indefinido',
               'configure': 'configuración', 'build': 'compilación', 'discover': 'descubrimiento',
               'unit': 'pruebas unitarias', 'integration': 'pruebas de integración',
-              'compiler-evidence': 'evidencia del compilador',
+              'compiler-evidence': 'evidencia del compilador', 'generated-context': 'captura de encabezados generados',
               'static-analysis': 'análisis estático', 'cmake-version': 'versión de CMake',
               'compiler-version': 'versión del compilador', 'analyzer-version': 'versión del analizador',
               'native-test-evidence': 'verificación del binario de prueba'}
@@ -112,6 +112,17 @@ def enrich_scanner_stage(canonical, stage):
                 timed_out = outcome.get('timed_out') is True
                 evidence.append((f'Prueba aislada / {labels.get(group, group)} / {name}: salida nativa={code}; tiempo agotado=' + ('sí' if timed_out else 'no') + '.' if es
                     else f'Isolated test / {group} / {name}: native exit={code}; timed out=' + ('yes' if timed_out else 'no') + '.'))
+        context = (build.get('generated_context') or {}).get('baseline')
+        if isinstance(context, Mapping):
+            captured = context.get('captured_header_hashes') or {}
+            included = compiler.get('generated_header_inclusions') or {} if isinstance(compiler, Mapping) else {}
+            line = (f'Encabezados generados: {len(captured)} capturados; {len(included)} incluidos en la compilación directa. No son archivos originales del repositorio.' if es
+                    else f'Generated headers: {len(captured)} captured; {len(included)} included by direct compilation. These are not original repository files.')
+            summaries.append(line)
+            evidence.append(line)
+            digest = context.get('capture_sha256')
+            if isinstance(digest, str):
+                evidence.append(('SHA-256 de la captura de encabezados generados: ' if es else 'Generated-header capture SHA-256: ') + digest)
         header_verified = (record.get('cppcheck_source_coverage') or {}).get('header_context_verified') is True
         if es:
             gaps.append('La ejecución de libFuzzer no está verificada; la calificación integral sigue incompleta.' if header_verified else
