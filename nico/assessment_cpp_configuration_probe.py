@@ -63,7 +63,8 @@ print(json.dumps(result, sort_keys=True))
 
 def probe_project_configuration(source, targets, image, *, project_options,
                                 retain=lambda result: None, command=None, baseline_execution=None,
-                                unit_test_data=None):
+                                unit_test_data=None, capture_generated_context=False,
+                                retain_artifact=None):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -93,6 +94,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 or re.fullmatch(r'[A-Za-z0-9_./+-]{1,120}', value) is None
                 for key, value in project_options.items())):
         raise ValueError('worker_configuration_probe_options_invalid')
+    if (type(capture_generated_context) is not bool
+            or (capture_generated_context and (baseline_execution is None or not callable(retain_artifact)))):
+        raise ValueError('worker_configuration_probe_capture_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:
         fields = {'schema', 'profile', 'compilation_database_sha256', 'build_seconds',
@@ -135,6 +139,10 @@ def probe_project_configuration(source, targets, image, *, project_options,
         'compiled': False, 'tests_executed': False, 'full_project_qualified': False,
         'error': None, 'wall_budget_seconds': 90, 'execution_budget_seconds': 80, 'duration_ms': 0}
 
+    if capture_generated_context:
+        result.update(schema='nico.cpp-project-configuration-probe.v4',
+            generated_context=None, generated_context_verified=False)
+
     if baseline_execution is not None:
         result.update(baseline_execution=dict(baseline_execution), tests_discovered=[], tests_passed=False,
             scratch_capacity_verified=False, scratch_capacity_bytes=None,
@@ -149,17 +157,32 @@ def probe_project_configuration(source, targets, image, *, project_options,
         if time.monotonic() >= deadline:
             raise ValueError('worker_configuration_probe_deadline')
 
-    def observe(key, argv, *, data=None, limit=65536, seconds=15):
+    def observe(key, argv, *, data=None, limit=65536, seconds=15, external=False):
         checkpoint()
         before = time.monotonic()
         observed = command(argv, checkpoint=checkpoint, timeout=min(seconds, deadline-before),
                            input_bytes=data, limit=limit, native_exit=True)
         raw = observed['output']
-        result['operations'].append({'id': key, 'invocation': argv,
+        entry = {'id': key, 'invocation': argv,
             'exit_code': observed['exit_code'], 'timed_out': observed['timed_out'],
             'output_truncated': observed['output_truncated'], 'duration_ms': int((time.monotonic()-before)*1000),
-            'output': base64.b64encode(raw).decode('ascii'), 'output_sha256': hashlib.sha256(raw).hexdigest()})
-        save()  # Retain returned bytes before parsing, assertions, or next command.
+            'output': None if external else base64.b64encode(raw).decode('ascii'),
+            'output_sha256': hashlib.sha256(raw).hexdigest()}
+        if external:
+            entry['output_artifact'] = None
+        result['operations'].append(entry)
+        save()  # Preserve the returned native outcome, even if artifact storage fails.
+        if external:
+            try:
+                reference = retain_artifact(key, raw)
+            except Exception as exc:
+                raise ValueError('worker_configuration_probe_artifact_retention_failed') from exc
+            expected = {'path': 'artifacts/' + key + '-' + entry['output_sha256'] + '.json',
+                        'sha256': entry['output_sha256'], 'bytes': len(raw)}
+            if reference != expected or type(reference.get('bytes')) is not int:
+                raise ValueError('worker_configuration_probe_artifact_reference_invalid')
+            entry['output_artifact'] = reference
+            save()  # Artifact bytes and identity are retained before parsing or promotion.
         return observed
 
     def invoke(key, argv, *, data=None, limit=65536, seconds=15, allow_failure=False):
@@ -362,6 +385,28 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                       and passed == names and not skipped)
             if not result['tests_passed']:
                 raise ValueError('worker_configuration_probe_native_tests_failed')
+            if capture_generated_context:
+                from nico.assessment_cpp_project_snapshot import (PROJECT_SNAPSHOT_PROGRAM,
+                    PROJECT_GENERATED_STREAM_LIMIT, project_snapshot_request, validate_project_snapshot)
+                snapshot_observed = observe('project-generated-context',
+                    ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive', name,
+                     'python3', '-I', '-S', '-c', PROJECT_SNAPSHOT_PROGRAM],
+                    data=canonical_bytes(project_snapshot_request(contexts)),
+                    limit=PROJECT_GENERATED_STREAM_LIMIT, seconds=30, external=True)
+                if (snapshot_observed['exit_code'] != 0 or snapshot_observed['timed_out']
+                        or snapshot_observed['output_truncated']):
+                    raise ValueError('worker_configuration_probe_snapshot_failed')
+                try:
+                    snapshot = validate_project_snapshot(_json(snapshot_observed['output']), contexts)
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise ValueError('worker_configuration_probe_snapshot_invalid') from exc
+                result['generated_context'] = {
+                    **{k: v for k, v in snapshot.items() if k != 'files'},
+                    'files': {p: {'sha256': v['sha256'], 'bytes': v['bytes']}
+                              for p, v in snapshot['files'].items()},
+                    'artifact': result['operations'][-1]['output_artifact']}
+                result['generated_context_verified'] = True
+                save()
             result['status'] = 'BASELINE_EXECUTED'
 
     except (Exception, KeyboardInterrupt) as exc:
