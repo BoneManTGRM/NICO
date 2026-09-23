@@ -1,9 +1,15 @@
 # Trusted pinned tools only. Assessed source enters the disposable runtime, never a layer.
 FROM gcc:14.2.0-bookworm@sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c3271ed802b81584a82
+COPY project-dependencies /opt/project-dependency-inputs
 COPY llvm /opt/llvm-inputs
 COPY cppcheck /opt/tool-src
 COPY cmake.whl /opt/cmake.whl
-RUN cd /opt/llvm-inputs && sha256sum -c SHA256SUMS \
+RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
+    && for package in *.deb; do dpkg-deb --extract "$package" /; done \
+    && mkdir -p /opt/nico-project-dependencies \
+    && cp receipt.json SHA256SUMS /opt/nico-project-dependencies/ \
+    && cd / && rm -rf /opt/project-dependency-inputs \
+    && cd /opt/llvm-inputs && sha256sum -c SHA256SUMS \
     && for package in *.deb; do dpkg-deb --extract "$package" /; done \
     && test "$(/usr/lib/llvm-17/bin/clang -dumpversion)" = 17.0.6 \
     && cd / && rm -rf /opt/llvm-inputs \

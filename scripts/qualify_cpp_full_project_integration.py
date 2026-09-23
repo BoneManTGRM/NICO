@@ -24,8 +24,10 @@ from scripts.qualify_cpp_full_project_control import FIXTURE
 from scripts.qualify_cppcheck_worker_control import consume_control
 
 
-def fixture(*, generated_headers=False, bounded_fuzz=False):
+def fixture(*, generated_headers=False, bounded_fuzz=False, project_dependencies=False):
     """Retain the original fixture by default; opt in to a real configured header."""
+    if type(project_dependencies) is not bool or (project_dependencies and not generated_headers):
+        raise ValueError('owned_dependency_generated_context_required')
     result = dict(FIXTURE)
     if generated_headers:
         result['config.h.in'] = '#pragma once\n#define NICO_CONFIGURED_OFFSET @NICO_CONFIGURED_OFFSET@\n'
@@ -35,6 +37,27 @@ def fixture(*, generated_headers=False, bounded_fuzz=False):
             'target_include_directories(control_sum PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")\n')
         result['sum.cpp'] = ('#include "sum.hpp"\n#include "generated/config.h"\n'
             'int control_sum(int a, int b) { return a + b + NICO_CONFIGURED_OFFSET; }\n')
+    if project_dependencies:
+        # Exercise actual nested compilation, pinned image headers, linking and
+        # library execution. Missing packages cannot become a no-op success.
+        result['CMakeLists.txt'] = result['CMakeLists.txt'].replace(
+            'add_library(control_sum STATIC sum.cpp)', 'add_subdirectory(src/library)')
+        result['src/library/CMakeLists.txt'] = (
+            'find_package(Boost 1.74 EXACT CONFIG REQUIRED)\n'
+            'find_package(SQLite3 3.40 REQUIRED)\n'
+            'add_library(control_sum STATIC sum.cpp)\n'
+            'target_include_directories(control_sum PUBLIC "${PROJECT_SOURCE_DIR}")\n'
+            'target_link_libraries(control_sum PUBLIC Boost::headers SQLite::SQLite3)\n')
+        del result['sum.cpp']
+        result['src/library/sum.cpp'] = (
+            '#include "sum.hpp"\n#include "generated/config.h"\n'
+            '#include <boost/array.hpp>\n#include <boost/version.hpp>\n#include <sqlite3.h>\n'
+            'static_assert(BOOST_VERSION == 107400, "Pinned Boost headers required");\n'
+            'static_assert(SQLITE_VERSION_NUMBER == 3040001, "Pinned SQLite headers required");\n'
+            'int control_sum(int a, int b) {\n'
+            '    if (sqlite3_libversion_number() != 3040001) return -100;\n'
+            '    boost::array<int, 2> values = {{a, b}};\n'
+            '    return values[0] + values[1] + NICO_CONFIGURED_OFFSET;\n}\n')
     if bounded_fuzz:
         result['corpus/seed'] = 'X'
         result['fuzz.cpp'] = """#include <stddef.h>
@@ -56,7 +79,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     return result
 
 
-def plan(image, *, negative=False, generated_headers=False, bounded_fuzz=False):
+def plan(image, *, negative=False, generated_headers=False, bounded_fuzz=False, project_dependencies=False):
     fuzz = None
     if bounded_fuzz:
         from nico.assessment_cpp_fuzz import fuzz_plan
@@ -65,11 +88,12 @@ def plan(image, *, negative=False, generated_headers=False, bounded_fuzz=False):
             targets=[{'name': 'control', 'binary': 'fuzz_control', 'corpus': ['corpus/seed'], 'environment': {}}],
             runs=128, seconds=2, seed=7)
     return {'profile': PROFILE, 'tool_version': '2.17.1', 'image_digest': image,
-        'configuration': configuration(units=['main.cpp', 'sum.cpp'],
+        'configuration': configuration(units=['main.cpp', 'src/library/sum.cpp' if project_dependencies else 'sum.cpp'],
             unit_tests=['negative' if negative else 'unit'], integration_tests=['integration'], compiler_evidence=True, native_test_evidence=True,
-            generated_headers=['generated/config.h'] if generated_headers else None, bounded_fuzz=fuzz),
+            generated_headers=['generated/config.h'] if generated_headers else None, bounded_fuzz=fuzz, nested_cmake=project_dependencies),
         'targets': {path: hashlib.sha256(text.encode()).hexdigest()
-                    for path, text in fixture(generated_headers=generated_headers, bounded_fuzz=bounded_fuzz).items()},
+                    for path, text in fixture(generated_headers=generated_headers, bounded_fuzz=bounded_fuzz,
+                                              project_dependencies=project_dependencies).items()},
         'limits': {'max_attempts': 1, 'wall_seconds': 180, 'lease_seconds': 30},
         'max_receipt_bytes': (8 if bounded_fuzz else 2) * 1024 * 1024}
 
@@ -156,6 +180,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
     parser.add_argument('--bounded-fuzz', action='store_true')
+    parser.add_argument('--project-dependencies', action='store_true',
+                        help='Exercise pinned Boost/SQLite in the owned nested CMake control.')
     parser.add_argument('--generated-headers', action='store_true', help='Qualify the opt-in frozen generated-header configuration.')
     parser.add_argument('--output', type=Path, default=Path('cpp-full-project-integration'))
     args = parser.parse_args(); args.output.mkdir(parents=True, exist_ok=True)
@@ -191,10 +217,12 @@ def main():
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=10).stdout.strip().decode()
             git('init', '--bare', '.')
             tree = write_fixture_tree(git, fixture(
-                generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz))
+                generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz,
+                project_dependencies=args.project_dependencies))
             revision = git('commit-tree', tree, data=b'Owned CMake integration fixture\n')
             for negative in (False, True):
-                contract = plan(args.image, negative=negative, generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz); observations = {}
+                contract = plan(args.image, negative=negative, generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz,
+                    project_dependencies=args.project_dependencies); observations = {}
                 evidence.update(stage='control_requested', active_control_negative=negative)
                 retain()
                 result = consume_control(contract, git_dir, tree, revision, release, observations)
@@ -216,16 +244,21 @@ def main():
                     proof = build['native_test_binary_evidence'][group]
                     assert proof['binary_instrumentation_verified'] is True, 'native_test_binary_binding_incomplete'
                     assert proof['tests_passed'] is (not negative), 'native_test_binary_outcome_changed'
-                assert build['compiled_translation_units'] == ['main.cpp', 'sum.cpp'], 'direct_compiler_population_incomplete'
+                required_units = contract['configuration']['translation_units']
+                library_unit = 'src/library/sum.cpp' if args.project_dependencies else 'sum.cpp'
+                assert build['compiled_translation_units'] == required_units, 'direct_compiler_population_incomplete'
                 assert record['cppcheck_source_coverage']['header_context_verified'] is True, 'compiler_header_context_incomplete'
                 for group in ('baseline', 'address', 'undefined'):
                     proof = build['compiler_evidence'][group]
                     assert proof['complete'] is True, 'compiler_configuration_incomplete'
-                    assert proof['header_inclusions']['sum.hpp'] == ['main.cpp', 'sum.cpp']
+                    assert proof['header_inclusions']['sum.hpp'] == required_units
                     if args.generated_headers:
-                        assert proof['generated_header_inclusions'] == {'generated/config.h': ['sum.cpp']}, 'generated_header_inclusion_missing'
+                        assert proof['generated_header_inclusions'] == {'generated/config.h': [library_unit]}, 'generated_header_inclusion_missing'
                         assert sorted(proof['captured_generated_header_hashes']) == ['generated/config.h']
                         assert proof['toolchain_image_digest'] == contract['image_digest']
+                    if args.project_dependencies:
+                        assert {'/usr/include/boost/array.hpp', '/usr/include/sqlite3.h'}.issubset(
+                            proof['toolchain_header_paths']), 'project_dependency_header_evidence_missing'
                     if group != 'baseline':
                         assert proof['object_instrumentation_observed_units'], 'instrumented_object_symbols_missing'
                     assert proof['test_binary_instrumentation_verified'] is False

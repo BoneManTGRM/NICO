@@ -1,0 +1,33 @@
+{
+  "packages": [
+    {
+      "architecture": "amd64",
+      "bytes": 9507888,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libboost1.74-dev/download",
+      "package": "libboost1.74-dev",
+      "sha256": "ba14fe04d7f138f874bd3ab3a20c4fd1e9f654e271449b8f3e48d20f942dbb93",
+      "url": "https://deb.debian.org/debian/pool/main/b/boost1.74/libboost1.74-dev_1.74.0+ds1-21_amd64.deb",
+      "version": "1.74.0+ds1-21"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 838808,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libsqlite3-0/download",
+      "package": "libsqlite3-0",
+      "sha256": "a8d78b40e9b4e422224aeebfe0e4dfc243f6acf3532490b0c05480d4283d41e2",
+      "url": "https://deb.debian.org/debian/pool/main/s/sqlite3/libsqlite3-0_3.40.1-2+deb12u2_amd64.deb",
+      "version": "3.40.1-2+deb12u2"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 1025140,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libsqlite3-dev/download",
+      "package": "libsqlite3-dev",
+      "sha256": "afb550eb103e717000a2c7adae2e06e3eebd2952bf7d243ae2f1ca8594307563",
+      "url": "https://deb.debian.org/debian/pool/main/s/sqlite3/libsqlite3-dev_3.40.1-2+deb12u2_amd64.deb",
+      "version": "3.40.1-2+deb12u2"
+    }
+  ],
+  "provenance": "Debian bookworm amd64 package download metadata; retrieved 2026-09-23. Pinned input hashes, not a vulnerability-free or installed-runtime claim.",
+  "schema": "nico.cpp-project-dependencies.v1"
+}

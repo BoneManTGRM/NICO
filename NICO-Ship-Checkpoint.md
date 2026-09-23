@@ -1,102 +1,78 @@
 # Active mission: Comprehensive C/C++ and Bitcoin qualification
 
-Updated 2026-09-23. Continue PR #1641 on `feat/cpp-full-project-capacity`; do not create a replacement branch or PR. The owner's `NICO-CPP-Bitcoin-Execution-Prompt.md` and its C0-C19 acceptance contract remain governing. This is a continuation, not a new strategy.
+Updated 2026-09-23. Continue PR #1641 on `feat/cpp-full-project-capacity`. The owner's `NICO-CPP-Bitcoin-Execution-Prompt.md` and C0-C19 contract remain governing. No replacement branch, permission bypass, automatic human approval, or full-capability completion claim.
 
-## Historical evidence is preserved, not superseded by a new success claim
+## Current increment and immutable continuity
 
-The complete previous checkpoint is retained verbatim in the immutable parent:
+The publication parent is `934bcf6bf30e5b011adabc7764cf75dcecdf92b9`, tree `ae2f8dbba7f1400742be553f27f092951565b02c`; observed main/base is `faaa10b037eb58e4175561b96dadf0d929764df4`. Resolve this enclosing commit and current PR head from GitHub instead of making a self-referential documentation commit.
 
-[Full previous checkpoint at 0b9d7038](https://github.com/BoneManTGRM/NICO/blob/0b9d7038d7558fd478aad8c32ea871c765b429f1/NICO-Ship-Checkpoint.md).
+The complete preceding checkpoint is preserved at [934bcf6b](https://github.com/BoneManTGRM/NICO/blob/934bcf6bf30e5b011adabc7764cf75dcecdf92b9/NICO-Ship-Checkpoint.md): Git blob `8a9109d1bb4fcee53be16669c614594e2e7712ad`, SHA-256 `9077d41e08b48d610a6ece39746e9887dd03147b6ba31a250bb4a833c8717210`, 12,768 bytes. It retains the exact older 589,918-byte checkpoint, PR #1627 worker/registry/database evidence, original authorization/restrictions, historical reports and all prior failure outcomes. This is the only active ledger; immutable historical next-action prose is not a current instruction to restart.
 
-Its Git blob is `ff2a3d2f7d6e89fbf100763158d4b9b16ab29271`, SHA-256 `b8109fcc5efbd3c93e1450e953599d2dcd7bac8f235e9b155cbc5e6d4d6816ec`, length 589,918 bytes. Follow that exact version for earlier PR #1627 worker protocol, database/restart, registry, authorization, truth-stress, production and approved-report evidence. Those historical receipts and accepted scoped proofs are not erased, rerun, or promoted to current full-project acceptance. This shorter current checkpoint separates today's state from stale historical next-action instructions; there is still only one active checkpoint.
+Qualification target remains `bitcoin/bitcoin@bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`. Historical report target `0e9018e8b65611b0769545e177110e4b7fc51244`, run `comprun_7cc47a5a81695fa452354479ea23b422`, remains separate. Production entrypoint is `https://app.nicoaudit.com`; no deployment or live Bitcoin run is claimed here.
 
-## Immutable anchors for this increment
+## NESTED-CMAKE-1: supported subdirectory configuration
 
-- Repository: `BoneManTGRM/NICO`.
-- Observed base/main: `faaa10b037eb58e4175561b96dadf0d929764df4`.
-- Parent candidate: `0b9d7038d7558fd478aad8c32ea871c765b429f1`.
-- Parent tree: `683898616480ed13da69e917205d1d30356fea62`.
-- Parent integration merge: `75440faf4c06bd7b6044f2a69cad580a8bcff115`, with the same tree. This is a CI merge identity, not a production release.
-- Qualification target: `bitcoin/bitcoin@bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, recorded tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`.
-- Historical report target remains separate: `0e9018e8b65611b0769545e177110e4b7fc51244`, run `comprun_7cc47a5a81695fa452354479ea23b422`.
-- Production entrypoint: `https://app.nicoaudit.com`. No deployment or live release identity is asserted by this increment.
+First divergence: existing compilation-database validators reject a legitimate CMake `add_subdirectory` working directory, even when source, includes, compiler and the complete required unit population remain bound. Owned reproduction: ten expected failures and fourteen unchanged rejection controls.
 
-Resolve the current branch head and checks from GitHub; do not mistake this file's parent anchor for the new candidate's SHA. Do not make an additional documentation-only commit solely to insert the enclosing commit's self-reference.
+Smallest correction extends the existing parser, execution and canonical reconstruction. Opt-in configuration v6 wraps validated v4/v5 with `cmake_layout=nested-source-v1`. Canonical child directories beneath the matching build root are accepted; cross-configuration, sibling, traversal, malformed and relative directories are rejected. Source/include operands remain absolute and restricted. Actual recompilation still uses the private analyst directory, never the untrusted database working directory.
 
-## Retained current native evidence
+Old v1-v5 meanings are unchanged. The existing compiler program remains byte-identical, SHA-256 `e733ce201f07381a5a5de7585b6296c3b9d21a5ca236246fc0b10dbd1140ae71`; the separately selected nested program is `388a56484e82b3e36f8776b8c14de2e1971b0200b03fe689154744dbb3a15e4d`. Snapshot program is unchanged, `69260ed6a9832caa309c34c70607ca7c8b0136c70abf1395285a42ac1537d084`. Both original native parent receipts reconstruct exactly with the new source; old evidence is not upgraded into v6 proof.
 
-Parent integration run [35818783575](https://github.com/BoneManTGRM/NICO/actions/runs/35818783575) completed successfully. All 21 workflows on the parent head were observed completed/success; changed code requires fresh candidate checks.
+## PROJECT-DEPS-1: pinned inputs and meaningful owned control
 
-- Exact-source artifact `10732314434`, ZIP SHA-256 `5ab5d0c4c6c49472b81871a250377c54af0355d12d43f0341c5c4eb895863440`. Its commit/tree and internal archive digest were verified before local source use.
-- Native artifact `10732024695`, ZIP SHA-256 `dbacd9e4b9ed5e4ae18fd6d9a5659ae7e22c48bd3841d249e88d4c02a6240b6a`.
-- Native image config ID `sha256:47024ad074bf2d7b8dcb6775767b6c0f335fbf3cb2a30e3590beb2d8c09f38b4`. This CI-built full-project image is not asserted to be the qualified production registry image.
-- Actual owned positive and intentional negative controls completed the generated-header, compiler, isolated sanitizer replay and bounded libFuzzer pipeline. The control artifact reports `PASS_OWNED_PROJECT_INTEGRATION`, 53,846 ms overall, `synthetic_issuer=true`, `production_dispatch_exercised=false`, `bitcoin_executed=false`, `production_qualified=false`.
-- Both original native receipts reconstruct their original canonical records exactly with this increment's corrected validator. Positive canonical SHA-256 `c7873d02925b3be30fc51f6c6c1cff26078ebcfc0b26eefdee2887c6d7f7a0bf`; negative canonical `9c3d03d44cf085e17a76af4f9112711d9c0581402d5d12474beaeb3aebf4b367`.
-- Positive receipt SHA-256 `e3cf0771c5fe5d4c04017f448b3f2a8e463e8e22893f6450c103a83225c9a0bb`; negative receipt `bab56698c841279a9ecb9ffc3524c20ab462ee66e66de360a28f6bbc17e98311`.
-- Retained owned-control PDFs are 22 pages each: English `0c44b33e9374e826f2c6e58459cb3ff799eb4ee3bafe48cf62754b4c82fefa6c`, es-MX `b127b752a3d2a247baf32dfd23eff5b7278fdc6c73cab9c5f309a11c32301bf7`. These are automated engineering drafts, not Bitcoin reports or approved client deliverables.
+The existing tool provisioner now supports one fixed reviewed dependency lock: Boost 1.74.0 development headers and matching SQLite 3.40.1 runtime/development packages. Official Debian bookworm amd64 metadata supplies exact package versions, lengths and SHA-256 values in `docker/assessment-project-dependencies.lock.json`. Total compressed inputs are 11,371,836 bytes. This is not a complete Bitcoin dependency inventory, installed-runtime proof, or a vulnerability-free claim.
 
-Earlier configuration v1/v2/v3 meanings, v4 generated-header composition, v5 fuzz composition, original CTest limitations, Spanish fixes, failed native outcomes, and the smaller worker profiles remain unchanged.
+Downloads remain credential-free, HTTPS-only, nonredirecting and byte/hash checked, with a 30-second aggregate dependency budget and 16 MiB aggregate input ceiling. Partial evidence is preserved on failure. No public package-install endpoint or arbitrary dependency selector is introduced. The existing disposable tool-image recipe verifies the input manifest and uses extraction only, without package install hooks or build networking. Input receipt and hashes are retained inside the image. Assessed source remains outside tool-image construction.
 
-## New bounded changes and verification
+The existing native positive and intentional-negative controls now explicitly request a nested library that uses Boost headers and calls SQLite at runtime. Header-version assertions, actual linking/runtime-version checks, source/generated/image-header evidence, original failed-test semantics, both sanitizer binary replays and bounded fuzz remain required. The default fixture is unchanged. New tests and package receipt retention are added to the existing workflow, not a parallel proof pipeline.
 
-### NATIVE-TIMING-1: corrected at receipt validation
+Every existing assertion, contents-read-only workflow permission, five-minute job bound, 2 CPU/2 GiB/256 PID class, smaller profile, one-attempt lease contract and report approval boundary remains. This increment does not publish an image registry artifact or activate a production profile.
 
-The validator previously accepted individually bounded sanitizer operations whose summed duration exceeded the enclosing controller's recorded duration. This could understate aggregate execution time despite green CI. A 20,000 ms nested operation inside a 10 ms stage reproduced the defect through the existing receipt boundary.
+## Verification actually observed
 
-The native-test validator now sums every recorded serial operation and compares it to the enclosing stage, using the existing fuzz convention's two-millisecond rounding allowance. Failed-stage receipts do not excuse contradictions. No native receipt or canonical/report schema changed; valid historical native records reconstruct byte-for-byte identically. Original CTest execution-time identity remains unproven, not rewritten as replay proof.
+- Nested-directory RED: 10 failures / 14 existing rejection controls passed.
+- Dependency provisioner RED: 3 failures / 17 controls passed; actual dependency-fixture API RED: 2 failures; malformed dependency-name RED: 2 failures / 3 controls passed.
+- Fresh final publication command: `python -m pytest -q tests/test_cpp_nested_cmake.py tests/test_cpp_project_dependencies.py tests/test_cpp_fixture_tree.py tests/test_cpp_fuzz_tool_provisioning.py tests/test_cpp_integration_workflow_schedule.py tests/test_cpp_native_test_timing.py tests/test_assessment_worker_archive.py` — 160 passed in 4.30 seconds.
+- Separate affected regression invocation: 313 passed, 25 explicitly deselected with `-k 'not report and not exporter'`. No complete local export-suite pass is claimed. Hosted CI retains all prior tests and adds both new files without those exclusions.
+- Python compilation, workflow shell syntax, fixed lock validation and `git diff --check` pass. Source subset was verified from the native GitHub source artifact, not represented as a complete repository checkout. Local Python 3.13.5 differs from hosted Python 3.11. Docker is unavailable locally; native execution must be established by hosted evidence.
 
-RED: 25 expected failures, six unchanged positive controls. GREEN: all 31 timing regressions. The actual retained positive/negative receipts also pass exact reconstruction. Their address/undefined nested totals were 708/691 ms inside 715/696 ms, and 694/683 ms inside 700/689 ms respectively.
+Publication invalidates dependent tool-image, nested configuration, selected fixture and native execution proof. Unchanged legacy receipt reconstruction, source acquisition, timing validation, smaller profiles and earlier scoped evidence remain valid. New candidate CI, actual dependency download/build/linking, native v6 execution and independent complete review are pending; parent green workflows are not inherited.
 
-### SOURCE-ARCHIVE-1: bounded generic large-population acquisition
+## Retained real parent evidence
 
-The existing source adapter now uses one immutable-commit archive for full-project populations of at least 32 files when the whole recorded tree fits the already-declared source byte envelope. This avoids thousands of sequential per-file HTTP requests. It does not depend on the repository's name and does not activate production selection.
+All 21 workflows on `934bcf6b` passed. C++ integration run `35854948193`, native job `107161838415`, used synthetic merge `8aa41110e1a20597f1088f1bc690dd2af8732eaf` with the exact parent tree, not a production release.
 
-Commit and complete-tree metadata still establish the HTTPS identity. Original Git blob hashes and independently frozen selected SHA-256 values remain mandatory. Only selected original files are materialized. All regular archive members are verified; links/special files are never extracted. Unselected Git symlink text can be verified without creating links. Executable bits come from the frozen tree, not tar permissions. Small profiles and trees whose unselected bytes exceed the archive envelope keep the existing per-blob path.
+Source artifact `10747211116`: verified ZIP SHA-256 `384f179a69b574d4db2034e81580ff0295871ea90a5d58c9a7148c1608d9f3bd`, inner source archive `80d3af50da7c0d252dd32ec14870adaa054bcec3776de5be76d1a32bc9994ed8`. Native artifact `10747291327`: verified ZIP SHA-256 `830af7d3558e4ce9dc0d2aab735835338fbf019dd8db717dc2e6bbd36c25ea99`. Original result is `PASS_OWNED_PROJECT_INTEGRATION`, 53,761 ms, synthetic issuer true, production dispatch false, Bitcoin executed false, production qualified false.
 
-Acquisition bounds: selected per-file 16 MiB, selected aggregate per the existing contract (at most 64 MiB), compressed archive 64 MiB, all expanded tar data including metadata/padding 128 MiB, existing lease checkpoints and deadlines. Only the exact `codeload.github.com/owner/repository/tar.gz/<40-character-SHA>` route is added to trusted pre-execution provisioning. No redirects, credentials, environment proxy inheritance, or implicit HTTP content expansion. External network remains unavailable to assessed code.
+Fresh replay with this increment reproduced both original canonical records exactly. Positive receipt `30e7861b42eb464864f166c9a485a424ab9371a2ef8784624f0999a63b51612c`, canonical `02312e25549e280e150e1089c2df0f1d719229ddf8ccebd76876f4fe587c44ad`; intentional-negative receipt `1f9bf052e7db4565e65d21ea4bdd7b89620c4bc6c351d6d9edd20697f5719bea`, canonical `81fc3216dce93d0d045e20bff064b631ad5f1af1b78bf59ce24eb0078d410e32`. These are replay/compatibility proofs, not a new native run. Parent English/es-MX engineering drafts remain unapproved owned-control artifacts, not Bitcoin reports.
 
-Malformed archives, digest substitutions, missing/duplicate files, traversal, unsafe types, truncated gzip, nonzero trailing data, second tar streams, excess expansion and lease loss fail before atomic promotion. No failed archive silently falls back or changes the required population. A transport hash/count receipt is retained by the adapter; existing source-method and native receipt projections are unchanged.
+## Acceptance matrix: no new whole-mission PASS
 
-RED: 22 missing archive-capability cases; then four transport/scheduling regressions. GREEN: 37 archive tests plus all existing neighboring source tests. These are owned synthetic transport fixtures, not a live Bitcoin download or Bitcoin resource qualification.
-
-### Verification scope
-
-- 71 tests passed: new timing/archive cases and existing schedule/retention tests.
-- 204 affected non-export regression cases passed; six exporter cases were explicitly excluded from that invocation.
-- 175 source, launcher, capacity, generated-context, phase-boundary and fuzz-workspace neighbors passed.
-- These are separate, disjoint test-file groups. Earlier combined local exporter invocations exceeded the execution timeout and are not reported as passing.
-- New test files are required by the existing regression predecessor before the native integration job. Existing tests, five-minute job bounds, contents-read-only permissions and native positive/negative assertions are preserved.
-- Complete new-candidate hosted CI, independent complete review, and Bitcoin qualification are not inherited from the parent.
-
-## Acceptance state: preserve subproofs, do not promote them to whole-mission success
-
-| Predicate | Retained evidence and remaining requirement |
+| Predicate | Current scoped proof and missing acceptance |
 |---|---|
-| C0 | Pinned target and prior public discovery retained; meaningful frozen Bitcoin execution/dependency/configuration and aggregate budget still require qualification. |
-| C1 | Generic original-byte acquisition and new bounded archive fixtures verified; actual full required Bitcoin population through this path not established. |
-| C2 | Real owned controls demonstrate enforced full-project isolation/resources; Bitcoin workload resource qualification remains separate. |
-| C3 | Existing worker authority protections preserved; synthetic control issuer is not actual production OIDC proof for the final candidate. |
-| C4 | Existing durable lease/receipt/persistence/restart evidence retained; final production dispatch on the full-project profile still requires acceptance. |
-| C5 | Owned configured static-analysis evidence retained; mandatory Bitcoin translation-unit/configuration coverage not established. |
-| C6 | Owned build/compiler/generated-header proofs retained; Bitcoin dependencies, configurations, required targets and header population not qualified. |
-| C7 | Real owned native tests, isolated sanitizer replays and bounded fuzz retained; meaningful Bitcoin test/sanitizer/fuzz execution not established. |
-| C8 | Existing observation/finding/disposition boundaries unchanged; actual Bitcoin results must retain them. |
-| C9 | Existing distinct source/translation-unit/header/test/fuzz populations unchanged; actual required Bitcoin populations still need reconciliation. |
-| C10 | Existing score/assurance boundaries unchanged; no Bitcoin assurance is inferred from CI or declared resources. |
-| C11 | 2 CPU/2 GiB/256 PID class remains bounded; real Bitcoin aggregate runtime, memory, retries and cost qualification not established. |
-| C12 | Small owned C++ native evidence and focused regressions retained; complete new-candidate existing-language CI pending publication. |
-| C13 | Owned bilingual report path retained; actual Bitcoin structured/PDF report not produced. |
-| C14 | Parent mobile/WebKit checks passed; final candidate production bilingual/restart/mobile acceptance remains required. |
-| C15 | No attestation, human review, approval, delivery authorization or historical approved artifact was altered. Actual new-edition actions remain human-controlled. |
-| C16 | Parent 21 workflows passed; complete independent review was absent. New-candidate CI/review and disposition of all Important/Critical findings remain mandatory. |
-| C17 | No merge or deployment performed. Exact coordinated frontend/backend/worker release identity remains a post-merge gate. |
+| C0 | Pinned target/public discovery retained. Meaningful frozen Bitcoin configuration, dependency closure and aggregate budgets remain unqualified. |
+| C1 | Exact source/archive implementation and prior regressions retained. Complete required live Bitcoin acquisition through the path remains unproved. |
+| C2 | Existing owned isolation proofs retained; new image/fixture and Bitcoin workload require native qualification. |
+| C3 | Dedicated worker authority protections unchanged; final actual production issuer and release binding remain unproved. |
+| C4 | Durable protocol evidence retained; full-profile real production dispatch/recovery acceptance remains outstanding. |
+| C5 | Prior owned static analysis retained; new nested dependency control pending hosted execution; full required Bitcoin units not qualified. |
+| C6 | Generic nested CMake implementation and regression proof added. Actual new native build/link/header results and Bitcoin component/dependency proof remain outstanding. |
+| C7 | Prior owned tests/sanitizer replay/fuzz evidence retained; new fixture pending native execution; Bitcoin runtime scope remains unqualified. |
+| C8 | Canonical observation/finding/disposition classes unchanged; actual Bitcoin results still required. |
+| C9 | Original/generated/image headers and unit populations stay separate; no directory acceptance grants analyzed coverage by itself. |
+| C10 | Scoring and assurance unchanged; no unknown metric or small-control pass becomes Bitcoin assurance. |
+| C11 | Hard resource limits unchanged; Bitcoin-size aggregate runtime/memory/disk/retry/cost qualification not established. |
+| C12 | Default controls preserved; fresh focused regressions pass; complete new hosted CI pending. |
+| C13 | Prior owned bilingual report projection retained; actual Bitcoin structured outputs/PDF not produced. |
+| C14 | Prior scoped mobile/WebKit proof retained; affected production bilingual/restart/mobile acceptance remains required. |
+| C15 | Requester attestation, human/specialist approval, delivery and historical immutable artifacts unchanged. |
+| C16 | Parent CI passed; new candidate CI and completed independent full base-to-head review remain mandatory. No author test is independent review. |
+| C17 | No merge/deployment or production registry/profile activation. Exact frontend/backend/worker serving chain not established. |
 | C18 | Actual authorized production Bitcoin assessment not executed. |
-| C19 | Primary source/native artifacts and this checkpoint are retained; final production report/manifest and supported repeated retrieval remain outstanding. |
+| C19 | Existing artifact identities/checkpoint retained; final report manifest and repeated immutable retrieval remain outstanding. |
 
-## Exact continuation
+## Exact next action
 
-Verify the published candidate and all changed blob hashes, inspect its automatic CI and native artifacts, and obtain an actual independent review of the complete PR from the recorded base to the current head. Do not label the implementation author's own validation as independent review. Preserve each review finding until evidence-based disposition.
+Publish the verified files on this same branch using a non-force update, verify remote blob identities, then inspect the actual new candidate native integration jobs and retained success/failure artifacts. Diagnose a failure at its first producer; do not weaken tests, increase budgets without measured justification, or blindly rerun. Record publication/check/run/artifact observations in the PR evidence summary without self-invalidating documentation-only commits.
 
-Continue the existing reusable dependency/configuration and qualified production-profile work, then perform the frozen Bitcoin qualification through genuinely authorized, supported execution. Successful archive fixtures or owned native controls are not substitutes. No platform denial may be bypassed, and no additional privilege or spending authority is invented.
-
-Only merge once required implementation, pre-merge qualification, reviews and checks are satisfied. Then verify the coordinated deployed release and actual authorized production Bitcoin report, including bilingual content, approval/delivery boundaries and repeat retrieval. Do not use the final SHIPPED declaration before C0-C19 are evidenced. Never force-push, bypass checks, reclassify unknown execution as success, or ask the owner to repeat already-given permission.
+After native control qualification, continue meaningful generic large-project execution/dependency/target coverage and qualified production-profile work. Obtain an independent review of the complete main-base-to-final-head diff, verify and resolve every material finding. Bitcoin qualification and actual authorized production acceptance remain distinct required stages. No rejected platform action may be bypassed; complete independently permitted work without inventing an exemption, new privilege or spending grant. Merge only after required implementation, review, checks and pre-merge qualification. The final SHIPPED declaration remains prohibited until every required predicate is evidenced.

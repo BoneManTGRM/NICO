@@ -267,10 +267,13 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                     successful[spec['id']] = False
                     continue
                 database = base64.b64decode(encoded_db, validate=True)
-                _database(database, contract['configuration']['translation_units'], '/work/build')
+                _database(database, contract['configuration']['translation_units'], '/work/build',
+                    nested=contract['configuration'].get('cmake_layout') == 'nested-source-v1')
                 if contract['configuration'].get('generated_headers'):
-                    from nico.assessment_cpp_generated_context import derive_database
-                    database = derive_database(database, contract['configuration']['translation_units'],
+                    from nico.assessment_cpp_generated_context import derive_database, derive_nested_database
+                    derive = (derive_nested_database if contract['configuration'].get('cmake_layout') == 'nested-source-v1'
+                              else derive_database)
+                    database = derive(database, contract['configuration']['translation_units'],
                         'baseline', contract['configuration']['generated_headers'])
                     encoded_db = base64.b64encode(database).decode('ascii')
                 digest = hashlib.sha256(database).hexdigest()
@@ -290,7 +293,8 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                 group = spec['compiler_configuration']
                 _database(base64.b64decode(database, validate=True), contract['configuration']['translation_units'],
                           '/work/build' if group == 'baseline' else '/work/' + group,
-                          None if group == 'baseline' else group)
+                          None if group == 'baseline' else group,
+                          nested=contract['configuration'].get('cmake_layout') == 'nested-source-v1')
                 request = {'database': database, 'configuration': group,
                     'units': contract['configuration']['translation_units'], 'targets': contract['targets']}
                 if contract['configuration'].get('generated_headers'):

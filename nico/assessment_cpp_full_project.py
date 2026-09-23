@@ -23,7 +23,7 @@ CMAKE_VERSION = '3.31.6'
 
 
 def configuration(*, units, unit_tests, integration_tests, compiler_evidence=False,
-                  native_test_evidence=False, generated_headers=None, bounded_fuzz=None):
+                  native_test_evidence=False, generated_headers=None, bounded_fuzz=None, nested_cmake=False):
     """Create a bounded configuration, not an authorization/qualification flag."""
     if type(compiler_evidence) is not bool or type(native_test_evidence) is not bool or (native_test_evidence and not compiler_evidence):
         raise ValueError('worker_compiler_mode_invalid')
@@ -51,6 +51,13 @@ def configuration(*, units, unit_tests, integration_tests, compiler_evidence=Fal
             raise ValueError('worker_fuzz_native_binding_required')
         result.update(fuzz_base_schema=result['schema'], schema='nico.cpp-cmake-configuration.v5',
                       bounded_fuzz=deepcopy(bounded_fuzz))
+    if type(nested_cmake) is not bool:
+        raise ValueError('worker_nested_cmake_mode_invalid')
+    if nested_cmake:
+        if generated_headers is None:
+            raise ValueError('worker_nested_cmake_generated_context_required')
+        result.update(nested_base_schema=result['schema'], schema='nico.cpp-cmake-configuration.v6',
+                      cmake_layout='nested-source-v1')
     return result
 
 
@@ -67,6 +74,16 @@ def _names(values, *, empty=False):
 
 
 def validate_configuration(config, targets):
+    if isinstance(config, dict) and config.get('schema') == 'nico.cpp-cmake-configuration.v6':
+        base = deepcopy(config)
+        schema = base.pop('nested_base_schema', None)
+        mode = base.pop('cmake_layout', None)
+        if (not isinstance(schema, str) or schema not in {'nico.cpp-cmake-configuration.v4', 'nico.cpp-cmake-configuration.v5'}
+                or mode != 'nested-source-v1' or not base.get('generated_headers')):
+            raise ValueError('worker_nested_cmake_configuration_invalid')
+        base['schema'] = schema
+        validate_configuration(base, targets)
+        return deepcopy(config)
     if isinstance(config, dict) and config.get('schema') == 'nico.cpp-cmake-configuration.v5':
         from nico.assessment_cpp_fuzz import validate_plan
         base = deepcopy(config)
@@ -129,7 +146,7 @@ def validate_configuration(config, targets):
 
 def execution_steps(contract):
     config = contract['configuration']
-    generated = config.get('fuzz_base_schema', config.get('schema')) == 'nico.cpp-cmake-configuration.v4'
+    generated = config.get('fuzz_base_schema', config.get('nested_base_schema', config.get('schema'))) == 'nico.cpp-cmake-configuration.v4'
     steps = []
     def add(key, args, needs=(), artifacts=None, **extra):
         steps.append({'id': key, 'invocation': args, 'needs': list(needs),
@@ -156,7 +173,8 @@ def execution_steps(contract):
         add(group + '-build', build, (group + '-configure',))
         if config.get('compiler_evidence'):
             if generated:
-                from nico.assessment_cpp_generated_context import SNAPSHOT_PROGRAM, COMPILER_PROGRAM as PROGRAM
+                from nico.assessment_cpp_generated_context import SNAPSHOT_PROGRAM, COMPILER_PROGRAM, NESTED_COMPILER_PROGRAM
+                PROGRAM = (NESTED_COMPILER_PROGRAM if config.get('cmake_layout') == 'nested-source-v1' else COMPILER_PROGRAM)
                 add(group + '-generated-context', ['python3', '-I', '-S', '-c', SNAPSHOT_PROGRAM],
                     (group + '-build',), generated_configuration=group)
             else:
@@ -201,14 +219,16 @@ def _json(raw):
         parse_constant=lambda _: (_ for _ in ()).throw(ValueError('worker_full_project_nonfinite')))
 
 
-def _database(raw, units, build_dir, sanitizer=None):
+def _database(raw, units, build_dir, sanitizer=None, *, nested=False):
     """Inspect data only; never execute commands from compilation databases."""
+    from nico.assessment_cpp_generated_context import valid_build_directory
     rows = _json(raw)
     if not isinstance(rows, list) or not 1 <= len(rows) <= 20000:
         raise ValueError('worker_full_project_database_invalid')
     observed = []
     for row in rows:
-        if not isinstance(row, dict) or row.get('directory') != build_dir:
+        if not isinstance(row, dict) or not (valid_build_directory(row.get('directory'), build_dir)
+                if nested else row.get('directory') == build_dir):
             raise ValueError('worker_full_project_database_invalid')
         path = row.get('file', '')
         if not isinstance(path, str) or not path.startswith('/work/source/'):
@@ -318,7 +338,7 @@ def validate_native(native, contract):
             'artifact_sha256': {key: hashlib.sha256(data).hexdigest() for key, data in streams.items() if key != 'output'}})
     gaps, databases, discovered = [], {}, {}
     generated_contexts = {}
-    if config.get('fuzz_base_schema', config.get('schema')) == 'nico.cpp-cmake-configuration.v4':
+    if config.get('fuzz_base_schema', config.get('nested_base_schema', config.get('schema'))) == 'nico.cpp-cmake-configuration.v4':
         from nico.assessment_cpp_generated_context import validate_snapshot, validate_failure
         for group in ('baseline', *config['sanitizers']):
             key = group + '-generated-context'
@@ -343,7 +363,8 @@ def validate_native(native, contract):
         try:
             if not success[key]: raise ValueError('configure_incomplete')
             _database(raw[key].get('compilation_database', b''), config['translation_units'], directory,
-                      None if group == 'baseline' else group)
+                      None if group == 'baseline' else group,
+                      nested=config.get('cmake_layout') == 'nested-source-v1')
             databases[group] = True
         except (ValueError, TypeError, UnicodeError):
             databases[group] = False
@@ -385,9 +406,10 @@ def validate_native(native, contract):
     analysis_input_frozen = (bool(raw['static-analysis'].get('compilation_database')) and
         raw['static-analysis'].get('compilation_database') == raw['baseline-configure'].get('compilation_database'))
     if generated_contexts:
-        from nico.assessment_cpp_generated_context import derive_database
+        from nico.assessment_cpp_generated_context import derive_database, derive_nested_database
+        derive = derive_nested_database if config.get('cmake_layout') == 'nested-source-v1' else derive_database
         try:
-            expected_database = derive_database(raw['baseline-configure'].get('compilation_database', b''),
+            expected_database = derive(raw['baseline-configure'].get('compilation_database', b''),
                 units, 'baseline', config['generated_headers'])
             analysis_input_frozen = bool(generated_contexts.get('baseline') and
                 raw['static-analysis'].get('compilation_database') == expected_database)

@@ -61,6 +61,24 @@ def build_directory(group):
     return '/work/build' if group == 'baseline' else '/work/' + group
 
 
+def valid_build_directory(value, root):
+    """Accept canonical CMake subdirectories, never an arbitrary execution cwd.
+
+    Source and include operands still have to be absolute and independently
+    validated. Compiler replay always runs in the private analyst directory.
+    """
+    if not isinstance(value, str) or not isinstance(root, str):
+        return False
+    if value == root:
+        return True
+    if not value.startswith(root + '/'):
+        return False
+    relative = value[len(root) + 1:]
+    return (0 < len(relative) <= 500
+        and re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_./+-]*', relative) is not None
+        and all(part not in {'', '.', '..', '.git'} for part in relative.split('/')))
+
+
 def snapshot_directory(group):
     build_directory(group)
     return '/work/analysis/generated-' + group
@@ -257,6 +275,24 @@ def derive_database(raw, units, group, headers):
     return json.dumps(result, sort_keys=True, separators=(',', ':')).encode()
 
 
+def derive_nested_database(raw, units, group, headers):
+    rows = _strict_json(raw)
+    if not isinstance(rows, list) or len(rows) != len(units) or not rows:
+        raise ValueError('worker_generated_database_invalid')
+    if any(not isinstance(row, dict) or not isinstance(row.get('file'), str) for row in rows):
+        raise ValueError('worker_generated_database_invalid')
+    rows = sorted(rows, key=lambda row: row['file'])
+    result = []
+    for index, (unit, row) in enumerate(zip(units, rows)):
+        if not valid_build_directory(row.get('directory'), build_directory(group)) or row['file'] != '/work/source/' + unit:
+            raise ValueError('worker_generated_database_binding_invalid')
+        args = row.get('arguments')
+        if args is None and isinstance(row.get('command'), str): args = shlex.split(row['command'])
+        args = safe_generated_compile_argv(args, row['file'], '/work/analysis/compiler-' + group + '/u' + str(index), group, headers)
+        result.append({'directory': '/work/analysis', 'file': row['file'], 'arguments': args})
+    return json.dumps(result, sort_keys=True, separators=(',', ':')).encode()
+
+
 def collect_compiler(request):
     """Compile captured configuration, retaining original/generated populations."""
     import resource
@@ -372,7 +408,8 @@ def validate_generated_compiler(raw, database, context_raw, contract, group):
     from nico.assessment_cpp_full_project import _database
     from nico.assessment_cpp_configuration import decode_stream
     units, headers = contract['configuration']['translation_units'], contract['configuration']['generated_headers']
-    _database(database, units, build_directory(group), None if group == 'baseline' else group)
+    _database(database, units, build_directory(group), None if group == 'baseline' else group,
+              nested=contract['configuration'].get('cmake_layout') == 'nested-source-v1')
     context = validate_snapshot(_strict_json(context_raw), group, headers, decoder=decode_stream)
     evidence = _strict_json(raw)
     if isinstance(evidence, dict) and evidence.get('schema') == 'nico.cpp-generated-failure.v1':
@@ -382,7 +419,8 @@ def validate_generated_compiler(raw, database, context_raw, contract, group):
             'generated_header_inclusions': {}, 'object_instrumentation_observed_units': [],
             'test_binary_instrumentation_verified': False,
             'native_evidence_sha256': hashlib.sha256(raw).hexdigest(), 'error': evidence['error']}
-    derived = derive_database(database, units, group, headers)
+    derive = derive_nested_database if contract['configuration'].get('cmake_layout') == 'nested-source-v1' else derive_database
+    derived = derive(database, units, group, headers)
     plans = _strict_json(derived)
     fields = {'schema', 'configuration', 'database_sha256', 'analysis_database_sha256',
         'generated_context_sha256', 'analyst_uid', 'records', 'test_binary_instrumentation_verified'}
@@ -479,3 +517,9 @@ COMPILER_PROGRAM = (_PRELUDE + inspect.getsource(_legacy_compile_argv).replace(
         validate_snapshot, _include_context, safe_generated_compile_argv, derive_database,
         collect_compiler, run_generated_program))
     + "\nrun_generated_program('compiler', collect_compiler)\n")
+
+# v6 opts in to nested CMake context; the older program stays byte-identical.
+NESTED_COMPILER_PROGRAM = COMPILER_PROGRAM.replace(
+    inspect.getsource(derive_database),
+    inspect.getsource(valid_build_directory) + '\n' + inspect.getsource(derive_nested_database).replace(
+        'def derive_nested_database(', 'def derive_database(', 1), 1)

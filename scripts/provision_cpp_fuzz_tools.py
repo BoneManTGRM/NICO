@@ -16,11 +16,43 @@ import time
 from urllib.parse import urlsplit
 
 LOCK = Path(__file__).resolve().parents[1] / 'docker/assessment-llvm17.lock.json'
+PROJECT_LOCK = LOCK.with_name('assessment-project-dependencies.lock.json')
 PACKAGES = {'clang-17', 'libclang-cpp17', 'libllvm17', 'libclang-common-17-dev',
             'libclang1-17', 'libclang-rt-17-dev', 'llvm-17-linker-tools', 'libz3-4', 'libedit2'}
 
 
+def validate_project_lock(value):
+    """Fixed reviewed dependency families, not a public package-install interface."""
+    parents = {'libboost1.74-dev': 'b/boost1.74',
+               'libsqlite3-0': 's/sqlite3', 'libsqlite3-dev': 's/sqlite3'}
+    rows = value.get('packages')
+    if (not isinstance(rows, list) or len(rows) != len(parents)
+            or any(not isinstance(row, dict) or not isinstance(row.get('package'), str) for row in rows)
+            or {row.get('package') for row in rows} != set(parents)):
+        raise ValueError('cpp_dependency_population_invalid')
+    total, versions = 0, {}
+    for row in rows:
+        name, version = row['package'], row.get('version')
+        if not isinstance(version, str) or re.fullmatch(r'[0-9][A-Za-z0-9.+~\-]{0,99}', version) is None:
+            raise ValueError('cpp_dependency_version_invalid')
+        expected = ('https://deb.debian.org/debian/pool/main/' + parents[name]
+                    + '/' + name + '_' + version + '_amd64.deb')
+        size = row.get('bytes')
+        if (row.get('url') != expected or row.get('architecture') != 'amd64'
+                or type(size) is not int or not 1 <= size <= 16 * 1024 * 1024
+                or not isinstance(row.get('sha256'), str)
+                or re.fullmatch(r'[0-9a-f]{64}', row['sha256']) is None):
+            raise ValueError('cpp_dependency_lock_invalid')
+        total += size
+        versions[name] = version
+    if total > 16 * 1024 * 1024 or versions['libsqlite3-0'] != versions['libsqlite3-dev']:
+        raise ValueError('cpp_dependency_budget_or_pair_invalid')
+    return rows
+
+
 def validate_lock(value):
+    if isinstance(value, dict) and value.get('schema') == 'nico.cpp-project-dependencies.v1':
+        return validate_project_lock(value)
     if not isinstance(value, dict) or value.get('schema') != 'nico.llvm17-package-lock.v1':
         raise ValueError('fuzz_tool_lock_invalid')
     rows = value.get('packages')
@@ -47,14 +79,20 @@ def validate_lock(value):
     return rows
 
 
-def provision(destination, *, run=subprocess.run):
-    value = json.loads(LOCK.read_bytes()); rows = validate_lock(value)
+def provision(destination, *, run=subprocess.run, project_dependencies=False):
+    if type(project_dependencies) is not bool:
+        raise ValueError('cpp_dependency_selection_invalid')
+    lock = PROJECT_LOCK if project_dependencies else LOCK
+    lock_bytes = lock.read_bytes()
+    value = json.loads(lock_bytes); rows = validate_lock(value)
+    project = value['schema'] == 'nico.cpp-project-dependencies.v1'
     destination = Path(destination)
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
-    result = {'schema':'nico.cpp-fuzz-tool-provisioning.v1','status':'UNPROVEN',
-        'lock_sha256':hashlib.sha256(LOCK.read_bytes()).hexdigest(), 'packages':[],
+    result = {'schema':('nico.cpp-project-dependency-provisioning.v1' if project else
+                       'nico.cpp-fuzz-tool-provisioning.v1'),'status':'UNPROVEN',
+        'lock_sha256':hashlib.sha256(lock_bytes).hexdigest(), 'packages':[],
         'installed':False,'target_executed':False}
-    deadline = time.monotonic() + 90
+    deadline = time.monotonic() + (30 if project else 90)
     try:
         for row in rows:
             left = min(30, int(deadline-time.monotonic()))
@@ -69,7 +107,8 @@ def provision(destination, *, run=subprocess.run):
                 raise ValueError('fuzz_tool_download_size_invalid')
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if digest != row['sha256']: raise ValueError('fuzz_tool_download_hash_invalid')
-            result['packages'].append({'package':row['package'],'sha256':digest,'bytes':row['bytes']})
+            result['packages'].append({'package':row['package'],'sha256':digest,'bytes':row['bytes'],
+                **({'version': row['version']} if project else {})})
         (destination / 'SHA256SUMS').write_text(''.join(r['sha256']+'  '+r['package']+'.deb\n' for r in rows))
         result['status']='VERIFIED_TOOL_INPUTS'
     finally:
@@ -80,4 +119,6 @@ def provision(destination, *, run=subprocess.run):
 if __name__ == '__main__':
     import argparse
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--destination',type=Path,required=True)
-    print(json.dumps({'status':provision(p.parse_args().destination)['status']}))
+    p.add_argument('--project-dependencies',action='store_true')
+    args=p.parse_args()
+    print(json.dumps({'status':provision(args.destination,project_dependencies=args.project_dependencies)['status']}))
