@@ -228,9 +228,8 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
             from nico.assessment_cpp_native_tests import SETUP_PROGRAM
             require(['docker', 'exec', '--user=0:0', name, 'python3', '-I', '-S', '-c', SETUP_PROGRAM])
         if contract['configuration'].get('bounded_fuzz') is not None:
-            from nico.assessment_cpp_fuzz_runtime import SETUP_PROGRAM as FUZZ_SETUP
-            require(['docker', 'exec', '--user=0:0', '--interactive', name, 'python3', '-I', '-S', '-c', FUZZ_SETUP],
-                data=json.dumps(contract['configuration']['bounded_fuzz']).encode())
+            from nico.assessment_cpp_fuzz_runtime import prepare_workspace
+            prepare_workspace(require, name, contract['configuration']['bounded_fuzz'])
         successful = {}
         for spec, row in zip(specs, result['steps']):
             if not all(successful.get(key, False) for key in spec['needs']):

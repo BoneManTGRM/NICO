@@ -17,23 +17,78 @@ from nico.assessment_cpp_fuzz import (
 from nico.assessment_cpp_native_tests import PROBE_PROGRAM
 
 SETUP_PROGRAM = r'''
-import json, os, pathlib, sys
+import json, os, pathlib, stat, sys
 p = json.loads(sys.stdin.buffer.read(262145))
-if os.getuid() != 0 or not 1 <= len(p['targets']) <= 2: raise ValueError('fuzz_setup_identity')
+if os.getuid() != 0 or os.getgid() != 0 or not 1 <= len(p['targets']) <= 2:
+    raise ValueError('fuzz_setup_identity')
 snap = pathlib.Path('/work/fuzz-snapshots'); snap.mkdir(mode=0o755)
-runs = pathlib.Path('/work/fuzz-runs'); runs.mkdir(mode=0o755)
+runs = pathlib.Path('/work/fuzz-runs'); runs.mkdir(mode=0o1777); runs.chmod(0o1777)
 for i, target in enumerate(p['targets']):
     (snap / ('t' + str(i))).mkdir(mode=0o755)
-    for j in [*range(len(target['corpus'])), 8]:
-        phase = 'campaign' if j == 8 else 'seed' + str(j)
-        path = runs / ('t' + str(i) + '-' + phase)
-        path.mkdir(mode=0o755)
-        (path / 'corpus').mkdir(mode=0o755)
-        uid = 3000 + i * 16 + j
-        os.chown(path / 'corpus', uid, uid)
-        os.chown(path, uid, uid)
 print('fuzz_snapshot_destinations_ready')
 '''
+
+RUNTIME_SETUP_PROGRAM = r'''
+import json, os, pathlib, re, stat, sys
+name = sys.argv[1]
+match = re.fullmatch(r't([01])-(seed([0-7])|campaign)', name)
+if match is None:
+    raise ValueError('fuzz_runtime_directory_invalid')
+uid = 3000 + int(match[1]) * 16 + (8 if match[2] == 'campaign' else int(match[3]))
+if os.getuid() != uid or os.getgid() != uid:
+    raise ValueError('fuzz_runtime_setup_identity')
+root = pathlib.Path('/work/fuzz-runs')
+info = root.lstat()
+if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o1777:
+    raise ValueError('fuzz_runtime_setup_parent')
+path = root / name
+# Each final runtime UID creates its own directories before any assessed
+# command. CAP_CHOWN is neither present nor needed. Refuse existing paths.
+path.mkdir(mode=0o755)
+(path / 'corpus').mkdir(mode=0o755)
+for directory in (path, path / 'corpus'):
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != uid or info.st_gid != uid or stat.S_IMODE(info.st_mode) != 0o755:
+        raise ValueError('fuzz_runtime_setup_ownership')
+print(json.dumps({'name': name, 'uid': uid, 'gid': uid}, sort_keys=True))
+'''
+
+SEAL_SETUP_PROGRAM = r'''
+import os, pathlib, stat
+if os.getuid() != 0 or os.getgid() != 0:
+    raise ValueError('fuzz_setup_identity')
+root = pathlib.Path('/work/fuzz-runs')
+info = root.lstat()
+if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o1777:
+    raise ValueError('fuzz_runtime_setup_parent')
+root.chmod(0o555)
+print('fuzz_runtime_population_sealed')
+'''
+
+
+def prepare_workspace(require, container, plan):
+    """Create one isolated phase directory per runtime UID with no capabilities.
+
+    Only fixed trusted setup code is invoked here, before any project command.
+    Native target execution still uses the existing immutable binary snapshots.
+    """
+    result = require(['docker', 'exec', '--user=0:0', '--interactive', container,
+        'python3', '-I', '-S', '-c', SETUP_PROGRAM], data=json.dumps(plan).encode())
+    if result.strip() != b'fuzz_snapshot_destinations_ready':
+        raise ValueError('worker_fuzz_setup_unverified')
+    for i, target in enumerate(plan['targets']):
+        for j in [*range(len(target['corpus'])), 8]:
+            name = 't' + str(i) + '-' + ('campaign' if j == 8 else 'seed' + str(j))
+            uid = 3000 + i * 16 + j
+            result = require(['docker', 'exec', '--user=' + str(uid) + ':' + str(uid),
+                container, 'python3', '-I', '-S', '-c', RUNTIME_SETUP_PROGRAM, name])
+            if json.loads(result) != {'name': name, 'uid': uid, 'gid': uid}:
+                raise ValueError('worker_fuzz_setup_unverified')
+    result = require(['docker', 'exec', '--user=0:0', container,
+        'python3', '-I', '-S', '-c', SEAL_SETUP_PROGRAM])
+    if result.strip() != b'fuzz_runtime_population_sealed':
+        raise ValueError('worker_fuzz_setup_unverified')
+
 
 SNAPSHOT_PROGRAM = r'''
 import hashlib, json, os, pathlib, re, stat, sys
