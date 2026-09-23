@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 LOCK = Path(__file__).resolve().parents[1] / 'docker/assessment-llvm17.lock.json'
 PROJECT_LOCK = LOCK.with_name('assessment-project-dependencies.lock.json')
+CAPNP_LOCK = LOCK.with_name('assessment-capnp-source.lock.json')
 PACKAGES = {'clang-17', 'libclang-cpp17', 'libllvm17', 'libclang-common-17-dev',
             'libclang1-17', 'libclang-rt-17-dev', 'llvm-17-linker-tools', 'libz3-4', 'libedit2'}
 
@@ -60,7 +61,27 @@ def validate_project_lock(value):
     return rows
 
 
+def validate_capnp_source_lock(value):
+    """One reviewed upstream source dependency, not arbitrary build input."""
+    rows = value.get('packages')
+    if (set(value) != {'schema', 'packages'} or not isinstance(rows, list) or len(rows) != 1
+            or not isinstance(rows[0], dict) or set(rows[0]) != {
+                'package', 'version', 'architecture', 'url', 'max_bytes', 'sha256'}):
+        raise ValueError('cpp_dependency_source_lock_invalid')
+    row = rows[0]
+    if (row['package'] != 'capnproto' or row['version'] != '1.5.0'
+            or row['architecture'] != 'source'
+            or row['url'] != 'https://capnproto.org/capnproto-c++-1.5.0.tar.gz'
+            or type(row['max_bytes']) is not int or not 1 <= row['max_bytes'] <= 4 * 1024 * 1024
+            or not isinstance(row['sha256'], str)
+            or re.fullmatch(r'[0-9a-f]{64}', row['sha256']) is None):
+        raise ValueError('cpp_dependency_source_identity_or_budget_invalid')
+    return rows
+
+
 def validate_lock(value):
+    if isinstance(value, dict) and value.get('schema') == 'nico.cpp-capnp-source-lock.v1':
+        return validate_capnp_source_lock(value)
     if isinstance(value, dict) and value.get('schema') in ('nico.cpp-project-dependencies.v1', 'nico.cpp-project-dependencies.v2'):
         return validate_project_lock(value)
     if not isinstance(value, dict) or value.get('schema') != 'nico.llvm17-package-lock.v1':
@@ -89,16 +110,23 @@ def validate_lock(value):
     return rows
 
 
-def provision(destination, *, run=subprocess.run, project_dependencies=False):
-    if type(project_dependencies) is not bool:
+def provision(destination, *, run=subprocess.run, project_dependencies=False, capnp_source=False):
+    if (type(project_dependencies) is not bool or type(capnp_source) is not bool
+            or (project_dependencies and capnp_source)):
         raise ValueError('cpp_dependency_selection_invalid')
-    lock = PROJECT_LOCK if project_dependencies else LOCK
+    lock = CAPNP_LOCK if capnp_source else PROJECT_LOCK if project_dependencies else LOCK
     lock_bytes = lock.read_bytes()
     value = json.loads(lock_bytes); rows = validate_lock(value)
     project = value['schema'] in ('nico.cpp-project-dependencies.v1', 'nico.cpp-project-dependencies.v2')
+    source = value['schema'] == 'nico.cpp-capnp-source-lock.v1'
+    if source:
+        dependencies = validate_lock(json.loads(PROJECT_LOCK.read_bytes()))
+        if sum(row['bytes'] for row in dependencies) + rows[0]['max_bytes'] > 16 * 1024 * 1024:
+            raise ValueError('cpp_dependency_aggregate_budget_invalid')
     destination = Path(destination)
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
-    result = {'schema':('nico.cpp-project-dependency-provisioning.v1' if project else
+    result = {'schema':('nico.cpp-source-tool-provisioning.v1' if source else
+                       'nico.cpp-project-dependency-provisioning.v1' if project else
                        'nico.cpp-fuzz-tool-provisioning.v1'),'status':'UNPROVEN',
         'lock_sha256':hashlib.sha256(lock_bytes).hexdigest(), 'packages':[],
         'installed':False,'target_executed':False}
@@ -112,26 +140,28 @@ def provision(destination, *, run=subprocess.run, project_dependencies=False):
             os.fsync(output.fileno())
         os.replace(temporary, destination / 'receipt.json')
 
-    deadline = time.monotonic() + (30 if project else 90)
+    deadline = time.monotonic() + (30 if project or source else 90)
     retain()
     try:
         for row in rows:
             left = min(30, int(deadline-time.monotonic()))
             if left < 1: raise ValueError('fuzz_tool_download_deadline')
-            path = destination / (row['package'] + '.deb')
+            path = destination / (row['package'] + ('.tar.gz' if source else '.deb'))
+            maximum = row['max_bytes'] if source else row['bytes']
             run(['curl','--disable','--fail','--silent','--show-error','--proto','=https','--tlsv1.2',
-                 '--connect-timeout','3','--max-time',str(left),'--max-filesize',str(row['bytes']),
+                 '--connect-timeout','3','--max-time',str(left),'--max-filesize',str(maximum),
                  '--output',str(path),row['url']], check=True, timeout=left+1,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 env={'PATH':os.environ.get('PATH','/usr/bin:/bin')})
-            if path.is_symlink() or not path.is_file() or path.stat().st_size != row['bytes']:
+            if (path.is_symlink() or not path.is_file()
+                    or (not 0 < path.stat().st_size <= maximum if source else path.stat().st_size != maximum)):
                 raise ValueError('fuzz_tool_download_size_invalid')
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if digest != row['sha256']: raise ValueError('fuzz_tool_download_hash_invalid')
-            result['packages'].append({'package':row['package'],'sha256':digest,'bytes':row['bytes'],
-                **({'version': row['version']} if project else {})})
+            result['packages'].append({'package':row['package'],'sha256':digest,'bytes':path.stat().st_size,
+                **({'version': row['version']} if project or source else {})})
             retain()
-        (destination / 'SHA256SUMS').write_text(''.join(r['sha256']+'  '+r['package']+'.deb\n' for r in rows))
+        (destination / 'SHA256SUMS').write_text(''.join(r['sha256']+'  '+r['package']+('.tar.gz\n' if source else '.deb\n') for r in rows))
         result['status']='VERIFIED_TOOL_INPUTS'
     finally:
         retain()
@@ -141,6 +171,8 @@ def provision(destination, *, run=subprocess.run, project_dependencies=False):
 if __name__ == '__main__':
     import argparse
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--destination',type=Path,required=True)
-    p.add_argument('--project-dependencies',action='store_true')
+    selection=p.add_mutually_exclusive_group()
+    selection.add_argument('--project-dependencies',action='store_true')
+    selection.add_argument('--capnp-source',action='store_true')
     args=p.parse_args()
-    print(json.dumps({'status':provision(args.destination,project_dependencies=args.project_dependencies)['status']}))
+    print(json.dumps({'status':provision(args.destination,project_dependencies=args.project_dependencies,capnp_source=args.capnp_source)['status']}))

@@ -1,0 +1,13 @@
+{
+  "schema": "nico.cpp-capnp-source-lock.v1",
+  "packages": [
+    {
+      "package": "capnproto",
+      "version": "1.5.0",
+      "architecture": "source",
+      "url": "https://capnproto.org/capnproto-c++-1.5.0.tar.gz",
+      "max_bytes": 4194304,
+      "sha256": "77dbc13ca82d9c87ddb4581dd49559d45b63096433d3dadea08b7f31b360a5ba"
+    }
+  ]
+}
