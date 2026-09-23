@@ -70,6 +70,11 @@ def fixture(*, generated_headers=False, bounded_fuzz=False, project_dependencies
             '    boost::array<int, 2> values = {{a, b}};\n'
             '    return values[0] + values[1] + NICO_CONFIGURED_OFFSET;\n}\n')
     if project_compiler_options:
+        # CMake otherwise silently omits helper.c from a CXX-only project.
+        # Change only this opt-in mixed-language control, not legacy fixtures.
+        result['CMakeLists.txt'] = result['CMakeLists.txt'].replace(
+            'project(nico_owned_control LANGUAGES CXX)',
+            'project(nico_owned_control LANGUAGES C CXX)', 1)
         result['src/library/CMakeLists.txt'] += (
             'target_compile_options(control_sum PRIVATE -fstack-protector-strong '
             '-fstack-clash-protection -fvisibility=hidden -Werror=return-type)\n')

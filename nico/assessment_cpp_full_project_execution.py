@@ -166,6 +166,57 @@ def _inputs(contract, source, checkpoint):
     return files
 
 
+
+def _capture_limits(contract, specs, empty_native):
+    """Partition the existing receipt cap; large evidence is not an ordinary log.
+
+    Reserve the fixed native programs/source inventory, the second target map
+    in the receipt envelope, and 64 KiB for identity/provisioning/boundary data.
+    Allocate the remaining base64 space once across every possible capture.
+    These quotas cannot raise the contract cap or change execution populations.
+    """
+    from nico.assessment_worker_receipts import canonical_bytes
+    slots = {}
+    for spec in specs:
+        key = spec['id']
+        weight, ceiling = 1, 65536
+        if key.endswith(('-configure', '-build', '-discover', '-unit', '-integration')) or key == 'static-analysis':
+            weight, ceiling = 4, 524288
+        if 'compiler_configuration' in spec:
+            weight, ceiling = 32, 2097152
+        elif 'generated_configuration' in spec:
+            weight, ceiling = 8, 524288
+        elif 'native_test_configuration' in spec or spec.get('fuzz_execution'):
+            weight, ceiling = 16, 1048576
+        slots[(key, 'output')] = (weight, ceiling)
+        for artifact in spec['artifacts']:
+            slots[(key, artifact)] = ({'compilation_database': (16, 1048576),
+                'analysis_xml': (8, 1048576), 'junit': (4, 262144)}[artifact])
+    reserve = (len(canonical_bytes(empty_native)) + len(canonical_bytes(contract['targets']))
+               + 65536 + 8 * len(slots))
+    available = (contract['max_receipt_bytes'] - reserve) * 3 // 4
+    if available < len(slots) * 1024:
+        raise ValueError('worker_full_project_evidence_budget_invalid')
+    # Capped weighted allocation redistributes unused small-log capacity to
+    # structured evidence. Integer rounding only leaves bytes unallocated.
+    pending, limits = dict(slots), {}
+    while pending:
+        total_weight = sum(weight for weight, _ in pending.values())
+        capped = {key: ceiling for key, (weight, ceiling) in pending.items()
+                  if available * weight // total_weight >= ceiling}
+        if not capped:
+            limits.update({key: available * weight // total_weight
+                           for key, (weight, _) in pending.items()})
+            break
+        for key, ceiling in capped.items():
+            limits[key] = ceiling
+            available -= ceiling
+            del pending[key]
+    if any(limit < 1024 for limit in limits.values()):
+        raise ValueError('worker_full_project_evidence_budget_invalid')
+    return limits
+
+
 def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, command=None):
     from nico.assessment_worker_receipts import validate_contract
     contract = validate_contract(contract)
@@ -183,7 +234,7 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
         'cleanup_verified': False, 'error': None}
     name = 'nico-full-project-' + uuid4().hex
     deadline = time.monotonic() + timeout_seconds
-    limit = min(65536, max(1024, contract['max_receipt_bytes'] // (len(specs) * 8 + 16)))
+    capture_limits = _capture_limits(contract, specs, result)
     created = False
     def invoke(args, *, data=None, max_output=65536, seconds=30):
         checkpoint()
@@ -239,9 +290,13 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                 from nico.assessment_cpp_fuzz_runtime import run_fuzz
                 before = time.monotonic()
                 observed = run_fuzz(invoke, name, contract['configuration']['bounded_fuzz'], contract['targets'])
+                data = json.dumps(observed, sort_keys=True).encode()
+                maximum = capture_limits[(spec['id'], 'output')]
                 row.update(attempted=True, exit_code=0, duration_ms=int((time.monotonic() - before) * 1000),
-                    output=base64.b64encode(json.dumps(observed, sort_keys=True).encode()).decode('ascii'))
-                successful[spec['id']] = observed['error'] is None
+                    output_truncated=len(data) > maximum,
+                    output=base64.b64encode(data[:maximum]).decode('ascii'))
+                successful[spec['id']] = observed['error'] is None and not row['output_truncated']
+                if row['output_truncated']: break
                 if observed['error'] == 'worker_fuzz_interrupted': break
                 continue
             if 'native_test_configuration' in spec:
@@ -251,9 +306,13 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                 before = time.monotonic()
                 observed = run_bound_tests(invoke, name, group,
                     base64.b64decode(discovered['output'], validate=True), contract['configuration'])
+                data = json.dumps(observed, sort_keys=True).encode()
+                maximum = capture_limits[(spec['id'], 'output')]
                 row.update(attempted=True, exit_code=0, duration_ms=int((time.monotonic() - before) * 1000),
-                    output=base64.b64encode(json.dumps(observed, sort_keys=True).encode()).decode('ascii'))
-                successful[spec['id']] = observed['error'] is None
+                    output_truncated=len(data) > maximum,
+                    output=base64.b64encode(data[:maximum]).decode('ascii'))
+                successful[spec['id']] = observed['error'] is None and not row['output_truncated']
+                if row['output_truncated']: break
                 if observed['error'] == 'worker_native_test_interrupted': break
                 continue
             analysis_step = (spec['id'] in {'analyzer-version', 'static-analysis', 'fuzz-compiler-version'}
@@ -307,10 +366,7 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
                     'headers': contract['configuration']['generated_headers']}).encode()
                 prefix = ['docker', 'exec', '--user=' + ANALYSIS_USER, '--interactive', name]
             before = time.monotonic()
-            stream_limit = min(262144, max(1024, contract['max_receipt_bytes'] // 24)) if compiler_input is not None else limit
-            if 'generated_configuration' in spec:
-                # Snapshot bytes and path/hash metadata have a separate, bounded share of the receipt.
-                stream_limit = min(524288, max(1024, contract['max_receipt_bytes'] // 4))
+            stream_limit = capture_limits[(spec['id'], 'output')]
             response = invoke([*prefix, *spec['invocation']], data=compiler_input, max_output=stream_limit, seconds=timeout_seconds)
             row.update(attempted=True, exit_code=response['exit_code'], timed_out=response['timed_out'],
                 output_truncated=response['output_truncated'], duration_ms=int((time.monotonic() - before) * 1000),
@@ -319,8 +375,9 @@ def run_full_project(contract, source: Path, *, checkpoint, timeout_seconds, com
             if row['timed_out'] or row['output_truncated']:
                 break  # stopping the Docker CLI alone does not stop the assessed process; remove container next.
             for key, path in spec['artifacts'].items():
+                artifact_limit = capture_limits[(spec['id'], key)]
                 observed = invoke([*prefix, 'python3', '-I', '-S', '-c', READ_PROGRAM,
-                                   path, str(limit)], max_output=limit * 2 + 1024)
+                                   path, str(artifact_limit)], max_output=artifact_limit * 2 + 1024)
                 if observed['exit_code'] or observed['timed_out'] or observed['output_truncated']:
                     continue  # artifact absent/unreadable remains missing, never successful evidence.
                 artifact = json.loads(observed['output'])
