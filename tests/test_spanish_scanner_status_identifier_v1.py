@@ -55,3 +55,24 @@ def test_ordinary_completed_and_failed_labels_stay_spanish_only():
     assert "permanece fallida" in failed
     assert "estado=fallida" in failed
     assert "failed" not in failed
+
+
+def test_configuration_failure_keeps_failure_meaning_and_exact_identifier():
+    """Configuration failure is an existing canonical state, not an unknown result."""
+    from nico.comprehensive_spanish_canonical_report_v87 import _scanner_status_visible
+    from nico.comprehensive_spanish_current_copy_worker_v98 import install_comprehensive_spanish_current_copy_worker_v98
+    assert install_comprehensive_spanish_current_copy_worker_v98()['bound'] is True
+    expected = 'configuration_failed (configuración fallida)'
+    assert _scanner_status_visible('configuration_failed') == expected
+    execution = _translate_presentation(_execution_line('configuration_failed'))
+    limitation = _translate_presentation(_limitation_line('configuration_failed'))
+    assert f'estado={expected}' in execution
+    assert f'permanece {expected}:' in limitation
+    assert f'estado={expected}' in limitation
+    assert 'completada' not in execution + limitation
+
+
+def test_unrecognized_scanner_status_still_fails_translation_explicitly():
+    from nico.comprehensive_spanish_canonical_report_v87 import _scanner_status_visible
+    with pytest.raises(ValueError, match='missing Spanish scanner status translation'):
+        _scanner_status_visible('not_a_supported_scanner_status')

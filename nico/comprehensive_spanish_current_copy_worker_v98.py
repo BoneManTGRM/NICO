@@ -616,6 +616,10 @@ def install_comprehensive_spanish_current_copy_worker_v98() -> dict[str, Any]:
     from nico import comprehensive_spanish_canonical_report_v87 as canonical
     from nico import comprehensive_spanish_presentation_parity_v1 as presentation_module
 
+    # This state is emitted by client_assessment_truth_v3 for failed scanner
+    # configuration. Extend display copy only; retain the exact machine state.
+    canonical._SCANNER_STATUS_ES["configuration_failed"] = "configuración fallida"
+
     bound = bool(
         canonical._translate_presentation_field is field
         and canonical._translate_presentation is presentation
