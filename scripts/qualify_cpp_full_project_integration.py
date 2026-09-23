@@ -164,6 +164,21 @@ def main():
         'status': 'UNPROVEN', 'synthetic_issuer': True, 'production_dispatch_exercised': False,
         'production_qualified': False, 'bitcoin_executed': False, 'controls': [], 'reports': []}
     start = time.monotonic()
+
+    def retain():
+        # A runner can be killed before finally executes. Persist UNPROVEN
+        # before work starts, then preserve each returned native receipt before
+        # assertions or report rendering. Atomic replacement prevents torn JSON.
+        evidence['duration_ms'] = int((time.monotonic() - start) * 1000)
+        temporary = args.output / 'receipt.json.tmp'
+        with temporary.open('wb') as handle:
+            handle.write(canonical_bytes(evidence))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, args.output / 'receipt.json')
+
+    evidence['stage'] = 'fixture_preparation'
+    retain()
     try:
         with tempfile.TemporaryDirectory(prefix='nico-project-owned-') as temporary:
             root = Path(temporary); git_dir = root / 'objects'; git_dir.mkdir()
@@ -180,11 +195,19 @@ def main():
             revision = git('commit-tree', tree, data=b'Owned CMake integration fixture\n')
             for negative in (False, True):
                 contract = plan(args.image, negative=negative, generated_headers=args.generated_headers, bounded_fuzz=args.bounded_fuzz); observations = {}
+                evidence.update(stage='control_requested', active_control_negative=negative)
+                retain()
                 result = consume_control(contract, git_dir, tree, revision, release, observations)
+                retained = {**observations, **result, 'contract': contract, 'negative': negative}
+                evidence['controls'].append(retained)
+                evidence['stage'] = 'native_receipt_returned'
+                retain()
                 from nico.scanner_worker import get_scan
                 persisted = get_scan(result['canonical_record']['scan_id'])
                 result['persisted_record'] = next(r for r in persisted['scanner_results'] if r.get('tool') == 'cppcheck')
-                evidence['controls'].append({**observations, **result, 'contract': contract, 'negative': negative})
+                retained['persisted_record'] = result['persisted_record']
+                evidence['stage'] = 'native_receipt_persisted'
+                retain()
                 record = result['canonical_record']; build = record['cpp_build_evidence']
                 assert record['completed'] is True, 'configuration_aware_static_analysis_incomplete'
                 assert build['build_completed'] is True, 'project_build_incomplete'
@@ -228,8 +251,11 @@ def main():
                     assert row['status'] == 'failed' and row['exit_code'] == 8
                     assert row['executed_tests'] == ['negative'] and row['passed_tests'] == []
                     for language in ('en', 'es-MX'):
+                        evidence['stage'] = 'report_' + language
+                        retain()
                         evidence['reports'].append(render_result(result, args.output, language))
-        evidence['status'] = 'PASS_OWNED_PROJECT_INTEGRATION'
+                        retain()
+        evidence.update(status='PASS_OWNED_PROJECT_INTEGRATION', stage='completed')
     except Exception as exc:
         # The owned proof may expose an assertion name, never arbitrary tool/transport text.
         evidence['error_type'] = type(exc).__name__
@@ -237,8 +263,7 @@ def main():
             evidence['failed_predicate'] = str(exc)
         raise
     finally:
-        evidence['duration_ms'] = int((time.monotonic() - start) * 1000)
-        (args.output / 'receipt.json').write_bytes(canonical_bytes(evidence))
+        retain()
         print(json.dumps({k: evidence[k] for k in ('status', 'duration_ms', 'production_qualified', 'bitcoin_executed')}))
 
 
