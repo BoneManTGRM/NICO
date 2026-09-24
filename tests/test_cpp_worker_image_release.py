@@ -203,3 +203,13 @@ def test_anonymous_probe_has_no_credentials_redirects_or_retained_token(monkeypa
         def close(self): pass
     monkeypatch.setattr(release.requests, 'Session', Session)
     assert release.anonymous_registry_status() == 403 and response.closed
+
+
+def test_image_release_is_bound_to_current_pr1641_branch():
+    expected = 'refs/heads/feat/cpp-full-project-capacity'
+    assert release.BRANCH == expected
+    for name in ('.github/workflows/cpp-worker-boundary-qualification.yml',
+                 '.github/workflows/cpp-worker-image-retrieval.yml'):
+        text = Path(name).read_text()
+        assert 'feat/cpp-full-project-capacity' in text
+        assert 'feat/large-repository-cpp-comprehensive' not in text

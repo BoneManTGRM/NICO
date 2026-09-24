@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify the published worker workflow budget and canonical reconstruction in hosted checks. Then add release-owned generic C/C++ selection to normal snapshot intake using exact source/tree evidence only, complete runtime sanitizer/fuzz execution, independent review/final gates, merge/deploy, and the actual bilingual production Bitcoin assessment.
+EXACT NEXT ACTION: verify the PR1641 image publication/retrieval outcome and the active frozen Bitcoin qualification. Preserve exact image config/manifest identities. After native C++ qualification passes, bind release-owned generic configure-first selection to normal intake, complete sanitizer/fuzz runtime scope and independent review, then merge/deploy and run the actual bilingual production Bitcoin assessment.
 
 ## Immutable continuity
 
@@ -141,3 +141,12 @@ Only after those checks pass does the scanner row become completed. The full can
 The dedicated protected-main `Assessment Worker` workflow still had a5-minute GitHub job timeout even though the internal configure-first job contract is bounded to2420 seconds and target execution to2400 seconds. That outer CI ceiling would terminate a legitimate large-repository assessment before the durable lease/job budget could decide its outcome.
 
 The workflow timeout is now45 minutes (2700 seconds), leaving bounded setup/finalization headroom around the existing2420-second durable job wall limit. The workflow still accepts only `job_id`, keeps `contents: read` plus `id-token: write`, has no public profile/image/budget input, and does not weaken any worker-side deadline, lease, retry or container resource limit.
+
+
+## PR1641 worker-image release binding
+
+The worker-image publication and independent retrieval controllers were still hard-bound to the historical PR1627 branch `feat/large-repository-cpp-comprehensive`. That prevented PR1641 from using the guarded publication path for its current exact image.
+
+The branch identity is now `feat/cpp-full-project-capacity` consistently in the boundary workflow, separate retrieval workflow and release-controller identity checks. The publication gate remains push-only, first-attempt only, exact repository/workflow/source bound, package-write only in the publish job, with a retained pre-push reservation and independent retrieval. Publication/retrieval still leave `production_qualified=false`.
+
+This commit intentionally carries the existing `[publish-worker-image]` trigger so the current branch can exercise that guarded path. It does not bypass Bitcoin qualification, merge gates or production activation.

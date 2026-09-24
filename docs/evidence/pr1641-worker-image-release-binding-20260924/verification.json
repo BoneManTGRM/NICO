@@ -1,0 +1,9 @@
+{
+  "schema": "nico.pr1641-worker-image-release-binding.v1",
+  "base": "4efb229414cf573e172faea14a61655712f1d35c",
+  "branch": "feat/cpp-full-project-capacity",
+  "historical_branch_removed": "feat/large-repository-cpp-comprehensive",
+  "publication_trigger": "[publish-worker-image]",
+  "production_qualified": false,
+  "merged": false
+}

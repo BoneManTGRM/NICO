@@ -2,7 +2,7 @@ name: C++ Published Image Retrieval
 
 on:
   push:
-    branches: [feat/large-repository-cpp-comprehensive]
+    branches: [feat/cpp-full-project-capacity]
     paths:
       - .github/workflows/cpp-worker-image-retrieval.yml
       - scripts/cpp_worker_image_release.py
