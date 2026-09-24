@@ -139,6 +139,11 @@ def test_failures_never_receive_completed_coverage_and_other_contexts_survive(tm
 
 def test_checker_inventory_information_does_not_hide_real_parse_limitations(tmp_path):
     req=request(tmp_path); data=native(req,'checkersReport')
+    # Use the pinned tool's real positive inventory, not a fabricated message.
+    for row in data['records']:
+        xml=base64.b64decode(row['xml']).replace(b'Owned diagnostic',
+            b'Active checkers: 167/856 (use --checkers-report=&lt;filename&gt; to see details)')
+        row.update(xml=base64.b64encode(xml).decode(), xml_sha256=digest(xml))
     proof=api().validate_project_static(_canonical(data),req)
     assert proof['complete'] is True and len(proof['limitations'])==3
 

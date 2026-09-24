@@ -1,0 +1,88 @@
+Local synthetic regression evidence; not hosted/native environment or production acceptance.
+Parent: 533d8d5ea833ad4b897cff8be734c1ce831175fe
+Focused command: python -m pytest -q tests/test_cpp_native_preprocessing_truth.py
+Corrected baseline RED: 16 failed, 4 passed in 0.49s; exit code 1.
+Repaired GREEN: 20 passed in 0.23s; exit code 0.
+Shared-producer refactor plus static regression: 61 passed in 0.80s; exit code 0.
+Initial new test used a nonexistent native_tests_passed field; corrected to native_test.passed, then RED was rerun against unchanged parent and GREEN confirmed. No existing assertion was relaxed.
+Initial multi-group command stopped during old group 1 with no terminal result; its partial dots were not counted. Remaining identical cases were split into bounded groups, isolating report exports.
+Full selection: 38 files; 1,042 required and executed unique cases, no failure/error/skip. Exact JUnit union equals collection with no duplicate membership.
+Format below: group | tests | exit | failures | errors | skipped | elapsed seconds
+regression-0 | 100 | 0 | 0 | 0 | 0 | 14.908
+batch-0 | 44 | 0 | 0 | 0 | 0 | 3.073
+batch-1 | 1 | 0 | 0 | 0 | 0 | 8.09
+batch-2 | 1 | 0 | 0 | 0 | 0 | 8.644
+batch-3 | 16 | 0 | 0 | 0 | 0 | 2.925
+batch-4 | 1 | 0 | 0 | 0 | 0 | 8.254
+batch-5 | 1 | 0 | 0 | 0 | 0 | 9.007
+batch-6 | 41 | 0 | 0 | 0 | 0 | 3.082
+batch-7 | 1 | 0 | 0 | 0 | 0 | 7.891
+batch-8 | 1 | 0 | 0 | 0 | 0 | 8.191
+batch-9 | 44 | 0 | 0 | 0 | 0 | 3.025
+batch-10 | 1 | 0 | 0 | 0 | 0 | 2.823
+batch-11 | 12 | 0 | 0 | 0 | 0 | 2.821
+batch-12 | 1 | 0 | 0 | 0 | 0 | 2.823
+batch-13 | 1 | 0 | 0 | 0 | 0 | 3.026
+batch-14 | 1 | 0 | 0 | 0 | 0 | 2.975
+batch-15 | 1 | 0 | 0 | 0 | 0 | 3.024
+batch-16 | 1 | 0 | 0 | 0 | 0 | 2.822
+batch-17 | 1 | 0 | 0 | 0 | 0 | 2.925
+batch-18 | 1 | 0 | 0 | 0 | 0 | 2.772
+batch-19 | 1 | 0 | 0 | 0 | 0 | 2.923
+batch-20 | 1 | 0 | 0 | 0 | 0 | 7.387
+batch-21 | 1 | 0 | 0 | 0 | 0 | 8.189
+batch-22 | 36 | 0 | 0 | 0 | 0 | 2.929
+batch-23 | 1 | 0 | 0 | 0 | 0 | 7.938
+batch-24 | 1 | 0 | 0 | 0 | 0 | 8.742
+batch-25 | 11 | 0 | 0 | 0 | 0 | 2.926
+batch-26 | 1 | 0 | 0 | 0 | 0 | 2.725
+batch-27 | 50 | 0 | 0 | 0 | 0 | 3.227
+batch-28 | 50 | 0 | 0 | 0 | 0 | 3.176
+batch-29 | 50 | 0 | 0 | 0 | 0 | 4.333
+batch-30 | 50 | 0 | 0 | 0 | 0 | 3.123
+batch-31 | 7 | 0 | 0 | 0 | 0 | 2.925
+batch-32 | 1 | 0 | 0 | 0 | 0 | 2.784
+batch-33 | 1 | 0 | 0 | 0 | 0 | 2.875
+batch-34 | 1 | 0 | 0 | 0 | 0 | 2.924
+batch-35 | 1 | 0 | 0 | 0 | 0 | 2.825
+batch-36 | 1 | 0 | 0 | 0 | 0 | 2.838
+batch-37 | 1 | 0 | 0 | 0 | 0 | 2.776
+batch-38 | 1 | 0 | 0 | 0 | 0 | 2.924
+batch-39 | 1 | 0 | 0 | 0 | 0 | 2.976
+batch-40 | 7 | 0 | 0 | 0 | 0 | 2.979
+batch-41 | 1 | 0 | 0 | 0 | 0 | 2.99
+batch-42 | 50 | 0 | 0 | 0 | 0 | 7.195
+batch-43 | 30 | 0 | 0 | 0 | 0 | 2.977
+batch-44 | 1 | 0 | 0 | 0 | 0 | 2.824
+batch-45 | 50 | 0 | 0 | 0 | 0 | 3.025
+batch-46 | 50 | 0 | 0 | 0 | 0 | 3.027
+batch-47 | 50 | 0 | 0 | 0 | 0 | 3.939
+batch-48 | 19 | 0 | 0 | 0 | 0 | 3.177
+batch-49 | 1 | 0 | 0 | 0 | 0 | 2.891
+batch-50 | 1 | 0 | 0 | 0 | 0 | 2.872
+batch-51 | 1 | 0 | 0 | 0 | 0 | 2.775
+batch-52 | 1 | 0 | 0 | 0 | 0 | 2.825
+batch-53 | 1 | 0 | 0 | 0 | 0 | 2.725
+batch-54 | 1 | 0 | 0 | 0 | 0 | 2.825
+batch-55 | 1 | 0 | 0 | 0 | 0 | 2.824
+batch-56 | 1 | 0 | 0 | 0 | 0 | 2.722
+batch-57 | 1 | 0 | 0 | 0 | 0 | 2.826
+batch-58 | 1 | 0 | 0 | 0 | 0 | 2.726
+batch-59 | 1 | 0 | 0 | 0 | 0 | 2.973
+batch-60 | 1 | 0 | 0 | 0 | 0 | 2.924
+batch-61 | 1 | 0 | 0 | 0 | 0 | 2.874
+batch-62 | 1 | 0 | 0 | 0 | 0 | 2.824
+batch-63 | 1 | 0 | 0 | 0 | 0 | 2.674
+batch-64 | 1 | 0 | 0 | 0 | 0 | 2.876
+batch-65 | 1 | 0 | 0 | 0 | 0 | 2.773
+batch-66 | 1 | 0 | 0 | 0 | 0 | 2.975
+batch-67 | 50 | 0 | 0 | 0 | 0 | 3.143
+batch-68 | 28 | 0 | 0 | 0 | 0 | 2.974
+batch-69 | 1 | 0 | 0 | 0 | 0 | 2.877
+batch-70 | 50 | 0 | 0 | 0 | 0 | 2.894
+batch-71 | 50 | 0 | 0 | 0 | 0 | 11.709
+batch-72 | 34 | 0 | 0 | 0 | 0 | 2.975
+batch-73 | 1 | 0 | 0 | 0 | 0 | 2.927
+batch-74 | 1 | 0 | 0 | 0 | 0 | 3.025
+batch-75 | 12 | 0 | 0 | 0 | 0 | 2.938
+Collected-node membership SHA-256: e405eb2fa6f1fdc7c842518cb483cbe217f31038e0b4a227d4732cec7117f065

@@ -1,67 +1,76 @@
-# PR1641 continuation - publish reconciled compiler deadline and evidence repair
+# PR1641 continuation — native static failure established; truthful diagnostics repaired
 
-Continue existing PR #1641 on `feat/cpp-full-project-capacity`. This candidate is a non-force descendant of `3652a03965dfd7a96a45b5a6161daf8ec7b1042b`, tree `d4b2df3c1ea0204d178ebe9b3ebd5f2c3633a369`; observed main/base is `faaa10b037eb58e4175561b96dadf0d929764df4`. Record the containing publication SHA in PR #1641, not a self-hash commit. Recheck live refs before any subsequent mutation. The original NICO-CPP-Bitcoin-Execution-Prompt.md and C0-C19 contract remain binding. Publication is not full-assessment completion, merge readiness, deployment or report approval.
+Continue existing PR #1641, branch `feat/cpp-full-project-capacity`. This candidate descends from `533d8d5ea833ad4b897cff8be734c1ce831175fe`, tree `9c64b8a439e7a126ffd0dea6f9c5ac4d7388613f`; observed main/base `faaa10b037eb58e4175561b96dadf0d929764df4`. Recheck live refs before any non-force publication. Never push the locally initialized source-export test fixture. Record publication identity in the PR, not a self-hash commit.
 
-## Reconciliation and implemented behavior
+The original NICO-CPP-Bitcoin-Execution-Prompt.md and stronger current C0-C19 requirements remain binding. This is not a passing full assessment, independent review, merge, release, production execution or human approval. No security or approval control is waived.
 
-The requested local repair was based on 2195a416, but the actual branch had advanced to 3652a039. Preserve that newer commit's versioned 600-second compiler allocation, boolean APIs, existing CLI switches, both native qualification commands and all 14 budget tests. Do not replace these with the older package's alternative string-version API. The compiler implementation and both qualification scripts remain byte-identical to 3652a039.
+## Current primary native evidence
 
-The additional changes now integrated are:
+The screenshot's failed check is integration run35978926706, Bitcoin job107568329757. Artifact10800637897 contains the actual terminal native receipt and immutable generated/compiler/static outputs. Its ZIP is12,837,611 bytes, SHA256 `80c977ed121797428e6547bffcacf6b7551978074e9e084596330b83bcd8ea69`. Source artifact10799650915 is4,454,479 bytes, SHA256 `9f8f5f70829dd1b581cc53283c75b48a4bf3453f3880af482d3722adef631251`. The source export's CI merge `d7739f3cf010237a36464067e373588a403271bc` is not a production merge; its tree matches the parent tree above.
 
-1. Enforce the unchanged 1,800-second parent deadline after native output/artifact retention and after compiler-proof validation/retention. Late bytes and successful earlier build/test evidence survive, but results at or after the deadline cannot qualify or start static analysis.
-2. Preserve actual aggregate elapsed time when failure occurs before the separate static stage. Extended-budget probe receipts explicitly record schema v7 and budget version v2.
-3. Bind live static preparation to the controller-selected compiler budget. Historical reconstruction still supports both published versions when no policy argument is supplied; explicit mismatches are rejected.
-4. Port all 30 prepared regression cases onto the already-published boolean interfaces and add the suite to the existing workflow. Keep the newer 14-case suite and the existing exhaustive-static/deadline tests unchanged.
+Reconstructed the source inventory, every captured generated-file digest, compilation contexts, compiler native proof, static request/output bindings, native discovery and complete JUnit population from those bytes:
 
-No context, generated file, required test, analyzer depth or diagnostic was removed. Compiler v1 remains 540 seconds; v2 remains 600 seconds; both retain 90 seconds/context and four workers. Parent baseline 1,800/1,810 seconds, separate static 600/610 seconds, aggregate 2,400/2,420 seconds, 50-minute hosted job, 4 CPU/12 GiB/no swap/256 PIDs/9 GiB scratch remain unchanged. No extra workflow dispatch, production activation, service, privilege or paid plan is introduced.
+- Frozen Bitcoin `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`.
+- Complete3,248 inventory entries,3,031 materialized files,49,729,651 source bytes.121 generated files,32,033,843 raw captured bytes.
+- Build passed.377 discovered=executed=passed native tests; zero skipped. This is baseline proof, not the remaining functional/sanitizer/fuzz scope.
+- Compiler v2 completed all475 required/attempted contexts;406 original and92 generated compiler-visited headers. Native compiler artifact SHA256 `15d92235ae5bd2880b1d3239d5aa837e665e5732f6b15a737a01d8dcc0aca69c`.
+- Static Cppcheck2.17.1 actually attempted475 contexts and returned bounded output with exit0, no timeout or truncation. It did not complete preprocessing:435 critical checker reports,429 preprocessor-error directives,4,414 missing-system-include messages and6 unknown-macro diagnostics. This is not another compiler timeout or a Bitcoin build failure.
+- Principal preprocessing messages are397 missing compiler-attribute-environment errors and32 missing Cap'n Proto header-environment errors. Imported compiler commands lack the compiler's implicit predefines/search environment; no repository-specific exception or suppression was added.
+- Baseline/capture/compiler1,740,770ms; static sandbox29,337ms; aggregate1,770,235ms. Peaks8,851,746,816 and4,541,882,368 bytes respectively. Both isolation boundaries and cleanup validated. These timings describe failed analysis, not qualified full-analysis performance.
 
-## Fresh local verification
+The baseline scope remains Linux Debug wallet/tests/IPC/embedded data ON; GUI, benchmarks, ZeroMQ and other-platform variants remain outside the previously frozen scope. Database `fc89aa69b2a369417cbff01d2784225bd23547827b1f7fd946669f919526aa1b` and every required/repeated context remain unchanged.
 
-The ported 30-case command first produced 10 expected assertion failures and 20 passes against 3652a039. The identical command after repair produced 30 passes, exit zero. This includes 1,799-second eligible output and 1,800/1,801-second rejection at native return, artifact retention and validation. No assertion was weakened to obtain a pass.
+## Earliest incorrect result layer repaired
 
-The complete updated workflow contract selection contains 32 files and 875 distinct cases. All 875 passed in nine disjoint batches: eight batches of 100 and one of 75; zero failures, errors or skips. Exact JUnit case membership equals the collected population, with neither omission nor duplication. The focused 30 and historical package's 861 are overlapping evidence, not additional test totals.
+The shared native parser previously classified `preprocessorErrorDirective` as a source code-risk candidate and treated every `checkersReport` as harmless, including critical failures. This could grant completion in the per-context, configured-worker, full-project-worker, standalone-worker and standalone-scanner consumers.
 
-An outer container invocation containing batches 2 and 3 was interrupted after batch 2 completed. Batch 3 was subsequently run alone with identical cases and passed; the interrupted partial attempt is not credited. The initial RED command reported one existing SyntaxWarning. All modified Python ASTs, both embedded programs, all 13 workflow shell blocks and git diff --check pass. Workflow changes only register the new test file; existing permissions, job order, resource settings and pins are preserved.
+The parser now retains preprocessor failures as limitations, preserving the native rule/message/location. Only a positive well-formed checker inventory is harmless; critical, zero-checker or malformed inventories also produce a derived `native_checkers_unproven` limitation with the original native rule identified. Existing consumers already reject that limitation. Genuine finding-bearing execution remains eligible. No raw evidence or prior stored report is rewritten.
 
-Local dependency versions differ from the pinned hosted environment. These results are local contract verification, not full backend, native Bitcoin, hosted qualification or independent review. The reproducible selection, test results, source hashes, prior-package identity and limitations are recorded in [verification.json](docs/evidence/pr1641-3652-reconciliation-20260924/verification.json) and [test-results.log](docs/evidence/pr1641-3652-reconciliation-20260924/test-results.log).
+Replaying the unchanged current native artifact under the correction yields2 completed static contexts rather than the stored110, and167 review candidates rather than596. The429 removed code-risk entries are tool preprocessing failures, now retained as limitations. The other167 candidates are not independently verified vulnerabilities. Static artifact SHA256 remains `b46607d23bd87a969c772dc071d54d9c88e97db37f50b119bf787d14682ea65a`.
 
-## Hosted and retained native evidence
+This corrects truth, not the unresolved compiler-predefine/include-model setup. Do not mark the failed integration green on the strength of parser tests.
 
-The source used here is artifact 10788757852 from run 35950988313: ZIP SHA-256 `8f5bdd812fae6b682261c0c7b21d62ab5a4fbdbbf99738c29c7d31a1465b3f05`. Its CI merge snapshot `11bf97a0bac8261cc11ae2dfaabda47e9484c2cf` maps to the observed parent tree, not a production merge. The archive and inner checksum were verified. Local Git metadata is only a detached source-export fixture without remotes and must never be pushed. Publish by building on the real upstream tree and parent.
+## Verification and bounded native reproduction support
 
-At the direct connector read, parent 3652a039 NICO CI 35950988315 and Security Audit 35950988288 reported success, while Full Project Integration 35950988313 reported failure. Its Bitcoin artifact 10790085970 exists. Its native failure cause has not been inspected in this publication task; do not infer that cause from the older 540-second timeout. All checks must be reevaluated for the containing candidate.
+New synthetic regressions exercise all five real consuming seams plus positive checker inventory and genuine diagnostic controls. Corrected baseline RED16 failed/4 passed; repaired GREEN20 passed. An initial new-test field-name mistake was corrected and RED repeated; no production field or existing assertion was weakened. The existing inventory fixture now uses the pinned tool's real positive message rather than fabricated generic text.
 
-Retain historical cbecc run 35934674741/job 107431082647/artifact 10783353302: 377 native tests passed, 475 compiler contexts checked. Retain a561 run 35945262906/job 107463662238/artifact 10787164500: 377 tests passed, 475 compiler contexts attempted but 474 completed before the 540-second cutoff; static analysis did not start. These different historical results are not interchangeable with new-policy qualification. Full original inventories, generated-byte hashes, owned controls, runtime measures and failure detail remain in the immutable parent checkpoint chain below.
+Complete33-file workflow selection plus five affected scanner/receipt/configuration/runtime files:1,042 unique cases passed, zero failures/errors/skips. Seventy-seven disjoint terminal groups reconcile exactly to the collected population. An interrupted larger group is retained as incomplete, not counted; the same required cases were split without omissions. Focused20/61 and historical875 counts overlap and are not added. Local dependencies differ from the pinned hosted environment, so final hosted regression remains mandatory.
 
-## C0-C19 current whole-row status
+Evidence index: `docs/evidence/pr1641-native-preprocessing-20260924/verification.json` and `test-results.log`. Full local XML/logs and reconstruction scripts are preserved in the conversation evidence archive. Existing native evidence remains in the authoritative GitHub artifact above.
 
-| Predicate | State | Remaining proof or retained scope |
+The existing owned integration job now retains the exact pinned Cppcheck executable/models from a never-started image container for bounded owned diagnostic reproduction. It copies no assessed source, mounts or secrets, checks64MiB aggregate/32MiB executable bounds, hashes files, and removes the container with a trap. No extra workflow dispatch, executable target workload, runner, privilege or paid plan is introduced. Hosted capture itself still requires verification. Existing owned controls continue before Bitcoin.
+
+All compiler v2 allocations, parent/static deadline repairs, actual execution limits, resource class, exhaustive depth and required target populations are byte-preserved. The local container has no Docker or installed pinned Cppcheck; do not claim local native analyzer qualification. Native execution continues on the existing CI worker, not the serving app or a credential-bearing controller.
+
+## Whole-row C0-C19 status
+
+| Predicate | Status | Evidence and remaining scope |
 | --- | --- | --- |
-| C0 | UNPROVEN | Full runtime contract and aggregate production qualification remain unfinished. |
-| C1 | PASS | Historical complete frozen inventory/acquisition retained; production revalidation belongs to C18. |
-| C2 | UNPROVEN | Prior isolated boundaries retained; complete workload/production enforcement pending. |
-| C3 | UNPROVEN | Final full-workload receipt authority and identity qualification pending. |
-| C4 | UNPROVEN | Normal-intake complete worker dispatch and ingestion remain unfinished. |
-| C5 | UNPROVEN | Complete exhaustive Bitcoin static-analysis qualification outstanding. |
-| C6 | UNPROVEN | Prior 475/475 success retained; current versioned policy requires native qualification. |
-| C7 | UNPROVEN | 377 historical native tests passed; functional/integration/sanitizer/fuzz scope remains. |
-| C8 | UNPROVEN | Complete native-to-canonical and report identity reconciliation pending. |
-| C9 | UNPROVEN | Complete static/runtime populations and coverage reconciliation pending. |
-| C10 | UNPROVEN | Final report scoring and assurance projections remain unverified. |
-| C11 | UNPROVEN | Combined production workload/resource sufficiency remains unqualified. |
-| C12 | UNPROVEN | 875 local contract cases pass; final native and supported-language qualification remains. |
-| C13 | UNPROVEN | Actual full-supported Bitcoin Comprehensive report absent. |
-| C14 | UNPROVEN | Final bilingual/mobile/progress/recovery proof pending. |
-| C15 | UNPROVEN | Approval/history controls untouched; actual final-edition acceptance pending. |
-| C16 | UNPROVEN | Final hosted checks and genuinely independent complete review pending. |
-| C17 | UNPROVEN | PR unmerged; no new serving production release. |
-| C18 | UNPROVEN | No normal production Bitcoin run exercising completed capability. |
-| C19 | UNPROVEN | Final bilingual reports, hashes and repeated retrieval pending. |
+| C0 | UNPROVEN | Current source/authority/target recovered; complete runtime groups and aggregate production qualification remain. |
+| C1 | PASS | Complete frozen inventory/acquisition reconciled from artifact10800637897. |
+| C2 | UNPROVEN | Actual baseline/static isolation and cleanup pass; complete workload/production enforcement remains. |
+| C3 | UNPROVEN | Prior identities retained; full production receipt binding remains. |
+| C4 | FAIL | Full project-wide evidence is not yet connected through normal durable production completion. |
+| C5 | FAIL |475 static attempts but incomplete preprocessing; corrected interpretation completes only2 contexts. |
+| C6 | PASS | Current v2 baseline,121 generated members,475 compiler contexts and compiler header populations verified. |
+| C7 | UNPROVEN |377 baseline native tests pass; declared integration/sanitizer/fuzz scope remains. |
+| C8 | UNPROVEN | Native failures/candidates corrected; actual canonical/report cross-format acceptance remains. |
+| C9 | UNPROVEN | Current baseline/compiler membership passes; static failures explicit; complete runtime/report reconciliation remains. |
+| C10 | UNPROVEN | No scoring redesign; actual new report inputs/projections remain unverified. |
+| C11 | UNPROVEN | Partial-workload measurements retained; correctly configured full analysis/runtime not qualified. |
+| C12 | UNPROVEN |1,042 local cases pass; new pinned hosted/native controls still required. |
+| C13 | UNPROVEN | No complete-scope production Bitcoin structured report or PDF. |
+| C14 | UNPROVEN | No new production bilingual/mobile/progress/recovery acceptance. |
+| C15 | UNPROVEN | Human/history controls untouched; exact-edition eligible one-action acceptance remains. |
+| C16 | FAIL | Full native qualification fails; independent complete review and final candidate checks remain. |
+| C17 | FAIL | PR unmerged; no new merged serving identities. |
+| C18 | FAIL | No actual normal-intake production Bitcoin run exercising the completed capability. |
+| C19 | UNPROVEN | Native/local evidence retained; final bilingual artifacts and repeated retrieval absent. |
 
-No independent review occurred in this publication task. Prior review request 5802036311/reply 5802038248 reported exhausted allowance; do not retry unchanged requests, purchase credits, change accounts, waive the gate or describe author tests as independent review. No operator approval or client-delivery authorization was performed. Unrelated Railway changes remain untouched.
+Prior Codex review request5802036311/reply5802038248 exhausted its allowance. No independent review is claimed. Do not retry unchanged requests, buy credits, switch accounts, waive review or call author tests independent. No new tool denial was established; GitHub no-op ref access succeeded. This is unfinished implementation, not a universal support-ticket blocker.
 
-EXACT NEXT ACTION: inspect the containing commit's automatic contract/native qualification and the first actual failed native boundary, including parent artifact 10790085970 where useful. Preserve successful stage evidence and full required populations. Continue full runtime and normal worker/canonical/report integration; obtain independent review and final checks before gated merge/deployment. Verify actual frontend/backend/worker identities and run normal owned then authorized Bitcoin intake, including real English/es-MX report, exact-edition approval and repeated retrieval. Do not issue the full SHIPPED declaration before every mandatory predicate is proved.
+EXACT NEXT ACTION: publish only this tested descendant after checking the live head. Inspect the newly retained pinned analyzer/models and correct compiler-predefine/implicit-dependency modeling against clean, benign diagnostic and missing-header owned controls. Require real native completion of all475 contexts without hiding diagnostics, reducing depth or blindly raising limits. Continue remaining runtime and normal worker/report integration, then independent review, gated merge/deployment and actual bilingual production acceptance. No SHIPPED declaration until every mandatory predicate passes.
 
 ## Immutable continuity
 
-The complete prior ledger is [3652a039:NICO-Ship-Checkpoint.md](https://github.com/BoneManTGRM/NICO/blob/3652a03965dfd7a96a45b5a6161daf8ec7b1042b/NICO-Ship-Checkpoint.md). Its 2195/a561/cbecc/fd1/254/b609/d236/a10/abb/1ebc chain preserves the original C0-C19 meanings, PR1627 evidence, native successes/failures, worker/database/serving records and approval history. Historical Bitcoin revision `0e9018e8b65611b0769545e177110e4b7fc51244` / run `comprun_7cc47a5a81695fa452354479ea23b422` remains unchanged. This file is the sole active ledger; evidence files are verification records, not competing checkpoints.
+Parent ledger `533d8d5ea833ad4b897cff8be734c1ce831175fe:NICO-Ship-Checkpoint.md` and its3652/2195/a561/cbecc/fd1/254/b609/d236/a10/abb/1ebc chain preserve the complete contract, predecessor PR1627, prior native successes/failures, tools, worker/database evidence and approvals. Historical Bitcoin revision `0e9018e8b65611b0769545e177110e4b7fc51244` and run `comprun_7cc47a5a81695fa452354479ea23b422` remain unchanged. This is the only active mission ledger.
