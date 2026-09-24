@@ -74,7 +74,9 @@ def validate_contract(contract: dict) -> dict:
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", contract["image_digest"])):
         raise ValueError("worker_contract_tool_invalid")
     targets = contract["targets"]
-    if not isinstance(targets, dict) or not 1 <= len(targets) <= 20000:
+    configure_first = contract.get("profile") == "cpp-configure-first-v2"
+    if (not isinstance(targets, dict) or len(targets) > 20000
+            or (not configure_first and not targets) or (configure_first and targets)):
         raise ValueError("worker_contract_targets_invalid")
     for path, digest in targets.items():
         if (not isinstance(path, str) or not path or len(path) > 1000
@@ -83,7 +85,14 @@ def validate_contract(contract: dict) -> dict:
                 or any(part in {".", ".."} for part in path.split("/"))
                 or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ValueError("worker_contract_path_or_digest_invalid")
-    if contract['profile'] == 'cpp-full-project-v1':
+    if configure_first:
+        from nico.assessment_cpp_configure_first_contract import validate_configuration
+        validate_configuration(contract['configuration'])
+        if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int
+                or not 1 <= contract['limits']['wall_seconds'] <= 2420
+                or contract['limits'].get('max_attempts') != 1):
+            raise ValueError('worker_configure_first_budget_invalid')
+    elif contract['profile'] == 'cpp-full-project-v1':
         from nico.assessment_cpp_full_project import validate_configuration
         validate_configuration(contract['configuration'], targets)
         if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int

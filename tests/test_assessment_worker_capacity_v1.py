@@ -5,6 +5,7 @@ import pytest
 
 from nico.assessment_worker_capacity_v1 import (
     BOUNDED_RESOURCES,
+    CONFIGURE_FIRST_PROFILE,
     FULL_PROJECT_PROFILE,
     FULL_PROJECT_RESOURCES,
     docker_resource_args,
@@ -150,3 +151,9 @@ def test_selection_preserves_qualification_and_bitcoin_report_state():
     assert qualification == before
     assert selected["bitcoin_executed"] is False
     assert selected["report_verified"] is False
+
+
+def test_configure_first_uses_qualified_large_repository_envelope():
+    resources=__import__('nico.assessment_worker_capacity_v1',fromlist=['resources_for']).resources_for(CONFIGURE_FIRST_PROFILE)
+    assert resources['cpus']=='4' and resources['memory']=='12g'
+    assert resources['memory_bytes']==12_884_901_888 and resources['tmpfs_bytes']==9_663_676_416

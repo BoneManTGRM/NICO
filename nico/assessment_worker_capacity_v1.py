@@ -15,6 +15,7 @@ BOUNDED_CLASS = "bounded-owned-v1"
 FULL_PROJECT_CLASS = "full-project-v1"
 FULL_PROJECT_PROFILE = "cpp-full-project-v1"
 BASELINE_QUALIFICATION_PROFILE = "cpp-baseline-qualification-v1"
+CONFIGURE_FIRST_PROFILE = "cpp-configure-first-v2"
 
 # Existing owned compile/test/sanitizer proofs were taken inside this envelope.
 BOUNDED_RESOURCES = {
@@ -76,7 +77,7 @@ BOUNDED_PROFILES = {
 
 
 def resources_for(profile: str) -> dict[str, Any]:
-    if profile == BASELINE_QUALIFICATION_PROFILE:
+    if profile in {BASELINE_QUALIFICATION_PROFILE, CONFIGURE_FIRST_PROFILE}:
         return deepcopy(BASELINE_QUALIFICATION_RESOURCES)
     if profile == FULL_PROJECT_PROFILE:
         return deepcopy(FULL_PROJECT_RESOURCES)

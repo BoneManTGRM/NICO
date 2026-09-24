@@ -282,3 +282,54 @@ def test_archive_transport_never_uses_credentials_redirects_or_implicit_expansio
     assert calls[0]['headers'] == {'Accept': 'application/octet-stream', 'Accept-Encoding': 'identity'}
     assert calls[0]['allow_redirects'] is False and calls[0]['stream'] is True
     assert output.exists() is (status == 200 and encoding == 'identity')
+
+
+def configure_first_job(files):
+    return {
+        'identity': {'repository_id':'https://github.com/owned/control','revision':REVISION},
+        'contract': {
+            'profile':'cpp-configure-first-v2','tool_version':'2.17.1','image_digest':'sha256:'+'d'*64,
+            'configuration': {
+                'schema':'nico.cpp-configure-first-contract.v1','platform':'linux/amd64','expected_tree_sha':TREE,
+                'project_options':{},'source_byte_limit':64*1024*1024,
+                'baseline_execution':{'schema':'nico.cpp-baseline-execution.v2','profile':'cpp-baseline-qualification-v1',
+                    'freeze_compilation_database':'after_configuration_before_build','build_seconds':1200,
+                    'test_seconds':480,'test_case_seconds':60,'parallel':4},
+                'capabilities':{'capture_generated_context':True,'project_compiler_evidence':True,
+                    'project_static_analysis':True,'extended_compiler_budget':True,'compiler_environment':True}},
+            'targets':{},'limits':{'max_attempts':1,'wall_seconds':2420,'lease_seconds':120},
+            'max_receipt_bytes':8*1024*1024},
+        'deadline_epoch':time.time()+60,'source_access':{'mode':'anonymous_public','credential_used':False}}
+
+def test_configure_first_profile_derives_complete_regular_population(tmp_path):
+    files=fixture(); job,download,calls=job_and_download(files); job=configure_first_job(files)
+    tmp_path.chmod(0o700)
+    root,evidence=acquire_public_github_inputs(job,tmp_path,lambda:None,download=download)
+    assert evidence['schema']=='nico.github_https_tree_materialization.v2'
+    assert evidence['freeze_point']=='after_materialization_before_configuration'
+    assert evidence['tree_sha']==TREE and evidence['required_count']==len(files)
+    assert evidence['inputs']=={p:hashlib.sha256(raw).hexdigest() for p,raw in files.items()}
+    assert evidence['excluded_entries']==[]
+    assert {p.relative_to(root).as_posix():p.read_bytes() for p in root.rglob('*') if p.is_file()}==files
+    assert calls[-1]==ARCHIVE_URL
+
+def test_configure_first_profile_rejects_tree_substitution(tmp_path):
+    files=fixture(); job,download,_=job_and_download(files); job=configure_first_job(files)
+    job['contract']['configuration']['expected_tree_sha']='c'*40
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError,match='worker_source_tree_identity_mismatch'):
+        acquire_public_github_inputs(job,tmp_path,lambda:None,download=download)
+    assert not (tmp_path/'source').exists()
+
+def test_configure_first_required_cpp_symlink_fails_closed(tmp_path):
+    files=fixture(); job,download,_=job_and_download(files); job=configure_first_job(files)
+    def changed(url,destination,**kwargs):
+        if '/git/trees/' not in url:
+            return download(url,destination,**kwargs)
+        entries=[{'path':p,'type':'blob','mode':'100755' if p=='main.cpp' else '100644','sha':oid(raw),'size':len(raw)} for p,raw in files.items()]
+        entries.append({'path':'linked.cpp','type':'blob','mode':'120000','sha':oid(b'main.cpp'),'size':8})
+        entries.append({'path':'include','type':'tree','mode':'040000','sha':'c'*40})
+        destination.write_text(json.dumps({'sha':TREE,'truncated':False,'tree':entries}))
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError,match='worker_source_required_source_symlink'):
+        acquire_public_github_inputs(job,tmp_path,lambda:None,download=changed)

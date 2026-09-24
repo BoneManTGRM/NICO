@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify the already-published Clang fallback in hosted qualification; then connect this freeze-after-configuration v2 policy to the existing durable C++ child worker behind release-owned qualification. Do not activate the old2GiB/300-second profile or expose profile choice to public intake. Preserve actual native evidence, complete runtime scope, independent review and production acceptance gates.
+EXACT NEXT ACTION: verify the published Clang fallback in hosted qualification and this complete-tree source-freeze contract. Then connect `cpp-configure-first-v2` execution/receipt projection to the existing durable C++ child worker, using the frozen derived SHA256 population and release-owned qualification only. Do not expose profile choice to public intake or activate incomplete runtime/report gates.
 
 ## Immutable continuity
 
@@ -94,3 +94,12 @@ The configuration probe now accepts a strict `nico.cpp-baseline-execution.v2` po
 The historical v1 contract remains unchanged and continues to require its supplied database SHA. v2 accepts only the explicit `after_configuration_before_build` freeze point and rejects a caller-supplied database hash, preventing a public or stale caller from mixing the two authority models. This is generic configure-first plumbing for normal CMake repositories; it contains no Bitcoin repository-name rule.
 
 Local affected verification:84 tests passed with zero failures/errors/skips. Production selection and durable worker execution remain gated on native qualification and are not activated by this contract alone.
+
+
+## Complete-tree source freeze for configure-first production
+
+The production source adapter now has a versioned internal `cpp-configure-first-v2` contract. It binds the exact commit and expected Git tree before acquisition, permits no caller-supplied SHA256 target map, and uses the existing bounded codeload archive verifier to materialize every regular `100644`/`100755` blob. Each member is checked against the Git tree object identity while streaming; its SHA256 is derived and frozen before any CMake command may execute. Symlinks and gitlinks remain explicit exclusions; a C/C++ source/header symlink fails closed. LFS pointers remain unsupported rather than silently fetched.
+
+The new profile uses the existing 4 CPU /12 GiB /9 GiB scratch qualification envelope and the strict baseline-execution-v2 freeze point. It is internal only: public intake still cannot choose a profile, image, source population, build option or budget. Production execution and receipt projection are not activated by this commit. Legacy worker contracts and pre-frozen target acquisition remain unchanged.
+
+Local verification:72 focused source/capacity/contract tests pass. Broader worker/receipt/launch/baseline/workflow regression:195 passed after adding temporary local Git metadata to the source-export fixture; the local `.git` directory is not published.

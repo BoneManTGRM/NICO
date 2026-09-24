@@ -216,9 +216,13 @@ def _materialize_archive(name, revision, stage, entries, population, inputs,
                     finally:
                         if handle is not None:
                             handle.close()
+                    digest256 = sha256.hexdigest()
+                    expected256 = population.get(path) if selected else None
                     if (count != member.size or blob.hexdigest() != entry.get('sha')
-                            or (selected and sha256.hexdigest() != population[path])):
+                            or (selected and expected256 is not None and digest256 != expected256)):
                         raise ValueError('worker_source_digest_mismatch')
+                    if selected and expected256 is None:
+                        population[path] = digest256
                     files += 1
                     if selected:
                         output.chmod(0o555 if entry['mode'] == '100755' else 0o444)
@@ -254,12 +258,14 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
         raise ValueError('worker_source_repository_unsupported')
     contract = job['contract']
     maximum = MAX_BYTES
-    if contract.get('profile') == 'cpp-full-project-v1':
+    profile = contract.get('profile')
+    if profile in {'cpp-full-project-v1', 'cpp-configure-first-v2'}:
         from nico.assessment_worker_receipts import validate_contract
         contract = validate_contract(contract)
         maximum = contract['configuration']['source_byte_limit']
+    derive_population = profile == 'cpp-configure-first-v2'
     population = dict(contract['targets'])
-    if not 1 <= len(population) <= 20000:
+    if (not derive_population and not 1 <= len(population) <= 20000) or len(population) > 20000:
         raise ValueError('worker_source_population_invalid')
     for path, digest in population.items():
         if (not isinstance(path, str) or not path or len(path) > 1000
@@ -301,6 +307,24 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
             if not isinstance(path, str) or path in entries:
                 raise ValueError('worker_source_tree_invalid')
             entries[path] = entry
+        excluded = []
+        if derive_population:
+            if tree_sha != contract['configuration']['expected_tree_sha']:
+                raise ValueError('worker_source_tree_identity_mismatch')
+            for path, entry in sorted(entries.items()):
+                mode, kind, size = entry.get('mode'), entry.get('type'), entry.get('size')
+                if kind == 'blob' and mode in {'100644', '100755'}:
+                    if type(size) is not int or not 0 <= size <= maximum:
+                        raise ValueError('worker_source_type_or_size_invalid')
+                    population[path] = None
+                elif kind == 'blob' and mode == '120000':
+                    excluded.append({'path': path, 'reason': 'unmaterialized_symlink'})
+                    if Path(path).suffix.lower() in {'.c','.cc','.cpp','.cxx','.h','.hh','.hpp','.hxx'}:
+                        raise ValueError('worker_source_required_source_symlink')
+                elif kind == 'commit' and mode == '160000':
+                    excluded.append({'path': path, 'reason': 'unmaterialized_gitlink'})
+            if not population or len(population) > 20000:
+                raise ValueError('worker_source_population_invalid')
         total = 0
         for path in population:
             entry = entries.get(path, {})
@@ -315,7 +339,7 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
         inputs = stage / 'inputs'
         inputs.mkdir(mode=0o700)
         transport = None
-        use_archive = (contract.get('profile') == 'cpp-full-project-v1'
+        use_archive = (profile in {'cpp-full-project-v1', 'cpp-configure-first-v2'}
             and len(population) >= ARCHIVE_MINIMUM_POPULATION and _archive_fits(entries, maximum))
         if use_archive:
             transport = _materialize_archive(name, revision, stage, entries, population, inputs,
@@ -334,15 +358,17 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
                     raise ValueError('worker_source_digest_mismatch')
                 if raw.startswith(b'version https://git-lfs.github.com/spec/v1'):
                     raise ValueError('worker_source_type_unsupported')
-                output.chmod(0o555 if contract.get('profile') == 'cpp-full-project-v1' and entry['mode'] == '100755' else 0o444)
+                output.chmod(0o555 if profile in {'cpp-full-project-v1','cpp-configure-first-v2'} and entry['mode'] == '100755' else 0o444)
         checkpoint()
         if time.monotonic() >= deadline:
             raise ValueError('worker_source_deadline')
         destination.mkdir(mode=0o700)
         os.replace(inputs, destination)
-    return destination, {'schema': 'nico.github_https_input_materialization.v1',
+    return destination, {'schema': ('nico.github_https_tree_materialization.v2' if derive_population
+            else 'nico.github_https_input_materialization.v1'),
         'commit_sha': revision, 'tree_sha': tree_sha, 'inputs': population,
         'population_sha256': hashlib.sha256(json.dumps(population, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
         'required_count': len(population), 'materialized_count': len(population), 'source_bytes': total,
         'analyzed_count': None, 'authorized': False, 'assessed_code_executed': False,
+        **({'freeze_point': 'after_materialization_before_configuration', 'excluded_entries': excluded} if derive_population else {}),
         **({'transport': transport} if transport is not None else {})}
