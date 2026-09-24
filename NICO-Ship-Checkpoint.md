@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify this published release-owned normal-intake selector, current worker image publication/retrieval, and canonical reconstruction in hosted checks while the frozen Bitcoin qualification runs. Then complete sanitizer/fuzz runtime scope, independent review/final gates, merge/deploy, configure exact qualified release/image settings, and run the actual bilingual production Bitcoin assessment.
+EXACT NEXT ACTION: verify this stricter selector together with worker-image publication/retrieval and the active frozen Bitcoin qualification. If and only if hosted qualification succeeds, promote its exact run/artifact/image identities into deployment settings; then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and the actual bilingual production Bitcoin assessment.
 
 ## Immutable continuity
 
@@ -161,3 +161,10 @@ The profile remains release-owned and fail-closed. It is selected only when depl
 The normal snapshot handler passes the internally constructed `cpp-configure-first-v2` contract through the existing additive C++ child path, preserving all ordinary required scanners and parent/child composition. If any source/capability/release predicate is absent, intake uses the unchanged ordinary scanner path.
 
 The public GitHub source adapter now accepts both canonical `owner/repo` locators and `https://github.com/owner/repo` identities, normalizing only for acquisition while retaining the original repository identity in job/evidence bindings.
+
+
+## Exact hosted qualification identity required for production selection
+
+The normal-intake selector now requires two additional release-owned values before it can construct the configure-first contract: the exact successful hosted qualification run ID and the SHA256 of its retained qualification artifact. Flags, release SHA and image config identity alone are insufficient. Both values are syntax-checked and remain unavailable to public assessment payloads. The selector still fails closed when any evidence identity is absent or stale.
+
+This does not claim that the currently running qualification has passed. Deployment settings must be populated only from a terminal successful hosted qualification whose native evidence satisfies the acceptance contract.

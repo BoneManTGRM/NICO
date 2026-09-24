@@ -19,7 +19,9 @@ def env():
     return {'NICO_CPP_CONFIGURE_FIRST_ENABLED':'1',
         'NICO_ASSESSMENT_WORKER_DISPATCH_ENABLED':'1',
         'NICO_CPP_CONFIGURE_FIRST_IMAGE_CONFIG_ID':IMAGE,
-        'NICO_CPP_CONFIGURE_FIRST_QUALIFIED_RELEASE':RELEASE}
+        'NICO_CPP_CONFIGURE_FIRST_QUALIFIED_RELEASE':RELEASE,
+        'NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_RUN_ID':'12345',
+        'NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_ARTIFACT_SHA256':'e'*64}
 
 def test_release_owned_selector_builds_generic_configure_first_contract():
     result=select_configure_first_contract(repo_step(),environ=env(),release_revision=RELEASE)
@@ -35,6 +37,10 @@ def test_selector_is_fail_closed_without_generic_cpp_cmake_or_release_proof():
     bad=env(); bad['NICO_CPP_CONFIGURE_FIRST_QUALIFIED_RELEASE']='e'*40
     assert select_configure_first_contract(repo_step(),environ=bad,release_revision=RELEASE) is None
     bad=env(); bad['NICO_ASSESSMENT_WORKER_DISPATCH_ENABLED']='0'
+    assert select_configure_first_contract(repo_step(),environ=bad,release_revision=RELEASE) is None
+    bad=env(); bad['NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_RUN_ID']='0'
+    assert select_configure_first_contract(repo_step(),environ=bad,release_revision=RELEASE) is None
+    bad=env(); bad['NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_ARTIFACT_SHA256']='bad'
     assert select_configure_first_contract(repo_step(),environ=bad,release_revision=RELEASE) is None
 
 def test_selector_requires_anonymous_exact_snapshot_and_uses_no_repo_name_rule():

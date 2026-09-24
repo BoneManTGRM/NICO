@@ -19,12 +19,17 @@ def _settings(environ, release_revision):
     dispatch=environ.get('NICO_ASSESSMENT_WORKER_DISPATCH_ENABLED')=='1'
     image=environ.get('NICO_CPP_CONFIGURE_FIRST_IMAGE_CONFIG_ID','')
     qualified=environ.get('NICO_CPP_CONFIGURE_FIRST_QUALIFIED_RELEASE','')
+    run_id=environ.get('NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_RUN_ID','')
+    artifact=environ.get('NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_ARTIFACT_SHA256','')
     if (not enabled or not dispatch
             or re.fullmatch(r'sha256:[0-9a-f]{64}',image) is None
             or re.fullmatch(r'[0-9a-f]{40}',qualified) is None
-            or qualified != release_revision):
+            or qualified != release_revision
+            or re.fullmatch(r'[1-9][0-9]{0,19}',run_id) is None
+            or re.fullmatch(r'[0-9a-f]{64}',artifact) is None):
         return None
-    return image
+    return {'image_config_id':image,'qualification_run_id':int(run_id),
+            'qualification_artifact_sha256':artifact}
 
 
 def select_configure_first_contract(repo_step, *, environ=None, release_revision=None):
@@ -61,10 +66,10 @@ def select_configure_first_contract(repo_step, *, environ=None, release_revision
             release_revision=expected_release_sha()
         except Exception:
             return None
-    image=_settings(environ,release_revision)
-    if image is None:
+    qualification=_settings(environ,release_revision)
+    if qualification is None:
         return None
-    return {'profile':PROFILE,'tool_version':'2.17.1','image_digest':image,
+    return {'profile':PROFILE,'tool_version':'2.17.1','image_digest':qualification['image_config_id'],
         'configuration':{'schema':'nico.cpp-configure-first-contract.v1','platform':'linux/amd64',
             'expected_tree_sha':snapshot['tree_sha'],'project_options':{},'source_byte_limit':64*1024*1024,
             'baseline_execution':{'schema':'nico.cpp-baseline-execution.v2',
