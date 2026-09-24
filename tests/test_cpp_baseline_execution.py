@@ -153,7 +153,7 @@ def test_published_baseline_job_is_serial_bounded_and_has_no_production_credenti
     workflow=yaml.safe_load((root/'.github/workflows/cpp-full-project-integration.yml').read_text())
     job=workflow['jobs'].get('project-baseline-qualification')
     assert job, 'missing actual whole-project hosted execution'
-    assert job['needs']==['owned-project-integration'] and job['timeout-minutes']==40
+    assert job['needs']==['owned-project-integration'] and job['timeout-minutes']==50
     assert job['runs-on']=='ubuntu-24.04'
     assert workflow['permissions']=={'contents':'read'}
     assert workflow['jobs']['owned-project-integration']['timeout-minutes']==10

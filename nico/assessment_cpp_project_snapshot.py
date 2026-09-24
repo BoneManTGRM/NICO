@@ -146,6 +146,41 @@ def _project_file_population(files):
     return hashlib.sha256(raw).hexdigest()
 
 
+class ProjectSnapshotFailure(ValueError):
+    """A rejected member and its bounds, never its contents or host error text."""
+    def __init__(self, code, failed_input):
+        super().__init__(code)
+        self.failed_input = failed_input
+
+
+def _input_metadata(root, relative):
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in (*Path(root).parts[1:], *relative.split('/')[:-1]):
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd); fd = child
+        info = os.stat(relative.split('/')[-1], dir_fd=fd, follow_symlinks=False)
+        kind = ('regular' if stat.S_ISREG(info.st_mode) else 'symlink' if stat.S_ISLNK(info.st_mode)
+                else 'directory' if stat.S_ISDIR(info.st_mode) else 'other')
+        return {'type': kind, 'bytes': info.st_size, 'links': info.st_nlink}
+    except OSError:
+        return {'type': 'unavailable', 'bytes': None, 'links': None}
+    finally:
+        os.close(fd)
+
+
+def _project_read(root, relative, maximum, total, phase):
+    try:
+        return _stable_bytes(root, relative, maximum)
+    except (ValueError, OSError) as error:
+        code = str(error)
+        if re.fullmatch(r'worker_generated_[a-z_]+', code) is None:
+            code = 'worker_generated_capture_unavailable'
+        raise ProjectSnapshotFailure(code, {'path': relative, 'phase': phase,
+            'effective_max_bytes': maximum, 'captured_bytes_before': total,
+            'observed': _input_metadata(root, relative)}) from error
+
+
 def capture_project_snapshot(build_root, destination, request):
     """Capture exact generated units plus bounded regular header candidates.
 
@@ -167,8 +202,8 @@ def capture_project_snapshot(build_root, destination, request):
     files, total = {}, 0
     try:
         for relative in paths:
-            raw = _stable_bytes(build_root, relative,
-                min(PROJECT_GENERATED_MAX_FILE_BYTES, PROJECT_GENERATED_MAX_BYTES - total))
+            raw = _project_read(build_root, relative,
+                min(PROJECT_GENERATED_MAX_FILE_BYTES, PROJECT_GENERATED_MAX_BYTES - total), total, 'initial_read')
             total += len(raw)
             target = staging / relative
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -178,7 +213,7 @@ def capture_project_snapshot(build_root, destination, request):
             files[relative] = {'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw),
                                'base64': base64.b64encode(raw).decode('ascii')}
         for relative in paths:
-            raw = _stable_bytes(build_root, relative, PROJECT_GENERATED_MAX_FILE_BYTES)
+            raw = _project_read(build_root, relative, PROJECT_GENERATED_MAX_FILE_BYTES, total, 'verification_read')
             if raw != base64.b64decode(files[relative]['base64'], validate=True):
                 raise ValueError('worker_generated_input_changed')
         if _project_header_inventory(build_root) != (headers, links):
@@ -246,6 +281,30 @@ def collect_project_snapshot(request):
         Path(snapshot_directory(group)), request)
 
 
+def run_project_snapshot():
+    """Retain bounded diagnostics in the new project path; legacy paths unchanged."""
+    import sys
+    request = None
+    try:
+        raw = sys.stdin.buffer.read(4 * 1024 * 1024 + 1)
+        if len(raw) > 4 * 1024 * 1024:
+            raise ValueError('worker_generated_request_size_invalid')
+        request = _strict_json(raw)
+        result = collect_project_snapshot(request)
+    except Exception as error:
+        group = request.get('configuration') if isinstance(request, dict) else None
+        code = str(error)
+        if re.fullmatch(r'worker_(?:compiler|generated)_[a-z_]+', code) is None:
+            code = 'worker_generated_capture_unavailable'
+        result = {'schema': 'nico.cpp-generated-failure.v1', 'configuration': group,
+                  'phase': 'project_snapshot', 'error': code}
+        if isinstance(error, ProjectSnapshotFailure):
+            result['failed_input'] = error.failed_input
+        print(json.dumps(result, sort_keys=True, separators=(',', ':')))
+        sys.exit(1)
+    print(json.dumps(result, sort_keys=True, separators=(',', ':')))
+
+
 PROJECT_SNAPSHOT_PROGRAM = (_PRELUDE +
     f'PROJECT_GENERATED_MAX_FILES={PROJECT_GENERATED_MAX_FILES}\n'
     f'PROJECT_GENERATED_MAX_FILE_BYTES={PROJECT_GENERATED_MAX_FILE_BYTES}\n'
@@ -255,5 +314,100 @@ PROJECT_SNAPSHOT_PROGRAM = (_PRELUDE +
     f'PROJECT_HEADER_SUFFIXES={PROJECT_HEADER_SUFFIXES!r}\n' +
     '\n'.join(inspect.getsource(f) for f in (_strict_json, build_directory, snapshot_directory,
         _stable_bytes, _project_paths, _project_request, _project_header_inventory,
-        _project_file_population, capture_project_snapshot, collect_project_snapshot, run_generated_program)) +
-    "\nrun_generated_program('project_snapshot', collect_project_snapshot)\n")
+        _project_file_population, ProjectSnapshotFailure, _input_metadata, _project_read,
+        capture_project_snapshot, collect_project_snapshot, run_project_snapshot)) +
+    "\nrun_project_snapshot()\n")
+
+
+def restore_project_files(request, destination):
+    """Restore a controller-validated snapshot into a fresh private analyst tree.
+
+    Context and compiler bindings are checked before this call by the controller.
+    The isolated receiver independently checks paths, byte limits and all hashes;
+    it never reads a build tree, follows a link or executes a captured member.
+    """
+    if (not isinstance(request, dict)
+            or set(request) != {'schema', 'files', 'file_population_sha256'}
+            or request['schema'] != 'nico.cpp-project-restore.v1'
+            or not isinstance(request['files'], dict)
+            or not isinstance(request['file_population_sha256'], str)
+            or re.fullmatch(r'[0-9a-f]{64}', request['file_population_sha256']) is None):
+        raise ValueError('worker_project_restore_request_invalid')
+    paths = _project_paths(sorted(request['files']))
+    total = 0
+    for item in request['files'].values():
+        if (not isinstance(item, dict) or set(item) != {'sha256', 'bytes', 'base64'}
+                or type(item['bytes']) is not int or not 0 <= item['bytes'] <= PROJECT_GENERATED_MAX_FILE_BYTES
+                or not isinstance(item['base64'], str)
+                or len(item['base64']) > 4 * ((item['bytes'] + 2) // 3)
+                or not isinstance(item['sha256'], str) or re.fullmatch(r'[0-9a-f]{64}', item['sha256']) is None):
+            raise ValueError('worker_project_restore_member_invalid')
+        total += item['bytes']
+        if total > PROJECT_GENERATED_MAX_BYTES:
+            raise ValueError('worker_project_restore_size_invalid')
+    if _project_file_population(request['files']) != request['file_population_sha256']:
+        raise ValueError('worker_project_restore_population_invalid')
+    destination = Path(destination)
+    parent = destination.parent
+    info = parent.lstat()
+    if (not parent.is_absolute() or parent != parent.resolve(strict=True)
+            or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700
+            or destination.exists() or destination.is_symlink()):
+        raise ValueError('worker_project_restore_destination_invalid')
+    staging = Path(tempfile.mkdtemp(prefix='.project-restore-', dir=parent))
+    try:
+        for path in paths:
+            item = request['files'][path]
+            raw = base64.b64decode(item['base64'], validate=True)
+            if len(raw) != item['bytes'] or hashlib.sha256(raw).hexdigest() != item['sha256']:
+                raise ValueError('worker_project_restore_digest_invalid')
+            leaf = staging / path
+            leaf.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with leaf.open('xb') as handle:
+                handle.write(raw)
+            leaf.chmod(0o444)
+            if _stable_bytes(staging, path, PROJECT_GENERATED_MAX_FILE_BYTES) != raw:
+                raise ValueError('worker_project_restore_written_bytes_invalid')
+        for directory in sorted((p for p in staging.rglob('*') if p.is_dir()), reverse=True):
+            directory.chmod(0o555)
+        staging.chmod(0o555)
+        os.rename(staging, destination)
+        return {'file_population_sha256': request['file_population_sha256'],
+                'files': {p: {'sha256': v['sha256'], 'bytes': v['bytes']}
+                          for p, v in sorted(request['files'].items())}}
+    finally:
+        if staging.exists():
+            staging.chmod(0o700)
+            for directory in staging.rglob('*'):
+                if directory.is_dir():
+                    directory.chmod(0o700)
+            shutil.rmtree(staging)
+
+
+def run_project_restore():
+    import sys
+    try:
+        if os.getuid() != 1001 or os.getgid() != 1001:
+            raise ValueError('worker_project_restore_identity_invalid')
+        raw = sys.stdin.buffer.read(PROJECT_GENERATED_STREAM_LIMIT + 1)
+        if len(raw) > PROJECT_GENERATED_STREAM_LIMIT:
+            raise ValueError('worker_project_restore_input_limit')
+        result = restore_project_files(_strict_json(raw), Path('/work/analysis/generated-baseline'))
+    except Exception as exc:
+        code = str(exc)
+        if re.fullmatch(r'worker_project_restore_[a-z_]+', code) is None:
+            code = 'worker_project_restore_failed'
+        print(json.dumps({'schema': 'nico.cpp-project-restore-failure.v1', 'error': code}))
+        sys.exit(1)
+    print(json.dumps(result, sort_keys=True, separators=(',', ':')))
+
+
+PROJECT_RESTORE_PROGRAM = (_PRELUDE
+    + f'PROJECT_GENERATED_MAX_FILES={PROJECT_GENERATED_MAX_FILES}\n'
+    + f'PROJECT_GENERATED_MAX_FILE_BYTES={PROJECT_GENERATED_MAX_FILE_BYTES}\n'
+    + f'PROJECT_GENERATED_MAX_BYTES={PROJECT_GENERATED_MAX_BYTES}\n'
+    + f'PROJECT_GENERATED_STREAM_LIMIT={PROJECT_GENERATED_STREAM_LIMIT}\n'
+    + '\n'.join(inspect.getsource(f) for f in (_strict_json, _project_paths,
+        _project_file_population, _stable_bytes, restore_project_files, run_project_restore))
+    + '\nrun_project_restore()\n')

@@ -132,7 +132,7 @@ def persist_project_artifact(output, key, raw):
     symlinks and arbitrary names cannot replace an earlier artifact.
     """
     from nico.assessment_cpp_project_snapshot import PROJECT_GENERATED_STREAM_LIMIT, _stable_bytes
-    if (key not in {'project-generated-context', 'project-compiler-evidence'} or not isinstance(raw, bytes)
+    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence'} or not isinstance(raw, bytes)
             or len(raw) > PROJECT_GENERATED_STREAM_LIMIT):
         raise ValueError('qualification_artifact_invalid')
     output = Path(output).absolute()
@@ -214,6 +214,7 @@ def qualify_configuration_checkout(args):
                 baseline_execution=execution_contract, unit_test_data=unit_test_data,
                 capture_generated_context=getattr(args, 'capture_generated_context', False),
                 project_compiler_evidence=getattr(args, 'project_compiler_evidence', False),
+                project_static_analysis=getattr(args, 'project_static_analysis', False),
                 retain_artifact=lambda key, raw: persist_project_artifact(args.output, key, raw))
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
@@ -241,6 +242,7 @@ def main():
     parser.add_argument('--unit-test-data', type=Path)
     parser.add_argument('--capture-generated-context', action='store_true')
     parser.add_argument('--project-compiler-evidence', action='store_true')
+    parser.add_argument('--project-static-analysis', action='store_true')
     parser.add_argument('--output', type=Path, default=Path('cpp-configuration-qualification'))
     qualify_configuration_checkout(parser.parse_args())
 

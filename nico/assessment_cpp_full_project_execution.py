@@ -118,8 +118,8 @@ finally:
 '''
 
 
-def boundary_valid(value, *, source_required=True, profile=PROFILE):
-    if not isinstance(value, dict): return False
+def boundary_valid(value, *, source_required=True, profile=PROFILE, executable=True):
+    if not isinstance(value, dict) or type(executable) is not bool: return False
     from nico.assessment_worker_capacity_v1 import resources_for, BASELINE_QUALIFICATION_PROFILE
     if profile not in {PROFILE, BASELINE_QUALIFICATION_PROFILE}: return False
     try:
@@ -135,7 +135,7 @@ def boundary_valid(value, *, source_required=True, profile=PROFILE):
             and period > 0 and quota == int(resources['cpus']) * period
             and value['memory_max'] == str(resources['memory_bytes']) and value['pids_max'] == resources['pids']
             and value['swap_max'] == '0' and {'rw', 'nosuid', 'nodev'} <= set(value['work_mount'])
-            and 'noexec' not in value['work_mount']
+            and (('noexec' not in value['work_mount']) if executable else ('noexec' in value['work_mount']))
             and all(value[k] is True for k in ('root_read_only', 'docker_socket_absent',
                 'credential_environment_absent', 'external_network_blocked')))
     except (KeyError, TypeError, ValueError, AttributeError):

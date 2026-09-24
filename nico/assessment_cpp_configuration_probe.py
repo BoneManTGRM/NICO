@@ -64,7 +64,7 @@ print(json.dumps(result, sort_keys=True))
 def probe_project_configuration(source, targets, image, *, project_options,
                                 retain=lambda result: None, command=None, baseline_execution=None,
                                 unit_test_data=None, capture_generated_context=False,
-                                retain_artifact=None, project_compiler_evidence=False):
+                                retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -99,6 +99,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raise ValueError('worker_configuration_probe_capture_contract_invalid')
     if type(project_compiler_evidence) is not bool or (project_compiler_evidence and not capture_generated_context):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
+    if type(project_static_analysis) is not bool or (project_static_analysis and not project_compiler_evidence):
+        raise ValueError('worker_configuration_probe_static_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:
         fields = {'schema', 'profile', 'compilation_database_sha256', 'build_seconds',
@@ -147,6 +149,10 @@ def probe_project_configuration(source, targets, image, *, project_options,
 
     if project_compiler_evidence:
         result.update(schema='nico.cpp-project-configuration-probe.v5', project_compiler=None)
+    if project_static_analysis:
+        result.update(schema='nico.cpp-project-configuration-probe.v6', project_static=None,
+            project_static_stage=None, aggregate_execution_budget_seconds=2400,
+            aggregate_wall_budget_seconds=2420, aggregate_duration_ms=0)
 
     if baseline_execution is not None:
         result.update(baseline_execution=dict(baseline_execution), tests_discovered=[], tests_passed=False,
@@ -462,4 +468,27 @@ def probe_project_configuration(source, targets, image, *, project_options,
         if not result['cleanup_verified'] or result['error']:
             result['status'] = 'UNPROVEN'
         save()
+    if project_static_analysis and result['status'] == 'BASELINE_EXECUTED':
+        # The build sandbox is already destroyed. Its original deadline and
+        # duration remain unchanged; static analysis owns a separately bounded
+        # noexec sandbox and a distinct receipt. No build code is replayed.
+        from nico.assessment_cpp_project_static import run_project_static_stage
+        def retain_static(value):
+            result.update(project_static_stage=value, project_static=value.get('analysis'),
+                          aggregate_duration_ms=int((time.monotonic()-start)*1000))
+            if not value.get('complete'):
+                result['status'] = 'UNPROVEN'
+            retain(result)
+        try:
+            static = run_project_static_stage(source, targets, image,
+                base64.b64decode(result['compilation_database'], validate=True),
+                snapshot, compiler_observed['output'], retain=retain_static,
+                retain_artifact=retain_artifact, command=command)
+            result['status'] = 'BASELINE_EXECUTED' if static['complete'] else 'UNPROVEN'
+            if not static['complete']:
+                result['error'] = 'worker_configuration_probe_static_incomplete'
+        except (Exception, KeyboardInterrupt):
+            result.update(status='UNPROVEN', error='worker_configuration_probe_static_failed')
+        result['aggregate_duration_ms'] = int((time.monotonic()-start)*1000)
+        retain(result)
     return result
