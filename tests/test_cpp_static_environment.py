@@ -159,3 +159,39 @@ def test_only_compiler_resolved_system_boost_headers_use_the_pinned_boost_model(
     assert env._model_header('/usr/include/boost/multi_index/detail/bucket_array.hpp', ['/usr/include']) == (
         'boost/multi_index/detail/bucket_array.hpp', 'boost')
     assert env._model_header('/usr/local/include/vendor/boost/version.hpp', ['/usr/local/include/vendor']) is None
+
+
+@pytest.mark.parametrize('root', ['/usr/include', '/usr/include/x86_64-linux-gnu'])
+def test_boost_version_macros_are_native_inputs_not_a_library_model(root):
+    # boost.cfg models API semantics; it cannot supply this installed version.
+    env = api()
+    assert env._model_header(root + '/boost/version.hpp', [root]) is None
+    assert env._model_header(root + '/boost/multi_index/detail/bucket_array.hpp', [root]) == (
+        'boost/multi_index/detail/bucket_array.hpp', 'boost')
+
+
+def test_compiler_resolved_boost_version_retains_exact_header_and_missing_is_fatal(tmp_path):
+    env = api()
+    *_, compiler, raw = fixture(tmp_path)
+    native = json.loads(raw)
+    path = '/usr/include/boost/version.hpp'
+    for row in native['records']:
+        deps = base64.b64decode(row['dependency_bytes']).replace(b'/usr/include/stdint.h', path.encode())
+        row.update(dependency_bytes=base64.b64encode(deps).decode(),
+                   dependency_sha256=hashlib.sha256(deps).hexdigest(),
+                   toolchain_dependencies=[path])
+    request = env.environment_request(compiler, _canonical(native), 'sha256:' + 'a' * 64)
+    data = evidence(request)
+    body = b'#ifndef BOOST_VERSION_HPP\n#define BOOST_VERSION_HPP\n#define BOOST_VERSION 107400\n#endif\n'
+    data['headers'][path].update(base64=base64.b64encode(body).decode(), bytes=len(body),
+                                 sha256=hashlib.sha256(body).hexdigest())
+    proof = env.validate_environment(_canonical(data), request)
+    member = proof['headers'][path]
+    assert member['projection'] == env.ROOT + '/headers' + path
+    assert member['sha256'] == hashlib.sha256(body).hexdigest()
+    assert member['bytes'] == len(body)
+    assert member['modeled_name'] is None and member['model'] is None
+    missing = {'rule_id': 'missingIncludeSystem', 'message':
+               'Include file: <boost/version.hpp> not found. Please note: Cppcheck does not need standard library headers to get proper results.'}
+    for context in request['contexts']:
+        assert env.modeled_missing_include(missing, proof, context['context_id']) is None

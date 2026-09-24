@@ -248,6 +248,9 @@ def _search_roots(raw):
 
 
 def header_model(name):
+    # Library API models cannot supply the installed dependency's version macros.
+    # Keep the compiler-resolved metadata header as exact, hash-verified input.
+    if name == 'boost/version.hpp': return None
     if name in STD_HEADERS: return 'std'
     if name in POSIX_HEADERS: return 'posix'
     if (isinstance(name, str) and name.startswith('boost/')
@@ -337,7 +340,7 @@ def validate_environment(raw, request):
         'compiler_evidence_sha256': request['compiler_evidence_sha256'],
         'queries': proof_queries, 'headers': headers, 'contexts': contexts, 'models': dict(MODEL_HASHES),
         'header_population_sha256': _digest(_canonical(headers)), 'header_bytes': total,
-        'model_policy': 'gcc14-unix64-public-c-cpp20-posix-boost-upstream-models-v2'}
+        'model_policy': 'gcc14-unix64-public-c-cpp20-posix-boost-native-version-v3'}
 
 
 def _write_input(path, raw):
