@@ -58,7 +58,7 @@ int second(){return 2;}
     return {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in sorted(files)}
 
 
-def qualify(image, output, project_static_analysis=False):
+def qualify(image, output, project_static_analysis=False, extended_compiler_budget=False):
     output.mkdir(parents=True, exist_ok=True)
     evidence = {'schema': 'nico.cpp-generated-project-control.v1', 'status': 'UNPROVEN',
         'synthetic_owned_control': True, 'production_qualified': False,
@@ -98,6 +98,7 @@ def qualify(image, output, project_static_analysis=False):
                     project_options={'BUILD_TESTS': 'ON'}, baseline_execution=execution,
                     capture_generated_context=True, project_compiler_evidence=True,
                     project_static_analysis=project_static_analysis, retain=keep_baseline,
+                    extended_compiler_budget=extended_compiler_budget,
                     retain_artifact=lambda key, raw: persist_project_artifact(directory, key, raw))
                 if (not result['compiled'] or not result['tests_passed'] or not result['cleanup_verified']
                         or result['tests_discovered'] != ['owned_generated']
@@ -157,9 +158,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
     parser.add_argument('--project-static-analysis', action='store_true')
+    parser.add_argument('--extended-compiler-budget', action='store_true')
     parser.add_argument('--output', type=Path, default=Path('cpp-generated-context-qualification'))
     args = parser.parse_args()
-    qualify(args.image, args.output, project_static_analysis=args.project_static_analysis)
+    qualify(args.image, args.output, project_static_analysis=args.project_static_analysis,
+            extended_compiler_budget=args.extended_compiler_budget)
 
 
 if __name__ == '__main__':

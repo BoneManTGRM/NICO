@@ -215,6 +215,7 @@ def qualify_configuration_checkout(args):
                 capture_generated_context=getattr(args, 'capture_generated_context', False),
                 project_compiler_evidence=getattr(args, 'project_compiler_evidence', False),
                 project_static_analysis=getattr(args, 'project_static_analysis', False),
+                extended_compiler_budget=getattr(args, 'extended_compiler_budget', False),
                 retain_artifact=lambda key, raw: persist_project_artifact(args.output, key, raw))
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
@@ -243,6 +244,7 @@ def main():
     parser.add_argument('--capture-generated-context', action='store_true')
     parser.add_argument('--project-compiler-evidence', action='store_true')
     parser.add_argument('--project-static-analysis', action='store_true')
+    parser.add_argument('--extended-compiler-budget', action='store_true')
     parser.add_argument('--output', type=Path, default=Path('cpp-configuration-qualification'))
     qualify_configuration_checkout(parser.parse_args())
 

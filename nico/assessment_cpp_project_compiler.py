@@ -26,6 +26,9 @@ from nico.assessment_cpp_project_snapshot import PROJECT_HEADER_SUFFIXES, PROJEC
 GENERATED_FILE_LIMIT = PROJECT_GENERATED_MAX_FILE_BYTES
 
 LIMITS = {'wall_seconds': 540, 'case_seconds': 90, 'parallel': 4}
+# Opt-in v2 gives the measured 475-context workload bounded headroom. The
+# enclosing 1,800-second executor, per-context limit and concurrency do not grow.
+EXTENDED_LIMITS = {'wall_seconds': 600, 'case_seconds': 90, 'parallel': 4}
 STREAM_LIMIT = 48 * 1024 * 1024
 REQUEST_LIMIT = 16 * 1024 * 1024
 
@@ -36,6 +39,24 @@ def _canonical(value):
 
 def _digest(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def _compiler_limits(request):
+    schemas = {'nico.cpp-project-compiler-request.v1': LIMITS,
+               'nico.cpp-project-compiler-request.v2': EXTENDED_LIMITS}
+    expected = schemas.get(request.get('schema')) if isinstance(request, dict) else None
+    supplied = request.get('limits') if isinstance(request, dict) else None
+    if (expected is None or not isinstance(supplied, dict) or supplied != expected
+            or any(type(value) is not int for value in supplied.values())):
+        raise ValueError('worker_project_compiler_budget_invalid')
+    return dict(expected)
+
+
+def _compiler_evidence_schema(request):
+    _compiler_limits(request)
+    return ('nico.cpp-project-compiler-evidence.v2'
+            if request['schema'] == 'nico.cpp-project-compiler-request.v2'
+            else 'nico.cpp-project-compiler-evidence.v1')
 
 
 def _extra_option(arg):
@@ -119,10 +140,12 @@ def _syntax_argv(context, generated_files):
             *result[1:], '-fsyntax-only'], analysis_source
 
 
-def project_compiler_request(database, targets, snapshot):
+def project_compiler_request(database, targets, snapshot, *, extended_budget=False):
     """Reconstruct the complete plan; a plan never confers execution coverage."""
     from nico.assessment_cpp_full_project import compilation_contexts
     from nico.assessment_cpp_project_snapshot import validate_project_snapshot
+    if type(extended_budget) is not bool:
+        raise ValueError('worker_project_compiler_budget_invalid')
     contexts = compilation_contexts(database, targets, '/work/build')
     validate_project_snapshot(snapshot, contexts)
     files = {p: {'sha256': v['sha256'], 'bytes': v['bytes']} for p, v in snapshot['files'].items()}
@@ -130,13 +153,14 @@ def project_compiler_request(database, targets, snapshot):
     for row in contexts['contexts']:
         argv, source = _syntax_argv(row, files)
         plans.append({**row, 'invocation': argv, 'analysis_file': source})
-    result = {'schema': 'nico.cpp-project-compiler-request.v1',
+    result = {'schema': ('nico.cpp-project-compiler-request.v2' if extended_budget
+                         else 'nico.cpp-project-compiler-request.v1'),
         'database_sha256': contexts['database_sha256'],
         'context_membership_sha256': contexts['context_membership_sha256'],
         'snapshot_population_sha256': snapshot['file_population_sha256'],
         'targets': dict(targets), 'generated_files': files,
         'generated_header_candidates': snapshot['header_candidates'],
-        'contexts': plans, 'limits': dict(LIMITS)}
+        'contexts': plans, 'limits': dict(EXTENDED_LIMITS if extended_budget else LIMITS)}
     if len(_canonical(result)) > REQUEST_LIMIT:
         raise ValueError('worker_project_compiler_request_limit')
     return result
@@ -190,8 +214,8 @@ def collect_project_compiler(request):
     import resource
     if os.getuid() != 1001 or os.getgid() != 1001:
         raise ValueError('worker_project_compiler_identity')
-    if (not isinstance(request, dict) or request.get('schema') != 'nico.cpp-project-compiler-request.v1'
-            or request.get('limits') != LIMITS or not isinstance(request.get('contexts'), list)
+    limits = _compiler_limits(request)
+    if (not isinstance(request.get('contexts'), list)
             or not 1 <= len(request['contexts']) <= 20000):
         raise ValueError('worker_project_compiler_request_invalid')
     parent = Path('/work/analysis')
@@ -212,7 +236,7 @@ def collect_project_compiler(request):
     environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8',
         'HOME': str(directory), 'TMPDIR': str(directory), 'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
     start = time.monotonic()
-    deadline = start + LIMITS['wall_seconds']
+    deadline = start + limits['wall_seconds']
     def one(context):
         record = {'context_id': context['context_id'], 'invocation': context['invocation'],
             'execution': None, 'dependency_bytes': '', 'dependency_sha256': None,
@@ -224,7 +248,7 @@ def collect_project_compiler(request):
                 _verify_input('/work/source', context['path'], request['targets'][context['path']])
             stem = str(directory / ('u' + str(context['index'])))
             record['execution'] = _run(context['invocation'], stem,
-                min(deadline, time.monotonic() + LIMITS['case_seconds']), environment)
+                min(deadline, time.monotonic() + limits['case_seconds']), environment)
             execution = record['execution']
             if execution['exit_code'] != 0 or execution['timed_out'] or execution['output_truncated']:
                 return record
@@ -246,9 +270,9 @@ def collect_project_compiler(request):
             code = str(exc)
             record['error'] = code if re.fullmatch(r'worker_project_compiler_[a-z_]+', code) else 'worker_project_compiler_unavailable'
         return record
-    with ThreadPoolExecutor(max_workers=LIMITS['parallel']) as pool:
+    with ThreadPoolExecutor(max_workers=limits['parallel']) as pool:
         records = list(pool.map(one, request['contexts']))
-    result = {'schema': 'nico.cpp-project-compiler-evidence.v1', 'request_sha256': _digest(_canonical(request)),
+    result = {'schema': _compiler_evidence_schema(request), 'request_sha256': _digest(_canonical(request)),
         'analyst_uid': os.getuid(), 'records': records, 'duration_ms': int((time.monotonic()-start)*1000)}
     if len(_canonical(result)) > STREAM_LIMIT:
         raise ValueError('worker_project_compiler_output_limit')
@@ -261,12 +285,13 @@ def validate_project_compiler(raw, request):
     from nico.assessment_cpp_configuration import decode_stream
     if not isinstance(raw, bytes) or not 0 < len(raw) <= STREAM_LIMIT:
         raise ValueError('worker_project_compiler_output_limit')
+    limits = _compiler_limits(request)
     evidence = _json(raw)
     if (not isinstance(evidence, dict) or set(evidence) != {'schema','request_sha256','analyst_uid','records','duration_ms'}
-            or evidence['schema'] != 'nico.cpp-project-compiler-evidence.v1'
+            or evidence['schema'] != _compiler_evidence_schema(request)
             or evidence['request_sha256'] != _digest(_canonical(request))
             or type(evidence['analyst_uid']) is not int or evidence['analyst_uid'] != 1001
-            or type(evidence['duration_ms']) is not int or not 0 <= evidence['duration_ms'] <= 543000
+            or type(evidence['duration_ms']) is not int or not 0 <= evidence['duration_ms'] <= (limits['wall_seconds'] + 3) * 1000
             or not isinstance(evidence['records'], list) or len(evidence['records']) != len(request['contexts'])):
         raise ValueError('worker_project_compiler_evidence_invalid')
     checked, attempted, original_headers, generated_headers = [], [], {}, {}
@@ -318,7 +343,7 @@ def validate_project_compiler(raw, request):
         for path in generated:
             if path in request['generated_header_candidates']:
                 generated_headers.setdefault(path, []).append(context['context_id'])
-    if durations > evidence['duration_ms'] * LIMITS['parallel'] + 1000:
+    if durations > evidence['duration_ms'] * limits['parallel'] + 1000:
         raise ValueError('worker_project_compiler_duration_invalid')
     required = [r['context_id'] for r in request['contexts']]
     return {'required_contexts': required, 'attempted_contexts': attempted, 'checked_contexts': checked,
@@ -350,9 +375,9 @@ def run_project_compiler():
 
 PROGRAM = ('import base64, hashlib, json, os, posixpath, re, shlex, stat, subprocess, time\n'
     'from pathlib import Path\nfrom concurrent.futures import ThreadPoolExecutor\n'
-    + f'LIMITS={LIMITS!r}\nSTREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\n'
+    + f'LIMITS={LIMITS!r}\nEXTENDED_LIMITS={EXTENDED_LIMITS!r}\nSTREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\n'
     + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
-    + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _source_path, safe_compile_argv,
+    + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _compiler_limits, _compiler_evidence_schema, _source_path, safe_compile_argv,
         _regular_bytes, _run, _project_option, _stable_bytes, _extra_option, _syntax_argv,
         _dependency_populations, _verify_input, collect_project_compiler, run_project_compiler))
     + '\nrun_project_compiler()\n')

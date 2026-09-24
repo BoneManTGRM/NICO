@@ -64,7 +64,8 @@ print(json.dumps(result, sort_keys=True))
 def probe_project_configuration(source, targets, image, *, project_options,
                                 retain=lambda result: None, command=None, baseline_execution=None,
                                 unit_test_data=None, capture_generated_context=False,
-                                retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False):
+                                retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
+                                extended_compiler_budget=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -101,6 +102,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     if type(project_static_analysis) is not bool or (project_static_analysis and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_static_contract_invalid')
+    if type(extended_compiler_budget) is not bool or (extended_compiler_budget and not project_compiler_evidence):
+        raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:
         fields = {'schema', 'profile', 'compilation_database_sha256', 'build_seconds',
@@ -422,13 +425,14 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 from nico.assessment_cpp_project_compiler import (PROGRAM, STREAM_LIMIT,
                     project_compiler_request, validate_project_compiler)
                 try:
-                    request = project_compiler_request(raw, targets, snapshot)
+                    request = project_compiler_request(raw, targets, snapshot, extended_budget=extended_compiler_budget)
                 except (ValueError, TypeError, KeyError) as exc:
                     raise ValueError('worker_configuration_probe_compiler_plan_invalid') from exc
                 compiler_observed = observe('project-compiler-evidence',
                     ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive', name,
                      'python3', '-I', '-S', '-c', PROGRAM],
-                    data=canonical_bytes(request), limit=STREAM_LIMIT, seconds=550, external=True)
+                    data=canonical_bytes(request), limit=STREAM_LIMIT,
+                    seconds=request['limits']['wall_seconds'] + 10, external=True)
                 if (compiler_observed['exit_code'] != 0 or compiler_observed['timed_out']
                         or compiler_observed['output_truncated']):
                     raise ValueError('worker_configuration_probe_compiler_failed')

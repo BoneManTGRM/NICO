@@ -62,7 +62,9 @@ def _static_plan(context):
 def project_static_request(database, targets, snapshot, compiler_raw):
     """Reconstruct every binding; require completed native compiler evidence."""
     from nico.assessment_cpp_full_project import _json
-    compiler_request = project_compiler_request(database, targets, snapshot)
+    compiler_schema = _json(compiler_raw).get('schema')
+    compiler_request = project_compiler_request(database, targets, snapshot,
+        extended_budget=compiler_schema == 'nico.cpp-project-compiler-evidence.v2')
     proof = validate_project_compiler(compiler_raw, compiler_request)
     if not proof['complete']:
         raise ValueError('worker_project_static_compiler_incomplete')
