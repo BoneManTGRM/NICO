@@ -24,6 +24,10 @@ from nico.assessment_cpp_project_compiler import (
     project_compiler_request, validate_project_compiler, GENERATED_FILE_LIMIT,
 )
 
+from nico.assessment_cpp_static_environment import (analyzer_environment_arguments,
+    STATIC_ENV_SUPPORT, verify_environment_inputs, context_dependencies,
+    modeled_missing_include, bind_environment)
+
 TOOL_VERSION = '2.17.1'
 CHECKS = 'warning,style,performance,portability,information,missingInclude'
 LIMITS = {'wall_seconds': 540, 'case_seconds': 90, 'parallel': 4}
@@ -32,7 +36,7 @@ REQUEST_LIMIT = 16 * 1024 * 1024
 XML_LIMIT = 1024 * 1024
 
 
-def _static_plan(context):
+def _static_plan(context, environment=None):
     """Preserve supported imported arguments, never execute a database command.
 
     Pinned ImportProject supports -D/-U/-I/-isystem/-std and selected scalar
@@ -50,16 +54,19 @@ def _static_plan(context):
             if name in defines:
                 raise ValueError('worker_project_static_macro_model_ambiguous')
             defines.add(name)
+    environment_flags = []
+    if environment is not None:
+        args, environment_flags = analyzer_environment_arguments(context, environment)
     stem = '/work/analysis/static-baseline/u' + str(context['index'])
     database = _canonical([{'directory': '/work/analysis',
         'file': context['analysis_file'], 'arguments': list(args)}]).decode()
     argv = ['/usr/local/bin/cppcheck', '--xml', '--enable=' + CHECKS,
         '--check-level=exhaustive', '--max-configs=1', '--platform=unix64', '-j1',
-        '--project=' + stem + '.json', '--output-file=' + stem + '.xml']
+        '--project=' + stem + '.json', '--output-file=' + stem + '.xml', *environment_flags]
     return database, argv
 
 
-def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None):
+def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None, environment=None):
     """Reconstruct every binding; require completed native compiler evidence."""
     from nico.assessment_cpp_full_project import _json
     # Retained-evidence callers may reconstruct either version. Live callers
@@ -73,9 +80,11 @@ def project_static_request(database, targets, snapshot, compiler_raw, *, extende
     if not proof['complete']:
         raise ValueError('worker_project_static_compiler_incomplete')
     records = _json(compiler_raw)['records']
+    if environment is not None:
+        bind_environment(environment, compiler_request, compiler_raw)
     contexts = []
     for context, record in zip(compiler_request['contexts'], records):
-        data, argv = _static_plan(context)
+        data, argv = _static_plan(context, environment)
         contexts.append({**context, 'analyzer_database': data,
             'analyzer_database_sha256': _digest(data.encode()), 'analyzer_invocation': argv,
             'source_dependencies': record['source_dependencies'],
@@ -87,6 +96,8 @@ def project_static_request(database, targets, snapshot, compiler_raw, *, extende
         'compiler_evidence_sha256': _digest(compiler_raw),
         'targets': dict(targets), 'generated_files': compiler_request['generated_files'],
         'contexts': contexts, 'limits': dict(LIMITS)}
+    if environment is not None:
+        request.update(schema='nico.cpp-project-static-request.v2', compiler_environment=environment)
     if len(_canonical(request)) > REQUEST_LIMIT:
         raise ValueError('worker_project_static_request_limit')
     return request
@@ -97,10 +108,15 @@ def collect_project_static(request):
     import resource
     if os.getuid() != 1001 or os.getgid() != 1001:
         raise ValueError('worker_project_static_identity')
-    if (not isinstance(request, dict) or request.get('schema') != 'nico.cpp-project-static-request.v1'
+    if (not isinstance(request, dict) or request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2'}
             or request.get('tool_version') != TOOL_VERSION or request.get('limits') != LIMITS
             or not isinstance(request.get('contexts'), list) or not 1 <= len(request['contexts']) <= 20000):
         raise ValueError('worker_project_static_request_invalid')
+    environment_model = request.get('compiler_environment')
+    if (request['schema'].endswith('.v2')) != (environment_model is not None):
+        raise ValueError('worker_project_static_environment_missing')
+    if environment_model is not None:
+        verify_environment_inputs(environment_model)
     parent = Path('/work/analysis')
     info = parent.lstat()
     if (parent.resolve(strict=True) != parent or info.st_uid != 1001
@@ -110,7 +126,7 @@ def collect_project_static(request):
     directory.mkdir(mode=0o700)
     for index, context in enumerate(request['contexts']):
         args, source = _syntax_argv(context, request['generated_files'])
-        data, argv = _static_plan(context)
+        data, argv = _static_plan(context, environment_model)
         if (context['index'] != index or args != context['invocation'] or source != context['analysis_file']
                 or data != context['analyzer_database'] or _digest(data.encode()) != context['analyzer_database_sha256']
                 or argv != context['analyzer_invocation']):
@@ -158,7 +174,9 @@ def collect_project_static(request):
 
     with ThreadPoolExecutor(max_workers=LIMITS['parallel']) as pool:
         records = list(pool.map(one, request['contexts']))
-    result = {'schema': 'nico.cpp-project-static-evidence.v1', 'request_sha256': _digest(_canonical(request)),
+    if environment_model is not None:
+        verify_environment_inputs(environment_model)
+    result = {'schema': request['schema'].replace('-request.', '-evidence.'), 'request_sha256': _digest(_canonical(request)),
         'analyst_uid': os.getuid(), 'version': version, 'records': records,
         'duration_ms': int((time.monotonic() - start) * 1000)}
     if len(_canonical(result)) > STREAM_LIMIT:
@@ -191,7 +209,7 @@ def validate_project_static(raw, request):
     evidence = _json(raw)
     fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms'}
     if (not isinstance(evidence, dict) or set(evidence) != fields
-            or evidence['schema'] != 'nico.cpp-project-static-evidence.v1'
+            or evidence['schema'] != request['schema'].replace('-request.', '-evidence.')
             or evidence['request_sha256'] != _digest(_canonical(request))
             or type(evidence['analyst_uid']) is not int or evidence['analyst_uid'] != 1001
             or type(evidence['duration_ms']) is not int or not 0 <= evidence['duration_ms'] <= 543000
@@ -200,7 +218,8 @@ def validate_project_static(raw, request):
     version_ok, version = _execution(evidence['version'], 8000)
     if not version_ok or version.strip() != ('Cppcheck ' + TOOL_VERSION).encode():
         raise ValueError('worker_project_static_tool_version')
-    attempted, analyzed, findings, limitations = [], [], [], []
+    attempted, analyzed, findings, limitations, modeled_inputs = [], [], [], [], []
+    environment_model = request.get('compiler_environment')
     duration = evidence['version']['duration_ms']
     fields = {'context_id', 'invocation', 'database_sha256', 'execution', 'xml', 'xml_sha256', 'error'}
     for context, row in zip(request['contexts'], evidence['records']):
@@ -231,6 +250,12 @@ def validate_project_static(raw, request):
                      for p, sha in context['source_dependencies'].items()}
         locations.update({'/work/analysis/generated-baseline/' + p: ('generated', p, sha)
                           for p, sha in context['generated_dependencies'].items()})
+        if environment_model is not None:
+            dependencies = context_dependencies(environment_model, context['context_id'])
+            locations.update({row['projection']: ('toolchain', path, row['sha256'])
+                              for path, row in dependencies.items() if row['projection']})
+            query = environment_model['queries'][environment_model['contexts'][context['context_id']]['query']]
+            locations[query['predefines_path']] = ('compiler_predefines', query['predefines_path'], query['predefines_sha256'])
         try:
             document = ET.fromstring(xml)
             # Unknown diagnostic locations are retained raw but cannot become
@@ -242,6 +267,18 @@ def validate_project_static(raw, request):
                 sorted(locations), version=TOOL_VERSION)
         except (ET.ParseError, UnicodeError) as exc:
             raise ValueError('worker_project_static_xml_invalid') from exc
+        if environment_model is not None:
+            execution_limits = []
+            for entry in limits:
+                modeled = modeled_missing_include(entry, environment_model, context['context_id'])
+                if modeled:
+                    modeled_inputs.append({**modeled, 'native_evidence_sha256': _digest(raw)})
+                else:
+                    execution_limits.append(entry)
+            limits = execution_limits
+            if not any(entry['rule_id'] == 'checkersReport' for entry in limits):
+                limits.append({'rule_id': 'native_checkers_not_confirmed',
+                               'message': 'Positive native checker inventory is required.'})
         limitations.extend({**entry, 'context_id': context['context_id']} for entry in limits)
         if observed != [context['analysis_file']]:
             limitations.append({'context_id': context['context_id'], 'rule_id': 'native_target_not_confirmed'})
@@ -263,10 +300,16 @@ def validate_project_static(raw, request):
     required = [c['context_id'] for c in request['contexts']]
     return {'required_contexts': required, 'attempted_contexts': attempted, 'analyzed_contexts': analyzed,
         'complete': analyzed == required, 'findings': findings, 'limitations': limitations,
+        **({'modeled_inputs': modeled_inputs, 'compiler_environment_sha256': environment_model['native_evidence_sha256']}
+           if environment_model is not None else {}),
         'native_evidence_sha256': _digest(raw), 'compiler_evidence_sha256': request['compiler_evidence_sha256'],
         'static_analysis_executed': bool(attempted), 'analyzer_header_coverage_verified': False,
-        'model_limits': ['Compiler predefined macro equivalence is not established.',
-                         'Header visitation evidence belongs to the separate compiler pass.'],
+        'model_limits': (['Observed GCC predefines and compiler-resolved dependency bytes bind each context.',
+                          'Named public C/C++ and POSIX headers use hash-verified upstream library models, not implementation-header analysis.',
+                          'Compiler header visitation does not establish analyzer header coverage.']
+                         if environment_model is not None else
+                         ['Compiler predefined macro equivalence is not established.',
+                          'Header visitation evidence belongs to the separate compiler pass.']),
         'human_review_completed': False, 'production_qualified': False}
 
 
@@ -291,6 +334,7 @@ PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time\
     + f'TOOL_VERSION={TOOL_VERSION!r}\nCHECKS={CHECKS!r}\nLIMITS={LIMITS!r}\n'
     + f'STREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\nXML_LIMIT={XML_LIMIT}\n'
     + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
+    + STATIC_ENV_SUPPORT + '\n'
     + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _source_path, safe_compile_argv,
         _regular_bytes, _run, _project_option, _stable_bytes, _extra_option, _syntax_argv,
         _verify_input, _static_plan, collect_project_static, run_project_static))
@@ -299,13 +343,15 @@ PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time\
 
 def run_project_static_stage(source, targets, image, database, snapshot, compiler_raw, *,
                              retain=lambda result: None, retain_artifact, checkpoint=lambda: None,
-                             command=None, extended_compiler_budget=None):
+                             command=None, extended_compiler_budget=None, compiler_environment=False):
     """Analyze verified inputs in a fresh 600-second, no-network/noexec sandbox.
 
     Reuses the existing controller input and isolation boundary. The preceding
     1,800-second build/compiler executor is never extended or left running.
     A stage receipt is evidence, not worker authority or production selection.
     """
+    if type(compiler_environment) is not bool:
+        raise ValueError('worker_project_static_stage_environment_flag_invalid')
     from uuid import uuid4
     from nico.assessment_cpp_full_project import MAX_SOURCE_BYTES, _json
     from nico.assessment_cpp_full_project_execution import (_command, _inputs, ANALYSIS_USER,
@@ -431,6 +477,34 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
             data=_canonical(restore), limit=4*1024*1024, seconds=30))
         if restored != {'files': request['generated_files'], 'file_population_sha256': request['snapshot_population_sha256']}:
             raise ValueError('worker_project_static_stage_restore_mismatch')
+        if compiler_environment:
+            from nico.assessment_cpp_static_environment import (environment_request, validate_environment,
+                ENV_PROGRAM, ENV_STREAM_LIMIT)
+            result['phase'] = 'compiler_environment'; save()
+            selected = extended_compiler_budget
+            if selected is None:
+                selected = _json(compiler_raw)['schema'] == 'nico.cpp-project-compiler-evidence.v2'
+            compiler_request = project_compiler_request(database, targets, snapshot, extended_budget=selected)
+            env_request = environment_request(compiler_request, compiler_raw, image)
+            env_observed = observe('project-static-environment', ['docker', 'exec', '--user='+ANALYSIS_USER,
+                '--interactive', name, 'python3', '-I', '-S', '-c', ENV_PROGRAM],
+                data=_canonical(env_request), limit=ENV_STREAM_LIMIT, seconds=40, external=True)
+            if env_observed['exit_code'] != 0 or env_observed['timed_out'] or env_observed['output_truncated']:
+                raise ValueError('worker_project_static_stage_environment_failed')
+            model = validate_environment(env_observed['output'], env_request)
+            result['compiler_environment'] = {'schema': model['schema'],
+                'artifact': result['operations'][-1]['output_artifact'],
+                'native_evidence_sha256': model['native_evidence_sha256'],
+                'compiler_evidence_sha256': model['compiler_evidence_sha256'],
+                'image_config_digest': model['image_config_digest'],
+                'contexts': len(model['contexts']), 'queries': len(model['queries']),
+                'headers': len(model['headers']), 'header_bytes': model['header_bytes'],
+                'header_population_sha256': model['header_population_sha256'],
+                'models': model['models'], 'model_policy': model['model_policy']}
+            request = project_static_request(database, targets, snapshot, compiler_raw,
+                extended_compiler_budget=extended_compiler_budget, environment=model)
+            result.update(schema='nico.cpp-project-static-stage.v2', request_sha256=_digest(_canonical(request)))
+            save(); guarded_checkpoint()
         result['phase'] = 'analysis'; save()
         observed = observe('project-static-evidence', ['docker', 'exec', '--user='+ANALYSIS_USER,
             '--interactive', name, 'python3', '-I', '-S', '-c', PROGRAM],

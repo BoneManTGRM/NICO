@@ -14,7 +14,7 @@ from nico.assessment_worker_receipts import canonical_bytes
 from scripts.qualify_cpp_project_configuration import persist_project_artifact
 
 
-def fixture(root, negative=False, static_diagnostic=False):
+def fixture(root, negative=False, static_diagnostic=False, compiler_environment=False):
     """Two contexts of one original, a generated source and a generated header."""
     files = {
         'CMakeLists.txt': '''cmake_minimum_required(VERSION 3.22)
@@ -47,6 +47,24 @@ int second(){return 2;}
         'unused.h.in': '#define OWNED_UNUSED_HEADER 1\n',
         'generated.cpp.in': '#include "config.h"\nint generated(){return GENERATED_VALUE;}\n',
     }
+    if compiler_environment:
+        files['CMakeLists.txt'] += '''
+configure_file(environment.h.in environment/owned_environment.h COPYONLY)
+target_include_directories(first SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/environment)
+target_include_directories(second SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/environment)
+'''
+        files['environment.h.in'] = '#define OWNED_ENVIRONMENT_VALUE 7\n'
+        files['repeated.cpp'] = '''#include <cstdint>
+#include <vector>
+#include <boost/version.hpp>
+#include <owned_environment.h>
+#ifndef __GNUC__
+#error "Owned compiler environment was not imported"
+#endif
+#if BOOST_VERSION <= 0 || OWNED_ENVIRONMENT_VALUE != 7
+#error "Owned implicit or system include was not imported"
+#endif
+''' + files['repeated.cpp']
     if static_diagnostic:
         # Deliberate owned analyzer diagnostic; never invoked by the native test.
         files['generated.cpp.in'] += 'int owned_static_diagnostic(){int value;return value;}\n'
@@ -58,7 +76,7 @@ int second(){return 2;}
     return {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in sorted(files)}
 
 
-def qualify(image, output, project_static_analysis=False, extended_compiler_budget=False):
+def qualify(image, output, project_static_analysis=False, extended_compiler_budget=False, compiler_environment=False):
     output.mkdir(parents=True, exist_ok=True)
     evidence = {'schema': 'nico.cpp-generated-project-control.v1', 'status': 'UNPROVEN',
         'synthetic_owned_control': True, 'production_qualified': False,
@@ -78,7 +96,7 @@ def qualify(image, output, project_static_analysis=False, extended_compiler_budg
             cases += [('positive', False, project_static_analysis), ('negative', True, project_static_analysis)]
             for name, negative, diagnostic in cases:
                 root = Path(temporary) / name
-                targets = fixture(root, negative, static_diagnostic=diagnostic)
+                targets = fixture(root, negative, static_diagnostic=diagnostic, compiler_environment=compiler_environment)
                 directory = output / name; directory.mkdir(exist_ok=True)
                 row = {'name': name, 'source_targets': targets, 'configuration': None, 'baseline': None}
                 evidence['controls'].append(row); save()
@@ -98,7 +116,7 @@ def qualify(image, output, project_static_analysis=False, extended_compiler_budg
                     project_options={'BUILD_TESTS': 'ON'}, baseline_execution=execution,
                     capture_generated_context=True, project_compiler_evidence=True,
                     project_static_analysis=project_static_analysis, retain=keep_baseline,
-                    extended_compiler_budget=extended_compiler_budget,
+                    extended_compiler_budget=extended_compiler_budget, compiler_environment=compiler_environment,
                     retain_artifact=lambda key, raw: persist_project_artifact(directory, key, raw))
                 if (not result['compiled'] or not result['tests_passed'] or not result['cleanup_verified']
                         or result['tests_discovered'] != ['owned_generated']
@@ -126,6 +144,8 @@ def qualify(image, output, project_static_analysis=False, extended_compiler_budg
                     expected = {'generated/generated.cpp': targets['generated.cpp.in'],
                                 'include/config.h': targets['config.h.in'],
                                 'include/unused.h': targets['unused.h.in']}
+                    if compiler_environment:
+                        expected['environment/owned_environment.h'] = targets['environment.h.in']
                     if {p: v['sha256'] for p, v in snapshot['files'].items()} != expected:
                         raise ValueError('qualification_control_generated_bytes_mismatch')
                     compiler = result['project_compiler']
@@ -144,6 +164,12 @@ def qualify(image, output, project_static_analysis=False, extended_compiler_budg
                                 or not result['project_static_stage']['complete']
                                 or static['human_review_completed'] or static['production_qualified']):
                             raise ValueError('qualification_control_static_unproven')
+                    if compiler_environment:
+                        environment = result['project_static_stage'].get('compiler_environment')
+                        if (not environment or environment['contexts'] != 4 or environment['headers'] < 1
+                                or not static.get('modeled_inputs')
+                                or static.get('compiler_environment_sha256') != environment['native_evidence_sha256']):
+                            raise ValueError('qualification_control_environment_unproven')
                     if snapshot['header_dependencies_verified'] or snapshot['analysis_executed']:
                         raise ValueError('qualification_control_false_analysis')
                 row['expected_outcome_verified'] = True; save()
@@ -159,10 +185,11 @@ def main():
     parser.add_argument('--image', required=True)
     parser.add_argument('--project-static-analysis', action='store_true')
     parser.add_argument('--extended-compiler-budget', action='store_true')
+    parser.add_argument('--compiler-environment', action='store_true')
     parser.add_argument('--output', type=Path, default=Path('cpp-generated-context-qualification'))
     args = parser.parse_args()
     qualify(args.image, args.output, project_static_analysis=args.project_static_analysis,
-            extended_compiler_budget=args.extended_compiler_budget)
+            extended_compiler_budget=args.extended_compiler_budget, compiler_environment=args.compiler_environment)
 
 
 if __name__ == '__main__':

@@ -65,7 +65,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 retain=lambda result: None, command=None, baseline_execution=None,
                                 unit_test_data=None, capture_generated_context=False,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
-                                extended_compiler_budget=False):
+                                extended_compiler_budget=False, compiler_environment=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -102,6 +102,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     if type(project_static_analysis) is not bool or (project_static_analysis and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_static_contract_invalid')
+    if type(compiler_environment) is not bool or (compiler_environment and not project_static_analysis):
+        raise ValueError('worker_configuration_probe_environment_contract_invalid')
     if type(extended_compiler_budget) is not bool or (extended_compiler_budget and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
@@ -496,7 +498,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
             static = run_project_static_stage(source, targets, image,
                 base64.b64decode(result['compilation_database'], validate=True),
                 snapshot, compiler_observed['output'], retain=retain_static,
-                extended_compiler_budget=extended_compiler_budget,
+                extended_compiler_budget=extended_compiler_budget, compiler_environment=compiler_environment,
                 retain_artifact=retain_artifact, command=command)
             result['status'] = 'BASELINE_EXECUTED' if static['complete'] else 'UNPROVEN'
             if not static['complete']:
