@@ -1,0 +1,17 @@
+{
+  "schema": "nico.pr1641-configure-first-canonical-projection.v1",
+  "base": "ab0189bdae154c03880c97e88fcd481c8ef54557",
+  "required_artifacts": [
+    "project-compilation-database",
+    "project-generated-context",
+    "project-compiler-evidence",
+    "project-static-environment",
+    "project-static-evidence"
+  ],
+  "optional_artifact": "project-static-clang-fallback",
+  "backend_revalidation": true,
+  "target_execution_replayed": false,
+  "canonical_finding_population": "full",
+  "hosted_verification_pending": true,
+  "merged": false
+}

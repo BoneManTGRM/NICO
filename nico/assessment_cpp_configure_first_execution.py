@@ -14,7 +14,7 @@ from nico.assessment_worker_receipts import canonical_bytes
 
 PROFILE = "cpp-configure-first-v2"
 _REQUIRED_ARTIFACTS = {
-    "project-generated-context", "project-compiler-evidence",
+    "project-compilation-database", "project-generated-context", "project-compiler-evidence",
     "project-static-environment", "project-static-evidence",
 }
 _OPTIONAL_ARTIFACTS = {"project-static-clang-fallback"}
@@ -148,5 +148,10 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         project_static_analysis=caps["project_static_analysis"],
         extended_compiler_budget=caps["extended_compiler_budget"],
         compiler_environment=caps["compiler_environment"])
+    import base64
+    database=base64.b64decode(result.get("compilation_database") or "",validate=True)
+    if not database or hashlib.sha256(database).hexdigest()!=result.get("compilation_database_sha256"):
+        raise ValueError("worker_configure_first_database_missing")
+    sink("project-compilation-database",database)
     return {"native":summarize_probe(result,targets,retained),"derived_targets":targets,
             "tool_version":contract["tool_version"]}

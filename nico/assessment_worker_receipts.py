@@ -332,7 +332,7 @@ def _configure_first_record(identity, contract, receipt, encoded):
         if type(native.get(key)) is not int or native[key] < 0:
             raise ValueError('worker_configure_first_native_invalid')
     refs=native.get('artifacts')
-    if not isinstance(refs,dict) or not {'project-generated-context','project-compiler-evidence',
+    if not isinstance(refs,dict) or not {'project-compilation-database','project-generated-context','project-compiler-evidence',
             'project-static-environment','project-static-evidence'} <= set(refs):
         raise ValueError('worker_configure_first_native_invalid')
     for key,value in refs.items():
@@ -425,6 +425,10 @@ def publish_receipt(jobs: WorkerJobs, identity: JobIdentity, lease: str, worker:
     compressed = gzip.compress(raw, mtime=0)
     raw_sha = hashlib.sha256(raw).hexdigest()
     store = ScannerArtifactStore(jobs.adapter._connect)
+    if job["contract"].get("profile") == "cpp-configure-first-v2":
+        from nico.assessment_cpp_configure_first_projection import reconstruct_configure_first, project_configure_first_record
+        reconstruction=reconstruct_configure_first(identity,job["contract"],receipt,store)
+        record=project_configure_first_record(record,identity,job["contract"],receipt,reconstruction)
 
     def publish(connection, _job):
         row = connection.execute("SELECT payload FROM scanner_runs WHERE scan_id=%s FOR UPDATE",

@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify this published configure-first worker/receipt bridge in hosted contract and worker-boundary checks while the frozen Bitcoin qualification runs. Then reconstruct canonical findings/coverage from the lease-bound static artifacts on the backend, connect release-owned generic profile selection to normal intake, finish runtime scope and independent review, and only then merge/deploy and run the actual bilingual production Bitcoin assessment.
+EXACT NEXT ACTION: verify the published backend reconstruction and full canonical finding population in hosted worker/contract checks and the frozen Bitcoin qualification. Then connect release-owned generic profile selection to normal intake, complete the declared runtime sanitizer/fuzz scope and report projection, obtain independent review/final gates, merge/deploy, and run the actual bilingual production Bitcoin assessment.
 
 ## Immutable continuity
 
@@ -125,3 +125,12 @@ The final worker receipt advances to `nico.worker-native-receipt.v7`. It carries
 This commit deliberately does NOT mark canonical scanner completion. Even when native configure/build/tests/compiler/static execution is complete, the scanner record remains `partial` with `canonical_findings_projected=false` until the backend reconstructs canonical findings from the retained static artifacts. The native finding count is retained, but an empty projected finding list cannot be mistaken for zero findings. This preserves the existing truth-stress requirement while connecting the durable execution path.
 
 The configure-first worker can use up to2400 seconds of the existing2420-second job wall budget; all other profiles retain the prior300-second consumer ceiling. Public intake still cannot choose this profile.
+
+
+## Backend canonical reconstruction from retained native bytes
+
+Configure-first completion no longer trusts the worker's compact summary as canonical finding truth. The worker now also retains the exact frozen compile database as `project-compilation-database`. During final receipt publication, the backend reads every referenced PostgreSQL artifact under the exact tenant/run/repository/revision/key binding and verifies compressed/raw hashes and byte counts.
+
+Without executing assessed code, the backend rebuilds the compilation contexts from the retained database, validates the generated snapshot, reconstructs the compiler request and validates compiler evidence, reconstructs and validates the compiler environment, rebuilds the static request and validates primary Cppcheck evidence, and when present rebuilds/validates the Clang fallback before merging coverage. Every compact count/SHA256 in the v7 receipt must equal the independently reconstructed population.
+
+Only after those checks pass does the scanner row become completed. The full canonical finding population is bound to the exact commit/configuration and evidence artifact, given stable observation IDs, and stored in the scanner record; retained limitations and exact context coverage remain attached. An incomplete native run remains incomplete. This closes the intentional `canonical_findings_projected=false` gate from the previous commit without replaying target code.
