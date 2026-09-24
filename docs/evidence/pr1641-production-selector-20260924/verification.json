@@ -1,0 +1,15 @@
+{
+  "schema": "nico.pr1641-production-selector.v1",
+  "base": "25f52f4bc07ae9ae912613cbb8891f12ae0912f4",
+  "selector": "generic exact-tree C/C++ + root CMake",
+  "repository_name_special_case": false,
+  "public_profile_input": false,
+  "release_gate": [
+    "NICO_CPP_CONFIGURE_FIRST_ENABLED",
+    "NICO_ASSESSMENT_WORKER_DISPATCH_ENABLED",
+    "NICO_CPP_CONFIGURE_FIRST_IMAGE_CONFIG_ID",
+    "NICO_CPP_CONFIGURE_FIRST_QUALIFIED_RELEASE"
+  ],
+  "normal_intake_connected": true,
+  "production_enabled_by_commit": false
+}

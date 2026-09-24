@@ -248,10 +248,17 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
     identity = job['identity']
     repository = identity['repository_id']
     parsed = urlsplit(repository)
-    match = re.fullmatch(r'/([A-Za-z0-9_-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?', parsed.path)
+    path_match = re.fullmatch(r'/([A-Za-z0-9_-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?', parsed.path)
+    short_match = re.fullmatch(r'([A-Za-z0-9_-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?', repository)
+    if (parsed.scheme == 'https' and parsed.netloc == 'github.com' and path_match
+            and not parsed.query and not parsed.fragment):
+        owner, project = path_match.group(1), path_match.group(2)
+    elif not parsed.scheme and not parsed.netloc and short_match:
+        owner, project = short_match.group(1), short_match.group(2)
+    else:
+        owner = project = ''
     revision = identity['revision']
-    if (parsed.scheme != 'https' or parsed.netloc != 'github.com' or not match
-            or parsed.query or parsed.fragment or match.group(2) in {'.', '..'}
+    if (not owner or not project or project in {'.', '..'}
             or not re.fullmatch(r'[0-9a-f]{40}', revision)
             or job.get('source_access') != {'mode': 'anonymous_public', 'credential_used': False}
             or job['source_access']['credential_used'] is not False):
@@ -282,7 +289,7 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
     if destination.exists() or destination.is_symlink():
         raise ValueError('worker_source_destination_exists')
     deadline = time.monotonic() + min(300, max(0, job['deadline_epoch'] - time.time()))
-    name = match.group(1) + '/' + match.group(2)
+    name = owner + '/' + project
     api = 'https://api.github.com/repos/' + name + '/git/'
     checkpoint()
     with tempfile.TemporaryDirectory(prefix='.nico-source-', dir=root) as temporary:

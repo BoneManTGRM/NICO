@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify the PR1641 image publication/retrieval outcome and the active frozen Bitcoin qualification. Preserve exact image config/manifest identities. After native C++ qualification passes, bind release-owned generic configure-first selection to normal intake, complete sanitizer/fuzz runtime scope and independent review, then merge/deploy and run the actual bilingual production Bitcoin assessment.
+EXACT NEXT ACTION: verify this published release-owned normal-intake selector, current worker image publication/retrieval, and canonical reconstruction in hosted checks while the frozen Bitcoin qualification runs. Then complete sanitizer/fuzz runtime scope, independent review/final gates, merge/deploy, configure exact qualified release/image settings, and run the actual bilingual production Bitcoin assessment.
 
 ## Immutable continuity
 
@@ -150,3 +150,14 @@ The worker-image publication and independent retrieval controllers were still ha
 The branch identity is now `feat/cpp-full-project-capacity` consistently in the boundary workflow, separate retrieval workflow and release-controller identity checks. The publication gate remains push-only, first-attempt only, exact repository/workflow/source bound, package-write only in the publish job, with a retained pre-push reservation and independent retrieval. Publication/retrieval still leave `production_qualified=false`.
 
 This commit intentionally carries the existing `[publish-worker-image]` trigger so the current branch can exercise that guarded path. It does not bypass Bitcoin qualification, merge gates or production activation.
+
+
+## Release-owned generic C/C++ selection from normal intake
+
+Normal snapshot intake now evaluates the attached exact repository evidence for a generic configure-first candidate. Selection requires an exact GitHub commit/tree, anonymous-public access, complete tree inventory, a root `CMakeLists.txt`, and at least one C/C++ source path. Repository names are never consulted.
+
+The profile remains release-owned and fail-closed. It is selected only when deployment settings explicitly enable configure-first execution, the existing worker dispatch gate is enabled, an exact worker image config digest is present, and `NICO_CPP_CONFIGURE_FIRST_QUALIFIED_RELEASE` equals the serving backend release SHA. Public request fields still cannot provide a contract, image, budget, tool version, project option or enablement value.
+
+The normal snapshot handler passes the internally constructed `cpp-configure-first-v2` contract through the existing additive C++ child path, preserving all ordinary required scanners and parent/child composition. If any source/capability/release predicate is absent, intake uses the unchanged ordinary scanner path.
+
+The public GitHub source adapter now accepts both canonical `owner/repo` locators and `https://github.com/owner/repo` identities, normalizing only for acquisition while retaining the original repository identity in job/evidence bindings.
