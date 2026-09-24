@@ -248,3 +248,38 @@ def test_spawned_transport_replays_lost_response_over_verified_loopback_tls():
             SyntheticToken(), session=session)
         assert transport.post('receipt', {}) == {}
     assert len(calls) == 2 and calls[0] == calls[1]
+
+
+def test_artifact_payload_uses_measured_bound_and_verifies_backend_reference(monkeypatch):
+    from nico.assessment_worker_consumer import WorkerTransport, MAX_ARTIFACT_REQUEST_BYTES
+    record = claimed()
+    client = WorkerTransport('https://backend.example.invalid', record['job_id'],
+        record['identity']['release_revision'], lambda: 'synthetic-token',
+        session=type('Session', (), {'trust_env': True})())
+    seen = []
+    def post(operation, payload, **kwargs):
+        seen.append((operation, payload))
+        artifact = payload['artifact']
+        return {'artifact': {'artifact_id':'scanartifact_'+'a'*64, 'key':artifact['key'],
+            'sha256':artifact['raw_sha256'], 'gzip_sha256':artifact['gzip_sha256'],
+            'retained_bytes':artifact['raw_bytes'], 'gzip_bytes':artifact['gzip_bytes'],
+            'storage_backend':'postgres'}}
+    monkeypatch.setattr(client, 'post', post)
+    raw = b'compressible-native-evidence-' * 50000
+    reference = client.put_artifact('e'*32, 'project-static-environment', raw)
+    assert reference['storage_backend'] == 'postgres'
+    assert seen[0][0] == 'artifact'
+    assert len(assessment_worker_receipts.canonical_bytes(seen[0][1])) < MAX_ARTIFACT_REQUEST_BYTES
+
+
+def test_artifact_payload_rejects_compressed_transport_over_eight_mib(monkeypatch):
+    import os
+    from nico.assessment_worker_consumer import WorkerTransport
+    record = claimed()
+    client = WorkerTransport('https://backend.example.invalid', record['job_id'],
+        record['identity']['release_revision'], lambda: 'synthetic-token',
+        session=type('Session', (), {'trust_env': True})())
+    monkeypatch.setattr(client, 'post', lambda *args, **kwargs: pytest.fail('oversized artifact must not post'))
+    raw = os.urandom(9 * 1024 * 1024)
+    with pytest.raises(ValueError, match='compressed_limit'):
+        client.put_artifact('e'*32, 'project-static-evidence', raw)

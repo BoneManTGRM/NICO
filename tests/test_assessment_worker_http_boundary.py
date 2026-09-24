@@ -3,7 +3,7 @@ import pytest
 from test_assessment_worker_auth import signed_worker, JOB
 
 
-@pytest.mark.parametrize("operation", ["claim", "heartbeat", "receipt", "fail"])
+@pytest.mark.parametrize("operation", ["claim", "heartbeat", "receipt", "artifact", "fail"])
 def test_production_worker_routes_require_their_own_authentication(operation):
     from nico.api.specialist_ship_ready_bootstrap import app
     with TestClient(app) as client:
@@ -53,3 +53,11 @@ def test_worker_http_operations_require_postgres_even_with_valid_signature(worke
     response = client.post("/internal/assessment-workers/" + JOB + "/claim", headers=headers, json={})
     assert response.status_code == 503
     assert response.json() == {"detail": "worker_durable_storage_unavailable"}
+
+
+def test_artifact_body_has_separate_measured_twelve_mib_ceiling(worker_client):
+    client, headers = worker_client
+    path = "/internal/assessment-workers/" + JOB + "/artifact"
+    oversized = b"x" * (12 * 1024 * 1024 + 1)
+    response = client.post(path, headers=headers, content=oversized)
+    assert response.status_code == 413

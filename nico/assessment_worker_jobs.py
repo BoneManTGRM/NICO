@@ -6,7 +6,10 @@ No public endpoint or execution path is enabled by importing this module.
 """
 from __future__ import annotations
 
+import base64
+import gzip
 import hashlib
+import io
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -17,6 +20,9 @@ from nico.storage import PostgresAdapter
 
 WORKFLOW = "assessment_worker_job.v1"
 TERMINAL = frozenset({"completed", "failed", "cancelled", "budget_exhausted"})
+CPP_ARTIFACT_KEYS = frozenset({"project-generated-context", "project-compiler-evidence", "project-static-environment", "project-static-evidence", "project-static-clang-fallback"})
+MAX_CPP_ARTIFACT_RAW_BYTES = 64 * 1024 * 1024
+MAX_CPP_ARTIFACT_GZIP_BYTES = 8 * 1024 * 1024
 
 
 class JobConflict(RuntimeError):
@@ -319,6 +325,62 @@ class WorkerJobs:
             self._owned(payload, lease_id, now, worker_id)
             payload["lease_until_epoch"] = min(now + payload["limits"]["lease_seconds"], payload["deadline_epoch"])
             return payload, True
+        return self._change(identity, operation)
+
+    def put_artifact(self, identity: JobIdentity, lease_id: str, worker_id: str, artifact: dict) -> dict:
+        """Verify and retain one large configure-first native artifact under the active lease.
+
+        The request carries gzip bytes in base64 only because the authenticated worker API is JSON.
+        The 12 MiB HTTP envelope is transport encoding only; compressed evidence itself remains capped
+        at 8 MiB and raw evidence at 64 MiB. Replays of identical bytes are idempotent.
+        """
+        required = {"key", "raw_sha256", "raw_bytes", "gzip_sha256", "gzip_bytes", "compressed"}
+        if (not isinstance(artifact, dict) or set(artifact) != required
+                or artifact.get("key") not in CPP_ARTIFACT_KEYS
+                or not isinstance(artifact.get("raw_sha256"), str) or re.fullmatch(r"[0-9a-f]{64}", artifact["raw_sha256"]) is None
+                or not isinstance(artifact.get("gzip_sha256"), str) or re.fullmatch(r"[0-9a-f]{64}", artifact["gzip_sha256"]) is None
+                or type(artifact.get("raw_bytes")) is not int or not 1 <= artifact["raw_bytes"] <= MAX_CPP_ARTIFACT_RAW_BYTES
+                or type(artifact.get("gzip_bytes")) is not int or not 1 <= artifact["gzip_bytes"] <= MAX_CPP_ARTIFACT_GZIP_BYTES
+                or not isinstance(artifact.get("compressed"), str)):
+            raise ValueError("worker_artifact_request_invalid")
+        try:
+            compressed = base64.b64decode(artifact["compressed"], validate=True)
+        except (ValueError, TypeError):
+            raise ValueError("worker_artifact_encoding_invalid") from None
+        if (len(compressed) != artifact["gzip_bytes"]
+                or hashlib.sha256(compressed).hexdigest() != artifact["gzip_sha256"]):
+            raise ValueError("worker_artifact_compressed_digest_invalid")
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(compressed), mode="rb") as stream:
+                raw = stream.read(artifact["raw_bytes"] + 1)
+        except (gzip.BadGzipFile, EOFError, OSError):
+            raise ValueError("worker_artifact_gzip_invalid") from None
+        if (len(raw) != artifact["raw_bytes"]
+                or hashlib.sha256(raw).hexdigest() != artifact["raw_sha256"]):
+            raise ValueError("worker_artifact_raw_digest_invalid")
+
+        def operation(payload, now, connection):
+            self._owned(payload, lease_id, now, worker_id)
+            if (payload.get("contract") or {}).get("profile") != "cpp-configure-first-v2":
+                raise JobConflict("worker_artifact_profile_invalid")
+            from nico.scanner_raw_artifact_storage_v1 import ScannerArtifactStore
+            binding = {"run_id": identity.run_id, "scan_id": identity.scan_id,
+                "customer_id": identity.customer_id, "project_id": identity.project_id,
+                "repository": identity.repository_id, "commit_sha": identity.revision,
+                "scanner_name": "cppcheck:" + artifact["key"]}
+            artifact_id = ScannerArtifactStore(self.adapter._connect).put_in_transaction(
+                connection, binding, compressed, artifact["raw_sha256"])
+            reference = {"artifact_id": artifact_id, "key": artifact["key"],
+                "sha256": artifact["raw_sha256"], "gzip_sha256": artifact["gzip_sha256"],
+                "retained_bytes": artifact["raw_bytes"], "gzip_bytes": artifact["gzip_bytes"],
+                "storage_backend": "postgres"}
+            retained = payload.setdefault("native_artifacts", {})
+            existing = retained.get(artifact["key"])
+            if existing is not None and existing != reference:
+                raise JobConflict("worker_artifact_immutable_conflict")
+            changed = existing is None
+            retained[artifact["key"]] = reference
+            return reference, changed
         return self._change(identity, operation)
 
     def complete(self, identity: JobIdentity, lease_id: str, receipt_sha256: str, *, worker_id=None, publish=None) -> dict:

@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify the published Clang fallback in hosted qualification and this complete-tree source-freeze contract. Then connect `cpp-configure-first-v2` execution/receipt projection to the existing durable C++ child worker, using the frozen derived SHA256 population and release-owned qualification only. Do not expose profile choice to public intake or activate incomplete runtime/report gates.
+EXACT NEXT ACTION: connect `cpp-configure-first-v2` execution to the existing durable child worker using the frozen complete SHA256 population and this lease-bound artifact transport. Build the final receipt from validated artifact references, not duplicated native bytes. Keep public intake profile-free and production activation gated on hosted C++ qualification.
 
 ## Immutable continuity
 
@@ -103,3 +103,14 @@ The production source adapter now has a versioned internal `cpp-configure-first-
 The new profile uses the existing 4 CPU /12 GiB /9 GiB scratch qualification envelope and the strict baseline-execution-v2 freeze point. It is internal only: public intake still cannot choose a profile, image, source population, build option or budget. Production execution and receipt projection are not activated by this commit. Legacy worker contracts and pre-frozen target acquisition remain unchanged.
 
 Local verification:72 focused source/capacity/contract tests pass. Broader worker/receipt/launch/baseline/workflow regression:195 passed after adding temporary local Git metadata to the source-export fixture; the local `.git` directory is not published.
+
+
+## Lease-bound production artifact transport
+
+The configure-first production worker now has a bounded authenticated artifact operation for large native evidence that cannot fit truthfully inside the final8MiB receipt. Only five known C++ evidence kinds are accepted: generated-context, compiler-evidence, static-environment, primary-static-evidence and Clang-fallback evidence. Upload authority is bound to the active durable job lease, exact worker identity, tenant/run/repository/revision and the internal `cpp-configure-first-v2` profile.
+
+Each artifact is gzip-compressed by the worker, capped at8MiB compressed /64MiB raw, transferred in a separately enforced12MiB JSON envelope (the measured base64 transport overhead for the retained Bitcoin artifacts), decompressed with a bounded read on the backend, and verified by raw/gzip SHA256 and exact byte counts before insertion into NICO's existing private PostgreSQL immutable artifact store. The stored scanner binding uses the exact child scan and a key-specific `cppcheck:<artifact-key>` identity. Lost-response retries are idempotent only for identical bytes; a changed artifact cannot replace an existing immutable slot. No artifact operation is available to other worker profiles.
+
+The final receipt remains independently bounded to8MiB and will reference these durable artifacts rather than duplicating tens of MiB of native bytes. This commit adds transport/storage only; it does not itself activate configure-first execution or claim production qualification.
+
+Verification:72 focused worker/jobs/API tests pass. Broader source/capacity/jobs/consumer/API/receipt/launch/configure-first/baseline/workflow regression:267 passed, zero failures/errors/skips.

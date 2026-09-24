@@ -46,3 +46,71 @@ def test_invalid_identity_rejected(changes):
 def test_volatile_storage_is_not_accepted_as_durable():
     with pytest.raises(TypeError, match="require_durable_postgres"):
         WorkerJobs(MemoryAdapter())
+
+
+def test_configure_first_native_artifact_is_lease_bound_hash_verified_and_idempotent(monkeypatch):
+    import base64
+    import gzip
+    import hashlib
+    from nico import assessment_worker_jobs as module
+    from nico.scanner_raw_artifact_storage_v1 import ScannerArtifactStore
+    from nico.storage import PostgresAdapter
+
+    jobs = object.__new__(module.WorkerJobs)
+    jobs.adapter = object.__new__(PostgresAdapter)
+    payload = {
+        'status': 'running', 'lease_id': 'e' * 32, 'worker_id': 'github:1:2:3',
+        'deadline_epoch': 200, 'lease_until_epoch': 150,
+        'contract': {'profile': 'cpp-configure-first-v2'},
+    }
+    connection = object()
+    jobs._change = lambda ident, operation: operation(payload, 100, connection)[0]
+    stored = []
+    def put(_self, actual_connection, binding, compressed, raw_sha256):
+        assert actual_connection is connection
+        stored.append((binding, compressed, raw_sha256))
+        return 'scanartifact_' + 'a' * 64
+    monkeypatch.setattr(ScannerArtifactStore, 'put_in_transaction', put)
+
+    raw = b'{"native":"synthetic large-project evidence"}' * 100
+    compressed = gzip.compress(raw, mtime=0)
+    artifact = {
+        'key': 'project-compiler-evidence',
+        'raw_sha256': hashlib.sha256(raw).hexdigest(), 'raw_bytes': len(raw),
+        'gzip_sha256': hashlib.sha256(compressed).hexdigest(), 'gzip_bytes': len(compressed),
+        'compressed': base64.b64encode(compressed).decode('ascii'),
+    }
+    result = jobs.put_artifact(identity(), 'e' * 32, 'github:1:2:3', artifact)
+    assert result['artifact_id'].startswith('scanartifact_')
+    assert result['sha256'] == artifact['raw_sha256']
+    assert payload['native_artifacts']['project-compiler-evidence'] == result
+    assert stored[0][0]['scanner_name'] == 'cppcheck:project-compiler-evidence'
+    assert jobs.put_artifact(identity(), 'e' * 32, 'github:1:2:3', artifact) == result
+
+    changed = {**artifact, 'raw_sha256': '0' * 64}
+    with pytest.raises(ValueError, match='raw_digest'):
+        jobs.put_artifact(identity(), 'e' * 32, 'github:1:2:3', changed)
+
+
+def test_artifact_upload_rejects_wrong_profile_and_wrong_lease(monkeypatch):
+    import base64
+    import gzip
+    import hashlib
+    from nico import assessment_worker_jobs as module
+    from nico.storage import PostgresAdapter
+
+    jobs = object.__new__(module.WorkerJobs)
+    jobs.adapter = object.__new__(PostgresAdapter)
+    payload = {'status':'running','lease_id':'e'*32,'worker_id':'github:1:2:3',
+               'deadline_epoch':200,'lease_until_epoch':150,
+               'contract':{'profile':'cppcheck-standalone-v1'}}
+    jobs._change = lambda ident, operation: operation(payload, 100, object())[0]
+    raw=b'owned'; compressed=gzip.compress(raw,mtime=0)
+    artifact={'key':'project-static-evidence','raw_sha256':hashlib.sha256(raw).hexdigest(),
+              'raw_bytes':len(raw),'gzip_sha256':hashlib.sha256(compressed).hexdigest(),
+              'gzip_bytes':len(compressed),'compressed':base64.b64encode(compressed).decode()}
+    with pytest.raises(module.JobConflict, match='profile'):
+        jobs.put_artifact(identity(),'e'*32,'github:1:2:3',artifact)
+    payload['contract']['profile']='cpp-configure-first-v2'
+    with pytest.raises(module.JobConflict, match='lease'):
+        jobs.put_artifact(identity(),'f'*32,'github:1:2:3',artifact)

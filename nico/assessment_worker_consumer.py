@@ -7,6 +7,8 @@ checks out or executes repository commands, and does not activate intake.
 from __future__ import annotations
 
 from copy import deepcopy
+import base64
+import gzip
 import hashlib
 import json
 import math
@@ -25,6 +27,8 @@ from nico.assessment_worker_jobs import JobIdentity, _digest
 from nico.assessment_worker_receipts import canonical_bytes, validate_contract, validate_receipt
 
 TRANSPORT_SECONDS = 12
+ARTIFACT_TRANSPORT_SECONDS = 30
+MAX_ARTIFACT_REQUEST_BYTES = 12 * 1024 * 1024
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
 
@@ -74,7 +78,8 @@ class WorkerTransport:
         self.session.trust_env = False
 
     def post(self, operation, payload, *, deadline=None):
-        limit = time.monotonic() + TRANSPORT_SECONDS
+        seconds = ARTIFACT_TRANSPORT_SECONDS if operation == "artifact" else TRANSPORT_SECONDS
+        limit = time.monotonic() + seconds
         if deadline is not None:
             limit = min(limit, deadline)
         if time.monotonic() >= limit:
@@ -112,11 +117,35 @@ class WorkerTransport:
                     process.join(1)
                     process.close()
 
+    def put_artifact(self, lease_id, key, raw):
+        if (not isinstance(lease_id, str) or re.fullmatch(r"[0-9a-f]{32}", lease_id) is None
+                or key not in {"project-generated-context", "project-compiler-evidence",
+                    "project-static-environment", "project-static-evidence", "project-static-clang-fallback"}
+                or not isinstance(raw, bytes) or not 1 <= len(raw) <= 64 * 1024 * 1024):
+            raise ValueError("worker_artifact_request_invalid")
+        compressed = gzip.compress(raw, compresslevel=9, mtime=0)
+        if len(compressed) > 8 * 1024 * 1024:
+            raise ValueError("worker_artifact_compressed_limit")
+        artifact = {"key": key, "raw_sha256": hashlib.sha256(raw).hexdigest(), "raw_bytes": len(raw),
+            "gzip_sha256": hashlib.sha256(compressed).hexdigest(), "gzip_bytes": len(compressed),
+            "compressed": base64.b64encode(compressed).decode("ascii")}
+        response = self.post("artifact", {"lease_id": lease_id, "artifact": artifact})
+        reference = response.get("artifact") if isinstance(response, dict) else None
+        expected = {"key": key, "sha256": artifact["raw_sha256"], "gzip_sha256": artifact["gzip_sha256"],
+                    "retained_bytes": len(raw), "gzip_bytes": len(compressed), "storage_backend": "postgres"}
+        if (not isinstance(reference, dict) or any(reference.get(k) != v for k, v in expected.items())
+                or not isinstance(reference.get("artifact_id"), str)
+                or not reference["artifact_id"].startswith("scanartifact_")):
+            raise ValueError("worker_artifact_reference_invalid")
+        return reference
+
     def _post_inline(self, operation, payload):
-        if operation not in {"claim", "heartbeat", "receipt", "fail"} or not isinstance(payload, dict):
+        if operation not in {"claim", "heartbeat", "receipt", "artifact", "fail"} or not isinstance(payload, dict):
             raise ValueError("worker_operation_invalid")
         body = canonical_bytes(payload)
-        if len(body) > (8 * 1024 * 1024 if operation == "receipt" else 4096):
+        maximum = (MAX_ARTIFACT_REQUEST_BYTES if operation == "artifact" else
+                   8 * 1024 * 1024 if operation == "receipt" else 4096)
+        if len(body) > maximum:
             raise ValueError("worker_request_size_invalid")
         token = self.token_provider()
         if not isinstance(token, str) or not token or len(token) > 16384 or any(c.isspace() for c in token):
@@ -124,7 +153,7 @@ class WorkerTransport:
         arguments = {"data": body, "headers": {"Authorization": "Bearer " + token,
             "Content-Type": "application/json", "Accept": "application/json"},
             "allow_redirects": False, "stream": True, "timeout": (2, 5)}
-        deadline = time.monotonic() + TRANSPORT_SECONDS
+        deadline = time.monotonic() + (ARTIFACT_TRANSPORT_SECONDS if operation == "artifact" else TRANSPORT_SECONDS)
         # Lost claim/receipt response: retain exactly the same token, body and
         # nonce for one transport retry. HTTP refusals are never retried.
         for attempt in range(2):
