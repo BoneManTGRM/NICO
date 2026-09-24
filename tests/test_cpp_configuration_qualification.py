@@ -237,3 +237,12 @@ def test_large_static_analysis_is_projected_to_hash_bound_receipt_summary():
     assert summary['artifact'] == analysis['artifact']
     assert projected['project_static_stage']['analysis'] == summary
     assert len(integration.canonical_bytes(projected)) < 512 * 1024
+
+
+def test_qualification_artifact_sink_accepts_bounded_clang_fallback_evidence(tmp_path):
+    from scripts.qualify_cpp_project_configuration import persist_project_artifact
+    output=tmp_path/'qualification'; output.mkdir()
+    raw=b'{"schema":"nico.cpp-clang-fallback-evidence.v1"}'
+    reference=persist_project_artifact(output,'project-static-clang-fallback',raw)
+    assert (output/reference['path']).read_bytes()==raw
+    assert reference['sha256']==hashlib.sha256(raw).hexdigest()

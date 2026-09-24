@@ -69,8 +69,19 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: publish the static validation scaling repair as a non-force descendant and verify the same retained/native contracts in hosted CI. Then address only the remaining native incompleteness from primary evidence: three90-second context timeouts, the coins.cpp placement-new internal error if it persists under the patched analyzer, Cap'n Proto/parser syntax limits, and unresolved macro configuration. Do not increase deadlines merely to hide controller overhead. Continue durable normal-intake/canonical/report integration, independent review and final gates before merge/deploy and actual English/es-MX production Bitcoin acceptance.
+EXACT NEXT ACTION: verify this published generic Clang fallback in hosted owned controls and the frozen475-context Bitcoin qualification. Preserve both analyzers' evidence and any remaining incomplete contexts. If C5/C11 qualify, continue runtime scope and durable normal-intake/canonical/report integration, then independent review/final gates, merge/deploy and actual English/es-MX Bitcoin acceptance.
 
 ## Immutable continuity
 
 Full predecessor ledger: `cf07a31d2c67470b605d618c3c324b42b7a95704:NICO-Ship-Checkpoint.md`. Its516/e372/50e/8f7/e118/95f/533d/3652/2195/a561/cbecc chain preserves original C0-C19, PR1627, native successes/failures, approvals and history. Historical Bitcoin revision0e9018e8b65611b0769545e177110e4b7fc51244/runcomprun_7cc47a5a81695fa452354479ea23b422 remains unchanged. This is the sole active ledger.
+
+
+## Generic Clang fallback for Cppcheck-incomplete contexts
+
+Retained Bitcoin artifact10835331499 and reconstructed proof establish that the primary Cppcheck pass attempted all475 required contexts but completed419. The remaining56 are analyzer-specific incompleteness:47 syntax errors,3 unknown-macro failures,1 placement-new internal error,1 additional AST initializer error and4 incomplete native executions. These remain disclosed limitations.
+
+A second substantive analyzer path is implemented generically only for contexts the validated Cppcheck proof actually attempted but did not complete. It binds the primary request/evidence/compiler identities, preserves the frozen translation-unit configuration, verifies immutable inputs, and invokes pinned Clang17 static analysis inside the same private static sandbox. Fallback failure never earns completion; all Cppcheck limitations remain disclosed.
+
+Fallback limits are180 seconds wall /45 seconds per context /4 workers /32MiB evidence, with exact raw plist SHA256 retained. No Bitcoin-name special case, context removal, analyzer-depth reduction, deadline increase or compiler-success substitution is introduced.
+
+Local verification:7 fallback-specific and228 affected tests pass. The retained Bitcoin proof selects exactly56/475 contexts and serializes a557,374-byte request. Hosted native fallback qualification remains mandatory.

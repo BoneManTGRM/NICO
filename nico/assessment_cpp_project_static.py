@@ -561,10 +561,32 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
             data=_canonical(request), limit=STREAM_LIMIT, seconds=550, external=True)
         if observed['exit_code'] != 0 or observed['timed_out'] or observed['output_truncated']:
             raise ValueError('worker_project_static_stage_analysis_failed')
-        result['analysis'] = {**validate_project_static(observed['output'], request),
-                              'artifact': result['operations'][-1]['output_artifact']}
+        primary_artifact = result['operations'][-1]['output_artifact']
+        primary_analysis = validate_project_static(observed['output'], request)
+        result['analysis'] = {**primary_analysis, 'artifact': primary_artifact}
         save()
         guarded_checkpoint()  # Parsing and proof retention belong to this phase.
+        if not result['analysis']['complete'] and compiler_environment:
+            from nico.assessment_cpp_clang_fallback import (PROGRAM as CLANG_FALLBACK_PROGRAM,
+                STREAM_LIMIT as CLANG_FALLBACK_STREAM_LIMIT, clang_fallback_request,
+                validate_clang_fallback, merge_static_analysis)
+            fallback_request = clang_fallback_request(request, primary_analysis)
+            if fallback_request['contexts']:
+                result['phase'] = 'analysis_fallback'; save()
+                fallback_observed = observe('project-static-clang-fallback',
+                    ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive', name,
+                     'python3', '-I', '-S', '-c', CLANG_FALLBACK_PROGRAM],
+                    data=_canonical(fallback_request), limit=CLANG_FALLBACK_STREAM_LIMIT,
+                    seconds=190, external=True)
+                if (fallback_observed['exit_code'] != 0 or fallback_observed['timed_out']
+                        or fallback_observed['output_truncated']):
+                    raise ValueError('worker_project_static_stage_fallback_failed')
+                fallback = validate_clang_fallback(fallback_observed['output'], fallback_request, request)
+                merged = merge_static_analysis(primary_analysis, fallback)
+                result['analysis'] = {**merged, 'artifact': primary_artifact,
+                    'fallback_artifact': result['operations'][-1]['output_artifact']}
+                result['clang_fallback'] = merged['clang_fallback']
+                save(); guarded_checkpoint()
         if not result['analysis']['complete']:
             raise ValueError('worker_project_static_stage_analysis_incomplete')
     except (Exception, KeyboardInterrupt) as exc:
