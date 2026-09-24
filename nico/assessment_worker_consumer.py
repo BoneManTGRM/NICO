@@ -236,8 +236,14 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
 
 def _receipt(job, result, *, acquisition=None):
     native = result.get("native")
+    targets = job["contract"]["targets"]
     schema = "nico.worker-native-receipt.v1"
-    if job['contract']['profile'] == 'cpp-full-project-v1':
+    if job['contract']['profile'] == 'cpp-configure-first-v2':
+        schema = 'nico.worker-native-receipt.v7'
+        targets = result.get("derived_targets")
+        if not isinstance(targets, dict) or not targets:
+            raise ValueError("worker_configure_first_population_missing")
+    elif job['contract']['profile'] == 'cpp-full-project-v1':
         schema = 'nico.worker-native-receipt.v6'
     elif job['contract']['profile'] == 'cpp-runtime-cases-v1':
         schema = 'nico.worker-native-receipt.v5'
@@ -254,8 +260,17 @@ def _receipt(job, result, *, acquisition=None):
     receipt = {"schema": schema, "identity": job["identity"], "lease_id": job["lease_id"],
         "worker_id": job["worker_id"], "image_digest": plan["image_digest"],
         "tool_version": plan["tool_version"], "configuration_sha256": _digest(plan["configuration"]),
-        "target_hashes": plan["targets"], "native": native, "native_sha256": _digest(native)}
-    if isinstance(acquisition, dict) and acquisition.get('schema') == 'nico.github_https_input_materialization.v1':
+        "target_hashes": targets, "native": native, "native_sha256": _digest(native)}
+    if isinstance(acquisition, dict) and acquisition.get('schema') == 'nico.github_https_tree_materialization.v2':
+        excluded=acquisition.get('excluded_entries') or []
+        receipt['provisioning']={'schema':'nico.worker-provisioning.v2','source_method':acquisition['schema'],
+            'commit_sha':acquisition['commit_sha'],'tree_sha':acquisition['tree_sha'],
+            'population_sha256':acquisition['population_sha256'],'required_count':acquisition['required_count'],
+            'materialized_count':acquisition['materialized_count'],'source_bytes':acquisition['source_bytes'],
+            'freeze_point':acquisition['freeze_point'],'excluded_count':len(excluded),
+            'excluded_sha256':hashlib.sha256(canonical_bytes(excluded)).hexdigest(),
+            'image_manifest':acquisition['image_manifest'],'image_config_id':acquisition['image_config_id']}
+    elif isinstance(acquisition, dict) and acquisition.get('schema') == 'nico.github_https_input_materialization.v1':
         receipt['provisioning'] = {key: acquisition[key] for key in (
             'commit_sha', 'tree_sha', 'population_sha256', 'required_count', 'materialized_count',
             'source_bytes', 'image_manifest', 'image_config_id')}
@@ -263,7 +278,7 @@ def _receipt(job, result, *, acquisition=None):
     return receipt
 
 
-def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck):
+def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck, configure_execute=None):
     job = validate_claim(transport.post("claim", {}), job_id=transport.job_id,
                          release_revision=transport.release_revision)
     identity = JobIdentity(**job["identity"])
@@ -302,10 +317,19 @@ def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck):
             checkpoint()
             source, acquisition = acquire(deepcopy(job), Path(temporary), checkpoint)
             checkpoint()
-            remaining = int(min(300, deadline - time.monotonic() - 2))
+            configure_first = job["contract"]["profile"] == "cpp-configure-first-v2"
+            remaining = int(min(2400 if configure_first else 300, deadline - time.monotonic() - 2))
             if remaining < 1:
                 raise ValueError("worker_local_deadline")
-            result = execute(job["contract"], source, checkpoint=checkpoint, timeout_seconds=remaining)
+            if configure_first:
+                if configure_execute is None:
+                    from nico.assessment_cpp_configure_first_execution import run_configure_first
+                    configure_execute = run_configure_first
+                result = configure_execute(job["contract"], source, acquisition,
+                    checkpoint=checkpoint, timeout_seconds=remaining,
+                    retain_artifact=lambda key, raw: transport.put_artifact(job["lease_id"], key, raw))
+            else:
+                result = execute(job["contract"], source, checkpoint=checkpoint, timeout_seconds=remaining)
             checkpoint(force=True)
             receipt = _receipt(job, result, acquisition=acquisition)
             raw, record, _ = validate_receipt(identity, job["contract"], job["lease_id"], job["worker_id"], receipt)

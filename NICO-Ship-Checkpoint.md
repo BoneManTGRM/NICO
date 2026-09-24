@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: connect `cpp-configure-first-v2` execution to the existing durable child worker using the frozen complete SHA256 population and this lease-bound artifact transport. Build the final receipt from validated artifact references, not duplicated native bytes. Keep public intake profile-free and production activation gated on hosted C++ qualification.
+EXACT NEXT ACTION: verify this published configure-first worker/receipt bridge in hosted contract and worker-boundary checks while the frozen Bitcoin qualification runs. Then reconstruct canonical findings/coverage from the lease-bound static artifacts on the backend, connect release-owned generic profile selection to normal intake, finish runtime scope and independent review, and only then merge/deploy and run the actual bilingual production Bitcoin assessment.
 
 ## Immutable continuity
 
@@ -114,3 +114,14 @@ Each artifact is gzip-compressed by the worker, capped at8MiB compressed /64MiB 
 The final receipt remains independently bounded to8MiB and will reference these durable artifacts rather than duplicating tens of MiB of native bytes. This commit adds transport/storage only; it does not itself activate configure-first execution or claim production qualification.
 
 Verification:72 focused worker/jobs/API tests pass. Broader source/capacity/jobs/consumer/API/receipt/launch/configure-first/baseline/workflow regression:267 passed, zero failures/errors/skips.
+
+
+## Durable configure-first execution and compact receipt
+
+The internal `cpp-configure-first-v2` contract is now executed through the existing authenticated durable worker rather than a parallel manual path. After exact-tree acquisition derives and freezes the complete SHA256 source population, the worker invokes the existing isolated configure/build/test/generated-context/compiler/static pipeline with the contract's release-owned capability set. Large generated/compiler/environment/Cppcheck/Clang evidence is uploaded through the lease-bound artifact operation already retained in PostgreSQL; the probe receives compatibility references only after those durable uploads succeed.
+
+The final worker receipt advances to `nico.worker-native-receipt.v7`. It carries the derived source population, exact configuration identity, compact count+SHA256 summaries for test/compiler/static populations, resource/timing truth and the immutable PostgreSQL artifact references. It does not duplicate the large native payloads. Backend validation binds the receipt's source population to the complete-tree provisioning receipt and requires its artifact map to equal the artifacts retained under the same active job lease.
+
+This commit deliberately does NOT mark canonical scanner completion. Even when native configure/build/tests/compiler/static execution is complete, the scanner record remains `partial` with `canonical_findings_projected=false` until the backend reconstructs canonical findings from the retained static artifacts. The native finding count is retained, but an empty projected finding list cannot be mistaken for zero findings. This preserves the existing truth-stress requirement while connecting the durable execution path.
+
+The configure-first worker can use up to2400 seconds of the existing2420-second job wall budget; all other profiles retain the prior300-second consumer ceiling. Public intake still cannot choose this profile.
