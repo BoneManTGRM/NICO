@@ -1,0 +1,15 @@
+{
+  "schema": "nico.pr1641-worker-workflow-budget.v1",
+  "base": "a1a0633177b33c16248ebd4e482036ce248f8b05",
+  "github_job_timeout_minutes": 45,
+  "durable_job_wall_seconds": 2420,
+  "target_execution_seconds": 2400,
+  "public_inputs": [
+    "job_id"
+  ],
+  "permissions": {
+    "contents": "read",
+    "id-token": "write"
+  },
+  "hosted_verification_pending": true
+}
