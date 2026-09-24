@@ -108,13 +108,19 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:
-        fields = {'schema', 'profile', 'compilation_database_sha256', 'build_seconds',
-                  'test_seconds', 'test_case_seconds', 'parallel'}
-        if (not isinstance(baseline_execution, dict) or set(baseline_execution) != fields
-                or baseline_execution['schema'] != 'nico.cpp-baseline-execution.v1'
-                or baseline_execution['profile'] != BASELINE_QUALIFICATION_PROFILE
-                or not isinstance(baseline_execution['compilation_database_sha256'], str)
-                or re.fullmatch(r'[a-f0-9]{64}', baseline_execution['compilation_database_sha256']) is None
+        fixed_fields = {'schema', 'profile', 'compilation_database_sha256', 'build_seconds',
+                        'test_seconds', 'test_case_seconds', 'parallel'}
+        freeze_fields = {'schema', 'profile', 'freeze_compilation_database', 'build_seconds',
+                         'test_seconds', 'test_case_seconds', 'parallel'}
+        schema = baseline_execution.get('schema') if isinstance(baseline_execution, dict) else None
+        fixed = schema == 'nico.cpp-baseline-execution.v1'
+        freeze = schema == 'nico.cpp-baseline-execution.v2'
+        if (not isinstance(baseline_execution, dict)
+                or set(baseline_execution) != (fixed_fields if fixed else freeze_fields if freeze else set())
+                or baseline_execution.get('profile') != BASELINE_QUALIFICATION_PROFILE
+                or (fixed and (not isinstance(baseline_execution['compilation_database_sha256'], str)
+                    or re.fullmatch(r'[a-f0-9]{64}', baseline_execution['compilation_database_sha256']) is None))
+                or (freeze and baseline_execution['freeze_compilation_database'] != 'after_configuration_before_build')
                 or any(type(baseline_execution[k]) is not int or not 1 <= baseline_execution[k] <= maximum
                        for k, maximum in (('build_seconds', 1200), ('test_seconds', 900),
                                           ('test_case_seconds', 300), ('parallel', 4)))):
@@ -160,8 +166,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
             aggregate_wall_budget_seconds=2420, aggregate_duration_ms=0)
 
     if baseline_execution is not None:
-        result.update(baseline_execution=dict(baseline_execution), tests_discovered=[], tests_passed=False,
-            scratch_capacity_verified=False, scratch_capacity_bytes=None,
+        result.update(baseline_execution=dict(baseline_execution), baseline_execution_frozen=None,
+            tests_discovered=[], tests_passed=False, scratch_capacity_verified=False, scratch_capacity_bytes=None,
             tests_result=None, native_test_discovery=None, unit_test_data=None,
             wall_budget_seconds=1810, execution_budget_seconds=execution_seconds)
 
@@ -312,8 +318,19 @@ def probe_project_configuration(source, targets, image, *, project_options,
             configured_invocations=contexts['context_count'], compilation_contexts=contexts)
         result['status'] = 'CONFIGURATION_CAPTURED'
         if baseline_execution is not None:
-            if result['compilation_database_sha256'] != baseline_execution['compilation_database_sha256']:
-                raise ValueError('worker_configuration_probe_frozen_database_mismatch')
+            if baseline_execution['schema'] == 'nico.cpp-baseline-execution.v1':
+                if result['compilation_database_sha256'] != baseline_execution['compilation_database_sha256']:
+                    raise ValueError('worker_configuration_probe_frozen_database_mismatch')
+            else:
+                result['baseline_execution_frozen'] = {
+                    'schema': 'nico.cpp-baseline-execution-freeze.v1',
+                    'source_population_sha256': result['source_population_sha256'],
+                    'project_options': dict(result['effective_project_options']),
+                    'compilation_database_sha256': result['compilation_database_sha256'],
+                    'configured_invocations': result['configured_invocations'],
+                    'freeze_point': 'after_configuration_before_build',
+                }
+                save()
             if staged_data is not None:
                 payload = canonical_bytes({name: {
                     'base64': base64.b64encode(blob).decode('ascii'),

@@ -220,3 +220,32 @@ def test_published_baseline_contract_raises_the_measured_debug_test_budget():
     assert '--unit-test-data qualification-unit-test-data' in workflow
     assert 'cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095' in workflow
     assert 'b33d85102d169b54d966ea315ad81a636680aefa' in workflow
+
+
+def test_freeze_after_configuration_contract_binds_observed_database_before_build(tmp_path):
+    spec={
+        'schema':'nico.cpp-baseline-execution.v2', 'profile':PROFILE,
+        'freeze_compilation_database':'after_configuration_before_build',
+        'build_seconds':1200, 'test_seconds':480, 'test_case_seconds':60, 'parallel':4,
+    }
+    result,docker,saved=execute(tmp_path,spec=spec)
+    assert result['status']=='BASELINE_EXECUTED'
+    frozen=result['baseline_execution_frozen']
+    assert frozen['schema']=='nico.cpp-baseline-execution-freeze.v1'
+    assert frozen['freeze_point']=='after_configuration_before_build'
+    assert frozen['compilation_database_sha256']==result['compilation_database_sha256']
+    assert frozen['configured_invocations']==result['configured_invocations']==1
+    ids=[row['id'] for row in result['operations']]
+    assert ids.index('compilation-database') < ids.index('baseline-build')
+    assert saved[-1]==result
+
+
+def test_freeze_after_configuration_contract_is_strict_and_does_not_accept_predeclared_hash(tmp_path):
+    spec={
+        'schema':'nico.cpp-baseline-execution.v2', 'profile':PROFILE,
+        'freeze_compilation_database':'after_configuration_before_build',
+        'build_seconds':1200, 'test_seconds':480, 'test_case_seconds':60, 'parallel':4,
+        'compilation_database_sha256':'a'*64,
+    }
+    with pytest.raises(ValueError, match='worker_configuration_probe_execution_contract_invalid'):
+        execute(tmp_path,spec=spec)

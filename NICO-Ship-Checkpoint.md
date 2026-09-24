@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify this published generic Clang fallback in hosted owned controls and the frozen475-context Bitcoin qualification. Preserve both analyzers' evidence and any remaining incomplete contexts. If C5/C11 qualify, continue runtime scope and durable normal-intake/canonical/report integration, then independent review/final gates, merge/deploy and actual English/es-MX Bitcoin acceptance.
+EXACT NEXT ACTION: verify the already-published Clang fallback in hosted qualification; then connect this freeze-after-configuration v2 policy to the existing durable C++ child worker behind release-owned qualification. Do not activate the old2GiB/300-second profile or expose profile choice to public intake. Preserve actual native evidence, complete runtime scope, independent review and production acceptance gates.
 
 ## Immutable continuity
 
@@ -85,3 +85,12 @@ A second substantive analyzer path is implemented generically only for contexts 
 Fallback limits are180 seconds wall /45 seconds per context /4 workers /32MiB evidence, with exact raw plist SHA256 retained. No Bitcoin-name special case, context removal, analyzer-depth reduction, deadline increase or compiler-success substitution is introduced.
 
 Local verification:7 fallback-specific and228 affected tests pass. The retained Bitcoin proof selects exactly56/475 contexts and serializes a557,374-byte request. Hosted native fallback qualification remains mandatory.
+
+
+## Freeze-after-configuration production contract
+
+The configuration probe now accepts a strict `nico.cpp-baseline-execution.v2` policy that does not require an engineering-precomputed compilation-database digest. Source revision, target population and project options remain fixed first. The isolated CMake configuration then produces the actual compile database; NICO hashes and freezes that exact population before any build, native test, generated-input capture, compiler evidence or static-analysis stage executes. The post-build database must still match the frozen digest exactly.
+
+The historical v1 contract remains unchanged and continues to require its supplied database SHA. v2 accepts only the explicit `after_configuration_before_build` freeze point and rejects a caller-supplied database hash, preventing a public or stale caller from mixing the two authority models. This is generic configure-first plumbing for normal CMake repositories; it contains no Bitcoin repository-name rule.
+
+Local affected verification:84 tests passed with zero failures/errors/skips. Production selection and durable worker execution remain gated on native qualification and are not activated by this contract alone.

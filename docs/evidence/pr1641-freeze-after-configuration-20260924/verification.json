@@ -1,0 +1,10 @@
+{
+  "schema":"nico.pr1641-freeze-after-configuration.v1",
+  "base":"89e3e85836985db9685c66227a14857a04c0848d",
+  "contract_schema":"nico.cpp-baseline-execution.v2",
+  "freeze_point":"after_configuration_before_build",
+  "legacy_v1_preserved":true,
+  "repository_specific_logic":false,
+  "tests":{"passed":84,"failed":0,"errors":0,"skipped":0},
+  "production_activated":false
+}
