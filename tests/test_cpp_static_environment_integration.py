@@ -196,3 +196,36 @@ def test_environment_stage_uses_the_real_immutable_artifact_sink(tmp_path):
     path = output/reference['path']; path.write_bytes(b'corrupt owned evidence')
     with pytest.raises(ValueError, match='qualification_artifact_existing_mismatch'):
         persist_project_artifact(output, 'project-static-environment', raw)
+
+
+def test_environment_static_evidence_accepts_bounded_compressed_xml(tmp_path):
+    request, _ = project(tmp_path)
+    raw = json.loads(native_v2(request))
+    original = 0
+    stored = 0
+    for row in raw['records']:
+        xml = base64.b64decode(row['xml'])
+        original += len(xml)
+        encoded, digest, encoding = static._encode_xml(xml, compact=True)
+        row['xml'] = encoded
+        row['xml_sha256'] = digest
+        row['xml_encoding'] = encoding
+        stored += len(base64.b64decode(encoded))
+    compact = _canonical(raw)
+    result = static.validate_project_static(compact, request)
+    assert result['complete']
+    assert stored < original
+
+
+def test_environment_static_evidence_rejects_truncated_compressed_xml(tmp_path):
+    request, _ = project(tmp_path)
+    raw = json.loads(native_v2(request))
+    row = raw['records'][0]
+    xml = base64.b64decode(row['xml'])
+    encoded, digest, encoding = static._encode_xml(xml, compact=True)
+    compressed = base64.b64decode(encoded)
+    row['xml'] = base64.b64encode(compressed[:-1]).decode()
+    row['xml_sha256'] = digest
+    row['xml_encoding'] = encoding
+    with pytest.raises(ValueError, match='worker_project_static_xml_digest'):
+        static.validate_project_static(_canonical(raw), request)

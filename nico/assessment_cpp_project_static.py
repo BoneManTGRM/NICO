@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import stat
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 
 from nico.assessment_cpp_compiler_evidence import _source_path, safe_compile_argv, _regular_bytes, _run
@@ -34,6 +35,49 @@ LIMITS = {'wall_seconds': 540, 'case_seconds': 90, 'parallel': 4}
 STREAM_LIMIT = 48 * 1024 * 1024
 REQUEST_LIMIT = 16 * 1024 * 1024
 XML_LIMIT = 1024 * 1024
+XML_COMPRESSED_LIMIT = 2 * 1024 * 1024
+
+
+def _encode_xml(raw, *, compact=False):
+    """Encode bounded native XML while preserving the digest of raw tool bytes."""
+    if not isinstance(raw, bytes) or len(raw) > XML_LIMIT:
+        raise ValueError('worker_project_static_xml_limit')
+    if not raw:
+        return '', None, 'zlib' if compact else 'identity'
+    stored = zlib.compress(raw, 9) if compact else raw
+    if len(stored) > XML_COMPRESSED_LIMIT:
+        raise ValueError('worker_project_static_xml_limit')
+    return base64.b64encode(stored).decode('ascii'), _digest(raw), 'zlib' if compact else 'identity'
+
+
+def _decode_xml(value, digest, encoding='identity'):
+    """Decode retained XML with a hard uncompressed bound."""
+    if not isinstance(value, str) or encoding not in {'identity', 'zlib'}:
+        raise ValueError('worker_project_static_xml_digest')
+    try:
+        stored = base64.b64decode(value, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError('worker_project_static_xml_digest') from exc
+    if len(stored) > XML_COMPRESSED_LIMIT:
+        raise ValueError('worker_project_static_xml_digest')
+    if not stored:
+        if digest is not None:
+            raise ValueError('worker_project_static_xml_digest')
+        return b''
+    try:
+        if encoding == 'zlib':
+            inflater = zlib.decompressobj()
+            raw = inflater.decompress(stored, XML_LIMIT + 1)
+            if (len(raw) > XML_LIMIT or inflater.unconsumed_tail or inflater.unused_data
+                    or not inflater.eof):
+                raise ValueError('worker_project_static_xml_digest')
+        else:
+            raw = stored
+    except zlib.error as exc:
+        raise ValueError('worker_project_static_xml_digest') from exc
+    if len(raw) > XML_LIMIT or not isinstance(digest, str) or _digest(raw) != digest:
+        raise ValueError('worker_project_static_xml_digest')
+    return raw
 
 
 def _static_plan(context, environment=None):
@@ -145,6 +189,8 @@ def collect_project_static(request):
         record = {'context_id': context['context_id'], 'invocation': context['analyzer_invocation'],
             'database_sha256': context['analyzer_database_sha256'], 'execution': None,
             'xml': '', 'xml_sha256': None, 'error': None}
+        if environment_model is not None:
+            record['xml_encoding'] = 'zlib'
         try:
             if not tool_ok:
                 raise ValueError('worker_project_static_tool_version')
@@ -164,7 +210,10 @@ def collect_project_static(request):
                 min(deadline, time.monotonic() + LIMITS['case_seconds']), environment)
             # Retain even failing native XML; the controller decides completeness.
             xml = _regular_bytes(stem + '.xml', XML_LIMIT)
-            record.update(xml=base64.b64encode(xml).decode(), xml_sha256=_digest(xml))
+            encoded, digest, encoding = _encode_xml(xml, compact=environment_model is not None)
+            record.update(xml=encoded, xml_sha256=digest)
+            if environment_model is not None:
+                record['xml_encoding'] = encoding
             if _regular_bytes(stem + '.json', REQUEST_LIMIT) != context['analyzer_database'].encode():
                 raise ValueError('worker_project_static_database_changed')
         except (ValueError, OSError, KeyError, TypeError) as exc:
@@ -221,17 +270,17 @@ def validate_project_static(raw, request):
     attempted, analyzed, findings, limitations, modeled_inputs = [], [], [], [], []
     environment_model = request.get('compiler_environment')
     duration = evidence['version']['duration_ms']
-    fields = {'context_id', 'invocation', 'database_sha256', 'execution', 'xml', 'xml_sha256', 'error'}
+    legacy_fields = {'context_id', 'invocation', 'database_sha256', 'execution', 'xml', 'xml_sha256', 'error'}
+    compact_fields = legacy_fields | {'xml_encoding'}
     for context, row in zip(request['contexts'], evidence['records']):
-        if (not isinstance(row, dict) or set(row) != fields or row['context_id'] != context['context_id']
+        expected_fields = compact_fields if 'xml_encoding' in row else legacy_fields
+        if (not isinstance(row, dict) or set(row) != expected_fields or row['context_id'] != context['context_id']
                 or row['invocation'] != context['analyzer_invocation']
                 or row['database_sha256'] != context['analyzer_database_sha256']
                 or row['error'] is not None and (not isinstance(row['error'], str)
                     or re.fullmatch(r'worker_project_static_[a-z_]+', row['error']) is None)):
             raise ValueError('worker_project_static_record_invalid')
-        xml = decode_stream(row['xml'])
-        if len(xml) > XML_LIMIT or (xml and _digest(xml) != row['xml_sha256']) or (not xml and row['xml_sha256'] is not None):
-            raise ValueError('worker_project_static_xml_digest')
+        xml = _decode_xml(row['xml'], row['xml_sha256'], row.get('xml_encoding', 'identity'))
         if row['execution'] is None:
             if row['error'] is None or xml:
                 raise ValueError('worker_project_static_missing_execution')
@@ -329,15 +378,15 @@ def run_project_static():
     print(_canonical(result).decode())
 
 
-PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time\n'
+PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time, zlib\n'
     'from pathlib import Path\nfrom concurrent.futures import ThreadPoolExecutor\n'
     + f'TOOL_VERSION={TOOL_VERSION!r}\nCHECKS={CHECKS!r}\nLIMITS={LIMITS!r}\n'
-    + f'STREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\nXML_LIMIT={XML_LIMIT}\n'
+    + f'STREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\nXML_LIMIT={XML_LIMIT}\nXML_COMPRESSED_LIMIT={XML_COMPRESSED_LIMIT}\n'
     + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
     + STATIC_ENV_SUPPORT + '\n'
     + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _source_path, safe_compile_argv,
         _regular_bytes, _run, _project_option, _stable_bytes, _extra_option, _syntax_argv,
-        _verify_input, _static_plan, collect_project_static, run_project_static))
+        _verify_input, _encode_xml, _static_plan, collect_project_static, run_project_static))
     + '\nrun_project_static()\n')
 
 

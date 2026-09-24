@@ -1,4 +1,4 @@
-# PR1641 continuation — observed compiler environment wired into static execution
+# PR1641 continuation — compiler environment qualified; static evidence transport compacted
 
 Continue existing PR #1641 / `feat/cpp-full-project-capacity`. Parent `e11822933556cc42b1acd5b58b57f2d85a00591e`, tree `632abd91d28fdebff5422833eae282cbbebd6923`; observed main/base `faaa10b037eb58e4175561b96dadf0d929764df4`. Recheck live refs before non-force publication; preserve concurrent work. Record the containing commit in the PR, not a self-hash commit. Local source-export Git metadata is an empty detached test fixture with no remotes and MUST NOT be pushed. The original NICO-CPP-Bitcoin-Execution-Prompt.md and stronger C0-C19 contract remain binding. This is not merge readiness, independent review, deployment or a production report.
 
@@ -15,6 +15,15 @@ The existing static producer and validator now consume the observed environment,
 The configuration probe and both existing qualification scripts forward the same explicit `--compiler-environment` flag. The existing workflow enables it for owned and frozen large qualification, with the owned stage still first. Owned fixtures now exercise compiler predefines, public library models, implicit Boost headers and a generated SYSTEM include, along with clean/diagnostic/repeated/generated/link-negative controls.
 
 A final real-storage test exposed an omitted allowed artifact type: the actual immutable sink rejected `project-static-environment`, while a mocked sink had accepted it. Recorded RED1 failure; identical GREEN1 pass after adding exactly that known key. Existing size/path/atomic/no-overwrite behavior remains. The test verifies real retained bytes, idempotence and corrupt-existing-file rejection. This was repaired before publication.
+
+
+## Latest hosted Bitcoin failure and bounded repair
+
+Candidate `8f7f1248c2b5832eb9ec004429556ff8a1df1ef6` passed hosted contract regressions and owned-project integration in run36013349958. Frozen Bitcoin job107683778968 retained artifact10816400065 (ZIP SHA256 `c3eb99d9bfee3f4992414cfb6e8985cf1184559c5205fe97d0954db3effc770b`). The environment producer completed475 contexts /12 queries /1439 headers /16,624,324 retained header bytes, and compiler-v2 again completed all475 contexts. The static stage entered real analysis and ran for227,017ms with7,592,583,168-byte peak memory; isolation and cleanup passed. Its first failure is `worker_project_static_output_limit`: the monolithic native JSON exceeded the existing48MiB evidence transport/storage cap. This is not a build, test, compiler-environment, analyzer-timeout, or dropped-target failure.
+
+The repair keeps the48MiB outer evidence and immutable artifact caps unchanged. Environment-bound v2 records now zlib-compress each retained Cppcheck XML member before base64 transport while preserving the SHA256 of the exact uncompressed native XML. The validator accepts historical uncompressed v2 evidence and new compact records, performs bounded decompression (1MiB native XML /2MiB stored-member caps), verifies stream termination/no trailing data and the original raw digest, then applies the unchanged parser/completion rules. Legacy v1 evidence stays byte-compatible. No finding, limitation, invocation, context, analyzer depth, timeout, resource class, model input or approval rule is removed. This is bounded representation compaction, not an evidence reduction.
+
+Focused static/environment/stage tests:91 passed. Broader affected static/environment/native-preprocessing/full-project set:196 passed, zero failures/errors/skips. A subsequent unchanged all-workflow local invocation exceeded the local command window after partial progress and is not credited; candidate hosted contract regressions remain mandatory. Two new cases verify compact XML round-trip and truncated compressed evidence rejection.
 
 ## Frozen limits and invalidation
 
@@ -65,7 +74,7 @@ Retain run35978926706/job107568329757/artifact10800637897:3,248 inventory entrie
 
 Prior Codex review request5802036311/reply5802038248 exhausted allowance; do not retry unchanged requests, buy credits, switch accounts, waive review or call author verification independent. No human approval or delivery authorization performed. The older rejected Bitcoin build/config/test/sanitizer/fuzz discovery operation must not be evaded; establish its exact supported resolution separately from permitted generic implementation. No new denial or universal support-ticket block is claimed. Existing GitHub publication works.
 
-EXACT NEXT ACTION: verify the containing commit/ref and automatic hosted owned environment controls, then inspect every retained frozen Bitcoin stage. Fix the first actual native failure with its reproduced cause, not a suppressed warning or dropped context. While hosted work runs, complete the existing generic durable worker/canonical/report integration and permitted runtime work. Obtain independent complete review and all pre-merge gates, then merge/deploy through existing platforms and prove normal owned then authorized Bitcoin intake with actual English/es-MX artifacts and protected approval/retrieval. No SHIPPED claim before every mandatory row passes.
+EXACT NEXT ACTION: publish this lossless static-evidence compaction as a non-force descendant after a fresh live-head check, then inspect its automatic hosted owned and frozen475-context Bitcoin qualification. Preserve any new first failure without dropping populations, increasing transport limits, or lowering depth. While hosted work runs, complete the existing generic durable worker/canonical/report integration and permitted runtime work. Obtain independent complete review and all pre-merge gates, then merge/deploy through existing platforms and prove normal owned then authorized Bitcoin intake with actual English/es-MX artifacts and protected approval/retrieval. No SHIPPED claim before every mandatory row passes.
 
 ## Immutable continuity
 
