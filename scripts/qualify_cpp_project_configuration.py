@@ -162,6 +162,42 @@ def persist_project_artifact(output, key, raw):
     return {'path': 'artifacts/' + path.name, 'sha256': sha, 'bytes': len(raw)}
 
 
+def qualification_probe_receipt(value):
+    """Project large reconstructible static populations into a bounded receipt.
+
+    Native static bytes are already retained immutably as an artifact. The
+    qualification receipt keeps counts and canonical population hashes so the
+    exact validated result can be reconstructed without duplicating many MiB of
+    findings/limitations inside the 16 MiB controller receipt. The live probe
+    object is never mutated.
+    """
+    if not isinstance(value, dict):
+        raise ValueError('qualification_probe_invalid')
+    projected = dict(value)
+    analysis = value.get('project_static')
+    if not isinstance(analysis, dict):
+        return projected
+    summary = dict(analysis)
+    for key in ('required_contexts', 'attempted_contexts', 'analyzed_contexts',
+                'findings', 'limitations', 'modeled_inputs'):
+        if key not in summary:
+            continue
+        population = summary.pop(key)
+        if not isinstance(population, list):
+            raise ValueError('qualification_probe_invalid')
+        summary[key + '_count'] = len(population)
+        summary[key + '_sha256'] = hashlib.sha256(canonical_bytes(population)).hexdigest()
+    summary['receipt_projection'] = 'hash-bound-summary-v1'
+    projected['project_static'] = summary
+    stage = value.get('project_static_stage')
+    if isinstance(stage, dict):
+        stage = dict(stage)
+        if isinstance(stage.get('analysis'), dict):
+            stage['analysis'] = summary
+        projected['project_static_stage'] = stage
+    return projected
+
+
 def qualify_configuration_checkout(args):
     """Prepare the next frozen execution contract using real isolated configure."""
     from nico.assessment_cpp_full_project import _json
@@ -208,7 +244,7 @@ def qualify_configuration_checkout(args):
                     raise ValueError('qualification_unit_test_data_invalid')
             def save_probe(value):
                 evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
-                    probe=value, compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
+                    probe=qualification_probe_receipt(value), compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,
                 project_options=manifest['project_options'],retain=save_probe,
                 baseline_execution=execution_contract, unit_test_data=unit_test_data,

@@ -201,3 +201,39 @@ def test_effective_options_and_exact_cache_bytes_are_retained(tmp_path):
     assert result['effective_project_options'] == {'BUILD_TESTS': 'ON'}
     raw = base64.b64decode(result['configuration_cache'])
     assert hashlib.sha256(raw).hexdigest() == result['configuration_cache_sha256']
+
+
+def test_large_static_analysis_is_projected_to_hash_bound_receipt_summary():
+    from scripts import qualify_cpp_project_configuration as integration
+    function = getattr(integration, 'qualification_probe_receipt', None)
+    assert callable(function), 'missing bounded qualification receipt projection'
+    analysis = {
+        'complete': True,
+        'required_contexts': [f'ctx-{i}' for i in range(475)],
+        'attempted_contexts': [f'ctx-{i}' for i in range(475)],
+        'analyzed_contexts': [f'ctx-{i}' for i in range(475)],
+        'findings': [{'id': f'f-{i}', 'path': 'src/example.cpp', 'line': i + 1} for i in range(25000)],
+        'limitations': [{'context_id': f'ctx-{i%475}', 'rule_id': 'modeled-input'} for i in range(25000)],
+        'modeled_inputs': [{'context_id': f'ctx-{i%475}', 'header_name': 'vector', 'model': 'std'} for i in range(25000)],
+        'native_evidence_sha256': 'a' * 64,
+        'compiler_evidence_sha256': 'b' * 64,
+        'artifact': {'path': 'artifacts/project-static-evidence-' + 'a'*64 + '.json',
+                     'sha256': 'a'*64, 'bytes': 3878970},
+        'human_review_completed': False,
+        'production_qualified': False,
+    }
+    probe = {'schema': 'nico.cpp-project-configuration-probe.v7',
+             'project_static': analysis,
+             'project_static_stage': {'complete': True, 'analysis': analysis, 'operations': []}}
+    projected = function(probe)
+    assert probe['project_static']['findings'][0]['id'] == 'f-0', 'projection must not mutate live proof'
+    summary = projected['project_static']
+    assert summary['receipt_projection'] == 'hash-bound-summary-v1'
+    for key in ('required_contexts', 'attempted_contexts', 'analyzed_contexts',
+                'findings', 'limitations', 'modeled_inputs'):
+        assert key not in summary
+        assert summary[key + '_count'] == len(analysis[key])
+        assert len(summary[key + '_sha256']) == 64
+    assert summary['artifact'] == analysis['artifact']
+    assert projected['project_static_stage']['analysis'] == summary
+    assert len(integration.canonical_bytes(projected)) < 512 * 1024
