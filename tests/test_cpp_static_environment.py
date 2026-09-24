@@ -114,7 +114,7 @@ def test_models_do_not_turn_an_arbitrary_missing_header_into_supported_input():
     assert env.header_model('vector') == 'std'
     assert env.header_model('sys/socket.h') == 'posix'
     assert env.header_model('capnp/generated-header-support.h') is None
-    assert env.header_model('boost/test/unit_test.hpp') is None
+    assert env.header_model('boost/test/unit_test.hpp') == 'boost'
     assert env.header_model('missing_required.h') is None
     assert env.header_model('../vector') is None
 
@@ -152,3 +152,10 @@ def test_pinned_compiler_public_header_models_do_not_depend_on_patch_directory_l
 
 def test_third_party_header_named_like_a_standard_header_is_never_reclassified():
     assert api()._model_header('/usr/local/include/vendor/vector', ['/usr/local/include/vendor']) is None
+
+
+def test_only_compiler_resolved_system_boost_headers_use_the_pinned_boost_model():
+    env = api()
+    assert env._model_header('/usr/include/boost/multi_index/detail/bucket_array.hpp', ['/usr/include']) == (
+        'boost/multi_index/detail/bucket_array.hpp', 'boost')
+    assert env._model_header('/usr/local/include/vendor/boost/version.hpp', ['/usr/local/include/vendor']) is None

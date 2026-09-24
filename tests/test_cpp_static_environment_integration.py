@@ -65,6 +65,7 @@ def test_environment_policy_binds_request_without_changing_context_population(tm
 
 
 @pytest.mark.parametrize('missing, complete', [('stdint.h', True), ('missing.h', False),
+                                              ('boost/not-compiler-resolved.hpp', False),
                                               ('capnp/generated-header-support.h', False)])
 def test_only_compiler_resolved_public_model_inputs_are_nonfatal(tmp_path, missing, complete):
     request, proof = project(tmp_path)

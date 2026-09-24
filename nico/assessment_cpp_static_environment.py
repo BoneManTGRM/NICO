@@ -36,8 +36,10 @@ ENV_LIMITS = {'wall_seconds': 30, 'query_seconds': 5, 'queries': 128,
               'total_header_bytes': 32 * 1024 * 1024}
 ENV_STREAM_LIMIT = 48 * 1024 * 1024
 ENV_REQUEST_LIMIT = 16 * 1024 * 1024
-# Named public headers only. Internal implementation headers, intrinsics,
-# arbitrary absent names, Boost and application dependencies are not waived.
+# Named public headers only. Internal implementation headers, intrinsics and
+# arbitrary absent/application dependencies are never waived. Compiler-resolved
+# system Boost headers may use the pinned Boost model instead of parsing third-party
+# implementation headers; native bytes/hashes and modeled-input disclosures remain.
 STD_HEADERS = frozenset(('algorithm any array atomic barrier bit bitset charconv chrono codecvt '
     'compare complex concepts condition_variable coroutine deque exception execution filesystem '
     'format forward_list fstream functional future initializer_list iomanip ios iosfwd iostream '
@@ -248,6 +250,10 @@ def _search_roots(raw):
 def header_model(name):
     if name in STD_HEADERS: return 'std'
     if name in POSIX_HEADERS: return 'posix'
+    if (isinstance(name, str) and name.startswith('boost/')
+            and re.fullmatch(r'boost/[A-Za-z0-9_./+-]+', name) is not None
+            and all(part not in {'', '.', '..'} for part in name.split('/'))):
+        return 'boost'
     return None
 
 
@@ -331,7 +337,7 @@ def validate_environment(raw, request):
         'compiler_evidence_sha256': request['compiler_evidence_sha256'],
         'queries': proof_queries, 'headers': headers, 'contexts': contexts, 'models': dict(MODEL_HASHES),
         'header_population_sha256': _digest(_canonical(headers)), 'header_bytes': total,
-        'model_policy': 'gcc14-unix64-public-c-cpp20-posix-upstream-models-v1'}
+        'model_policy': 'gcc14-unix64-public-c-cpp20-posix-boost-upstream-models-v2'}
 
 
 def _write_input(path, raw):
