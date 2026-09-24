@@ -260,3 +260,19 @@ def test_standalone_generated_input_verification_retains_current_snapshot_bound(
     assert scope['GENERATED_FILE_LIMIT'] == snapshot.PROJECT_GENERATED_MAX_FILE_BYTES == 32 * 1024 * 1024
     with pytest.raises(ValueError, match='input_mismatch'):
         scope['_verify_input'](root, 'config.h', '0' * 64, len(raw), True)
+
+
+def test_native_evidence_digest_is_computed_once_per_validation(tmp_path, monkeypatch):
+    req = request(tmp_path)
+    raw = _canonical(native(req, 'uninitvar'))
+    module = api()
+    original = module._digest
+    calls = {'native': 0}
+    def counted(value):
+        if value is raw:
+            calls['native'] += 1
+        return original(value)
+    monkeypatch.setattr(module, '_digest', counted)
+    proof = module.validate_project_static(raw, req)
+    assert proof['complete'] and len(proof['findings']) == 3
+    assert calls['native'] == 1

@@ -256,6 +256,7 @@ def validate_project_static(raw, request):
     if not isinstance(raw, bytes) or not 0 < len(raw) <= STREAM_LIMIT:
         raise ValueError('worker_project_static_output_limit')
     evidence = _json(raw)
+    native_evidence_sha256 = _digest(raw)
     fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms'}
     if (not isinstance(evidence, dict) or set(evidence) != fields
             or evidence['schema'] != request['schema'].replace('-request.', '-evidence.')
@@ -319,9 +320,9 @@ def validate_project_static(raw, request):
         if environment_model is not None:
             execution_limits = []
             for entry in limits:
-                modeled = modeled_missing_include(entry, environment_model, context['context_id'])
+                modeled = modeled_missing_include(entry, environment_model, context['context_id'], dependencies)
                 if modeled:
-                    modeled_inputs.append({**modeled, 'native_evidence_sha256': _digest(raw)})
+                    modeled_inputs.append({**modeled, 'native_evidence_sha256': native_evidence_sha256})
                 else:
                     execution_limits.append(entry)
             limits = execution_limits
@@ -335,7 +336,7 @@ def validate_project_static(raw, request):
         for finding in native_findings:
             origin, path, sha = locations[finding['path']]
             value = {**finding, 'path': path, 'origin': origin, 'source_sha256': sha,
-                'context_id': context['context_id'], 'native_evidence_sha256': _digest(raw),
+                'context_id': context['context_id'], 'native_evidence_sha256': native_evidence_sha256,
                 'locations': [{'origin': locations[p['path']][0], 'path': locations[p['path']][1],
                     'source_sha256': locations[p['path']][2], 'line': p['line'], 'column': p['column']}
                     for p in finding['locations']]}
@@ -351,7 +352,7 @@ def validate_project_static(raw, request):
         'complete': analyzed == required, 'findings': findings, 'limitations': limitations,
         **({'modeled_inputs': modeled_inputs, 'compiler_environment_sha256': environment_model['native_evidence_sha256']}
            if environment_model is not None else {}),
-        'native_evidence_sha256': _digest(raw), 'compiler_evidence_sha256': request['compiler_evidence_sha256'],
+        'native_evidence_sha256': native_evidence_sha256, 'compiler_evidence_sha256': request['compiler_evidence_sha256'],
         'static_analysis_executed': bool(attempted), 'analyzer_header_coverage_verified': False,
         'model_limits': (['Observed GCC predefines and compiler-resolved dependency bytes bind each context.',
                           'Named public C/C++ and POSIX headers use hash-verified upstream library models, not implementation-header analysis.',

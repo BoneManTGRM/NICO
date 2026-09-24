@@ -502,19 +502,25 @@ def context_dependencies(environment, context_id):
     return {paths[i]: environment['headers'][paths[i]] for i in indices}
 
 
-def modeled_missing_include(limit, environment, context_id):
+def modeled_missing_include(limit, environment, context_id, dependencies=None):
     """A documented model is distinct from a present or analyzer-visited header.
 
     Preserve the original diagnostic. Only a named public header that the actual
     compiler resolved for this exact context and a hash-verified upstream model
     can be recorded as modeled rather than an unavailable required dependency.
+    The caller may provide the already-validated context dependency map so large
+    evidence does not repeatedly rebuild the same population for every diagnostic.
     """
     if limit.get('rule_id') != 'missingIncludeSystem': return None
     match = re.fullmatch(r'Include file: <([^<>]+)> not found\. Please note: Cppcheck does not need standard library headers to get proper results\.', limit.get('message', ''))
     if match is None: return None
     name = match[1]; model = header_model(name)
     if not model or environment['models'].get(model) != MODEL_HASHES[model]: return None
-    resolved = [path for path, member in context_dependencies(environment, context_id).items()
+    if dependencies is None:
+        dependencies = context_dependencies(environment, context_id)
+    if not isinstance(dependencies, dict):
+        raise ValueError('worker_project_static_dependency_population')
+    resolved = [path for path, member in dependencies.items()
                 if member['modeled_name'] == name and member['model'] == model]
     if not resolved: return None
     return {**limit, 'context_id': context_id, 'classification': 'modeled_public_header',

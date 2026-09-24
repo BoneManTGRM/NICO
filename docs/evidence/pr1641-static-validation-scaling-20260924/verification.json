@@ -1,0 +1,45 @@
+{
+  "schema": "nico.pr1641-static-validation-scaling.v1",
+  "parent": "42abcc8c5c151e73ac5765b87b0646ce95fa8bd1",
+  "bitcoin_run": 36056863546,
+  "bitcoin_job": 107832568836,
+  "artifact": 10835331499,
+  "artifact_zip_sha256": "6fc3e5f37e0b66c783b7aac0c3ccefb434bdf558c5dc1dc31a0dbe901a9b8014",
+  "native_static_artifact_sha256": "e9f37e7d787b04a3b8d4da850f9b52e9388045287efd7788646a01eaeaf0778c",
+  "native_static_artifact_bytes": 4665074,
+  "native_static_duration_ms": 356499,
+  "stage_duration_ms": 863639,
+  "stage_error": "worker_project_static_stage_deadline",
+  "retained_population": {
+    "required_contexts": 475,
+    "attempted_contexts": 475,
+    "analyzed_contexts_before_native_fixes": 419,
+    "findings": 31873,
+    "limitations": 579,
+    "modeled_inputs": 138106
+  },
+  "repair": [
+    "compute native evidence digest once per validation",
+    "reuse already-validated context dependency map for modeled missing includes"
+  ],
+  "semantic_contract_changed": false,
+  "resource_limits_changed": false,
+  "deadlines_changed": false,
+  "exact_artifact_local_validation_seconds": 20.674519,
+  "focused_tests": {
+    "passed": 122,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "broader_local_run": "partial_not_credited",
+  "not_claimed": [
+    "Bitcoin complete static analysis",
+    "runtime scope",
+    "production integration",
+    "independent review",
+    "merge",
+    "deployment",
+    "production report"
+  ]
+}

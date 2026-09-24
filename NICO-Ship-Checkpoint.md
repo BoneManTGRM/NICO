@@ -1,6 +1,6 @@
-# PR1641 continuation — source-pinned placement initializer repair
+# PR1641 continuation — static validation scaling repair
 
-Continue PR #1641 / `feat/cpp-full-project-capacity`. Candidate parent is `cf07a31d2c67470b605d618c3c324b42b7a95704`, tree `3550616e8dffdbf0cba591190d472bdd76efe816`; main/base last read `faaa10b037eb58e4175561b96dadf0d929764df4`. Recheck live refs before non-force publication and preserve concurrent descendants. The local detached source-export fixture has no remote and MUST NOT be pushed. Record publication identity in the PR, not a self-hash commit. Original and stronger C0-C19 requirements remain binding.
+Continue PR #1641 / `feat/cpp-full-project-capacity`. Candidate parent is `42abcc8c5c151e73ac5765b87b0646ce95fa8bd1`, tree `479a92fc217fed491695044afa655b4914213c9d`; main/base last read `faaa10b037eb58e4175561b96dadf0d929764df4`. Recheck live refs before non-force publication and preserve concurrent descendants. The local detached source-export fixture has no remote and MUST NOT be pushed. Record publication identity in the PR, not a self-hash commit. Original and stronger C0-C19 requirements remain binding.
 
 
 ## Security audit exact public-source disposition
@@ -8,6 +8,15 @@ Continue PR #1641 / `feat/cpp-full-project-capacity`. Candidate parent is `cf07a
 Security Audit Evidence run36055047175 completed every scanner but the final fail-closed gate blocked on one new Gitleaks observation. Artifact10832023290 (SHA256 `19122e8002bc33050a4eca98b04cd056eeeeeb5d4a7f2e59664982af6bc41f30`) identifies the exact source as `docs/evidence/pr1641-placement-ast-20260924/verification.json:45` in commit `923d5b92254f73aa297bb1f00c9929236125853f`. The redacted match is the recorded public upstream Cppcheck `tokenlist.cpp` Git blob identity; the same verification record separately binds upstream commit/source hashes. It is not a credential.
 
 The security gate now dispositions only that complete immutable locator (commit, path, rule, redacted match, fingerprint, line and columns) as `approved_public_source_hash`. No rule class, path prefix, generic hash, test directory or secret value is broadly allowed; changed commit/path/line/match/value observations still block. Recorded focused RED failed before the correction; focused GREEN passes. Full `test_security_audit_gate.py`:29 passed. A wider local source-export security invocation had75 passes and2 setup failures solely because that bounded source export omits unrelated `apps/web/package.json` and `pyproject.toml`; those two are not credited as candidate passes. Hosted Security Audit Evidence remains required on the published candidate.
+
+
+## Bitcoin static validation scaling defect and repair
+
+Run36056863546/job107832568836/artifact10835331499 (ZIP SHA256 `6fc3e5f37e0b66c783b7aac0c3ccefb434bdf558c5dc1dc31a0dbe901a9b8014`) proves the patched full-project analyzer reached frozen Bitcoin after owned controls. Build/tests/compiler evidence remained successful, and native static execution itself returned475 records in356,499ms. The stage nevertheless reported `worker_project_static_stage_deadline` at863,639ms. The retained stage operations show environment capture2,532ms and native static execution356,835ms; the unexplained remainder occurred in controller validation, not target execution or resource exhaustion.
+
+Profiling the exact retained 4,665,074-byte static artifact identified two repeated controller computations: the same native-evidence SHA256 was recomputed for every finding/modeled input, and every `missingIncludeSystem` diagnostic rebuilt/sorted the same context dependency population. With31,873 findings and138,106 modeled inputs this multiplied work without adding evidence. The repair computes the immutable native digest once and passes the already-validated per-context dependency map into modeled-header classification. No evidence field, finding, limitation, context, analyzer invocation, deadline, resource limit, hash contract, model policy or completion rule changes.
+
+Exact-artifact replay after repair validates in20.675 seconds on the local Python3.13 environment, versus the hosted stage's hundreds of seconds of controller validation. Native execution remains unchanged. Focused environment/static/stage suite:122 passed. A wider C++ invocation was interrupted by the local command window after partial progress and is not credited; hosted contract/native checks remain authoritative. This repair invalidates only controller validation timing, not the retained native bytes.
 
 ## Reproduced earliest remaining analyzer defect
 
@@ -60,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: publish the exact public-source security disposition as a non-force descendant, verify the hosted security gate and patched owned C++ control, then let the frozen Bitcoin qualification run. Preserve any new first failure without dropping contexts, diagnostics, depth or resource enforcement. Continue durable normal-intake/canonical/report integration and permitted runtime work, then obtain independent review and final gates before merge/deploy and actual English/es-MX production Bitcoin acceptance.
+EXACT NEXT ACTION: publish the static validation scaling repair as a non-force descendant and verify the same retained/native contracts in hosted CI. Then address only the remaining native incompleteness from primary evidence: three90-second context timeouts, the coins.cpp placement-new internal error if it persists under the patched analyzer, Cap'n Proto/parser syntax limits, and unresolved macro configuration. Do not increase deadlines merely to hide controller overhead. Continue durable normal-intake/canonical/report integration, independent review and final gates before merge/deploy and actual English/es-MX production Bitcoin acceptance.
 
 ## Immutable continuity
 

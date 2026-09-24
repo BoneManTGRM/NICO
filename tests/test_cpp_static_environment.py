@@ -195,3 +195,21 @@ def test_compiler_resolved_boost_version_retains_exact_header_and_missing_is_fat
                'Include file: <boost/version.hpp> not found. Please note: Cppcheck does not need standard library headers to get proper results.'}
     for context in request['contexts']:
         assert env.modeled_missing_include(missing, proof, context['context_id']) is None
+
+
+def test_modeled_missing_include_reuses_validated_context_dependencies(monkeypatch):
+    env = api()
+    proof = {
+        'models': dict(env.MODEL_HASHES),
+        'native_evidence_sha256': 'a' * 64,
+    }
+    dependencies = {
+        '/usr/include/stdint.h': {'modeled_name': 'stdint.h', 'model': 'std'}
+    }
+    monkeypatch.setattr(env, 'context_dependencies', lambda *args: (_ for _ in ()).throw(AssertionError('recomputed')))
+    limit = {'rule_id': 'missingIncludeSystem',
+             'message': 'Include file: <stdint.h> not found. Please note: Cppcheck does not need standard library headers to get proper results.',
+             'locations': []}
+    modeled = env.modeled_missing_include(limit, proof, 'owned-context', dependencies)
+    assert modeled['compiler_resolved_headers'] == ['/usr/include/stdint.h']
+    assert modeled['model'] == 'std'
