@@ -163,8 +163,15 @@ def probe_project_configuration(source, targets, image, *, project_options,
             tests_result=None, native_test_discovery=None, unit_test_data=None,
             wall_budget_seconds=1810, execution_budget_seconds=execution_seconds)
 
+    if extended_compiler_budget:
+        result.update(schema='nico.cpp-project-configuration-probe.v7',
+                      project_compiler_budget_version='v2')
+
     def save():
         result['duration_ms'] = int((time.monotonic() - start) * 1000)
+        if project_static_analysis:
+            # Include failures before the separate static stage starts.
+            result['aggregate_duration_ms'] = result['duration_ms']
         retain(result)
 
     def checkpoint():
@@ -197,6 +204,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 raise ValueError('worker_configuration_probe_artifact_reference_invalid')
             entry['output_artifact'] = reference
             save()  # Artifact bytes and identity are retained before parsing or promotion.
+        checkpoint()  # Returned-byte retention is part of the parent phase.
         return observed
 
     def invoke(key, argv, *, data=None, limit=65536, seconds=15, allow_failure=False):
@@ -442,6 +450,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
                     raise ValueError('worker_configuration_probe_compiler_evidence_invalid') from exc
                 result['project_compiler'] = {**proof, 'artifact': result['operations'][-1]['output_artifact']}
                 save()
+                checkpoint()  # Validation and proof retention belong to this phase.
                 if not proof['complete']:
                     raise ValueError('worker_configuration_probe_compiler_incomplete')
             result['status'] = 'BASELINE_EXECUTED'
@@ -487,6 +496,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
             static = run_project_static_stage(source, targets, image,
                 base64.b64decode(result['compilation_database'], validate=True),
                 snapshot, compiler_observed['output'], retain=retain_static,
+                extended_compiler_budget=extended_compiler_budget,
                 retain_artifact=retain_artifact, command=command)
             result['status'] = 'BASELINE_EXECUTED' if static['complete'] else 'UNPROVEN'
             if not static['complete']:

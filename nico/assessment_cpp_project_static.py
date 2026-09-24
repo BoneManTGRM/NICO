@@ -59,12 +59,16 @@ def _static_plan(context):
     return database, argv
 
 
-def project_static_request(database, targets, snapshot, compiler_raw):
+def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None):
     """Reconstruct every binding; require completed native compiler evidence."""
     from nico.assessment_cpp_full_project import _json
-    compiler_schema = _json(compiler_raw).get('schema')
+    # Retained-evidence callers may reconstruct either version. Live callers
+    # supply their selected policy so evidence cannot choose a different one.
+    if extended_compiler_budget is None:
+        compiler_schema = _json(compiler_raw).get('schema')
+        extended_compiler_budget = compiler_schema == 'nico.cpp-project-compiler-evidence.v2'
     compiler_request = project_compiler_request(database, targets, snapshot,
-        extended_budget=compiler_schema == 'nico.cpp-project-compiler-evidence.v2')
+        extended_budget=extended_compiler_budget)
     proof = validate_project_compiler(compiler_raw, compiler_request)
     if not proof['complete']:
         raise ValueError('worker_project_static_compiler_incomplete')
@@ -295,7 +299,7 @@ PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time\
 
 def run_project_static_stage(source, targets, image, database, snapshot, compiler_raw, *,
                              retain=lambda result: None, retain_artifact, checkpoint=lambda: None,
-                             command=None):
+                             command=None, extended_compiler_budget=None):
     """Analyze verified inputs in a fresh 600-second, no-network/noexec sandbox.
 
     Reuses the existing controller input and isolation boundary. The preceding
@@ -376,7 +380,8 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
     save()
     try:
         guarded_checkpoint()
-        request = project_static_request(database, targets, snapshot, compiler_raw)
+        request = project_static_request(database, targets, snapshot, compiler_raw,
+            extended_compiler_budget=extended_compiler_budget)
         result.update(request_sha256=_digest(_canonical(request)),
             snapshot_population_sha256=request['snapshot_population_sha256'],
             compiler_evidence_sha256=request['compiler_evidence_sha256'])

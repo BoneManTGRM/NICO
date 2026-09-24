@@ -1,0 +1,93 @@
+PR1641 reconciliation on 3652a03965dfd7a96a45b5a6161daf8ec7b1042b
+LOCAL CONTRACT TESTS; not hosted, native Bitcoin, independent review or production qualification.
+
+GROUP 1; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 12.18s
+
+GROUP 2; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 21.60s
+
+GROUP 3; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 19.95s
+
+GROUP 4; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 11.39s
+
+GROUP 5; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 1.48s
+
+GROUP 6; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 4.34s
+
+GROUP 7; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 0.45s
+
+GROUP 8; process exit 0
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 1.46s
+
+GROUP 9; process exit 0
+........................................................................ [ 96%]
+...                                                                      [100%]
+75 passed in 0.48s
+
+RECORDED RED; process exit 1; 10 expected missing-behavior assertion failures.
+=========================== short test summary info ============================
+FAILED tests/test_cpp_compiler_budget_v2.py::test_static_consumer_binds_same_compiler_version_and_preserves_own_limit - assert 'extended_compiler_budget' in mappingproxy(OrderedDict({'database': <Parameter "database">, 'targets': <Parameter "targets">, 'snapshot': <Parameter "snapshot">, 'compiler_raw': <Parameter "compiler_raw">}))
+ +  where mappingproxy(OrderedDict({'database': <Parameter "database">, 'targets': <Parameter "targets">, 'snapshot': <Parameter "snapshot">, 'compiler_raw': <Parameter "compiler_raw">})) = <Signature (database, targets, snapshot, compiler_raw)>.parameters
+ +    where <Signature (database, targets, snapshot, compiler_raw)> = <function signature at 0x7fc41f592e80>(<function project_static_request at 0x7fc3f6917380>)
+ +      where <function signature at 0x7fc41f592e80> = inspect.signature
+ +      and   <function project_static_request at 0x7fc3f6917380> = analysis.project_static_request
+FAILED tests/test_cpp_compiler_budget_v2.py::test_probe_uses_v2_and_preserves_overall_deadline_before_separate_static_stage - KeyError: 'project_compiler_budget_version'
+FAILED tests/test_cpp_compiler_budget_v2.py::test_early_compiler_failure_retains_nonzero_aggregate_elapsed_time - AssertionError: failure loses aggregate execution time
+assert 0 == 1720000
+FAILED tests/test_cpp_compiler_budget_v2.py::test_both_owned_and_large_qualification_use_v2_without_global_budget_change - assert 'tests/test_cpp_compiler_budget_v2.py' in '{"runs-on": "ubuntu-24.04", "timeout-minutes": 5, "steps": [{"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c18...t_cpp_project_snapshot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_baseline_execution.py\\n"}]}'
+ +  where '{"runs-on": "ubuntu-24.04", "timeout-minutes": 5, "steps": [{"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c18...t_cpp_project_snapshot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_baseline_execution.py\\n"}]}' = <function dumps at 0x7fc41f84f2e0>({'runs-on': 'ubuntu-24.04', 'steps': [{'uses': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', 'with': {'...ot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_baseline_execution.py\n'}], 'timeout-minutes': 5})
+ +    where <function dumps at 0x7fc41f84f2e0> = json.dumps
+FAILED tests/test_cpp_compiler_budget_v2.py::test_compiler_cannot_promote_evidence_at_or_after_parent_deadline[1800-native-return] - AssertionError: assert ('BASELINE_EXECUTED' == 'UNPROVEN'
+  
+  - UNPROVEN
+  + BASELINE_EXECUTED)
+FAILED tests/test_cpp_compiler_budget_v2.py::test_compiler_cannot_promote_evidence_at_or_after_parent_deadline[1800-artifact-retention] - AssertionError: assert ('BASELINE_EXECUTED' == 'UNPROVEN'
+  
+  - UNPROVEN
+  + BASELINE_EXECUTED)
+FAILED tests/test_cpp_compiler_budget_v2.py::test_compiler_cannot_promote_evidence_at_or_after_parent_deadline[1800-validation] - AssertionError: assert ('BASELINE_EXECUTED' == 'UNPROVEN'
+  
+  - UNPROVEN
+  + BASELINE_EXECUTED)
+FAILED tests/test_cpp_compiler_budget_v2.py::test_compiler_cannot_promote_evidence_at_or_after_parent_deadline[1801-native-return] - AssertionError: assert ('BASELINE_EXECUTED' == 'UNPROVEN'
+  
+  - UNPROVEN
+  + BASELINE_EXECUTED)
+FAILED tests/test_cpp_compiler_budget_v2.py::test_compiler_cannot_promote_evidence_at_or_after_parent_deadline[1801-artifact-retention] - AssertionError: assert ('BASELINE_EXECUTED' == 'UNPROVEN'
+  
+  - UNPROVEN
+  + BASELINE_EXECUTED)
+FAILED tests/test_cpp_compiler_budget_v2.py::test_compiler_cannot_promote_evidence_at_or_after_parent_deadline[1801-validation] - AssertionError: assert ('BASELINE_EXECUTED' == 'UNPROVEN'
+  
+  - UNPROVEN
+  + BASELINE_EXECUTED)
+10 failed, 20 passed, 1 warning in 0.55s
+
+IDENTICAL FOCUSED COMMAND AFTER REPAIR; process exit 0
+..............................                                           [100%]
+30 passed in 0.30s
+
+Counts overlap: focused 30 cases are included in the 875 cases above.
+Initial group 3 outer container invocation was interrupted after group 2 completed; group 3 was subsequently run alone with unchanged cases and passed. The interrupted partial attempt is not counted.
