@@ -2,6 +2,13 @@
 
 Continue PR #1641 / `feat/cpp-full-project-capacity`. Candidate parent is `cf07a31d2c67470b605d618c3c324b42b7a95704`, tree `3550616e8dffdbf0cba591190d472bdd76efe816`; main/base last read `faaa10b037eb58e4175561b96dadf0d929764df4`. Recheck live refs before non-force publication and preserve concurrent descendants. The local detached source-export fixture has no remote and MUST NOT be pushed. Record publication identity in the PR, not a self-hash commit. Original and stronger C0-C19 requirements remain binding.
 
+
+## Security audit exact public-source disposition
+
+Security Audit Evidence run36055047175 completed every scanner but the final fail-closed gate blocked on one new Gitleaks observation. Artifact10832023290 (SHA256 `19122e8002bc33050a4eca98b04cd056eeeeeb5d4a7f2e59664982af6bc41f30`) identifies the exact source as `docs/evidence/pr1641-placement-ast-20260924/verification.json:45` in commit `923d5b92254f73aa297bb1f00c9929236125853f`. The redacted match is the recorded public upstream Cppcheck `tokenlist.cpp` Git blob identity; the same verification record separately binds upstream commit/source hashes. It is not a credential.
+
+The security gate now dispositions only that complete immutable locator (commit, path, rule, redacted match, fingerprint, line and columns) as `approved_public_source_hash`. No rule class, path prefix, generic hash, test directory or secret value is broadly allowed; changed commit/path/line/match/value observations still block. Recorded focused RED failed before the correction; focused GREEN passes. Full `test_security_audit_gate.py`:29 passed. A wider local source-export security invocation had75 passes and2 setup failures solely because that bounded source export omits unrelated `apps/web/package.json` and `pyproject.toml`; those two are not credited as candidate passes. Hosted Security Audit Evidence remains required on the published candidate.
+
 ## Reproduced earliest remaining analyzer defect
 
 Retained run36024277039/job107720070151/artifact10819979024 contains the source-bound `internalError` / `AST cyclic dependency` at first-party `src/coins.cpp:340`. The raw compact static artifact is3,878,970 bytes, SHA256 `25a3f643d2a7172eeefc592500ba509f904795ebd2cc33b9733dac12a86f558a`. Preserve it unchanged. The newer Boost metadata repair and its pending native qualification are not reset.
@@ -53,7 +60,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify the containing candidate's automatic tool build and owned4-context clean/diagnostic/link-negative results, and inspect the preserved parent run36052401546 rather than cancel/duplicate it. If the patched native control fails, retain the actual error and repair the parser hypothesis before any Bitcoin run. If it passes, qualify all475 frozen contexts and continue remaining runtime plus normal durable worker/canonical/report integration while hosted work runs. Independent complete review and all pre-merge gates precede merge/deploy and actual English/es-MX production Bitcoin reports, serving identities and protected retrieval. No SHIPPED claim before every mandatory predicate passes.
+EXACT NEXT ACTION: publish the exact public-source security disposition as a non-force descendant, verify the hosted security gate and patched owned C++ control, then let the frozen Bitcoin qualification run. Preserve any new first failure without dropping contexts, diagnostics, depth or resource enforcement. Continue durable normal-intake/canonical/report integration and permitted runtime work, then obtain independent review and final gates before merge/deploy and actual English/es-MX production Bitcoin acceptance.
 
 ## Immutable continuity
 

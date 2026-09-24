@@ -223,6 +223,28 @@ def _known_public_signing_fingerprint(finding: dict[str, Any]) -> bool:
             and finding.get('Verified', False) is False)
 
 
+def _known_public_cppcheck_source_blob(finding: dict[str, Any]) -> bool:
+    """Disposition one public upstream Git blob SHA recorded as evidence.
+
+    Security audit artifact 10832023290 identifies the exact redacted Gitleaks
+    observation created by PR1641 commit 923d5b92. The value is the public
+    Git blob identity for Cppcheck's pinned tokenlist.cpp source, not a secret.
+    Require the full immutable source locator so no adjacent hash-like value
+    or future observation is approved by class.
+    """
+    commit = '923d5b92254f73aa297bb1f00c9929236125853f'
+    path = 'docs/evidence/pr1641-placement-ast-20260924/verification.json'
+    expected = {
+        'File': path, 'Commit': commit, 'RuleID': 'generic-api-key',
+        'Secret': 'REDACTED', 'Match': 'upstream_tokenlist_git_blob": "REDACTED"',
+        'Fingerprint': commit + ':' + path + ':generic-api-key:45',
+        'StartLine': 45, 'EndLine': 45, 'StartColumn': 5, 'EndColumn': 76,
+    }
+    return (all(type(finding.get(key)) is type(value) and finding[key] == value
+                for key, value in expected.items())
+            and finding.get('Verified', False) is False)
+
+
 def _gitleaks(root: Path) -> dict[str, Any]:
     data, error = _read_json(root, "gitleaks.json")
     summary, summary_error = _read_json(root, "gitleaks-summary.json")
@@ -245,6 +267,7 @@ def _gitleaks(root: Path) -> dict[str, Any]:
     approved_test_placeholders = 0
     approved_public_verifiers = 0
     approved_public_signing_fingerprints = 0
+    approved_public_source_hashes = 0
     triage: list[dict[str, Any]] = []
     for finding in data:
         if not isinstance(finding, dict):
@@ -276,6 +299,9 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         elif _known_public_signing_fingerprint(finding):
             approved_public_signing_fingerprints += 1
             disposition = "approved_public_signing_fingerprint"
+        elif _known_public_cppcheck_source_blob(finding):
+            approved_public_source_hashes += 1
+            disposition = "approved_public_source_hash"
         else:
             blocking += 1
             disposition = "blocking"
@@ -299,6 +325,8 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         approved_public_verifiers=approved_public_verifiers,
         **({'approved_public_signing_fingerprints': approved_public_signing_fingerprints}
            if approved_public_signing_fingerprints else {}),
+        **({'approved_public_source_hashes': approved_public_source_hashes}
+           if approved_public_source_hashes else {}),
         triage=triage[:200],
         summary_artifact_hash=_digest(root, "gitleaks-summary.json"),
     )
