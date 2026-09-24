@@ -54,7 +54,7 @@ def _static_plan(context):
     database = _canonical([{'directory': '/work/analysis',
         'file': context['analysis_file'], 'arguments': list(args)}]).decode()
     argv = ['/usr/local/bin/cppcheck', '--xml', '--enable=' + CHECKS,
-        '--check-level=normal', '--max-configs=1', '--platform=unix64', '-j1',
+        '--check-level=exhaustive', '--max-configs=1', '--platform=unix64', '-j1',
         '--project=' + stem + '.json', '--output-file=' + stem + '.xml']
     return database, argv
 
@@ -361,6 +361,8 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                 raise ValueError('worker_project_static_stage_artifact_reference_invalid')
             operation['output_artifact'] = reference
             save()
+        # Preserve returned bytes before rejecting a late response or retention.
+        guarded_checkpoint()
         return observed
 
     def require(key, argv, **kwargs):
@@ -431,6 +433,7 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
         result['analysis'] = {**validate_project_static(observed['output'], request),
                               'artifact': result['operations'][-1]['output_artifact']}
         save()
+        guarded_checkpoint()  # Parsing and proof retention belong to this phase.
         if not result['analysis']['complete']:
             raise ValueError('worker_project_static_stage_analysis_incomplete')
     except (Exception, KeyboardInterrupt) as exc:

@@ -56,6 +56,7 @@ def test_plan_preserves_each_context_and_uses_single_entry_databases(tmp_path):
         assert row['analyzer_database_sha256']==digest(row['analyzer_database'].encode())
         assert row['analyzer_invocation'][0]=='/usr/local/bin/cppcheck'
         assert '--max-configs=1' in row['analyzer_invocation']
+        assert '--check-level=exhaustive' in row['analyzer_invocation']
         assert not any(a.startswith(('--addon','--suppress','--force','--rule')) for a in row['analyzer_invocation'])
         assert any(a.startswith('--project=/work/analysis/static-baseline/u') for a in row['analyzer_invocation'])
     assert req['tool_version']=='2.17.1'

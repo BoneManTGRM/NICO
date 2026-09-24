@@ -263,3 +263,55 @@ def test_probe_delegates_static_only_after_baseline_cleanup_with_separate_budget
         assert result['project_static_stage']['execution_budget_seconds'] == 600
         assert result['status'] == ('UNPROVEN' if fault else 'BASELINE_EXECUTED')
     assert saved[-1] == result
+
+
+@pytest.mark.parametrize('boundary', ['native-return', 'artifact-retention', 'validation'])
+@pytest.mark.parametrize('elapsed', [599, 600, 601])
+def test_static_stage_deadline_includes_final_output_retention_and_validation(
+        tmp_path, monkeypatch, boundary, elapsed):
+    """Returned bytes survive a deadline; late evidence never qualifies a stage."""
+    from nico import assessment_cpp_project_static as analysis
+    from scripts.qualify_cpp_project_configuration import persist_project_artifact
+    root, targets, database, captured, compiler_raw = stage_inputs(tmp_path)
+    docker = StaticDocker(targets)
+    clock = [0.0]
+    monkeypatch.setattr(analysis.time, 'monotonic', lambda: clock[0])
+    output = tmp_path / 'evidence'; output.mkdir()
+    saved = []
+    real_validate = analysis.validate_project_static
+
+    def command(argv, **kwargs):
+        result = docker(argv, **kwargs)
+        if analysis.PROGRAM in argv and boundary == 'native-return':
+            clock[0] = float(elapsed)
+        return result
+
+    def sink(key, raw):
+        result = persist_project_artifact(output, key, raw)
+        if boundary == 'artifact-retention':
+            clock[0] = float(elapsed)
+        return result
+
+    def validate(raw, request):
+        result = real_validate(raw, request)
+        if boundary == 'validation':
+            clock[0] = float(elapsed)
+        return result
+
+    monkeypatch.setattr(analysis, 'validate_project_static', validate)
+    result = analysis.run_project_static_stage(root, targets, 'sha256:' + 'a' * 64,
+        database, captured, compiler_raw, command=command, retain_artifact=sink,
+        retain=lambda value: saved.append(deepcopy(value)))
+    operation = next(op for op in result['operations'] if op['id'] == 'project-static-evidence')
+    reference = operation['output_artifact']
+    raw = (output / reference['path']).read_bytes()
+    assert len(raw) == reference['bytes']
+    assert hashlib.sha256(raw).hexdigest() == reference['sha256'] == operation['output_sha256']
+    assert result['cleanup_verified'] and saved[-1] == result
+    assert result['duration_ms'] == elapsed * 1000
+    if elapsed < 600:
+        assert result['complete'] and result['status'] == 'STATIC_ANALYSIS_EXECUTED'
+        assert result['error'] is None
+    else:
+        assert result['complete'] is False and result['status'] == 'UNPROVEN'
+        assert result['error'] == 'worker_project_static_stage_deadline'
