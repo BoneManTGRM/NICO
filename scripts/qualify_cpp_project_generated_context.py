@@ -55,6 +55,7 @@ target_include_directories(second SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/env
 '''
         files['environment.h.in'] = '#define OWNED_ENVIRONMENT_VALUE 7\n'
         files['repeated.cpp'] = '''#include <cstdint>
+#include <new>
 #include <vector>
 #include <boost/version.hpp>
 #include <owned_environment.h>
@@ -64,7 +65,17 @@ target_include_directories(second SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/env
 #if BOOST_VERSION <= 0 || OWNED_ENVIRONMENT_VALUE != 7
 #error "Owned implicit or system include was not imported"
 #endif
-''' + files['repeated.cpp']
+struct OwnedResource { int value{}; };
+inline void owned_reconstruct(OwnedResource& resource) {
+    resource.~OwnedResource();
+    ::new (&resource) OwnedResource{};
+}
+#if VARIANT == 1
+int first(){OwnedResource resource{};owned_reconstruct(resource);return resource.value+1;}
+#else
+int second(){OwnedResource resource{};owned_reconstruct(resource);return resource.value+2;}
+#endif
+'''
     if static_diagnostic:
         # Deliberate owned analyzer diagnostic; never invoked by the native test.
         files['generated.cpp.in'] += 'int owned_static_diagnostic(){int value;return value;}\n'

@@ -24,6 +24,7 @@ FROM gcc:14.2.0-bookworm@sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c32
 COPY project-dependencies /opt/project-dependency-inputs
 COPY llvm /opt/llvm-inputs
 COPY cppcheck /opt/tool-src
+COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py
 COPY cmake.whl /opt/cmake.whl
 RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && for package in *.deb; do dpkg-deb --extract "$package" /; done \
@@ -35,6 +36,7 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && test "$(/usr/lib/llvm-17/bin/clang -dumpversion)" = 17.0.6 \
     && cd / && rm -rf /opt/llvm-inputs \
     && test "$(g++ -dumpfullversion)" = 14.2.0 \
+    && python3 /opt/repair_cppcheck_placement_ast.py /opt/tool-src/lib/tokenlist.cpp > /opt/nico-cppcheck-repair.json \
     && timeout 180s make -C /opt/tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \
     && cp /opt/tool-src/cppcheck /usr/local/bin/cppcheck \
     && mkdir -p /opt/cppcheck \
@@ -47,5 +49,6 @@ COPY --from=capnp-builder /opt/capnp-install/usr/local/ /usr/local/
 COPY --from=capnp-builder /opt/nico-capnp-metadata/ /opt/nico-capnp/
 ENV PATH=/opt/cmake-wheel/cmake/data/bin:/usr/local/bin:/usr/bin:/bin
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
+LABEL org.nico.cppcheck.repair="placement-new-initializer-ast-v1"
 USER 1000:1000
 ENTRYPOINT ["sleep"]

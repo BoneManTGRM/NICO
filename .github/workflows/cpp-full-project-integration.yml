@@ -58,7 +58,7 @@ jobs:
       - name: Test every existing contract and report boundary
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pytest -q tests/test_cpp_fixture_tree.py tests/test_cpp_bounded_fuzz.py tests/test_cpp_fuzz_tool_provisioning.py tests/test_cpp_generated_context.py tests/test_cpp_combined_configuration.py tests/test_cpp_compiler_evidence.py tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_cpp_native_test_binding.py tests/test_cpp_native_test_timing.py tests/test_cpp_nested_cmake.py tests/test_cpp_project_compiler_options.py tests/test_cpp_project_dependencies.py tests/test_cpp_dependency_retention.py tests/test_assessment_worker_archive.py tests/test_assessment_worker_capacity_v1.py tests/test_cpp_fuzz_workspace.py tests/test_cpp_integration_workflow_schedule.py tests/test_cpp_full_project_capture_budget.py tests/test_cpp_mixed_language_activation.py tests/test_cpp_configuration_qualification.py tests/test_cpp_compilation_contexts.py tests/test_cpp_project_snapshot.py tests/test_cpp_project_compiler.py tests/test_cpp_project_compiler_budget.py tests/test_cpp_compiler_budget_v2.py tests/test_cpp_generated_capacity.py tests/test_cpp_project_static.py tests/test_cpp_native_preprocessing_truth.py tests/test_cpp_static_environment.py tests/test_cpp_static_environment_integration.py tests/test_cpp_project_static_stage.py tests/test_cpp_project_snapshot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_baseline_execution.py
+          python -m pytest -q tests/test_cpp_fixture_tree.py tests/test_cpp_bounded_fuzz.py tests/test_cpp_fuzz_tool_provisioning.py tests/test_cpp_generated_context.py tests/test_cpp_combined_configuration.py tests/test_cpp_compiler_evidence.py tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_cpp_native_test_binding.py tests/test_cpp_native_test_timing.py tests/test_cpp_nested_cmake.py tests/test_cpp_project_compiler_options.py tests/test_cpp_project_dependencies.py tests/test_cpp_dependency_retention.py tests/test_assessment_worker_archive.py tests/test_assessment_worker_capacity_v1.py tests/test_cpp_fuzz_workspace.py tests/test_cpp_integration_workflow_schedule.py tests/test_cpp_full_project_capture_budget.py tests/test_cpp_mixed_language_activation.py tests/test_cpp_configuration_qualification.py tests/test_cpp_compilation_contexts.py tests/test_cpp_project_snapshot.py tests/test_cpp_project_compiler.py tests/test_cpp_project_compiler_budget.py tests/test_cpp_compiler_budget_v2.py tests/test_cpp_generated_capacity.py tests/test_cpp_project_static.py tests/test_cpp_native_preprocessing_truth.py tests/test_cpp_static_environment.py tests/test_cpp_static_environment_integration.py tests/test_cpp_placement_tool_repair.py tests/test_cpp_project_static_stage.py tests/test_cpp_project_snapshot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_baseline_execution.py
 
   owned-project-integration:
     needs: [contract-regressions]
@@ -106,6 +106,7 @@ jobs:
           python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
           python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
+          cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
       - name: Retain the exact analyzer for bounded owned diagnostic reproduction
@@ -121,6 +122,7 @@ jobs:
           docker cp "$container:/opt/cppcheck/cfg" cpp-analyzer-toolchain/cfg
           docker cp "$container:/opt/cppcheck/platforms" cpp-analyzer-toolchain/platforms
           docker cp "$container:/opt/cppcheck/COPYING" cpp-analyzer-toolchain/COPYING
+          docker cp "$container:/opt/nico-cppcheck-repair.json" cpp-analyzer-toolchain/repair.json
           test "$(find cpp-analyzer-toolchain -type l | wc -l)" -eq 0
           test "$(du -sb cpp-analyzer-toolchain | cut -f1)" -le 67108864
           test "$(stat -c %s cpp-analyzer-toolchain/cppcheck)" -le 33554432
@@ -197,6 +199,7 @@ jobs:
           python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
           python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
+          cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
       - name: Acquire pinned public qualification source without execution

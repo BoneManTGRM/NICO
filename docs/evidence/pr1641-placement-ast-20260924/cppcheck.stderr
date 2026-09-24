@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<results version="2">
+    <cppcheck version="2.17.1"/>
+    <errors>
+        <error id="missingIncludeSystem" severity="information" msg="Include file: &lt;new&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results." verbose="Include file: &lt;new&gt; not found. Please note: Cppcheck does not need standard library headers to get proper results.">
+            <location file="/mnt/data/cppcheck-placement-proof/placement.cpp" line="2" column="0"/>
+        </error>
+        <error id="internalError" severity="error" msg="Internal error. AST cyclic dependency." verbose="Internal error. AST cyclic dependency." file0="/mnt/data/cppcheck-placement-proof/placement.cpp">
+            <location file="/mnt/data/cppcheck-placement-proof/placement.cpp" line="6" column="7"/>
+        </error>
+        <error id="checkersReport" severity="information" msg="Active checkers: There was critical errors (use --checkers-report=&lt;filename&gt; to see details)" verbose="Active checkers: There was critical errors (use --checkers-report=&lt;filename&gt; to see details)"/>
+    </errors>
+</results>

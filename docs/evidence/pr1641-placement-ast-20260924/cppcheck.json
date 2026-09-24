@@ -1,0 +1,17 @@
+{
+  "command": [
+    "/mnt/data/nico-tools/cpp-analyzer-toolchain/cppcheck",
+    "--std=c++20",
+    "--platform=unix64",
+    "--enable=warning,style,performance,portability,information,missingInclude",
+    "--check-level=exhaustive",
+    "--max-configs=1",
+    "--library=/mnt/data/nico-tools/cpp-analyzer-toolchain/cfg/std.cfg",
+    "--xml",
+    "/mnt/data/cppcheck-placement-proof/placement.cpp"
+  ],
+  "exit_code": 0,
+  "seconds": 0.012092086000023983,
+  "stdout_sha256": "c1fcc09446b50efcbeb955dceb4dfc22f60cf99cc5696389bfab2f808c8a42af",
+  "stderr_sha256": "88756318d0f6dffa4263bd6ac35a36d81f0e00b641d2ad305c5b769a2c21d8a6"
+}
