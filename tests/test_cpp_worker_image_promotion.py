@@ -159,6 +159,42 @@ def test_archive_replaced_after_validation_cannot_change_loaded_bytes(package, t
     assert result['state'] == 'failed_before_push'
 
 
+def test_v2_handoff_requires_same_image_full_project_qualification(tmp_path):
+    config=b'{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}'
+    image='sha256:'+hashlib.sha256(config).hexdigest()
+    base={'image_digest':image,'profile':'cppcheck-standalone-v1'}
+    proof={'schema':'nico.cppcheck_worker_control.v1','source_sha':'a'*40,
+        'status':'PASS_OWNED_RUNTIME_CASES','contract':base,
+        **{key:{'contract':{**base,'profile':profile}} for key,profile in (
+            ('configured_control','cpp-configured-v1'),('configured_negative','cpp-configured-v1'),
+            ('runtime_control','cpp-runtime-cases-v1'),('runtime_negative','cpp-runtime-cases-v1'))},
+        'sanitizer_controls':[{'contract':{**base,'profile':'cpp-sanitized-v1'}} for _ in range(4)]}
+    proof['evidence_sha256']=hashlib.sha256(handoff._canonical(proof)).hexdigest()
+    full={'schema':'nico.cpp-configuration-qualification.v1','status':'BASELINE_EXECUTED',
+        'stage':'completed','production_qualified':False,'compiled':True,'tests_executed':True,
+        'source':{'commit_sha':'b'*40,'tree_sha':'c'*40},
+        'probe':{'image_config_digest':image,'status':'BASELINE_EXECUTED','compiled':True,
+            'tests_passed':True,'generated_context_verified':True,
+            'project_compiler':{'complete':True},'project_static':{'complete':True},
+            'project_static_stage':{'complete':True}},
+        'runtime':{'complete':True,'native_evidence_sha256':'d'*64}}
+    recipe=tmp_path/'recipe'; recipe.write_bytes(b'full project recipe\n')
+    directory=tmp_path/'handoff-v2'
+    def exporter(_image,archive):
+        name=image[7:]+'.json'
+        with tarfile.open(archive,'w') as output:
+            for path,raw in [(name,config),('manifest.json',json.dumps([{'Config':name,'Layers':[],'RepoTags':[]}]).encode())]:
+                member=tarfile.TarInfo(path); member.size=len(raw); output.addfile(member,io.BytesIO(raw))
+    result=handoff.export_qualified_image(proof,[{'Id':image,'Os':'linux','Architecture':'amd64','Size':1024}],
+        recipe,directory,source_sha='a'*40,full_project_qualification=full,exporter=exporter)
+    assert result['schema']=='nico.qualified-image-handoff.v2'
+    assert (directory/'full-project-qualification.json').is_file()
+    broken=dict(full); broken['runtime']={'complete':False,'native_evidence_sha256':'d'*64}
+    with pytest.raises(ValueError,match='full_project'):
+        handoff.export_qualified_image(proof,[{'Id':image,'Os':'linux','Architecture':'amd64','Size':1024}],
+            recipe,tmp_path/'rejected',source_sha='a'*40,full_project_qualification=broken,exporter=exporter)
+
+
 def test_budget_exhaustion_prevents_first_docker_command(package, tmp_path, monkeypatch):
     monkeypatch.setattr(promotion, 'MAX_SECONDS', 0)
     with pytest.raises(ValueError, match='deadline'):
