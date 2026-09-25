@@ -139,7 +139,7 @@ def test_real_stage_retains_environment_before_analysis_and_rejects_bad_inputs(t
         assert result['compiler_environment']['artifact']['sha256'] == hashlib.sha256(artifacts['project-static-environment']).hexdigest()
         ids = [r['id'] for r in result['operations']]
         assert ids.index('project-static-environment') < ids.index('project-static-evidence')
-        assert result['execution_budget_seconds'] == 600
+        assert result['execution_budget_seconds'] == 1020
         assert not result['production_qualified']
 
 
