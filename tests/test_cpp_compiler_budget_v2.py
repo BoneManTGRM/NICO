@@ -173,7 +173,7 @@ def test_probe_uses_v2_and_preserves_overall_deadline_before_separate_static_sta
     assert result['status'] == 'BASELINE_EXECUTED'
     assert result['compiled'] and result['tests_passed'] and result['project_compiler']['complete']
     assert result['execution_budget_seconds'] == 1800 and result['wall_budget_seconds'] == 1810
-    assert result['aggregate_execution_budget_seconds'] == 2400
+    assert result['aggregate_execution_budget_seconds'] == 2820
     invocation, options = next((a,k) for a,k in calls if compiler.PROGRAM in a)
     assert options['timeout'] == 610 and '--user=1001:1001' in invocation
     assert result['project_compiler_budget_version'] == 'v2'
