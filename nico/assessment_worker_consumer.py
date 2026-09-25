@@ -120,7 +120,7 @@ class WorkerTransport:
     def put_artifact(self, lease_id, key, raw):
         if (not isinstance(lease_id, str) or re.fullmatch(r"[0-9a-f]{32}", lease_id) is None
                 or key not in {"project-compilation-database", "project-generated-context", "project-compiler-evidence",
-                    "project-static-environment", "project-static-evidence", "project-static-clang-fallback"}
+                    "project-static-environment", "project-static-evidence", "project-static-clang-fallback", "project-runtime-evidence"}
                 or not isinstance(raw, bytes) or not 1 <= len(raw) <= 64 * 1024 * 1024):
             raise ValueError("worker_artifact_request_invalid")
         compressed = gzip.compress(raw, compresslevel=9, mtime=0)
