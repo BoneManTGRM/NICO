@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import tarfile
 
-MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 3 * 1024 * 1024 * 1024
 
 
 def _canonical(value):
