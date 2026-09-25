@@ -20,7 +20,7 @@ from nico.storage import PostgresAdapter
 
 WORKFLOW = "assessment_worker_job.v1"
 TERMINAL = frozenset({"completed", "failed", "cancelled", "budget_exhausted"})
-CPP_ARTIFACT_KEYS = frozenset({"project-compilation-database", "project-generated-context", "project-compiler-evidence", "project-static-environment", "project-static-evidence", "project-static-clang-fallback"})
+CPP_ARTIFACT_KEYS = frozenset({"project-compilation-database", "project-generated-context", "project-compiler-evidence", "project-static-environment", "project-static-evidence", "project-static-clang-fallback", "project-runtime-evidence"})
 MAX_CPP_ARTIFACT_RAW_BYTES = 64 * 1024 * 1024
 MAX_CPP_ARTIFACT_GZIP_BYTES = 8 * 1024 * 1024
 
