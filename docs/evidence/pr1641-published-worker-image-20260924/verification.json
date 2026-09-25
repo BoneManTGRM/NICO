@@ -1,0 +1,14 @@
+{
+  "schema": "nico.pr1641-published-worker-image.v1",
+  "source_sha": "29bcaa7d067024f4710c0f15361a3f9459d4c241",
+  "push_run_id": 36077694591,
+  "publication_artifact_id": 10840905823,
+  "retrieval_artifact_id": 10840850952,
+  "handoff_sha256": "d3381d278d7ef1b178f0d6cc282d4305c64ba4f1b9e7b04168156561806866f9",
+  "image_config_id": "sha256:69196fa06dd1c421d561e8b049a1dc56ff20186db325bd585aba87e954f42338",
+  "image_manifest": "ghcr.io/bonemantgrm/nico/assessment-cppcheck@sha256:c9402d01c7a931cef1b6e7691f09111399832369cc96ff2dac72dfe91c63a4fb",
+  "registry_published": true,
+  "image_pull_verified": true,
+  "registry_access_mode": "anonymous",
+  "production_qualified": false
+}

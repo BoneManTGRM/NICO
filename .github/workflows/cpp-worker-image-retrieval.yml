@@ -24,8 +24,8 @@ jobs:
       contents: read
       packages: read
     env:
-      NICO_IMAGE_HANDOFF_SHA256: 5311d1fc8ebba1aefbd378a0d384e4fa09c54d689887aa5e20c09bc685ad2165
-      NICO_IMAGE_QUALIFIED_SOURCE_SHA: bb4914b9f8ba94ccea0d4fb256630580a53301b6
+      NICO_IMAGE_HANDOFF_SHA256: d3381d278d7ef1b178f0d6cc282d4305c64ba4f1b9e7b04168156561806866f9
+      NICO_IMAGE_QUALIFIED_SOURCE_SHA: 29bcaa7d067024f4710c0f15361a3f9459d4c241
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

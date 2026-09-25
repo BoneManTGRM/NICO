@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify this repaired push-event image publication/retrieval and the hosted frozen Bitcoin requalification on the 8ebe static-validator descendant. Preserve exact image config/manifest and qualification run/artifact identities. If C5/C11 pass, promote only those terminal successful identities into the fail-closed normal-intake selector, then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual Bitcoin acceptance.
+EXACT NEXT ACTION: preserve active hosted Bitcoin qualification and verify the 56-context Clang fallback under the pushed validator repair. If C5/C11 pass, promote only that terminal qualification run/artifact plus this exact image config/manifest into the fail-closed selector; then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual Bitcoin acceptance.
 
 ## Immutable continuity
 
@@ -196,3 +196,10 @@ Push-event worker-image release run36074435680 proved publication itself succeed
 The verify job now uses the same isolated-daemon construction already proven in the separate retrieval workflow: stop the hosted Docker service/socket, create a new empty data/exec root, launch dockerd with bridge/iptables/ip-forward/ip-masq disabled, verify DockerRootDir equals that private root, then invoke the unchanged anonymous release verifier. No cached image can satisfy the pull. No registry credential is introduced; the package must still be anonymously retrievable, and `production_qualified` remains false after publication/retrieval.
 
 This commit intentionally carries the existing `[publish-worker-image]` trigger because the prior publication cannot be re-verified with a changed workflow definition. It is a single repair-driven publication attempt, not a reassurance retry.
+
+
+## Current PR1641 worker image identity
+
+Push run36077694591 at source `29bcaa7d067024f4710c0f15361a3f9459d4c241` built the pinned worker image, passed the owned native/static control, published the exact image, and independently retrieved it on a separate clean Docker daemon. Publication artifact10840905823 and retrieval artifact10840850952 bind handoff SHA256 `d3381d278d7ef1b178f0d6cc282d4305c64ba4f1b9e7b04168156561806866f9`, image config `sha256:69196fa06dd1c421d561e8b049a1dc56ff20186db325bd585aba87e954f42338`, and registry manifest `ghcr.io/bonemantgrm/nico/assessment-cppcheck@sha256:c9402d01c7a931cef1b6e7691f09111399832369cc96ff2dac72dfe91c63a4fb`. Retrieval state is `published_and_retrieved`, `image_pull_verified=true`, access mode `anonymous`, with no error.
+
+The repository's retained publication record and retrieval workflow now point to those exact identities. `production_qualified` deliberately remains false: image publication/retrieval proves immutable tool delivery, not complete Bitcoin workload qualification or production activation.
