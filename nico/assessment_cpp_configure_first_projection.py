@@ -58,6 +58,9 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     native=receipt["native"]; refs=native["artifacts"]; targets=receipt["target_hashes"]
     required={"project-compilation-database","project-generated-context","project-compiler-evidence",
               "project-static-environment","project-static-evidence"}
+    runtime_contract=contract["configuration"].get("schema")=="nico.cpp-configure-first-contract.v3"
+    if runtime_contract:
+        required.add("project-runtime-evidence")
     if not required<=set(refs):
         raise ValueError("worker_configure_first_artifact_population_invalid")
     database=_read_artifact(store,identity,refs["project-compilation-database"],"project-compilation-database")
@@ -102,13 +105,24 @@ def reconstruct_configure_first(identity, contract, receipt, store):
             or native["project_compiler_complete"] is not compiler["complete"]
             or native["project_static_complete"] is not analysis["complete"]):
         raise ValueError("worker_configure_first_summary_mismatch")
+    runtime=None
+    if runtime_contract:
+        from nico.assessment_cpp_runtime_scope import validate_retained_runtime
+        runtime_raw=_read_artifact(store,identity,refs["project-runtime-evidence"],"project-runtime-evidence")
+        runtime=validate_retained_runtime(runtime_raw,targets,native["project_options"],contract["configuration"]["runtime_scope"])
+        if (native.get("runtime_complete") is not runtime["summary"]["complete"]
+                or native.get("runtime_plan_sha256")!=hashlib.sha256(canonical_bytes(runtime["plan"])).hexdigest()
+                or native.get("runtime_summary_sha256")!=hashlib.sha256(canonical_bytes(runtime["summary"])).hexdigest()
+                or native.get("runtime_duration_ms")!=runtime["duration_ms"]):
+            raise ValueError("worker_configure_first_summary_mismatch")
     return {"contexts":contexts,"snapshot":snapshot,"compiler":compiler,
-            "environment":environment,"analysis":analysis}
+            "environment":environment,"analysis":analysis,"runtime":runtime}
 
 
 def project_configure_first_record(record, identity, contract, receipt, reconstruction):
-    native=receipt["native"]; analysis=reconstruction["analysis"]
-    if not native["complete_execution"] or not analysis["complete"]:
+    native=receipt["native"]; analysis=reconstruction["analysis"]; runtime=reconstruction.get("runtime")
+    if (not native["complete_execution"] or not analysis["complete"]
+            or (runtime is not None and runtime["summary"]["complete"] is not True)):
         return record
     findings=[]
     primary_ref=native["artifacts"]["project-static-evidence"]["artifact_id"]
@@ -134,10 +148,13 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
         limitations_count=len(analysis["limitations"]),
         all_repository_configurations_analyzed=analysis["complete"],
         analyzer_header_coverage_verified=analysis.get("analyzer_header_coverage_verified") is True)
+    if runtime is not None:
+        output["cpp_build_evidence"]["runtime_scope"]=deepcopy(runtime["summary"])
     output["worker_provenance"]["canonical_projection"]={
         "compilation_database_sha256":native["compilation_database_sha256"],
         "compiler_native_sha256":reconstruction["compiler"]["native_evidence_sha256"],
         "static_native_sha256":analysis["native_evidence_sha256"],
+        **({"runtime_native_sha256":runtime["native_evidence_sha256"]} if runtime is not None else {}),
         "finding_population_sha256":hashlib.sha256(canonical_bytes(findings)).hexdigest(),
     }
     return output
