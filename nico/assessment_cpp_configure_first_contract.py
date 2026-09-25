@@ -50,12 +50,13 @@ def validate_configuration(value):
         raise ValueError("worker_configure_first_execution_invalid")
     if schema == SCHEMA_V3:
         runtime=value["runtime_scope"]
-        runtime_fields={"schema","functional_policy","functional_seconds","sanitizers",
+        runtime_fields={"schema","total_seconds","functional_policy","functional_seconds","sanitizers",
             "sanitizer_build_seconds","sanitizer_test_seconds","sanitizer_test_case_seconds",
             "fuzz_policy","fuzz_replay_runs","fuzz_campaign_runs","fuzz_campaign_seconds","parallel"}
         if (not isinstance(runtime,dict) or set(runtime)!=runtime_fields
                 or runtime.get("schema")!="nico.cpp-runtime-scope.v1"
                 or runtime.get("functional_policy")!="source-declared-functional-v1"
+                or runtime.get("total_seconds")!=6000
                 or runtime.get("sanitizers")!=["address","undefined"]
                 or runtime.get("fuzz_policy")!="source-declared-libfuzzer-v1"
                 or type(runtime.get("functional_seconds")) is not int or not 1<=runtime["functional_seconds"]<=1800
