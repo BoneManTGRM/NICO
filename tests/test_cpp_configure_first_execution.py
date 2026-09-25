@@ -88,7 +88,7 @@ def test_configure_first_v3_derives_release_options_before_probe(tmp_path, monke
             'fuzz_campaign_runs':256,'fuzz_campaign_seconds':300,'parallel':4})
     plan['limits']={'max_attempts':1,'wall_seconds':9000,'lease_seconds':300}
     root=tmp_path/'source'; root.mkdir()
-    cmake=b'option(BUILD_TESTS "tests" OFF)\\noption(BUILD_GUI "gui" ON)\\n'
+    cmake=b'option(BUILD_TESTS "tests" OFF)\noption(BUILD_GUI "gui" ON)\n'
     (root/'CMakeLists.txt').write_bytes(cmake)
     targets={'CMakeLists.txt':hashlib.sha256(cmake).hexdigest()}
     acquisition={'schema':'nico.github_https_tree_materialization.v2','tree_sha':plan['configuration']['expected_tree_sha'],
