@@ -10,7 +10,7 @@ def plan():
         {'path':'qa/a','git_blob_sha':'a'*40,'sha256':hashlib.sha256(b'a').hexdigest(),'bytes':1,'base64':base64.b64encode(b'a').decode()},
         {'path':'qa/b','git_blob_sha':'b'*40,'sha256':hashlib.sha256(b'b').hexdigest(),'bytes':1,'base64':base64.b64encode(b'b').decode()},
     ]
-    return {'schema':'nico.cpp-runtime-plan.v1',
+    return {'schema':'nico.cpp-runtime-plan.v1','total_seconds':6000,'unit_test_data':None,
         'functional':{'policy':'source-declared-functional-v1','runner':'test/functional/test_runner.py',
             'selected_tests':['feature_a.py','mempool_a.py'],'seconds':900,'parallel':4},
         'sanitizers':{'interface':'SANITIZERS','kinds':['address','undefined'],'build_seconds':1200,
