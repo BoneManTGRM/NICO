@@ -318,7 +318,12 @@ def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck, config
             source, acquisition = acquire(deepcopy(job), Path(temporary), checkpoint)
             checkpoint()
             configure_first = job["contract"]["profile"] == "cpp-configure-first-v2"
-            remaining = int(min(2400 if configure_first else 300, deadline - time.monotonic() - 2))
+            if configure_first:
+                from nico.assessment_cpp_configure_first_execution import execution_timeout_limit
+                execution_cap = execution_timeout_limit(job["contract"])
+            else:
+                execution_cap = 300
+            remaining = int(min(execution_cap, deadline - time.monotonic() - 2))
             if remaining < 1:
                 raise ValueError("worker_local_deadline")
             if configure_first:
