@@ -162,3 +162,175 @@ def test_timed_out_sanitizer_without_junit_never_reports_zero_passes(locale,expe
     text=' '.join([out['summary'],*out['evidence'],*out['unavailable']])
     assert expected in text
     assert 'None' not in text
+
+
+def _failed_runtime_complete_static_fixture():
+    """Owned receipt-to-report seam; native reconstruction data is synthetic.
+
+    Artifact-store/native parser behavior is covered separately. These cases
+    deliberately obtain the preliminary flags from the actual receipt producer
+    rather than pre-setting an observed-execution flag in a renderer fixture.
+    """
+    from dataclasses import asdict
+    from nico.assessment_cpp_configure_first_execution import summarize_probe
+    from nico.assessment_worker_receipts import validate_receipt
+    from tests.test_cpp_configure_first_contract import contract
+    from tests.test_cpp_configure_first_execution import proof, ref as native_ref
+
+    plan = contract()
+    plan['configuration'].pop('project_options')
+    plan['configuration'].update(schema='nico.cpp-configure-first-contract.v3',
+        project_option_policy='conservative-cmake-v1', runtime_scope={
+            'schema':'nico.cpp-runtime-scope.v1', 'total_seconds':6000,
+            'functional_policy':'source-declared-functional-v1', 'functional_seconds':900,
+            'sanitizers':['address','undefined'], 'sanitizer_build_seconds':1200,
+            'sanitizer_test_seconds':600, 'sanitizer_test_case_seconds':120,
+            'fuzz_policy':'source-declared-libfuzzer-v1', 'fuzz_replay_runs':1,
+            'fuzz_campaign_runs':256, 'fuzz_campaign_seconds':300, 'parallel':4})
+    plan['limits'] = {'max_attempts':1, 'wall_seconds':9000, 'lease_seconds':300}
+    ident = JobIdentity('c','p','r','scan','owner/repo','a'*40,_digest(plan),'c'*40)
+    targets = {'CMakeLists.txt':'d'*64, 'src/a.cpp':'e'*64}
+    findings = [
+        {'rule_id':'owned-rule', 'path':'src/a.cpp', 'line':1, 'column':1,
+         'context_id':context, 'source_sha256':'e'*64,
+         'classification':'review_required_candidate', 'analyzer':analyzer}
+        for context, analyzer in [('c1','cppcheck'), ('c2','clang-static-analyzer')]
+    ]
+    probe = proof()
+    probe.update(status='UNPROVEN', error='worker_configuration_probe_runtime_incomplete')
+    probe['project_static'].update(findings=findings, native_evidence_sha256='4'*64)
+    artifacts = {key:native_ref(key) for key in (
+        'project-compilation-database','project-generated-context','project-compiler-evidence',
+        'project-static-environment','project-static-evidence','project-static-clang-fallback',
+        'project-runtime-evidence')}
+    artifacts['project-static-clang-fallback']['artifact_id'] = 'scanartifact_'+'b'*64
+    native = summarize_probe(probe, targets, artifacts)
+    runtime_summary = {'complete':False, 'error':'worker_runtime_sanitizer_failed',
+        'functional':{'required':['owned.py'], 'executed':['owned.py'], 'passed':['owned.py'],
+                      'failed':[], 'skipped':[]},
+        'sanitizers':[{'kind':'address','state':'timed_out','required':['owned-unit'],
+                      'executed':None,'passed':None,'failed':None,'skipped':None}],
+        'sanitizers_not_executed':['undefined'],
+        'fuzz':{'state':'not_executed','target':'owned','required_replay_count':2,'replay_count':0,
+                'campaign_completed':False,'campaign_executions':None,
+                'campaign_coverage_signal':None,'campaign_duration_ms':None}}
+    native.update(schema='nico.cpp-configure-first-native.v2', runtime_complete=False,
+        runtime_plan_sha256='6'*64, runtime_summary_sha256=_digest(runtime_summary), runtime_duration_ms=600,
+        project_option_policy='conservative-cmake-v1', project_options={}, project_options_sha256=_digest({}))
+    receipt = {'schema':'nico.worker-native-receipt.v7', 'identity':asdict(ident),
+        'lease_id':'owned-lease','worker_id':'owned-worker','image_digest':plan['image_digest'],
+        'tool_version':plan['tool_version'],'configuration_sha256':_digest(plan['configuration']),
+        'target_hashes':targets,'native':native,'native_sha256':_digest(native)}
+    encoded, record, _ = validate_receipt(ident,plan,'owned-lease','owned-worker',receipt)
+    reconstruction = {'analysis':deepcopy(probe['project_static']),
+        'compiler':{'native_evidence_sha256':'5'*64},
+        'runtime':{'summary':runtime_summary,'native_evidence_sha256':'7'*64}}
+    return ident, plan, receipt, encoded, record, reconstruction
+
+
+def test_verified_static_findings_survive_failed_runtime_without_completion_credit():
+    ident, plan, receipt, _, record, reconstruction = _failed_runtime_complete_static_fixture()
+    originals = deepcopy((record, receipt, reconstruction))
+    assert record['execution_observed_for_this_report'] is False
+    projected = project_configure_first_record(record,ident,plan,receipt,reconstruction)
+    assert projected['finding_count'] == len(projected['findings']) == 2
+    assert projected['canonical_findings_projected'] is True
+    assert projected['execution_observed_for_this_report'] is True
+    assert projected['status'] == 'failed' and projected['reason'] == record['reason']
+    for key in ('completed','verified_complete','verified_for_this_report','returncode_valid'):
+        assert projected[key] is False
+    assert projected['human_review_required'] is True
+    assert projected['client_delivery_allowed'] is False
+    assert [f['context_id'] for f in projected['findings']] == ['c1','c2']
+    assert len({f['observation_id'] for f in projected['findings']}) == 2
+    for value, key in zip(projected['findings'], ('project-static-evidence','project-static-clang-fallback')):
+        assert value['evidence_reference'] == 'worker_artifact:'+receipt['native']['artifacts'][key]['artifact_id']
+        assert value['commit_sha'] == ident.revision
+        assert value['configuration_sha256'] == receipt['configuration_sha256']
+    assert projected == project_configure_first_record(record,ident,plan,receipt,reconstruction)
+    assert (record, receipt, reconstruction) == originals
+
+
+@pytest.mark.parametrize('locale,terms', [
+    ('en', ('Functional runtime tests: 1/1 passed.', 'passed=unknown/1',
+            'Sanitizer / undefined: not executed.', 'Declared runtime scope is incomplete.')),
+    ('es-MX', ('Pruebas funcionales en ejecución: 1/1 aprobadas.', 'aprobadas=desconocido/1',
+              'Sanitizador / undefined: no ejecutado.', 'El alcance de ejecución declarado está incompleto.')),
+])
+def test_receipt_produced_runtime_failure_reaches_existing_report_gate(locale, terms):
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    from nico.production_report_truth_gate_v1 import _canonical_scanners
+    ident,plan,receipt,encoded,record,reconstruction = _failed_runtime_complete_static_fixture()
+    record = project_configure_first_record(record,ident,plan,receipt,reconstruction)
+    # Simulate successful immutable retention of these exact owned receipt bytes;
+    # this is not a live database write or production artifact proof.
+    digest = hashlib.sha256(encoded).hexdigest()
+    record.update(raw_artifact_retention_complete=True,raw_artifact_sha256=digest,artifact_hash=digest)
+    canonical = {'report_language':locale, 'identity':{'run_id':ident.run_id,'commit_sha':ident.revision},
+                 'scanner_execution_records':[record]}
+    rendered = enrich_scanner_stage(canonical, {'summary':'','evidence':[],'unavailable':[]})
+    text = ' '.join([rendered['summary'],*rendered['evidence'],*rendered['unavailable']])
+    for term in terms:
+        assert term in text
+    assert 'None' not in text
+    normalized = _canonical_scanners(canonical,{})[0]
+    assert normalized['status'] == 'failed'
+    assert normalized['completed'] is False and normalized['verified_complete'] is False
+    assert normalized['finding_count'] == len(normalized['findings']) == 2
+
+
+@pytest.mark.parametrize('analysis_complete', [False, None, 0, 'true'])
+def test_partial_projection_requires_actual_static_completion(analysis_complete):
+    ident,plan,receipt,_,record,reconstruction = _failed_runtime_complete_static_fixture()
+    reconstruction['analysis']['complete'] = analysis_complete
+    projected = project_configure_first_record(record,ident,plan,receipt,reconstruction)
+    assert projected['findings'] == [] and projected['canonical_findings_projected'] is False
+    assert projected['execution_observed_for_this_report'] is False
+    assert projected['completed'] is False
+
+
+def test_failed_projection_copies_findings_coverage_and_runtime_without_mutating_evidence():
+    ident,plan,receipt,_,record,reconstruction = _failed_runtime_complete_static_fixture()
+    originals = deepcopy((record,receipt,reconstruction))
+    projected = project_configure_first_record(record,ident,plan,receipt,reconstruction)
+    projected['findings'][0]['path'] = 'changed.cpp'
+    projected['cpp_build_evidence']['runtime_scope']['sanitizers_not_executed'].clear()
+    projected['cppcheck_source_coverage']['limitations'].append('changed')
+    assert (record,receipt,reconstruction) == originals
+
+
+def test_runtime_failure_does_not_change_static_observation_identity():
+    ident,plan,receipt,_,record,reconstruction = _failed_runtime_complete_static_fixture()
+    failed = project_configure_first_record(record,ident,plan,receipt,reconstruction)
+    completed_receipt = deepcopy(receipt)
+    completed_reconstruction = deepcopy(reconstruction)
+    completed_receipt['native']['complete_execution'] = True
+    completed_reconstruction['runtime']['summary']['complete'] = True
+    # The projection seam receives already-validated reconstruction. This paired
+    # case compares observation identity only; it is not native execution proof.
+    completed = project_configure_first_record(record,ident,plan,completed_receipt,completed_reconstruction)
+    assert completed['findings'] == failed['findings']
+    assert completed['worker_provenance']['canonical_projection'] == failed['worker_provenance']['canonical_projection']
+    assert completed['completed'] is True and failed['completed'] is False
+
+
+@pytest.mark.parametrize('change', ['missing_retention','changed_hash','changed_run','changed_revision'])
+def test_partial_execution_does_not_relax_retained_report_identity_gate(change):
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    ident,plan,receipt,encoded,record,reconstruction = _failed_runtime_complete_static_fixture()
+    record = project_configure_first_record(record,ident,plan,receipt,reconstruction)
+    record.update(raw_artifact_retention_complete=True,raw_artifact_sha256=hashlib.sha256(encoded).hexdigest())
+    if change == 'missing_retention':
+        record['raw_artifact_retention_complete'] = False
+    elif change == 'changed_hash':
+        record['raw_artifact_sha256'] = '0'*64
+    elif change == 'changed_run':
+        record['worker_provenance']['identity']['run_id'] = 'other-run'
+    else:
+        record['commit_sha'] = '0'*40
+    canonical = {'report_language':'en','identity':{'run_id':ident.run_id,'commit_sha':ident.revision},
+                 'scanner_execution_records':[record]}
+    rendered = enrich_scanner_stage(canonical,{'summary':'','evidence':[],'unavailable':[]})
+    text = ' '.join([rendered['summary'],*rendered['evidence'],*rendered['unavailable']])
+    assert 'not bound to a verified retained receipt' in text
+    assert 'Functional runtime tests: 1/1 passed.' not in text

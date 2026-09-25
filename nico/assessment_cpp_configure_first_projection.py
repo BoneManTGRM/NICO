@@ -122,13 +122,14 @@ def reconstruct_configure_first(identity, contract, receipt, store):
 def project_configure_first_record(record, identity, contract, receipt, reconstruction):
     native=receipt["native"]; analysis=reconstruction["analysis"]; runtime=reconstruction.get("runtime")
     # Reconstruction is source/receipt-bound even when required execution failed.
-    # Preserve that evidence without promoting scanner completion or findings.
+    # Runtime failure must not erase independently verified static observations.
     if runtime is not None:
         record=deepcopy(record)
         record.setdefault("cpp_build_evidence", {})["runtime_scope"]=deepcopy(runtime["summary"])
-    if (not native["complete_execution"] or not analysis["complete"]
-            or (runtime is not None and runtime["summary"]["complete"] is not True)):
+    if analysis["complete"] is not True:
         return record
+    execution_complete = (native["complete_execution"] is True
+        and (runtime is None or runtime["summary"]["complete"] is True))
     findings=[]
     primary_ref=native["artifacts"]["project-static-evidence"]["artifact_id"]
     fallback_ref=(native["artifacts"].get("project-static-clang-fallback") or {}).get("artifact_id")
@@ -141,9 +142,13 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
             ("rule_id","path","line","column","context_id","source_sha256","commit_sha","configuration_sha256")})
         findings.append(finding)
     output=deepcopy(record)
-    output.update(status="completed",completed=True,verified_complete=True,verified_for_this_report=True,
-        execution_observed_for_this_report=True,returncode_valid=True,findings=findings,
-        finding_count=len(findings),reason="",canonical_findings_projected=True)
+    output.update(execution_observed_for_this_report=True,findings=findings,
+        finding_count=len(findings),canonical_findings_projected=True)
+    if execution_complete:
+        output.update(status="completed",completed=True,verified_complete=True,
+            verified_for_this_report=True,returncode_valid=True,reason="")
+    # Otherwise retain the producer's failure and incomplete/invalid-exit flags.
+    # Canonical projection proves observation identity, not whole-scope success.
     output["cppcheck_source_coverage"].update(
         requested_target_count=len(receipt["target_hashes"]),
         observed_target_count=len(receipt["target_hashes"]),
