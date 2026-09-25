@@ -70,13 +70,19 @@ def select_configure_first_contract(repo_step, *, environ=None, release_revision
     if qualification is None:
         return None
     return {'profile':PROFILE,'tool_version':'2.17.1','image_digest':qualification['image_config_id'],
-        'configuration':{'schema':'nico.cpp-configure-first-contract.v2','platform':'linux/amd64',
+        'configuration':{'schema':'nico.cpp-configure-first-contract.v3','platform':'linux/amd64',
             'expected_tree_sha':snapshot['tree_sha'],'project_option_policy':'conservative-cmake-v1','source_byte_limit':64*1024*1024,
             'baseline_execution':{'schema':'nico.cpp-baseline-execution.v2',
                 'profile':'cpp-baseline-qualification-v1',
                 'freeze_compilation_database':'after_configuration_before_build',
                 'build_seconds':1200,'test_seconds':480,'test_case_seconds':60,'parallel':4},
             'capabilities':{'capture_generated_context':True,'project_compiler_evidence':True,
-                'project_static_analysis':True,'extended_compiler_budget':True,'compiler_environment':True}},
-        'targets':{},'limits':{'max_attempts':1,'wall_seconds':2420,'lease_seconds':300},
+                'project_static_analysis':True,'extended_compiler_budget':True,'compiler_environment':True},
+            'runtime_scope':{'schema':'nico.cpp-runtime-scope.v1',
+                'functional_policy':'source-declared-functional-v1','functional_seconds':900,
+                'sanitizers':['address','undefined'],'sanitizer_build_seconds':1200,
+                'sanitizer_test_seconds':600,'sanitizer_test_case_seconds':120,
+                'fuzz_policy':'source-declared-libfuzzer-v1','fuzz_replay_runs':1,
+                'fuzz_campaign_runs':256,'fuzz_campaign_seconds':300,'parallel':4}},
+        'targets':{},'limits':{'max_attempts':1,'wall_seconds':9000,'lease_seconds':300},
         'max_receipt_bytes':8*1024*1024}
