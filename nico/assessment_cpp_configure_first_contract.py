@@ -10,24 +10,32 @@ import re
 
 PROFILE = "cpp-configure-first-v2"
 SCHEMA = "nico.cpp-configure-first-contract.v1"
+SCHEMA_V2 = "nico.cpp-configure-first-contract.v2"
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
 def validate_configuration(value):
-    fields = {"schema", "platform", "expected_tree_sha", "project_options",
+    schema = value.get("schema") if isinstance(value, dict) else None
+    fields = {"schema", "platform", "expected_tree_sha",
               "source_byte_limit", "baseline_execution", "capabilities"}
-    if (not isinstance(value, dict) or set(value) != fields or value.get("schema") != SCHEMA
+    fields |= ({"project_options"} if schema == SCHEMA else {"project_option_policy"})
+    if (not isinstance(value, dict) or set(value) != fields or schema not in {SCHEMA, SCHEMA_V2}
             or value.get("platform") != "linux/amd64"
             or not isinstance(value.get("expected_tree_sha"), str)
             or re.fullmatch(r"[0-9a-f]{40}", value["expected_tree_sha"]) is None
             or type(value.get("source_byte_limit")) is not int
             or not 1 <= value["source_byte_limit"] <= MAX_SOURCE_BYTES):
         raise ValueError("worker_configure_first_configuration_invalid")
-    options=value["project_options"]
-    if (not isinstance(options, dict) or len(options)>64
-            or any(not isinstance(k,str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}",k) is None
-                or k.startswith("CMAKE_") or not isinstance(v,str)
-                or re.fullmatch(r"[A-Za-z0-9_./+-]{1,120}",v) is None for k,v in options.items())):
-        raise ValueError("worker_configure_first_options_invalid")
+    if schema == SCHEMA:
+        options=value["project_options"]
+        if (not isinstance(options, dict) or len(options)>64
+                or any(not isinstance(k,str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}",k) is None
+                    or k.startswith("CMAKE_") or not isinstance(v,str)
+                    or re.fullmatch(r"[A-Za-z0-9_./+-]{1,120}",v) is None for k,v in options.items())):
+            raise ValueError("worker_configure_first_options_invalid")
+    else:
+        from nico.assessment_cpp_cmake_policy import POLICY
+        if value.get("project_option_policy") != POLICY:
+            raise ValueError("worker_configure_first_options_invalid")
     baseline=value["baseline_execution"]
     expected={"schema","profile","freeze_compilation_database","build_seconds","test_seconds","test_case_seconds","parallel"}
     if (not isinstance(baseline,dict) or set(baseline)!=expected

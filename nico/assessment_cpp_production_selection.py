@@ -70,8 +70,8 @@ def select_configure_first_contract(repo_step, *, environ=None, release_revision
     if qualification is None:
         return None
     return {'profile':PROFILE,'tool_version':'2.17.1','image_digest':qualification['image_config_id'],
-        'configuration':{'schema':'nico.cpp-configure-first-contract.v1','platform':'linux/amd64',
-            'expected_tree_sha':snapshot['tree_sha'],'project_options':{},'source_byte_limit':64*1024*1024,
+        'configuration':{'schema':'nico.cpp-configure-first-contract.v2','platform':'linux/amd64',
+            'expected_tree_sha':snapshot['tree_sha'],'project_option_policy':'conservative-cmake-v1','source_byte_limit':64*1024*1024,
             'baseline_execution':{'schema':'nico.cpp-baseline-execution.v2',
                 'profile':'cpp-baseline-qualification-v1',
                 'freeze_compilation_database':'after_configuration_before_build',

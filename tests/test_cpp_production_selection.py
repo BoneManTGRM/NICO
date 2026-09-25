@@ -28,6 +28,9 @@ def test_release_owned_selector_builds_generic_configure_first_contract():
     assert result['profile']=='cpp-configure-first-v2'
     assert result['image_digest']==IMAGE
     assert result['configuration']['expected_tree_sha']==TREE
+    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v2'
+    assert result['configuration']['project_option_policy']=='conservative-cmake-v1'
+    assert 'project_options' not in result['configuration']
     assert result['targets']=={}
     assert result['limits']=={'max_attempts':1,'wall_seconds':2420,'lease_seconds':300}
 

@@ -141,8 +141,15 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         return {"path":"artifacts/"+key+"-"+reference["sha256"]+".json",
                 "sha256":reference["sha256"],"bytes":reference["retained_bytes"]}
     cfg=contract["configuration"]; caps=cfg["capabilities"]
+    if cfg["schema"] == "nico.cpp-configure-first-contract.v2":
+        from nico.assessment_cpp_cmake_policy import derive_project_options
+        project_options = derive_project_options(source, targets, cfg["project_option_policy"])
+        project_option_policy = cfg["project_option_policy"]
+    else:
+        project_options = cfg["project_options"]
+        project_option_policy = "explicit-v1"
     result=probe_project_configuration(source,targets,contract["image_digest"],
-        project_options=cfg["project_options"],retain=lambda _:checkpoint(),
+        project_options=project_options,retain=lambda _:checkpoint(),
         baseline_execution=cfg["baseline_execution"],capture_generated_context=caps["capture_generated_context"],
         retain_artifact=sink,project_compiler_evidence=caps["project_compiler_evidence"],
         project_static_analysis=caps["project_static_analysis"],
@@ -153,5 +160,9 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
     if not database or hashlib.sha256(database).hexdigest()!=result.get("compilation_database_sha256"):
         raise ValueError("worker_configure_first_database_missing")
     sink("project-compilation-database",database)
-    return {"native":summarize_probe(result,targets,retained),"derived_targets":targets,
+    native=summarize_probe(result,targets,retained)
+    native["project_option_policy"]=project_option_policy
+    native["project_options"]=dict(sorted(project_options.items()))
+    native["project_options_sha256"]=hashlib.sha256(canonical_bytes(native["project_options"])).hexdigest()
+    return {"native":native,"derived_targets":targets,
             "tool_version":contract["tool_version"]}

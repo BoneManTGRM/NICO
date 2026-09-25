@@ -20,3 +20,13 @@ def test_configure_first_contract_is_strict_and_internal_source_population_is_in
                    {'limits':{'max_attempts':1,'wall_seconds':2421,'lease_seconds':120}}):
         broken=deepcopy(value); broken.update(change)
         with pytest.raises(ValueError): validate_contract(broken)
+
+
+def test_configure_first_v2_accepts_only_release_owned_cmake_policy():
+    value=contract()
+    value['configuration'].pop('project_options')
+    value['configuration'].update(schema='nico.cpp-configure-first-contract.v2',
+        project_option_policy='conservative-cmake-v1')
+    assert validate_contract(value)==value
+    broken=deepcopy(value); broken['configuration']['project_option_policy']='caller-selected'
+    with pytest.raises(ValueError): validate_contract(broken)

@@ -45,3 +45,30 @@ def test_summary_rejects_artifact_identity_substitution():
     import pytest
     with pytest.raises(ValueError,match="artifact_reference"):
         summarize_probe(proof(),targets,artifacts)
+
+
+def test_configure_first_v2_derives_options_before_probe(tmp_path, monkeypatch):
+    from nico.assessment_cpp_configure_first_execution import run_configure_first
+    from tests.test_cpp_configure_first_contract import contract
+    import base64
+    plan=contract(); plan['configuration'].pop('project_options')
+    plan['configuration'].update(schema='nico.cpp-configure-first-contract.v2',
+        project_option_policy='conservative-cmake-v1')
+    root=tmp_path/'source'; root.mkdir()
+    cmake=b'option(BUILD_TESTS "tests" OFF)\noption(BUILD_GUI "gui" ON)\n'
+    (root/'CMakeLists.txt').write_bytes(cmake)
+    targets={'CMakeLists.txt':hashlib.sha256(cmake).hexdigest()}
+    acquisition={'schema':'nico.github_https_tree_materialization.v2','tree_sha':plan['configuration']['expected_tree_sha'],
+        'inputs':targets,'population_sha256':hashlib.sha256(canonical_bytes(targets)).hexdigest()}
+    observed={}
+    def fake_probe(source, actual_targets, image, **kwargs):
+        observed['options']=kwargs['project_options']
+        value=proof(); value['compilation_database']=base64.b64encode(b'[]').decode()
+        value['compilation_database_sha256']=hashlib.sha256(b'[]').hexdigest()
+        return value
+    monkeypatch.setattr('nico.assessment_cpp_configuration_probe.probe_project_configuration',fake_probe)
+    result=run_configure_first(plan,root,acquisition,checkpoint=lambda:None,timeout_seconds=60,
+        retain_artifact=lambda key,raw:ref(key,raw))
+    assert observed['options']=={'BUILD_GUI':'OFF','BUILD_TESTS':'ON'}
+    assert result['native']['project_option_policy']=='conservative-cmake-v1'
+    assert result['native']['project_options']==observed['options']

@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: preserve active hosted Bitcoin qualification and verify the 56-context Clang fallback under the pushed validator repair. If C5/C11 pass, promote only that terminal qualification run/artifact plus this exact image config/manifest into the fail-closed selector; then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual Bitcoin acceptance.
+EXACT NEXT ACTION: preserve the active hosted Bitcoin qualification and verify the current published image plus policy-v2 path in queued hosted checks. If static C5/C11 pass, promote only that terminal qualification run/artifact and exact image identity into deployment settings; then execute and integrate the mandatory sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual Bitcoin acceptance.
 
 ## Immutable continuity
 
@@ -203,3 +203,14 @@ This commit intentionally carries the existing `[publish-worker-image]` trigger 
 Push run36077694591 at source `29bcaa7d067024f4710c0f15361a3f9459d4c241` built the pinned worker image, passed the owned native/static control, published the exact image, and independently retrieved it on a separate clean Docker daemon. Publication artifact10840905823 and retrieval artifact10840850952 bind handoff SHA256 `d3381d278d7ef1b178f0d6cc282d4305c64ba4f1b9e7b04168156561806866f9`, image config `sha256:69196fa06dd1c421d561e8b049a1dc56ff20186db325bd585aba87e954f42338`, and registry manifest `ghcr.io/bonemantgrm/nico/assessment-cppcheck@sha256:c9402d01c7a931cef1b6e7691f09111399832369cc96ff2dac72dfe91c63a4fb`. Retrieval state is `published_and_retrieved`, `image_pull_verified=true`, access mode `anonymous`, with no error.
 
 The repository's retained publication record and retrieval workflow now point to those exact identities. `production_qualified` deliberately remains false: image publication/retrieval proves immutable tool delivery, not complete Bitcoin workload qualification or production activation.
+
+
+## Generic release-owned CMake baseline policy
+
+Normal production intake previously selected `cpp-configure-first-v2` with an empty CMake option map. That was not equivalent to the qualified Bitcoin baseline, whose frozen supported scope explicitly enables tests/wallet/IPC while disabling GUI, benchmarks, fuzz-only modes and ZeroMQ. A production Bitcoin run could therefore configure a different feature population even if its source/release/image identities were correct.
+
+The selector now emits `nico.cpp-configure-first-contract.v2` with release-owned policy `conservative-cmake-v1`, not caller-supplied option names. After the exact Git tree is materialized and SHA256-bound but before CMake executes, the worker reads the exact root `CMakeLists.txt` with no-follow semantics and verifies its SHA256 against the frozen source population. It recognizes only literal `option()` / `cmake_dependent_option()` declarations and applies a fixed conservative set when those capabilities exist: `BUILD_TESTS/ENABLE_WALLET/ENABLE_IPC=ON`; `BUILD_GUI/BUILD_GUI_TESTS/BUILD_BENCH/BUILD_FUZZ_BINARY/BUILD_FOR_FUZZING/WITH_ZMQ=OFF`. Unknown project options are untouched. There is no repository-name rule.
+
+The final v7 native receipt retains the policy ID, exact derived option map and its canonical SHA256. Backend receipt validation requires explicit-v1 runs to equal their contract options and policy-v2 runs to contain only the fixed allowed names with fixed values; a worker cannot invent or invert an option. These values are projected into C++ build evidence for the report/provenance path.
+
+Local verification on the exact PR source:131 affected tests pass across policy, configure-first contract/execution, production selection, receipts, snapshot intake, consumer, canonical projection and configuration qualification. Two unrelated0.2-second subprocess-start timing controls in the local Python3.13 source-export environment can fail before their fixture writes a PID; they are unchanged and not credited. Hosted CI remains authoritative for those existing boundaries.

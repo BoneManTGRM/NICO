@@ -311,12 +311,27 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'clang_fallback_required_count','clang_fallback_required_sha256','clang_fallback_analyzed_count',
         'clang_fallback_analyzed_sha256','boundary_verified','cleanup_verified','scratch_capacity_verified',
         'memory_peak_bytes','static_memory_peak_bytes','duration_ms','aggregate_duration_ms','artifacts',
-        'canonical_findings_projected'}
+        'canonical_findings_projected','project_option_policy','project_options','project_options_sha256'}
     if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!='nico.cpp-configure-first-native.v1'
             or native.get('source_population_sha256')!=_digest(receipt['target_hashes'])
             or type(native.get('source_count')) is not int or native['source_count']!=len(receipt['target_hashes'])
-            or native.get('canonical_findings_projected') is not False):
+            or native.get('canonical_findings_projected') is not False
+            or native.get('project_option_policy') not in {'explicit-v1','conservative-cmake-v1'}
+            or not isinstance(native.get('project_options'),dict) or len(native['project_options'])>64
+            or any(not isinstance(k,str) or re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}',k) is None
+                or not isinstance(v,str) or re.fullmatch(r'[A-Za-z0-9_./+-]{1,120}',v) is None
+                for k,v in native['project_options'].items())
+            or native.get('project_options_sha256') != _digest(native['project_options'])):
         raise ValueError('worker_configure_first_native_invalid')
+    config=contract['configuration']
+    if config['schema']=='nico.cpp-configure-first-contract.v1':
+        if native['project_option_policy']!='explicit-v1' or native['project_options']!=config['project_options']:
+            raise ValueError('worker_configure_first_native_invalid')
+    else:
+        from nico.assessment_cpp_cmake_policy import validate_project_options
+        if (native['project_option_policy']!=config['project_option_policy']
+                or validate_project_options(native['project_options'])!=native['project_options']):
+            raise ValueError('worker_configure_first_native_invalid')
     for key in ('compilation_database_sha256','tests_discovered_sha256','tests_executed_sha256','tests_passed_sha256',
                 'tests_skipped_sha256','project_compiler_required_sha256','project_compiler_checked_sha256',
                 'project_static_required_sha256','project_static_analyzed_sha256','project_static_findings_sha256',
@@ -371,7 +386,10 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'all_repository_configurations_analyzed':native['project_static_complete']},
         'cpp_build_evidence':{'compiled':native['compiled'],'tests_executed':native['tests_executed'],
             'tests_passed':native['tests_passed'],'configured_invocations':native['configured_invocations'],
-            'compilation_database_sha256':native['compilation_database_sha256']},
+            'compilation_database_sha256':native['compilation_database_sha256'],
+            'project_option_policy':native['project_option_policy'],
+            'project_options':deepcopy(native['project_options']),
+            'project_options_sha256':native['project_options_sha256']},
         'canonical_findings_projected':False,'human_review_required':True,'client_delivery_allowed':False},binding
 
 
