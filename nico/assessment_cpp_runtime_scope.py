@@ -5,10 +5,29 @@ import ast
 import base64
 from copy import deepcopy
 import hashlib
+import json
 from pathlib import Path, PurePosixPath
 import re
+import tempfile
+import time
 
 QA_ASSETS_COMMIT = 'cf4ec4a6b7fe814dc3f2ddbaa00cd1a7d7c7ae2f'
+UNIT_TEST_DATA_COMMIT = 'b33d85102d169b54d966ea315ad81a636680aefa'
+UNIT_TEST_DATA_ASSET = {
+    'policy':'source-declared-pinned-public-asset-v1',
+    'repository':'bitcoin-core/qa-assets','commit_sha':UNIT_TEST_DATA_COMMIT,
+    'path':'unit_test_data/script_assets_test.json',
+    'git_blob_sha':'6a69755a5e53f4212f265374e14f590dcbf86496',
+    'name':'script_assets_test.json',
+    'url':'https://raw.githubusercontent.com/bitcoin-core/qa-assets/'+UNIT_TEST_DATA_COMMIT+'/unit_test_data/script_assets_test.json',
+    'sha256':'cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095',
+    'bytes':9243520,
+}
+_RUNTIME_INTERFACES = (
+    'CMakeLists.txt','test/functional/test_runner.py','test/fuzz/test_runner.py',
+    'src/test/fuzz/CMakeLists.txt','src/test/fuzz/connect_block.cpp',
+)
+_OPTIONAL_UNIT_INTERFACE = 'src/test/script_assets_tests.cpp'
 _CORPUS = (
     {
         'path':'fuzz_corpora/connect_block/00e43b08640114362c899209ab336025af5c7432',
@@ -87,7 +106,8 @@ def derive_runtime_plan(source, targets, project_options, scope):
     if (not isinstance(targets,dict) or not targets or not isinstance(project_options,dict)
             or not isinstance(scope,dict) or scope.get('schema')!='nico.cpp-runtime-scope.v1'
             or scope.get('functional_policy')!='source-declared-functional-v1'
-            or scope.get('fuzz_policy')!='source-declared-libfuzzer-v1'):
+            or scope.get('fuzz_policy')!='source-declared-libfuzzer-v1'
+            or scope.get('total_seconds')!=6000):
         raise ValueError('worker_runtime_scope_unsupported')
     for path,digest in targets.items():
         if not _safe_path(path) or not isinstance(digest,str) or re.fullmatch(r'[0-9a-f]{64}',digest) is None:
@@ -98,6 +118,11 @@ def derive_runtime_plan(source, targets, project_options, scope):
     fuzz_runner=_read_exact(root,targets,'test/fuzz/test_runner.py')
     fuzz_cmake=_read_exact(root,targets,'src/test/fuzz/CMakeLists.txt')
     _read_exact(root,targets,'src/test/fuzz/connect_block.cpp')
+    unit_data=None
+    if _OPTIONAL_UNIT_INTERFACE in targets:
+        unit_source=_read_exact(root,targets,_OPTIONAL_UNIT_INTERFACE,4*1024*1024)
+        if b'DIR_UNIT_TEST_DATA' in unit_source and b'script_assets_test.json' in unit_source:
+            unit_data=deepcopy(UNIT_TEST_DATA_ASSET)
     text=cmake.decode('utf-8',errors='strict')
     if ('SANITIZERS' not in text or 'BUILD_FUZZ_BINARY' not in text or 'BUILD_FOR_FUZZING' not in text
             or b'add_executable(fuzz' not in fuzz_cmake or b'connect_block.cpp' not in fuzz_cmake
@@ -111,7 +136,8 @@ def derive_runtime_plan(source, targets, project_options, scope):
             raise ValueError('worker_runtime_scope_asset_invalid')
         corpus.append(deepcopy(row))
     return {
-        'schema':'nico.cpp-runtime-plan.v1',
+        'schema':'nico.cpp-runtime-plan.v1','total_seconds':scope['total_seconds'],
+        'unit_test_data':unit_data,
         'functional':{
             'policy':scope['functional_policy'],'runner':'test/functional/test_runner.py',
             'selected_tests':selected,'seconds':scope['functional_seconds'],'parallel':scope['parallel'],
@@ -128,3 +154,81 @@ def derive_runtime_plan(source, targets, project_options, scope):
             'campaign_seconds':scope['fuzz_campaign_seconds'],'parallel':1,
         },
     }
+
+
+def capture_runtime_interfaces(source, targets):
+    if not isinstance(targets,dict) or not targets:
+        raise ValueError('worker_runtime_scope_interfaces_invalid')
+    paths=list(_RUNTIME_INTERFACES)
+    if _OPTIONAL_UNIT_INTERFACE in targets:
+        paths.append(_OPTIONAL_UNIT_INTERFACE)
+    result={}
+    for path in paths:
+        raw=_read_exact(Path(source),targets,path,4*1024*1024)
+        result[path]={'sha256':targets[path],'bytes':len(raw),'base64':base64.b64encode(raw).decode()}
+    return result
+
+
+def derive_runtime_plan_from_interfaces(interfaces, targets, project_options, scope):
+    expected=set(_RUNTIME_INTERFACES)
+    if _OPTIONAL_UNIT_INTERFACE in targets:
+        expected.add(_OPTIONAL_UNIT_INTERFACE)
+    if not isinstance(interfaces,dict) or set(interfaces)!=expected:
+        raise ValueError('worker_runtime_scope_interfaces_invalid')
+    with tempfile.TemporaryDirectory(prefix='nico-runtime-interfaces-') as temporary:
+        root=Path(temporary)
+        for path in sorted(expected):
+            row=interfaces[path]
+            if (not isinstance(row,dict) or set(row)!={'sha256','bytes','base64'}
+                    or row.get('sha256')!=targets.get(path) or type(row.get('bytes')) is not int
+                    or not 1<=row['bytes']<=4*1024*1024):
+                raise ValueError('worker_runtime_scope_interfaces_invalid')
+            try:
+                raw=base64.b64decode(row['base64'],validate=True)
+            except (ValueError,TypeError) as exc:
+                raise ValueError('worker_runtime_scope_interfaces_invalid') from exc
+            if len(raw)!=row['bytes'] or hashlib.sha256(raw).hexdigest()!=row['sha256']:
+                raise ValueError('worker_runtime_scope_interfaces_invalid')
+            output=root/path; output.parent.mkdir(parents=True,exist_ok=True); output.write_bytes(raw)
+        return derive_runtime_plan(root,targets,project_options,scope)
+
+
+def acquire_unit_test_data(plan, checkpoint, *, download=None):
+    asset=(plan or {}).get('unit_test_data') if isinstance(plan,dict) else None
+    if asset is None:
+        return None
+    if asset!=UNIT_TEST_DATA_ASSET or not callable(checkpoint):
+        raise ValueError('worker_runtime_scope_asset_invalid')
+    if download is None:
+        from nico.assessment_worker_source import download_public
+        download=download_public
+    with tempfile.TemporaryDirectory(prefix='nico-runtime-asset-') as temporary:
+        path=Path(temporary)/asset['name']
+        download(asset['url'],path,limit=asset['bytes'],checkpoint=checkpoint,deadline=time.monotonic()+30)
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('worker_runtime_scope_asset_invalid')
+        raw=path.read_bytes()
+    if len(raw)!=asset['bytes'] or hashlib.sha256(raw).hexdigest()!=asset['sha256']:
+        raise ValueError('worker_runtime_scope_asset_invalid')
+    return {asset['name']:raw}
+
+
+def retained_runtime_bytes(interfaces, plan, evidence):
+    return json.dumps({'schema':'nico.cpp-runtime-retained.v1','interfaces':interfaces,
+        'plan':plan,'evidence':evidence},sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+
+
+def validate_retained_runtime(raw, targets, project_options, scope):
+    from nico.assessment_cpp_full_project import _json
+    from nico.assessment_cpp_runtime_execution import validate_runtime_evidence
+    if not isinstance(raw,bytes) or not 0<len(raw)<=64*1024*1024:
+        raise ValueError('worker_runtime_retained_invalid')
+    value=_json(raw)
+    if (not isinstance(value,dict) or set(value)!={'schema','interfaces','plan','evidence'}
+            or value.get('schema')!='nico.cpp-runtime-retained.v1'):
+        raise ValueError('worker_runtime_retained_invalid')
+    plan=derive_runtime_plan_from_interfaces(value['interfaces'],targets,project_options,scope)
+    if value['plan']!=plan:
+        raise ValueError('worker_runtime_retained_invalid')
+    summary=validate_runtime_evidence(value['evidence'],plan,project_options=project_options)
+    return {'plan':plan,'summary':summary,'native_evidence_sha256':hashlib.sha256(raw).hexdigest()}
