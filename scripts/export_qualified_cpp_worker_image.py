@@ -84,7 +84,31 @@ def validate_control_proof(proof, *, source_sha, image):
     return proof_hash, sorted(profiles)
 
 
-def export_qualified_image(proof, metadata, recipe, output, *, source_sha, exporter=_save_image):
+def validate_full_project_qualification(value, *, source_sha, image):
+    if (not isinstance(value,dict) or value.get('schema')!='nico.cpp-configuration-qualification.v1'
+            or value.get('status')!='BASELINE_EXECUTED' or value.get('stage')!='completed'
+            or value.get('production_qualified') is not False
+            or value.get('compiled') is not True or value.get('tests_executed') is not True):
+        raise ValueError('image_handoff_full_project_qualification_invalid')
+    source=value.get('source'); probe=value.get('probe'); runtime=value.get('runtime')
+    if (not isinstance(source,dict) or not isinstance(probe,dict) or not isinstance(runtime,dict)
+            or not re.fullmatch(r'[0-9a-f]{40}',str(source.get('commit_sha') or ''))
+            or not re.fullmatch(r'[0-9a-f]{40}',str(source.get('tree_sha') or ''))
+            or probe.get('image_config_digest')!=image or probe.get('status')!='BASELINE_EXECUTED'
+            or probe.get('compiled') is not True or probe.get('tests_passed') is not True
+            or probe.get('generated_context_verified') is not True
+            or (probe.get('project_compiler') or {}).get('complete') is not True
+            or (probe.get('project_static') or {}).get('complete') is not True
+            or (probe.get('project_static_stage') or {}).get('complete') is not True
+            or runtime.get('complete') is not True
+            or not isinstance(runtime.get('native_evidence_sha256'),str)
+            or re.fullmatch(r'[0-9a-f]{64}',runtime['native_evidence_sha256']) is None):
+        raise ValueError('image_handoff_full_project_qualification_invalid')
+    return hashlib.sha256(_canonical(value)).hexdigest()
+
+
+def export_qualified_image(proof, metadata, recipe, output, *, source_sha,
+                           full_project_qualification=None, exporter=_save_image):
     """Bind trusted native proof and Docker export without expanding its scope."""
     if (not isinstance(metadata, list) or len(metadata) != 1
             or metadata[0].get('Os') != 'linux' or metadata[0].get('Architecture') != 'amd64'
@@ -95,6 +119,8 @@ def export_qualified_image(proof, metadata, recipe, output, *, source_sha, expor
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
         raise ValueError('image_handoff_image_invalid')
     proof_hash, profiles = validate_control_proof(proof, source_sha=source_sha, image=image)
+    full_hash = (validate_full_project_qualification(full_project_qualification,
+        source_sha=source_sha,image=image) if full_project_qualification is not None else None)
     recipe = Path(recipe)
     if not 0 < recipe.stat().st_size <= 65536:
         raise ValueError('image_handoff_recipe_invalid')
@@ -108,15 +134,20 @@ def export_qualified_image(proof, metadata, recipe, output, *, source_sha, expor
         _verify_archive_config(archive, image)
         with archive.open('rb') as source:
             archive_hash = hashlib.file_digest(source, 'sha256').hexdigest()
-        result = {'schema': 'nico.qualified-image-handoff.v1', 'source_sha': source_sha,
+        result = {'schema': ('nico.qualified-image-handoff.v2' if full_hash else 'nico.qualified-image-handoff.v1'),
+            'source_sha': source_sha,
             'image_config_id': image, 'platform': 'linux/amd64',
             'archive': {'name': 'image.tar', 'bytes': archive.stat().st_size, 'sha256': archive_hash},
             'recipe_sha256': hashlib.sha256(recipe.read_bytes()).hexdigest(),
             'qualification_sha256': proof_hash, 'owned_control_profiles': sorted(profiles),
+            **({'full_project_qualification_sha256':full_hash} if full_hash else {}),
             'registry_published': False, 'production_qualified': False,
-            'scope': 'same-image owned controls only; no full-project or Bitcoin qualification'}
+            'scope': ('same-image owned controls plus terminal full-project qualification; production activation remains separate'
+                if full_hash else 'same-image owned controls only; no full-project or Bitcoin qualification')}
         (output / 'handoff.json').write_bytes(_canonical(result) + b'\n')
         (output / 'qualification.json').write_bytes(_canonical(dict(proof, evidence_sha256=proof_hash)) + b'\n')
+        if full_hash:
+            (output / 'full-project-qualification.json').write_bytes(_canonical(full_project_qualification) + b'\n')
         return result
     except BaseException:
         shutil.rmtree(output)
@@ -126,12 +157,19 @@ def export_qualified_image(proof, metadata, recipe, output, *, source_sha, expor
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-sha', required=True)
+    parser.add_argument('--control-proof', type=Path, default=Path('cppcheck-worker-control.json'))
+    parser.add_argument('--image-metadata', type=Path, default=Path('cppcheck-image-metadata.json'))
+    parser.add_argument('--recipe', type=Path, default=Path('docker/assessment-cppcheck.Dockerfile'))
+    parser.add_argument('--output', type=Path, default=Path('cppcheck-image-handoff'))
+    parser.add_argument('--full-project-qualification', type=Path)
     args = parser.parse_args()
+    full = (_read_json(args.full_project_qualification,16*1024*1024)
+            if args.full_project_qualification is not None else None)
     result = export_qualified_image(
-        _read_json('cppcheck-worker-control.json', 4 * 1024 * 1024),
-        _read_json('cppcheck-image-metadata.json', 1024 * 1024),
-        Path('docker/assessment-cppcheck.Dockerfile'), Path('cppcheck-image-handoff'),
-        source_sha=args.source_sha)
+        _read_json(args.control_proof, 4 * 1024 * 1024),
+        _read_json(args.image_metadata, 1024 * 1024),
+        args.recipe, args.output, source_sha=args.source_sha,
+        full_project_qualification=full)
     print(json.dumps(result, sort_keys=True))
 
 
