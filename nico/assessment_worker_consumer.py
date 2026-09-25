@@ -292,6 +292,8 @@ def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck, config
 
     def checkpoint(force=False):
         nonlocal next_heartbeat, lease_deadline, owned
+        if not owned:
+            raise ValueError("worker_local_ownership_lost")
         now = time.monotonic()
         if now >= deadline:
             owned = False

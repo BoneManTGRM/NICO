@@ -283,3 +283,29 @@ def test_artifact_payload_rejects_compressed_transport_over_eight_mib(monkeypatc
     raw = os.urandom(9 * 1024 * 1024)
     with pytest.raises(ValueError, match='compressed_limit'):
         client.put_artifact('e'*32, 'project-static-evidence', raw)
+
+
+def test_caught_heartbeat_failure_cannot_regain_publication_authority(monkeypatch):
+    """A controller that retains an error must not silently re-enter ownership."""
+    from nico import assessment_worker_consumer as consumer
+    record = claimed(); sent = []; clock = [100.0]
+    monkeypatch.setattr(consumer.time, 'monotonic', lambda: clock[0])
+    class Transport:
+        job_id = record['job_id']; release_revision = record['identity']['release_revision']
+        def post(self, operation, payload, **kwargs):
+            sent.append(operation)
+            if operation == 'heartbeat' and sent.count('heartbeat') == 1:
+                raise ValueError('worker_job_conflict')
+            if operation == 'receipt':
+                raw, _, _ = assessment_worker_receipts.validate_receipt(identity(), record['contract'],
+                    record['lease_id'], record['worker_id'], payload['receipt'])
+                return {**record, 'status': 'completed', 'receipt_sha256': hashlib.sha256(raw).hexdigest()}
+            return deepcopy(record)
+    def execute(plan, source, *, checkpoint, **kwargs):
+        clock[0] += 12
+        with pytest.raises(ValueError, match='worker_job_conflict'):
+            checkpoint()
+        return {'native': receipt()['native'], 'native_decoding_failed': False}
+    with pytest.raises(ValueError, match='worker_local_ownership_lost'):
+        consumer.consume_one_job(Transport(), acquire=lambda job, root, check: (root, {}), execute=execute)
+    assert sent == ['claim', 'heartbeat']

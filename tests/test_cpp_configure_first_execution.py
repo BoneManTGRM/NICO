@@ -119,3 +119,74 @@ def test_configure_first_v3_derives_release_options_before_probe(tmp_path, monke
     assert result['native']['project_option_policy']=='conservative-cmake-v1'
     assert result['native']['project_options']==observed['options']
     assert 'project-runtime-evidence' in result['native']['artifacts']
+
+
+def _run_real_configure_first_with_build_polls(tmp_path, monkeypatch, *, cancel=False,
+                                               expire=False):
+    """Only Docker is substituted; exercise the real configure-first/probe seam."""
+    from types import SimpleNamespace
+    import pytest
+    from nico import assessment_cpp_configure_first_execution as execution
+    from nico import assessment_cpp_configuration_probe as probe
+    from tests.test_cpp_baseline_execution import Native, source
+    from tests.test_cpp_configure_first_contract import contract
+
+    root, targets = source(tmp_path)
+    plan = contract()
+    plan['image_digest'] = 'sha256:'+'a'*64
+    plan['configuration']['project_options'] = {'BUILD_TESTS': 'ON'}
+    acquisition = {'schema': 'nico.github_https_tree_materialization.v2',
+        'tree_sha': plan['configuration']['expected_tree_sha'], 'inputs': targets,
+        'population_sha256': hashlib.sha256(canonical_bytes(targets)).hexdigest()}
+    docker = Native(targets)
+    state = {'calls': [], 'owner_polls': 0, 'in_build': False, 'clock': 0,
+             'build_poll_count': 0, 'cancelled': False, 'build_delta': None}
+    monkeypatch.setattr(execution, 'time', SimpleNamespace(monotonic=lambda: state['clock']), raising=False)
+    def owner_checkpoint():
+        state['owner_polls'] += 1
+        if state['in_build']:
+            state['build_poll_count'] += 1
+            if cancel and state['build_poll_count'] >= 2:
+                state['cancelled'] = True
+        if state['cancelled']:
+            raise ValueError('owner_cancelled')
+    def command(argv, **kwargs):
+        state['calls'].append(argv)
+        if '--build' in argv:
+            before = state['owner_polls']; state['in_build'] = True
+            try:
+                for _ in range(3):
+                    if expire: state['clock'] = 61
+                    kwargs['checkpoint']()
+            finally:
+                state['in_build'] = False
+                state['build_delta'] = state['owner_polls'] - before
+        return docker(argv, **kwargs)
+    monkeypatch.setattr(probe, '_command', command)
+    run = lambda: execution.run_configure_first(plan, root, acquisition,
+        checkpoint=owner_checkpoint, timeout_seconds=60,
+        retain_artifact=lambda key, raw: ref(key, raw))
+    if cancel or expire:
+        with pytest.raises(ValueError, match='owner_cancelled' if cancel else 'worker_configure_first_execution_deadline'):
+            run()
+    else:
+        run()
+    return state
+
+
+def test_real_configure_first_renews_owner_lease_inside_long_build(tmp_path, monkeypatch):
+    state = _run_real_configure_first_with_build_polls(tmp_path, monkeypatch)
+    assert state['build_delta'] == 3, 'the running native command lost the durable owner checkpoint'
+
+
+def test_real_configure_first_cancellation_stops_before_tests_and_still_cleans_up(tmp_path, monkeypatch):
+    state = _run_real_configure_first_with_build_polls(tmp_path, monkeypatch, cancel=True)
+    assert state['cancelled'] and state['build_poll_count'] == 2
+    assert not any('ctest' in argv for argv in state['calls'])
+    assert any(argv[1:3] == ['rm', '--force'] for argv in state['calls'])
+
+
+def test_real_configure_first_enforces_supplied_remaining_time_during_build(tmp_path, monkeypatch):
+    state = _run_real_configure_first_with_build_polls(tmp_path, monkeypatch, expire=True)
+    assert not any('ctest' in argv for argv in state['calls'])
+    assert any(argv[1:3] == ['rm', '--force'] for argv in state['calls'])

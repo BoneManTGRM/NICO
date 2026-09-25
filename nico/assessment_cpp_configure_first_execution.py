@@ -9,6 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import re
+import time
 
 from nico.assessment_worker_receipts import canonical_bytes
 
@@ -142,12 +143,20 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
             or type(timeout_seconds) is not int or not 1<=timeout_seconds<=execution_timeout_limit(contract)
             or not callable(checkpoint) or not callable(retain_artifact)):
         raise ValueError("worker_configure_first_execution_contract_invalid")
+    execution_deadline = time.monotonic() + timeout_seconds
+    def execution_checkpoint():
+        checkpoint()
+        if time.monotonic() >= execution_deadline:
+            raise ValueError("worker_configure_first_execution_deadline")
+    execution_checkpoint()
     targets=deepcopy(acquisition["inputs"])
     retained={}
     def sink(key, raw):
+        execution_checkpoint()
         reference=_artifact_reference(retain_artifact(key,raw),key)
         if reference["sha256"]!=hashlib.sha256(raw).hexdigest() or reference["retained_bytes"]!=len(raw):
             raise ValueError("worker_configure_first_artifact_reference_invalid")
+        execution_checkpoint()
         retained[key]=reference
         return {"path":"artifacts/"+key+"-"+reference["sha256"]+".json",
                 "sha256":reference["sha256"],"bytes":reference["retained_bytes"]}
@@ -165,9 +174,10 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
             derive_runtime_plan_from_interfaces, acquire_unit_test_data)
         runtime_interfaces=capture_runtime_interfaces(source,targets)
         runtime_plan=derive_runtime_plan_from_interfaces(runtime_interfaces,targets,project_options,cfg["runtime_scope"])
-        unit_test_data=acquire_unit_test_data(runtime_plan,checkpoint)
+        unit_test_data=acquire_unit_test_data(runtime_plan,execution_checkpoint)
     result=probe_project_configuration(source,targets,contract["image_digest"],
-        project_options=project_options,retain=lambda _:checkpoint(),
+        project_options=project_options,retain=lambda _:execution_checkpoint(),
+        external_checkpoint=execution_checkpoint,
         baseline_execution=cfg["baseline_execution"],unit_test_data=unit_test_data,runtime_plan=runtime_plan,
         capture_generated_context=caps["capture_generated_context"],
         retain_artifact=sink,project_compiler_evidence=caps["project_compiler_evidence"],
@@ -196,5 +206,6 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
     native["project_option_policy"]=project_option_policy
     native["project_options"]=dict(sorted(project_options.items()))
     native["project_options_sha256"]=hashlib.sha256(canonical_bytes(native["project_options"])).hexdigest()
+    execution_checkpoint()
     return {"native":native,"derived_targets":targets,
             "tool_version":contract["tool_version"]}

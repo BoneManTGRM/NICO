@@ -65,7 +65,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 retain=lambda result: None, command=None, baseline_execution=None,
                                 unit_test_data=None, capture_generated_context=False,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
-                                extended_compiler_budget=False, compiler_environment=False, runtime_plan=None):
+                                extended_compiler_budget=False, compiler_environment=False, runtime_plan=None,
+                                external_checkpoint=None):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -74,6 +75,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
     baseline contract adds build/test stages without claiming full assessment.
     Returned records survive later failure through the caller's atomic sink.
     """
+    if external_checkpoint is not None and not callable(external_checkpoint):
+        raise ValueError('worker_configuration_probe_checkpoint_invalid')
+    owner_checkpoint = external_checkpoint or (lambda: None)
     import re
     from pathlib import PurePosixPath
     from nico.assessment_cpp_full_project import CMAKE_VERSION, MAX_SOURCE_BYTES, _json, _database
@@ -186,6 +190,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
         retain(result)
 
     def checkpoint():
+        owner_checkpoint()
         if time.monotonic() >= deadline:
             raise ValueError('worker_configuration_probe_deadline')
 
@@ -525,7 +530,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 base64.b64decode(result['compilation_database'], validate=True),
                 snapshot, compiler_observed['output'], retain=retain_static,
                 extended_compiler_budget=extended_compiler_budget, compiler_environment=compiler_environment,
-                retain_artifact=retain_artifact, command=command)
+                retain_artifact=retain_artifact, command=command, checkpoint=owner_checkpoint)
             result['status'] = 'BASELINE_EXECUTED' if static['complete'] else 'UNPROVEN'
             if not static['complete']:
                 result['error'] = 'worker_configuration_probe_static_incomplete'

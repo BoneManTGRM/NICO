@@ -319,3 +319,48 @@ def test_static_stage_deadline_includes_final_output_retention_and_validation(
     else:
         assert result['complete'] is False and result['status'] == 'UNPROVEN'
         assert result['error'] == 'worker_project_static_stage_deadline'
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+def test_probe_preserves_owner_checkpoint_across_the_fresh_static_stage(tmp_path, monkeypatch, cancel):
+    from nico import assessment_cpp_configuration_probe as probe
+    from nico import assessment_cpp_project_compiler as compiler
+    from nico import assessment_cpp_project_static as analysis
+    from tests.test_cpp_baseline_execution import Native, source, contract
+    from tests.test_cpp_project_snapshot import _empty_native_snapshot
+    from tests.test_cpp_project_static import _simple_compiler_native
+    from nico.assessment_cpp_project_compiler import _canonical
+    root, targets = source(tmp_path)
+    baseline = Native(targets)
+    calls = []; owner_polls = []; in_static = [False]
+    def owner_checkpoint():
+        owner_polls.append(in_static[0])
+        if in_static[0] and cancel:
+            raise ValueError('owner_cancelled')
+    def command(argv, **kwargs):
+        calls.append(argv)
+        if snapshot.PROJECT_SNAPSHOT_PROGRAM in argv:
+            raw = _canonical(_empty_native_snapshot(json.loads(kwargs['input_bytes'])))
+        elif compiler.PROGRAM in argv:
+            raw = _canonical(_simple_compiler_native(json.loads(kwargs['input_bytes'])))
+        else:
+            return baseline(argv, **kwargs)
+        return dict(exit_code=0, timed_out=False, output_truncated=False, output=raw)
+    def static(source_path, actual_targets, image, database, captured, compiler_raw, **kwargs):
+        assert calls[-1][1:3] == ['rm', '--force']
+        assert kwargs['checkpoint'] is owner_checkpoint
+        in_static[0] = True
+        for _ in range(3):
+            kwargs['checkpoint']()
+        return dict(complete=True, analysis={'complete': True, 'findings': []}, error=None)
+    monkeypatch.setattr(analysis, 'run_project_static_stage', static)
+    def sink(key, raw):
+        digest = hashlib.sha256(raw).hexdigest()
+        return dict(path='artifacts/'+key+'-'+digest+'.json', sha256=digest, bytes=len(raw))
+    result = probe.probe_project_configuration(root, targets, 'sha256:'+'a'*64,
+        project_options={'BUILD_TESTS': 'ON'}, baseline_execution=contract(), command=command,
+        capture_generated_context=True, project_compiler_evidence=True, project_static_analysis=True,
+        retain_artifact=sink, external_checkpoint=owner_checkpoint)
+    assert owner_polls.count(True) == (1 if cancel else 3)
+    assert result['cleanup_verified'] is True
+    assert result['status'] == ('UNPROVEN' if cancel else 'BASELINE_EXECUTED')
