@@ -358,3 +358,114 @@ def test_gitleaks_accepts_only_exact_public_cppcheck_source_blob_evidence(tmp_pa
         blocked = build_manifest(tmp_path)
         assert blocked["security_gate"]["status"] == "blocked"
         assert blocked["tools"]["gitleaks"]["blocking"] == 1
+
+@pytest.mark.parametrize(
+    "commit",
+    (
+        "923d5b92254f73aa297bb1f00c9929236125853f",
+        "0f14a8dba3c0fa6d11d982e007492a7f543ccfb7",
+    ),
+)
+def test_gitleaks_accepts_exact_reviewed_cppcheck_blob_across_pr1641_merge(
+    tmp_path: Path, commit: str,
+) -> None:
+    _clean_evidence(tmp_path)
+    path = "docs/evidence/pr1641-placement-ast-20260924/verification.json"
+    finding = {
+        "File": path,
+        "Commit": commit,
+        "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+        "Match": 'upstream_tokenlist_git_blob": "REDACTED"',
+        "Fingerprint": commit + ":" + path + ":generic-api-key:45",
+        "StartLine": 45,
+        "EndLine": 45,
+        "StartColumn": 5,
+        "EndColumn": 76,
+    }
+    _write(tmp_path, "gitleaks.json", [finding])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+
+    manifest = build_manifest(tmp_path)
+
+    assert manifest["security_gate"]["status"] == "passed"
+    assert manifest["tools"]["gitleaks"]["blocking"] == 0
+    assert manifest["tools"]["gitleaks"]["triage"][0]["disposition"] == "approved_public_source_hash"
+
+
+@pytest.mark.parametrize(
+    "commit",
+    (
+        "684e5af5074c6e1c0cf4b67fa263b0d79b8beabf",
+        "0f14a8dba3c0fa6d11d982e007492a7f543ccfb7",
+    ),
+)
+def test_gitleaks_accepts_exact_reviewed_llvm_public_fingerprint_across_pr1641_merge(
+    tmp_path: Path, commit: str,
+) -> None:
+    _clean_evidence(tmp_path)
+    path = "docker/assessment-llvm17.lock.json"
+    finding = {
+        "File": path,
+        "Commit": commit,
+        "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+        "Match": 'llvm_signing_key_fingerprint": "REDACTED"',
+        "Fingerprint": commit + ":" + path + ":generic-api-key:5",
+        "StartLine": 5,
+        "EndLine": 5,
+        "StartColumn": 5,
+        "EndColumn": 77,
+    }
+    _write(tmp_path, "gitleaks.json", [finding])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+
+    manifest = build_manifest(tmp_path)
+
+    assert manifest["security_gate"]["status"] == "passed"
+    assert manifest["tools"]["gitleaks"]["blocking"] == 0
+    assert (
+        manifest["tools"]["gitleaks"]["triage"][0]["disposition"]
+        == "approved_public_signing_fingerprint"
+    )
+
+
+@pytest.mark.parametrize(
+    "path,line,match",
+    (
+        (
+            "docker/assessment-llvm17.lock.json",
+            5,
+            'llvm_signing_key_fingerprint": "REDACTED"',
+        ),
+        (
+            "docs/evidence/pr1641-placement-ast-20260924/verification.json",
+            45,
+            'upstream_tokenlist_git_blob": "REDACTED"',
+        ),
+    ),
+)
+def test_gitleaks_pr1641_merge_disposition_still_rejects_unknown_commits(
+    tmp_path: Path, path: str, line: int, match: str,
+) -> None:
+    _clean_evidence(tmp_path)
+    finding = {
+        "File": path,
+        "Commit": "f" * 40,
+        "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+        "Match": match,
+        "Fingerprint": ("f" * 40) + ":" + path + f":generic-api-key:{line}",
+        "StartLine": line,
+        "EndLine": line,
+        "StartColumn": 5,
+        "EndColumn": 77 if line == 5 else 76,
+    }
+    _write(tmp_path, "gitleaks.json", [finding])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+
+    manifest = build_manifest(tmp_path)
+
+    assert manifest["security_gate"]["status"] == "blocked"
+    assert manifest["tools"]["gitleaks"]["blocking"] == 1
+
