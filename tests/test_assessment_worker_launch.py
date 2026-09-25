@@ -201,7 +201,7 @@ def test_dedicated_workflow_accepts_only_job_identity_and_keeps_narrow_permissio
     assert set(trigger) == {'workflow_dispatch'}
     assert set(trigger['workflow_dispatch']['inputs']) == {'job_id'}
     assert workflow['permissions'] == {'contents': 'read', 'id-token': 'write'}
-    assert workflow['jobs']['consume']['timeout-minutes'] == 45
+    assert workflow['jobs']['consume']['timeout-minutes'] == 155
     assert 'environment' not in workflow['jobs']['consume']
     for step in workflow['jobs']['consume']['steps']:
         assert '${{ inputs.' not in step.get('run', '')
