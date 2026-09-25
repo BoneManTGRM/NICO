@@ -159,3 +159,38 @@ def test_compose_keeps_one_authoritative_ci_boundary_body_page(heading: str) -> 
     assert "Superseded base boundary copy." not in extracted
     assert "Authoritative boundary copy." in extracted
     assert "Primary report content retained." in extracted
+
+def test_compose_replaces_entire_legacy_detailed_register_before_budget() -> None:
+    legacy_findings = [
+        [
+            f"P2 · Legacy finding {index} · CPP-LEGACY-{index:04d}",
+            "Observed evidence retained in the machine-readable package.",
+            "Recommendation retained in the compact canonical register.",
+        ]
+        for index in range(75)
+    ]
+    base = _pdf(
+        ["NICO COMPREHENSIVE"],
+        ["Detailed Findings Register"],
+        *legacy_findings,
+        ["Six-Month Execution Roadmap", "Roadmap decision content retained."],
+        ["Evidence Appendix", "raw internal material"],
+    )
+    register = _pdf(
+        ["Compact Finding and Remediation Register", "Canonical register retained."]
+    )
+    gate = _pdf(["Human Review and Acceptance Gate", "CLIENT DELIVERY BLOCKED"])
+
+    result = compose_compact_client_pdf(base, register, gate)
+    reader = PdfReader(io.BytesIO(result))
+    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    assert len(reader.pages) == 4
+    assert "Detailed Findings Register" not in extracted
+    assert "Legacy finding 0" not in extracted
+    assert "Legacy finding 74" not in extracted
+    assert "Roadmap decision content retained." in extracted
+    assert "Canonical register retained." in extracted
+    assert "Human Review and Acceptance Gate" in extracted
+    assert "raw internal material" not in extracted
+
