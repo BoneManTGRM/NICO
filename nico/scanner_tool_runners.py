@@ -118,6 +118,15 @@ def redact_text(value: str) -> str:
         redacted = pattern.sub(lambda match: _redact_match(match), redacted)
     return redacted
 
+def contains_sensitive_text(value: str) -> bool:
+    """Return whether redaction would change this decoded text.
+
+    Detection uses the same compiled patterns as redact_text but avoids
+    allocating a substituted copy when callers only need a yes/no answer.
+    """
+    text = value or ""
+    return any(pattern.search(text) is not None for pattern in SECRET_PATTERNS)
+
 
 def _redact_match(match: re.Match[str]) -> str:
     if match.lastindex and match.lastindex >= 2:

@@ -15,10 +15,10 @@ def parse_native(native_xml: str, progress: str, targets: list[str], *, version:
     if "<!DOCTYPE" in native_xml or "<!ENTITY" in native_xml:
         raise ValueError("cppcheck_xml_external_content_rejected")
     document = ET.fromstring(native_xml)
-    from nico.scanner_tool_runners import redact_text
+    from nico.scanner_tool_runners import contains_sensitive_text
     for node in document.iter():
-        values = [node.tag, node.text or "", node.tail or "", *node.attrib.keys(), *node.attrib.values()]
-        if any(redact_text(value) != value for value in values):
+        values = (node.tag, node.text or "", node.tail or "", *node.attrib.keys(), *node.attrib.values())
+        if any(contains_sensitive_text(value) for value in values):
             raise NativeOutputRedactionRequired("cppcheck_native_redaction_required")
     tool = document.find("cppcheck")
     if (document.tag != "results" or document.get("version") != "2"

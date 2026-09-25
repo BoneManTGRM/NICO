@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify this stricter selector together with worker-image publication/retrieval and the active frozen Bitcoin qualification. If and only if hosted qualification succeeds, promote its exact run/artifact/image identities into deployment settings; then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and the actual bilingual production Bitcoin assessment.
+EXACT NEXT ACTION: verify this published controller hot-path repair in the frozen Bitcoin qualification so the already-published Clang fallback actually executes. Preserve exact primary/fallback populations and artifacts. If C5/C11 pass, promote only the terminal successful qualification run/artifact/image identities into the fail-closed normal-intake selector, then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual production Bitcoin acceptance.
 
 ## Immutable continuity
 
@@ -168,3 +168,11 @@ The public GitHub source adapter now accepts both canonical `owner/repo` locator
 The normal-intake selector now requires two additional release-owned values before it can construct the configure-first contract: the exact successful hosted qualification run ID and the SHA256 of its retained qualification artifact. Flags, release SHA and image config identity alone are insufficient. Both values are syntax-checked and remain unavailable to public assessment payloads. The selector still fails closed when any evidence identity is absent or stale.
 
 This does not claim that the currently running qualification has passed. Deployment settings must be populated only from a terminal successful hosted qualification whose native evidence satisfies the acceptance contract.
+
+## Bitcoin static validator redaction hot-path repair
+
+Frozen Bitcoin run36069996332/job107871849128 retained qualification artifact10839024837 (ZIP SHA256 `41573c1a9afa71e8aa74014e49df990da0d2eee8d56ae89a1be3e4e276d4a624`). Build, all377 discovered native tests and475 compiler contexts completed. Primary static native evidence `da44104ef44287791b7c09b65991ca5d07ca0f7285a5a82cce9309f6b43461e8` returned all475 records in393,441ms, with419 contexts complete,31,873 findings,579 unmodeled limitations and138,106 modeled-input records. The stage then entered `analysis_fallback` but hit its existing600-second stage deadline before Clang fallback could execute.
+
+Exact-artifact replay isolated the controller hot path: Cppcheck XML secret safety used full substitution-based redaction for every decoded XML tag/text/tail/attribute merely to answer whether a secret pattern matched. Temporarily bypassing only that yes/no scan reduced exact artifact validation to8.6 seconds; replacing it with search-only detection using the identical compiled secret patterns validates the exact retained artifact in11.5 seconds while preserving the same419/475 primary coverage,31,873 findings,579 limitations and138,106 modeled inputs. No native analyzer invocation, finding, limitation, context, secret pattern, deadline, resource limit, or completion rule changes.
+
+Focused parser/static/receipt/scanner regressions pass121/121. The new equivalence regression proves each supported secret shape and benign text returns the same detection truth as `redact_text(value) != value`. Existing entity-decoded XML and base64 secret rejection tests continue to pass. The repair is controller-only performance work; hosted native qualification remains mandatory and Clang fallback completion is not yet claimed.
