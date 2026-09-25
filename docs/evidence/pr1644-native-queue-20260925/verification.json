@@ -1,0 +1,62 @@
+{
+  "schema": "nico.native-queue-correction.v1",
+  "parent_commit": "f48e0b28349841980dc7b91eeab19d82dec9f0bf",
+  "parent_tree": "0339af85f8287691624bb8275f0a4da750c6c706",
+  "purpose": "Preserve pending native diagnostic and qualification workflows with the documented FIFO queue while keeping the shared serial group.",
+  "hosted_observation": {
+    "cancelled_diagnostic": 36187313110,
+    "pending_qualification": 36187313096,
+    "preserved_active_qualification": 36177497388,
+    "cancellation_actor_or_annotation_verified": false
+  },
+  "documentation": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency",
+  "files": {
+    ".github/workflows/cpp-full-project-integration.yml": {
+      "bytes": 18272,
+      "git_blob_sha": "c826370c2bfda4c9156b998f866585f79fa29854",
+      "sha256": "70ca90efb0398602da0e5fec25088ef00a1cb7a8a7fb9684532c903140c8cbef",
+      "preimage_git_blob": "ba490fe8da8f662d6cae1e78fc18b9c9f79c33a9"
+    },
+    ".github/workflows/native-timeout-diagnostic.yml": {
+      "bytes": 6433,
+      "git_blob_sha": "ebda5c60432f594c1cf46761e645fac6636af99e",
+      "sha256": "f57f00864594faed95fd8af3b22d2624bb460edd6cce5a36a6e881b179c587d8",
+      "preimage_git_blob": "c7c0388635b88d2b27653ffce062511da16a5a6d"
+    },
+    "tests/test_cpp_integration_workflow_schedule.py": {
+      "bytes": 6781,
+      "git_blob_sha": "3ad0a85d0cfbcdd8fd0eabbf3e255bc3e42c1162",
+      "sha256": "3b64292cb233598d2fcc667f63628bd3d76a1292903c4da795271f25d61b3561",
+      "preimage_git_blob": "0cd7da1669441f1144f44b7abfdf62a14b43c3dd"
+    }
+  },
+  "verification": {
+    "focused_red": "2 failed, 1 passed: both workflows omitted concurrency.queue",
+    "focused_green": "3 passed; identical test membership",
+    "affected_command": "python -m pytest -q tests/test_cpp_integration_workflow_schedule.py tests/test_cpp_full_project_capture_budget.py tests/test_cpp_runtime_scope.py tests/test_cpp_runtime_execution.py tests/test_cpp_clang_fallback.py tests/test_cpp_project_static_stage.py",
+    "affected_result": {
+      "tests": 204,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "initial_regression_attempt": "202 passed, 2 setup failures: scoped archive had no Git HEAD. Added a local archive-baseline commit, without changing assertions, then reran identical selection.",
+    "runtime": "3.13.5",
+    "source_scope": "Verified f4abf2cb scoped archive; all exercised inherited modules unchanged in f48e0b28 compare. Diagnostic workflow reproduced with exact c7c0388 preimage hash. New diagnostic module is not part of this selection. Not full checkout or pinned hosted parity.",
+    "non_concurrency_workflow_objects_unchanged": true,
+    "red_warning": "Existing SyntaxWarning for invalid escape in nico/express_score_assurance_export_v1.py; not changed.",
+    "evidence_sha256": {
+      "queue-green.xml": "59b0952bb8e4f7c1e738b3c0feceb293b95d0800d6797657d6bb36e0329b0de6",
+      "queue-red.xml": "050eae50627e861c55ab34de238597ae22455bccef9a267def6ec3d8ff19f901",
+      "queue-regressions-initial.xml": "7a5e8f2cb7d57366736a0edcc8e4285abe0f617a35affb4e29cca447614f7b59",
+      "queue-regressions.xml": "11d2fabf4df28b5d9070255b5d1d2766bb9256dc555d832bd5cd4a811f39d72e"
+    }
+  },
+  "native_execution_performed": false,
+  "full_qualification": false,
+  "independent_review": false,
+  "pdf_actual_input_replayed": false,
+  "merge_allowed_by_this_record": false,
+  "deployment_performed": false,
+  "user_scope": "Finish engineering and verification; do not ship, merge or deploy. Production gates remain deferred, not passed."
+}

@@ -14,6 +14,8 @@ permissions:
 # The same PR ref/group prevents overlap with the preserved full qualification.
 concurrency:
   group: cpp-full-project-integration-${{ github.ref }}
+  # Keep waiting diagnostics and qualification runs; false alone protects only the running one.
+  queue: max
   cancel-in-progress: false
 
 jobs:
