@@ -132,7 +132,7 @@ def persist_project_artifact(output, key, raw):
     symlinks and arbitrary names cannot replace an earlier artifact.
     """
     from nico.assessment_cpp_project_snapshot import PROJECT_GENERATED_STREAM_LIMIT, _stable_bytes
-    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback'} or not isinstance(raw, bytes)
+    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback', 'project-runtime-evidence'} or not isinstance(raw, bytes)
             or len(raw) > PROJECT_GENERATED_STREAM_LIMIT):
         raise ValueError('qualification_artifact_invalid')
     output = Path(output).absolute()
@@ -174,6 +174,15 @@ def qualification_probe_receipt(value):
     if not isinstance(value, dict):
         raise ValueError('qualification_probe_invalid')
     projected = dict(value)
+    runtime = value.get('runtime_evidence')
+    if isinstance(runtime, dict):
+        projected['runtime_evidence']={
+            'schema':runtime.get('schema'),'plan_sha256':runtime.get('plan_sha256'),
+            'complete':runtime.get('complete'),'error':runtime.get('error'),
+            'duration_ms':runtime.get('duration_ms'),
+            'native_evidence_sha256':hashlib.sha256(canonical_bytes(runtime)).hexdigest(),
+            'receipt_projection':'hash-bound-summary-v1',
+        }
     analysis = value.get('project_static')
     if not isinstance(analysis, dict):
         return projected
