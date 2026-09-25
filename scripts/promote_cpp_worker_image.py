@@ -23,7 +23,7 @@ from scripts.export_qualified_cpp_worker_image import (
 )
 
 DESTINATION = 'ghcr.io/bonemantgrm/nico/assessment-cppcheck'
-MAX_SECONDS = 300
+MAX_SECONDS = 900
 
 
 @contextmanager
