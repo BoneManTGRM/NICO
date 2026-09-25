@@ -28,7 +28,7 @@ _REQUIRED_ARTIFACTS = {
     "project-compilation-database", "project-generated-context", "project-compiler-evidence",
     "project-static-environment", "project-static-evidence",
 }
-_OPTIONAL_ARTIFACTS = {"project-static-clang-fallback"}
+_OPTIONAL_ARTIFACTS = {"project-static-clang-fallback","project-runtime-evidence"}
 _SHA = re.compile(r"[0-9a-f]{64}")
 
 
@@ -152,6 +152,7 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         return {"path":"artifacts/"+key+"-"+reference["sha256"]+".json",
                 "sha256":reference["sha256"],"bytes":reference["retained_bytes"]}
     cfg=contract["configuration"]; caps=cfg["capabilities"]
+    runtime_plan=None; runtime_interfaces=None; unit_test_data=None
     if cfg["schema"] in {"nico.cpp-configure-first-contract.v2", "nico.cpp-configure-first-contract.v3"}:
         from nico.assessment_cpp_cmake_policy import derive_project_options
         project_options = derive_project_options(source, targets, cfg["project_option_policy"])
@@ -159,9 +160,16 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
     else:
         project_options = cfg["project_options"]
         project_option_policy = "explicit-v1"
+    if cfg["schema"]=="nico.cpp-configure-first-contract.v3":
+        from nico.assessment_cpp_runtime_scope import (capture_runtime_interfaces,
+            derive_runtime_plan_from_interfaces, acquire_unit_test_data)
+        runtime_interfaces=capture_runtime_interfaces(source,targets)
+        runtime_plan=derive_runtime_plan_from_interfaces(runtime_interfaces,targets,project_options,cfg["runtime_scope"])
+        unit_test_data=acquire_unit_test_data(runtime_plan,checkpoint)
     result=probe_project_configuration(source,targets,contract["image_digest"],
         project_options=project_options,retain=lambda _:checkpoint(),
-        baseline_execution=cfg["baseline_execution"],capture_generated_context=caps["capture_generated_context"],
+        baseline_execution=cfg["baseline_execution"],unit_test_data=unit_test_data,runtime_plan=runtime_plan,
+        capture_generated_context=caps["capture_generated_context"],
         retain_artifact=sink,project_compiler_evidence=caps["project_compiler_evidence"],
         project_static_analysis=caps["project_static_analysis"],
         extended_compiler_budget=caps["extended_compiler_budget"],
@@ -171,7 +179,20 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
     if not database or hashlib.sha256(database).hexdigest()!=result.get("compilation_database_sha256"):
         raise ValueError("worker_configure_first_database_missing")
     sink("project-compilation-database",database)
+    if runtime_plan is not None:
+        from nico.assessment_cpp_runtime_scope import retained_runtime_bytes
+        runtime_raw=retained_runtime_bytes(runtime_interfaces,runtime_plan,result.get("runtime_evidence"))
+        sink("project-runtime-evidence",runtime_raw)
     native=summarize_probe(result,targets,retained)
+    if runtime_plan is not None:
+        runtime_summary=result.get("runtime_summary") or {}
+        native["schema"]="nico.cpp-configure-first-native.v2"
+        native["runtime_complete"]=(runtime_summary.get("complete") is True and "project-runtime-evidence" in retained)
+        native["runtime_plan_sha256"]=hashlib.sha256(canonical_bytes(runtime_plan)).hexdigest()
+        native["runtime_summary_sha256"]=hashlib.sha256(canonical_bytes(runtime_summary)).hexdigest()
+        duration=(result.get("runtime_evidence") or {}).get("duration_ms")
+        native["runtime_duration_ms"]=duration if type(duration) is int and duration>=0 else 0
+        native["complete_execution"]=native["complete_execution"] and native["runtime_complete"]
     native["project_option_policy"]=project_option_policy
     native["project_options"]=dict(sorted(project_options.items()))
     native["project_options_sha256"]=hashlib.sha256(canonical_bytes(native["project_options"])).hexdigest()
