@@ -141,7 +141,7 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         return {"path":"artifacts/"+key+"-"+reference["sha256"]+".json",
                 "sha256":reference["sha256"],"bytes":reference["retained_bytes"]}
     cfg=contract["configuration"]; caps=cfg["capabilities"]
-    if cfg["schema"] == "nico.cpp-configure-first-contract.v2":
+    if cfg["schema"] in {"nico.cpp-configure-first-contract.v2", "nico.cpp-configure-first-contract.v3"}:
         from nico.assessment_cpp_cmake_policy import derive_project_options
         project_options = derive_project_options(source, targets, cfg["project_option_policy"])
         project_option_policy = cfg["project_option_policy"]
