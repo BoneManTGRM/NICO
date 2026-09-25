@@ -1,82 +1,64 @@
-# NICO — measured native timing correction; qualification still required
+# NICO — isolated timeout diagnosis and actual report identity recovery
 
-This is the sole active mission-ledger path. Preserve every original C0–C19 predicate, supported C/C++ scope, security/resource/ownership boundary, immutable historical evidence and genuine human approval/delivery requirement. Longer permitted execution is not proof of execution or success.
+Continue the existing C0–C19 mission. This is the sole current mission ledger, not completion or merge approval. All original requirements, security/resource/ownership boundaries, frozen scope, human review and delivery authorization remain binding.
 
-## Immutable continuity and single writer
+## Immutable continuity
 
-Continue existing draft PR1644, fix/cpp-runtime-scratch-retention, from67834a956ed4cc51f3a806ded88959952f7b4d2d/tree2626b805a3d0056ae0a0651e1b58fbbb97e69102. Preserve its full checkpoint at [67834a95](https://github.com/BoneManTGRM/NICO/blob/67834a956ed4cc51f3a806ded88959952f7b4d2d/NICO-Ship-Checkpoint.md), the complete diagnostic predecessor [3ebda0ae](https://github.com/BoneManTGRM/NICO/blob/3ebda0ae506be282e5ffd3fb8098ebf1452260a9/NICO-Ship-Checkpoint.md), and existing PDF/security checkpoint [3a25652b](https://github.com/BoneManTGRM/NICO/blob/3a25652b8591d72ce096680d11f46e80912a9dfe/NICO-Ship-Checkpoint.md). Their earlier immutable chains, full review accumulator and stronger requirements remain binding.
+The complete prior ledger, review accumulator, source corrections and earlier evidence chain are preserved at [f4abf2cb](https://github.com/BoneManTGRM/NICO/blob/f4abf2cb29ff9371b3da7230190a0d99c111117c/NICO-Ship-Checkpoint.md). The separate PDF ledger and its immutable predecessors remain at [3a25652b](https://github.com/BoneManTGRM/NICO/blob/3a25652b8591d72ce096680d11f46e80912a9dfe/NICO-Ship-Checkpoint.md). Those stronger requirements are not replaced by this summary.
 
-Main312693443b1e70c8a065de2c4e9ca329281d162a is unchanged. PR1641 and PR1643 are merged; do not reopen. PR1645 remains draft on fix/client-pdf-register-conservation at3a25652b8591d72ce096680d11f46e80912a9dfe. Reconcile actual heads and the shared ledger before integration. Authenticated source writes work; local Git DNS failure is not a blanket publication blocker. No force-push, replacement branch/project, competing writer or manual duplicate native run.
+Parent: f4abf2cb29ff9371b3da7230190a0d99c111117c, tree2d471a5ce1fa9efc20bd740adea061599d5dc6c4, existing PR1644/fix/cpp-runtime-scratch-retention. Main312693443b1e70c8a065de2c4e9ca329281d162a and PDF PR1645/head3a25652b8591d72ce096680d11f46e80912a9dfe were unchanged at reconciliation. PR1641 and1643 are merged; do not reopen or replace them. Source writes work. No force push, competing writer, new project, review waiver or production activation.
 
-## Latest diagnostic native evidence — not success
+## Preserved native evidence
 
-Frozen target: bitcoin/bitcoin, bb5296576e8f1a9fc11c19d9a25ba02ed4547e24, tree186194c9de7f613d2d323db41cb8ce6bf1e3e549. Keep all475 compiler contexts including generated/repeated configurations,377 baseline tests, Linux Debug wallet/tests/IPC,6 functional cases, required ASan/UBSan and bounded fuzz, and complete primary/fallback static scope. Original GUI/benchmark/ZeroMQ/other-platform exclusions remain. Historical0e9018e8b65611b0769545e177110e4b7fc51244/comprun_7cc47a5a81695fa452354479ea23b422 remains unchanged.
+Run36167659433 on937ce834 is now a terminal failure, not an active run. Artifact10883294546 is20,434,872bytes with ZIP SHA256 d4933e0120105b8427ebe813cfec2f8487e5d801b980e7cbfbc942adc0ffd41e. Its retained source/request/evidence reconstruction verifies the unchanged Bitcoin target bb5296576e8f1a9fc11c19d9a25ba02ed4547e24, tree186194c9de7f613d2d323db41cb8ce6bf1e3e549.
 
-Run36155314745/job108141988099 on3eb is terminal. Retained artifact10875864140 is20320531bytes, ZIP SHA256ccbb8f8287d68d7242cb086dd9682b829fc0bd70478a9c704dc8ab2743b6bce1. Its source-bound raw artifacts validate without modification: baseline377/377, compiler475/475, functional6/6, ASan build exit0. ASan suite timed out at600046ms. The124089-byte untruncated diagnostic log records372passes,4case timeouts at120seconds and1unresolved test. With no JUnit, canonical ASan passed/executed/skipped counts remain UNKNOWN; diagnostic counts are not promoted to complete scope.
+Baseline377/377, compiler475/475 and functional6/6 remain scoped passing evidence. ASan built successfully;376/377 tests passed and cluster_linearize_tests timed out at300.01seconds. The suite finished at741.428seconds with exit8, not an outer timeout. Static completed474/475; context c2d48aa8de514849e4167b32061fe921be8df2b06bca621bb2c96ba4990ef65e for generated src/ipc/libmultiprocess/test/mp/test/foo.capnp.proxy-server.c++ timed out at120.063seconds/exit124. The static stage finished below its aggregate limit. A12GiB memory peak does not prove an OOM kill. UBSan and bounded fuzz were not executed. Automated observations are not confirmed vulnerabilities. Preserve the whole archive, earlier failed campaigns and historical0e9018e8/comprun_7cc47a5a81695fa452354479ea23b422 unchanged.
 
-The retained memory snapshot has oom=0,oom_kill=0,max=0 and peak9264336896bytes; scratchavailable3683282944 of9663676416bytes. It does not evidence the old scratch/OOM hypothesis. Four censored120-second cases are cluster_linearize_tests,coins_tests_base,coins_tests_dbbase,random_tests; coinselector_tests was unresolved at the suite boundary. Do not patch assessed source, remove tests or infer true completion time from censorship.
+The current full qualification36177497388/job108222724489 onf4abf2cb was still executing at the latest direct read. It is not cancelled, retried or duplicated by this work. Inspect its terminal native artifact before drawing conclusions.
 
-Static now executes: Cppcheck419/475, fallback35/56, merged454/475. Eleven fallback contexts timed out (seven at45seconds, four at remaining aggregate), ten were not started at180seconds. Twenty-one required contexts remain incomplete. Retain31873 automated native candidate observations, not confirmed vulnerabilities. UBSan and fuzz are not executed, not excluded. Earlier failed campaigns and hashes remain intact in predecessors.
+## Diagnostic-only addition
 
-## Coherent measured timing change
+The new Isolated Native Timeout Diagnostic workflow shares the existing full-qualification concurrency group and cannot overlap it for the same PR ref. It first checks the exact preserved run36177497388: success skips unnecessary diagnostics, failure permits the targeted measurement, other states fail closed. Contents/actions permissions are read-only; no production credentials, deployment, approval or write token is used.
 
-Internal normal-intake selection and the qualification scope fixture choose900-second sanitizer suites and300-second individual cases, within existing strict contract maxima. Existing immutable600/120contracts remain replayable and unmodified. Runtime total6000, durable9000, renewable lease300,one attempt and155-minute hosted bound stay unchanged.
+It rebuilds the existing exact tool recipe, runs owned boundary controls, reconstructs the immutable failed evidence, freezes the same source, and selects only the corroborated timed-out test/context. The ASan binary is hashed before/after and checked for instrumentation. The Clang replay uses the unchanged collector, private analyst identity, dependency checks, file cap, environment, working directory and process-group cleanup. Both cases use fresh existing-policy containers. CPU and memory-event deltas, scratch capacity, native output, failed operations and cleanup are retained.
 
-Clang fallback request/evidence v2 explicitly selects480-second aggregate/120-second case/4workers. Default v1 retains180/45/4. Exact schema, strict integer limit maps, request/evidence digest, original context/command/dependency/population checks and incomplete-result rejection remain. The isolated collector, static producer and backend reconstruction agree on the version; historical v1 bytes are not relabeled.
+The original300-second test case and120-second Clang case limits are unchanged. Global4CPU/12GiB/no swap/256PIDs/9GiB boundaries and production6000/9000-second/one-attempt/300-second-lease contracts are untouched. No test or context is removed from production. Diagnostic completion is never full-project, assessment, worker-image or production qualification. A rebuilt image/binary is identified honestly; it is not represented as the historical binary.
 
-The static parent stays1020execution/1030wall seconds and fences commands, retention and validation. Metadata v3 now accurately reports primary540/fallback480/controller300 as phase maxima sharing1020seconds, not additive entitlements or concurrent phases. Commands are bounded by remaining parent time. All4CPU/12GiB/no swap/256PIDs/9GiB scratch/no-network/noexec/source isolation controls stay unchanged. Actual combined sufficiency is unproven until qualification.
+Fresh local focused suite:212 distinct cases passed, zero failures/errors/skips;27 diagnostic cases are included, not additive. Recorded helper implementation and lifecycle RED/GREEN evidence is indexed in docs/evidence/pr1644-isolated-timeout-20260925/verification.json. Data-only replay reconstructs377 required tests/475 required contexts and selects exactly one of each. No assessed source executed locally. Local Python3.13.5/pytest9.0.2 differs from hosted pins. Hosted owned controls and isolated native outcomes remain unproven until their artifacts exist. This is not independent review.
 
-Original behavioral RED2→identicalGREEN2; prepublication malformed-schema/stale-budget RED3failed/3passed→identicalGREEN6. Final disjoint affected groups92+221=313distinct passes, zero failures/errors/skips, exit0. These overlap earlier counts and are not additive to them. Source and embedded-program syntax pass. Data-only replay retains compiler475,static454,runtimeincomplete, original v1fallback and600/120scope. No assessed source runs locally. Exact8source/test blobs and commands: [verification.json](docs/evidence/pr1644-measured-native-budgets-20260925/verification.json). A transcription mismatch in one uploaded test blob was caught and excluded before branch publication.
+## Actual failed report — corrected identity and failure state
 
-## Unpublished permitted work preserved
+Authorized READ ONLY SQL on the existing diagnostic service retrieved exact metadata for comprun_29c30048215275ecbac35d179f71a1ed, revision66, integrity2bf78b4f47ffda9ba792c509e65e08c5b90a44aacd29456aec84ee1a54b36710. It is a NICO self-assessment, repository BoneManTGRM/NICO at faaa10b037eb58e4175561b96dadf0d929764df4, NOT Bitcoin. Do not conflate its PDF problem with native Bitcoin qualification.
 
-Separate local functional failure-retention changes in /mnt/data/nico-active stop tests after failed setup, retain failed CSV reads before parsing, validate only corroborated partial prefixes, and distinguish not-executed/unknown from zero in EN/es-MX. Related canonical Spanish export corrections remain local. They are NOT included in this timing commit and must not be reported as shipped or lost on reset. Their recorded source/tests and evidence are under /mnt/data/nico-functional-retention-evidence; reconcile against the newest native candidate before publication. The already-published678 static observation-retention and3eb timeout diagnostics remain unchanged.
+Its latest final-report stage records final_report_publication_deadline_exceeded in rendering: configured900seconds, observed3031.1515748500824seconds. Its retained decision package has a36-page PDF, SHA25669f57995f0383df766decf3d444113ff9c3ef77ed2c506c828cf2f97fb4074de, and no PDF error. This is a decision PDF, not a qualifying final report. Metadata retrieval is not full input export, rendered inspection, or proof that an earlier1132-page PDF was stored. Retrieve the earlier failure history separately and replay the actual immutable inputs against PR1645 before merge.
 
-## Review, PDF and production boundaries
+Only the existing diagnostic service's SQL variable was changed for bounded read-only queries. Main NICO configuration/deployment, database records, assessment state, credentials, approvals and delivery grants were not changed. No secret values were extracted. Main remains31269344; qualified frontend/backend/image/worker execution binding remains open.
 
-The timing supplied-material reviewer executed no tests and retrieved no artifacts. Its ASan-versus-fallback duration comparisons and description of sequential shared phases as concurrent are wrong and rejected. No concrete code defect was supplied, but this is NOT sufficient complete independent review or merge approval. Codex quota exhaustion remains unwaived; no duplicate exhausted request, alternate account or new credits.
+## C0–C19 whole-row status
 
-PR1645 at3a has18successful PR-triggered workflows including security/CI; fresh security artifact10873747509 ZIP SHA25676b74575ea464554cc4bc9e4b69527c1993239aec765a0e0d44f373bf9837dca preserves its scanner findings. Actual failing inputs/contract/PDF for comprun_29c30048215275ecbac35d179f71a1ed remain inaccessible through this session. Supported same-origin GET returned401 specialist_authentication_required at2026-09-25T16:41:33Z. No credentials were extracted/reused and no protection weakened. The1132-page error does not prove a stored PDF; HTTP200 traffic and83percent do not establish stage truth. Keep60pages and mandatory canonical/primary content; no synthetic-only merge.
-
-Last verified production remains main31269344: Vercel READY dpl_8peLtPtpFF839XWMbhwiQZkK2Dt1 and corresponding Railway SUCCESS deployment. Full qualified tool-image/worker/execution receipt chain remains unproven. No production setting, database, assessment, approval, delivery or deployment is changed here. No qualifying English/es-MX Bitcoin artifacts or approval state are established.
-
-## C0–C19 whole-row disposition
-
-| Row | State | Remaining scope |
+| Row | State | Remaining evidence |
 | --- | --- | --- |
-| C0 | UNPROVEN | Actual production contract/access and final qualification. |
-| C1 | PASS | Preserved frozen complete acquisition/inventory; production is C18. |
-| C2 | UNPROVEN | Complete corrected isolated execution and transport proof. |
-| C3 | UNPROVEN | Final dedicated worker/tenant/run/source/configuration/release binding. |
-| C4 | UNPROVEN | Real long-job recovery/cancellation/fencing/idempotence. |
-| C5 | FAIL | Latest454/475; qualify completion of21remaining contexts. |
-| C6 | PASS | Preserved frozen baseline/generated/compiler/header evidence. |
-| C7 | FAIL | ASan timeout; mandatory UBSan/fuzz absent. |
+| C0 | UNPROVEN | Complete actual input/release/qualification recovery. |
+| C1 | PASS | Preserved frozen acquisition; production revalidation remains C18. |
+| C2 | UNPROVEN | Complete final isolated native execution and transport. |
+| C3 | UNPROVEN | Dedicated final worker/tenant/run/source/configuration/release binding. |
+| C4 | UNPROVEN | Production long-job recovery, cancellation, fencing and idempotence. |
+| C5 | FAIL | Latest inspected complete artifact has474/475 static contexts. |
+| C6 | PASS | Preserved frozen baseline/compiler/generated evidence, not production proof. |
+| C7 | FAIL | One ASan timeout; required UBSan/fuzz not executed in inspected artifact. |
 | C8 | UNPROVEN | Final native/canonical/findings/register/format conservation. |
-| C9 | UNPROVEN | Complete final memberships/counts/hashes/exclusions. |
+| C9 | UNPROVEN | Complete final populations/counts/hashes/exclusions. |
 | C10 | UNPROVEN | Actual final-run score and assurance projection. |
-| C11 | UNPROVEN | New measured full workload within shared and outer limits. |
+| C11 | UNPROVEN | Measured complete workload within all unchanged boundaries. |
 | C12 | UNPROVEN | Normal-production owned C/C++ and existing-language controls. |
-| C13 | UNPROVEN | Actual structured/rendered Bitcoin output and failing-input PDF replay. |
-| C14 | UNPROVEN | Actual EN/es-MX/desktop/mobile/progress/recovery/blank metadata. |
-| C15 | UNPROVEN | Exact-edition one-action proof; human/history boundaries preserved. |
-| C16 | UNPROVEN | Exact new checks/security and complete independent review. |
+| C13 | UNPROVEN | Actual-input final PDF replay and actual Bitcoin report. |
+| C14 | UNPROVEN | Real EN/es-MX/mobile/progress/recovery/blank metadata acceptance. |
+| C15 | UNPROVEN | Exact-edition one-action proof with genuine human authorization. |
+| C16 | UNPROVEN | Final exact checks/security and complete applicable independent review. |
 | C17 | UNPROVEN | Corrected merged frontend/backend/qualified image/worker serving chain. |
 | C18 | UNPROVEN | Authorized normal-production frozen Bitcoin supported scope. |
-| C19 | UNPROVEN | Actual bilingual hashes/retrieval, pending local source and closeout. |
+| C19 | UNPROVEN | Actual bilingual hashes/repeated retrieval and verified closeout. |
 
-## EXACT NEXT ACTION
+## Next dependency steps
 
-Verify the single published timing candidate and its automatic owned/native qualification without manual duplication. Preserve any successor already running on678; changed runtime scope/fallback timing invalidates only their dependent proof. Reconcile and publish the tested local functional/report correction rather than restart it, while obtaining legitimate actual-report access and complete independent review. Native qualification must establish every retained target and actual instrumentation before image/release integration, then ordinary production control followed by frozen Bitcoin and bilingual rendered/retrieval acceptance. Do not merge, activate qualification or declare SHIPPED on longer limits, green badges, partial native output or synthetic artifacts.
-
-## Reconciled artifact, functional-failure and es-MX correction
-
-This continuation is based on exact head937ce8345286c5bf4557497a260580cbb2a53d8e/treeb5c49087af64fd2df9130989e9f6da99f8dd5251. Its above timing correction and all immutable predecessors remain intact. The retrieved native-source archive records PR test merge24aebd772ceb216ee79d479203f9b70ef8d81054 with the exact same tree. No stale timing/checkpoint patch was applied wholesale.
-
-Recovered changes are now one candidate: actual compressed-byte digest/length/type verification before decompression; retention and reconstruction of corroborated functional setup/runner/result-read failures; unknown versus unexecuted EN/es-MX scope; exact configure-first Spanish failure text; independent incomplete-scanner clause grammar; late-companion stakeholder-confirmation translation. Successful native commands, target populations, existing sanitizer/fallback budgets, all resource/isolation limits, scores and genuine human approval/delivery gates are unchanged.
-
-The unchanged 75-case focused test membership produced48failures/27passes before code changes and75passes after. Dependent fixture failures are not credited as independent behavioral REDs. Final56disjoint module runs total1421distinct passes, zero failures/errors/skips; those75are included, not additive. The first combined local command hit a200-second process ceiling with no terminal JUnit and is preserved as unproven; module sharding is not pinned hosted single-process parity. Local Python3.13.5/pytest9.0.2/pypdf5.9.0/reportlab4.4.9 differs from hosted pins. Two owned21-page EN/es-MX exports pass cross-format assertions and off-page text checks; corrected Spanish scanner/companion pages were rendered and inspected. The English PDF is byte-identical to the preserved owned baseline. These are NOT Bitcoin or production review PDFs. Exact file/JUnit hashes and scope: docs/evidence/pr1644-integrated-corrections-20260925/verification.json.
-
-Publication uses an explicitly bounded, temporary data-only GitHub object-preparation job because local Git cannot resolve github.com and the large file contents must remain byte-exact. The helper executes no NICO module, test or assessed source; it can create only immutable blobs/tree and cannot update a ref or merge. Its proposed tree removes all four temporary helper paths. The authorized integrating connection must verify returned hashes, re-read the expected head, create the commit and fast-forward the existing branch without force. A helper run is not qualification or independent review.
-
-Preserve run36167659433/job108194761680; no cancellation, retry or manually duplicated native campaign was started. Routine exact-source CI after branch publication remains required. Reconcile any concurrent head before publication. PR1645 remains separate; no actual production input, valid Bitcoin PDF, full independent approval, deployment chain, normal production exercise or client authorization is supplied by these corrections. The above C0–C19 incomplete/failed rows remain open until their actual evidence is obtained. The next action is exact-source hosted checks/review plus the preserved native result, then actual-input PDF replay and authorized production qualification—not a green-badge merge.
+Inspect the preserved full run and, only if required, the serialized isolated diagnostic. Correct the measured scheduling/capacity cause without weakening scope, then finish native sanitizer/fuzz/static qualification. In parallel recover actual report inputs/history and validate PR1645. Reconcile the shared ledger before integration; obtain complete independent review; qualify the final release/image/worker; exercise ordinary production controls and Bitcoin; inspect bilingual artifacts and repeated retrieval. Do not mark SHIPPED on diagnostic preparation, passing local tests, partial native output, synthetic PDFs or deployment badges.
