@@ -113,3 +113,18 @@ def test_published_source_pin_image_and_bitcoin_scope_are_bound():
     assert benchmark['project_options']['BUILD_TESTS'] == 'ON'
     assert benchmark['project_options']['ENABLE_WALLET'] == 'ON'
     assert benchmark['commit_sha'] == 'bb5296576e8f1a9fc11c19d9a25ba02ed4547e24'
+
+
+def test_full_project_image_provisions_frozen_bitcoin_pycapnp_offline():
+    workflow = (ROOT / '.github/workflows/cpp-full-project-integration.yml').read_text()
+    wheel = 'pycapnp-2.2.1-cp311-cp311-manylinux_2_28_x86_64.whl'
+    url = ('https://files.pythonhosted.org/packages/f0/a6/'
+           'eeb28ab162eed10340921aca24efe062d6bf7d9b98acc7a55c3b6900bf7a/' + wheel)
+    digest = 'd682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec'
+    assert workflow.count(url) == 2
+    assert workflow.count(digest + '  toolchain/full-project/pycapnp.whl') == 2
+    image = (ROOT / 'docker/assessment-full-project-fuzz.Dockerfile').read_text()
+    assert 'COPY pycapnp.whl /opt/pycapnp.whl' in image
+    assert digest + '  /opt/pycapnp.whl' in image
+    assert "capnp.__version__ == '2.2.1'" in image
+    assert 'ENV PYTHONPATH=/opt/pycapnp' in image
