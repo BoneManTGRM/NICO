@@ -65,7 +65,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 retain=lambda result: None, command=None, baseline_execution=None,
                                 unit_test_data=None, capture_generated_context=False,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
-                                extended_compiler_budget=False, compiler_environment=False):
+                                extended_compiler_budget=False, compiler_environment=False, runtime_plan=None):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -106,6 +106,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raise ValueError('worker_configuration_probe_environment_contract_invalid')
     if type(extended_compiler_budget) is not bool or (extended_compiler_budget and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
+    if (runtime_plan is not None and (baseline_execution is None or not isinstance(runtime_plan,dict)
+            or runtime_plan.get('schema')!='nico.cpp-runtime-plan.v1' or runtime_plan.get('total_seconds')!=6000)):
+        raise ValueError('worker_configuration_probe_runtime_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:
         fixed_fields = {'schema', 'profile', 'compilation_database_sha256', 'build_seconds',
@@ -136,7 +139,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
         staged_data = {name: bytes(blob) for name, blob in sorted(unit_test_data.items())}
     profile = BASELINE_QUALIFICATION_PROFILE if baseline_execution is not None else PROFILE
     resources = resources_for(profile)
-    execution_seconds = 1800 if baseline_execution is not None else 80
+    execution_seconds = (1800 + (runtime_plan['total_seconds'] if runtime_plan is not None else 0) if baseline_execution is not None else 80)
     command = command or _command
     start = time.monotonic()
     deadline = start + execution_seconds
@@ -168,8 +171,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if baseline_execution is not None:
         result.update(baseline_execution=dict(baseline_execution), baseline_execution_frozen=None,
             tests_discovered=[], tests_passed=False, scratch_capacity_verified=False, scratch_capacity_bytes=None,
-            tests_result=None, native_test_discovery=None, unit_test_data=None,
-            wall_budget_seconds=1810, execution_budget_seconds=execution_seconds)
+            tests_result=None, native_test_discovery=None, unit_test_data=None, runtime_evidence=None, runtime_summary=None,
+            wall_budget_seconds=execution_seconds+10, execution_budget_seconds=execution_seconds)
 
     if extended_compiler_budget:
         result.update(schema='nico.cpp-project-configuration-probe.v7',
@@ -472,6 +475,12 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 checkpoint()  # Validation and proof retention belong to this phase.
                 if not proof['complete']:
                     raise ValueError('worker_configuration_probe_compiler_incomplete')
+            if runtime_plan is not None:
+                from nico.assessment_cpp_runtime_execution import execute_runtime_plan, validate_runtime_evidence
+                runtime=execute_runtime_plan(observe,name,runtime_plan,project_options)
+                result['runtime_evidence']=runtime
+                result['runtime_summary']=validate_runtime_evidence(runtime,runtime_plan,project_options=project_options)
+                save()
             result['status'] = 'BASELINE_EXECUTED'
 
     except (Exception, KeyboardInterrupt) as exc:
@@ -523,5 +532,10 @@ def probe_project_configuration(source, targets, image, *, project_options,
         except (Exception, KeyboardInterrupt):
             result.update(status='UNPROVEN', error='worker_configuration_probe_static_failed')
         result['aggregate_duration_ms'] = int((time.monotonic()-start)*1000)
+        retain(result)
+    if runtime_plan is not None and not (result.get('runtime_summary') or {}).get('complete'):
+        result['status']='UNPROVEN'
+        result['error']=result.get('error') or 'worker_configuration_probe_runtime_incomplete'
+        result['aggregate_duration_ms']=int((time.monotonic()-start)*1000)
         retain(result)
     return result
