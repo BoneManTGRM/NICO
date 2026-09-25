@@ -121,6 +121,11 @@ def reconstruct_configure_first(identity, contract, receipt, store):
 
 def project_configure_first_record(record, identity, contract, receipt, reconstruction):
     native=receipt["native"]; analysis=reconstruction["analysis"]; runtime=reconstruction.get("runtime")
+    # Reconstruction is source/receipt-bound even when required execution failed.
+    # Preserve that evidence without promoting scanner completion or findings.
+    if runtime is not None:
+        record=deepcopy(record)
+        record.setdefault("cpp_build_evidence", {})["runtime_scope"]=deepcopy(runtime["summary"])
     if (not native["complete_execution"] or not analysis["complete"]
             or (runtime is not None and runtime["summary"]["complete"] is not True)):
         return record

@@ -80,3 +80,85 @@ def test_configure_first_runtime_evidence_renders_in_both_languages():
         for term in terms: assert term in rendered
         assert ('not exhaustive vulnerability or source coverage' in rendered if language=='en'
                 else 'no representa cobertura exhaustiva de vulnerabilidades ni del código' in rendered)
+
+
+def test_partial_runtime_evidence_is_projected_without_promoting_scanner():
+    record = {'status': 'partial', 'completed': False, 'verified_complete': False,
+              'finding_count': 0, 'findings': [], 'reason': 'incomplete execution',
+              'cpp_build_evidence': {'profile': 'cpp-configure-first-v2', 'compiled': True}}
+    original = deepcopy(record)
+    summary = {'complete': False, 'error': 'worker_runtime_sanitizer_failed',
+               'sanitizers_not_executed': ['undefined'], 'fuzz': {'state': 'not_executed'}}
+    receipt = {'native': {'complete_execution': False}}
+    reconstruction = {'analysis': {'complete': False}, 'runtime': {'summary': summary}}
+    result = project_configure_first_record(record, identity(), {}, receipt, reconstruction)
+    assert result['cpp_build_evidence']['runtime_scope'] == summary
+    assert result['status'] == 'partial'
+    assert result['completed'] is False and result['verified_complete'] is False
+    assert result['finding_count'] == 0 and result['findings'] == []
+    result['cpp_build_evidence']['runtime_scope']['sanitizers_not_executed'].clear()
+    assert summary['sanitizers_not_executed'] == ['undefined']
+    assert record == original
+
+
+import pytest
+
+@pytest.mark.parametrize('locale,terms', [
+    ('en', ('Sanitizer / undefined: not executed.',
+            'Bounded fuzz / connect_block: not executed; required corpus replays=2.',
+            'Declared runtime scope is incomplete.')),
+    ('es-MX', ('Sanitizador / undefined: no ejecutado.',
+              'Fuzzing acotado / connect_block: no ejecutado; repeticiones requeridas del corpus=2.',
+              'El alcance de ejecución declarado está incompleto.')),
+])
+def test_failed_runtime_report_names_unexecuted_scope_in_each_locale(locale, terms):
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    digest = 'a' * 64
+    record = {'commit_sha': 'b' * 40, 'raw_artifact_retention_complete': True,
+        'raw_artifact_sha256': digest, 'current_run': True, 'exact_commit_match': True,
+        'execution_observed_for_this_report': True,
+        'worker_provenance': {'profile': 'cpp-configure-first-v2', 'receipt_sha256': digest,
+            'identity': {'run_id': 'run', 'revision': 'b' * 40}},
+        'cppcheck_source_coverage': {'header_context_verified': True},
+        'cpp_build_evidence': {'profile': 'cpp-configure-first-v2', 'compiled': True,
+            'runtime_scope': {'complete': False, 'error': 'worker_runtime_sanitizer_failed',
+                'functional': {'required': ['feature_a.py'], 'passed': ['feature_a.py']},
+                'sanitizers': [{'kind': 'address', 'required': ['unit_a'],
+                               'executed': [], 'passed': [], 'skipped': ['unit_a']}],
+                'sanitizers_not_executed': ['undefined'],
+                'fuzz': {'state': 'not_executed', 'target': 'connect_block',
+                         'required_replay_count': 2, 'replay_count': 0,
+                         'campaign_completed': False, 'campaign_executions': None,
+                         'campaign_coverage_signal': None, 'campaign_duration_ms': None}}}}
+    canonical = {'report_language': locale, 'identity': {'run_id': 'run', 'commit_sha': 'b' * 40},
+                 'scanner_execution_records': [record]}
+    rendered = enrich_scanner_stage(canonical, {'summary': '', 'evidence': [], 'unavailable': []})
+    text = ' '.join([rendered['summary'], *rendered['evidence'], *rendered['unavailable']])
+    for term in terms:
+        assert term in text
+    assert 'None' not in text
+
+
+@pytest.mark.parametrize('locale,expected', [('en','passed=unknown/1'),('es-MX','aprobadas=desconocido/1')])
+def test_timed_out_sanitizer_without_junit_never_reports_zero_passes(locale,expected):
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    digest='a'*64
+    native={'commit_sha':'b'*40,'raw_artifact_retention_complete':True,
+        'raw_artifact_sha256':digest,'current_run':True,'exact_commit_match':True,
+        'execution_observed_for_this_report':True,
+        'worker_provenance':{'profile':'cpp-configure-first-v2','receipt_sha256':digest,
+            'identity':{'run_id':'run','revision':'b'*40}},
+        'cppcheck_source_coverage':{'header_context_verified':True},
+        'cpp_build_evidence':{'profile':'cpp-configure-first-v2','compiled':True,
+            'runtime_scope':{'complete':False,
+                'functional':{'required':['feature_a.py'],'passed':['feature_a.py']},
+                'sanitizers':[{'kind':'address','state':'timed_out','required':['unit_a'],
+                    'executed':None,'passed':None,'skipped':None}],
+                'sanitizers_not_executed':['undefined'],
+                'fuzz':{'state':'not_executed','target':'connect_block','required_replay_count':2}}}}
+    canonical={'report_language':locale,'identity':{'run_id':'run','commit_sha':'b'*40},
+               'scanner_execution_records':[native]}
+    out=enrich_scanner_stage(canonical,{'summary':'','evidence':[],'unavailable':[]})
+    text=' '.join([out['summary'],*out['evidence'],*out['unavailable']])
+    assert expected in text
+    assert 'None' not in text

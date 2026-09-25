@@ -130,6 +130,9 @@ def enrich_scanner_stage(canonical, stage):
                 evidence.append(('SHA-256 de la captura de encabezados generados: ' if es else 'Generated-header capture SHA-256: ') + digest)
         runtime = build.get('runtime_scope')
         if isinstance(runtime, Mapping):
+            if runtime.get('complete') is False:
+                gaps.append('El alcance de ejecución declarado está incompleto.' if es
+                            else 'Declared runtime scope is incomplete.')
             functional = runtime.get('functional') if isinstance(runtime.get('functional'), Mapping) else {}
             required = functional.get('required') or []
             passed = functional.get('passed') or []
@@ -139,10 +142,26 @@ def enrich_scanner_stage(canonical, stage):
             for sanitizer in runtime.get('sanitizers') or []:
                 if not isinstance(sanitizer, Mapping): continue
                 kind = str(sanitizer.get('kind') or '')
-                req = sanitizer.get('required') or []
-                ok = sanitizer.get('passed') or []
-                line = (f'Sanitizador / {kind}: {len(ok)}/{len(req)} aprobadas.' if es
-                        else f'Sanitizer / {kind}: {len(ok)}/{len(req)} passed.')
+                req = sanitizer.get('required')
+                ok = sanitizer.get('passed')
+                if isinstance(req, list) and isinstance(ok, list):
+                    line = (f'Sanitizador / {kind}: {len(ok)}/{len(req)} aprobadas.' if es
+                            else f'Sanitizer / {kind}: {len(ok)}/{len(req)} passed.')
+                else:
+                    unknown = 'desconocido' if es else 'unknown'
+                    total = str(len(req)) if isinstance(req, list) else unknown
+                    passed = str(len(ok)) if isinstance(ok, list) else unknown
+                    executed = sanitizer.get('executed')
+                    count = str(len(executed)) if isinstance(executed, list) else unknown
+                    state = sanitizer.get('state')
+                    label = ('tiempo agotado' if state == 'timed_out' else 'incompleto') if es else (
+                        'timed out' if state == 'timed_out' else 'incomplete')
+                    line = (f'Sanitizador / {kind}: {label}; ejecutadas={count}/{total}; aprobadas={passed}/{total}.' if es
+                            else f'Sanitizer / {kind}: {label}; executed={count}/{total}; passed={passed}/{total}.')
+                summaries.append(line); evidence.append(line)
+            for kind in runtime.get('sanitizers_not_executed') or []:
+                line = (f'Sanitizador / {kind}: no ejecutado.' if es
+                        else f'Sanitizer / {kind}: not executed.')
                 summaries.append(line); evidence.append(line)
             runtime_fuzz = runtime.get('fuzz') if isinstance(runtime.get('fuzz'), Mapping) else {}
             target = str(runtime_fuzz.get('target') or '')
@@ -150,8 +169,17 @@ def enrich_scanner_stage(canonical, stage):
             executions = runtime_fuzz.get('campaign_executions')
             signal = runtime_fuzz.get('campaign_coverage_signal')
             duration = runtime_fuzz.get('campaign_duration_ms')
-            line = (f'Fuzzing acotado / {target}: repeticiones del corpus={replay}; ejecuciones de campaña={executions}; señal de cobertura de la herramienta={signal}.' if es
-                    else f'Bounded fuzz / {target}: corpus replays={replay}; campaign executions={executions}; tool coverage signal={signal}.')
+            unknown = 'desconocido' if es else 'unknown'
+            replay = replay if type(replay) is int else unknown
+            executions = executions if type(executions) is int else unknown
+            signal = signal if type(signal) is int else unknown
+            if runtime_fuzz.get('state') == 'not_executed':
+                required_replays = runtime_fuzz.get('required_replay_count')
+                line = (f'Fuzzing acotado / {target}: no ejecutado; repeticiones requeridas del corpus={required_replays}.' if es
+                        else f'Bounded fuzz / {target}: not executed; required corpus replays={required_replays}.')
+            else:
+                line = (f'Fuzzing acotado / {target}: repeticiones del corpus={replay}; ejecuciones de campaña={executions}; señal de cobertura de la herramienta={signal}.' if es
+                        else f'Bounded fuzz / {target}: corpus replays={replay}; campaign executions={executions}; tool coverage signal={signal}.')
             summaries.append(line); evidence.append(line)
             if type(duration) is int:
                 evidence.append((f'Duración de la campaña de fuzzing: {duration} ms.' if es else f'Fuzz campaign duration: {duration} ms.'))
