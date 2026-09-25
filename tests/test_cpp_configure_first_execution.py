@@ -81,7 +81,7 @@ def test_configure_first_v3_derives_release_options_before_probe(tmp_path, monke
     plan=contract(); plan['configuration'].pop('project_options')
     plan['configuration'].update(schema='nico.cpp-configure-first-contract.v3',
         project_option_policy='conservative-cmake-v1', runtime_scope={
-            'schema':'nico.cpp-runtime-scope.v1','functional_policy':'source-declared-functional-v1',
+            'schema':'nico.cpp-runtime-scope.v1','total_seconds':6000,'functional_policy':'source-declared-functional-v1',
             'functional_seconds':900,'sanitizers':['address','undefined'],'sanitizer_build_seconds':1200,
             'sanitizer_test_seconds':600,'sanitizer_test_case_seconds':120,
             'fuzz_policy':'source-declared-libfuzzer-v1','fuzz_replay_runs':1,
@@ -94,14 +94,28 @@ def test_configure_first_v3_derives_release_options_before_probe(tmp_path, monke
     acquisition={'schema':'nico.github_https_tree_materialization.v2','tree_sha':plan['configuration']['expected_tree_sha'],
         'inputs':targets,'population_sha256':hashlib.sha256(canonical_bytes(targets)).hexdigest()}
     observed={}
+    monkeypatch.setattr('nico.assessment_cpp_runtime_scope.capture_runtime_interfaces',
+        lambda source,actual_targets:{'interfaces':True})
+    runtime_plan={'schema':'nico.cpp-runtime-plan.v1','total_seconds':6000,'unit_test_data':None}
+    monkeypatch.setattr('nico.assessment_cpp_runtime_scope.derive_runtime_plan_from_interfaces',
+        lambda interfaces,actual_targets,options,scope:runtime_plan)
+    monkeypatch.setattr('nico.assessment_cpp_runtime_scope.acquire_unit_test_data',lambda plan,checkpoint:None)
+    monkeypatch.setattr('nico.assessment_cpp_runtime_scope.retained_runtime_bytes',
+        lambda interfaces,actual_plan,evidence:b'{"runtime":true}')
     def fake_probe(source, actual_targets, image, **kwargs):
-        observed['options']=kwargs['project_options']
+        observed['options']=kwargs['project_options']; observed['runtime_plan']=kwargs['runtime_plan']
         value=proof(); value['compilation_database']=base64.b64encode(b'[]').decode()
         value['compilation_database_sha256']=hashlib.sha256(b'[]').hexdigest()
+        value['runtime_evidence']={'schema':'nico.cpp-runtime-evidence.v1','duration_ms':7}
+        value['runtime_summary']={'complete':True}
         return value
     monkeypatch.setattr('nico.assessment_cpp_configuration_probe.probe_project_configuration',fake_probe)
     result=run_configure_first(plan,root,acquisition,checkpoint=lambda:None,timeout_seconds=8980,
         retain_artifact=lambda key,raw:ref(key,raw))
     assert observed['options']=={'BUILD_GUI':'OFF','BUILD_TESTS':'ON'}
+    assert observed['runtime_plan']==runtime_plan
+    assert result['native']['schema']=='nico.cpp-configure-first-native.v2'
+    assert result['native']['runtime_complete'] is True
     assert result['native']['project_option_policy']=='conservative-cmake-v1'
     assert result['native']['project_options']==observed['options']
+    assert 'project-runtime-evidence' in result['native']['artifacts']
