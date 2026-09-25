@@ -25,6 +25,22 @@ SECRET_PATTERNS = (
 )
 
 
+def _combined_secret_pattern(patterns):
+    """Compile the existing secret rules into one equivalent search regex."""
+    parts = []
+    for pattern in patterns:
+        flags = ""
+        if pattern.flags & re.IGNORECASE: flags += "i"
+        if pattern.flags & re.MULTILINE: flags += "m"
+        if pattern.flags & re.DOTALL: flags += "s"
+        body = re.sub(r"^\(\?[aiLmsux]+\)", "", pattern.pattern)
+        parts.append(("(?"+flags+":"+body+")") if flags else "(?:"+body+")")
+    return re.compile("|".join(parts))
+
+
+_SENSITIVE_PATTERN = _combined_secret_pattern(SECRET_PATTERNS)
+
+
 @dataclass(frozen=True)
 class ScannerToolSpec:
     name: str
@@ -121,11 +137,19 @@ def redact_text(value: str) -> str:
 def contains_sensitive_text(value: str) -> bool:
     """Return whether redaction would change this decoded text.
 
-    Detection uses the same compiled patterns as redact_text but avoids
-    allocating a substituted copy when callers only need a yes/no answer.
+    One equivalent compiled union plus cheap marker guards avoids repeated
+    regex scans for ordinary native diagnostics.
     """
     text = value or ""
-    return any(pattern.search(text) is not None for pattern in SECRET_PATTERNS)
+    if len(text) < 16:
+        return False
+    folded = text.casefold()
+    if ("gh" not in text and "github_pat_" not in text and "AKIA" not in text
+            and "PRIVATE KEY" not in text and "api" not in folded
+            and "secret" not in folded and "token" not in folded
+            and "password" not in folded):
+        return False
+    return _SENSITIVE_PATTERN.search(text) is not None
 
 
 def _redact_match(match: re.Match[str]) -> str:

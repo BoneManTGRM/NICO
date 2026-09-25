@@ -309,18 +309,24 @@ def validate_project_static(raw, request):
         try:
             document = ET.fromstring(xml)
             # Unknown diagnostic locations are retained raw but cannot become
-            # source-bound findings or a completed context.
+            # source-bound findings or a completed context. Parse once and pass
+            # the same verified tree into the native adapter.
             for loc in document.findall('errors/error/location'):
                 if loc.get('file') not in locations:
                     raise ValueError('worker_project_static_location_unbound')
             native_findings, limits, observed = parse_native(xml.decode('utf-8'), progress.decode('utf-8'),
-                sorted(locations), version=TOOL_VERSION)
+                sorted(locations), version=TOOL_VERSION, document=document)
         except (ET.ParseError, UnicodeError) as exc:
             raise ValueError('worker_project_static_xml_invalid') from exc
         if environment_model is not None:
+            modeled_index = {}
+            for path, member in dependencies.items():
+                if member['modeled_name'] and member['model']:
+                    modeled_index.setdefault((member['modeled_name'], member['model']), []).append(path)
             execution_limits = []
             for entry in limits:
-                modeled = modeled_missing_include(entry, environment_model, context['context_id'], dependencies)
+                modeled = modeled_missing_include(entry, environment_model, context['context_id'],
+                    dependencies, modeled_index)
                 if modeled:
                     modeled_inputs.append({**modeled, 'native_evidence_sha256': native_evidence_sha256})
                 else:

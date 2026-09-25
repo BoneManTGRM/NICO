@@ -11,10 +11,13 @@ class NativeOutputRedactionRequired(ValueError):
 
 
 def parse_native(native_xml: str, progress: str, targets: list[str], *, version: str | None = None,
-                 source_prefix: str = ''):
+                 source_prefix: str = '', document=None):
     if "<!DOCTYPE" in native_xml or "<!ENTITY" in native_xml:
         raise ValueError("cppcheck_xml_external_content_rejected")
-    document = ET.fromstring(native_xml)
+    if document is None:
+        document = ET.fromstring(native_xml)
+    elif not isinstance(document, ET.Element):
+        raise ValueError("cppcheck_output_schema_invalid")
     from nico.scanner_tool_runners import contains_sensitive_text
     for node in document.iter():
         values = (node.tag, node.text or "", node.tail or "", *node.attrib.keys(), *node.attrib.values())

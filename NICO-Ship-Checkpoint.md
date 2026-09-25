@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify this published controller hot-path repair in the frozen Bitcoin qualification so the already-published Clang fallback actually executes. Preserve exact primary/fallback populations and artifacts. If C5/C11 pass, promote only the terminal successful qualification run/artifact/image identities into the fail-closed normal-intake selector, then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual production Bitcoin acceptance.
+EXACT NEXT ACTION: verify this second controller hot-path repair in hosted frozen Bitcoin qualification so the already-published 56-context Clang fallback can execute within the unchanged 600-second static-stage budget. Preserve exact primary/fallback artifacts and populations. If C5/C11 pass, promote only the terminal successful qualification run/artifact/image identities into the fail-closed normal-intake selector, then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual Bitcoin acceptance.
 
 ## Immutable continuity
 
@@ -176,3 +176,14 @@ Frozen Bitcoin run36069996332/job107871849128 retained qualification artifact108
 Exact-artifact replay isolated the controller hot path: Cppcheck XML secret safety used full substitution-based redaction for every decoded XML tag/text/tail/attribute merely to answer whether a secret pattern matched. Temporarily bypassing only that yes/no scan reduced exact artifact validation to8.6 seconds; replacing it with search-only detection using the identical compiled secret patterns validates the exact retained artifact in11.5 seconds while preserving the same419/475 primary coverage,31,873 findings,579 limitations and138,106 modeled inputs. No native analyzer invocation, finding, limitation, context, secret pattern, deadline, resource limit, or completion rule changes.
 
 Focused parser/static/receipt/scanner regressions pass121/121. The new equivalence regression proves each supported secret shape and benign text returns the same detection truth as `redact_text(value) != value`. Existing entity-decoded XML and base64 secret rejection tests continue to pass. The repair is controller-only performance work; hosted native qualification remains mandatory and Clang fallback completion is not yet claimed.
+
+
+## Bitcoin static validator second hot-path repair
+
+The first search-only redaction repair at 74cfd03c reduced exact retained Bitcoin validation materially, but profiling the same native evidence still showed avoidable controller work before the already-published Clang fallback. The remaining hot paths were five separate secret-pattern searches for each decoded XML field, a second XML parse inside the generic native adapter, and repeated modeled-header dependency scans for 138,106 modeled-input records.
+
+This descendant preserves the same secret rules but compiles them into one scoped-flag union and uses cheap marker guards before regex evaluation. The project validator parses each native XML document once and passes that verified ElementTree into the generic parser. Per-context modeled public headers are indexed once and the modeled-input validator checks every indexed path back against the exact dependency map before use.
+
+Exact replay of retained static evidence da44104ef44287791b7c09b65991ca5d07ca0f7285a5a82cce9309f6b43461e8 produced a byte-for-byte identical 135,751,540-byte canonical proof, SHA256 becb54cf03d1b59b04ffdd46c461779fdb558e3b3961e5a18c62e1f001210ea7, with 419/475 analyzed contexts, 31,873 findings, 579 limitations and 138,106 modeled inputs. Local Python3.13 replay fell from 11.762s before this descendant to 3.707s after it. The Clang fallback request remains exactly 56 contexts and 557,374 serialized bytes.
+
+Focused regression groups pass 155/155 plus 20/20 additional Clang/redaction tests. The unchanged broader C++ aggregate exceeded the local command window after partial progress and is not credited. No analyzer invocation, secret pattern, context, finding, limitation, deadline, resource limit or completion rule changes. Hosted Bitcoin requalification remains mandatory.

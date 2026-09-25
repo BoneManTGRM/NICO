@@ -37,6 +37,8 @@ def test_sensitive_detection_matches_redaction_change_without_allocating_replace
         "AKIA" + "A" * 16,
         "-----BEGIN PRIVATE KEY-----owned-----END PRIVATE KEY-----",
         "api_key = " + "z" * 20,
+        "ToKeN: " + "q" * 20,
+        "PaSsWoRd = " + "r" * 20,
     ]
     for value in [*secrets, "ordinary diagnostic text", "[REDACTED]"]:
         assert contains_sensitive_text(value) is (redact_text(value) != value)

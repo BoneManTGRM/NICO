@@ -213,3 +213,22 @@ def test_modeled_missing_include_reuses_validated_context_dependencies(monkeypat
     modeled = env.modeled_missing_include(limit, proof, 'owned-context', dependencies)
     assert modeled['compiler_resolved_headers'] == ['/usr/include/stdint.h']
     assert modeled['model'] == 'std'
+
+
+def test_modeled_missing_include_uses_preindexed_dependency_population():
+    env = api()
+    proof = {'models': dict(env.MODEL_HASHES), 'native_evidence_sha256': 'a' * 64}
+    dependencies = {
+        '/usr/include/stdint.h': {'modeled_name': 'stdint.h', 'model': 'std'},
+        '/usr/include/boost/asio.hpp': {'modeled_name': 'boost/asio.hpp', 'model': 'boost'},
+    }
+    index = {('stdint.h', 'std'): ['/usr/include/stdint.h'],
+             ('boost/asio.hpp', 'boost'): ['/usr/include/boost/asio.hpp']}
+    limit = {'rule_id': 'missingIncludeSystem',
+             'message': 'Include file: <stdint.h> not found. Please note: Cppcheck does not need standard library headers to get proper results.',
+             'locations': []}
+    modeled = env.modeled_missing_include(limit, proof, 'owned-context', dependencies, index)
+    assert modeled['compiler_resolved_headers'] == ['/usr/include/stdint.h']
+    broken = {('stdint.h', 'std'): ['/usr/include/boost/asio.hpp']}
+    with pytest.raises(ValueError, match='dependency_population'):
+        env.modeled_missing_include(limit, proof, 'owned-context', dependencies, broken)

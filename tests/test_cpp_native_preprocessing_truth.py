@@ -134,3 +134,15 @@ def test_positive_inventory_and_genuine_findings_still_allow_completed_execution
     result = validate_project_static(_canonical(value), req)
     assert result['complete'] and result['analyzed_contexts'] == result['required_contexts']
     assert len(result['findings']) == (3 if rule == 'uninitvar' else 0)
+
+
+def test_project_parser_reuses_preparsed_xml_without_changing_native_truth(monkeypatch):
+    import xml.etree.ElementTree as ET
+    from nico import cppcheck_native_output as parser
+    raw = xml('owned.cpp', 'uninitvar', 'Uninitialized variable: owned', 'warning')
+    document = ET.fromstring(raw)
+    monkeypatch.setattr(parser.ET, 'fromstring', lambda value: pytest.fail('XML parsed twice'))
+    findings, limits, observed = parser.parse_native(raw, 'Checking owned.cpp ...\n', ['owned.cpp'],
+        version='2.17.1', document=document)
+    assert observed == ['owned.cpp'] and not limits
+    assert len(findings) == 1 and findings[0]['rule_id'] == 'uninitvar'

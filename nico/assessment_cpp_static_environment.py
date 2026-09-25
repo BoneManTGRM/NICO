@@ -502,7 +502,7 @@ def context_dependencies(environment, context_id):
     return {paths[i]: environment['headers'][paths[i]] for i in indices}
 
 
-def modeled_missing_include(limit, environment, context_id, dependencies=None):
+def modeled_missing_include(limit, environment, context_id, dependencies=None, modeled_index=None):
     """A documented model is distinct from a present or analyzer-visited header.
 
     Preserve the original diagnostic. Only a named public header that the actual
@@ -520,8 +520,17 @@ def modeled_missing_include(limit, environment, context_id, dependencies=None):
         dependencies = context_dependencies(environment, context_id)
     if not isinstance(dependencies, dict):
         raise ValueError('worker_project_static_dependency_population')
-    resolved = [path for path, member in dependencies.items()
-                if member['modeled_name'] == name and member['model'] == model]
+    if modeled_index is None:
+        resolved = [path for path, member in dependencies.items()
+                    if member['modeled_name'] == name and member['model'] == model]
+    else:
+        if not isinstance(modeled_index, dict):
+            raise ValueError('worker_project_static_dependency_population')
+        resolved = modeled_index.get((name, model), [])
+        if (not isinstance(resolved, list) or any(path not in dependencies for path in resolved)
+                or any(dependencies[path]['modeled_name'] != name
+                    or dependencies[path]['model'] != model for path in resolved)):
+            raise ValueError('worker_project_static_dependency_population')
     if not resolved: return None
     return {**limit, 'context_id': context_id, 'classification': 'modeled_public_header',
             'model': model, 'model_sha256': MODEL_HASHES[model], 'header_name': name,
