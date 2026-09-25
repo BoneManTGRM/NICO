@@ -22,7 +22,8 @@ from nico.assessment_cpp_compiler_evidence import _source_path, safe_compile_arg
 from nico.assessment_cpp_generated_context import _project_option, _stable_bytes
 from nico.assessment_cpp_project_compiler import (
     _canonical, _digest, _extra_option, _syntax_argv, _verify_input,
-    project_compiler_request, validate_project_compiler, GENERATED_FILE_LIMIT,
+    project_compiler_request, validate_project_compiler, validated_project_compiler_state,
+    reuse_validated_project_compiler, GENERATED_FILE_LIMIT,
 )
 
 from nico.assessment_cpp_static_environment import (analyzer_environment_arguments,
@@ -114,22 +115,30 @@ def _static_plan(context, environment=None):
     return database, argv
 
 
-def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None, environment=None):
+def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None,
+                           environment=None, compiler_request=None, compiler_state=None):
     """Reconstruct every binding; require completed native compiler evidence."""
     from nico.assessment_cpp_full_project import _json
     # Retained-evidence callers may reconstruct either version. Live callers
     # supply their selected policy so evidence cannot choose a different one.
-    if extended_compiler_budget is None:
-        compiler_schema = _json(compiler_raw).get('schema')
-        extended_compiler_budget = compiler_schema == 'nico.cpp-project-compiler-evidence.v2'
-    compiler_request = project_compiler_request(database, targets, snapshot,
-        extended_budget=extended_compiler_budget)
-    proof = validate_project_compiler(compiler_raw, compiler_request)
+    if compiler_request is None:
+        if compiler_state is not None:
+            raise ValueError('worker_project_compiler_state_mismatch')
+        if extended_compiler_budget is None:
+            compiler_schema = _json(compiler_raw).get('schema')
+            extended_compiler_budget = compiler_schema == 'nico.cpp-project-compiler-evidence.v2'
+        compiler_request = project_compiler_request(database, targets, snapshot,
+            extended_budget=extended_compiler_budget)
+        proof = validate_project_compiler(compiler_raw, compiler_request)
+        records = _json(compiler_raw)['records']
+    else:
+        if compiler_state is None:
+            raise ValueError('worker_project_compiler_state_mismatch')
+        proof, records = reuse_validated_project_compiler(compiler_state, compiler_raw, compiler_request)
     if not proof['complete']:
         raise ValueError('worker_project_static_compiler_incomplete')
-    records = _json(compiler_raw)['records']
     if environment is not None:
-        bind_environment(environment, compiler_request, compiler_raw)
+        bind_environment(environment, compiler_request, compiler_raw, compiler_state=compiler_state)
     contexts = []
     for context, record in zip(compiler_request['contexts'], records):
         data, argv = _static_plan(context, environment)
@@ -487,8 +496,13 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
     save()
     try:
         guarded_checkpoint()
+        selected = extended_compiler_budget
+        if selected is None:
+            selected = _json(compiler_raw)['schema'] == 'nico.cpp-project-compiler-evidence.v2'
+        compiler_request = project_compiler_request(database, targets, snapshot, extended_budget=selected)
+        compiler_state = validated_project_compiler_state(compiler_raw, compiler_request)
         request = project_static_request(database, targets, snapshot, compiler_raw,
-            extended_compiler_budget=extended_compiler_budget)
+            extended_compiler_budget=selected, compiler_request=compiler_request, compiler_state=compiler_state)
         result.update(request_sha256=_digest(_canonical(request)),
             snapshot_population_sha256=request['snapshot_population_sha256'],
             compiler_evidence_sha256=request['compiler_evidence_sha256'])
@@ -542,11 +556,8 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
             from nico.assessment_cpp_static_environment import (environment_request, validate_environment,
                 ENV_PROGRAM, ENV_STREAM_LIMIT)
             result['phase'] = 'compiler_environment'; save()
-            selected = extended_compiler_budget
-            if selected is None:
-                selected = _json(compiler_raw)['schema'] == 'nico.cpp-project-compiler-evidence.v2'
-            compiler_request = project_compiler_request(database, targets, snapshot, extended_budget=selected)
-            env_request = environment_request(compiler_request, compiler_raw, image)
+            env_request = environment_request(compiler_request, compiler_raw, image,
+                compiler_state=compiler_state)
             env_observed = observe('project-static-environment', ['docker', 'exec', '--user='+ANALYSIS_USER,
                 '--interactive', name, 'python3', '-I', '-S', '-c', ENV_PROGRAM],
                 data=_canonical(env_request), limit=ENV_STREAM_LIMIT, seconds=40, external=True)
@@ -563,7 +574,8 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                 'header_population_sha256': model['header_population_sha256'],
                 'models': model['models'], 'model_policy': model['model_policy']}
             request = project_static_request(database, targets, snapshot, compiler_raw,
-                extended_compiler_budget=extended_compiler_budget, environment=model)
+                extended_compiler_budget=selected, environment=model, compiler_request=compiler_request,
+                compiler_state=compiler_state)
             result.update(schema='nico.cpp-project-static-stage.v2', request_sha256=_digest(_canonical(request)))
             save(); guarded_checkpoint()
         result['phase'] = 'analysis'; save()
