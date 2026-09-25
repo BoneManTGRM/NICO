@@ -78,3 +78,152 @@ def test_runtime_validator_rejects_tampered_retained_result_read():
     value['functional']['results_read']['output_sha256']='0'*64
     with pytest.raises(ValueError,match='runtime_evidence_invalid'):
         validate_runtime_evidence(value,plan())
+
+
+"""Runtime CSV membership, not presentation order, binds executed tests."""
+import base64
+import csv
+import io
+import json
+
+import pytest
+
+from nico.assessment_cpp_runtime_execution import (
+    _parse_functional_csv, execute_runtime_plan, validate_runtime_evidence,
+)
+
+
+def csv_bytes(rows):
+    stream = io.StringIO(newline='')
+    writer = csv.writer(stream)
+    writer.writerow(['test', 'status', 'duration(seconds)'])
+    writer.writerows(rows)
+    return stream.getvalue().encode()
+
+
+class SortedResults(Observe):
+    def __call__(self, key, argv, **kwargs):
+        result = super().__call__(key, argv, **kwargs)
+        if key == 'runtime-functional-results':
+            raw = csv_bytes([
+                ['feature_a.py', 'Passed', '1'],
+                ['interface_ipc.py', 'Passed', '2'],
+                ['mempool_a.py', 'Passed', '3'],
+                ['ALL', 'Passed', '3'],
+            ])
+            result['output'] = json.dumps({
+                'data': base64.b64encode(raw).decode(), 'truncated': False,
+            }).encode()
+        return result
+
+
+def test_sorted_upstream_csv_completes_the_original_selected_population():
+    contract = plan()
+    selected = ['feature_a.py', 'mempool_a.py', 'interface_ipc.py']
+    contract['functional']['selected_tests'] = selected
+    native = execute_runtime_plan(SortedResults(), 'container', contract, {'BUILD_TESTS': 'ON'})
+    assert native['complete'] is True, native['error']
+    verified = validate_runtime_evidence(native, contract)
+    assert verified['functional']['required'] == selected
+    assert verified['functional']['executed'] == selected
+    assert verified['functional']['passed'] == selected
+
+
+def test_status_sorted_failures_and_skips_preserve_the_selected_order_and_truth():
+    selected = ['feature_a.py', 'mempool_a.py', 'interface_ipc.py']
+    raw = csv_bytes([
+        ['interface_ipc.py', 'Passed', '1'],
+        ['mempool_a.py', 'Skipped', '0'],
+        ['feature_a.py', 'Failed', '2'],
+        ['ALL', 'Failed', '2'],
+    ])
+    assert _parse_functional_csv(raw, selected) == {
+        'required': selected,
+        'executed': ['feature_a.py', 'interface_ipc.py'],
+        'passed': ['interface_ipc.py'],
+        'failed': ['feature_a.py'],
+        'skipped': ['mempool_a.py'],
+    }
+
+
+def test_skipped_rows_are_not_executed_even_when_upstream_total_says_passed():
+    raw = csv_bytes([['feature_a.py', 'Skipped', '0'], ['ALL', 'Passed', '0']])
+    result = _parse_functional_csv(raw, ['feature_a.py'])
+    assert result['executed'] == []
+    assert result['skipped'] == ['feature_a.py']
+
+
+@pytest.mark.parametrize('rows', [
+    [['feature_a.py', 'Passed', '1'], ['feature_a.py', 'Passed', '1'], ['ALL', 'Passed', '2']],
+    [['other.py', 'Passed', '1'], ['ALL', 'Passed', '1']],
+    [['ALL', 'Passed', '0']],
+    [['feature_a.py', 'Passed', '1'], []],
+    [[], ['ALL', 'Passed', '1']],
+    [['feature_a.py', 'Passed', '1'], ['ALL']],
+    [['feature_a.py', 'Failed', '1'], ['ALL', 'Passed', '1']],
+    [['feature_a.py', 'Passed', '1'], ['ALL', 'Failed', '1']],
+    [['feature_a.py', 'Passed', '-1'], ['ALL', 'Passed', '1']],
+    [['feature_a.py', 'Passed', 'nan'], ['ALL', 'Passed', '1']],
+    [['feature_a.py', 'Passed', '1'], ['ALL', 'Passed', 'Infinity']],
+])
+def test_malformed_or_contradictory_csv_cannot_pass(rows):
+    with pytest.raises(ValueError, match='worker_runtime_functional_results_invalid'):
+        _parse_functional_csv(csv_bytes(rows), ['feature_a.py'])
+
+
+"""Native summaries cannot stand in for the frozen command/seed population."""
+from copy import deepcopy
+
+import pytest
+
+from nico.assessment_cpp_runtime_execution import execute_runtime_plan, validate_runtime_evidence
+
+
+def native():
+    contract = plan()
+    value = execute_runtime_plan(Observe(), 'container', contract, {'BUILD_TESTS': 'ON'})
+    return contract, value
+
+
+@pytest.mark.parametrize('fault', [
+    'functional_command', 'functional_user', 'functional_workdir', 'functional_read_failed',
+    'functional_read_path', 'sanitizer_flags', 'sanitizer_options', 'sanitizer_read_failed',
+    'sanitizer_test_environment', 'fuzz_target_environment', 'fuzz_campaign_runs',
+    'fuzz_replays_missing', 'fuzz_replays_duplicate', 'fuzz_replay_other_seed',
+    'fuzz_replay_user', 'fuzz_replay_extra', 'fuzz_replay_id',
+    'negative_duration', 'sequential_duration', 'exit_code_range',
+])
+def test_reconstructed_runtime_rejects_changed_commands_seeds_and_envelopes(fault):
+    contract, value = native()
+    functional = value['functional']
+    sanitizer = value['sanitizers'][0]
+    fuzz = value['fuzz']
+    if fault == 'functional_command': functional['operation']['argv'] = ['true']
+    elif fault == 'functional_user': functional['operation']['user'] = '0:0'
+    elif fault == 'functional_workdir': functional['operation']['workdir'] = '/tmp'
+    elif fault == 'functional_read_failed': functional['results_read']['exit_code'] = 1
+    elif fault == 'functional_read_path': functional['results_read']['argv'][-2] = '/work/other.csv'
+    elif fault == 'sanitizer_flags': sanitizer['configure']['argv'][-1] = '-DSANITIZERS='
+    elif fault == 'sanitizer_options': sanitizer['configure']['argv'][-2] = '-DBUILD_TESTS=OFF'
+    elif fault == 'sanitizer_read_failed': sanitizer['junit_read']['timed_out'] = True
+    elif fault == 'sanitizer_test_environment': sanitizer['tests']['environment'] = {}
+    elif fault == 'fuzz_target_environment': fuzz['campaign']['environment']['FUZZ'] = 'other'
+    elif fault == 'fuzz_campaign_runs': fuzz['campaign']['argv'][1] = '-runs=1'
+    elif fault == 'fuzz_replays_missing': fuzz['replays'] = []
+    elif fault == 'fuzz_replays_duplicate': fuzz['replays'][1] = deepcopy(fuzz['replays'][0])
+    elif fault == 'fuzz_replay_other_seed': fuzz['replays'][1]['argv'][-1] = '/work/runtime-corpus/connect_block/s0'
+    elif fault == 'fuzz_replay_user': fuzz['replays'][0]['user'] = '0:0'
+    elif fault == 'fuzz_replay_extra': fuzz['replays'].append(deepcopy(fuzz['replays'][0]))
+    elif fault == 'fuzz_replay_id': fuzz['replays'][0]['id'] = 'another-operation'
+    elif fault == 'negative_duration': fuzz['replays'][0]['duration_ms'] = -1
+    elif fault == 'sequential_duration': functional['operation']['duration_ms'] = value['duration_ms'] + 3000
+    elif fault == 'exit_code_range': functional['operation']['exit_code'] = 1000000
+    with pytest.raises(ValueError, match='worker_runtime_evidence_invalid'):
+        validate_runtime_evidence(value, contract, project_options={'BUILD_TESTS': 'ON'})
+
+
+def test_runtime_validation_keeps_real_failure_and_valid_bound_control():
+    contract, value = native()
+    assert validate_runtime_evidence(value, contract, project_options={'BUILD_TESTS': 'ON'})['complete']
+    failed = execute_runtime_plan(Observe('runtime-fuzz-campaign'), 'container', contract, {'BUILD_TESTS': 'ON'})
+    assert validate_runtime_evidence(failed, contract, project_options={'BUILD_TESTS': 'ON'})['complete'] is False

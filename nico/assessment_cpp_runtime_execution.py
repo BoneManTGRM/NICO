@@ -105,17 +105,36 @@ def _read_file(observe, container, key, path, limit):
 
 
 def _parse_functional_csv(raw, selected):
-    rows=list(csv.reader(io.StringIO(raw.decode('utf-8'))))
-    if not rows or rows[0]!=['test','status','duration(seconds)']:
-        raise ValueError('worker_runtime_functional_results_invalid')
-    body=rows[1:]
-    if not body or body[-1][0]!='ALL': raise ValueError('worker_runtime_functional_results_invalid')
-    tests=body[:-1]
-    names=[row[0] for row in tests]
-    if names!=selected or any(len(row)!=3 or row[1] not in {'Passed','Failed','Skipped'} for row in tests):
-        raise ValueError('worker_runtime_functional_results_invalid')
-    return {'required':selected,'executed':names,'passed':[r[0] for r in tests if r[1]=='Passed'],
-        'failed':[r[0] for r in tests if r[1]=='Failed'],'skipped':[r[0] for r in tests if r[1]=='Skipped']}
+    """Bind exact membership independently of the runner's presentation order."""
+    error = 'worker_runtime_functional_results_invalid'
+    if (not isinstance(raw, bytes) or not isinstance(selected, list) or not selected
+            or any(not isinstance(name, str) or not name or name == 'ALL' for name in selected)
+            or len(selected) != len(set(selected))):
+        raise ValueError(error)
+    try:
+        rows = list(csv.reader(io.StringIO(raw.decode('utf-8')), strict=True))
+    except (UnicodeError, csv.Error) as exc:
+        raise ValueError(error) from exc
+    if (len(rows) < 3 or rows[0] != ['test', 'status', 'duration(seconds)']
+            or any(len(row) != 3 for row in rows[1:])
+            or rows[-1][0] != 'ALL'
+            or any(re.fullmatch(r'[0-9]+(?:\.[0-9]+)?', row[2]) is None for row in rows[1:])):
+        raise ValueError(error)
+    tests = rows[1:-1]
+    names = [row[0] for row in tests]
+    if (len(names) != len(selected) or len(set(names)) != len(names)
+            or set(names) != set(selected)
+            or any(row[1] not in {'Passed', 'Failed', 'Skipped'} for row in tests)):
+        raise ValueError(error)
+    by_name = {row[0]: row[1] for row in tests}
+    total_status = 'Failed' if 'Failed' in by_name.values() else 'Passed'
+    if rows[-1][1] != total_status:
+        raise ValueError(error)
+    return {'required': list(selected),
+        'executed': [name for name in selected if by_name[name] != 'Skipped'],
+        'passed': [name for name in selected if by_name[name] == 'Passed'],
+        'failed': [name for name in selected if by_name[name] == 'Failed'],
+        'skipped': [name for name in selected if by_name[name] == 'Skipped']}
 
 
 def _discover(raw):
@@ -266,6 +285,67 @@ def execute_runtime_plan(observe, container, plan, project_options):
     return evidence
 
 
+def _runtime_operation_specs(plan, project_options):
+    """Reconstruct semantic commands; never execute worker-supplied argv."""
+    specs = {}
+    def add(key, argv, seconds, *, user=None, environment=None, workdir=None, limit=1024*1024):
+        specs[key] = {'id': key, 'argv': argv, 'user': user,
+            'environment': environment or {}, 'workdir': workdir,
+            'seconds': seconds, 'limit': limit}
+    def read(key, path, limit):
+        add(key, ['python3', '-I', '-S', '-c', READ_PROGRAM, path, str(limit)],
+            15, limit=limit*2+4096)
+    functional = plan['functional']
+    add('runtime-functional-setup', ['python3', '-I', '-S', '-c',
+        "import pathlib; pathlib.Path('/work/functional-tests').mkdir(exist_ok=True)"], 10)
+    add('runtime-functional', ['python3', '/work/build/test/functional/test_runner.py',
+        '--jobs', str(functional['parallel']), '--quiet',
+        '--resultsfile=/work/build/nico-functional-results.csv',
+        '--tmpdirprefix=/work/functional-tests', *functional['selected_tests']],
+        functional['seconds'], environment={'PYTHON_GIL': '1'}, workdir='/work/build')
+    read('runtime-functional-results', '/work/build/nico-functional-results.csv', 1024*1024)
+    for kind in plan['sanitizers']['kinds']:
+        directory = '/work/sanitize-' + kind
+        prefix = 'runtime-' + kind
+        add(prefix+'-configure', ['cmake', '-S', '/work/source', '-B', directory,
+            '-G', 'Unix Makefiles', '-DCMAKE_BUILD_TYPE=Debug', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+            '-DCMAKE_C_COMPILER=/usr/local/bin/gcc', '-DCMAKE_CXX_COMPILER=/usr/local/bin/g++',
+            *_base_options(project_options), '-DSANITIZERS='+kind], 90)
+        add(prefix+'-build', ['cmake', '--build', directory, '--parallel',
+            str(plan['sanitizers']['parallel'])], plan['sanitizers']['build_seconds'])
+        add(prefix+'-discover', ['ctest', '--test-dir', directory, '--show-only=json-v1'],
+            60, limit=4*1024*1024)
+        environment = ({'ASAN_OPTIONS': 'detect_leaks=0:halt_on_error=1'} if kind == 'address'
+            else {'UBSAN_OPTIONS': 'halt_on_error=1'})
+        if plan.get('unit_test_data') is not None:
+            environment['DIR_UNIT_TEST_DATA'] = '/work/unit_test_data'
+        add(prefix+'-tests', ['python3', '-I', '-S', '-c', LOG_EXEC_PROGRAM,
+            directory+'/nico-runtime-ctest.log', 'ctest', '--test-dir', directory,
+            '--parallel', str(plan['sanitizers']['parallel']), '--timeout',
+            str(plan['sanitizers']['test_case_seconds']), '--output-on-failure',
+            '--output-junit', directory+'/nico-runtime-junit.xml'],
+            plan['sanitizers']['test_seconds'], environment=environment)
+        read(prefix+'-junit', directory+'/nico-runtime-junit.xml', 4*1024*1024)
+    fuzz = plan['fuzz']
+    add('runtime-fuzz-corpus-stage', ['python3', '-I', '-S', '-c', CORPUS_STAGE_PROGRAM], 20, user='0:0')
+    add('runtime-fuzz-configure', ['cmake', '-S', '/work/source', '-B', '/work/fuzz-build',
+        '-G', 'Unix Makefiles', '-DCMAKE_BUILD_TYPE=Debug',
+        '-DCMAKE_C_COMPILER=/usr/lib/llvm-17/bin/clang', '-DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++',
+        '-DBUILD_FOR_FUZZING=ON', '-DSANITIZERS=address,fuzzer,undefined'], 90)
+    add('runtime-fuzz-build', ['cmake', '--build', '/work/fuzz-build', '--parallel', '1',
+        '--target', fuzz['build_target']], 1200)
+    environment = {'FUZZ': fuzz['target'], 'ASAN_OPTIONS': 'detect_leaks=0:halt_on_error=1',
+        'UBSAN_OPTIONS': 'halt_on_error=1'}
+    for index in range(len(fuzz['corpus'])):
+        add('runtime-fuzz-replay-'+str(index), ['/work/fuzz-build/'+fuzz['binary'],
+            '-runs='+str(fuzz['replay_runs']), '/work/runtime-corpus/connect_block/s'+str(index)],
+            60, environment=environment)
+    add('runtime-fuzz-campaign', ['/work/fuzz-build/'+fuzz['binary'], '-runs='+str(fuzz['campaign_runs']),
+        '-max_total_time='+str(fuzz['campaign_seconds']), '-print_final_stats=1', '-seed=1', '-max_len=4096',
+        '/work/runtime-campaign/connect_block'], fuzz['campaign_seconds']+30, environment=environment)
+    return specs
+
+
 def validate_runtime_evidence(evidence, plan, *, project_options=None):
     if (not isinstance(evidence,dict) or set(evidence)!={'schema','plan_sha256','functional','sanitizers','fuzz','complete','error','duration_ms'}
             or evidence.get('schema')!='nico.cpp-runtime-evidence.v1' or evidence.get('plan_sha256')!=_digest(plan)
@@ -275,19 +355,48 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
                 (not isinstance(evidence['error'],str) or re.fullmatch(r'worker_runtime_[a-z_]+',evidence['error']) is None))):
         raise ValueError('worker_runtime_evidence_invalid')
 
+    try:
+        # Standalone legacy inspection can infer unbound project options. Real
+        # probe/retained-artifact callers supply the release-bound option map.
+        if project_options is None:
+            arguments = evidence['sanitizers'][0]['configure']['argv'][11:-1]
+            project_options = {}
+            for argument in arguments:
+                match = re.fullmatch(r'-D([A-Z][A-Z0-9_]{0,63})=([A-Za-z0-9_./+-]{1,120})', argument)
+                if match is None or match[1] in project_options:
+                    raise ValueError('worker_runtime_evidence_invalid')
+                project_options[match[1]] = match[2]
+        if not isinstance(project_options, dict):
+            raise ValueError('worker_runtime_evidence_invalid')
+        specs = _runtime_operation_specs(plan, project_options)
+    except (KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise ValueError('worker_runtime_evidence_invalid') from exc
+    seen = set()
+    observed_duration_ms = 0
+
     operation_fields={'id','argv','user','environment','workdir','exit_code','timed_out',
         'output_truncated','duration_ms','output','output_sha256'}
     def operation(row, maximum=4*1024*1024):
+        nonlocal observed_duration_ms
         if (not isinstance(row,dict) or set(row)!=operation_fields
                 or not isinstance(row.get('id'),str) or not isinstance(row.get('argv'),list)
                 or not isinstance(row.get('environment'),dict)
                 or (row.get('user') is not None and not isinstance(row.get('user'),str))
                 or (row.get('workdir') is not None and not isinstance(row.get('workdir'),str))
-                or type(row.get('exit_code')) is not int
+                or type(row.get('exit_code')) is not int or not -255 <= row['exit_code'] <= 255
                 or type(row.get('timed_out')) is not bool or type(row.get('output_truncated')) is not bool
                 or type(row.get('duration_ms')) is not int or row['duration_ms']<0):
             raise ValueError('worker_runtime_evidence_invalid')
-        return _output(row,maximum)
+        spec = specs.get(row['id'])
+        if (spec is None or row['id'] in seen
+                or any(row[key] != spec[key] for key in ('argv', 'user', 'environment', 'workdir'))
+                or row['duration_ms'] > spec['seconds']*1000 + 2000):
+            raise ValueError('worker_runtime_evidence_invalid')
+        seen.add(row['id'])
+        observed_duration_ms += row['duration_ms']
+        if observed_duration_ms > evidence['duration_ms'] + 2:
+            raise ValueError('worker_runtime_evidence_invalid')
+        return _output(row, min(maximum, spec['limit']))
 
     def retained_file(row, limit):
         raw=operation(row,limit*2+4096)
@@ -340,7 +449,8 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
     if (not isinstance(fuzz,dict) or set(fuzz)!={'corpus_stage','staged','configure','build','replays','campaign','campaign_metrics','target','corpus_sha256'}
             or fuzz.get('target')!=plan['fuzz']['target']
             or fuzz.get('corpus_sha256')!=[row['sha256'] for row in plan['fuzz']['corpus']]
-            or not isinstance(fuzz.get('replays'),list)):
+            or not isinstance(fuzz.get('replays'),list)
+            or len(fuzz['replays']) != len(plan['fuzz']['corpus'])):
         raise ValueError('worker_runtime_evidence_invalid')
     for key in ('corpus_stage','configure','build','campaign'): operation(fuzz[key])
     for row in fuzz['replays']: operation(row)
@@ -355,11 +465,15 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
     if fuzz.get('campaign_metrics')!=parsed_metrics:
         raise ValueError('worker_runtime_evidence_invalid')
 
+    if seen != set(specs):
+        raise ValueError('worker_runtime_evidence_invalid')
+
     derived=(_ok(functional['setup']) and _ok(functional['operation'])
+        and _ok(functional['results_read'])
         and parsed_functional['passed']==plan['functional']['selected_tests']
         and parsed_functional['executed']==plan['functional']['selected_tests']
         and not parsed_functional['failed'] and not parsed_functional['skipped']
-        and all(_ok(row[k]) for row in sanitizers for k in ('configure','build','discovery','tests'))
+        and all(_ok(row[k]) for row in sanitizers for k in ('configure','build','discovery','tests','junit_read'))
         and all(row['passed']==row['required'] and row['executed']==row['required'] and not row['skipped']
                 for row in parsed_sanitizers)
         and _ok(fuzz['corpus_stage']) and _ok(fuzz['configure']) and _ok(fuzz['build'])
