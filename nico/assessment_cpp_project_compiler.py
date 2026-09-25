@@ -357,6 +357,39 @@ def validate_project_compiler(raw, request):
         'object_code_generated': False, 'production_qualified': False}
 
 
+_PROJECT_COMPILER_STATE_TOKEN = object()
+
+
+class _ValidatedProjectCompilerState:
+    """Process-local proof that one exact compiler receipt was fully validated."""
+    __slots__ = ('raw', 'request', 'proof', 'records')
+
+    def __init__(self, token, raw, request, proof, records):
+        if token is not _PROJECT_COMPILER_STATE_TOKEN:
+            raise ValueError('worker_project_compiler_state_invalid')
+        self.raw = raw
+        self.request = request
+        self.proof = proof
+        self.records = records
+
+
+def validated_project_compiler_state(raw, request):
+    """Validate once, then retain only trusted process-local parsed state."""
+    from nico.assessment_cpp_full_project import _json
+    proof = validate_project_compiler(raw, request)
+    evidence = _json(raw)
+    return _ValidatedProjectCompilerState(
+        _PROJECT_COMPILER_STATE_TOKEN, raw, request, proof, evidence['records'])
+
+
+def reuse_validated_project_compiler(state, raw, request):
+    """Reuse only the exact bytes/request objects validated in this process."""
+    if (not isinstance(state, _ValidatedProjectCompilerState)
+            or state.raw is not raw or state.request is not request):
+        raise ValueError('worker_project_compiler_state_mismatch')
+    return state.proof, state.records
+
+
 def run_project_compiler():
     import sys
     try:
