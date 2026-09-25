@@ -1,0 +1,121 @@
+{
+  "schema": "nico.pr1645-primary-finding-reference-conservation.v1",
+  "parent_commit": "de28b4f5729eae566d15b9295595f09b58a4cf51",
+  "parent_tree": "7587e56e56f4bb112ee699f4d4f4a6bd4671be26",
+  "composer_preimage_blob": "7163098426c5ed02b8104bcacff51a38d621aa61",
+  "files": {
+    "nico/client_pdf_compose_v2.py": {
+      "bytes": 13706,
+      "sha256": "86265db51d4d4288835b80aadb1edebbbf00602cac8889e45e6b8e3852485767",
+      "git_blob_sha": "1760a124b35a2af0f1b58ff38478ea66e8d0261e"
+    },
+    "tests/test_client_pdf_primary_finding_references.py": {
+      "bytes": 2956,
+      "sha256": "45b7eb3f99d6ef55c33a135604ef9bef169934575e48f70ea658f80462290ef1",
+      "git_blob_sha": "b2b8c64747d209f36a4c972201c2d02883cb14d0"
+    },
+    "NICO-Ship-Checkpoint.md": {
+      "bytes": 4150,
+      "sha256": "718b0325ba0698361fea020d7da014e50e5e471a4feeaafd1de4a63abc531507",
+      "git_blob_sha": "538bf5fc040095763b9d57a91d8f740b533cc40c"
+    }
+  },
+  "verification": {
+    "primary-reference-red": {
+      "tests": 9,
+      "failures": 8,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "1431da76e45fb711d54b3dc96d5978374d2a1e00d6eccd71f0172f0718a69a6a"
+    },
+    "primary-reference-green": {
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "d616d81f0b5c94e96bbab51a6c3cd19c45958a8c5cc19ae5ba9e0a8ccd64dce2"
+    },
+    "affected-fast": {
+      "tests": 29,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "1ae18a79671c4fc0d356141870ed7fbb3648e580af4254c00ec5dea96b3e6c63"
+    },
+    "real-finalizer-en": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "e5a961b17e1691e9f66a093e0aa9236d981976e8482587a6bff22cf6c3cf8774"
+    },
+    "real-finalizer-es": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "8af39a19f9b0e15e8a20b7f407c6101380bf0c4fa46e029d87ec894c2e597c87"
+    },
+    "real-finalizer-other": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "a1eee1aed74a8e2f4a8f709a9b360ae375104d24776928af09f53899765cb67e"
+    }
+  },
+  "distinct_passing_tests": 35,
+  "count_note": "29 affected includes nine focused; six real finalizer cases are additional. Red and repeated green are not additive.",
+  "rendered_comparison": [
+    {
+      "name": "en-roadmap.pdf",
+      "before_pages": 3,
+      "after_pages": 4,
+      "unchanged_pages_pixel_and_text_equal": true,
+      "after_sha256": "b066c6f87a4c4c8a1066c83204c050f6f53a8376a156fa9e3e13621b8c513508"
+    },
+    {
+      "name": "en-unknown.pdf",
+      "before_pages": 3,
+      "after_pages": 4,
+      "unchanged_pages_pixel_and_text_equal": true,
+      "after_sha256": "4cd9181d3bb24d1c9337bda22805846840b96193a5634454123f0b156b6f6a35"
+    },
+    {
+      "name": "es-MX-roadmap.pdf",
+      "before_pages": 3,
+      "after_pages": 4,
+      "unchanged_pages_pixel_and_text_equal": true,
+      "after_sha256": "14e954597c6416945db78477f17065dc2a1b83272c19e64bc1b09215fe7774eb"
+    },
+    {
+      "name": "es-MX-unknown.pdf",
+      "before_pages": 3,
+      "after_pages": 4,
+      "unchanged_pages_pixel_and_text_equal": true,
+      "after_sha256": "4d74e0d4a431f5184bbcb53df84104b9c41c959908f5f88d09d1bc757856fa02"
+    }
+  ],
+  "offpage_words": 0,
+  "local_source_scope": "Hash-verified f48 scoped archive with exact current report completion/composer and CI-boundary-test blobs. Not full checkout; apps/web absent.",
+  "local_environment": {
+    "python": "3.13.5",
+    "pytest": "9.0.2",
+    "pypdf": "5.9.0",
+    "reportlab": "4.4.9"
+  },
+  "initial_render_script_setup_failure": "Standalone helper lacked PYTHONPATH; corrected before generating the before/after PDFs. This was not a behavioral RED.",
+  "review": {
+    "method": "Railway connected agent, read-only supplied-code critique",
+    "thread": "67a5d273-8775-4e13-8717-74b7788ddae6",
+    "verdict": "Material v3.8 precedence defect; bounded v3.9 fix sound; no concrete added regression in supplied scope.",
+    "tests_executed_by_reviewer": false,
+    "whole_pr_review": false,
+    "count_correction": "Reviewer prose called 29 cases additional. They total29 and include9 new; author-verified distinct aggregate is35."
+  },
+  "actual_input_replayed": false,
+  "native_qualified": false,
+  "merge_ready": false,
+  "deployed": false,
+  "approval_or_delivery_changed": false
+}

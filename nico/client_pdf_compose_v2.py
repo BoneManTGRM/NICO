@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY, MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.8"
+VERSION = "nico.client-pdf-compose.v3.9"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -174,6 +174,7 @@ def compose_compact_client_pdf(
                            if line in _LEGACY_REGISTER_SECTION_HEADINGS]
         primary_starts = [index for index, line in enumerate(lines)
                           if line in _REGISTER_SECTION_RESUME_HEADINGS]
+        preserve_primary_content = bool(primary_starts)
         if register_starts:
             start = register_starts[0]
             following_primary = any(index > start for index in primary_starts)
@@ -197,6 +198,7 @@ def compose_compact_client_pdf(
                 # discard state and let the unchanged page budget fail closed
                 # rather than silently consuming the rest of the report.
                 replacing_legacy_register = False
+                preserve_primary_content = True
         # Apply the existing final-reflow empty-page rule before the intermediate
         # budget. A footer-only overflow must not displace required report content.
         if _has_standard_header(extracted) and not _content_lines(extracted):
@@ -249,7 +251,9 @@ def compose_compact_client_pdf(
             # page has no independent evidence and would create duplicate title,
             # pagination, and generated-at facts.
             continue
-        if _finding_detail(extracted):
+        # A finding reference does not override a primary-section boundary or
+        # the decision above to preserve unclassified post-register content.
+        if not preserve_primary_content and _finding_detail(extracted):
             continue
         retained.append(page)
 
