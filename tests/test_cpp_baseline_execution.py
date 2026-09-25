@@ -153,13 +153,13 @@ def test_published_baseline_job_is_serial_bounded_and_has_no_production_credenti
     workflow=yaml.safe_load((root/'.github/workflows/cpp-full-project-integration.yml').read_text())
     job=workflow['jobs'].get('project-baseline-qualification')
     assert job, 'missing actual whole-project hosted execution'
-    assert job['needs']==['owned-project-integration'] and job['timeout-minutes']==50
+    assert job['needs']==['owned-project-integration'] and job['timeout-minutes']==155
     assert job['runs-on']=='ubuntu-24.04'
     assert workflow['permissions']=={'contents':'read'}
     assert workflow['jobs']['owned-project-integration']['timeout-minutes']==10
     assert not job.get('services') and not job.get('env')
     text=json.dumps(job)
-    assert 'baseline-execution-contract' in text and 'secrets.' not in text
+    assert 'baseline-execution-contract' in text and 'runtime-scope-contract' in text and 'secrets.' not in text
 
 
 def test_runtime_scratch_capacity_must_be_observed_and_bound(tmp_path):
@@ -218,6 +218,7 @@ def test_published_baseline_contract_raises_the_measured_debug_test_budget():
     assert spec['build_seconds'] == 1200 and spec['parallel'] == 4
     workflow = (root/'.github/workflows/cpp-full-project-integration.yml').read_text()
     assert '--unit-test-data qualification-unit-test-data' in workflow
+    assert '--runtime-scope-contract tests/fixtures/cpp/bitcoin-runtime-scope.json' in workflow
     assert 'cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095' in workflow
     assert 'b33d85102d169b54d966ea315ad81a636680aefa' in workflow
 
