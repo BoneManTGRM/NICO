@@ -27,6 +27,9 @@ COPY cppcheck /opt/tool-src
 COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py
 COPY cmake.whl /opt/cmake.whl
 COPY pycapnp.whl /opt/pycapnp.whl
+COPY runtime-dependencies/payload /opt/nico-runtime
+COPY runtime-dependencies/lock.json runtime-dependencies/receipt.json runtime-dependencies/SHA256SUMS /opt/nico-runtime-inputs/
+RUN cd /opt/nico-runtime && sha256sum -c /opt/nico-runtime-inputs/SHA256SUMS
 RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && for package in *.deb; do dpkg-deb --extract "$package" /; done \
     && mkdir -p /opt/nico-project-dependencies \
@@ -53,6 +56,7 @@ COPY --from=capnp-builder /opt/capnp-install/usr/local/ /usr/local/
 COPY --from=capnp-builder /opt/nico-capnp-metadata/ /opt/nico-capnp/
 ENV PATH=/opt/cmake-wheel/cmake/data/bin:/usr/local/bin:/usr/bin:/bin
 ENV PYTHONPATH=/opt/pycapnp
+ENV PREVIOUS_RELEASES_DIR=/opt/nico-runtime/previous-releases
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
 RUN python3 -c "import capnp; assert capnp.__version__ == '2.2.1'"
 LABEL org.nico.cppcheck.repair="placement-new-initializer-ast-v1"

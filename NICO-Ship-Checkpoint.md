@@ -1,55 +1,58 @@
-# PR1641 continuation — runtime CSV and receipt integrity
+# PR1641 continuation — runtime transport and required prerequisites
 
-Continue existing PR #1641 on `feat/cpp-full-project-capacity`; do not restart or replace it. This correction is based on candidate `3ff747f86943edd8be97ae05ce7b7d1cf33f0fac`, tree `65eb53650a7d61290de7bd48d5de52d2e4b061b8`; main/base remains `faaa10b037eb58e4175561b96dadf0d929764df4`. Recheck live refs and preserve concurrent descendants before any non-force publication. The local source export has no remote and is not a complete checkout; its fixture history must never be pushed.
+Continue the existing PR #1641 / `feat/cpp-full-project-capacity`. This candidate descends from `9e71beb31bb1cc7c7c78d7e6af1cfafd271e5119` (tree `517c343e37056d03028c36c92413a5618d949857`); main/base last read `faaa10b037eb58e4175561b96dadf0d929764df4`. Recheck refs before non-force publication and preserve concurrent descendants. The local exact-source export is a subset, has no remote and must never be pushed as repository history.
 
-## Immutable continuity and governing contract
+## Immutable continuity and governing scope
 
-This remains the sole active checkpoint. The complete prior checkpoint, including analyzer repairs, artifact transport, source/image identities, accepted maintenance and the older evidence chain, is retained at [3ff747f8:NICO-Ship-Checkpoint.md](https://github.com/BoneManTGRM/NICO/blob/3ff747f86943edd8be97ae05ce7b7d1cf33f0fac/NICO-Ship-Checkpoint.md). Its records and all stronger original C0–C19 requirements remain binding; this summary does not erase or relabel them.
+The complete preceding ledger and its original C0-C19 contract are retained at [cefff68f:NICO-Ship-Checkpoint.md](https://github.com/BoneManTGRM/NICO/blob/cefff68f4a06c75e6a210c4770ae9f170bd21cac/NICO-Ship-Checkpoint.md), including the earlier 3ff747f8 checkpoint and predecessor chain. This is the sole active checkpoint; this update does not remove older proof or waive acceptance.
 
-Frozen Bitcoin qualification remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`, all 475 compiler contexts, 377 baseline tests, Debug wallet/tests/IPC and generated/header evidence. The distinct historical revision `0e9018e8b65611b0769545e177110e4b7fc51244` and run `comprun_7cc47a5a81695fa452354479ea23b422` remain unchanged. No source population, test, sanitizer, corpus member, analyzer rule, runtime command, isolation setting, resource limit, authority or human approval was removed or relaxed by this correction.
+Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`, with 475 compiler contexts, 377 baseline tests and the selected Debug wallet/tests/IPC scope. Historical revision `0e9018e8b65611b0769545e177110e4b7fc51244` and run `comprun_7cc47a5a81695fa452354479ea23b422` are unchanged. No selected functional test, sanitizer, corpus member, analyzer rule, execution command, resource envelope, approval control or human decision is removed by this prerequisite repair.
 
-## Verified current native failure
+## Published runtime transport correction
 
-Hosted integration run 36117852901 at source `7c084721ea24754680aefbabd5c0736ecd43f5ad` completed its contract and owned-control jobs successfully, then failed qualification job 108018383610. Artifact 10858291369 is 12,179,656 bytes; ZIP SHA256 `b1dea2df91dd9fcf376f039c59d818a602e674690f6a0ab733d6442923291fd3` was verified before inspection.
+Commit `9e71beb31bb1cc7c7c78d7e6af1cfafd271e5119` adds the already-backend-supported `project-runtime-evidence` key to the worker HTTP allowlist. The former producer rejected that key before upload. Existing lease identity, hashes, gzip/raw byte limits and unknown-key rejection are unchanged. Five HTTP-boundary cases include the failing runtime case and passing static/unknown-key controls. Recorded RED: one failure/four passes; identical GREEN: five passes. HTTP/durable-job suites: 48 passes; two existing encoding/size controls also pass. A wider 77-case local attempt had one unchanged spawned-process PID-startup failure on Python 3.13; that attempt is not a full pass. Exact-head hosted qualification remains required.
 
-The retained probe proves 377/377 baseline tests passed, 475/475 compiler contexts checked, generated-context and boundary verification, and cleanup. Functional execution returned exit 0 but its actual CSV contains four Passed rows and two Skipped rows (`interface_ipc.py`, `wallet_ancient_migration.py`). The runtime controller rejected presentation order with `worker_runtime_functional_results_invalid`; runtime qualification, sanitizers, fuzz and later static execution are not established by this run. Preserve the original failed receipt.
+## Latest native failure narrows the prerequisite gap
 
-The frozen upstream runner sorts results by status/name before writing CSV, whereas NICO compared row order with selection order. Separately, the selected wallet migration test requires previous-release v0.14.3 binaries. The latest head adds pinned pycapnp for IPC, but that image/runtime repair still needs native qualification. Do not replace either skipped test with an easier test or count skipped tests as executed.
+Integration run `36119915548`, source `3ff747f86943edd8be97ae05ce7b7d1cf33f0fac`, retained artifact `10859117522` (ZIP SHA256 `f4688db5d32bc58ccf7c5cdb0c38d7084404e41a55c00db47c1667a374fdabb9`) was downloaded and hash-verified. The probe retains 377 passing baseline tests, 475 checked compiler contexts and verified generated inputs/boundary/cleanup. Its actual functional CSV has five Passed rows: feature_shutdown, interface_ipc, mempool_datacarrier, p2p_seednode and rpc_openrpc; wallet_ancient_migration is Skipped. This proves the pinned pycapnp repair allowed IPC execution in this run, not complete runtime qualification. Preserve the original failure; the older four-pass/two-skip run remains historical.
 
-## Implemented corrections and tests
+The upstream v0.14.3 migration test uses old/new disposable nodes and explicitly requires previous releases. The pinned upstream test framework discovers the release directory from `PREVIOUS_RELEASES_DIR`. Its `get_previous_releases.py` binds the x86_64 Linux archive to SHA256 `706e0472dbc933ed2757650d54cbcd780fd3829ebf8f609b32780c7eedebdbc9`; the official release directory reports 24,644,309 bytes.
 
-1. Functional CSV reconciliation validates exact unique test membership independently of presentation order, projects outcomes in the original selected order, excludes Skipped rows from executed membership, and rejects malformed/contradictory totals and invalid durations. The CSV reproduction first yielded 11 expected failures and 3 passing controls, then 14 passes.
-2. Runtime evidence validation reconstructs every fixed semantic command, UID, environment and working directory from the declared plan and release-owned options; it requires every corpus replay exactly once, valid read outcomes, bounded exit codes and per-operation/cumulative timing. Previously, deleting every fuzz replay or changing commands/identities could retain completion. The binding reproduction first yielded 18 expected failures and 3 passing controls, then 21 passes.
+## Implemented prerequisite repair
 
-The 35 new regression cases are included in the existing `tests/test_cpp_runtime_execution.py` already named by CI; its four original tests are unchanged. Final affected selection: 172 distinct cases passed, zero failures/errors/skips, including all 39 runtime cases, contract/projection/worker/baseline/configuration and workflow interruption neighbors. The complete 47-file local C++ command exceeded the 120-second command limit after partial progress and has no terminal result; it is not credited. Local Python 3.13 differs from hosted Python 3.11. No native execution or independent review is claimed from synthetic Docker-boundary tests. Exact commands, hashes and RED/GREEN counts are in `docs/evidence/pr1641-runtime-integrity-20260925/verification.json`.
+A reviewed release-owned dependency lock and bounded provisioning controller acquire that exact archive and copy only the required bitcoind/bitcoin-cli members plus the unchanged upstream MIT license. Downloads use HTTPS with no redirect or ambient credential environment; exact archive size/hash precede parsing, decompression/member/count/path limits apply, selected symlinks/duplicates/traversal/missing inputs reject, and existing output cannot be overwritten. The controller never runs a downloaded binary. It retains lock/archive/member/license identities and explicit failure receipts.
 
-## Remaining whole-mission acceptance
+Both existing full-project image build paths invoke the same provisioner. The no-network Docker build verifies member hashes, puts immutable test dependencies in `/opt/nico-runtime`, and sets `PREVIOUS_RELEASES_DIR` for the isolated runtime. Native assessment commands and selected tests remain unchanged. Provisioning remains outside assessed execution; legacy binaries will run only inside the existing disposable, credential-free, no-external-network assessment boundary. No real funds, live peers, real wallets or keys are used.
 
-| Predicate | Current status | Evidence still needed for the whole row |
+Local verification: the new positive extraction/hash/retention test was recorded failing against the UNPROVEN scaffold, then passed after implementation. The final prerequisite suite has 18 passes including malformed archive, URL/path, license, overwrite and workflow/image binding controls. The disjoint dependency/tool/runtime neighbors have 105 passes. A fresh combined run passed all 123 cases; all 14 workflow shell blocks and both new Python ASTs validate. This is synthetic archive/transport evidence, not a real v0.14.3 download, image build, migration execution or independent review. The new image invalidates prior image qualification and must pass the existing owned prerequisite before large execution.
+
+## Whole-row acceptance remains evidence-based
+
+| Predicate | Status | Required remaining proof |
 | --- | --- | --- |
-| C0 | UNPROVEN | Complete runtime prerequisites, scope and aggregate qualification. |
-| C1 | PASS (historical native scope only) | Retain complete immutable inventory; production revalidation remains C18. |
-| C2 | UNPROVEN | Entire combined workload isolation/capacity, not only baseline controls. |
+| C0 | UNPROVEN | Complete runtime prerequisites and combined qualification. |
+| C1 | PASS, frozen native scope | Preserve complete inventory; production revalidation is C18. |
+| C2 | UNPROVEN | Complete workload isolation/capacity, beyond baseline controls. |
 | C3 | UNPROVEN | Final production worker/release/receipt authority chain. |
-| C4 | UNPROVEN | Actual normal-intake durable full-scope completion/recovery. |
-| C5 | UNPROVEN | Terminal substantive static completion for every required context. |
-| C6 | PASS (frozen native baseline only) | 475 compiler contexts and generated inputs retained; not production proof. |
-| C7 | FAIL | Resolve required functional skips and complete sanitizer/fuzz runtime proof. |
-| C8 | UNPROVEN | Actual native/canonical/finding/register/report reconciliation. |
-| C9 | UNPROVEN | Complete static/runtime/report populations and exclusions reconciled. |
-| C10 | UNPROVEN | Actual final score inputs and maturity/assurance separation. |
-| C11 | UNPROVEN | Combined workload fits enforced stage and aggregate resource budgets. |
-| C12 | UNPROVEN | Qualified generic C/C++ and supported-language production controls. |
-| C13 | FAIL | Actual full-supported-scope Bitcoin structured outputs and PDF absent. |
-| C14 | UNPROVEN | Final English/es-MX, mobile, progress and restart/retrieval acceptance. |
-| C15 | UNPROVEN | Preserve historical approval; verify eligible exact-edition one-action delivery. |
-| C16 | UNPROVEN | Fresh complete candidate CI/security and independent full-diff review. |
-| C17 | FAIL | PR unmerged; final frontend/backend/worker serving identities absent. |
+| C4 | UNPROVEN | Normal-intake full-scope completion/recovery. |
+| C5 | UNPROVEN | Terminal substantive static completion of every required context. |
+| C6 | PASS, frozen native baseline | 475 compiler contexts and generated/header proof, not production. |
+| C7 | FAIL until native proof | Wallet prerequisite execution plus sanitizer/fuzz qualification. |
+| C8 | UNPROVEN | Actual native/canonical/register/report reconciliation. |
+| C9 | UNPROVEN | Complete static/runtime/report populations and exclusions. |
+| C10 | UNPROVEN | Actual score inputs and maturity/assurance distinction. |
+| C11 | UNPROVEN | Combined measured workload within enforced budgets. |
+| C12 | UNPROVEN | Generic C/C++ and supported-language production controls. |
+| C13 | FAIL | Actual full-supported-scope Bitcoin structured report/PDF absent. |
+| C14 | UNPROVEN | Final English/es-MX/mobile/progress/recovery acceptance. |
+| C15 | UNPROVEN | Historical approval preserved; eligible exact-edition one-action proof remains. |
+| C16 | UNPROVEN | Final candidate CI/security and independent complete review. |
+| C17 | FAIL | PR unmerged; final serving identities not established. |
 | C18 | FAIL | No qualified normal-production Bitcoin run for this candidate. |
-| C19 | UNPROVEN | Final bilingual artifact hashes, repeated retrieval and closeout index. |
+| C19 | UNPROVEN | Actual artifact hashes/repeated retrieval/closeout index. |
 
 ## Exact next work
 
-Verify the published candidate against this correction and inspect its automatically queued checks without cancelling or duplicating active qualification. Provision and verify the frozen functional-test prerequisites without removing required scope. Validate real sanitizer instrumentation/binary identity, bounded replay/campaign populations, failure retention and measured combined capacity; command flags and zero exits alone are insufficient. Reconcile the terminal full-scope native receipt with normal production selection, immutable worker image, canonical outputs and bilingual rendering. Complete independent full-range review and final checks before merge/deploy, then verify actual production control and Bitcoin reports. Image publication remains distinct from production qualification.
+Publish the verified prerequisite descendant, then preserve existing automatic qualification and inspect actual retained native outcomes. Do not cancel or duplicate active jobs for reassurance. Prove the required wallet test rather than replacing it; retain any actual native failure. Complete sanitizer instrumentation/binary identity, bounded fuzz replay/campaign evidence, failure retention and measured capacity. Qualify and publish the exact full-project worker image, not the historical standalone image. Complete final independent review/checks before merge/deploy and then actual production control/Bitcoin report acceptance.
 
-Prior independent-review allowance exhaustion is not waived: do not repeat an unchanged exhausted request, purchase credits, change accounts, substitute author review or invent approval. No merge, deployment, production activation, client-delivery authorization or human/specialist attestation was performed by this correction. Do not issue the SHIPPED declaration until every mandatory whole-row predicate passes.
+Prior independent-review allowance exhaustion is not waived: no unchanged repeated request, purchased credits, alternate account, author-review substitution or fabricated approval. No production enablement, merge, deployment, specialist approval or client-delivery authorization is performed by this correction. The final SHIPPED declaration still requires every mandatory whole-row predicate.
