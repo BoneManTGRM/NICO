@@ -41,6 +41,7 @@ def test_configure_first_v3_freezes_required_runtime_scope_before_execution():
         runtime_scope={
             'schema':'nico.cpp-runtime-scope.v1',
             'functional_policy':'source-declared-functional-v1',
+            'functional_seconds':900,
             'sanitizers':['address','undefined'],
             'sanitizer_build_seconds':1200,
             'sanitizer_test_seconds':600,
