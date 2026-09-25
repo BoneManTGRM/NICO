@@ -40,6 +40,7 @@ def test_configure_first_v3_freezes_required_runtime_scope_before_execution():
         project_option_policy='conservative-cmake-v1',
         runtime_scope={
             'schema':'nico.cpp-runtime-scope.v1',
+            'total_seconds':6000,
             'functional_policy':'source-declared-functional-v1',
             'functional_seconds':900,
             'sanitizers':['address','undefined'],
@@ -55,6 +56,7 @@ def test_configure_first_v3_freezes_required_runtime_scope_before_execution():
     value['limits']={'max_attempts':1,'wall_seconds':9000,'lease_seconds':300}
     assert validate_contract(value)==value
     for field, replacement in (
+        ('total_seconds',5999),
         ('sanitizers',['address']),
         ('functional_policy','disabled'),
         ('fuzz_policy','disabled'),
