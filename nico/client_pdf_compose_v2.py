@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.5"
+VERSION = "nico.client-pdf-compose.v3.6"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -34,6 +34,28 @@ _REVIEW_SECTION_HEADINGS = (
 _CI_BOUNDARY_HEADINGS = (
     "ci/cd operational readiness and historical health",
     "preparacion operativa y salud historica de ci/cd",
+)
+
+_LEGACY_REGISTER_SECTION_HEADINGS = (
+    "detailed findings register",
+    "registro detallado de hallazgos",
+    "finding and remediation register",
+    "registro de hallazgos y remediacion",
+)
+
+_REGISTER_SECTION_RESUME_HEADINGS = (
+    "six-month execution roadmap",
+    "hoja de ruta de ejecucion de seis meses",
+    "staffing and sequencing",
+    "personal y secuenciacion",
+    "how to use this report",
+    "como usar este informe",
+    "scope boundary and unassessed risk",
+    "limite de alcance y riesgo no evaluado",
+    *_REVIEW_SECTION_HEADINGS,
+    *_CI_BOUNDARY_HEADINGS,
+    "evidence appendix",
+    "apendice de evidencia",
 )
 
 
@@ -115,9 +137,24 @@ def compose_compact_client_pdf(
     gate = PdfReader(io.BytesIO(gate_pdf))
 
     retained: list[Any] = []
+    replacing_legacy_register = False
     from nico.comprehensive_pdf_reflow_v1 import _content_lines, _has_standard_header
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
+
+        # The compact register appended below is the authoritative client-facing
+        # finding register. Legacy premium reports can span hundreds or thousands
+        # of continuation pages whose individual finding IDs do not match the
+        # older _finding_detail heuristic. Once the legacy register begins, omit
+        # the whole section until a known following primary section starts.
+        if _page_heading(extracted, _LEGACY_REGISTER_SECTION_HEADINGS):
+            replacing_legacy_register = True
+            continue
+        if replacing_legacy_register:
+            if _page_heading(extracted, _REGISTER_SECTION_RESUME_HEADINGS):
+                replacing_legacy_register = False
+            else:
+                continue
         # Apply the existing final-reflow empty-page rule before the intermediate
         # budget. A footer-only overflow must not displace required report content.
         if _has_standard_header(extracted) and not _content_lines(extracted):
