@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.6"
+VERSION = "nico.client-pdf-compose.v3.7"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -96,6 +96,26 @@ def _finding_detail(value: str) -> bool:
     return "nico-code-" in text and "action:" in text and "cyclomatic_complexity" in text
 
 
+_LEGACY_REGISTER_FIELD_LABELS = frozenset((
+    "category / status", "location", "layer 1 — evidence / fact",
+    "layer 2 — interpretation", "layer 3 — business inference",
+    "layer 4 — recommendation", "owner / effort", "cost of inaction",
+    "residual risk", "acceptance criteria", "roadmap / backlog",
+    "campo", "categoria / estado", "ubicacion", "hecho observado",
+    "interpretacion", "impacto empresarial", "recomendacion",
+    "responsable / esfuerzo", "costo de no actuar", "riesgo residual",
+))
+
+
+def _legacy_register_continuation(lines: list[str]) -> bool:
+    """Recognize legacy finding/field starts, never arbitrary following pages."""
+    if not lines:
+        return False
+    return bool(re.match(r"^p[0-4]\s*[·•]\s+", lines[0])) or (
+        lines[0] in _LEGACY_REGISTER_FIELD_LABELS
+    )
+
+
 def _optional_pdf_reader(pdf: bytes | None, *, label: str) -> PdfReader | None:
     if pdf is None:
         return None
@@ -142,19 +162,34 @@ def compose_compact_client_pdf(
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
 
-        # The compact register appended below is the authoritative client-facing
-        # finding register. Legacy premium reports can span hundreds or thousands
-        # of continuation pages whose individual finding IDs do not match the
-        # older _finding_detail heuristic. Once the legacy register begins, omit
-        # the whole section until a known following primary section starts.
-        if _page_heading(extracted, _LEGACY_REGISTER_SECTION_HEADINGS):
-            replacing_legacy_register = True
+        lines = _meaningful_lines(extracted)
+        register_starts = [index for index, line in enumerate(lines)
+                           if line in _LEGACY_REGISTER_SECTION_HEADINGS]
+        primary_starts = [index for index, line in enumerate(lines)
+                          if line in _REGISTER_SECTION_RESUME_HEADINGS]
+        if register_starts:
+            start = register_starts[0]
+            following_primary = any(index > start for index in primary_starts)
+            replacing_legacy_register = not following_primary
+            if start > 0 or following_primary:
+                # Mixed pages contain primary content: retain their actual bytes,
+                # even when this leaves a small superseded register fragment.
+                retained.append(page)
             continue
         if replacing_legacy_register:
-            if _page_heading(extracted, _REGISTER_SECTION_RESUME_HEADINGS):
+            if primary_starts:
                 replacing_legacy_register = False
-            else:
+                if primary_starts[0] > 0:
+                    # A new section can start below a continued finding table.
+                    retained.append(page)
+                    continue
+            elif _legacy_register_continuation(lines):
                 continue
+            else:
+                # Unknown content is not proof of another finding page. End the
+                # discard state and let the unchanged page budget fail closed
+                # rather than silently consuming the rest of the report.
+                replacing_legacy_register = False
         # Apply the existing final-reflow empty-page rule before the intermediate
         # budget. A footer-only overflow must not displace required report content.
         if _has_standard_header(extracted) and not _content_lines(extracted):
@@ -187,8 +222,6 @@ def compose_compact_client_pdf(
         if not detailed_review_evidence and _page_heading(
             extracted,
             (
-                "finding and remediation register",
-                "registro de hallazgos y remediacion",
                 "analyzer applicability and provenance",
                 "procedencia y aplicabilidad de analizadores",
                 "human review and acceptance gate",
