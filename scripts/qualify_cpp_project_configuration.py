@@ -221,6 +221,12 @@ def qualify_configuration_checkout(args):
         manifest=_json(raw)
         evidence['benchmark_sha256']=hashlib.sha256(raw).hexdigest()
         execution_contract = None
+        runtime_scope = None
+        if getattr(args, 'runtime_scope_contract', None) is not None:
+            raw_runtime = args.runtime_scope_contract.read_bytes()
+            if len(raw_runtime) > 16384: raise ValueError('qualification_runtime_contract_size')
+            runtime_scope = _json(raw_runtime)
+            evidence['runtime_scope_sha256'] = hashlib.sha256(raw_runtime).hexdigest()
         if getattr(args, 'baseline_execution_contract', None) is not None:
             raw_execution = args.baseline_execution_contract.read_bytes()
             if len(raw_execution) > 16384: raise ValueError('qualification_execution_contract_size')
@@ -230,6 +236,15 @@ def qualify_configuration_checkout(args):
             root=Path(temporary)/'source'
             evidence['source']=freeze_configuration_checkout(args.qualification_source,root,manifest)
             evidence['stage']='source_frozen'; retain()
+            runtime_plan = None
+            runtime_interfaces = None
+            if runtime_scope is not None:
+                from nico.assessment_cpp_runtime_scope import capture_runtime_interfaces, derive_runtime_plan_from_interfaces
+                runtime_interfaces=capture_runtime_interfaces(root,evidence['source']['targets'])
+                runtime_plan=derive_runtime_plan_from_interfaces(runtime_interfaces,evidence['source']['targets'],
+                    manifest['project_options'],runtime_scope)
+                evidence['runtime_plan_sha256']=hashlib.sha256(canonical_bytes(runtime_plan)).hexdigest()
+                retain()
             unit_test_data = None
             if getattr(args, 'unit_test_data', None) is not None:
                 data_root = Path(args.unit_test_data)
@@ -242,12 +257,18 @@ def qualify_configuration_checkout(args):
                     unit_test_data[path.name] = path.read_bytes()
                 if not unit_test_data:
                     raise ValueError('qualification_unit_test_data_invalid')
+                if runtime_plan is not None and runtime_plan.get('unit_test_data') is not None:
+                    asset=runtime_plan['unit_test_data']
+                    if (set(unit_test_data)!={asset['name']}
+                            or len(unit_test_data[asset['name']])!=asset['bytes']
+                            or hashlib.sha256(unit_test_data[asset['name']]).hexdigest()!=asset['sha256']):
+                        raise ValueError('qualification_unit_test_data_invalid')
             def save_probe(value):
                 evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
                     probe=qualification_probe_receipt(value), compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,
                 project_options=manifest['project_options'],retain=save_probe,
-                baseline_execution=execution_contract, unit_test_data=unit_test_data,
+                baseline_execution=execution_contract, unit_test_data=unit_test_data, runtime_plan=runtime_plan,
                 capture_generated_context=getattr(args, 'capture_generated_context', False),
                 project_compiler_evidence=getattr(args, 'project_compiler_evidence', False),
                 project_static_analysis=getattr(args, 'project_static_analysis', False),
@@ -256,6 +277,15 @@ def qualify_configuration_checkout(args):
                 retain_artifact=lambda key, raw: persist_project_artifact(args.output, key, raw))
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
+            if runtime_plan is not None:
+                from nico.assessment_cpp_runtime_scope import retained_runtime_bytes, validate_retained_runtime
+                runtime_raw=retained_runtime_bytes(runtime_interfaces,runtime_plan,result.get('runtime_evidence'))
+                reference=persist_project_artifact(args.output,'project-runtime-evidence',runtime_raw)
+                reconstructed=validate_retained_runtime(runtime_raw,evidence['source']['targets'],
+                    manifest['project_options'],runtime_scope)
+                evidence['runtime']={'complete':reconstructed['summary']['complete'],
+                    'artifact':reference,'native_evidence_sha256':reconstructed['native_evidence_sha256'],
+                    'duration_ms':reconstructed['duration_ms']}
             success = 'BASELINE_EXECUTED' if execution_contract is not None else 'CONFIGURATION_CAPTURED'
             evidence['stage']='completed' if result['status']==success else 'execution_unproven' if execution_contract is not None else 'configuration_unproven'
     except (Exception, KeyboardInterrupt) as exc:
@@ -277,6 +307,7 @@ def main():
     parser.add_argument('--qualification-source', type=Path, required=True)
     parser.add_argument('--qualification-manifest', type=Path, required=True)
     parser.add_argument('--baseline-execution-contract', type=Path)
+    parser.add_argument('--runtime-scope-contract', type=Path)
     parser.add_argument('--unit-test-data', type=Path)
     parser.add_argument('--capture-generated-context', action='store_true')
     parser.add_argument('--project-compiler-evidence', action='store_true')
