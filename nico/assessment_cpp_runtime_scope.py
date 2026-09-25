@@ -231,4 +231,5 @@ def validate_retained_runtime(raw, targets, project_options, scope):
     if value['plan']!=plan:
         raise ValueError('worker_runtime_retained_invalid')
     summary=validate_runtime_evidence(value['evidence'],plan,project_options=project_options)
-    return {'plan':plan,'summary':summary,'native_evidence_sha256':hashlib.sha256(raw).hexdigest()}
+    return {'plan':plan,'summary':summary,'native_evidence_sha256':hashlib.sha256(raw).hexdigest(),
+        'duration_ms':value['evidence']['duration_ms']}
