@@ -88,8 +88,10 @@ def validate_contract(contract: dict) -> dict:
     if configure_first:
         from nico.assessment_cpp_configure_first_contract import validate_configuration
         validate_configuration(contract['configuration'])
+        runtime = contract['configuration'].get('schema') == 'nico.cpp-configure-first-contract.v3'
+        maximum_wall = 9000 if runtime else 2420
         if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int
-                or not 1 <= contract['limits']['wall_seconds'] <= 2420
+                or not 1 <= contract['limits']['wall_seconds'] <= maximum_wall
                 or contract['limits'].get('max_attempts') != 1):
             raise ValueError('worker_configure_first_budget_invalid')
     elif contract['profile'] == 'cpp-full-project-v1':
