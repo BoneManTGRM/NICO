@@ -1,68 +1,72 @@
-# NICO post-merge continuation — runtime scratch and failure retention
+# NICO — post-merge continuation: exact security disposition on PR1644
 
-This is the sole active mission ledger. Preserve the complete predecessor at [31269344:NICO-Ship-Checkpoint.md](https://github.com/BoneManTGRM/NICO/blob/312693443b1e70c8a065de2c4e9ca329281d162a/NICO-Ship-Checkpoint.md), including its immutable 1bae/cefff/3ff747f8 chain and the original C0–C19 requirements. Nothing in this update reduces the frozen supported scope or approval boundaries.
+This is the sole active mission-ledger path. The complete original C0–C19 contract, frozen supported C/C++ scope, historical immutability, isolation, resource limits, exact-release proof and genuine human review/delivery boundaries remain binding. No requirement is waived by this compact checkpoint.
 
-## Recovered release and coordination
+## Immutable continuity and single writer
 
-PR #1641 is merged at `0f14a8dba3c0fa6d11d982e007492a7f543ccfb7`. PR #1643 is also merged, at `312693443b1e70c8a065de2c4e9ca329281d162a`; its final source head was `bc36671c42b4bee73401d650d49f8b676f2f1ffd`. Do not reopen either PR or restore older versions. The corrective runtime work is based on actual main/tree `312693443b1e70c8a065de2c4e9ca329281d162a` / `0373f40d585471162c674dc7870fa6dee3784571`. Reconcile refs immediately before publication; use non-force updates and one writer.
+Preserve the complete reconciled checkpoint at [7f674d38](https://github.com/BoneManTGRM/NICO/blob/7f674d3855d1ededa1813f5fbe2f2db96e9b6260/NICO-Ship-Checkpoint.md), including the full 41545933/31269344/1bae/cefff/3ff747f8 chain and review accumulator. Preserve the runtime predecessor at [a928951f](https://github.com/BoneManTGRM/NICO/blob/a928951f7ea38db182cf717cdf1f63bb88e3eda3/NICO-Ship-Checkpoint.md). These immutable predecessors retain stronger original requirements and all earlier native evidence.
 
-The production frontend deployment `dpl_8peLtPtpFF839XWMbhwiQZkK2Dt1` is READY, carries that main SHA, and owns `app.nicoaudit.com`. Railway deployment `e045965c-ca52-42dc-858f-ef18bf563266` is SUCCESS with the same SHA. These are deployment/alias proofs, not complete serving/worker/assessment acceptance. No redundant deployment was requested. The service configuration's returned variable names did not include the configure-first qualification/activation settings. No setting was invented or enabled.
+Main is `312693443b1e70c8a065de2c4e9ca329281d162a`, tree `0373f40d585471162c674dc7870fa6dee3784571`. PR1641 and PR1643 are merged; do not reopen either. Existing draft PR1644 is `fix/cpp-runtime-scratch-retention`, based on a928951f tree `bd13c3c394ae0178ea9d826b90c0a46ed7770a1e`. Existing draft PR1645 is `fix/client-pdf-register-conservation`, last read at `7f674d3855d1ededa1813f5fbe2f2db96e9b6260`. Both remain unmerged. Reconcile the shared ledger hunk and expected heads before integration; no force push, competing writer, replacement PR or duplicate manual qualification.
 
-Frozen qualification target remains `bitcoin/bitcoin` at `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`. The separate historical revision `0e9018e8b65611b0769545e177110e4b7fc51244` and run `comprun_7cc47a5a81695fa452354479ea23b422` remain untouched.
+GitHub authenticated source writes have succeeded in this mission. A previous blanket read-only/publication-blocked summary is obsolete. The retained local NICO-runtime-failure-correction.patch predates PR1644's v2 producer; do not apply it blindly over that newer implementation. Its compatibility and failure-projection work needs exact current-source reconciliation.
 
-## Actual native failure recovered
+## Current security correction
 
-Downloaded and verified run `36127119592` / job `108052224324` artifact `10862967834`, ZIP SHA256 `2a6056ce7b74ce1ec501c6b0777bf91f0a40a47ac8b5ae9df5da4fb606d0fe7b`. No oversized full-job log request was repeated. The native runtime artifact is `40af4a279f63e15944ae4afd2239a669bfbd7e6a20f09285bfc9b00f71000ec2`.
+Authenticated Railway metadata was re-read and identifies the SUCCESS production deployment of main31269344. Its identifier SHA256 is `1980b2f6dab7776d10baa4343cca6b20d8af6aaec1a99137932989a3a81fff37`. Original Security Audit Evidence artifact10864619748, ZIP SHA256 `b8f68ec097acc9615d6e8f2eebc49e674afde363ffbc12e81711e0a9527f0c16`, contains one blocking TruffleHog observation at a928:NICO-Ship-Checkpoint.md:9 with that exact value, detector RailwayApp and Verified=false.
 
-The frozen inventory contains 3,031 materialized files / 49,729,651 source bytes. The retained baseline passes 377 tests and 475 compiler contexts; generated inputs and cleanup are verified. All six selected functional tests pass, including wallet_ancient_migration and interface_ipc. The first failing native operation is `runtime-address-build`: exit 2 after 691,220 ms, with a killed linker followed by explicit `No space left on device`. Peak memory is 12,884,901,888 bytes; scratch capacity is 9,663,676,416 bytes. Reaching that ceiling and SIGKILL are not independent OOM-event proof.
+Add only this digest to the existing exact-path/detector/boolean-false nonsecret-deployment disposition. All scanner definitions, raw observations, verified/unknown-secret blocking, approval rules and native execution inputs remain unchanged. No general UUID exemption is introduced.
 
-The old producer continued into CTest after the failed build: 222/377 tests passed and 155 were skipped. UBSan and fuzz did not execute. The runtime remained incomplete. Exact retained-artifact replay reproduces `worker_runtime_evidence_invalid` because only the address sanitizer row exists, not the required address/undefined population. This is downstream rejection of incomplete execution, not permission to weaken the validator. Preserve all original failure bytes and statuses.
+Meaningful RED:2 failed/23 passed on the exact a928 script. Identical focused GREEN:25 passed. Final affected four-file suite:116 passed, zero failures/errors/skips, exit0; the25 are included in116. The initial RED command retained one warning from an unchanged invalid escape sequence. Local Python3.13.5/pytest9.0.2/pypdf5.9.0 is not pinned hosted parity.
 
-The descendant run `36129521112` on `977d657a02f7c449da9455b26896052f1261159c` was still running its native job `108068531516` at the last read; its contract/toolchain/source/owned-project jobs passed. It was neither cancelled nor duplicated. Its runtime producer blob is still the same uncorrected `801fa82afd4bc713c67a1cd9450e86c52118e846`; owner-liveness changes do not repair scratch exhaustion. Reuse its terminal evidence where applicable.
+Exact original-archive replay changes blocked to passed, preserves104/104 TruffleHog observations and all22 raw files byte-identically, changes exactly one disposition, and preserves every other scanner record and all human-review requirements. Tested script blob `fe7eacb713ccaa609fc2b53ca6997dea33f47b5b`; new test blob `86c032ed1a79c17359e6ab034fa0f585bc089418`. Evidence index: [verification.json](docs/evidence/pr1644-deployment-disposition-20260925/verification.json). Hosted checks and independent review remain mandatory; this local replay is not a new hosted scanner execution.
 
-## Bounded corrective implementation
+## Native qualification — preserve active work and actual failures
 
-After retained functional results, reclaim only the completed baseline build and temporary functional-test directory. After each sanitizer's retained results, reclaim only that completed sanitizer build before starting the next phase. Fixed phase names, descriptor-relative symlink-resistant removal, top-level type/device checks, unchanged runtime UID and before/after filesystem measurements preserve the isolation boundary. Source, private analyst snapshots and unit-test data are not cleanup targets. The outer disposable-container cleanup remains unconditional.
+Frozen target: bitcoin/bitcoin at `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`. Keep all475 compiler contexts, including original/generated/repeated configurations, all377 baseline tests, Linux Debug wallet/tests/IPC, six selected functional tests, required ASan/UBSan, bounded fuzz and substantive static/fallback analysis. Preserve declared GUI/benchmark/ZeroMQ/other-platform exclusions; no target-name exception or hidden scope reduction.
 
-Retain failed configure/build/discovery/corpus-stage operations before interpretation and do not execute their dependents. Evidence v2 binds the ordered reclamation operations, commands, users, exits, byte hashes, timing and space measurements. Legacy v1 remains readable with its original meaning and gains no reclamation claim. No required source/context/test, analyzer depth, resource/time ceiling, retry budget, approval control, credential scope or production setting changes.
+Historical commit `0e9018e8b65611b0769545e177110e4b7fc51244` and run `comprun_7cc47a5a81695fa452354479ea23b422` remain unchanged. Retained failed runs36127119592 and36129521112 still prove complete acquisition, baseline377/377, compiler475/475 and functional6/6 before ASan build exit2, killed linker and explicit No space left on device. Each retained222/377 ASan tests executed with155 skipped; UBSan/fuzz/fresh static did not execute. Scratch exhaustion is evidenced; SIGKILL without OOM-event evidence is not proof of an OOM kill.
 
-Recorded RED: 21 failures. Identical GREEN: 21 passes. Thirteen additional negative/legacy cases were added after GREEN, not claimed as independently observed RED. All new tests now live in the already-required `tests/test_cpp_runtime_execution.py`; no additional workflow or duplicate qualification campaign is added. Final affected eight-file command: 168 passed, zero failures/errors/skips, terminal exit 0. Source and test Git blobs match locally tested bytes. A report-heavy broad command exceeded the local tool deadline and is not a complete suite pass. Local transport is substituted; real owned filesystem/symlink tests pass. Native Docker and full production proof remain unproven.
+PR1644's unchanged runtime correction reclaims only fixed completed build directories after retained results, uses descriptor-relative symlink-resistant removal, retains first failed operations, prevents failed-prerequisite dependents and adds v2 reclamation bindings while preserving legacy v1. Resource ceilings remain4 CPUs/12GiB/no swap/256PIDs/9GiB scratch. Preserve the9000-second durable contract,300-second renewable lease,one attempt and155-minute hosted outer bound.
 
-Exact verification and native locators: `docs/evidence/cpp-runtime-reclamation-20260925/verification.json`.
+Existing native run36138550814/job108086221842 on a928 remains IN_PROGRESS at the last direct step read. Contract, toolchain, exact source and owned-project prerequisites passed. Do not cancel, retry or dispatch a duplicate campaign. This security-only delta changes no native implementation/tool/configuration inputs, so applicable unchanged native proof remains reusable with exact content-equivalence and final-release binding. The source artifact10864729586 ZIP SHA256 `46f573fcddea30910358b76a17cb10a1713569698c7c940eacdc998ece12b307` was verified; its CI merge tree equals a928's tree.
 
-## PDF recovery and independent review still required
+## PDF, production and review gaps
 
-Run `comprun_29c30048215275ecbac35d179f71a1ed` remains the existing recovery target. PR #1643 records the 1,132-page composition-boundary failure, but its actual stored source/revision/contract and failing report inputs have not been retrieved in this continuation. Do not infer that it exercised the frozen complete C++ scope or that a 1,132-page PDF was stored. Recover through the supported authenticated operator workflow. Keep the 60-page boundary and verify English/es-MX continuation, unknown/missing/shared-page section boundaries, the canonical register and mandatory following content against actual inputs. Do not discard a report tail to make publication pass.
+PR1645 preserves the previously verified22-case bilingual boundary correction and51 distinct affected passes. Its tested composer is blob `8cd348edce7cbc549f699d30164e2f8d0e7bea4b`. Actual failing inputs and immutable contract for `comprun_29c30048215275ecbac35d179f71a1ed` remain unavailable. The1132-page exception does not prove a PDF was stored. The60-page boundary stays; ambiguous content must not be discarded to force publication. Actual-input replay, complete rendered inspection, bilingual semantic parity and normal desktop/mobile/recovery still require evidence.
 
-No authenticated operator session has been established here. Infrastructure access does not supply it; no password, admin secret or proof credential was extracted. No production assessment, database state, human disposition, approval or delivery authorization was created or changed. Direct external reads unavailable through a tool are not proof that the service is down.
+Latest established frontend mapping is Vercel `dpl_8peLtPtpFF839XWMbhwiQZkK2Dt1`, READY at main31269344. Railway's corresponding NICO deployment remains SUCCESS and was re-read. These mappings are not qualified worker/image/receipt proof. No redundant deployment, production qualification settings, database changes, assessment creation or approval was performed for this correction.
 
-The predecessor's independent-review allowance restriction remains binding. PR #1641's review-submission list is empty, but that does not disprove review elsewhere. Recover the complete review accumulator before claiming review completion. No exhausted unchanged review was resubmitted, no credits purchased, and no author self-review was represented as independent.
+The actual operator session/report-input access boundary remains distinct from permitted engineering. Do not extract credentials, reuse proof credentials, remove authentication or treat a phone sign-in as automatic tool-session transfer. The prior Firecrawl zero-data-retention rejection must not be evaded. A supported authenticated route is still needed for the existing report and final normal-intake control/Bitcoin journey.
 
-## Whole-row acceptance
+Review accumulator: SECURITY-DEPLOYMENT-ID-1 has a tested source correction and unchanged-artifact replay; hosted clearance/review pending. NATIVE-CAPACITY-1 has a currently running corrected candidate. PDF-CONSERVATION-1 has published bounded repairs but missing actual-input proof. ACTUAL-PDF-REPLAY-1 and INDEPENDENT-REVIEW-1 remain open. The prior limited PDF source review is not full-capability review; its rejected persistent-discard proposal and NOT READY disposition remain preserved at7f674d38. Do not repeat exhausted unchanged reviews, waive independence or substitute author tests.
 
-| Predicate | State | Evidence / unmet scope |
+## C0–C19 whole-row status
+
+| Predicate | Status | Remaining scope |
 | --- | --- | --- |
-| C0 | UNPROVEN | Source/control/budgets and current release recovered; actual recovery-run contract/access and final qualification remain. |
-| C1 | PASS | Retained complete frozen native inventory/acquisition; unchanged by correction. Normal-production exercise remains C18. |
-| C2 | UNPROVEN | Prior native isolation passes; complete corrected combined workload still needs proof. |
-| C3 | UNPROVEN | Dedicated final production worker/run/release binding absent. |
-| C4 | UNPROVEN | Prior liveness repair preserved; final real-transport recovery/fencing acceptance remains. |
-| C5 | UNPROVEN | Full current 475-context substantive static/fallback completion not proved. |
-| C6 | PASS | Retained frozen baseline build/generated inputs and 475 compiler contexts; not production acceptance. |
-| C7 | FAIL | ASan build failed; UBSan/fuzz absent. Corrected native instrumentation/replay proof required. |
-| C8 | UNPROVEN | Final native/canonical/register/cross-format reconciliation remains. |
-| C9 | UNPROVEN | Final static/runtime/report populations and exclusions remain. |
-| C10 | UNPROVEN | Actual production score/assurance projection remains. |
-| C11 | FAIL | Retained combined runtime exhausted scratch and reached memory ceiling; corrected workload unqualified. |
-| C12 | UNPROVEN | Hosted owned predecessor passes; corrected owned and normal-production language controls remain. |
-| C13 | FAIL | Required actual complete-scope Bitcoin report and failing-input PDF verification absent. |
-| C14 | UNPROVEN | Actual bilingual/mobile/progress/refresh/recovery acceptance remains. |
-| C15 | UNPROVEN | No human/history boundary changed; eligible exact-edition one-action proof remains. |
-| C16 | UNPROVEN | Corrective hosted CI/security and complete independent review remain. |
-| C17 | UNPROVEN | Main frontend/backend deployment mappings recovered; corrected release/worker/image serving chain incomplete. |
-| C18 | FAIL | No qualified authorized normal-production frozen Bitcoin acceptance run established. |
-| C19 | UNPROVEN | Final bilingual artifacts, repeated retrieval/hashes and complete closeout absent. |
+| C0 | UNPROVEN | Actual production run contract/access and final qualification. |
+| C1 | PASS | Unchanged complete frozen native inventory/acquisition; production exercise remains C18. |
+| C2 | UNPROVEN | Complete corrected combined/production isolation and capacity proof. |
+| C3 | UNPROVEN | Final dedicated worker/tenant/run/configuration/release binding. |
+| C4 | UNPROVEN | Real-transport long-job recovery, cancellation, fencing and idempotence. |
+| C5 | UNPROVEN | Terminal substantive static/fallback completion for all475 contexts. |
+| C6 | PASS | Retained frozen build/generated/compiler/header evidence; not production acceptance. |
+| C7 | UNPROVEN | Corrected complete integration/sanitizer/fuzz native qualification pending. |
+| C8 | UNPROVEN | Final native/canonical/findings/dispositions/register reconciliation. |
+| C9 | UNPROVEN | Complete final memberships, counts, hashes, units and exclusions. |
+| C10 | UNPROVEN | Actual final-run score and assurance projection. |
+| C11 | UNPROVEN | Corrected measured aggregate workload within existing enforced budgets. |
+| C12 | UNPROVEN | Normal-production C/C++ and supported-language controls. |
+| C13 | UNPROVEN | Actual Bitcoin structured output and complete rendered report proof. |
+| C14 | UNPROVEN | Actual EN/es-MX, desktop/mobile, progress/recovery and blank metadata proof. |
+| C15 | UNPROVEN | Required exact-edition approval/download verification; boundaries preserved. |
+| C16 | UNPROVEN | New hosted security/check clearance and complete independent review. |
+| C17 | UNPROVEN | Corrected merged frontend/backend/qualified worker/image serving chain. |
+| C18 | UNPROVEN | Authorized normal-production frozen Bitcoin full-scope execution. |
+| C19 | UNPROVEN | Actual bilingual artifact links/hashes/repeated retrieval and closeout. |
 
 ## EXACT NEXT ACTION
 
-Preserve the descendant native run and read its terminal retained evidence. Complete owned/focused verification of this correction, recover the actual report inputs and independent review, then use the normal narrow corrective PR process. Qualify only the changed candidate after the owned prerequisite. Complete full-project image/release binding and authenticated production control before the one justified frozen Bitcoin acceptance run. Keep all C0–C19 requirements and pending genuine human approval; do not declare SHIPPED at a code/test/merge/deployment milestone.
+Verify published bytes and observe the new hosted security result without repeating the unchanged native campaign. Recover run36138550814's terminal artifacts when available; reconcile the old local runtime-evidence patch only against the actual v2 producer and its retained output. Continue independent source/negative-path verification and legitimate actual-report-input access while that native job runs. Finish applicable independent review, integrate PR1644/PR1645 with the reconciled single ledger, qualify the exact image/release, then normal production control and frozen Bitcoin bilingual artifacts. No merge is authorized merely by this security test or green badge.
+
+No qualifying English/es-MX Bitcoin artifact, repeated-download hash or genuine approval/delivery state is established. Do not declare SHIPPED.
