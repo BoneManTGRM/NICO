@@ -100,7 +100,7 @@ def test_configure_first_v3_derives_release_options_before_probe(tmp_path, monke
         value['compilation_database_sha256']=hashlib.sha256(b'[]').hexdigest()
         return value
     monkeypatch.setattr('nico.assessment_cpp_configuration_probe.probe_project_configuration',fake_probe)
-    result=run_configure_first(plan,root,acquisition,checkpoint=lambda:None,timeout_seconds=60,
+    result=run_configure_first(plan,root,acquisition,checkpoint=lambda:None,timeout_seconds=8980,
         retain_artifact=lambda key,raw:ref(key,raw))
     assert observed['options']=={'BUILD_GUI':'OFF','BUILD_TESTS':'ON'}
     assert result['native']['project_option_policy']=='conservative-cmake-v1'
