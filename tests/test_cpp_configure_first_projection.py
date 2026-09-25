@@ -334,3 +334,74 @@ def test_partial_execution_does_not_relax_retained_report_identity_gate(change):
     text = ' '.join([rendered['summary'],*rendered['evidence'],*rendered['unavailable']])
     assert 'not bound to a verified retained receipt' in text
     assert 'Functional runtime tests: 1/1 passed.' not in text
+
+
+@pytest.mark.parametrize('locale,unknown,unexecuted', [
+    ('en', 'passed=unknown/1', 'Sanitizer / undefined: not executed.'),
+    ('es-MX', 'aprobadas=desconocido/1', 'Sanitizador / undefined: no ejecutado.'),
+])
+def test_failed_runtime_complete_export_retains_unknowns_and_human_boundary(tmp_path, locale, unknown, unexecuted):
+    """Use the public exporter, not only the scanner-stage string helper."""
+    import io
+    from pypdf import PdfReader
+    from scripts.qualify_cpp_full_project_integration import render_result
+    ident, plan, receipt, encoded, record, reconstruction = _failed_runtime_complete_static_fixture()
+    record = project_configure_first_record(record, ident, plan, receipt, reconstruction)
+    digest = hashlib.sha256(encoded).hexdigest()
+    record.update(raw_artifact_retention_complete=True, raw_artifact_sha256=digest, artifact_hash=digest)
+    before = deepcopy(record)
+    result = render_result({'canonical_record': record}, tmp_path, locale)
+    assert result['automated_draft'] is True and result['production_report'] is False
+    assert record == before
+    assert record['status'] == 'failed'
+    assert record['completed'] is False and record['verified_complete'] is False
+    assert record['human_review_required'] is True and record['client_delivery_allowed'] is False
+    stem = tmp_path / ('owned-project-' + locale)
+    text = '\n'.join(page.extract_text() or '' for page in PdfReader(io.BytesIO(stem.with_suffix('.pdf').read_bytes())).pages)
+    for rendered in (text, stem.with_suffix('.md').read_text(), stem.with_suffix('.html').read_text()):
+        normalized = ' '.join(rendered.split())
+        assert unknown in normalized
+        assert unexecuted in normalized
+        if locale == 'es-MX':
+            assert 'Configure-first execution is incomplete' not in normalized
+            assert 'scanner execution(s) remain incomplete' not in normalized
+            assert 'Dates, owners, dependencies, and budget require' not in normalized
+            assert 'la evidencia nativa conservada requiere reparación' in normalized
+
+
+@pytest.mark.parametrize('prefix', ['', 'cppcheck: '])
+def test_configure_first_failure_translation_is_exact_and_does_not_allow_new_english(prefix):
+    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
+    reason = 'Configure-first execution is incomplete; retained native evidence requires repair.'
+    translated = _translate_presentation_field(prefix + reason, 'unavailable')
+    assert translated == prefix + ('La ejecución con configuración inicial está incompleta; '
+                                  'la evidencia nativa conservada requiere reparación.')
+    with pytest.raises(ValueError, match='Spanish presentation'):
+        _translate_presentation_field(prefix + reason.replace('requires repair', 'has unreviewed new conditions'),
+                                      'unavailable')
+
+
+@pytest.mark.parametrize('count', [0, 1, 4])
+@pytest.mark.parametrize('with_candidates', [False, True])
+def test_incomplete_scanner_clause_localizes_independently_of_candidate_clause(count, with_candidates):
+    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
+    text = f'{count} scanner execution(s) remain incomplete.'
+    if with_candidates:
+        text += ' 2 resulting candidates remain pending human disposition.'
+    translated = _translate_presentation_field(text, 'summary')
+    unit = 'ejecución de analizador permanece incompleta' if count == 1 else 'ejecuciones de analizadores permanecen incompletas'
+    assert f'{count} {unit}.' in translated
+    assert 'scanner execution' not in translated
+    if with_candidates:
+        assert '2 candidatos resultantes siguen pendientes de disposición humana.' in translated
+
+
+def test_blank_roadmap_late_companion_localizes_confirmation_requirement():
+    from nico.comprehensive_client_review_companion_v2 import review_sections
+    canonical = {'assessment': {}, 'roadmap': []}
+    original = deepcopy(canonical)
+    spanish = next(row for row in review_sections(canonical, spanish=True) if row['id'] == 'six_month_roadmap')
+    english = next(row for row in review_sections(canonical, spanish=False) if row['id'] == 'six_month_roadmap')
+    assert spanish['limitations'] == ['Las fechas, los responsables, las dependencias y el presupuesto requieren confirmación explícita de las partes interesadas.']
+    assert english['limitations'] == ['Dates, owners, dependencies, and budget require explicit stakeholder confirmation.']
+    assert canonical == original

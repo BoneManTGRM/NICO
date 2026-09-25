@@ -135,9 +135,21 @@ def enrich_scanner_stage(canonical, stage):
                             else 'Declared runtime scope is incomplete.')
             functional = runtime.get('functional') if isinstance(runtime.get('functional'), Mapping) else {}
             required = functional.get('required') or []
-            passed = functional.get('passed') or []
-            line = (f'Pruebas funcionales en ejecución: {len(passed)}/{len(required)} aprobadas.' if es
-                    else f'Functional runtime tests: {len(passed)}/{len(required)} passed.')
+            passed = functional.get('passed')
+            state = functional.get('state')
+            if state == 'not_executed':
+                line = (f'Pruebas funcionales en ejecución: no ejecutadas; requeridas={len(required)}.' if es
+                        else f'Functional runtime tests: not executed; required={len(required)}.')
+            elif isinstance(passed, list):
+                line = (f'Pruebas funcionales en ejecución: {len(passed)}/{len(required)} aprobadas.' if es
+                        else f'Functional runtime tests: {len(passed)}/{len(required)} passed.')
+            else:
+                line = (f'Pruebas funcionales en ejecución: aprobadas=desconocido/{len(required)}.' if es
+                        else f'Functional runtime tests: passed=unknown/{len(required)}.')
+            if state in {'failed','timed_out'}:
+                label = ('tiempo agotado' if state == 'timed_out' else 'fallidas') if es else (
+                    'timed out' if state == 'timed_out' else 'failed')
+                line += (' Estado: ' if es else ' State: ') + label + '.'
             summaries.append(line); evidence.append(line)
             for sanitizer in runtime.get('sanitizers') or []:
                 if not isinstance(sanitizer, Mapping): continue

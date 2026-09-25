@@ -33,6 +33,10 @@ def _read_artifact(store, identity, reference, key):
             or stored.get("compressed_bytes")!=reference.get("gzip_bytes")):
         raise ValueError("worker_configure_first_artifact_binding_invalid")
     compressed=stored["compressed"]
+    if (not isinstance(compressed, bytes) or not 0 < len(compressed) <= MAX_COMPRESSED
+            or len(compressed) != reference.get("gzip_bytes")
+            or hashlib.sha256(compressed).hexdigest() != reference.get("gzip_sha256")):
+        raise ValueError("worker_configure_first_artifact_digest_invalid")
     try:
         with gzip.GzipFile(fileobj=io.BytesIO(compressed),mode="rb") as stream:
             raw=stream.read(min(MAX_RAW,reference.get("retained_bytes",0))+1)

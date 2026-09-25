@@ -22,6 +22,8 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "Configure-first execution is incomplete; retained native evidence requires repair.": "La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
+    "cppcheck: Configure-first execution is incomplete; retained native evidence requires repair.": "cppcheck: La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
     "The dedicated worker retained native scanner evidence. Individual tool records state completion and limitations.": "El trabajador dedicado conservó evidencia nativa de los analizadores. Cada registro indica el estado de ejecución y sus limitaciones.",
     "The selected worker profile does not execute this requested tool.": "El perfil seleccionado del trabajador no ejecuta esta herramienta solicitada.",
     "Native target execution or parsing is incomplete; retained observations require review.": "La ejecución o el análisis nativo de los objetivos está incompleto; las observaciones conservadas requieren revisión.",
@@ -3062,6 +3064,16 @@ def _translate_presentation(value: Any) -> str:
             f"{'Se completó' if int(match.group(2)) == 1 else 'Se completaron'} "
             f"{match.group(1)} de {match.group(2)} "
             f"{'ejecución de analizador aplicable' if int(match.group(2)) == 1 else 'ejecuciones de analizadores aplicables'}."
+        ),
+        text,
+    )
+    # Translate this clause independently: the following candidate sentence
+    # may already be localized before the older combined grammar is reached.
+    text = re.sub(
+        r"(\d+) scanner execution\(s\) remain incomplete\.",
+        lambda match: (
+            f"{match.group(1)} "
+            f"{'ejecución de analizador permanece incompleta' if int(match.group(1)) == 1 else 'ejecuciones de analizadores permanecen incompletas'}."
         ),
         text,
     )

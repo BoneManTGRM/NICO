@@ -350,19 +350,25 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
         evidence['failure_diagnostics'] = []
     try:
         functional=plan['functional']; selected=list(functional['selected_tests'])
+        retained={'setup':None,'operation':None,'results_read':None,'results':None,'results_sha256':None}
+        evidence['functional']=retained
         setup=_run(observe,'runtime-functional-setup',container,
             ['python3','-I','-S','-c',"import pathlib; pathlib.Path('/work/functional-tests').mkdir(exist_ok=True)"],
             seconds=10)
+        retained['setup']=setup
+        if not _ok(setup):
+            raise ValueError('worker_runtime_functional_failed')
         argv=['python3','/work/build/test/functional/test_runner.py','--jobs',str(functional['parallel']),
             '--quiet','--resultsfile=/work/build/nico-functional-results.csv',
             '--tmpdirprefix=/work/functional-tests',*selected]
         operation=_run(observe,'runtime-functional',container,argv,seconds=functional['seconds'],
             environment={'PYTHON_GIL':'1'},workdir='/work/build')
+        retained['operation']=operation
         results_read,results_raw=_read_file(observe,container,'runtime-functional-results',
-            '/work/build/nico-functional-results.csv',1024*1024)
+            '/work/build/nico-functional-results.csv',1024*1024,
+            retain_row=lambda row: retained.update(results_read=row))
         summary=_parse_functional_csv(results_raw,selected)
-        evidence['functional']={'setup':setup,'operation':operation,'results_read':results_read,'results':summary,
-            'results_sha256':hashlib.sha256(results_raw).hexdigest()}
+        retained.update(results=summary,results_sha256=hashlib.sha256(results_raw).hexdigest())
         if not (_ok(setup) and _ok(operation) and summary['passed']==selected and not summary['failed'] and not summary['skipped']):
             raise ValueError('worker_runtime_functional_failed')
 
@@ -563,6 +569,62 @@ def _retained_file_bytes(raw, limit):
         raise ValueError(error) from exc
 
 
+def _validate_failed_functional_prefix(evidence, plan, operation):
+    """Verify the returned functional failure; absent CSV means unknown results."""
+    error='worker_runtime_evidence_invalid'
+    def require(condition):
+        if not condition:
+            raise ValueError(error)
+    require(evidence['complete'] is False and evidence['sanitizers']==[]
+        and evidence['fuzz'] is None and evidence['reclamations']==[]
+        and evidence.get('failure_diagnostics',[])==[])
+    functional=evidence['functional']
+    require(isinstance(functional,dict) and set(functional)==
+        {'setup','operation','results_read','results','results_sha256'})
+    def read(key,row):
+        require(isinstance(row,dict) and row.get('id')==key)
+        return operation(row,2*1024*1024+4096)
+    setup=functional['setup']; read('runtime-functional-setup',setup)
+    required=list(plan['functional']['selected_tests'])
+    if not _ok(setup):
+        require(all(functional[key] is None for key in ('operation','results_read','results','results_sha256'))
+            and evidence['error']=='worker_runtime_functional_failed')
+        failed='runtime-functional-setup'
+        summary={'required':required,'executed':[],'passed':[],'failed':[],'skipped':[],'state':'not_executed'}
+    else:
+        runner=functional['operation']; read('runtime-functional',runner)
+        results_read=functional['results_read']; returned=read('runtime-functional-results',results_read)
+        if _ok(results_read):
+            raw=_retained_file_bytes(returned,1024*1024)
+            try:
+                parsed=_parse_functional_csv(raw,required)
+            except (ValueError,UnicodeError) as exc:
+                raise ValueError(error) from exc
+            require(functional['results']==parsed and functional['results_sha256']==hashlib.sha256(raw).hexdigest()
+                and (not _ok(runner) or parsed['passed']!=required or parsed['executed']!=required
+                     or bool(parsed['failed']) or bool(parsed['skipped']))
+                and evidence['error']=='worker_runtime_functional_failed')
+            summary=dict(parsed)
+        else:
+            require(functional['results'] is None and functional['results_sha256'] is None
+                and evidence['error']=='worker_runtime_artifact_unavailable')
+            summary={'required':required,'executed':None,'passed':None,'failed':None,'skipped':None}
+        summary['state']='timed_out' if runner['timed_out'] else 'failed'
+        # With valid CSV, a failed/skipped required test is a runner failure
+        # even when its process incorrectly returned zero. Missing CSV is a
+        # read failure only when the runner itself completed successfully.
+        failed=('runtime-functional' if not _ok(runner) or _ok(results_read) else 'runtime-functional-results')
+    return {'complete':False,'error':evidence['error'],'failure_operation':failed,'functional':summary,
+        'sanitizers':[],'sanitizers_not_executed':list(plan['sanitizers']['kinds']),
+        'fuzz':{'state':'not_executed','target':plan['fuzz']['target'],
+            'required_replay_count':len(plan['fuzz']['corpus']), 'replay_count':0,
+            'campaign_completed':False,'campaign_executions':None,'campaign_coverage_signal':None,
+            'campaign_duration_ms':None,'corpus_sha256':[],
+            'required_corpus_sha256':[row['sha256'] for row in plan['fuzz']['corpus']]},
+        **({'failure_diagnostics':[]} if evidence['schema']=='nico.cpp-runtime-evidence.v3' else {}),
+        'native_evidence_sha256':_digest(evidence)}
+
+
 def _validate_failed_runtime_prefix(evidence, plan, operation):
     """Reconstruct a corroborated v2 abort without inventing its missing suffix.
 
@@ -571,6 +633,8 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
     native failure and no later execution except that test's result-file read.
     The returned record is explicitly incomplete and grants no completion credit.
     """
+    if evidence['sanitizers']==[] and evidence['fuzz'] is None and evidence['reclamations']==[]:
+        return _validate_failed_functional_prefix(evidence,plan,operation)
     error = 'worker_runtime_evidence_invalid'
     rows = {}; raw = {}; order = []
     def require(condition):
