@@ -171,8 +171,8 @@ jobs:
   project-baseline-qualification:
     needs: [owned-project-integration]
     runs-on: ubuntu-24.04
-    # 1,810s baseline + 610s static + 580s bounded setup/artifact margin.
-    timeout-minutes: 50
+    # 1,810s baseline + 1,030s combined primary/fallback static + 760s bounded setup/artifact margin.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
