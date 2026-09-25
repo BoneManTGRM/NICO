@@ -30,3 +30,36 @@ def test_configure_first_v2_accepts_only_release_owned_cmake_policy():
     assert validate_contract(value)==value
     broken=deepcopy(value); broken['configuration']['project_option_policy']='caller-selected'
     with pytest.raises(ValueError): validate_contract(broken)
+
+
+def test_configure_first_v3_freezes_required_runtime_scope_before_execution():
+    value=contract()
+    value['configuration'].pop('project_options')
+    value['configuration'].update(
+        schema='nico.cpp-configure-first-contract.v3',
+        project_option_policy='conservative-cmake-v1',
+        runtime_scope={
+            'schema':'nico.cpp-runtime-scope.v1',
+            'functional_policy':'source-declared-functional-v1',
+            'sanitizers':['address','undefined'],
+            'sanitizer_build_seconds':1200,
+            'sanitizer_test_seconds':600,
+            'sanitizer_test_case_seconds':120,
+            'fuzz_policy':'source-declared-libfuzzer-v1',
+            'fuzz_replay_runs':1,
+            'fuzz_campaign_runs':256,
+            'fuzz_campaign_seconds':300,
+            'parallel':4,
+        })
+    value['limits']={'max_attempts':1,'wall_seconds':9000,'lease_seconds':300}
+    assert validate_contract(value)==value
+    for field, replacement in (
+        ('sanitizers',['address']),
+        ('functional_policy','disabled'),
+        ('fuzz_policy','disabled'),
+        ('fuzz_campaign_runs',0),
+    ):
+        broken=deepcopy(value)
+        broken['configuration']['runtime_scope'][field]=replacement
+        with pytest.raises(ValueError):
+            validate_contract(broken)
