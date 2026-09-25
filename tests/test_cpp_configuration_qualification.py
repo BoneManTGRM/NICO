@@ -186,6 +186,8 @@ def test_pinned_large_configuration_is_wired_after_owned_native_success():
     workflow = (root/'.github/workflows/cpp-full-project-integration.yml').read_text()
     assert 'tests/test_cpp_configuration_qualification.py' in workflow
     assert '--qualification-source' in workflow
+    assert '--runtime-scope-contract tests/fixtures/cpp/bitcoin-runtime-scope.json' in workflow
+    assert 'tests/test_cpp_runtime_scope.py' in workflow and 'tests/test_cpp_runtime_execution.py' in workflow
     assert workflow.index('--project-compiler-options --image') < workflow.index('--qualification-source')
     assert 'cpp-configuration-qualification/' in workflow
 
@@ -237,6 +239,23 @@ def test_large_static_analysis_is_projected_to_hash_bound_receipt_summary():
     assert summary['artifact'] == analysis['artifact']
     assert projected['project_static_stage']['analysis'] == summary
     assert len(integration.canonical_bytes(projected)) < 512 * 1024
+
+
+def test_runtime_evidence_is_projected_and_retained_outside_the_bounded_receipt(tmp_path):
+    from scripts.qualify_cpp_project_configuration import qualification_probe_receipt, persist_project_artifact
+    runtime={'schema':'nico.cpp-runtime-evidence.v1','plan_sha256':'a'*64,
+        'functional':{'large':'x'*10000},'sanitizers':[],'fuzz':{},'complete':True,
+        'error':None,'duration_ms':123}
+    projected=qualification_probe_receipt({'runtime_evidence':runtime})
+    compact=projected['runtime_evidence']
+    assert compact['receipt_projection']=='hash-bound-summary-v1'
+    assert compact['native_evidence_sha256']==hashlib.sha256(
+        json.dumps(runtime,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert 'functional' not in compact
+    output=tmp_path/'qualification'; output.mkdir()
+    raw=json.dumps(runtime,sort_keys=True,separators=(',',':')).encode()
+    reference=persist_project_artifact(output,'project-runtime-evidence',raw)
+    assert (output/reference['path']).read_bytes()==raw
 
 
 def test_qualification_artifact_sink_accepts_bounded_clang_fallback_evidence(tmp_path):
