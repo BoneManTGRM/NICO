@@ -1,0 +1,161 @@
+{
+  "schema": "nico.pr1645-ci-boundary-test-seam.v1",
+  "parent_commit": "e930e7e374b24c07fa85abc05065dbfca128676e",
+  "parent_tree": "76b9eb9df7aa7faf51f8aa0719587ac0ebcdcd1c",
+  "scope": "Test-only repair for the changed compatibility preparation seam; actual production implementation unchanged.",
+  "hosted_failure": {
+    "run_id": 36193781687,
+    "job_id": 108264809765,
+    "artifact_id": 10889144141,
+    "artifact_bytes": 86504,
+    "artifact_sha256": "095d30936db6f202d9360d731c7a0f549868afab815330c29b04f9ec95af899b",
+    "assigned_files": 110,
+    "completed_files": 110,
+    "failed_files": [
+      "tests/test_compact_ci_boundary_publication_v81.py"
+    ],
+    "failures": 2,
+    "failure": "final client report finding populations do not reconcile",
+    "cause": "The focused CI/CD publication fixture mocked legacy finalization but not the new text-only preparation. Real finding preparation rejected the deliberately incomplete fixture."
+  },
+  "file": {
+    "path": "tests/test_compact_ci_boundary_publication_v81.py",
+    "preimage_blob": "e752ef5f749d1d42d70d2f5b5cd6885b6e734ad4",
+    "git_blob_sha": "c06f50fb4740832b42e35d2f00731a4e402aed96",
+    "sha256": "75a32e0ff98ee43319428826657c78b297b2b64d2843191cdd85991c31c8adbd",
+    "bytes": 8779
+  },
+  "unchanged_implementation_and_real_preparation_tests": {
+    "nico/client_pdf_compose_v2.py": "7163098426c5ed02b8104bcacff51a38d621aa61",
+    "nico/client_report_completion_v1.py": "6eadf34c03802afd0f7212c230ba22e1d413ea6b",
+    "nico/client_report_completion_v2.py": "bbced31bb133fffccaa13f95032e97ab1586116a",
+    "tests/test_client_report_single_composition.py": "5e7705bccd92e4cb5407cfe4f1f2053330ca69d8"
+  },
+  "original_assert_statements_preserved": 10,
+  "original_71_page_failure_test_preserved": true,
+  "verification": {
+    "original_fixture_red": {
+      "tests": 3,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "40f1d9fc2a52d84c44013809f464afc7a43f07137aef06b0a66fd0e4e251dfb7"
+    },
+    "expanded_fixture_before_seam_repair": {
+      "tests": 5,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "6dfa906c63def4fb82bbe7b2f11b2ac632eaa158c74ac227f8485f3dd384cb1d"
+    },
+    "expanded_fixture_after_seam_repair": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "b78f93ba29d3749bb8e0a4732ca6ce7ebd42d4f06d8fd5ff8bab17297902208b"
+    },
+    "adjacent_ci_boundary_tests": {
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "8f06333207b612413d6d37839ddcef0e9099301b7ac765b2b34d2da53298b43a"
+    },
+    "ci_boundary_command": "python -m pytest -q tests/test_compact_ci_boundary_publication_v81.py tests/test_comprehensive_final_ci_boundary_repair_v80.py tests/test_comprehensive_rendered_ci_boundary_producer_v79.py tests/test_comprehensive_rendered_ci_boundary_truth_v78.py tests/test_terminal_ci_boundary_validator_compat_v1.py",
+    "negative_control": {
+      "tests": 4,
+      "failures": 4,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "cfa03bf3b9ae1ad0a87cb2b8541b3ff254c7c914943a3814a1edb2595e7407c9",
+      "change": "Ephemeral in-memory replacement of repair_ci_operational_markdown with identity; no source mutation persisted.",
+      "expected_outcome": "All four locale/path cases reject missing CI/CD markers.",
+      "warning": "PytestAssertRewriteWarning: anyio was imported before the embedded pytest invocation."
+    },
+    "real_finalizer_disjoint_groups": {
+      "pr1645-review-en.xml": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "d5b9f6605f5f6f831d4303f96a0ac023338c9dfd79fa2179253e061249214ddd"
+      },
+      "pr1645-review-es.xml": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "d76e73e07f7e5fd08c1fb30c6bdbbe654840acd6195215847088c92f5327a7ad"
+      },
+      "pr1645-review-other.xml": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "aeb24851be835b6a4008d12e9d972cf0aac066a336d883892910693b7d53c4a2"
+      },
+      "pr1645-reuse-tests.xml": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "65e179d3b63562413d486d2e6251de7db27e1b956af6eb271ae4f49a2ea1a83f"
+      },
+      "pr1645-legacy-replacement.xml": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "27acc030454efaf754fe90f52d9fd5e721a0ad7218d80b928b162456b630adc0"
+      },
+      "pr1645-finalizer-integration.xml": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "de8b799f9b95fdfb5351ac3592a8c282fe9f367efa365c5735ab0561f4788924"
+      }
+    },
+    "distinct_report_cases_passed": 38,
+    "count_note": "25 adjacent CI cases include the five focused cases. Thirteen disjoint real-finalization/reuse cases are additional; no earlier-turn totals are added.",
+    "incomplete_attempt": "An initial combined thirteen-test invocation hit the local command timeout without terminal JUnit. All thirteen were subsequently completed in bounded disjoint groups. The interrupted attempt is not a pass.",
+    "local_environment": {
+      "python": "3.13.5",
+      "pytest": "9.0.2",
+      "pypdf": "5.9.0",
+      "reportlab": "4.4.9"
+    },
+    "checkout_scope": "Hash-verified f48 scoped source archive plus exact current PDF blobs; no apps/web. Not full checkout or pinned hosted parity.",
+    "classification": "Test-seam maintenance with recorded failure-to-pass evidence; no new production behavior/TDD claim."
+  },
+  "bounded_review": {
+    "reviewer": "Railway connected agent; supplied-source independent critique only",
+    "thread_id": "67a5d273-8775-4e13-8717-74b7788ddae6",
+    "test_repair_verdict": "Valid repair; no concrete gap within supplied test-only scope.",
+    "e930_initial_findings": {
+      "source_register_propagation": "Withdrawn: prepare and final assembly already write both register locations; same normalization path.",
+      "bound_sanitization_bypass": "Withdrawn: bound path unchanged; final control-glyph validation covers both paths.",
+      "whitespace_removal": "Withdrawn: space join normalizes rather than concatenates words.",
+      "additional_locales": "Withdrawn: moved code unchanged; supported locales are EN/es-MX."
+    },
+    "e930_corrected_verdict": "No newly established defect within supplied single-composition scope.",
+    "tests_executed_by_reviewer": false,
+    "reviewer_fetched_repository": false,
+    "full_independent_pr_review_complete": false,
+    "record_kind": "Transcribed review summary, not raw tool transcript."
+  },
+  "actual_input_access": {
+    "existing_status_read": "401 specialist_authentication_required remains unresolved.",
+    "new_handoff_attempt": "Normal specialist-login navigation with zeroDataRetention=true failed before browser creation because ZDR is not enabled for the Firecrawl team.",
+    "protection_disabled": false,
+    "session_created": false,
+    "production_record_diagnostic_retried": false
+  },
+  "native_status": "No new native result accepted here. Existing full campaign and queued isolated diagnostic remain separate; no cancellation or manual duplicate launched.",
+  "actual_input_replayed": false,
+  "full_native_qualification": false,
+  "merge_authorized_by_this_evidence": false,
+  "deployment_performed": false,
+  "approval_or_delivery_changed": false
+}
