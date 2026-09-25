@@ -1,0 +1,150 @@
+{
+  "schema": "nico.pr1645-single-composition-verification.v1",
+  "parent_commit": "5db2a020490aac13dc364d714ee7cbf977c002c0",
+  "parent_tree": "b351b3dd8c4af878378dd7b1a66bb88d1d57770a",
+  "scope": "Remove the disposable legacy PDF pass only from compact compatibility finalization; preserve finished-package reuse and validate final surfaces.",
+  "files": {
+    "nico/client_report_completion_v1.py": {
+      "bytes": 25508,
+      "git_blob_sha": "6eadf34c03802afd0f7212c230ba22e1d413ea6b",
+      "sha256": "5724dca8acd3087c15b275c735184dd74f68c6c16bc509d385b6e2f5f82f8d74"
+    },
+    "nico/client_report_completion_v2.py": {
+      "bytes": 21544,
+      "git_blob_sha": "bbced31bb133fffccaa13f95032e97ab1586116a",
+      "sha256": "74ae7e81527da88b81f32b7f9aaa20fb9ee83b10859905a2f20a70f01bb85b01"
+    },
+    "tests/test_client_report_single_composition.py": {
+      "bytes": 5073,
+      "git_blob_sha": "5e7705bccd92e4cb5407cfe4f1f2053330ca69d8",
+      "sha256": "dd1a181ec8727f427b67e301a32b853c8f21ffa46b4048dad83d87e874a2c4ae"
+    }
+  },
+  "preimage_blobs": {
+    "nico/client_report_completion_v1.py": "ec12b691e674e41cdee9aabc4409ebcf1110b45c",
+    "nico/client_report_completion_v2.py": "29e188bc9f9cc42d2b6ae237531f205c0cf9df94"
+  },
+  "unchanged_composer_blob": "7163098426c5ed02b8104bcacff51a38d621aa61",
+  "verification": {
+    "focused_command": "python -m pytest -q tests/test_client_report_single_composition.py",
+    "exact_preimage_red": {
+      "failed": 3,
+      "passed": 3,
+      "errors": 0,
+      "reason": "Both compatibility locales rendered a disposable legacy register; final-surface checker lacked not-applicable-analyzer rejection."
+    },
+    "identical_final_green": {
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "disjoint_report_groups": {
+      "a": 13,
+      "b": 15,
+      "c": 30,
+      "total_distinct": 58,
+      "failed": 0,
+      "skipped": 0
+    },
+    "group_commands": [
+      "python -m pytest -q tests/test_client_report_completion_v1.py tests/test_client_report_completion_v2.py tests/test_client_report_single_composition.py tests/test_comprehensive_rendered_package_reuse_v1.py",
+      "python -m pytest -q tests/test_client_pdf_compose_v2.py tests/test_client_pdf_status_sanitizer_v1.py",
+      "python -m pytest -q tests/test_client_pdf_register_conservation.py tests/test_client_pdf_real_footer_conservation.py",
+      "python -m pytest -q tests/test_comprehensive_artifact_manifest_approval_v1.py tests/test_review_artifact_approval_boundary_v1.py tests/test_spanish_exact_artifact_hash_binding_v1.py"
+    ],
+    "broader_approval_group": {
+      "passed": 43,
+      "failed": 2,
+      "reason": "Both FileNotFoundErrors: scoped source archive omits apps/web/app/operations/final-review/ComprehensiveFinalReviewWorkspace.tsx. Assertions were not changed."
+    },
+    "interrupted_attempts": "Two combined report invocations and one combined RED/GREEN shell invocation reached container command limits with no terminal aggregate result; not counted as passing. Terminal disjoint groups and standalone final GREEN were rerun.",
+    "local_environment": "Python3.13.5 pytest9.0.2 pypdf5.9.0 reportlab4.4.9; scoped archive, not full checkout or pinned hosted parity.",
+    "baseline_warning": "One existing invalid-escape SyntaxWarning in express_score_assurance_export_v1.py; not modified."
+  },
+  "differential": {
+    "owned_cases": [
+      "small-en:1",
+      "large-en:80",
+      "large-es:80",
+      "bound-en:1"
+    ],
+    "pages_compared": 62,
+    "all_page_text_equal": true,
+    "all_page_pixels_equal_at_86_4dpi": true,
+    "offpage_words": 0,
+    "markdown_html_equal": true,
+    "input_unchanged": true,
+    "source_findings_scores_equal": true,
+    "completion_metadata_equal_except_version": true,
+    "changed_export_fields": "Version and derived PDF/JSON/manifest hashes/byte sizes only; the bound-reuse PDF is byte-identical. Existing declarations are preserved.",
+    "large_compatibility_legacy_pages_before": 61,
+    "large_compatibility_legacy_pages_after": 0,
+    "large_final_pages_before_and_after": 17,
+    "single_local_timing_samples_seconds": {
+      "large-en": [
+        10.043,
+        7.708
+      ],
+      "large-es": [
+        12.105,
+        9.304
+      ]
+    },
+    "timings_are_not_production_benchmarks": true
+  },
+  "owned_after_pdfs": {
+    "small-en": {
+      "pages": 14,
+      "sha256": "03f1ed7c30c3f3e2410cb4f579ca0b0bb60395ef73de1cc151e2e0056a933cb5"
+    },
+    "large-en": {
+      "pages": 17,
+      "sha256": "74a1eccb6ee5971d95d14375489b63ff89550f754c1f738ba189ccb0361b3586"
+    },
+    "large-es": {
+      "pages": 17,
+      "sha256": "40306216ba34d6ce80ab707559cdb123b93df549434f039ec25bc17a36181d7c"
+    },
+    "bound-en": {
+      "pages": 14,
+      "sha256": "b2ea7ddfe90c928eb71bca4f3d97b5dfcac47663ef3c41f22d76ad58eaf7f7af"
+    }
+  },
+  "production_observation": {
+    "latest_log_run": "comprun_34a469900baa742c0d557f42634b318f",
+    "observation": "Existing Railway deployment e045965c has HTTP200 continuation traffic at21:24-21:25UTC. No response body or exact failure contract for this run was retrieved. This is not stage/completion or root-cause proof."
+  },
+  "not_established": [
+    "actual_failing_input_replay",
+    "cause_of_latest_production_timeout",
+    "independent_review",
+    "hosted_exact_candidate_checks",
+    "native_cpp_qualification",
+    "merge_readiness",
+    "production_deployment"
+  ],
+  "production_record_diagnostic_retried": false,
+  "deployment_or_approval_changed": false,
+  "shipping_hold_preserved": true,
+  "evidence_sha256": {
+    "self-timeout-final-red.log": "6fe077896a4602666f254dd9ecf57eacbfa366b8a70cbb5cb54bbbac11e69d7b",
+    "self-timeout-final-red.xml": "41840c97f2aac4de0bfac956721c08febb217149524f8d80790cc4070d6684e3",
+    "self-timeout-final-green-complete.log": "d06955ce5d2e0bd968dc3f268c3d65e90dc96b44869fe0fd4f9cecd844daaf8a",
+    "self-timeout-final-green.xml": "e3c236cd80a0fcd78e31d453c87ca7cd1b04d302db0058cdc70d5c72510c12d8",
+    "self-timeout-group-a-final.log": "12a77b1def35cc40756910e1c75d830ec25e00aa37f0251a014d779f7aef656c",
+    "self-timeout-group-a-final.xml": "16336b7acf7661f402dab81f5023e0fe38cf4c299784b34cb6def84792ffa295",
+    "self-timeout-group-b.log": "8752b14b3f5eda7251b8f24981b122e0cfbd72bc995a1e0295d1338e73c24c4a",
+    "self-timeout-group-b.xml": "a8ab1aefb07af8439978b3661e38fe23c27304bcfaef7b035f0a98608f9b3349",
+    "self-timeout-group-c.log": "f7a727bec90979b3a67ed8e9f9012a656e14670d0abbf1178e4a9e2aa367ee41",
+    "self-timeout-group-c.xml": "c7dfa77e2fe896c5b78070890473d1bb32913d33be2f5503eb0fec1d1b3967c3",
+    "self-timeout-group-d.log": "a905202c0d6d5bfcce21cc543915ca26d217a3355ac3302ab72a632e2c6086de",
+    "self-timeout-group-d.xml": "76c524418222ab725e18a1fa36f9ba48fb0ec4f465744a7441b018a208c9f064",
+    "self-timeout-regressions-interrupted.log": "a350e9f897688140366f5f21456c728387e13fa74fa673a445a759bfb6a16747",
+    "self-timeout-regressions.log": "90d1dd74cc6998e93ce835696cb76694431c92b521d78ddc66ea39954d735642",
+    "self-timeout-final-green.log": "ab5df625bc76dbd4e163bed2dd888df828f90159bb93556525c31821b6541d46",
+    "single-composition-before.log": "e7f7a9a6d6f5903face1096b572ba45bd093ca89875d6e7f12dabac2430a45b2",
+    "single-composition-after.log": "c2f91e37d8e3cebcb41bc75ad468f86eafafcce013f78a62ff8098d8e31053da",
+    "single-composition-differential.json": "cbcd1b5fcc08fb8097740f1c3cbe71d8c8b0fea84f510ae41cf46d7c5dcce474"
+  }
+}
