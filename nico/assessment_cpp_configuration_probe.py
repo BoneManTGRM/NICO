@@ -162,8 +162,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
         result.update(schema='nico.cpp-project-configuration-probe.v5', project_compiler=None)
     if project_static_analysis:
         result.update(schema='nico.cpp-project-configuration-probe.v6', project_static=None,
-            project_static_stage=None, aggregate_execution_budget_seconds=2400,
-            aggregate_wall_budget_seconds=2420, aggregate_duration_ms=0)
+            project_static_stage=None, aggregate_execution_budget_seconds=2820,
+            aggregate_wall_budget_seconds=2840, aggregate_duration_ms=0)
 
     if baseline_execution is not None:
         result.update(baseline_execution=dict(baseline_execution), baseline_execution_frozen=None,
