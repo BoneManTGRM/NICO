@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from nico.assessment_cpp_runtime_scope import derive_runtime_plan
+from nico.assessment_cpp_runtime_scope import capture_runtime_interfaces, derive_runtime_plan, derive_runtime_plan_from_interfaces
 
 
 def _write(root: Path, path: str, data: bytes, targets: dict[str,str]):
@@ -21,12 +21,17 @@ def test_runtime_plan_is_derived_from_exact_source_interfaces(tmp_path):
     _write(root,'test/fuzz/test_runner.py',b'#!/usr/bin/env python3\nFUZZ=1\n',targets)
     _write(root,'src/test/fuzz/CMakeLists.txt',fuzz_cmake,targets)
     _write(root,'src/test/fuzz/connect_block.cpp',b'int x;\n',targets)
-    scope={'schema':'nico.cpp-runtime-scope.v1','functional_policy':'source-declared-functional-v1',
+    _write(root,'src/test/script_assets_tests.cpp',
+        b'const char* dir = std::getenv("DIR_UNIT_TEST_DATA"); // script_assets_test.json\n',targets)
+    scope={'schema':'nico.cpp-runtime-scope.v1','total_seconds':6000,'functional_policy':'source-declared-functional-v1',
         'functional_seconds':900,'sanitizers':['address','undefined'],'sanitizer_build_seconds':1200,
         'sanitizer_test_seconds':600,'sanitizer_test_case_seconds':120,'fuzz_policy':'source-declared-libfuzzer-v1',
         'fuzz_replay_runs':1,'fuzz_campaign_runs':256,'fuzz_campaign_seconds':300,'parallel':4}
     plan=derive_runtime_plan(root,targets,{'ENABLE_IPC':'ON','ENABLE_WALLET':'ON'},scope)
     assert plan['schema']=='nico.cpp-runtime-plan.v1'
+    assert plan['total_seconds']==6000
+    assert plan['unit_test_data']['commit_sha']=='b33d85102d169b54d966ea315ad81a636680aefa'
+    assert plan['unit_test_data']['sha256']=='cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095'
     assert plan['functional']['selected_tests']==[
         'feature_fast.py','mempool_fast.py','p2p_fast.py','rpc_fast.py','wallet_fast.py','interface_ipc.py']
     assert plan['sanitizers']['kinds']==['address','undefined']
@@ -35,12 +40,15 @@ def test_runtime_plan_is_derived_from_exact_source_interfaces(tmp_path):
     assert [x['sha256'] for x in plan['fuzz']['corpus']]==[
         'b711ed78d4987553c5a9fe7ca143ea017af39215f87e6c222b0796779edb3b44',
         'e7cf46a078fed4fafd0b5e3aff144802b853f8ae459a4f0c14add3314b7cc3a6']
+    interfaces=capture_runtime_interfaces(root,targets)
+    assert derive_runtime_plan_from_interfaces(interfaces,targets,
+        {'ENABLE_IPC':'ON','ENABLE_WALLET':'ON'},scope)==plan
 
 
 def test_runtime_plan_fails_closed_when_required_source_interface_is_missing(tmp_path):
     root=tmp_path/'source'; root.mkdir(); targets={}
     _write(root,'CMakeLists.txt',b'option(BUILD_TESTS "tests" ON)\n',targets)
-    scope={'schema':'nico.cpp-runtime-scope.v1','functional_policy':'source-declared-functional-v1',
+    scope={'schema':'nico.cpp-runtime-scope.v1','total_seconds':6000,'functional_policy':'source-declared-functional-v1',
         'functional_seconds':900,'sanitizers':['address','undefined'],'sanitizer_build_seconds':1200,
         'sanitizer_test_seconds':600,'sanitizer_test_case_seconds':120,'fuzz_policy':'source-declared-libfuzzer-v1',
         'fuzz_replay_runs':1,'fuzz_campaign_runs':256,'fuzz_campaign_seconds':300,'parallel':4}
