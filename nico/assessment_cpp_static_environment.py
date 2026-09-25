@@ -143,13 +143,18 @@ def search_arguments(predefines):
     return [*predefines[:-5], '-E', '-v', '-x', predefines[-2], '/dev/null']
 
 
-def environment_request(compiler_request, compiler_raw, image):
-    from nico.assessment_cpp_project_compiler import validate_project_compiler
+def environment_request(compiler_request, compiler_raw, image, *, compiler_state=None):
+    from nico.assessment_cpp_project_compiler import (validate_project_compiler,
+        reuse_validated_project_compiler)
     if not isinstance(image, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', image) is None:
         raise ValueError('worker_static_environment_image_invalid')
-    if not validate_project_compiler(compiler_raw, compiler_request)['complete']:
+    if compiler_state is None:
+        proof = validate_project_compiler(compiler_raw, compiler_request)
+        records = _env_json(compiler_raw)['records']
+    else:
+        proof, records = reuse_validated_project_compiler(compiler_state, compiler_raw, compiler_request)
+    if not proof['complete']:
         raise ValueError('worker_static_environment_compiler_incomplete')
-    records = _env_json(compiler_raw)['records']
     contexts = []
     for context, native in zip(compiler_request['contexts'], records):
         predefine_arguments(context['invocation'], context['analysis_file'])
@@ -558,11 +563,12 @@ STATIC_ENV_SUPPORT = ('import posixpath\n' + '\n'.join(name+'='+repr(value) for 
         _predefines, analyzer_environment_arguments, verify_environment_inputs, context_dependencies)))
 
 
-def bind_environment(proof, compiler_request, compiler_raw):
+def bind_environment(proof, compiler_request, compiler_raw, *, compiler_state=None):
     """Check controller-derived model bindings against the full compiler plan."""
     if not isinstance(proof, dict) or proof.get('models') != MODEL_HASHES:
         raise ValueError('worker_project_static_environment_invalid')
-    requested = environment_request(compiler_request, compiler_raw, proof.get('image_config_digest'))
+    requested = environment_request(compiler_request, compiler_raw, proof.get('image_config_digest'),
+        compiler_state=compiler_state)
     queries, paths = _validate_request(requested)
     if (proof.get('schema') != 'nico.cpp-static-environment-model.v1'
             or proof.get('compiler_evidence_sha256') != _digest(compiler_raw)
