@@ -1,0 +1,43 @@
+{
+  "schema": "nico.pr1641-worker-artifact-transport.v1",
+  "base": "369bf609ab157f0fcfa64ca48b0b5b3fdf7a0af4",
+  "bounds": {
+    "http_json_bytes": 12582912,
+    "compressed_bytes": 8388608,
+    "raw_bytes": 67108864
+  },
+  "allowed_keys": [
+    "project-generated-context",
+    "project-compiler-evidence",
+    "project-static-environment",
+    "project-static-evidence",
+    "project-static-clang-fallback"
+  ],
+  "binding": [
+    "job lease",
+    "worker identity",
+    "customer",
+    "project",
+    "run",
+    "child scan",
+    "repository",
+    "revision",
+    "configure-first profile"
+  ],
+  "storage": "existing private PostgreSQL scanner_raw_artifacts",
+  "focused_tests": {
+    "passed": 72,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "broader_tests": {
+    "passed": 267,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "production_execution_connected": false,
+  "public_profile_selection": false,
+  "merged": false
+}

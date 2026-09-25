@@ -74,7 +74,9 @@ def validate_contract(contract: dict) -> dict:
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", contract["image_digest"])):
         raise ValueError("worker_contract_tool_invalid")
     targets = contract["targets"]
-    if not isinstance(targets, dict) or not 1 <= len(targets) <= 20000:
+    configure_first = contract.get("profile") == "cpp-configure-first-v2"
+    if (not isinstance(targets, dict) or len(targets) > 20000
+            or (not configure_first and not targets) or (configure_first and targets)):
         raise ValueError("worker_contract_targets_invalid")
     for path, digest in targets.items():
         if (not isinstance(path, str) or not path or len(path) > 1000
@@ -83,7 +85,23 @@ def validate_contract(contract: dict) -> dict:
                 or any(part in {".", ".."} for part in path.split("/"))
                 or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ValueError("worker_contract_path_or_digest_invalid")
-    if contract['profile'] in {'cpp-configured-v1', 'cpp-sanitized-v1', 'cpp-runtime-cases-v1'}:
+    if configure_first:
+        from nico.assessment_cpp_configure_first_contract import validate_configuration
+        validate_configuration(contract['configuration'])
+        runtime = contract['configuration'].get('schema') == 'nico.cpp-configure-first-contract.v3'
+        maximum_wall = 9000 if runtime else 2420
+        if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int
+                or not 1 <= contract['limits']['wall_seconds'] <= maximum_wall
+                or contract['limits'].get('max_attempts') != 1):
+            raise ValueError('worker_configure_first_budget_invalid')
+    elif contract['profile'] == 'cpp-full-project-v1':
+        from nico.assessment_cpp_full_project import validate_configuration
+        validate_configuration(contract['configuration'], targets)
+        if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int
+                or not 1 <= contract['limits']['wall_seconds'] <= 300
+                or contract['limits'].get('max_attempts') != 1):
+            raise ValueError('worker_full_project_budget_invalid')
+    elif contract['profile'] in {'cpp-configured-v1', 'cpp-sanitized-v1', 'cpp-runtime-cases-v1'}:
         from nico.assessment_cpp_configuration import validate_configuration
         validate_configuration(contract['configuration'], targets,
             sanitized=contract['profile'] == 'cpp-sanitized-v1',
@@ -98,10 +116,32 @@ def validate_contract(contract: dict) -> dict:
     return deepcopy(contract)
 
 
-def _validate_provisioning(identity, contract, value):
+def _validate_provisioning(identity, contract, value, target_hashes=None):
+    target_hashes = contract['targets'] if target_hashes is None else target_hashes
+    count = len(target_hashes)
+    if contract['profile'] == 'cpp-configure-first-v2':
+        required={'schema','source_method','commit_sha','tree_sha','population_sha256','required_count',
+            'materialized_count','source_bytes','freeze_point','excluded_count','excluded_sha256',
+            'image_manifest','image_config_id'}
+        repository = os.getenv('NICO_ASSESSMENT_WORKER_REPOSITORY', 'BoneManTGRM/NICO')
+        image_prefix = 'ghcr.io/' + repository.lower() + '/assessment-cppcheck@sha256:'
+        if (not isinstance(value,dict) or set(value)!=required or value['schema']!='nico.worker-provisioning.v2'
+                or value['source_method']!='nico.github_https_tree_materialization.v2'
+                or value['commit_sha']!=identity.revision or value['tree_sha']!=contract['configuration']['expected_tree_sha']
+                or value['population_sha256']!=_digest(target_hashes)
+                or type(value['required_count']) is not int or value['required_count']!=count
+                or type(value['materialized_count']) is not int or value['materialized_count']!=count
+                or type(value['source_bytes']) is not int or not 0<=value['source_bytes']<=contract['configuration']['source_byte_limit']
+                or value['freeze_point']!='after_materialization_before_configuration'
+                or type(value['excluded_count']) is not int or value['excluded_count']<0
+                or not isinstance(value['excluded_sha256'],str) or re.fullmatch(r'[0-9a-f]{64}',value['excluded_sha256']) is None
+                or value['image_config_id']!=contract['image_digest']
+                or not isinstance(value['image_manifest'],str)
+                or re.fullmatch(re.escape(image_prefix)+r'[0-9a-f]{64}',value['image_manifest']) is None):
+            raise ValueError('worker_provisioning_binding_invalid')
+        return
     required = {'schema', 'source_method', 'commit_sha', 'tree_sha', 'population_sha256',
         'required_count', 'materialized_count', 'source_bytes', 'image_manifest', 'image_config_id'}
-    count = len(contract['targets'])
     repository = os.getenv('NICO_ASSESSMENT_WORKER_REPOSITORY', 'BoneManTGRM/NICO')
     image_prefix = 'ghcr.io/' + repository.lower() + '/assessment-cppcheck@sha256:'
     if (not isinstance(value, dict) or set(value) != required
@@ -109,10 +149,12 @@ def _validate_provisioning(identity, contract, value):
             or value['source_method'] != 'nico.github_https_input_materialization.v1'
             or value['commit_sha'] != identity.revision
             or not isinstance(value['tree_sha'], str) or not re.fullmatch(r'[0-9a-f]{40}', value['tree_sha'])
-            or value['population_sha256'] != _digest(contract['targets'])
+            or value['population_sha256'] != _digest(target_hashes)
             or type(value['required_count']) is not int or value['required_count'] != count
             or type(value['materialized_count']) is not int or value['materialized_count'] != count
-            or type(value['source_bytes']) is not int or not 0 <= value['source_bytes'] <= 16 * 1024 * 1024
+            or type(value['source_bytes']) is not int or not 0 <= value['source_bytes'] <= (
+                contract['configuration']['source_byte_limit'] if contract['profile'] == 'cpp-full-project-v1'
+                else 16 * 1024 * 1024)
             or value['image_config_id'] != contract['image_digest']
             or not isinstance(value['image_manifest'], str)
             or not re.fullmatch(re.escape(image_prefix) + r'[0-9a-f]{64}', value['image_manifest'])):
@@ -128,8 +170,8 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     if not isinstance(receipt, dict) or set(receipt) not in (required, required | {'provisioning'}):
         raise ValueError("worker_receipt_schema_invalid")
     if 'provisioning' in receipt:
-        _validate_provisioning(identity, contract, receipt['provisioning'])
-    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3", "nico.worker-native-receipt.v4", "nico.worker-native-receipt.v5"}:
+        _validate_provisioning(identity, contract, receipt['provisioning'], receipt.get('target_hashes'))
+    if receipt["schema"] not in {"nico.worker-native-receipt.v1", "nico.worker-native-receipt.v2", "nico.worker-native-receipt.v3", "nico.worker-native-receipt.v4", "nico.worker-native-receipt.v5", "nico.worker-native-receipt.v6", "nico.worker-native-receipt.v7"}:
         raise ValueError("worker_receipt_schema_invalid")
     if (receipt['schema'].endswith('.v3')) != (contract['profile'] == 'cpp-configured-v1'):
         raise ValueError('worker_receipt_profile_mismatch')
@@ -137,17 +179,30 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
         raise ValueError('worker_receipt_profile_mismatch')
     if (receipt['schema'].endswith('.v5')) != (contract['profile'] == 'cpp-runtime-cases-v1'):
         raise ValueError('worker_receipt_profile_mismatch')
+    if (receipt['schema'].endswith('.v6')) != (contract['profile'] == 'cpp-full-project-v1'):
+        raise ValueError('worker_receipt_profile_mismatch')
+    if (receipt['schema'].endswith('.v7')) != (contract['profile'] == 'cpp-configure-first-v2'):
+        raise ValueError('worker_receipt_profile_mismatch')
     expected = {"identity": asdict(identity),
         "lease_id": lease, "worker_id": worker, "image_digest": contract["image_digest"],
-        "tool_version": contract["tool_version"], "configuration_sha256": _digest(contract["configuration"]),
-        "target_hashes": contract["targets"]}
+        "tool_version": contract["tool_version"], "configuration_sha256": _digest(contract["configuration"])}
+    if contract['profile'] != 'cpp-configure-first-v2':
+        expected["target_hashes"] = contract["targets"]
+    elif (not isinstance(receipt.get("target_hashes"),dict) or not receipt["target_hashes"]
+            or any(not isinstance(k,str) or not isinstance(v,str) or re.fullmatch(r'[0-9a-f]{64}',v) is None
+                   for k,v in receipt["target_hashes"].items())):
+        raise ValueError("worker_receipt_binding_mismatch")
     if any(receipt.get(key) != value for key, value in expected.items()):
         raise ValueError("worker_receipt_binding_mismatch")
     encoded = canonical_bytes(receipt)
     if len(encoded) > contract["max_receipt_bytes"]:
         raise ValueError("worker_receipt_size_invalid")
     native = receipt["native"]
-    if receipt['schema'].endswith(('.v3', '.v4', '.v5')):
+    if receipt['schema'].endswith('.v7'):
+        if _digest(native) != receipt['native_sha256']:
+            raise ValueError('worker_native_digest_or_schema_invalid')
+        return _configure_first_record(identity, contract, receipt, encoded)
+    if receipt['schema'].endswith(('.v3', '.v4', '.v5', '.v6')):
         if _digest(native) != receipt['native_sha256']:
             raise ValueError('worker_native_digest_or_schema_invalid')
         return _configured_record(identity, contract, receipt, encoded)
@@ -244,8 +299,124 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     return encoded, record, binding
 
 
+def _configure_first_record(identity, contract, receipt, encoded):
+    native=receipt['native']; config=contract['configuration']
+    runtime_contract=config.get('schema')=='nico.cpp-configure-first-contract.v3'
+    required={'schema','status','complete_execution','error','source_population_sha256',
+        'source_count','compilation_database_sha256','configured_invocations','baseline_execution_frozen','compiled',
+        'tests_executed','tests_passed','tests_discovered_count','tests_discovered_sha256','tests_executed_count',
+        'tests_executed_sha256','tests_passed_count','tests_passed_sha256','tests_skipped_count','tests_skipped_sha256',
+        'generated_context_verified','project_compiler_complete','project_compiler_required_count',
+        'project_compiler_required_sha256','project_compiler_checked_count','project_compiler_checked_sha256',
+        'project_static_complete','project_static_required_count','project_static_required_sha256',
+        'project_static_analyzed_count','project_static_analyzed_sha256','project_static_findings_count',
+        'project_static_findings_sha256','project_static_limitations_count','project_static_limitations_sha256',
+        'project_static_modeled_inputs_count','project_static_modeled_inputs_sha256','clang_fallback_complete',
+        'clang_fallback_required_count','clang_fallback_required_sha256','clang_fallback_analyzed_count',
+        'clang_fallback_analyzed_sha256','boundary_verified','cleanup_verified','scratch_capacity_verified',
+        'memory_peak_bytes','static_memory_peak_bytes','duration_ms','aggregate_duration_ms','artifacts',
+        'canonical_findings_projected','project_option_policy','project_options','project_options_sha256'}
+    if runtime_contract:
+        required |= {'runtime_complete','runtime_plan_sha256','runtime_summary_sha256','runtime_duration_ms'}
+    expected_schema='nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'
+    if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!=expected_schema
+            or native.get('source_population_sha256')!=_digest(receipt['target_hashes'])
+            or type(native.get('source_count')) is not int or native['source_count']!=len(receipt['target_hashes'])
+            or native.get('canonical_findings_projected') is not False
+            or native.get('project_option_policy') not in {'explicit-v1','conservative-cmake-v1'}
+            or not isinstance(native.get('project_options'),dict) or len(native['project_options'])>64
+            or any(not isinstance(k,str) or re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}',k) is None
+                or not isinstance(v,str) or re.fullmatch(r'[A-Za-z0-9_./+-]{1,120}',v) is None
+                for k,v in native['project_options'].items())
+            or native.get('project_options_sha256') != _digest(native['project_options'])):
+        raise ValueError('worker_configure_first_native_invalid')
+    if config['schema']=='nico.cpp-configure-first-contract.v1':
+        if native['project_option_policy']!='explicit-v1' or native['project_options']!=config['project_options']:
+            raise ValueError('worker_configure_first_native_invalid')
+    else:
+        from nico.assessment_cpp_cmake_policy import validate_project_options
+        if (native['project_option_policy']!=config['project_option_policy']
+                or validate_project_options(native['project_options'])!=native['project_options']):
+            raise ValueError('worker_configure_first_native_invalid')
+    for key in ('compilation_database_sha256','tests_discovered_sha256','tests_executed_sha256','tests_passed_sha256',
+                'tests_skipped_sha256','project_compiler_required_sha256','project_compiler_checked_sha256',
+                'project_static_required_sha256','project_static_analyzed_sha256','project_static_findings_sha256',
+                'project_static_limitations_sha256','project_static_modeled_inputs_sha256',
+                'clang_fallback_required_sha256','clang_fallback_analyzed_sha256'):
+        if not isinstance(native.get(key),str) or re.fullmatch(r'[0-9a-f]{64}',native[key]) is None:
+            raise ValueError('worker_configure_first_native_invalid')
+    if runtime_contract:
+        if (type(native.get('runtime_complete')) is not bool
+                or type(native.get('runtime_duration_ms')) is not int or native['runtime_duration_ms']<0
+                or any(not isinstance(native.get(key),str) or re.fullmatch(r'[0-9a-f]{64}',native[key]) is None
+                    for key in ('runtime_plan_sha256','runtime_summary_sha256'))):
+            raise ValueError('worker_configure_first_native_invalid')
+    for key in ('source_count','configured_invocations','tests_discovered_count','tests_executed_count','tests_passed_count',
+                'tests_skipped_count','project_compiler_required_count','project_compiler_checked_count',
+                'project_static_required_count','project_static_analyzed_count','project_static_findings_count',
+                'project_static_limitations_count','project_static_modeled_inputs_count','clang_fallback_required_count',
+                'clang_fallback_analyzed_count'):
+        if type(native.get(key)) is not int or native[key] < 0:
+            raise ValueError('worker_configure_first_native_invalid')
+    refs=native.get('artifacts')
+    required_refs={'project-compilation-database','project-generated-context','project-compiler-evidence',
+        'project-static-environment','project-static-evidence'}
+    if runtime_contract:
+        required_refs.add('project-runtime-evidence')
+    if not isinstance(refs,dict) or not required_refs <= set(refs):
+        raise ValueError('worker_configure_first_native_invalid')
+    for key,value in refs.items():
+        if (not isinstance(value,dict) or value.get('key')!=key or value.get('storage_backend')!='postgres'
+                or not isinstance(value.get('artifact_id'),str) or not value['artifact_id'].startswith('scanartifact_')
+                or not isinstance(value.get('sha256'),str) or re.fullmatch(r'[0-9a-f]{64}',value['sha256']) is None):
+            raise ValueError('worker_configure_first_native_invalid')
+    receipt_sha=hashlib.sha256(encoded).hexdigest()
+    binding={'run_id':identity.run_id,'scan_id':identity.scan_id,'customer_id':identity.customer_id,
+        'project_id':identity.project_id,'repository':identity.repository_id,'commit_sha':identity.revision,
+        'scanner_name':'cppcheck'}
+    execution_complete=native['complete_execution'] is True
+    return encoded,{**binding,'tool':'cppcheck','category':'static','status':'partial' if execution_complete else 'failed',
+        'completed':False,'verified_complete':False,'verified_for_this_report':False,'current_run':True,
+        'execution_observed_for_this_report':execution_complete,'exact_commit_match':True,
+        'snapshot_commit_sha':identity.revision,'output_capture_complete':True,'raw_artifact_capture_complete':True,
+        'returncode_valid':execution_complete,'exit_code':0 if execution_complete else None,'timed_out':False,
+        'output_truncated':False,'duration_seconds':(native.get('aggregate_duration_ms') or native.get('duration_ms') or 0)/1000,
+        'findings':[],'finding_count':native['project_static_findings_count'],'scanner_tool_version':contract['tool_version'],
+        'applicable':True,'evidence_required':True,
+        'reason':('Configure-first execution completed; canonical findings projection from retained native artifacts is pending.'
+                  if execution_complete else 'Configure-first execution is incomplete; retained native evidence requires repair.'),
+        'worker_provenance':{'job_id':identity.job_id,'worker_id':receipt['worker_id'],
+            'release_revision':identity.release_revision,'image_digest':contract['image_digest'],
+            'contract_sha256':identity.contract_sha256,'configuration_sha256':receipt['configuration_sha256'],
+            'receipt_sha256':receipt_sha,'profile':contract['profile'],'identity':asdict(identity),
+            'provisioning':deepcopy(receipt.get('provisioning')),'native_artifacts':deepcopy(refs)},
+        'cppcheck_source_coverage':{'requested_target_count':native['project_static_required_count'],
+            'observed_target_count':native['project_static_analyzed_count'],
+            'required_contexts_sha256':native['project_static_required_sha256'],
+            'analyzed_contexts_sha256':native['project_static_analyzed_sha256'],
+            'limitations_count':native['project_static_limitations_count'],
+            'limitations_sha256':native['project_static_limitations_sha256'],
+            'population_sha256':native['source_population_sha256'],'configuration_aware':True,
+            'header_context_verified':True,'repository_build_executed':native['compiled'],
+            'all_repository_configurations_analyzed':native['project_static_complete']},
+        'cpp_build_evidence':{'profile':contract['profile'],'compiled':native['compiled'],'tests_executed':native['tests_executed'],
+            'tests_passed':native['tests_passed'],'configured_invocations':native['configured_invocations'],
+            'compilation_database_sha256':native['compilation_database_sha256'],
+            'project_option_policy':native['project_option_policy'],
+            'project_options':deepcopy(native['project_options']),
+            'project_options_sha256':native['project_options_sha256'],
+            **({'runtime_complete':native['runtime_complete'],
+                'runtime_plan_sha256':native['runtime_plan_sha256'],
+                'runtime_summary_sha256':native['runtime_summary_sha256'],
+                'runtime_duration_ms':native['runtime_duration_ms']} if runtime_contract else {})},
+        'canonical_findings_projected':False,'human_review_required':True,'client_delivery_allowed':False},binding
+
+
 def _configured_record(identity, contract, receipt, encoded):
-    from nico.assessment_cpp_configuration import validate_native
+    if contract['profile'] == 'cpp-full-project-v1':
+        from nico.assessment_cpp_full_project import validate_native
+    else:
+        from nico.assessment_cpp_configuration import validate_native
     result = validate_native(receipt['native'], contract)
     receipt_sha = hashlib.sha256(encoded).hexdigest()
     binding = {'run_id': identity.run_id, 'scan_id': identity.scan_id, 'customer_id': identity.customer_id,
@@ -272,6 +443,7 @@ def _configured_record(identity, contract, receipt, encoded):
             'release_revision': identity.release_revision, 'image_digest': contract['image_digest'],
             'contract_sha256': identity.contract_sha256, 'configuration_sha256': receipt['configuration_sha256'],
             'receipt_sha256': receipt_sha, 'profile': contract['profile'],
+            **({'identity': asdict(identity)} if contract['profile'] == 'cpp-full-project-v1' else {}),
             **({'provisioning': deepcopy(receipt['provisioning'])} if 'provisioning' in receipt else {})},
         'cppcheck_source_coverage': result['coverage'], 'cpp_build_evidence': result['build'],
         'human_review_required': True, 'client_delivery_allowed': False}
@@ -282,10 +454,18 @@ def publish_receipt(jobs: WorkerJobs, identity: JobIdentity, lease: str, worker:
     job = jobs.get(identity)
     if job is None or not isinstance(job.get("contract"), dict):
         raise JobConflict("worker_contract_missing")
+    if job["contract"].get("profile") == "cpp-configure-first-v2":
+        artifacts=((receipt.get("native") or {}).get("artifacts") if isinstance(receipt,dict) else None)
+        if not isinstance(artifacts,dict) or artifacts != job.get("native_artifacts",{}):
+            raise JobConflict("worker_artifact_receipt_binding_mismatch")
     raw, record, binding = validate_receipt(identity, job["contract"], lease, worker, receipt)
     compressed = gzip.compress(raw, mtime=0)
     raw_sha = hashlib.sha256(raw).hexdigest()
     store = ScannerArtifactStore(jobs.adapter._connect)
+    if job["contract"].get("profile") == "cpp-configure-first-v2":
+        from nico.assessment_cpp_configure_first_projection import reconstruct_configure_first, project_configure_first_record
+        reconstruction=reconstruct_configure_first(identity,job["contract"],receipt,store)
+        record=project_configure_first_record(record,identity,job["contract"],receipt,reconstruction)
 
     def publish(connection, _job):
         row = connection.execute("SELECT payload FROM scanner_runs WHERE scan_id=%s FOR UPDATE",
@@ -319,11 +499,11 @@ def publish_receipt(jobs: WorkerJobs, identity: JobIdentity, lease: str, worker:
             receipt_sha256=raw_sha, tools_run=["cppcheck"] if record["completed"] else [],
             failed_tools=["cppcheck"] if record["status"] in {"failed", "partial"} else [],
             timed_out_tools=["cppcheck"] if record["timed_out"] else [],
-            finding_summary={"raw_total": len(record["findings"]), "material_total": 0,
-                "review_required_total": len(record["findings"]), "approved_or_nonblocking_total": 0,
+            finding_summary={"raw_total": int(record.get("finding_count") or 0), "material_total": 0,
+                "review_required_total": int(record.get("finding_count") or 0), "approved_or_nonblocking_total": 0,
                 "excluded_test_only_total": 0, "by_tool": {"cppcheck": {
-                    "raw": len(record["findings"]), "material": 0,
-                    "review_required": len(record["findings"]), "approved_or_nonblocking": 0,
+                    "raw": int(record.get("finding_count") or 0), "material": 0,
+                    "review_required": int(record.get("finding_count") or 0), "approved_or_nonblocking": 0,
                     "excluded_test_only": 0}}, "by_category": {}},
             human_review_required=True, client_delivery_allowed=False)
         connection.execute("UPDATE scanner_runs SET status=%s,payload=%s,updated_at=clock_timestamp() "

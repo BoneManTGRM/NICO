@@ -1,0 +1,4 @@
+focused: tests/test_cpp_project_static.py tests/test_cpp_static_environment.py tests/test_cpp_static_environment_integration.py tests/test_cpp_project_static_stage.py
+result: 122 passed in 3.85s
+exact retained Bitcoin static artifact validation after repair: 20.674519s
+broader C++ invocation: interrupted by local command timeout after partial progress; NOT CREDITED

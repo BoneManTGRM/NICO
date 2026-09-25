@@ -1,0 +1,13 @@
+{
+  "schema": "nico.pr1641-configure-first-worker-bridge.v1",
+  "base": "3e01f81ae8b080a9f357a6eaa1f640a3b39cc4dd",
+  "profile": "cpp-configure-first-v2",
+  "receipt_schema": "nico.worker-native-receipt.v7",
+  "execution_budget_seconds": 2400,
+  "artifact_transport": "lease-bound-postgres",
+  "canonical_findings_projected": false,
+  "public_profile_selection": false,
+  "hosted_verification_pending": true,
+  "merged": false,
+  "production_qualified": false
+}

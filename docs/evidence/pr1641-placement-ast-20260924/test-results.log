@@ -1,0 +1,209 @@
+## placement-red
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+_____ test_fixture_reproduces_placement_new_through_both_existing_contexts _____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-1/test_fixture_reproduces_placem0')
+
+    def test_fixture_reproduces_placement_new_through_both_existing_contexts(tmp_path):
+        from scripts.qualify_cpp_project_generated_context import fixture
+        root = tmp_path / 'owned'
+        fixture(root, compiler_environment=True)
+        source = (root / 'repeated.cpp').read_text()
+>       assert '#include <new>' in source
+E       assert '#include <new>' in '#include <cstdint>\n#include <vector>\n#include <boost/version.hpp>\n#include <owned_environment.h>\n#ifndef __GNUC__... include was not imported"\n#endif\n#if VARIANT == 1\nint first(){return 1;}\n#else\nint second(){return 2;}\n#endif\n'
+
+tests/test_cpp_placement_tool_repair.py:19: AssertionError
+________ test_both_toolchain_builds_apply_the_same_pinned_source_repair ________
+
+    def test_both_toolchain_builds_apply_the_same_pinned_source_repair():
+        import yaml
+        workflow = yaml.safe_load(Path('.github/workflows/cpp-full-project-integration.yml').read_text())
+        builds = [s['run'] for j in workflow['jobs'].values() for s in j['steps']
+                  if 'docker/assessment-full-project-fuzz.Dockerfile' in s.get('run', '')]
+        assert len(builds) == 2
+>       assert all('cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/' in b for b in builds)
+E       assert False
+E        +  where False = all(<generator object test_both_toolchain_builds_apply_the_same_pinned_source_repair.<locals>.<genexpr> at 0x7f36fafe7ac0>)
+
+tests/test_cpp_placement_tool_repair.py:32: AssertionError
+_______ test_repair_pins_the_exact_upstream_source_not_a_repository_name _______
+
+    def test_repair_pins_the_exact_upstream_source_not_a_repository_name():
+>       m = repair()
+            ^^^^^^^^
+
+tests/test_cpp_placement_tool_repair.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def repair():
+        module = 'scripts.repair_cppcheck_placement_ast'
+>       assert Path('scripts/repair_cppcheck_placement_ast.py').is_file(), 'missing pinned analyzer repair'
+E       AssertionError: missing pinned analyzer repair
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+E        +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+
+tests/test_cpp_placement_tool_repair.py:10: AssertionError
+_____ test_owned_file_repair_records_exact_before_after_and_script_hashes ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-1/test_owned_file_repair_records0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f36facdbbd0>
+
+    def test_owned_file_repair_records_exact_before_after_and_script_hashes(tmp_path, monkeypatch):
+>       m = repair(); raw = pinned_fixture(m, monkeypatch)
+            ^^^^^^^^
+
+tests/test_cpp_placement_tool_repair.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def repair():
+        module = 'scripts.repair_cppcheck_placement_ast'
+>       assert Path('scripts/repair_cppcheck_placement_ast.py').is_file(), 'missing pinned analyzer repair'
+E       AssertionError: missing pinned analyzer repair
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+E        +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+
+tests/test_cpp_placement_tool_repair.py:10: AssertionError
+_________ test_changed_or_ambiguous_native_anchor_is_never_patched[0] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f36fad14490>
+count = 0
+
+    @pytest.mark.parametrize('count', [0, 2])
+    def test_changed_or_ambiguous_native_anchor_is_never_patched(monkeypatch, count):
+>       m = repair(); raw = b'// owned\n' + m.ANCHOR * count
+            ^^^^^^^^
+
+tests/test_cpp_placement_tool_repair.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def repair():
+        module = 'scripts.repair_cppcheck_placement_ast'
+>       assert Path('scripts/repair_cppcheck_placement_ast.py').is_file(), 'missing pinned analyzer repair'
+E       AssertionError: missing pinned analyzer repair
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+E        +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+
+tests/test_cpp_placement_tool_repair.py:10: AssertionError
+_________ test_changed_or_ambiguous_native_anchor_is_never_patched[2] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f36fad11050>
+count = 2
+
+    @pytest.mark.parametrize('count', [0, 2])
+    def test_changed_or_ambiguous_native_anchor_is_never_patched(monkeypatch, count):
+>       m = repair(); raw = b'// owned\n' + m.ANCHOR * count
+            ^^^^^^^^
+
+tests/test_cpp_placement_tool_repair.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def repair():
+        module = 'scripts.repair_cppcheck_placement_ast'
+>       assert Path('scripts/repair_cppcheck_placement_ast.py').is_file(), 'missing pinned analyzer repair'
+E       AssertionError: missing pinned analyzer repair
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+E        +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+
+tests/test_cpp_placement_tool_repair.py:10: AssertionError
+_________________ test_symlink_tool_source_cannot_be_followed __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-1/test_symlink_tool_source_canno0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f36fad11850>
+
+    def test_symlink_tool_source_cannot_be_followed(tmp_path, monkeypatch):
+>       m = repair(); raw = pinned_fixture(m, monkeypatch)
+            ^^^^^^^^
+
+tests/test_cpp_placement_tool_repair.py:81: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def repair():
+        module = 'scripts.repair_cppcheck_placement_ast'
+>       assert Path('scripts/repair_cppcheck_placement_ast.py').is_file(), 'missing pinned analyzer repair'
+E       AssertionError: missing pinned analyzer repair
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+E        +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+
+tests/test_cpp_placement_tool_repair.py:10: AssertionError
+___________ test_repair_only_changes_placement_initializer_dispatch ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f36fae7d5e0>
+
+    def test_repair_only_changes_placement_initializer_dispatch(monkeypatch):
+>       m = repair(); raw = pinned_fixture(m, monkeypatch)
+            ^^^^^^^^
+
+tests/test_cpp_placement_tool_repair.py:90: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def repair():
+        module = 'scripts.repair_cppcheck_placement_ast'
+>       assert Path('scripts/repair_cppcheck_placement_ast.py').is_file(), 'missing pinned analyzer repair'
+E       AssertionError: missing pinned analyzer repair
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+E        +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+
+tests/test_cpp_placement_tool_repair.py:10: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_cpp_placement_tool_repair.py::test_fixture_reproduces_placement_new_through_both_existing_contexts - assert '#include <new>' in '#include <cstdint>\n#include <vector>\n#include <boost/version.hpp>\n#include <owned_environment.h>\n#ifndef __GNUC__... include was not imported"\n#endif\n#if VARIANT == 1\nint first(){return 1;}\n#else\nint second(){return 2;}\n#endif\n'
+FAILED tests/test_cpp_placement_tool_repair.py::test_both_toolchain_builds_apply_the_same_pinned_source_repair - assert False
+ +  where False = all(<generator object test_both_toolchain_builds_apply_the_same_pinned_source_repair.<locals>.<genexpr> at 0x7f36fafe7ac0>)
+FAILED tests/test_cpp_placement_tool_repair.py::test_repair_pins_the_exact_upstream_source_not_a_repository_name - AssertionError: missing pinned analyzer repair
+assert False
+ +  where False = is_file()
+ +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+ +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+FAILED tests/test_cpp_placement_tool_repair.py::test_owned_file_repair_records_exact_before_after_and_script_hashes - AssertionError: missing pinned analyzer repair
+assert False
+ +  where False = is_file()
+ +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+ +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+FAILED tests/test_cpp_placement_tool_repair.py::test_changed_or_ambiguous_native_anchor_is_never_patched[0] - AssertionError: missing pinned analyzer repair
+assert False
+ +  where False = is_file()
+ +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+ +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+FAILED tests/test_cpp_placement_tool_repair.py::test_changed_or_ambiguous_native_anchor_is_never_patched[2] - AssertionError: missing pinned analyzer repair
+assert False
+ +  where False = is_file()
+ +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+ +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+FAILED tests/test_cpp_placement_tool_repair.py::test_symlink_tool_source_cannot_be_followed - AssertionError: missing pinned analyzer repair
+assert False
+ +  where False = is_file()
+ +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+ +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+FAILED tests/test_cpp_placement_tool_repair.py::test_repair_only_changes_placement_initializer_dispatch - AssertionError: missing pinned analyzer repair
+assert False
+ +  where False = is_file()
+ +    where is_file = PosixPath('scripts/repair_cppcheck_placement_ast.py').is_file
+ +      where PosixPath('scripts/repair_cppcheck_placement_ast.py') = Path('scripts/repair_cppcheck_placement_ast.py')
+8 failed in 0.27s
+
+## placement-green
+........                                                                 [100%]
+8 passed in 0.18s
+
+## placement-affected
+........................................................................ [ 31%]
+........................................................................ [ 63%]
+........................................................................ [ 95%]
+..........                                                               [100%]
+226 passed in 16.53s
+
+## placement-build-regression
+..................................................................       [100%]
+66 passed in 4.24s

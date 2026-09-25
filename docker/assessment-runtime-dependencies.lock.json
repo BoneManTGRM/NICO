@@ -1,0 +1,17 @@
+{
+  "schema": "nico.cpp-runtime-dependencies.v1",
+  "packages": [
+    {
+      "id": "bitcoin-0.14.3",
+      "url": "https://bitcoincore.org/bin/bitcoin-core-0.14.3/bitcoin-0.14.3-x86_64-linux-gnu.tar.gz",
+      "sha256": "706e0472dbc933ed2757650d54cbcd780fd3829ebf8f609b32780c7eedebdbc9",
+      "bytes": 24644309,
+      "members": {
+        "bitcoin-0.14.3/bin/bitcoind": "previous-releases/v0.14.3/bin/bitcoind",
+        "bitcoin-0.14.3/bin/bitcoin-cli": "previous-releases/v0.14.3/bin/bitcoin-cli"
+      },
+      "license_file": "licenses/bitcoin-0.14.3.txt",
+      "license_sha256": "93d633183b4715ff1d799dc26b30a6edae096a13fb35b062d0d69463f453644e"
+    }
+  ]
+}

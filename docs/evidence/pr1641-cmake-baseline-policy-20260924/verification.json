@@ -1,0 +1,31 @@
+{
+  "schema": "nico.pr1641-cmake-baseline-policy.v1",
+  "base": "49df32a2a5b09bbf5f55138b75fc627569baa037",
+  "contract_schema": "nico.cpp-configure-first-contract.v2",
+  "policy": "conservative-cmake-v1",
+  "on": [
+    "BUILD_TESTS",
+    "ENABLE_WALLET",
+    "ENABLE_IPC"
+  ],
+  "off": [
+    "BUILD_GUI",
+    "BUILD_GUI_TESTS",
+    "BUILD_BENCH",
+    "BUILD_FUZZ_BINARY",
+    "BUILD_FOR_FUZZING",
+    "WITH_ZMQ"
+  ],
+  "repository_name_rule": false,
+  "derived_after_exact_source_freeze": true,
+  "derived_before_cmake_execution": true,
+  "receipt_hash_bound": true,
+  "tests": {
+    "passed": 131,
+    "failed": 0,
+    "errors": 0
+  },
+  "unrelated_local_timing_controls": "not_credited",
+  "hosted_verification_pending": true,
+  "production_qualified": false
+}

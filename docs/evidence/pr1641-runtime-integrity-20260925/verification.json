@@ -1,0 +1,68 @@
+{
+  "schema": "nico.pr1641-runtime-integrity-verification.v1",
+  "source_parent": "3ff747f86943edd8be97ae05ce7b7d1cf33f0fac",
+  "source_tree": "65eb53650a7d61290de7bd48d5de52d2e4b061b8",
+  "python": "3.13.5",
+  "files": {
+    "nico/assessment_cpp_runtime_execution.py": {
+      "preimage_blob_sha": "ccc15e730056c681bc98f27c6a8421a20a9c4b38",
+      "postimage_blob_sha": "801fa82afd4bc713c67a1cd9450e86c52118e846",
+      "sha256": "88b5c56ac18560caff20c89f6d2de8bf025f9f40bd5b23a1daf29b7a3b23c474"
+    },
+    "tests/test_cpp_runtime_execution.py": {
+      "preimage_blob_sha": "2c5eabf9aadea77500f51d35cdb1e561ab7ed900",
+      "postimage_blob_sha": "f60b063c37f189fe01c4491acfca911ca89ba532",
+      "sha256": "41fd8c921ed119e638b70231d457ef43f08810ff8da6d99ff0a73a7702925c50"
+    }
+  },
+  "test_command": "python -m pytest -q tests/test_cpp_runtime_execution.py tests/test_cpp_runtime_scope.py tests/test_cpp_configure_first_contract.py tests/test_cpp_configure_first_execution.py tests/test_cpp_configure_first_projection.py tests/test_assessment_worker_consumer.py tests/test_assessment_worker_http_boundary.py tests/test_assessment_worker_jobs.py tests/test_cpp_baseline_execution.py tests/test_cpp_configuration_qualification.py tests/test_cpp_integration_workflow_schedule.py --tb=short --junitxml=affected-final.xml",
+  "tests": {
+    "unique_passed": 172,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "runtime_module_passed": 39,
+    "new_cases": 35,
+    "membership_sha256": "2c07a6c1fcaea3e13e76a580a3e6c40830af540c826dc6ead4df2cad89e6513d"
+  },
+  "tdd": {
+    "csv": {
+      "red_failed": 11,
+      "red_passed": 3,
+      "green_passed": 14
+    },
+    "operation_binding": {
+      "red_failed": 18,
+      "red_passed": 3,
+      "green_passed": 21
+    }
+  },
+  "logs": {
+    "csv-red.log": "5980239cc2d7219aaf2fc409987c8d0569eb4b75ffff38fc16b34c436d90b592",
+    "csv-green.log": "afd29dde277673ae5fdf4065212d4ff9dfcfb69674649964c2810313752808d3",
+    "binding-red.log": "8babd3270c278e3eb1b387bbc2e6c649f1dbefa7ac92af8d309c0a2f237be394",
+    "binding-green.log": "adea1f3613edb71f4da679d20b2c5581c9602201aa6675b3768673f718464958",
+    "affected-final.log": "9dd74f8e299d0e1f49a0dab0ec854d0640d33113b2d17841958fe55d8abd9fda"
+  },
+  "whole_local_cpp_suite": "Incomplete: 47-file command exceeded the 120-second command limit; partial progress is not credited.",
+  "native_evidence": {
+    "run_id": 36117852901,
+    "job_id": 108018383610,
+    "artifact_id": 10858291369,
+    "archive_sha256": "b1dea2df91dd9fcf376f039c59d818a602e674690f6a0ab733d6442923291fd3",
+    "baseline_passed": 377,
+    "compiler_checked": 475,
+    "functional_passed": 4,
+    "functional_skipped": [
+      "interface_ipc.py",
+      "wallet_ancient_migration.py"
+    ],
+    "qualification_passed": false
+  },
+  "native_qualification_of_this_repair": false,
+  "independent_review_completed": false,
+  "merged": false,
+  "deployed": false,
+  "production_bitcoin_report": null,
+  "human_approval_performed": false
+}

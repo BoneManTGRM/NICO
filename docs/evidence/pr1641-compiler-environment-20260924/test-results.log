@@ -1,0 +1,103 @@
+Local terminal evidence. Counts overlap except the ten final disjoint groups.
+
+## environment-red.log
+19 failed, 1 passed in 0.46s
+SHA256 a33f3787195083898ec6cb4132f15991454bc511c8050bb2c856d4dd2e57b072
+
+## environment-integration-red.log
+11 failed, 1 passed in 3.58s
+SHA256 eb3b3b3b038642265f6e7c5726fec69f2c942828b46598e65602e09bbba6001d
+
+## environment-layout-red.log
+2 failed, 1 passed, 21 deselected in 0.19s
+SHA256 2de6320e44d76cbfce38ba6273cf97373b58fd5fd209e933e1b8ada437076792
+
+## environment-layout-green.log
+3 passed, 21 deselected in 0.15s
+SHA256 107fc3cc937faccc6cf3c728519188d355b72d6598fed7d577d3b74e626210c8
+
+## owned-environment-wiring-red.log
+1 failed, 12 deselected in 0.21s
+SHA256 15a23a5eff0db1b1081f5faeec01bb9495ebb69245c3de65a2d6ceac77c34dc8
+
+## owned-environment-wiring-green.log
+37 passed in 3.69s
+SHA256 4fb1fa6026c1a024501b72bb8bf800fa9326c4f324ce6ed8c1fcddb3663e32ce
+
+## environment-real-sink-red.log
+1 failed in 0.22s
+SHA256 7056236d4c41a564989f2adaf7e541f44a6ffdf340f3c29ac79a673b7020cde2
+
+## environment-real-sink-green.log
+1 passed in 0.18s
+SHA256 fa8e3e1f0a4b084326a7027307e5cc3a94f799f9733ea598c3b878fa3c70f37c
+
+## Native owned implementation control (not Docker/Bitcoin)
+restore exit 0 bytes 325 duration 0.036
+compiler exit 0 bytes 19367 duration 0.22
+compiler completed True
+environment exit 0 bytes 1986802 duration 0.171
+environment 3 81 1411116
+static exit 0 bytes 8460 duration 0.123
+STATIC COMPLETE True analyzed 3 candidates [('uninitvar', 'generated', 'generated/owned.c++'), ('unassignedVariable', 'generated', 'generated/owned.c++')]
+limits [{'rule_id': 'checkersReport', 'message': 'Active checkers: 167/856 (use --checkers-report=<filename> to see details)', 'locations': [], 'context_id': '9834fa3ec2e461385d691d3d8a5529a71c0470e9cbac9f6e2787eff7625998c9'}, {'rule_id': 'checkersReport', 'message': 'Active checkers: 167/856 (use --checkers-report=<filename> to see details)', 'locations': [], 'context_id': '6d1fe2aa3e9d7959843beb0b659073e9d1ce04ff47b9825d4feec45ef5d55675'}, {'rule_id': 'checkersReport', 'message': 'Active checkers: 167/856 (use --checkers-report=<filename> to see details)', 'locations': [], 'context_id': '993731967c819fc46ac16f69cf73170706d29377b64be851dd0c9c2a8a715c53'}]
+modeled 4
+
+## Final group 0
+{"group": 0, "requested": 100, "exit_code": 0, "seconds": 15.963, "log_sha256": "77c87f2c5116a788242167f265cf08f4afd0901f8782e1a897355879310592de", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "c4c52663aae72bb865a73fbd8af751fdf7d192c112630f64ded81ae7884769f5"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 12.95s
+
+## Final group 1
+{"group": 1, "requested": 100, "exit_code": 0, "seconds": 26.295, "log_sha256": "8d5a4a6707c92a6581465cf0b053c911ce535bb444e6dc9144f33dd2d3c804b2", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "38c70b126089878663ba59e87681e1881d237a6110d34193a1c5fdd30e70f0f1"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 23.25s
+
+## Final group 2
+{"group": 2, "requested": 100, "exit_code": 0, "seconds": 25.058, "log_sha256": "c57d77a2c5b8ed1f52bf9f578da6ebe6b1798814d91d40ba45434790f6cb1a04", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "bd902621df7f13489d13e0f3a3046bba5f90195d403893ac3cc322758ab15d01"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 21.90s
+
+## Final group 3
+{"group": 3, "requested": 100, "exit_code": 0, "seconds": 15.078, "log_sha256": "c6446d9e01a24a585090a04a5cbd343191f55d453fea4be4554ea1f089575d31", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "6526c7d4050ed5542b86c4aa6fa5098a96374f75db74d022824598a1b1cc8bc0"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 11.82s
+
+## Final group 4
+{"group": 4, "requested": 100, "exit_code": 0, "seconds": 4.625, "log_sha256": "a75e3163e0a4b661095b2c84ffd723e8cf28a3b4ff889f7f0a62cd0420ade6a0", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "bb66f37f8f04458168c82d6c3d34cc7830d21f2284c275a44433e3b1f67111d5"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 1.61s
+
+## Final group 5
+{"group": 5, "requested": 100, "exit_code": 0, "seconds": 7.49, "log_sha256": "bbf8be7cec508ad0888e184710f750f857f2b7f3cafcdd94bbd663a9b1db6ca0", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "05383525dfdf37648fab6520d811026c8db14fb5d559983587e8c94ef509bb85"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 4.47s
+
+## Final group 6
+{"group": 6, "requested": 100, "exit_code": 0, "seconds": 3.349, "log_sha256": "f9aa4aa4149734d0dbbf6b876ec010d25671b8181c22bf745a5dbc55ba155175", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "d3b249dde32390f2ad60cc36cd0aebb693f91adfbd98aecbfe78cb021a2ec204"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 0.45s
+
+## Final group 7
+{"group": 7, "requested": 100, "exit_code": 0, "seconds": 4.373, "log_sha256": "7c66b5d8d80a9e4e37912b1889f9a7e65ccd6adfa05f208f71fb7b9cc33e2a65", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "1d903523f67c314d4a3670fe44168a07471cc2468c0c9b67459f5f2978f1ba06"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 1.48s
+
+## Final group 8
+{"group": 8, "requested": 100, "exit_code": 0, "seconds": 7.006, "log_sha256": "c37102262e683cc2c41c528bf5d475b1f1663d3301af93c3b11e7ec0852170f0", "tests": {"tests": 100, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "ec92ec43ed8c14e937e1df7b5ae444d3877c1b872dbd2aa769bc195ecf103dfc"}
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 3.91s
+
+## Final group 9
+{"group": 9, "requested": 33, "exit_code": 0, "seconds": 3.074, "log_sha256": "a37571aa28850f526a0645386223138a2bdd0c1ef1ba91efad68493f03950742", "tests": {"tests": 33, "failures": 0, "errors": 0, "skipped": 0}, "junit_sha256": "043e4230bda004866af87df3bb8fc497f481e01785ac06b48b3d2dce75412dbf"}
+.................................                                        [100%]
+33 passed in 0.27s

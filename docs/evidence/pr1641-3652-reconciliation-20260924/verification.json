@@ -1,0 +1,346 @@
+{
+  "schema": "nico.pr1641-reconciliation-verification.v1",
+  "scope": "Local contract verification for the containing commit; publication identity recorded in PR #1641. No hosted/native/production claim.",
+  "repository": "BoneManTGRM/NICO",
+  "branch": "feat/cpp-full-project-capacity",
+  "parent_sha": "3652a03965dfd7a96a45b5a6161daf8ec7b1042b",
+  "parent_tree": "d4b2df3c1ea0204d178ebe9b3ebd5f2c3633a369",
+  "observed_main": "faaa10b037eb58e4175561b96dadf0d929764df4",
+  "source_archive": {
+    "artifact_id": 10788757852,
+    "bytes": 4452346,
+    "sha256": "8f5bdd812fae6b682261c0c7b21d62ab5a4fbdbbf99738c29c7d31a1465b3f05",
+    "git_blob_sha1": "b190ffae7f249e4bf2ebade8aec18c6f52c5b902"
+  },
+  "prepared_package": {
+    "name": "NICO-PR1641-2195a416-tested-repair.zip",
+    "source_parent": "2195a416ba3750b3269f366a27083038f7957da2",
+    "bytes": 174951,
+    "sha256": "5cf8603647ea1d21bd32054fa1aa7f477f42843e74c652a829ed35b53647c75d",
+    "git_blob_sha1": "5bdd17f60bcb70a34685f442fe2b42629de2f13f",
+    "historical_tests": 861,
+    "historical_counts_not_added": true,
+    "archive_not_committed": "Its implementation was reconciled, not blindly copied. Original bundle remains a conversation attachment."
+  },
+  "reconciliation": "Retain the newer boolean compiler-budget API, implementation, CLI wiring and 14 existing tests. Port missing parent-deadline, aggregate-time, policy-binding behavior and all 30 prepared tests to that API. No force push or replacement history.",
+  "changed_files": [
+    {
+      "path": "nico/assessment_cpp_configuration_probe.py",
+      "preimage": {
+        "bytes": 32166,
+        "sha256": "ae9e3c85e850b51b5a5ef7ea9b1740208bda5a2d5e3f8b99f238571bcc87f064",
+        "git_blob_sha1": "479a835c3b1dcb8812c1a094e660c2be01aa46e7"
+      },
+      "postimage": {
+        "bytes": 32737,
+        "sha256": "e47adda0ff29b1c78eca1f93140798717c7766cce400d0deea1f0384593a2d3e",
+        "git_blob_sha1": "ba3818b4573e41401ad49b42e6b210ee892229f7"
+      }
+    },
+    {
+      "path": "nico/assessment_cpp_project_static.py",
+      "preimage": {
+        "bytes": 28503,
+        "sha256": "0b4ca3668294f6a6d4b0cbfd1b6a9017ca82d3c64a970847b1f97f0ce1bb3998",
+        "git_blob_sha1": "74c476749539f98bb279f74c3161e5f7e0ec4f3a"
+      },
+      "postimage": {
+        "bytes": 28891,
+        "sha256": "1f74403ad647d55104137507b0d56b35d2c4dbe035d290f64e0dd333e0b7cac4",
+        "git_blob_sha1": "4f9ec0a9c867c874ca862a2a291e5e23a93104b9"
+      }
+    },
+    {
+      "path": ".github/workflows/cpp-full-project-integration.yml",
+      "preimage": {
+        "bytes": 14013,
+        "sha256": "7902f41b3f7b11ee31efbb6240d9fb4f60a02903371479f518d2ca9357835d0b",
+        "git_blob_sha1": "a25d02ad555a2415aeb9b81e2b9f67120c2acd12"
+      },
+      "postimage": {
+        "bytes": 14050,
+        "sha256": "1c719617f5c0d85b0c32f48dc3db811175c5c572bacc87bc6cede7b85544cfe2",
+        "git_blob_sha1": "7ac989f53506d209240ea9853cfa38d52c83227d"
+      }
+    },
+    {
+      "path": "tests/test_cpp_compiler_budget_v2.py",
+      "preimage": null,
+      "postimage": {
+        "bytes": 12523,
+        "sha256": "545ce4f6a0e484b1a289c907c972dfb8560d5098c29aebfcc08aee2ae178503f",
+        "git_blob_sha1": "3d010e984a196ef81770d2335aa64fd62c074148"
+      }
+    }
+  ],
+  "preserved_files": {
+    "nico/assessment_cpp_project_compiler.py": {
+      "bytes": 22074,
+      "sha256": "06421f6f143b2931075437a156739730fc0bd46798bdfa8d95138ad08c94f28e",
+      "git_blob_sha1": "d7924eab1fbadbbd617c8f7edb9f4dac80a73bc7"
+    },
+    "scripts/qualify_cpp_project_configuration.py": {
+      "bytes": 15548,
+      "sha256": "507ea0e15215d035454a52c19d8c6ab70637fda5a793bb3a6ac89b963f370817",
+      "git_blob_sha1": "7925c792f0ad42fc77d8b10059aaaeb0a2f287f0"
+    },
+    "scripts/qualify_cpp_project_generated_context.py": {
+      "bytes": 10219,
+      "sha256": "f78054192d3c8ce9f914ad475897ea3bf702db61b0cd9d937c168422e5cd11ce",
+      "git_blob_sha1": "6e67ae1d5bbfdd2595df2df7a7e2125e44d9617a"
+    },
+    "tests/test_cpp_project_compiler_budget.py": {
+      "bytes": 9488,
+      "sha256": "43148027b72b87adc6c7d030820328b52f42bd3cd8693d3674cbd42a3e280cbc",
+      "git_blob_sha1": "ecc9d3ae3d8fa7f250389a92e714b74641f2a3a5"
+    },
+    "tests/test_cpp_project_static.py": {
+      "bytes": 15148,
+      "sha256": "190006f5018094179be6b95549e16b142a6bf86533f03d422a2636cf0644a062",
+      "git_blob_sha1": "5c60d9df7389acab7d8afaf9dc826dd14e62bd96"
+    },
+    "tests/test_cpp_project_static_stage.py": {
+      "bytes": 17717,
+      "sha256": "05d34d4f77f776843834be86c0850b9478159c8bd39a74c440d10bf0781e7ccd",
+      "git_blob_sha1": "8691041c775af7accdcf01d2f22276b65937dcf6"
+    }
+  },
+  "tests": {
+    "files": [
+      "tests/test_cpp_fixture_tree.py",
+      "tests/test_cpp_bounded_fuzz.py",
+      "tests/test_cpp_fuzz_tool_provisioning.py",
+      "tests/test_cpp_generated_context.py",
+      "tests/test_cpp_combined_configuration.py",
+      "tests/test_cpp_compiler_evidence.py",
+      "tests/test_assessment_cpp_full_project.py",
+      "tests/test_cpp_analysis_phase_boundary.py",
+      "tests/test_cpp_native_test_binding.py",
+      "tests/test_cpp_native_test_timing.py",
+      "tests/test_cpp_nested_cmake.py",
+      "tests/test_cpp_project_compiler_options.py",
+      "tests/test_cpp_project_dependencies.py",
+      "tests/test_cpp_dependency_retention.py",
+      "tests/test_assessment_worker_archive.py",
+      "tests/test_assessment_worker_capacity_v1.py",
+      "tests/test_cpp_fuzz_workspace.py",
+      "tests/test_cpp_integration_workflow_schedule.py",
+      "tests/test_cpp_full_project_capture_budget.py",
+      "tests/test_cpp_mixed_language_activation.py",
+      "tests/test_cpp_configuration_qualification.py",
+      "tests/test_cpp_compilation_contexts.py",
+      "tests/test_cpp_project_snapshot.py",
+      "tests/test_cpp_project_compiler.py",
+      "tests/test_cpp_project_compiler_budget.py",
+      "tests/test_cpp_compiler_budget_v2.py",
+      "tests/test_cpp_generated_capacity.py",
+      "tests/test_cpp_project_static.py",
+      "tests/test_cpp_project_static_stage.py",
+      "tests/test_cpp_project_snapshot_diagnostics.py",
+      "tests/test_cpp_capnp_provisioning.py",
+      "tests/test_cpp_baseline_execution.py"
+    ],
+    "collected": 875,
+    "executed_unique": 875,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "membership_sha256": "0b33013a3988c4491ae4e50ffc37a8a43aab9d663cc3ef2d81d0ba805e106654",
+    "membership_encoding": "UTF-8 JSON sorted pytest node IDs, separators comma and colon, no trailing newline",
+    "method": "Collect workflow test files with python -m pytest --collect-only -q; partition collection-order node IDs into consecutive groups of 100; run each with python -m pytest -q NODE_IDS --junitxml=group-N.xml. Reconcile exact JUnit node membership against collection, without omitted or duplicated cases.",
+    "groups": [
+      {
+        "group": 1,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 14.886,
+        "log_sha256": "badc2ff65ae8299c2d90d4e0f87ec4efd1ca0245384aeaad6bc27c4946313467",
+        "junit_sha256": "34a4567d9f10aa5bc549db0c89007b78376cc2b03e1a092e38062efb9139b5b0"
+      },
+      {
+        "group": 2,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 24.278,
+        "log_sha256": "1d4aeb60570645784bf2de21eebd96cd6932948ef10aa8c99e0d462a87e0fd6a",
+        "junit_sha256": "49db5c9fd77977481d726d786f397f7c203ed79ee2501e2a0185330ab212df02"
+      },
+      {
+        "group": 3,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 22.587,
+        "log_sha256": "022b4cac59c73c70ec0e9a89cc76947ac34a30a3fc07852962131980684f41d7",
+        "junit_sha256": "cbc592035d90012a182513ef69a14021f9ada61088c456886bd9b564f8a049b7"
+      },
+      {
+        "group": 4,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 14.317,
+        "log_sha256": "07f5e4b37a9947c79dc2aac6e4e34a4868c9a019d9fc24b6aeede1784253fab0",
+        "junit_sha256": "5ef1268c82475fc45d6f345cb78329c8969802fda6ea7c5a4236311a83661939"
+      },
+      {
+        "group": 5,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 4.107,
+        "log_sha256": "7c66b5d8d80a9e4e37912b1889f9a7e65ccd6adfa05f208f71fb7b9cc33e2a65",
+        "junit_sha256": "0d0cd07754c127bf190984f69e61f1ec15ce23f27916548d250c8812a8ac770f"
+      },
+      {
+        "group": 6,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 6.894,
+        "log_sha256": "baaef91418ec4d6df2955fb90a9dc79ed530d64fb2221b89beab504b2ccc5fea",
+        "junit_sha256": "543b417f7c27e8da120317c1fa837a07c4e54cd4b3e7125dbe75094196f8107b"
+      },
+      {
+        "group": 7,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 3.312,
+        "log_sha256": "f9aa4aa4149734d0dbbf6b876ec010d25671b8181c22bf745a5dbc55ba155175",
+        "junit_sha256": "e273bd3865054e976978629a9f4c80023477cab193934c08d4a86d6e01b218b3"
+      },
+      {
+        "group": 8,
+        "exit_code": 0,
+        "stats": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 4.162,
+        "log_sha256": "4bb5bde4590e651fbcfee61656c606fd89055d3adb2135c97bd314d32c020043",
+        "junit_sha256": "92fc3e874958205e2c7e31190faff6d4daa0d0c6db3f9c78ce173fca9f1554f9"
+      },
+      {
+        "group": 9,
+        "exit_code": 0,
+        "stats": {
+          "tests": 75,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "elapsed_seconds": 3.224,
+        "log_sha256": "e2053ac49968bc4449ead8953c8e3ecbd365d3f68c070d897edb8e068393d4fb",
+        "junit_sha256": "7191f5296de9bb1df5bc521f6ca8fc5b7cff38d3e9e89281ad8886544791df6e"
+      }
+    ]
+  },
+  "tdd": {
+    "command": "python -m pytest -q tests/test_cpp_compiler_budget_v2.py --junitxml=RESULT.xml",
+    "red": {
+      "tests": 30,
+      "failures": 10,
+      "errors": 0,
+      "skipped": 0
+    },
+    "red_log_sha256": "9bdc7c345643281b0b456abac13dbc702dc5cfa6b9bf6b3738da6c6307fe8288",
+    "green": {
+      "tests": 30,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "green_log_sha256": "2c7c8a68657d24733fb3421d4fe3225c8e5797fc5fc878a904c340dc1f845805",
+    "counts_overlap": true
+  },
+  "structural": {
+    "AST": true,
+    "embedded_programs_compile": true,
+    "bash_blocks": 13,
+    "bash_syntax": true,
+    "git_diff_check": true,
+    "workflow_only_adds_test_filename": true,
+    "existing_budgets_resources_permissions_populations_unchanged": true
+  },
+  "local_environment": {
+    "python": "3.13.5",
+    "pytest": "9.0.2",
+    "PyYAML": "6.0.3",
+    "fastapi": "0.128.2",
+    "pydantic": "2.13.4",
+    "reportlab": "4.4.9",
+    "pypdf": "5.9.0",
+    "pinned_hosted_environment_reproduced": false
+  },
+  "attempt_limitations": [
+    "An outer command containing groups 2 and 3 hit the container limit after group 2 completed. Group 3 was run alone with unchanged cases and passed; partial attempt not credited.",
+    "RED included one existing SyntaxWarning in express_score_assurance_export_v1.py.",
+    "Local exported-source Git metadata is a detached fixture without remotes, not upstream history. It must never be pushed."
+  ],
+  "parent_hosted_observations": {
+    "head": "3652a03965dfd7a96a45b5a6161daf8ec7b1042b",
+    "NICO_CI": {
+      "run": 35950988315,
+      "conclusion": "success"
+    },
+    "security": {
+      "run": 35950988288,
+      "conclusion": "success"
+    },
+    "full_project_integration": {
+      "run": 35950988313,
+      "conclusion": "failure",
+      "native_failure_cause": "Not inspected in this publication task; do not infer from preceding failure.",
+      "bitcoin_artifact": 10790085970
+    }
+  },
+  "not_claimed": [
+    "full backend test suite",
+    "hosted qualification of the containing commit",
+    "native Bitcoin v2/compiler/static completion",
+    "independent review",
+    "merge",
+    "deployment",
+    "production assessment",
+    "operator approval",
+    "delivery authorization"
+  ],
+  "test_results_log": {
+    "bytes": 6313,
+    "sha256": "efe2ac61ca9588b7e97d8461c35c9a56c3c25279006e94dbc809c6cae1edfc9d",
+    "git_blob_sha1": "3585772622a15f9e4dda10ebaf9f4cf82a1d4dde"
+  }
+}

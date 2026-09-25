@@ -166,6 +166,9 @@ def _snapshot_scanner_handler(context: dict[str, Any], outputs: dict[str, Any]) 
             },
         }
 
+    from nico.assessment_cpp_production_selection import select_configure_first_contract
+    repo_step = outputs.get("repo_evidence") if isinstance(outputs.get("repo_evidence"), dict) else {}
+    cpp_contract = select_configure_first_contract(repo_step)
     scan = start_snapshot_scan(
         {
             "repository": context["repository"],
@@ -188,7 +191,8 @@ def _snapshot_scanner_handler(context: dict[str, Any], outputs: dict[str, Any]) 
                 else snapshot.get("provider_credential_used")
             ),
             "tools": context.get("tools") or [],
-        }
+        },
+        **({"cpp_contract": cpp_contract} if cpp_contract is not None else {})
     )
     if scan.get("status") == "blocked":
         return {

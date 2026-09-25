@@ -1,0 +1,147 @@
+{
+  "base": "faaa10b037eb58e4175561b96dadf0d929764df4",
+  "embedded_programs_compile": true,
+  "files": [
+    {
+      "bytes": 33580,
+      "git_blob_sha1": "f61561b15a4e4b206f2744543d8d085d68694820",
+      "path": "nico/assessment_cpp_static_environment.py",
+      "preimage_sha256": "c7f9b1d762c61a54d473e100b5fa4fc1ffe5ea30bafcbb4d6fdf61f8c42a2ea9",
+      "sha256": "52b96268d59acd8fa1543b1dcf3c8440b4a7e83e18f3c6128601d8e28628ad76"
+    },
+    {
+      "bytes": 10842,
+      "git_blob_sha1": "7c63f45d63b08920f0b5953ec7829391d6c1996b",
+      "path": "tests/test_cpp_static_environment.py",
+      "preimage_sha256": "ca9fc76f576fb0c8af55c337d191662e98fb7d39945c97e12aafab66742ae282",
+      "sha256": "ff0571c15daf07142dca036ad58c0e7bc777410acdc94ef61be943eee14a0d39"
+    }
+  ],
+  "hosted_failure": {
+    "artifact": 10825472844,
+    "bitcoin_conclusion": "skipped",
+    "bitcoin_job": 107768065382,
+    "job": 107766534356,
+    "run": 36035386439,
+    "zip_sha256": "f0a0a655ada3802df178d50fe35ad343ddb482e4dd5ce9fbf6c940053280fd4f"
+  },
+  "limits": "All native target/time/resource/output/storage bounds unchanged. Missing or corrupted required headers remain blocking. No finding suppression or source mutation.",
+  "local_native": {
+    "boost-current-clean": {
+      "analyzed": 4,
+      "attempted": 4,
+      "compiler_evidence": "retained-hosted-not-reexecuted",
+      "complete": true,
+      "contexts": 4,
+      "docker": false,
+      "duration_ms": 201,
+      "findings": 0,
+      "header_projection": "/work/analysis/compiler-environment/headers/usr/include/boost/version.hpp",
+      "header_sha256": "90e046b8e3138a61c692abdd9bc2e45c1a95996cc5a8031cce1f110de5e64a70",
+      "kind": "owned-input-native-replay",
+      "label": "boost-current-clean",
+      "limitation_rules": [
+        "checkersReport"
+      ],
+      "modeled_inputs": 4,
+      "native_sha256": "33cac9ca1761602a3418bf58d9fbb9d9af19c0c40eca7ca734c131f36a2e45e5",
+      "network_boundary_verified": false,
+      "production": false,
+      "request_sha256": "f6ecd99ee3b84161794b0fabfd2094a6f7f563d655e2e6afdc5a1fb5ed485dc6",
+      "returncode": 0
+    },
+    "boost-current-diagnostic": {
+      "analyzed": 4,
+      "attempted": 4,
+      "compiler_evidence": "retained-hosted-not-reexecuted",
+      "complete": true,
+      "contexts": 4,
+      "docker": false,
+      "duration_ms": 221,
+      "findings": 2,
+      "header_projection": "/work/analysis/compiler-environment/headers/usr/include/boost/version.hpp",
+      "header_sha256": "90e046b8e3138a61c692abdd9bc2e45c1a95996cc5a8031cce1f110de5e64a70",
+      "kind": "owned-input-native-replay",
+      "label": "boost-current-diagnostic",
+      "limitation_rules": [
+        "checkersReport"
+      ],
+      "modeled_inputs": 4,
+      "native_sha256": "f4ad9a263156b745d3d392f2168c183850b468e16d2f7b060e502bfb324a9554",
+      "network_boundary_verified": false,
+      "production": false,
+      "request_sha256": "aab2a5a5e862b2b93c4abf5dcca161dd810839e703640d13ffe619866a6221ce",
+      "returncode": 0
+    },
+    "boost-current-missing": {
+      "complete": false,
+      "docker": false,
+      "failure": {
+        "error": "worker_project_static_unavailable",
+        "schema": "nico.cpp-project-static-failure.v1"
+      },
+      "input_removed": "compiler-resolved boost/version.hpp",
+      "kind": "owned-input-native-negative-replay",
+      "label": "boost-current-missing",
+      "native_sha256": "1e9f29936034d979a5e1dbc293f729375e56b512a9dd656cb0b0387a3867787a",
+      "production": false,
+      "request_sha256": "f6ecd99ee3b84161794b0fabfd2094a6f7f563d655e2e6afdc5a1fb5ed485dc6",
+      "returncode": 1
+    },
+    "boost-native-red": {
+      "analyzed": 2,
+      "attempted": 4,
+      "compiler_evidence": "retained-hosted-not-reexecuted",
+      "complete": false,
+      "contexts": 4,
+      "docker": false,
+      "duration_ms": 357,
+      "findings": 0,
+      "header_projection": null,
+      "header_sha256": "90e046b8e3138a61c692abdd9bc2e45c1a95996cc5a8031cce1f110de5e64a70",
+      "kind": "owned-input-native-replay",
+      "label": "boost-native-red",
+      "limitation_rules": [
+        "checkersReport",
+        "native_checkers_unproven",
+        "preprocessorErrorDirective"
+      ],
+      "modeled_inputs": 6,
+      "native_sha256": "d87f0db37f96ce89a3b3e4e2752682ba7d25878b208c0edb4d57b5302efb9476",
+      "network_boundary_verified": false,
+      "production": false,
+      "request_sha256": "b20cca7f75254e38996151826c17839c9cec2826d4506490ac52e376a1424b01",
+      "returncode": 0
+    }
+  },
+  "native_negative_harness": "The first missing-header run correctly returned a failure envelope. The replay harness initially asserted successful return for all cases; it was corrected to assert the expected failure for this explicit negative control. Product output and assertions for successful controls were not relaxed.",
+  "not_proved": [
+    "Full workflow suite locally: two 80-case batches completed; batches 3 and 4 exceeded a 26-second local command allocation. Batch 3 was split and completed; no full-suite pass is claimed. Prior passes overlap affected tests.",
+    "Hosted execution of this repair",
+    "Bitcoin complete static analysis",
+    "Production integration",
+    "Independent review",
+    "Merge or deployment",
+    "Report approval"
+  ],
+  "parent": "516d6d83eb5d73f85374769dd3d9af26a6bcbc37",
+  "parent_tree": "3783958df114ec510ed3c0398f8283be09aa6f42",
+  "schema": "nico.bounded-repair-verification.v1",
+  "scope": "Preserve exact compiler-resolved Boost version metadata while retaining API models for other system Boost headers.",
+  "tdd": {
+    "current_affected": {
+      "errors": 0,
+      "exit_code": 0,
+      "failures": 0,
+      "junit_sha256": "39e15120ef41ad2678692a73a6656b3b9816e4e0b84ef4f3d817c7f5c038212a",
+      "log_sha256": "b6bb9ca7bab74e2fff03a4f893bc32955730928a33842730b01be5824bf5db41",
+      "skipped": 0,
+      "tests": 157
+    },
+    "prepared_red": {
+      "deselected": 25,
+      "failures": 3,
+      "log_sha256": "606ccd72084fb7c7a97188cae48ac134f815d2607322ab9efc5c7ecae33a648c"
+    }
+  }
+}

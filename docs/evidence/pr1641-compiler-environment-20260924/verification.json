@@ -1,0 +1,411 @@
+{
+  "schema": "nico.compiler-environment-local-verification.v1",
+  "parent": "e11822933556cc42b1acd5b58b57f2d85a00591e",
+  "source_files": [
+    {
+      "path": ".github/workflows/cpp-full-project-integration.yml",
+      "bytes": 15721,
+      "sha256": "6b527362638a1312a13be2988c9b7ef1b4ffc503dbe6cb9c3077eef6dad5e47a",
+      "git_blob": "24d2b2d42dcbb3569f4048f8a4f3a7416c13a0c2",
+      "preimage_git_blob": "744014e7108a6a1bdfa32cea870f4ff64d73a70d"
+    },
+    {
+      "path": "nico/assessment_cpp_configuration_probe.py",
+      "bytes": 32997,
+      "sha256": "5f72617ba9cb369d1ad17022e428c5582ab4b37bbbc884219d59e729678ee0ab",
+      "git_blob": "9539223f445066c1d8dbe9661e92983e05decdde",
+      "preimage_git_blob": "ba3818b4573e41401ad49b42e6b210ee892229f7"
+    },
+    {
+      "path": "nico/assessment_cpp_project_static.py",
+      "bytes": 34357,
+      "sha256": "8ea8bcdfc15b694662f2d597f7e911ad261c56a324694761d1c21378dd98136b",
+      "git_blob": "2ae9d1023d4cd988dfb7051233df56bcf336060d",
+      "preimage_git_blob": "4f9ec0a9c867c874ca862a2a291e5e23a93104b9"
+    },
+    {
+      "path": "nico/assessment_cpp_static_environment.py",
+      "bytes": 32953,
+      "sha256": "b39f53efb50804893c76a96983b37e2c0a549717484fd3bcbf9f1811f6b88288",
+      "git_blob": "da76ce55d7dc81ed9822a26fe0a7564f50582064",
+      "preimage_git_blob": null
+    },
+    {
+      "path": "scripts/qualify_cpp_project_configuration.py",
+      "bytes": 15732,
+      "sha256": "bebafeafe41225c4746bd350c4308a7703338ddec3d9b34d43d7a4b4a7bed433",
+      "git_blob": "5ed88982f2ca71e7a97f8e7b9535d9d0d88008f1",
+      "preimage_git_blob": "7925c792f0ad42fc77d8b10059aaaeb0a2f287f0"
+    },
+    {
+      "path": "scripts/qualify_cpp_project_generated_context.py",
+      "bytes": 11907,
+      "sha256": "f417e7a65f06a3045693886ea970dc2dae23c2659048b4ec4399353e0f3cd304",
+      "git_blob": "d772c960151332c1ddc1af465d382d8ac33a120b",
+      "preimage_git_blob": "6e67ae1d5bbfdd2595df2df7a7e2125e44d9617a"
+    },
+    {
+      "path": "tests/test_cpp_static_environment.py",
+      "bytes": 8341,
+      "sha256": "a5f1634de6c22663dfc820e81942dd917d2163999095315f3b68cea91a7c2085",
+      "git_blob": "e83662a3b866a0a673f0bd06f2254aebd861256c",
+      "preimage_git_blob": null
+    },
+    {
+      "path": "tests/test_cpp_static_environment_integration.py",
+      "bytes": 10834,
+      "sha256": "79c05793620b6b11f9fa5b3dab28d9759172b1435114fe55eb7a1ee1b3ca151e",
+      "git_blob": "c3f78cb04440279f3818e4c18a73ca9fce437467",
+      "preimage_git_blob": null
+    }
+  ],
+  "tests": {
+    "files": [
+      "tests/test_cpp_fixture_tree.py",
+      "tests/test_cpp_bounded_fuzz.py",
+      "tests/test_cpp_fuzz_tool_provisioning.py",
+      "tests/test_cpp_generated_context.py",
+      "tests/test_cpp_combined_configuration.py",
+      "tests/test_cpp_compiler_evidence.py",
+      "tests/test_assessment_cpp_full_project.py",
+      "tests/test_cpp_analysis_phase_boundary.py",
+      "tests/test_cpp_native_test_binding.py",
+      "tests/test_cpp_native_test_timing.py",
+      "tests/test_cpp_nested_cmake.py",
+      "tests/test_cpp_project_compiler_options.py",
+      "tests/test_cpp_project_dependencies.py",
+      "tests/test_cpp_dependency_retention.py",
+      "tests/test_assessment_worker_archive.py",
+      "tests/test_assessment_worker_capacity_v1.py",
+      "tests/test_cpp_fuzz_workspace.py",
+      "tests/test_cpp_integration_workflow_schedule.py",
+      "tests/test_cpp_full_project_capture_budget.py",
+      "tests/test_cpp_mixed_language_activation.py",
+      "tests/test_cpp_configuration_qualification.py",
+      "tests/test_cpp_compilation_contexts.py",
+      "tests/test_cpp_project_snapshot.py",
+      "tests/test_cpp_project_compiler.py",
+      "tests/test_cpp_project_compiler_budget.py",
+      "tests/test_cpp_compiler_budget_v2.py",
+      "tests/test_cpp_generated_capacity.py",
+      "tests/test_cpp_project_static.py",
+      "tests/test_cpp_native_preprocessing_truth.py",
+      "tests/test_cpp_static_environment.py",
+      "tests/test_cpp_static_environment_integration.py",
+      "tests/test_cpp_project_static_stage.py",
+      "tests/test_cpp_project_snapshot_diagnostics.py",
+      "tests/test_cpp_capnp_provisioning.py",
+      "tests/test_cpp_baseline_execution.py"
+    ],
+    "collected": 933,
+    "unique_completed": 933,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "membership_sha256": "e8471801cd3a5b9a3759684b5c6e2ea89ecf30e51ceb6c52e99b51d6b4d2b68a",
+    "groups": [
+      {
+        "group": 0,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 15.963,
+        "log_sha256": "77c87f2c5116a788242167f265cf08f4afd0901f8782e1a897355879310592de",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "c4c52663aae72bb865a73fbd8af751fdf7d192c112630f64ded81ae7884769f5"
+      },
+      {
+        "group": 1,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 26.295,
+        "log_sha256": "8d5a4a6707c92a6581465cf0b053c911ce535bb444e6dc9144f33dd2d3c804b2",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "38c70b126089878663ba59e87681e1881d237a6110d34193a1c5fdd30e70f0f1"
+      },
+      {
+        "group": 2,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 25.058,
+        "log_sha256": "c57d77a2c5b8ed1f52bf9f578da6ebe6b1798814d91d40ba45434790f6cb1a04",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "bd902621df7f13489d13e0f3a3046bba5f90195d403893ac3cc322758ab15d01"
+      },
+      {
+        "group": 3,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 15.078,
+        "log_sha256": "c6446d9e01a24a585090a04a5cbd343191f55d453fea4be4554ea1f089575d31",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "6526c7d4050ed5542b86c4aa6fa5098a96374f75db74d022824598a1b1cc8bc0"
+      },
+      {
+        "group": 4,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 4.625,
+        "log_sha256": "a75e3163e0a4b661095b2c84ffd723e8cf28a3b4ff889f7f0a62cd0420ade6a0",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "bb66f37f8f04458168c82d6c3d34cc7830d21f2284c275a44433e3b1f67111d5"
+      },
+      {
+        "group": 5,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 7.49,
+        "log_sha256": "bbf8be7cec508ad0888e184710f750f857f2b7f3cafcdd94bbd663a9b1db6ca0",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "05383525dfdf37648fab6520d811026c8db14fb5d559983587e8c94ef509bb85"
+      },
+      {
+        "group": 6,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 3.349,
+        "log_sha256": "f9aa4aa4149734d0dbbf6b876ec010d25671b8181c22bf745a5dbc55ba155175",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "d3b249dde32390f2ad60cc36cd0aebb693f91adfbd98aecbfe78cb021a2ec204"
+      },
+      {
+        "group": 7,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 4.373,
+        "log_sha256": "7c66b5d8d80a9e4e37912b1889f9a7e65ccd6adfa05f208f71fb7b9cc33e2a65",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "1d903523f67c314d4a3670fe44168a07471cc2468c0c9b67459f5f2978f1ba06"
+      },
+      {
+        "group": 8,
+        "requested": 100,
+        "exit_code": 0,
+        "seconds": 7.006,
+        "log_sha256": "c37102262e683cc2c41c528bf5d475b1f1663d3301af93c3b11e7ec0852170f0",
+        "tests": {
+          "tests": 100,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "ec92ec43ed8c14e937e1df7b5ae444d3877c1b872dbd2aa769bc195ecf103dfc"
+      },
+      {
+        "group": 9,
+        "requested": 33,
+        "exit_code": 0,
+        "seconds": 3.074,
+        "log_sha256": "a37571aa28850f526a0645386223138a2bdd0c1ef1ba91efad68493f03950742",
+        "tests": {
+          "tests": 33,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "043e4230bda004866af87df3bb8fc497f481e01785ac06b48b3d2dce75412dbf"
+      }
+    ]
+  },
+  "structural": {
+    "python_ast": true,
+    "three_embedded_programs_compile": true,
+    "bash_blocks": 14,
+    "bash_syntax": true,
+    "workflow_only_expected_changes": true,
+    "diff_whitespace": true
+  },
+  "limitations": [
+    "Local dependencies differ from pinned hosted environment.",
+    "No Docker/Bitcoin or independent-review proof in these unit results.",
+    "Group5 initially failed two git rev-parse calls because archive export has no Git metadata; an empty detached local fixture with no remotes fixed only that environment; original failing evidence retained.",
+    "The local fixture history must never be pushed.",
+    "The final multi-group container invocation was interrupted after group1; no group2 terminal result existed. The unchanged group2 and remaining groups ran separately with terminal outcomes. No partial output is credited.",
+    "The earlier932 cases and local104-case predecessor results overlap the final933 population and are not additive."
+  ],
+  "publication_state": "source objects uploaded; containing commit/ref must be independently verified",
+  "native_owned_control": {
+    "scope": "Local bounded owned original/repeated/generated source; not Docker, pinned full worker image, Bitcoin, production, or independent review",
+    "required_contexts": 3,
+    "analyzed_contexts": 3,
+    "findings": [
+      {
+        "rule_id": "uninitvar",
+        "origin": "generated",
+        "path": "generated/owned.c++"
+      },
+      {
+        "rule_id": "unassignedVariable",
+        "origin": "generated",
+        "path": "generated/owned.c++"
+      }
+    ],
+    "modeled_public_header_diagnostics": 4,
+    "queries": 3,
+    "headers": 81,
+    "header_bytes": 1411116,
+    "files": [
+      {
+        "name": "compiler.json",
+        "bytes": 19367,
+        "sha256": "d1dab81e446cd1e9de3acb45f36677f724c5e641fc2df06f5259ed34799ae007"
+      },
+      {
+        "name": "compiler.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "environment-proof.json",
+        "bytes": 29281,
+        "sha256": "fdee509e6445c1f8c08ae266f072308eb0ce14b7d40056d0672c32b648c7bebc"
+      },
+      {
+        "name": "environment-request.json",
+        "bytes": 9106,
+        "sha256": "d2997983a1f04c844f6c26388322bef1b0dffaddb7a8ce83472f37a6b2fd14e0"
+      },
+      {
+        "name": "environment.json",
+        "bytes": 1986802,
+        "sha256": "98c17057f89c04e030574c80cd6cfbfebad519e88034e16f0dccf8385f656491"
+      },
+      {
+        "name": "environment.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "restore.json",
+        "bytes": 325,
+        "sha256": "0ccb6c526b3768501344312c1249a73ea5a1b78846c6eb4cab69c55776439710"
+      },
+      {
+        "name": "restore.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "static-proof.json",
+        "bytes": 6832,
+        "sha256": "1d4f2e7772be06c251fec933cccf4a3c757ab6132c4d8e511f58a2aa7ca1c25c"
+      },
+      {
+        "name": "static-request.json",
+        "bytes": 38319,
+        "sha256": "3d3617450cc28a9ac80bc70099f695d6406dac042df2741ff7a6a8c6485a563e"
+      },
+      {
+        "name": "static.json",
+        "bytes": 8460,
+        "sha256": "2e589b3ff5d54ca90f2ee8462252663dad6470d5b4a50b76b056f38bf61bc735"
+      },
+      {
+        "name": "static.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "limits": {
+      "uid": 1001,
+      "address_space_bytes": 2147483648,
+      "cpu_seconds": 60,
+      "file_size_bytes": 50331648
+    },
+    "compiler": "local GCC14.2.0 through temporary owned alias; not claimed to be hosted image",
+    "analyzer": "exact Cppcheck2.17.1 executable and cfg from artifact10804136344; hashes verified"
+  },
+  "frozen_request_validation": {
+    "source_run": 35978926706,
+    "artifact": 10800637897,
+    "required_contexts": 475,
+    "query_profiles": 12,
+    "compiler_toolchain_headers": 1439,
+    "request_bytes": 13056019,
+    "request_sha256": "a8e9f3522a71c77f9de9cd98b50756333890f77e1e6e4f37d6d328d6de60d88c",
+    "native_new_policy_execution": false
+  },
+  "tdd_records": {
+    "environment-red.log": {
+      "sha256": "a33f3787195083898ec6cb4132f15991454bc511c8050bb2c856d4dd2e57b072",
+      "terminal_summary": "19 failed, 1 passed in 0.46s"
+    },
+    "environment-integration-red.log": {
+      "sha256": "eb3b3b3b038642265f6e7c5726fec69f2c942828b46598e65602e09bbba6001d",
+      "terminal_summary": "11 failed, 1 passed in 3.58s"
+    },
+    "environment-layout-red.log": {
+      "sha256": "2de6320e44d76cbfce38ba6273cf97373b58fd5fd209e933e1b8ada437076792",
+      "terminal_summary": "2 failed, 1 passed, 21 deselected in 0.19s"
+    },
+    "environment-layout-green.log": {
+      "sha256": "107fc3cc937faccc6cf3c728519188d355b72d6598fed7d577d3b74e626210c8",
+      "terminal_summary": "3 passed, 21 deselected in 0.15s"
+    },
+    "owned-environment-wiring-red.log": {
+      "sha256": "15a23a5eff0db1b1081f5faeec01bb9495ebb69245c3de65a2d6ceac77c34dc8",
+      "terminal_summary": "1 failed, 12 deselected in 0.21s"
+    },
+    "owned-environment-wiring-green.log": {
+      "sha256": "4fb1fa6026c1a024501b72bb8bf800fa9326c4f324ce6ed8c1fcddb3663e32ce",
+      "terminal_summary": "37 passed in 3.69s"
+    },
+    "environment-real-sink-red.log": {
+      "sha256": "7056236d4c41a564989f2adaf7e541f44a6ffdf340f3c29ac79a673b7020cde2",
+      "terminal_summary": "1 failed in 0.22s"
+    },
+    "environment-real-sink-green.log": {
+      "sha256": "fa8e3e1f0a4b084326a7027307e5cc3a94f799f9733ea598c3b878fa3c70f37c",
+      "terminal_summary": "1 passed in 0.18s"
+    },
+    "real_storage_explanation": "Real artifact sink initially rejected project-static-environment. Add exactly this known key to the existing immutable bounded sink; corrupt replacement remains rejected. Same test RED1 fail, GREEN1 pass."
+  },
+  "not_completed": [
+    "Full backend regression",
+    "Hosted new policy owned and475-context Bitcoin qualification",
+    "Full configured production worker/canonical/report integration",
+    "Declared Bitcoin functional/sanitizer/fuzz qualification",
+    "Independent final-candidate review",
+    "Merge/deployment",
+    "Actual English/es-MX production reports"
+  ]
+}

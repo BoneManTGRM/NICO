@@ -1,0 +1,79 @@
+# Preserved focused RED (three failures)
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_boost_version_macros_are_native_inputs_not_a_library_model[/usr/include] _
+
+root = '/usr/include'
+
+    @pytest.mark.parametrize('root', ['/usr/include', '/usr/include/x86_64-linux-gnu'])
+    def test_boost_version_macros_are_native_inputs_not_a_library_model(root):
+        # boost.cfg models API semantics; it cannot supply this installed version.
+        env = api()
+>       assert env._model_header(root + '/boost/version.hpp', [root]) is None
+E       AssertionError: assert ('boost/version.hpp', 'boost') is None
+E        +  where ('boost/version.hpp', 'boost') = <function _model_header at 0x7f0e9d03ce00>(('/usr/include' + '/boost/version.hpp'), ['/usr/include'])
+E        +    where <function _model_header at 0x7f0e9d03ce00> = <module 'nico.assessment_cpp_static_environment' from '/mnt/data/nico_work/source/repo/nico/assessment_cpp_static_environment.py'>._model_header
+
+tests/test_cpp_static_environment.py:168: AssertionError
+_ test_boost_version_macros_are_native_inputs_not_a_library_model[/usr/include/x86_64-linux-gnu] _
+
+root = '/usr/include/x86_64-linux-gnu'
+
+    @pytest.mark.parametrize('root', ['/usr/include', '/usr/include/x86_64-linux-gnu'])
+    def test_boost_version_macros_are_native_inputs_not_a_library_model(root):
+        # boost.cfg models API semantics; it cannot supply this installed version.
+        env = api()
+>       assert env._model_header(root + '/boost/version.hpp', [root]) is None
+E       AssertionError: assert ('boost/version.hpp', 'boost') is None
+E        +  where ('boost/version.hpp', 'boost') = <function _model_header at 0x7f0e9d03ce00>(('/usr/include/x86_64-linux-gnu' + '/boost/version.hpp'), ['/usr/include/x86_64-linux-gnu'])
+E        +    where <function _model_header at 0x7f0e9d03ce00> = <module 'nico.assessment_cpp_static_environment' from '/mnt/data/nico_work/source/repo/nico/assessment_cpp_static_environment.py'>._model_header
+
+tests/test_cpp_static_environment.py:168: AssertionError
+_ test_compiler_resolved_boost_version_retains_exact_header_and_missing_is_fatal _
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_compiler_resolved_boost_v0')
+
+    def test_compiler_resolved_boost_version_retains_exact_header_and_missing_is_fatal(tmp_path):
+        env = api()
+        *_, compiler, raw = fixture(tmp_path)
+        native = json.loads(raw)
+        path = '/usr/include/boost/version.hpp'
+        for row in native['records']:
+            deps = base64.b64decode(row['dependency_bytes']).replace(b'/usr/include/stdint.h', path.encode())
+            row.update(dependency_bytes=base64.b64encode(deps).decode(),
+                       dependency_sha256=hashlib.sha256(deps).hexdigest(),
+                       toolchain_dependencies=[path])
+        request = env.environment_request(compiler, _canonical(native), 'sha256:' + 'a' * 64)
+        data = evidence(request)
+        body = b'#ifndef BOOST_VERSION_HPP\n#define BOOST_VERSION_HPP\n#define BOOST_VERSION 107400\n#endif\n'
+        data['headers'][path].update(base64=base64.b64encode(body).decode(), bytes=len(body),
+                                     sha256=hashlib.sha256(body).hexdigest())
+        proof = env.validate_environment(_canonical(data), request)
+        member = proof['headers'][path]
+>       assert member['projection'] == env.ROOT + '/headers' + path
+E       AssertionError: assert None == (('/work/analysis/compiler-environment' + '/headers') + '/usr/include/boost/version.hpp')
+E        +  where '/work/analysis/compiler-environment' = <module 'nico.assessment_cpp_static_environment' from '/mnt/data/nico_work/source/repo/nico/assessment_cpp_static_environment.py'>.ROOT
+
+tests/test_cpp_static_environment.py:190: AssertionError
+=============================== warnings summary ===============================
+nico/express_score_assurance_export_v1.py:113
+  /mnt/data/nico_work/source/repo/nico/express_score_assurance_export_v1.py:113: SyntaxWarning: invalid escape sequence '\s'
+    Horizontal whitespace is matched deliberately. A broad ``\s*`` can consume the
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_cpp_static_environment.py::test_boost_version_macros_are_native_inputs_not_a_library_model[/usr/include] - AssertionError: assert ('boost/version.hpp', 'boost') is None
+ +  where ('boost/version.hpp', 'boost') = <function _model_header at 0x7f0e9d03ce00>(('/usr/include' + '/boost/version.hpp'), ['/usr/include'])
+ +    where <function _model_header at 0x7f0e9d03ce00> = <module 'nico.assessment_cpp_static_environment' from '/mnt/data/nico_work/source/repo/nico/assessment_cpp_static_environment.py'>._model_header
+FAILED tests/test_cpp_static_environment.py::test_boost_version_macros_are_native_inputs_not_a_library_model[/usr/include/x86_64-linux-gnu] - AssertionError: assert ('boost/version.hpp', 'boost') is None
+ +  where ('boost/version.hpp', 'boost') = <function _model_header at 0x7f0e9d03ce00>(('/usr/include/x86_64-linux-gnu' + '/boost/version.hpp'), ['/usr/include/x86_64-linux-gnu'])
+ +    where <function _model_header at 0x7f0e9d03ce00> = <module 'nico.assessment_cpp_static_environment' from '/mnt/data/nico_work/source/repo/nico/assessment_cpp_static_environment.py'>._model_header
+FAILED tests/test_cpp_static_environment.py::test_compiler_resolved_boost_version_retains_exact_header_and_missing_is_fatal - AssertionError: assert None == (('/work/analysis/compiler-environment' + '/headers') + '/usr/include/boost/version.hpp')
+ +  where '/work/analysis/compiler-environment' = <module 'nico.assessment_cpp_static_environment' from '/mnt/data/nico_work/source/repo/nico/assessment_cpp_static_environment.py'>.ROOT
+3 failed, 25 deselected, 1 warning in 0.64s
+
+# Current affected GREEN
+........................................................................ [ 45%]
+........................................................................ [ 91%]
+.............                                                            [100%]
+157 passed in 8.78s

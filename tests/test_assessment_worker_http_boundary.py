@@ -3,7 +3,7 @@ import pytest
 from test_assessment_worker_auth import signed_worker, JOB
 
 
-@pytest.mark.parametrize("operation", ["claim", "heartbeat", "receipt", "fail"])
+@pytest.mark.parametrize("operation", ["claim", "heartbeat", "receipt", "artifact", "fail"])
 def test_production_worker_routes_require_their_own_authentication(operation):
     from nico.api.specialist_ship_ready_bootstrap import app
     with TestClient(app) as client:
@@ -53,3 +53,53 @@ def test_worker_http_operations_require_postgres_even_with_valid_signature(worke
     response = client.post("/internal/assessment-workers/" + JOB + "/claim", headers=headers, json={})
     assert response.status_code == 503
     assert response.json() == {"detail": "worker_durable_storage_unavailable"}
+
+
+def test_artifact_body_has_separate_measured_twelve_mib_ceiling(worker_client):
+    client, headers = worker_client
+    path = "/internal/assessment-workers/" + JOB + "/artifact"
+    oversized = b"x" * (12 * 1024 * 1024 + 1)
+    response = client.post(path, headers=headers, content=oversized)
+    assert response.status_code == 413
+
+
+@pytest.mark.parametrize("key", ["project-runtime-evidence", "project-static-evidence"])
+def test_runtime_and_static_artifacts_reach_the_same_verified_transport(monkeypatch, key):
+    import base64, gzip, hashlib
+    from nico.assessment_worker_consumer import WorkerTransport
+    from tests.test_assessment_worker_consumer import claimed
+    record = claimed()
+    client = WorkerTransport('https://backend.example.invalid', record['job_id'],
+        record['identity']['release_revision'], lambda: 'synthetic-token',
+        session=type('Session', (), {'trust_env': True})())
+    calls = []
+    raw = b'{"schema":"owned-runtime-transport-control","complete":false}'
+    def post(operation, payload):
+        calls.append((operation, payload))
+        artifact = payload['artifact']
+        compressed = base64.b64decode(artifact['compressed'], validate=True)
+        assert gzip.decompress(compressed) == raw
+        assert artifact['raw_sha256'] == hashlib.sha256(raw).hexdigest()
+        assert artifact['gzip_sha256'] == hashlib.sha256(compressed).hexdigest()
+        assert payload['lease_id'] == 'e'*32
+        return {'artifact': {'artifact_id': 'scanartifact_'+'a'*64, 'key': artifact['key'],
+            'sha256': artifact['raw_sha256'], 'gzip_sha256': artifact['gzip_sha256'],
+            'retained_bytes': artifact['raw_bytes'], 'gzip_bytes': artifact['gzip_bytes'],
+            'storage_backend': 'postgres'}}
+    monkeypatch.setattr(client, 'post', post)
+    result = client.put_artifact('e'*32, key, raw)
+    assert len(calls) == 1 and calls[0][0] == 'artifact'
+    assert result['key'] == key and result['sha256'] == hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize("key", ["project-runtime-evidence-extra", "runtime-evidence", "../project-runtime-evidence"])
+def test_runtime_artifact_transport_still_rejects_unknown_keys_before_post(monkeypatch, key):
+    from nico.assessment_worker_consumer import WorkerTransport
+    from tests.test_assessment_worker_consumer import claimed
+    record = claimed()
+    client = WorkerTransport('https://backend.example.invalid', record['job_id'],
+        record['identity']['release_revision'], lambda: 'synthetic-token',
+        session=type('Session', (), {'trust_env': True})())
+    monkeypatch.setattr(client, 'post', lambda *a, **k: pytest.fail('unknown key must not post'))
+    with pytest.raises(ValueError, match='worker_artifact_request_invalid'):
+        client.put_artifact('e'*32, key, b'owned')

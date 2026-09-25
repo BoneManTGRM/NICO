@@ -1,0 +1,33 @@
+{
+  "schema": "nico.pr1641-static-validator-hot-path.v1",
+  "base": "441e56c2c85b40d1e62c46820cb8cad81cd32da8",
+  "bitcoin_run_id": 36069996332,
+  "bitcoin_job_id": 107871849128,
+  "qualification_artifact_id": 10839024837,
+  "qualification_artifact_zip_sha256": "41573c1a9afa71e8aa74014e49df990da0d2eee8d56ae89a1be3e4e276d4a624",
+  "primary_static_sha256": "da44104ef44287791b7c09b65991ca5d07ca0f7285a5a82cce9309f6b43461e8",
+  "primary_static_duration_ms": 393441,
+  "stage_duration_ms": 600292,
+  "phase_at_failure": "analysis_fallback",
+  "failure": "worker_project_static_stage_deadline",
+  "population": {
+    "required": 475,
+    "attempted": 475,
+    "analyzed": 419,
+    "findings": 31873,
+    "limitations": 579,
+    "modeled_inputs": 138106
+  },
+  "exact_artifact_replay_seconds": 11.529,
+  "focused_tests": {
+    "passed": 121,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "secret_patterns_changed": false,
+  "deadlines_changed": false,
+  "resources_changed": false,
+  "native_scope_changed": false,
+  "hosted_requalification_pending": true
+}

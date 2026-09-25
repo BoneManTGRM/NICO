@@ -1,0 +1,289 @@
+name: C++ Full Project Integration
+
+on:
+  pull_request:
+    paths:
+      - 'nico/assessment_*'
+      - 'nico/cppcheck_native_output.py'
+      - 'nico/scanner_evidence_pipeline_v1.py'
+      - 'scripts/*cpp*'
+      - 'tests/*cpp*'
+      - 'tests/test_assessment_worker*'
+      - '.github/workflows/cpp-full-project-integration.yml'
+      - 'docker/assessment-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-full-project-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retain tracked source for exact-revision integration review
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cpp-integration-source"
+          git rev-parse HEAD > "$RUNNER_TEMP/cpp-integration-source/commit.txt"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/cpp-integration-source/tree.txt"
+          git archive --format=tar HEAD nico scripts tests docker .github requirements.txt NICO-Ship-Checkpoint.md | gzip -n > "$RUNNER_TEMP/cpp-integration-source/source.tar.gz"
+          test "$(stat -c %s "$RUNNER_TEMP/cpp-integration-source/source.tar.gz")" -le 67108864
+          cd "$RUNNER_TEMP/cpp-integration-source"
+          sha256sum source.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-integration-source-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/cpp-integration-source/
+          if-no-files-found: error
+          retention-days: 7
+
+  contract-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Test every existing contract and report boundary
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pytest -q tests/test_cpp_fixture_tree.py tests/test_cpp_bounded_fuzz.py tests/test_cpp_fuzz_tool_provisioning.py tests/test_cpp_generated_context.py tests/test_cpp_combined_configuration.py tests/test_cpp_compiler_evidence.py tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_cpp_native_test_binding.py tests/test_cpp_native_test_timing.py tests/test_cpp_nested_cmake.py tests/test_cpp_project_compiler_options.py tests/test_cpp_project_dependencies.py tests/test_cpp_dependency_retention.py tests/test_assessment_worker_archive.py tests/test_assessment_worker_capacity_v1.py tests/test_assessment_worker_jobs.py tests/test_assessment_worker_consumer.py tests/test_assessment_worker_http_boundary.py tests/test_cpp_cmake_policy.py tests/test_cpp_configure_first_contract.py tests/test_cpp_configure_first_execution.py tests/test_cpp_configure_first_projection.py tests/test_cpp_production_selection.py tests/test_cpp_runtime_scope.py tests/test_cpp_runtime_execution.py tests/test_cpp_fuzz_workspace.py tests/test_cpp_integration_workflow_schedule.py tests/test_cpp_full_project_capture_budget.py tests/test_cpp_mixed_language_activation.py tests/test_cpp_configuration_qualification.py tests/test_cpp_compilation_contexts.py tests/test_cpp_project_snapshot.py tests/test_cpp_project_compiler.py tests/test_cpp_project_compiler_budget.py tests/test_cpp_compiler_budget_v2.py tests/test_cpp_generated_capacity.py tests/test_cpp_project_static.py tests/test_cpp_native_preprocessing_truth.py tests/test_cpp_static_environment.py tests/test_cpp_static_environment_integration.py tests/test_cpp_clang_fallback.py tests/test_cpp_placement_tool_repair.py tests/test_cpp_project_static_stage.py tests/test_cpp_project_snapshot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_runtime_dependency_provisioning.py tests/test_cpp_baseline_execution.py
+
+  owned-project-integration:
+    needs: [contract-regressions]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nico
+          POSTGRES_PASSWORD: nico
+          POSTGRES_DB: nico
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U nico -d nico"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      NICO_TEST_DATABASE_URL: postgresql://nico:nico@127.0.0.1:5432/nico
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cppcheck-opensource/cppcheck
+          ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
+          path: toolchain/full-project/cppcheck
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install the native control dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Provision exact tools without assessed source or runtime network
+        run: |
+          set -euo pipefail
+          test "$(git -C toolchain/full-project/cppcheck rev-parse HEAD)" = ac9db3069b9f90e81e126a090b99ad456e122cf8
+          printf 'cppcheck/.git\n' > toolchain/full-project/.dockerignore
+          python -m pip download --disable-pip-version-check --only-binary=:all: --no-deps --platform manylinux2014_x86_64 --implementation py --abi none cmake==3.31.6 --dest toolchain/full-project
+          mv toolchain/full-project/cmake-3.31.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl toolchain/full-project/cmake.whl
+          echo '1c8b05df0602365da91ee6a3336fe57525b137706c4ab5675498f662ae1dbcec  toolchain/full-project/cmake.whl' | sha256sum -c -
+          curl --proto '=https' --tlsv1.2 --fail --retry 3 --retry-delay 2 --max-filesize 8388608 \
+            --output toolchain/full-project/pycapnp.whl \
+            https://files.pythonhosted.org/packages/f0/a6/eeb28ab162eed10340921aca24efe062d6bf7d9b98acc7a55c3b6900bf7a/pycapnp-2.2.1-cp311-cp311-manylinux_2_28_x86_64.whl
+          echo 'd682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec  toolchain/full-project/pycapnp.whl' | sha256sum -c -
+          python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
+          python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
+          python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
+          python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
+          cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
+          docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
+      - name: Retain the exact analyzer for bounded owned diagnostic reproduction
+        run: |
+          set -euo pipefail
+          mkdir -p cpp-analyzer-toolchain
+          cp full-project-image-id.txt cpp-analyzer-toolchain/image-config-digest.txt
+          printf '%s\n' ac9db3069b9f90e81e126a090b99ad456e122cf8 > cpp-analyzer-toolchain/source-commit.txt
+          container="$(docker create --network=none --read-only --entrypoint=/bin/true "$(cat full-project-image-id.txt)")"
+          trap 'docker rm --force "$container" >/dev/null' EXIT
+          # This container is never started and has no source, mounts or secrets.
+          docker cp "$container:/usr/local/bin/cppcheck" cpp-analyzer-toolchain/cppcheck
+          docker cp "$container:/opt/cppcheck/cfg" cpp-analyzer-toolchain/cfg
+          docker cp "$container:/opt/cppcheck/platforms" cpp-analyzer-toolchain/platforms
+          docker cp "$container:/opt/cppcheck/COPYING" cpp-analyzer-toolchain/COPYING
+          docker cp "$container:/opt/nico-cppcheck-repair.json" cpp-analyzer-toolchain/repair.json
+          test "$(find cpp-analyzer-toolchain -type l | wc -l)" -eq 0
+          test "$(du -sb cpp-analyzer-toolchain | cut -f1)" -le 67108864
+          test "$(stat -c %s cpp-analyzer-toolchain/cppcheck)" -le 33554432
+          (cd cpp-analyzer-toolchain && find . -type f -print0 | sort -z | xargs -0 sha256sum) > cpp-analyzer-toolchain-SHA256SUMS
+      - name: Exercise owned project through worker lease, receipt and report
+        run: python -m scripts.qualify_cpp_full_project_integration --generated-headers --bounded-fuzz --project-dependencies --project-compiler-options --image "$(cat full-project-image-id.txt)"
+      - name: Verify immutable generated-source snapshots on owned positive and negative controls
+        run: python -m scripts.qualify_cpp_project_generated_context --project-static-analysis --extended-compiler-budget --compiler-environment --image "$(cat full-project-image-id.txt)"
+      - name: Acquire pinned public qualification source without execution
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: bitcoin/bitcoin
+          ref: bb5296576e8f1a9fc11c19d9a25ba02ed4547e24
+          path: qualification-input
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Freeze the complete source and capture its isolated CMake configuration
+        run: >-
+          python -m scripts.qualify_cpp_project_configuration
+          --qualification-source qualification-input
+          --qualification-manifest tests/fixtures/cpp/bitcoin-configuration-benchmark.json
+          --output cpp-configuration-qualification
+          --image "$(cat full-project-image-id.txt)"
+      - name: Retain native success and failure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-project-integration-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            cpp-full-project-integration/
+            cpp-generated-context-qualification/
+            cpp-analyzer-toolchain/
+            cpp-analyzer-toolchain-SHA256SUMS
+            cpp-configuration-qualification/
+            full-project-image-id.txt
+            full-project-image.json
+            toolchain/full-project/llvm/receipt.json
+            toolchain/full-project/project-dependencies/receipt.json
+            toolchain/full-project/project-dependencies/lock.json
+            toolchain/full-project/capnp-source/receipt.json
+            toolchain/full-project/capnp-source/lock.json
+            toolchain/full-project/runtime-dependencies/lock.json
+            toolchain/full-project/runtime-dependencies/receipt.json
+            toolchain/full-project/runtime-dependencies/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  project-baseline-qualification:
+    needs: [owned-project-integration]
+    runs-on: ubuntu-24.04
+    # 7,800s baseline+runtime + 1,030s combined static + bounded setup/artifact margin.
+    timeout-minutes: 155
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cppcheck-opensource/cppcheck
+          ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
+          path: toolchain/full-project/cppcheck
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install the native control dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Provision exact tools without assessed source or runtime network
+        run: |
+          set -euo pipefail
+          test "$(git -C toolchain/full-project/cppcheck rev-parse HEAD)" = ac9db3069b9f90e81e126a090b99ad456e122cf8
+          printf 'cppcheck/.git\n' > toolchain/full-project/.dockerignore
+          python -m pip download --disable-pip-version-check --only-binary=:all: --no-deps --platform manylinux2014_x86_64 --implementation py --abi none cmake==3.31.6 --dest toolchain/full-project
+          mv toolchain/full-project/cmake-3.31.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl toolchain/full-project/cmake.whl
+          echo '1c8b05df0602365da91ee6a3336fe57525b137706c4ab5675498f662ae1dbcec  toolchain/full-project/cmake.whl' | sha256sum -c -
+          curl --proto '=https' --tlsv1.2 --fail --retry 3 --retry-delay 2 --max-filesize 8388608 \
+            --output toolchain/full-project/pycapnp.whl \
+            https://files.pythonhosted.org/packages/f0/a6/eeb28ab162eed10340921aca24efe062d6bf7d9b98acc7a55c3b6900bf7a/pycapnp-2.2.1-cp311-cp311-manylinux_2_28_x86_64.whl
+          echo 'd682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec  toolchain/full-project/pycapnp.whl' | sha256sum -c -
+          python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
+          python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
+          python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
+          python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
+          cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
+          docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
+      - name: Acquire pinned public qualification source without execution
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: bitcoin/bitcoin
+          ref: bb5296576e8f1a9fc11c19d9a25ba02ed4547e24
+          path: qualification-input
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Stage the pinned unit-test asset outside the assessed source
+        run: |
+          set -euo pipefail
+          mkdir -p qualification-unit-test-data
+          curl --location --fail --retry 3 --retry-delay 2 -o qualification-unit-test-data/script_assets_test.json \
+            https://github.com/bitcoin-core/qa-assets/raw/b33d85102d169b54d966ea315ad81a636680aefa/unit_test_data/script_assets_test.json
+          echo 'cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095  qualification-unit-test-data/script_assets_test.json' | sha256sum -c -
+          test "$(wc -c < qualification-unit-test-data/script_assets_test.json)" -eq 9243520
+      - name: Execute the complete frozen baseline build and discovered native tests
+        run: >-
+          python -m scripts.qualify_cpp_project_configuration
+          --qualification-source qualification-input
+          --qualification-manifest tests/fixtures/cpp/bitcoin-configuration-benchmark.json
+          --baseline-execution-contract tests/fixtures/cpp/bitcoin-baseline-execution.json
+          --runtime-scope-contract tests/fixtures/cpp/bitcoin-runtime-scope.json
+          --unit-test-data qualification-unit-test-data
+          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment
+          --output cpp-baseline-qualification
+          --image "$(cat full-project-image-id.txt)"
+      - name: Retain native success and failure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-baseline-qualification-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            cpp-baseline-qualification/
+            full-project-image-id.txt
+            full-project-image.json
+            toolchain/full-project/llvm/receipt.json
+            toolchain/full-project/project-dependencies/receipt.json
+            toolchain/full-project/project-dependencies/lock.json
+            toolchain/full-project/capnp-source/receipt.json
+            toolchain/full-project/capnp-source/lock.json
+            toolchain/full-project/runtime-dependencies/lock.json
+            toolchain/full-project/runtime-dependencies/receipt.json
+            toolchain/full-project/runtime-dependencies/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  llvm-toolchain-inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Verify the bounded upstream inventory reader
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pytest -q tests/test_cpp_llvm_toolchain_inventory.py
+      - name: Authenticate LLVM 17 package identities without installing tools
+        run: python -m scripts.cpp_llvm_toolchain_inventory
+      - name: Retain authenticated inventory or actual failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-llvm-inventory-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: llvm-toolchain-inventory/
+          if-no-files-found: error
+          retention-days: 30

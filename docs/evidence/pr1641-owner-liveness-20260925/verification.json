@@ -1,0 +1,79 @@
+{
+  "changes": {
+    "nico/assessment_cpp_configuration_probe.py": {
+      "blob": "364002d55c600b0a0f14fac40ccd36a7a053d2dc",
+      "sha256": "393c73529929aa7223f6b9594c3e70382c59aef3416d3ee1030b542a101a9c18"
+    },
+    "nico/assessment_cpp_configure_first_execution.py": {
+      "blob": "580db3990eff15eeb7334d519c04d57b896984b0",
+      "sha256": "f37c690f8dce8791b8353b2a89050d294e175d952c520b049550ae900793f17c"
+    },
+    "nico/assessment_worker_consumer.py": {
+      "blob": "7271aeafdd89e5b3c85bdd756dd8c78d3ef0906e",
+      "sha256": "0819381a116de10f9d0a43bef482140db283ab5f180000ecb8cf2ec01f2651af"
+    },
+    "tests/test_assessment_worker_consumer.py": {
+      "blob": "ee2913165eb694d538a1c1c883eb3737720ed9f9",
+      "sha256": "0919a4f2cf00038d53bb0842b24a415898e39ba3ff1f9be601d8fb177ed5dede"
+    },
+    "tests/test_cpp_configure_first_execution.py": {
+      "blob": "97fdebb6e69bb18e934b9fd61ace1a3a5b6e8905",
+      "sha256": "d52a13cd4a661e79af8cf8364d94b925eec65efb1cc7405dbc60a741b53f94a0"
+    },
+    "tests/test_cpp_project_static_stage.py": {
+      "blob": "a2294d2918fbe4962af51c83080a3a32c9ffdef6",
+      "sha256": "9bf0197e09668b456856d2b30f0674b21f266d3358b08947ea729b4c3b0656c6"
+    }
+  },
+  "independent_review_completed": false,
+  "logs": {
+    "heartbeat-green.log": "166928613f0ccac4080c379af527bd2abcc28082c6291fabed30fbf5101f5363",
+    "heartbeat-red.log": "e46e5c9ee7ccc7568099bc7476029fb005c75cfb1362fda00b985e2984313a89",
+    "ownership-green.log": "6194ceef8495c6dbd7d979eee84c7ba06f4ce69f7630768ca31a0ca44270aec6",
+    "ownership-red.log": "d68ed5e49e7b1f713c230ba7dfdd2bc1125890e808367618abe524581a076e2c"
+  },
+  "native_execution_performed": false,
+  "parent_sha": "1bae247a9729512a809e3ec20930ae067680f7db",
+  "parent_tree": "0cc831c0bbfa8499a995b7e47873155ca20b1866",
+  "preserved": [
+    "source/test/runtime populations",
+    "native commands",
+    "tool pins",
+    "resource limits",
+    "workflow concurrency",
+    "approval and delivery"
+  ],
+  "production_qualified": false,
+  "python": "3.13.5",
+  "red_green": {
+    "build_lease_cancellation_deadline": {
+      "green": 3,
+      "red": 3
+    },
+    "ownership_latch": {
+      "green": 1,
+      "red": 1
+    },
+    "static_owner_forwarding": {
+      "additional_passes": 2,
+      "independent_red_claimed": false
+    }
+  },
+  "schema": "nico.pr1641.owner-liveness-verification.v1",
+  "tests": {
+    "heartbeat-final": {
+      "cases": 178,
+      "failures": [
+        "tests.test_assessment_worker_consumer::test_transport_kills_and_reaps_blocking_credential_process"
+      ],
+      "log_sha256": "b46ac561b8dc596a346eb44da00a23fdcfa72fb3ece2042d80c41342cc86ba94",
+      "passed": 177
+    },
+    "heartbeat-focused": {
+      "cases": 148,
+      "failures": [],
+      "log_sha256": "4b693b5e313b98351865c4434ddbcc534f8c063d15f7b81932ea57774b9b9374",
+      "passed": 148
+    }
+  }
+}

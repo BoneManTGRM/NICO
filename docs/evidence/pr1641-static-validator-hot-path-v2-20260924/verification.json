@@ -1,0 +1,35 @@
+{
+  "schema": "nico.pr1641-static-validator-hot-path-v2",
+  "base": "74cfd03cf71af4fc082647aa963d130291d55668",
+  "bitcoin_run_id": 36069996332,
+  "bitcoin_job_id": 107871849128,
+  "qualification_artifact_id": 10839024837,
+  "qualification_artifact_zip_sha256": "41573c1a9afa71e8aa74014e49df990da0d2eee8d56ae89a1be3e4e276d4a624",
+  "primary_static_sha256": "da44104ef44287791b7c09b65991ca5d07ca0f7285a5a82cce9309f6b43461e8",
+  "canonical_result_sha256": "becb54cf03d1b59b04ffdd46c461779fdb558e3b3961e5a18c62e1f001210ea7",
+  "canonical_result_bytes": 135751540,
+  "before_seconds": 11.762002248,
+  "after_seconds": 3.707237132,
+  "populations": {
+    "required": 475,
+    "attempted": 475,
+    "analyzed": 419,
+    "findings": 31873,
+    "limitations": 579,
+    "modeled_inputs": 138106
+  },
+  "clang_fallback_selected_contexts": 56,
+  "clang_fallback_request_bytes": 557374,
+  "focused_tests": {
+    "group_one_passed": 155,
+    "group_two_passed": 20,
+    "failed": 0,
+    "errors": 0
+  },
+  "broader_local_aggregate": "timed_out_partial_not_credited",
+  "secret_patterns_changed": false,
+  "deadlines_changed": false,
+  "resources_changed": false,
+  "native_scope_changed": false,
+  "hosted_requalification_pending": true
+}

@@ -322,3 +322,39 @@ def test_documented_railway_deployment_id_is_retained_but_other_credentials_bloc
         manifest = build_manifest(tmp_path)
         assert manifest["security_gate"]["status"] == "blocked"
         assert manifest["tools"]["trufflehog"]["blocking"] == 1
+
+
+def test_gitleaks_accepts_only_exact_public_cppcheck_source_blob_evidence(tmp_path: Path) -> None:
+    _clean_evidence(tmp_path)
+    commit = "923d5b92254f73aa297bb1f00c9929236125853f"
+    path = "docs/evidence/pr1641-placement-ast-20260924/verification.json"
+    finding = {
+        "File": path,
+        "Commit": commit,
+        "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+        "Match": 'upstream_tokenlist_git_blob": "REDACTED"',
+        "Fingerprint": commit + ":" + path + ":generic-api-key:45",
+        "StartLine": 45, "EndLine": 45, "StartColumn": 5, "EndColumn": 76,
+    }
+    _write(tmp_path, "gitleaks.json", [finding])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+
+    manifest = build_manifest(tmp_path)
+    evidence = manifest["tools"]["gitleaks"]
+    assert manifest["security_gate"]["status"] == "passed"
+    assert evidence["blocking"] == 0
+    assert evidence["approved_public_source_hashes"] == 1
+    assert evidence["triage"][0]["disposition"] == "approved_public_source_hash"
+
+    for changed in (
+        {"Commit": "0" * 40},
+        {"File": "docs/evidence/other.json"},
+        {"StartLine": 46, "EndLine": 46},
+        {"Match": 'other_hash": "REDACTED"'},
+        {"Secret": "not-redacted"},
+    ):
+        _write(tmp_path, "gitleaks.json", [{**finding, **changed}])
+        blocked = build_manifest(tmp_path)
+        assert blocked["security_gate"]["status"] == "blocked"
+        assert blocked["tools"]["gitleaks"]["blocking"] == 1

@@ -1,0 +1,15 @@
+{
+  "schema":"nico.pr1641-clang-fallback-verification.v1",
+  "base":"357cce2e9f82835a7bb136263778b268286c5c54",
+  "required_contexts":475,
+  "primary_analyzed_contexts":419,
+  "fallback_selected_contexts":56,
+  "fallback_request_bytes":557374,
+  "tool":{"path":"/usr/lib/llvm-17/bin/clang","version":"17.0.6","already_pinned_in_image":true},
+  "limits":{"wall_seconds":180,"case_seconds":45,"parallel":4,"stream_bytes":33554432,"request_bytes":8388608},
+  "tests":{"fallback_specific_passed":7,"affected_selection_passed":228,"failures":0,"errors":0,"skips":0},
+  "hosted_native_fallback_qualified":false,
+  "independent_review":false,
+  "merged":false,
+  "production_qualified":false
+}

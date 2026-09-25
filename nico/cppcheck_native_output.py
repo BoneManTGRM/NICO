@@ -9,15 +9,19 @@ class NativeOutputRedactionRequired(ValueError):
     """Decoded native content is unsafe to retain as a redacted artifact."""
 
 
+
 def parse_native(native_xml: str, progress: str, targets: list[str], *, version: str | None = None,
-                 source_prefix: str = ''):
+                 source_prefix: str = '', document=None):
     if "<!DOCTYPE" in native_xml or "<!ENTITY" in native_xml:
         raise ValueError("cppcheck_xml_external_content_rejected")
-    document = ET.fromstring(native_xml)
-    from nico.scanner_tool_runners import redact_text
+    if document is None:
+        document = ET.fromstring(native_xml)
+    elif not isinstance(document, ET.Element):
+        raise ValueError("cppcheck_output_schema_invalid")
+    from nico.scanner_tool_runners import contains_sensitive_text
     for node in document.iter():
-        values = [node.tag, node.text or "", node.tail or "", *node.attrib.keys(), *node.attrib.values()]
-        if any(redact_text(value) != value for value in values):
+        values = (node.tag, node.text or "", node.tail or "", *node.attrib.keys(), *node.attrib.values())
+        if any(contains_sensitive_text(value) for value in values):
             raise NativeOutputRedactionRequired("cppcheck_native_redaction_required")
     tool = document.find("cppcheck")
     if (document.tag != "results" or document.get("version") != "2"
@@ -35,10 +39,21 @@ def parse_native(native_xml: str, progress: str, targets: list[str], *, version:
                 locations.append({"path": path, "line": line, "column": int(row.get("column") or 0)})
         rule = error.get("id") or ""
         limited = error.get("severity") == "information" or rule in {
-            "syntaxError", "internalError", "internalAstError", "cppcheckError", "preprocessorError", "unknownMacro",
+            "syntaxError", "internalError", "internalAstError", "cppcheckError", "preprocessorError", "preprocessorErrorDirective", "unknownMacro", "checkersReport",
         }
         if limited or not locations:
-            limitations.append({"rule_id": rule, "message": error.get("msg") or "", "locations": locations})
+            message = error.get("msg") or ""
+            limitations.append({"rule_id": rule, "message": message, "locations": locations})
+            if rule == "checkersReport":
+                # The same native rule reports both inventory and critical
+                # preprocessing failure. Preserve its exact ID/message and add
+                # an adapter limitation when checker execution is unproved.
+                match = re.fullmatch(r"Active checkers: ([0-9]{1,8})/([0-9]{1,8}) "
+                    r"\(use --checkers-report=<filename> to see details\)", message)
+                if (error.get("severity") != "information" or match is None
+                        or not 0 < int(match[1]) <= int(match[2])):
+                    limitations.append({"rule_id": "native_checkers_unproven",
+                        "native_rule_id": rule, "message": message, "locations": locations})
             continue
         severity = {"error": "high", "warning": "medium", "style": "low", "performance": "low", "portability": "low"}.get(error.get("severity"), "unknown")
         findings.append({"rule_id": rule, **locations[0], "locations": locations,

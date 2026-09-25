@@ -201,6 +201,50 @@ def _summary_tool(root: Path, summary_name: str) -> dict[str, Any]:
     )
 
 
+def _known_public_signing_fingerprint(finding: dict[str, Any]) -> bool:
+    """Disposition one reviewed immutable observation, never a class of keys.
+
+    Native artifact 10731003280 identifies this exact line in commit 684e5af5.
+    That line contains LLVM's PUBLIC signing-key fingerprint, independently
+    published at https://apt.llvm.org/#install (6084 F3CF ... AF4F 7421).
+    The scanner redacts its value, so require the immutable source locator and
+    complete matching context. New commits/paths/rules/values still block.
+    """
+    commit = '684e5af5074c6e1c0cf4b67fa263b0d79b8beabf'
+    path = 'docker/assessment-llvm17.lock.json'
+    expected = {
+        'File': path, 'Commit': commit, 'RuleID': 'generic-api-key',
+        'Secret': 'REDACTED', 'Match': 'llvm_signing_key_fingerprint": "REDACTED"',
+        'Fingerprint': commit + ':' + path + ':generic-api-key:5',
+        'StartLine': 5, 'EndLine': 5, 'StartColumn': 5, 'EndColumn': 77,
+    }
+    return (all(type(finding.get(key)) is type(value) and finding[key] == value
+                for key, value in expected.items())
+            and finding.get('Verified', False) is False)
+
+
+def _known_public_cppcheck_source_blob(finding: dict[str, Any]) -> bool:
+    """Disposition one public upstream Git blob SHA recorded as evidence.
+
+    Security audit artifact 10832023290 identifies the exact redacted Gitleaks
+    observation created by PR1641 commit 923d5b92. The value is the public
+    Git blob identity for Cppcheck's pinned tokenlist.cpp source, not a secret.
+    Require the full immutable source locator so no adjacent hash-like value
+    or future observation is approved by class.
+    """
+    commit = '923d5b92254f73aa297bb1f00c9929236125853f'
+    path = 'docs/evidence/pr1641-placement-ast-20260924/verification.json'
+    expected = {
+        'File': path, 'Commit': commit, 'RuleID': 'generic-api-key',
+        'Secret': 'REDACTED', 'Match': 'upstream_tokenlist_git_blob": "REDACTED"',
+        'Fingerprint': commit + ':' + path + ':generic-api-key:45',
+        'StartLine': 45, 'EndLine': 45, 'StartColumn': 5, 'EndColumn': 76,
+    }
+    return (all(type(finding.get(key)) is type(value) and finding[key] == value
+                for key, value in expected.items())
+            and finding.get('Verified', False) is False)
+
+
 def _gitleaks(root: Path) -> dict[str, Any]:
     data, error = _read_json(root, "gitleaks.json")
     summary, summary_error = _read_json(root, "gitleaks-summary.json")
@@ -222,6 +266,8 @@ def _gitleaks(root: Path) -> dict[str, Any]:
     blocking = 0
     approved_test_placeholders = 0
     approved_public_verifiers = 0
+    approved_public_signing_fingerprints = 0
+    approved_public_source_hashes = 0
     triage: list[dict[str, Any]] = []
     for finding in data:
         if not isinstance(finding, dict):
@@ -250,6 +296,12 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         elif approved_public_verifier:
             approved_public_verifiers += 1
             disposition = "approved_public_verifier_digest"
+        elif _known_public_signing_fingerprint(finding):
+            approved_public_signing_fingerprints += 1
+            disposition = "approved_public_signing_fingerprint"
+        elif _known_public_cppcheck_source_blob(finding):
+            approved_public_source_hashes += 1
+            disposition = "approved_public_source_hash"
         else:
             blocking += 1
             disposition = "blocking"
@@ -271,6 +323,10 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         needs_review=0,
         approved_test_placeholders=approved_test_placeholders,
         approved_public_verifiers=approved_public_verifiers,
+        **({'approved_public_signing_fingerprints': approved_public_signing_fingerprints}
+           if approved_public_signing_fingerprints else {}),
+        **({'approved_public_source_hashes': approved_public_source_hashes}
+           if approved_public_source_hashes else {}),
         triage=triage[:200],
         summary_artifact_hash=_digest(root, "gitleaks-summary.json"),
     )
@@ -393,6 +449,8 @@ def _trufflehog(root: Path) -> dict[str, Any]:
                 "6d4640b92e987e8f4f2165f9aeff775cff9de58ffcc1f7f43d5e95035ca04395",
                 "2b28038ac24e811f5f664df493ecd9296b09c7917b51a54974bcb5cbcfb5ddce",
                 "6fca1bec657f5f87061bb05e4f689a3f669c66ddd8d93f1bdb90da530db2e452",
+                "ef9eb96c9686e4314a4a0dfed94e8c026ca73e7e350895ac129ce57164da3d10",
+                "ab6604b5617b61f4670629e75f542f1d93c433174affb467e76d73a5eda1d642",
             }
         ):
             # Artifact10589039830 and authenticated Railway deployment metadata
@@ -412,6 +470,11 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             # the last digest as the SUCCESS d5b3de33 serving deployment ID.
             # Artifact10697678746 and native Railway metadata establish the
             # added digest as the SUCCESS 065baca8 serving deployment ID.
+            # PR1641 artifact10717384136 and authenticated Railway metadata
+            # identify the added digest as the replaced initial d5b3de33 deployment.
+            # Its REMOVED status does not make the deployment ID a credential.
+            # PR1641 artifact10780830520 and authenticated Railway metadata
+            # identify the final digest as the SUCCESS faaa10b0 deployment ID.
             disposition = "approved_nonsecret_deployment_identifier"
             approved_nonsecret_identifiers += 1
         elif (

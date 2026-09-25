@@ -6,6 +6,7 @@ import pytest
 
 from nico.scanner_tool_runners import (
     ScannerToolSpec,
+    contains_sensitive_text,
     parse_tool_findings,
     prepare_project_commands,
     redact_payload,
@@ -28,6 +29,19 @@ def test_redact_text_masks_common_secret_shapes():
     assert password_value not in redacted
     assert "[REDACTED]" in redacted
 
+
+def test_sensitive_detection_matches_redaction_change_without_allocating_replacement_contract():
+    secrets = [
+        "ghp_" + "x" * 36,
+        "github_pat_" + "y" * 30,
+        "AKIA" + "A" * 16,
+        "-----BEGIN PRIVATE KEY-----owned-----END PRIVATE KEY-----",
+        "api_key = " + "z" * 20,
+        "ToKeN: " + "q" * 20,
+        "PaSsWoRd = " + "r" * 20,
+    ]
+    for value in [*secrets, "ordinary diagnostic text", "[REDACTED]"]:
+        assert contains_sensitive_text(value) is (redact_text(value) != value)
 
 def test_redact_payload_recurses_through_dicts_and_lists():
     api_value = "1234" + "567890" + "abcdef"

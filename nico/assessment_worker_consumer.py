@@ -7,6 +7,8 @@ checks out or executes repository commands, and does not activate intake.
 from __future__ import annotations
 
 from copy import deepcopy
+import base64
+import gzip
 import hashlib
 import json
 import math
@@ -25,6 +27,8 @@ from nico.assessment_worker_jobs import JobIdentity, _digest
 from nico.assessment_worker_receipts import canonical_bytes, validate_contract, validate_receipt
 
 TRANSPORT_SECONDS = 12
+ARTIFACT_TRANSPORT_SECONDS = 30
+MAX_ARTIFACT_REQUEST_BYTES = 12 * 1024 * 1024
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
 
@@ -74,7 +78,8 @@ class WorkerTransport:
         self.session.trust_env = False
 
     def post(self, operation, payload, *, deadline=None):
-        limit = time.monotonic() + TRANSPORT_SECONDS
+        seconds = ARTIFACT_TRANSPORT_SECONDS if operation == "artifact" else TRANSPORT_SECONDS
+        limit = time.monotonic() + seconds
         if deadline is not None:
             limit = min(limit, deadline)
         if time.monotonic() >= limit:
@@ -112,11 +117,35 @@ class WorkerTransport:
                     process.join(1)
                     process.close()
 
+    def put_artifact(self, lease_id, key, raw):
+        if (not isinstance(lease_id, str) or re.fullmatch(r"[0-9a-f]{32}", lease_id) is None
+                or key not in {"project-compilation-database", "project-generated-context", "project-compiler-evidence",
+                    "project-static-environment", "project-static-evidence", "project-static-clang-fallback", "project-runtime-evidence"}
+                or not isinstance(raw, bytes) or not 1 <= len(raw) <= 64 * 1024 * 1024):
+            raise ValueError("worker_artifact_request_invalid")
+        compressed = gzip.compress(raw, compresslevel=9, mtime=0)
+        if len(compressed) > 8 * 1024 * 1024:
+            raise ValueError("worker_artifact_compressed_limit")
+        artifact = {"key": key, "raw_sha256": hashlib.sha256(raw).hexdigest(), "raw_bytes": len(raw),
+            "gzip_sha256": hashlib.sha256(compressed).hexdigest(), "gzip_bytes": len(compressed),
+            "compressed": base64.b64encode(compressed).decode("ascii")}
+        response = self.post("artifact", {"lease_id": lease_id, "artifact": artifact})
+        reference = response.get("artifact") if isinstance(response, dict) else None
+        expected = {"key": key, "sha256": artifact["raw_sha256"], "gzip_sha256": artifact["gzip_sha256"],
+                    "retained_bytes": len(raw), "gzip_bytes": len(compressed), "storage_backend": "postgres"}
+        if (not isinstance(reference, dict) or any(reference.get(k) != v for k, v in expected.items())
+                or not isinstance(reference.get("artifact_id"), str)
+                or not reference["artifact_id"].startswith("scanartifact_")):
+            raise ValueError("worker_artifact_reference_invalid")
+        return reference
+
     def _post_inline(self, operation, payload):
-        if operation not in {"claim", "heartbeat", "receipt", "fail"} or not isinstance(payload, dict):
+        if operation not in {"claim", "heartbeat", "receipt", "artifact", "fail"} or not isinstance(payload, dict):
             raise ValueError("worker_operation_invalid")
         body = canonical_bytes(payload)
-        if len(body) > (8 * 1024 * 1024 if operation == "receipt" else 4096):
+        maximum = (MAX_ARTIFACT_REQUEST_BYTES if operation == "artifact" else
+                   8 * 1024 * 1024 if operation == "receipt" else 4096)
+        if len(body) > maximum:
             raise ValueError("worker_request_size_invalid")
         token = self.token_provider()
         if not isinstance(token, str) or not token or len(token) > 16384 or any(c.isspace() for c in token):
@@ -124,7 +153,7 @@ class WorkerTransport:
         arguments = {"data": body, "headers": {"Authorization": "Bearer " + token,
             "Content-Type": "application/json", "Accept": "application/json"},
             "allow_redirects": False, "stream": True, "timeout": (2, 5)}
-        deadline = time.monotonic() + TRANSPORT_SECONDS
+        deadline = time.monotonic() + (ARTIFACT_TRANSPORT_SECONDS if operation == "artifact" else TRANSPORT_SECONDS)
         # Lost claim/receipt response: retain exactly the same token, body and
         # nonce for one transport retry. HTTP refusals are never retried.
         for attempt in range(2):
@@ -197,7 +226,9 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
         destination = root / "source"
         evidence = materialize_exact_git_inputs(git_dir=git_dir, commit_sha=job["identity"]["revision"],
             expected_tree_sha=expected_tree_sha, inputs=job["contract"]["targets"], destination=destination,
-            max_files=20000, max_file_bytes=16 * 1024 * 1024, max_total_bytes=16 * 1024 * 1024,
+            max_files=20000, max_file_bytes=16 * 1024 * 1024,
+            max_total_bytes=(job['contract']['configuration']['source_byte_limit']
+                if job['contract']['profile'] == 'cpp-full-project-v1' else 16 * 1024 * 1024),
             timeout_seconds=min(300, remaining), checkpoint=checkpoint)
         return destination, evidence
     return acquire
@@ -205,8 +236,16 @@ def local_git_inputs(git_dir: Path, expected_tree_sha: str):
 
 def _receipt(job, result, *, acquisition=None):
     native = result.get("native")
+    targets = job["contract"]["targets"]
     schema = "nico.worker-native-receipt.v1"
-    if job['contract']['profile'] == 'cpp-runtime-cases-v1':
+    if job['contract']['profile'] == 'cpp-configure-first-v2':
+        schema = 'nico.worker-native-receipt.v7'
+        targets = result.get("derived_targets")
+        if not isinstance(targets, dict) or not targets:
+            raise ValueError("worker_configure_first_population_missing")
+    elif job['contract']['profile'] == 'cpp-full-project-v1':
+        schema = 'nico.worker-native-receipt.v6'
+    elif job['contract']['profile'] == 'cpp-runtime-cases-v1':
         schema = 'nico.worker-native-receipt.v5'
     elif job['contract']['profile'] == 'cpp-sanitized-v1':
         schema = 'nico.worker-native-receipt.v4'
@@ -221,8 +260,17 @@ def _receipt(job, result, *, acquisition=None):
     receipt = {"schema": schema, "identity": job["identity"], "lease_id": job["lease_id"],
         "worker_id": job["worker_id"], "image_digest": plan["image_digest"],
         "tool_version": plan["tool_version"], "configuration_sha256": _digest(plan["configuration"]),
-        "target_hashes": plan["targets"], "native": native, "native_sha256": _digest(native)}
-    if isinstance(acquisition, dict) and acquisition.get('schema') == 'nico.github_https_input_materialization.v1':
+        "target_hashes": targets, "native": native, "native_sha256": _digest(native)}
+    if isinstance(acquisition, dict) and acquisition.get('schema') == 'nico.github_https_tree_materialization.v2':
+        excluded=acquisition.get('excluded_entries') or []
+        receipt['provisioning']={'schema':'nico.worker-provisioning.v2','source_method':acquisition['schema'],
+            'commit_sha':acquisition['commit_sha'],'tree_sha':acquisition['tree_sha'],
+            'population_sha256':acquisition['population_sha256'],'required_count':acquisition['required_count'],
+            'materialized_count':acquisition['materialized_count'],'source_bytes':acquisition['source_bytes'],
+            'freeze_point':acquisition['freeze_point'],'excluded_count':len(excluded),
+            'excluded_sha256':hashlib.sha256(canonical_bytes(excluded)).hexdigest(),
+            'image_manifest':acquisition['image_manifest'],'image_config_id':acquisition['image_config_id']}
+    elif isinstance(acquisition, dict) and acquisition.get('schema') == 'nico.github_https_input_materialization.v1':
         receipt['provisioning'] = {key: acquisition[key] for key in (
             'commit_sha', 'tree_sha', 'population_sha256', 'required_count', 'materialized_count',
             'source_bytes', 'image_manifest', 'image_config_id')}
@@ -230,7 +278,7 @@ def _receipt(job, result, *, acquisition=None):
     return receipt
 
 
-def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck):
+def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck, configure_execute=None):
     job = validate_claim(transport.post("claim", {}), job_id=transport.job_id,
                          release_revision=transport.release_revision)
     identity = JobIdentity(**job["identity"])
@@ -244,6 +292,8 @@ def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck):
 
     def checkpoint(force=False):
         nonlocal next_heartbeat, lease_deadline, owned
+        if not owned:
+            raise ValueError("worker_local_ownership_lost")
         now = time.monotonic()
         if now >= deadline:
             owned = False
@@ -269,10 +319,24 @@ def consume_one_job(transport, *, acquire, execute=run_isolated_cppcheck):
             checkpoint()
             source, acquisition = acquire(deepcopy(job), Path(temporary), checkpoint)
             checkpoint()
-            remaining = int(min(300, deadline - time.monotonic() - 2))
+            configure_first = job["contract"]["profile"] == "cpp-configure-first-v2"
+            if configure_first:
+                from nico.assessment_cpp_configure_first_execution import execution_timeout_limit
+                execution_cap = execution_timeout_limit(job["contract"])
+            else:
+                execution_cap = 300
+            remaining = int(min(execution_cap, deadline - time.monotonic() - 2))
             if remaining < 1:
                 raise ValueError("worker_local_deadline")
-            result = execute(job["contract"], source, checkpoint=checkpoint, timeout_seconds=remaining)
+            if configure_first:
+                if configure_execute is None:
+                    from nico.assessment_cpp_configure_first_execution import run_configure_first
+                    configure_execute = run_configure_first
+                result = configure_execute(job["contract"], source, acquisition,
+                    checkpoint=checkpoint, timeout_seconds=remaining,
+                    retain_artifact=lambda key, raw: transport.put_artifact(job["lease_id"], key, raw))
+            else:
+                result = execute(job["contract"], source, checkpoint=checkpoint, timeout_seconds=remaining)
             checkpoint(force=True)
             receipt = _receipt(job, result, acquisition=acquisition)
             raw, record, _ = validate_receipt(identity, job["contract"], job["lease_id"], job["worker_id"], receipt)

@@ -58,6 +58,18 @@ COPY_ES = {
 }
 
 
+# Canonical C/C++ execution labels use the existing presentation-copy registry.
+COPY_ES.update({
+    "Sanitizer flags are verified in configuration; independent binary instrumentation is not established.": "Las opciones de sanitización se verifican en la configuración; la instrumentación binaria independiente no está establecida.",
+    "Header inclusion coverage has not been established.": "La cobertura de inclusión de encabezados no está establecida.",
+    "Compilation database membership is not measured compiler execution coverage.": "La pertenencia a la base de datos de compilación no es una medición de cobertura de ejecución del compilador.",
+    "Dependencies must be present in the pinned image or captured source; no runtime downloads.": "Las dependencias deben estar en la imagen fijada o en el código capturado; no se permiten descargas durante la ejecución.",
+    "Bounded libFuzzer execution is not implemented by this profile revision.": "Esta revisión del perfil no implementa la ejecución acotada de libFuzzer.",
+    "Build/test/sanitizer evidence is not an independent security finding or human approval.": "La evidencia de compilación, pruebas y sanitizadores no es un hallazgo de seguridad independiente ni una aprobación humana.",
+    "Owned integration proof only; not a production assessment.": "Prueba de integración con código propio; no es una evaluación de producción."
+})
+
+
 def _messages(profile: Mapping[str, Any]) -> list[str] | None:
     value = profile.get("unavailable_item_notes")
     return list(value) if isinstance(value, list) and all(isinstance(v, str) for v in value) else None

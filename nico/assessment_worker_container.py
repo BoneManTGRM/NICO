@@ -18,6 +18,8 @@ import subprocess
 import time
 from uuid import uuid4
 
+from nico.assessment_worker_capacity_v1 import docker_resource_args
+
 
 def _native_result(xml, stdout, stderr, *, exit_code, timed_out, output_truncated, duration_ms, invocation):
     """Preserve original bounded bytes even when canonical text cannot be parsed."""
@@ -207,6 +209,9 @@ def run_isolated_cppcheck(contract, source: Path, *, checkpoint, timeout_seconds
     """Use one preprovisioned image by digest; cancellation always removes it."""
     from nico.assessment_worker_receipts import validate_contract
     contract = validate_contract(contract)
+    if contract['profile'] == 'cpp-full-project-v1':
+        from nico.assessment_cpp_full_project_execution import run_full_project
+        return run_full_project(contract, source, checkpoint=checkpoint, timeout_seconds=timeout_seconds)
     if contract['profile'] in {'cpp-configured-v1', 'cpp-sanitized-v1', 'cpp-runtime-cases-v1'}:
         from nico.assessment_cpp_execution import run_configured
         return run_configured(contract, source, checkpoint=checkpoint, timeout_seconds=timeout_seconds)
@@ -249,8 +254,8 @@ def run_isolated_cppcheck(contract, source: Path, *, checkpoint, timeout_seconds
     try:
         _command(["docker", "create", "--name", name, "--interactive", "--network=none",
             "--read-only", "--user=1000:1000", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-            "--cpus=0.5", "--memory=256m", "--memory-swap=256m", "--pids-limit=32",
-            "--tmpfs=/work:rw,nosuid,nodev,size=33554432,mode=1777", "--log-driver=none",
+            *docker_resource_args(contract["profile"]),
+            "--log-driver=none",
             "--entrypoint=python", image, "-I", "-S", "-c", PROGRAM], checkpoint=checkpoint)
         output = _command(["docker", "start", "--attach", "--interactive", name], checkpoint=checkpoint,
             input_bytes=data, timeout=timeout_seconds+10, limit=contract['max_receipt_bytes'])

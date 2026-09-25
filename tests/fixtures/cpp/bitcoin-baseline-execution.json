@@ -1,0 +1,9 @@
+{
+  "schema": "nico.cpp-baseline-execution.v1",
+  "profile": "cpp-baseline-qualification-v1",
+  "compilation_database_sha256": "fc89aa69b2a369417cbff01d2784225bd23547827b1f7fd946669f919526aa1b",
+  "build_seconds": 1200,
+  "test_seconds": 720,
+  "test_case_seconds": 180,
+  "parallel": 4
+}

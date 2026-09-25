@@ -1,0 +1,87 @@
+{
+  "schema": "nico.cppcheck-placement-repair-verification.v1",
+  "base": "cf07a31d2c67470b605d618c3c324b42b7a95704",
+  "base_tree": "3550616e8dffdbf0cba591190d472bdd76efe816",
+  "status": "LOCAL_CONTRACT_VERIFIED_NATIVE_REPAIR_PENDING",
+  "files": [
+    {
+      "path": "scripts/repair_cppcheck_placement_ast.py",
+      "bytes": 3800,
+      "sha256": "b7766109bc264cdaf5a2be254c71a98595929637235fc490cb44ea633d771c2f",
+      "git_blob": "849fa3d099845974cad15badd2ba524ed4503a2e"
+    },
+    {
+      "path": "scripts/qualify_cpp_project_generated_context.py",
+      "bytes": 12279,
+      "sha256": "b7f8f08858d32428974ddbf9617ef5c5beb0eed058383c6ce594596468b2ed4d",
+      "git_blob": "3d20fc60bb35939f843099f292ec1ec0e7955ef7"
+    },
+    {
+      "path": "tests/test_cpp_placement_tool_repair.py",
+      "bytes": 4583,
+      "sha256": "b5fa71b177ba4d6215af154db8e70c6514b4847b566a58bd14a0e4271a1f3634",
+      "git_blob": "86f2189ac2282c4c2e040a178b31d52edb1c35da"
+    },
+    {
+      "path": "docker/assessment-full-project-fuzz.Dockerfile",
+      "bytes": 3658,
+      "sha256": "42e1c5878adfb8b5166d0dfcc65053c31e5901cc558a69697e55dfb915bd95ec",
+      "git_blob": "4c2c137324a5c94e44324b29407070583cc592b5"
+    },
+    {
+      "path": ".github/workflows/cpp-full-project-integration.yml",
+      "bytes": 16016,
+      "sha256": "8d508d7a566b9573a06c5ef55a8cedc93bdb5a5df3fb2505500aaf36eccc5737",
+      "git_blob": "97d05a1e85f9cc7bfb93f09960a1bf506d0fc2ff"
+    },
+    {
+      "path": "NICO-Ship-Checkpoint.md",
+      "bytes": 8837,
+      "sha256": "02d6f46b0758be83a0f96669ca5073ea1ea85d7c69abdba79c92f17034afb02e",
+      "git_blob": "12eb51a06c8987ea053e251e97265e37055ae12b"
+    }
+  ],
+  "upstream_commit": "ac9db3069b9f90e81e126a090b99ad456e122cf8",
+  "upstream_tokenlist_git_blob": "b9c3ab07f0436ada75da5f45c7f8c3f3e06a8608",
+  "tdd": {
+    "boundary_red_failures": 8,
+    "boundary_green_passes": 8,
+    "native_red": "GCC accepts placement.cpp; pinned Cppcheck emits internalError and critical checker report",
+    "patched_native_green": null
+  },
+  "distinct_local_tests": 292,
+  "groups": [
+    {
+      "name": "placement-affected",
+      "count": 226,
+      "exit_code": 0,
+      "log_sha256": "6d49f42607205238d2956bfbaeb1eba9bd7ea7ed53dab1b43791d53cb468ab00",
+      "junit_sha256": "98249c3ee6b9ede4315cd1b5fee6f748dc43daac116f830ce4963b10ae4c6c32"
+    },
+    {
+      "name": "placement-build-regression",
+      "count": 66,
+      "exit_code": 0,
+      "log_sha256": "d6f1a308987f756589dd75250d4ca2259521664c76e2d02658cf908e21fe6965",
+      "junit_sha256": "fadabfe31f48541b467c40819e9c6ac508884c692fcc40c0f486015bf56a174a"
+    }
+  ],
+  "case_membership_sha256": "2234a7c0cf9b459baf47832c391f83349d3228ff091616f97fec0794038eabf0",
+  "full_workflow_collected_cases": 949,
+  "full_workflow_test_files": 36,
+  "complete_workflow_local_pass": false,
+  "python_version": "3.13.5",
+  "hosted_python_version": "3.11",
+  "independent_review": false,
+  "production_report": null,
+  "not_claimed": [
+    "patched native analyzer success",
+    "Bitcoin qualification",
+    "complete full-suite execution",
+    "independent review",
+    "merge",
+    "deployment",
+    "production assessment",
+    "human approval"
+  ]
+}

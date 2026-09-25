@@ -14,7 +14,7 @@ from nico.assessment_worker_launch import image_reference, provision_image
 from scripts.promote_cpp_worker_image import DESTINATION, _read, _receipt, publish_image
 
 REPOSITORY = 'BoneManTGRM/NICO'
-BRANCH = 'refs/heads/feat/large-repository-cpp-comprehensive'
+BRANCH = 'refs/heads/feat/cpp-full-project-capacity'
 WORKFLOW = REPOSITORY + '/.github/workflows/cpp-worker-boundary-qualification.yml@' + BRANCH
 RETRIEVAL_WORKFLOW = REPOSITORY + '/.github/workflows/cpp-worker-image-retrieval.yml@' + BRANCH
 SAFE_ERRORS = {'image_release_clean_daemon_required', 'worker_container_control_failed',

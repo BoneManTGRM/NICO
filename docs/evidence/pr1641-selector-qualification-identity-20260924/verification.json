@@ -1,0 +1,11 @@
+{
+  "schema": "nico.pr1641-selector-qualification-identity.v1",
+  "base": "fae885e580b5fac3af69cf0267a7bb3b8d507110",
+  "required_release_owned_fields": [
+    "NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_RUN_ID",
+    "NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_ARTIFACT_SHA256"
+  ],
+  "flags_alone_sufficient": false,
+  "public_input_allowed": false,
+  "qualification_promoted": false
+}

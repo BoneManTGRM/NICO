@@ -1,0 +1,87 @@
+{
+  "packages": [
+    {
+      "architecture": "amd64",
+      "bytes": 9507888,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libboost1.74-dev/download",
+      "package": "libboost1.74-dev",
+      "sha256": "ba14fe04d7f138f874bd3ab3a20c4fd1e9f654e271449b8f3e48d20f942dbb93",
+      "url": "https://deb.debian.org/debian/pool/main/b/boost1.74/libboost1.74-dev_1.74.0+ds1-21_amd64.deb",
+      "version": "1.74.0+ds1-21"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 181168,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libevent-2.1-7/download",
+      "package": "libevent-2.1-7",
+      "sha256": "95a025ae2548aed9dbb0f0a0215b0483b7fa43db1d4f1f318f013f2ea84987c3",
+      "url": "https://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-2.1-7_2.1.12-stable-8+deb12u1_amd64.deb",
+      "version": "2.1.12-stable-8+deb12u1"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 131276,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libevent-core-2.1-7/download",
+      "package": "libevent-core-2.1-7",
+      "sha256": "464ace3714faa77e3a6e2beada29481a0e28a48f9db032d6fc8b6f7b6073bb01",
+      "url": "https://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-core-2.1-7_2.1.12-stable-8+deb12u1_amd64.deb",
+      "version": "2.1.12-stable-8+deb12u1"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 305484,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libevent-dev/download",
+      "package": "libevent-dev",
+      "sha256": "bb4db135ce5b99e25e0d960cd17b3f25bb80329ef7453090627ea93542b74e7d",
+      "url": "https://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-dev_2.1.12-stable-8+deb12u1_amd64.deb",
+      "version": "2.1.12-stable-8+deb12u1"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 107668,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libevent-extra-2.1-7/download",
+      "package": "libevent-extra-2.1-7",
+      "sha256": "46fa2556794ba205827b8b1b6da527a22e29656f15b5114366dc224c7494913b",
+      "url": "https://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-extra-2.1-7_2.1.12-stable-8+deb12u1_amd64.deb",
+      "version": "2.1.12-stable-8+deb12u1"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 60780,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libevent-openssl-2.1-7/download",
+      "package": "libevent-openssl-2.1-7",
+      "sha256": "2da7cae6253ba436c28dec0b03f9fe252213bc1ac288c04a1d528298b177808c",
+      "url": "https://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-openssl-2.1-7_2.1.12-stable-8+deb12u1_amd64.deb",
+      "version": "2.1.12-stable-8+deb12u1"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 53764,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libevent-pthreads-2.1-7/download",
+      "package": "libevent-pthreads-2.1-7",
+      "sha256": "cbc0ed5896ce969333bd6c998cf902bfd6d8eb8e8590561b3e155bea7864204b",
+      "url": "https://security.debian.org/debian-security/pool/updates/main/libe/libevent/libevent-pthreads-2.1-7_2.1.12-stable-8+deb12u1_amd64.deb",
+      "version": "2.1.12-stable-8+deb12u1"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 838808,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libsqlite3-0/download",
+      "package": "libsqlite3-0",
+      "sha256": "a8d78b40e9b4e422224aeebfe0e4dfc243f6acf3532490b0c05480d4283d41e2",
+      "url": "https://deb.debian.org/debian/pool/main/s/sqlite3/libsqlite3-0_3.40.1-2+deb12u2_amd64.deb",
+      "version": "3.40.1-2+deb12u2"
+    },
+    {
+      "architecture": "amd64",
+      "bytes": 1025140,
+      "metadata_url": "https://packages.debian.org/bookworm/amd64/libsqlite3-dev/download",
+      "package": "libsqlite3-dev",
+      "sha256": "afb550eb103e717000a2c7adae2e06e3eebd2952bf7d243ae2f1ca8594307563",
+      "url": "https://deb.debian.org/debian/pool/main/s/sqlite3/libsqlite3-dev_3.40.1-2+deb12u2_amd64.deb",
+      "version": "3.40.1-2+deb12u2"
+    }
+  ],
+  "provenance": "Debian bookworm amd64 package download metadata; retrieved 2026-09-23. Pinned input hashes, not a vulnerability-free or installed-runtime claim. Libevent security-update packages use the official Debian security repository. Version 1 retains its original three-package population.",
+  "schema": "nico.cpp-project-dependencies.v2"
+}

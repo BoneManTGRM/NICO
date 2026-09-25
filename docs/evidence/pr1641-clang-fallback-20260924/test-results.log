@@ -1,0 +1,4 @@
+fallback-specific: 7 passed
+affected selection: 228 passed, 0 failed, 0 errors, 0 skipped
+retained Bitcoin fallback selection: 56/475 contexts; request bytes 557374
+hosted native qualification: pending
