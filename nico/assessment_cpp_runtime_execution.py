@@ -141,9 +141,19 @@ def _base_options(project_options):
 def execute_runtime_plan(observe, container, plan, project_options):
     if (not callable(observe) or not isinstance(container,str) or not container
             or not isinstance(plan,dict) or plan.get('schema')!='nico.cpp-runtime-plan.v1'
-            or not isinstance(project_options,dict)):
+            or plan.get('total_seconds')!=6000 or not isinstance(project_options,dict)):
         raise ValueError('worker_runtime_execution_contract_invalid')
     start=time.monotonic()
+    deadline=start+plan['total_seconds']
+    transport=observe
+    def bounded_observe(key,argv,**kwargs):
+        left=deadline-time.monotonic()
+        if left<=0:
+            raise ValueError('worker_runtime_deadline')
+        requested=kwargs.get('seconds',15)
+        kwargs['seconds']=max(0.001,min(requested,left))
+        return transport(key,argv,**kwargs)
+    observe=bounded_observe
     evidence={'schema':'nico.cpp-runtime-evidence.v1','plan_sha256':_digest(plan),
         'functional':None,'sanitizers':[],'fuzz':None,'complete':False,'error':None,'duration_ms':0}
     try:
@@ -180,6 +190,8 @@ def execute_runtime_plan(observe, container, plan, project_options):
             log=directory+'/nico-runtime-ctest.log'; junit=directory+'/nico-runtime-junit.xml'
             env=({'ASAN_OPTIONS':'detect_leaks=0:halt_on_error=1'} if kind=='address'
                 else {'UBSAN_OPTIONS':'halt_on_error=1'})
+            if plan.get('unit_test_data') is not None:
+                env['DIR_UNIT_TEST_DATA']='/work/unit_test_data'
             test_argv=['python3','-I','-S','-c',LOG_EXEC_PROGRAM,log,'ctest','--test-dir',directory,
                 '--parallel',str(plan['sanitizers']['parallel']),'--timeout',
                 str(plan['sanitizers']['test_case_seconds']),'--output-on-failure','--output-junit',junit]
@@ -234,11 +246,12 @@ def execute_runtime_plan(observe, container, plan, project_options):
     return evidence
 
 
-def validate_runtime_evidence(evidence, plan):
+def validate_runtime_evidence(evidence, plan, *, project_options=None):
     if (not isinstance(evidence,dict) or set(evidence)!={'schema','plan_sha256','functional','sanitizers','fuzz','complete','error','duration_ms'}
             or evidence.get('schema')!='nico.cpp-runtime-evidence.v1' or evidence.get('plan_sha256')!=_digest(plan)
+            or plan.get('total_seconds')!=6000
             or type(evidence.get('complete')) is not bool or type(evidence.get('duration_ms')) is not int
-            or evidence['duration_ms']<0 or (evidence.get('error') is not None and
+            or not 0<=evidence['duration_ms']<=(plan['total_seconds']+5)*1000 or (evidence.get('error') is not None and
                 (not isinstance(evidence['error'],str) or re.fullmatch(r'worker_runtime_[a-z_]+',evidence['error']) is None))):
         raise ValueError('worker_runtime_evidence_invalid')
     functional=evidence.get('functional')
@@ -251,12 +264,23 @@ def validate_runtime_evidence(evidence, plan):
     if (not isinstance(fuzz,dict) or fuzz.get('target')!=plan['fuzz']['target']
             or fuzz.get('corpus_sha256')!=[row['sha256'] for row in plan['fuzz']['corpus']]):
         raise ValueError('worker_runtime_evidence_invalid')
-    derived=(functional['results'].get('passed')==plan['functional']['selected_tests']
-        and not functional['results'].get('failed') and not functional['results'].get('skipped')
-        and all(row.get('results',{}).get('passed')==row.get('results',{}).get('required')
+    try:
+        derived=(_ok(functional['setup']) and _ok(functional['operation'])
+            and functional['results'].get('passed')==plan['functional']['selected_tests']
+            and functional['results'].get('executed')==plan['functional']['selected_tests']
+            and not functional['results'].get('failed') and not functional['results'].get('skipped')
+            and all(_ok(row['configure']) and _ok(row['build']) and _ok(row['discovery']) and _ok(row['tests'])
+                and row.get('results',{}).get('executed')==row.get('results',{}).get('required')
+                and row.get('results',{}).get('passed')==row.get('results',{}).get('required')
                 and not row.get('results',{}).get('skipped') for row in sanitizers)
-        and all(_ok(row) for row in fuzz.get('replays',[])) and _ok(fuzz.get('campaign',{}))
-        and _ok(fuzz.get('configure',{})) and _ok(fuzz.get('build',{})))
+            and _ok(fuzz.get('corpus_stage',{})) and _ok(fuzz.get('configure',{})) and _ok(fuzz.get('build',{}))
+            and all(_ok(row) for row in fuzz.get('replays',[])) and _ok(fuzz.get('campaign',{})))
+        for row in [functional['setup'],functional['operation'],
+                *[item[k] for item in sanitizers for k in ('configure','build','discovery','tests')],
+                fuzz['corpus_stage'],fuzz['configure'],fuzz['build'],*fuzz.get('replays',[]),fuzz['campaign']]:
+            _output(row,4*1024*1024)
+    except (KeyError,TypeError,ValueError):
+        raise ValueError('worker_runtime_evidence_invalid') from None
     if evidence['complete'] is not (derived and evidence['error'] is None):
         raise ValueError('worker_runtime_evidence_invalid')
     return {'complete':evidence['complete'],'functional':functional['results'],
