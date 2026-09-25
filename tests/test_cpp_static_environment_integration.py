@@ -230,3 +230,40 @@ def test_environment_static_evidence_rejects_truncated_compressed_xml(tmp_path):
     row['xml_encoding'] = encoding
     with pytest.raises(ValueError, match='worker_project_static_xml_digest'):
         static.validate_project_static(_canonical(raw), request)
+
+
+
+def test_static_stage_validates_compiler_evidence_once_before_internal_reuse(tmp_path, monkeypatch):
+    """Large compiler receipts are validated once, then reused only in-process."""
+    from nico import assessment_cpp_project_compiler as compiler
+    root, targets, database, snapshot, compiler_raw = stage_inputs(tmp_path)
+    docker = EnvironmentDocker(targets)
+    calls = []
+    original = compiler.validate_project_compiler
+
+    def counted(raw, request):
+        calls.append((hashlib.sha256(raw).hexdigest(), hashlib.sha256(compiler._canonical(request)).hexdigest()))
+        return original(raw, request)
+
+    monkeypatch.setattr(compiler, 'validate_project_compiler', counted)
+    monkeypatch.setattr(static, 'validate_project_compiler', counted)
+    result = static.run_project_static_stage(root, targets, 'sha256:'+'a'*64,
+        database, snapshot, compiler_raw, compiler_environment=True,
+        command=docker, retain_artifact=lambda key, raw: {
+            'path': 'artifacts/'+key+'-'+hashlib.sha256(raw).hexdigest()+'.json',
+            'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)})
+    assert result['complete'], result['error']
+    assert len(calls) == 1
+
+
+def test_validated_compiler_state_cannot_be_reused_for_copied_bytes_or_request(tmp_path):
+    from nico import assessment_cpp_project_compiler as compiler
+    database, targets, snapshot, compiler_raw, _, _, _ = prepared(tmp_path)
+    request = compiler.project_compiler_request(database, targets, snapshot)
+    state = compiler.validated_project_compiler_state(compiler_raw, request)
+    proof, records = compiler.reuse_validated_project_compiler(state, compiler_raw, request)
+    assert proof['complete'] and len(records) == len(request['contexts'])
+    with pytest.raises(ValueError, match='worker_project_compiler_state_mismatch'):
+        compiler.reuse_validated_project_compiler(state, bytes(bytearray(compiler_raw)), request)
+    with pytest.raises(ValueError, match='worker_project_compiler_state_mismatch'):
+        compiler.reuse_validated_project_compiler(state, compiler_raw, deepcopy(request))
