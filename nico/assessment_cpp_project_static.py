@@ -32,6 +32,10 @@ from nico.assessment_cpp_static_environment import (analyzer_environment_argumen
 TOOL_VERSION = '2.17.1'
 CHECKS = 'warning,style,performance,portability,information,missingInclude'
 LIMITS = {'wall_seconds': 540, 'case_seconds': 90, 'parallel': 4}
+STAGE_BUDGET = {'schema': 'nico.cpp-static-combined-budget.v2',
+    'primary_seconds': 540, 'fallback_seconds': 180, 'controller_seconds': 300}
+STAGE_EXECUTION_SECONDS = sum(v for k, v in STAGE_BUDGET.items() if k.endswith('_seconds'))
+STAGE_WALL_SECONDS = STAGE_EXECUTION_SECONDS + 10
 STREAM_LIMIT = 48 * 1024 * 1024
 REQUEST_LIMIT = 16 * 1024 * 1024
 XML_LIMIT = 1024 * 1024
@@ -400,7 +404,7 @@ PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time,
 def run_project_static_stage(source, targets, image, database, snapshot, compiler_raw, *,
                              retain=lambda result: None, retain_artifact, checkpoint=lambda: None,
                              command=None, extended_compiler_budget=None, compiler_environment=False):
-    """Analyze verified inputs in a fresh 600-second, no-network/noexec sandbox.
+    """Analyze verified inputs in a fresh bounded, no-network/noexec sandbox.
 
     Reuses the existing controller input and isolation boundary. The preceding
     1,800-second build/compiler executor is never extended or left running.
@@ -422,14 +426,15 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
     resources = resources_for(profile)
     command = _command if command is None else command
     start = time.monotonic()
-    deadline = start + 600
+    deadline = start + STAGE_EXECUTION_SECONDS
     name = 'nico-project-static-' + uuid4().hex
     created = False
     result = {'schema': 'nico.cpp-project-static-stage.v1', 'status': 'UNPROVEN',
         'phase': 'validate_inputs', 'complete': False, 'image_config_digest': image,
         'source_population_sha256': _digest(_canonical(targets)),
         'request_sha256': None, 'snapshot_population_sha256': None, 'compiler_evidence_sha256': None,
-        'execution_budget_seconds': 600, 'wall_budget_seconds': 610, 'duration_ms': 0,
+        'execution_budget_seconds': STAGE_EXECUTION_SECONDS, 'wall_budget_seconds': STAGE_WALL_SECONDS,
+        'budget_policy': dict(STAGE_BUDGET), 'duration_ms': 0,
         'resource_profile': profile, 'operations': [], 'boundary': None, 'boundary_verified': False,
         'scratch_capacity_verified': False, 'scratch_capacity_bytes': None,
         'memory_peak_bytes': None, 'cleanup_verified': False, 'analysis': None,
@@ -497,7 +502,7 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
         require('static-create', ['docker', 'create', '--name', name, '--network=none', '--read-only',
             '--user=1000:1000', '--cap-drop=ALL', '--security-opt=no-new-privileges',
             *docker_resource_args(profile, executable=False), '--log-driver=none',
-            '--env=HOME=/work', '--env=TMPDIR=/work', '--entrypoint=sleep', image, '615'])
+            '--env=HOME=/work', '--env=TMPDIR=/work', '--entrypoint=sleep', image, str(STAGE_WALL_SECONDS + 5)])
         require('static-start', ['docker', 'start', name])
         private = _json(require('static-private', ['docker', 'exec', '--user='+ANALYSIS_USER, name,
             'python3', '-I', '-S', '-c', ANALYSIS_SETUP_PROGRAM]))
