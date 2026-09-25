@@ -87,7 +87,7 @@ def select_configure_first_contract(repo_step, *, environ=None, release_revision
         configuration['runtime_scope']={'schema':'nico.cpp-runtime-scope.v1','total_seconds':6000,
             'functional_policy':'source-declared-functional-v1','functional_seconds':900,
             'sanitizers':['address','undefined'],'sanitizer_build_seconds':1200,
-            'sanitizer_test_seconds':600,'sanitizer_test_case_seconds':120,
+            'sanitizer_test_seconds':900,'sanitizer_test_case_seconds':300,
             'fuzz_policy':'source-declared-libfuzzer-v1','fuzz_replay_runs':1,
             'fuzz_campaign_runs':256,'fuzz_campaign_seconds':300,'parallel':4}
     return {'profile':PROFILE,'tool_version':'2.17.1','image_digest':qualification['image_config_id'],

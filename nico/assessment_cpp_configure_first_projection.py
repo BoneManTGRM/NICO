@@ -82,7 +82,8 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     analysis=primary
     if "project-static-clang-fallback" in refs:
         fallback_raw=_read_artifact(store,identity,refs["project-static-clang-fallback"],"project-static-clang-fallback")
-        fallback_request=clang_fallback_request(static_request,primary)
+        fallback_request=clang_fallback_request(static_request,primary,
+            extended_budget=_json(fallback_raw).get('schema')=='nico.cpp-clang-fallback-evidence.v2')
         fallback=validate_clang_fallback(fallback_raw,fallback_request,static_request)
         analysis=merge_static_analysis(primary,fallback)
     checks=[

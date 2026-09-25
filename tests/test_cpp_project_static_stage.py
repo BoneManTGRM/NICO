@@ -158,8 +158,9 @@ def test_static_execution_has_a_fresh_enforced_budget_and_no_executable_workspac
     assert len(result['analysis']['analyzed_contexts']) == 3
     assert result['execution_budget_seconds'] == 1020 and result['wall_budget_seconds'] == 1030
     assert result['budget_policy'] == {
-        'schema':'nico.cpp-static-combined-budget.v2',
-        'primary_seconds':540,'fallback_seconds':180,'controller_seconds':300,
+        'schema':'nico.cpp-static-combined-budget.v3',
+        'primary_seconds':540,'fallback_seconds':480,'controller_seconds':300,
+        'shared_execution_seconds':1020,'limits_share_execution_envelope':True,
     }
     assert result['memory_peak_bytes'] == 12345678
     assert result['production_qualified'] is False

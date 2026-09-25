@@ -34,7 +34,7 @@ def fallback_native(req,*,finding=False,fail=False):
         rows.append({'context_id':context['context_id'],'invocation':context['invocation'],'dropped_arguments':context['dropped_arguments'],
             'execution':execution(exit_code=1 if fail else 0),'plist':base64.b64encode(__import__('zlib').compress(raw,9)).decode(),
             'plist_sha256':hashlib.sha256(raw).hexdigest(),'error':None})
-    return {'schema':'nico.cpp-clang-fallback-evidence.v1','request_sha256':hashlib.sha256(_canonical(req)).hexdigest(),
+    return {'schema':req['schema'].replace('-request.', '-evidence.'),'request_sha256':hashlib.sha256(_canonical(req)).hexdigest(),
         'analyst_uid':1001,'version':execution(b'17.0.6\n'),'records':rows,'duration_ms':5}
 
 def test_fallback_plan_preserves_configuration_and_only_drops_known_gcc_only_or_output_flags(tmp_path):
@@ -113,3 +113,110 @@ def test_real_static_stage_runs_fallback_only_after_primary_incomplete(tmp_path)
     ids=[op['id'] for op in result['operations']]; assert ids.index('project-static-evidence')<ids.index('project-static-clang-fallback')
     assert any(f.get('analyzer')=='clang-static-analyzer' for f in result['analysis']['findings'])
     assert any(l.get('rule_id')=='syntaxError' for l in result['analysis']['limitations'])
+
+
+def test_static_stage_retains_substantive_fallback_beyond_old_per_case_limit(tmp_path):
+    """Owned native-response boundary, not a real long-running analyzer proof."""
+    from nico import assessment_cpp_project_static as static
+    from tests.test_cpp_project_static_stage import stage_inputs
+    from tests.test_cpp_static_environment_integration import EnvironmentDocker,native_v2
+    from xml.etree import ElementTree as ET
+    class SlowFallbackDocker(EnvironmentDocker):
+        def __call__(self,argv,**kwargs):
+            if static.PROGRAM in argv:
+                self.calls.append((argv,kwargs)); req=json.loads(kwargs['input_bytes'])
+                value=json.loads(native_v2(req,missing='stdint.h',rule='uninitvar'))
+                row=value['records'][0]
+                raw=__import__('zlib').decompress(base64.b64decode(row['xml'])) if row.get('xml_encoding')=='zlib' else base64.b64decode(row['xml'])
+                doc=ET.fromstring(raw); ET.SubElement(doc.find('errors'),'error',{'id':'syntaxError','severity':'error','msg':'syntax error'})
+                enc,digest,encoding=static._encode_xml(ET.tostring(doc),compact=True)
+                row.update(xml=enc,xml_sha256=digest,xml_encoding=encoding)
+                return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}
+            if api().PROGRAM in argv:
+                self.calls.append((argv,kwargs)); req=json.loads(kwargs['input_bytes'])
+                value=fallback_native(req,finding=True)
+                value['records'][0]['execution']['duration_ms']=90000
+                value['duration_ms']=90010
+                return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}
+            return super().__call__(argv,**kwargs)
+    source,targets,database,snapshot,compiler=stage_inputs(tmp_path)
+    docker=SlowFallbackDocker(targets); artifacts={}
+    def sink(key,raw):
+        artifacts[key]=raw; sha=hashlib.sha256(raw).hexdigest()
+        return {'path':'artifacts/'+key+'-'+sha+'.json','sha256':sha,'bytes':len(raw)}
+    result=static.run_project_static_stage(source,targets,'sha256:'+'a'*64,database,snapshot,compiler,
+        compiler_environment=True,command=docker,retain_artifact=sink)
+    assert result['complete'] is True, result['error']
+    assert result['execution_budget_seconds']==1020 and result['wall_budget_seconds']==1030
+    call=next(kwargs for argv,kwargs in docker.calls if api().PROGRAM in argv)
+    assert call['timeout']>480 and call['timeout']<=490
+    req=json.loads(call['input_bytes'])
+    assert req['limits']=={'wall_seconds':480,'case_seconds':120,'parallel':4}
+    assert len(result['analysis']['analyzed_contexts'])==len(result['analysis']['required_contexts'])
+    assert result['cleanup_verified'] is True
+
+
+@pytest.mark.parametrize('extended,seconds', [(False,45),(True,120)])
+def test_fallback_budget_versions_bind_native_evidence_and_reject_overrun(tmp_path,extended,seconds):
+    req,proof=primary_with_one_failure(tmp_path)
+    fr=api().clang_fallback_request(req,proof,extended_budget=extended)
+    data=fallback_native(fr,finding=True)
+    data['records'][0]['execution']['duration_ms']=seconds*1000
+    data['duration_ms']=seconds*1000+10
+    result=api().validate_clang_fallback(_canonical(data),fr,req)
+    assert result['complete'] is True
+    data['records'][0]['execution']['duration_ms']=(seconds+4)*1000
+    data['duration_ms']=(seconds+4)*1000+10
+    with pytest.raises(ValueError,match='execution_invalid'):
+        api().validate_clang_fallback(_canonical(data),fr,req)
+
+
+@pytest.mark.parametrize('change', ['schema','limits','boolean','missing','hash','outcome'])
+def test_extended_fallback_never_accepts_unbound_or_incomplete_success(tmp_path,change):
+    req,proof=primary_with_one_failure(tmp_path)
+    fr=api().clang_fallback_request(req,proof,extended_budget=True)
+    data=fallback_native(fr)
+    if change=='schema': data['schema']='nico.cpp-clang-fallback-evidence.v1'
+    elif change=='limits': fr['limits']['wall_seconds']=481
+    elif change=='boolean': fr['limits']['parallel']=True
+    elif change=='missing': del fr['limits']['case_seconds']
+    elif change=='hash': data['request_sha256']='0'*64
+    else:
+        data['records'][0]['execution'].update(exit_code=124,timed_out=True)
+        result=api().validate_clang_fallback(_canonical(data),fr,req)
+        assert result['complete'] is False and result['analyzed_contexts']==[]
+        return
+    with pytest.raises(ValueError):
+        api().validate_clang_fallback(_canonical(data),fr,req)
+
+
+def test_expanded_fallback_preserves_population_commands_and_primary_limits(tmp_path):
+    req,proof=primary_with_one_failure(tmp_path)
+    old=api().clang_fallback_request(req,proof)
+    new=api().clang_fallback_request(req,proof,extended_budget=True)
+    assert {k:v for k,v in old.items() if k not in {'schema','limits'}}=={
+        k:v for k,v in new.items() if k not in {'schema','limits'}}
+    assert api().LIMITS=={'wall_seconds':180,'case_seconds':45,'parallel':4}
+    assert new['limits']=={'wall_seconds':480,'case_seconds':120,'parallel':4}
+    for bad in [None,0,1,'true']:
+        with pytest.raises(ValueError): api().clang_fallback_request(req,proof,extended_budget=bad)
+    compile(api().PROGRAM,'owned-fallback-program','exec')
+    assert 'EXTENDED_LIMITS' in api().PROGRAM
+
+
+@pytest.mark.parametrize('schema', [[], {}, None, True, 2])
+def test_fallback_schema_is_validated_before_lookup(schema):
+    request = {'schema':schema, 'limits':{'wall_seconds':480,'case_seconds':120,'parallel':4}}
+    with pytest.raises(ValueError, match='worker_clang_fallback_request_invalid'):
+        api()._request_limits(request)
+
+
+def test_shared_static_budget_reports_selected_fallback_limit_without_expanding_parent():
+    from nico import assessment_cpp_project_static as static
+    policy = static.STAGE_BUDGET
+    assert policy['fallback_seconds'] == api().EXTENDED_LIMITS['wall_seconds']
+    assert policy['schema'] == 'nico.cpp-static-combined-budget.v3'
+    assert policy['shared_execution_seconds'] == static.STAGE_EXECUTION_SECONDS == 1020
+    assert policy['controller_seconds'] == 300
+    assert policy['limits_share_execution_envelope'] is True
+    assert static.STAGE_WALL_SECONDS == 1030
