@@ -55,6 +55,78 @@ print(json.dumps(out, sort_keys=True))
 '''
 
 
+# Fixed release-owned phase names, never paths supplied by assessed source.
+# Descriptor-relative rmtree refuses top-level links and does not follow nested
+# links. The outer disposable container remains responsible for final cleanup.
+RECLAIM_PROGRAM = r'''
+import json, os, shutil, stat, sys
+PHASES = {'baseline': ('build', 'functional-tests'),
+          'address': ('sanitize-address',), 'undefined': ('sanitize-undefined',)}
+
+def reclaim(phase, *, root='/work'):
+    if phase not in PHASES or not shutil.rmtree.avoids_symlink_attacks:
+        raise ValueError('workspace_reclamation_policy')
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        device = os.fstat(fd).st_dev
+        names = PHASES[phase]
+        # Validate every top-level target before removing any of them.
+        for name in names:
+            info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if not stat.S_ISDIR(info.st_mode) or info.st_dev != device:
+                raise ValueError('workspace_reclamation_target')
+        def space():
+            info = os.fstatvfs(fd)
+            return {'capacity_bytes': info.f_blocks * info.f_frsize,
+                    'available_bytes': info.f_bavail * info.f_frsize}
+        before = space()
+        for name in names:
+            shutil.rmtree(name, dir_fd=fd)
+        return {'phase': phase, 'removed': list(names), 'before': before, 'after': space()}
+    finally:
+        os.close(fd)
+
+if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        raise SystemExit(2)
+    print(json.dumps(reclaim(sys.argv[1]), sort_keys=True))
+'''
+
+_RECLAIM_PHASES = {'baseline': ['build', 'functional-tests'],
+                   'address': ['sanitize-address'], 'undefined': ['sanitize-undefined']}
+
+
+def _reclamation_result(raw, phase):
+    error = 'worker_runtime_reclamation_failed'
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError, UnicodeError) as exc:
+        raise ValueError(error) from exc
+    if (not isinstance(value, dict) or set(value) != {'phase', 'removed', 'before', 'after'}
+            or value['phase'] != phase or value['removed'] != _RECLAIM_PHASES[phase]):
+        raise ValueError(error)
+    for key in ('before', 'after'):
+        row = value[key]
+        if (not isinstance(row, dict) or set(row) != {'capacity_bytes', 'available_bytes'}
+                or any(type(v) is not int for v in row.values())
+                or not 0 <= row['available_bytes'] <= row['capacity_bytes']
+                or row['capacity_bytes'] <= 0):
+            raise ValueError(error)
+    if (value['before']['capacity_bytes'] != value['after']['capacity_bytes']
+            or value['after']['available_bytes'] < value['before']['available_bytes']):
+        raise ValueError(error)
+    return value
+
+
+def _reclaim(observe, container, evidence, phase):
+    row = _run(observe, 'runtime-reclaim-'+phase, container,
+        ['python3', '-I', '-S', '-c', RECLAIM_PROGRAM, phase], seconds=30, limit=4096)
+    evidence['reclamations'].append(row)  # Retain failure before interpretation.
+    if not _ok(row):
+        raise ValueError('worker_runtime_reclamation_failed')
+    _reclamation_result(_output(row, 4096), phase)
+
+
 def _digest(value):
     return hashlib.sha256(value if isinstance(value, bytes) else canonical_bytes(value)).hexdigest()
 
@@ -190,8 +262,9 @@ def execute_runtime_plan(observe, container, plan, project_options):
         kwargs['seconds']=max(0.001,min(requested,left))
         return transport(key,argv,**kwargs)
     observe=bounded_observe
-    evidence={'schema':'nico.cpp-runtime-evidence.v1','plan_sha256':_digest(plan),
-        'functional':None,'sanitizers':[],'fuzz':None,'complete':False,'error':None,'duration_ms':0}
+    evidence={'schema':'nico.cpp-runtime-evidence.v2','plan_sha256':_digest(plan),
+        'functional':None,'sanitizers':[],'fuzz':None,'complete':False,'error':None,'duration_ms':0,
+        'reclamations':[]}
     try:
         functional=plan['functional']; selected=list(functional['selected_tests'])
         setup=_run(observe,'runtime-functional-setup',container,
@@ -210,19 +283,33 @@ def execute_runtime_plan(observe, container, plan, project_options):
         if not (_ok(setup) and _ok(operation) and summary['passed']==selected and not summary['failed'] and not summary['skipped']):
             raise ValueError('worker_runtime_functional_failed')
 
+        _reclaim(observe, container, evidence, 'baseline')
+
         for kind in plan['sanitizers']['kinds']:
             directory='/work/sanitize-'+kind
             configure=['cmake','-S','/work/source','-B',directory,'-G','Unix Makefiles',
                 '-DCMAKE_BUILD_TYPE=Debug','-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
                 '-DCMAKE_C_COMPILER=/usr/local/bin/gcc','-DCMAKE_CXX_COMPILER=/usr/local/bin/g++',
                 *_base_options(project_options),'-DSANITIZERS='+kind]
+            item={'kind':kind,'configure':None,'build':None,'discovery':None,'tests':None,
+                'junit_read':None,'results':None,'junit_sha256':None}
+            evidence['sanitizers'].append(item)
             c=_run(observe,'runtime-'+kind+'-configure',container,configure,seconds=90)
+            item['configure']=c
+            if not _ok(c):
+                raise ValueError('worker_runtime_sanitizer_failed')
             b=_run(observe,'runtime-'+kind+'-build',container,
                 ['cmake','--build',directory,'--parallel',str(plan['sanitizers']['parallel'])],
                 seconds=plan['sanitizers']['build_seconds'])
+            item['build']=b
+            if not _ok(b):
+                raise ValueError('worker_runtime_sanitizer_failed')
             d=_run(observe,'runtime-'+kind+'-discover',container,
                 ['ctest','--test-dir',directory,'--show-only=json-v1'],seconds=60,limit=4*1024*1024)
-            names=_discover(_output(d,4*1024*1024)) if _ok(d) else []
+            item['discovery']=d
+            if not _ok(d):
+                raise ValueError('worker_runtime_sanitizer_failed')
+            names=_discover(_output(d,4*1024*1024))
             log=directory+'/nico-runtime-ctest.log'; junit=directory+'/nico-runtime-junit.xml'
             env=({'ASAN_OPTIONS':'detect_leaks=0:halt_on_error=1'} if kind=='address'
                 else {'UBSAN_OPTIONS':'halt_on_error=1'})
@@ -233,30 +320,45 @@ def execute_runtime_plan(observe, container, plan, project_options):
                 str(plan['sanitizers']['test_case_seconds']),'--output-on-failure','--output-junit',junit]
             t=_run(observe,'runtime-'+kind+'-tests',container,test_argv,
                 seconds=plan['sanitizers']['test_seconds'],environment=env)
+            item['tests']=t
             junit_read,junit_raw=_read_file(observe,container,'runtime-'+kind+'-junit',junit,4*1024*1024)
             summary=_junit(junit_raw,names)
-            item={'kind':kind,'configure':c,'build':b,'discovery':d,'tests':t,'junit_read':junit_read,'results':summary,
-                'junit_sha256':hashlib.sha256(junit_raw).hexdigest()}
-            evidence['sanitizers'].append(item)
+            item.update(junit_read=junit_read, results=summary,
+                junit_sha256=hashlib.sha256(junit_raw).hexdigest())
             if not (_ok(c) and _ok(b) and _ok(d) and _ok(t) and names
                     and summary['executed']==names and summary['passed']==names and not summary['skipped']):
                 raise ValueError('worker_runtime_sanitizer_failed')
+            _reclaim(observe, container, evidence, kind)
 
         fuzz=plan['fuzz']
         payload=canonical_bytes({'corpus':fuzz['corpus']})
         stage=_run(observe,'runtime-fuzz-corpus-stage',container,
             ['python3','-I','-S','-c',CORPUS_STAGE_PROGRAM],seconds=20,user='0:0',data=payload)
-        staged=json.loads(_output(stage)) if _ok(stage) else []
+        evidence['fuzz']={'corpus_stage':stage,'staged':None,'configure':None,'build':None,
+            'replays':[],'campaign':None,'campaign_metrics':None,'target':fuzz['target'],
+            'corpus_sha256':[row['sha256'] for row in fuzz['corpus']]}
+        if not _ok(stage):
+            raise ValueError('worker_runtime_fuzz_failed')
+        staged=json.loads(_output(stage))
+        evidence['fuzz']['staged']=staged
         expected=[{'path':'/work/runtime-corpus/connect_block/s'+str(i),'sha256':row['sha256'],'bytes':row['bytes']}
                   for i,row in enumerate(fuzz['corpus'])]
+        if staged != expected:
+            raise ValueError('worker_runtime_fuzz_failed')
         configure=['cmake','-S','/work/source','-B','/work/fuzz-build','-G','Unix Makefiles',
             '-DCMAKE_BUILD_TYPE=Debug','-DCMAKE_C_COMPILER=/usr/lib/llvm-17/bin/clang',
             '-DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++','-DBUILD_FOR_FUZZING=ON',
             '-DSANITIZERS=address,fuzzer,undefined']
         fc=_run(observe,'runtime-fuzz-configure',container,configure,seconds=90)
+        evidence['fuzz']['configure']=fc
+        if not _ok(fc):
+            raise ValueError('worker_runtime_fuzz_failed')
         fb=_run(observe,'runtime-fuzz-build',container,
             ['cmake','--build','/work/fuzz-build','--parallel','1','--target',fuzz['build_target']],
             seconds=1200)
+        evidence['fuzz']['build']=fb
+        if not _ok(fb):
+            raise ValueError('worker_runtime_fuzz_failed')
         fenv={'FUZZ':fuzz['target'],'ASAN_OPTIONS':'detect_leaks=0:halt_on_error=1',
               'UBSAN_OPTIONS':'halt_on_error=1'}
         replays=[]
@@ -347,8 +449,13 @@ def _runtime_operation_specs(plan, project_options):
 
 
 def validate_runtime_evidence(evidence, plan, *, project_options=None):
-    if (not isinstance(evidence,dict) or set(evidence)!={'schema','plan_sha256','functional','sanitizers','fuzz','complete','error','duration_ms'}
-            or evidence.get('schema')!='nico.cpp-runtime-evidence.v1' or evidence.get('plan_sha256')!=_digest(plan)
+    v2 = isinstance(evidence, dict) and evidence.get('schema') == 'nico.cpp-runtime-evidence.v2'
+    fields = {'schema','plan_sha256','functional','sanitizers','fuzz','complete','error','duration_ms'}
+    if v2:
+        fields.add('reclamations')
+    if (not isinstance(evidence,dict) or set(evidence)!=fields
+            or evidence.get('schema') not in {'nico.cpp-runtime-evidence.v1', 'nico.cpp-runtime-evidence.v2'}
+            or evidence.get('plan_sha256')!=_digest(plan)
             or plan.get('total_seconds')!=6000
             or type(evidence.get('complete')) is not bool or type(evidence.get('duration_ms')) is not int
             or not 0<=evidence['duration_ms']<=(plan['total_seconds']+5)*1000 or (evidence.get('error') is not None and
@@ -369,6 +476,11 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
         if not isinstance(project_options, dict):
             raise ValueError('worker_runtime_evidence_invalid')
         specs = _runtime_operation_specs(plan, project_options)
+        if v2:
+            for phase in _RECLAIM_PHASES:
+                specs['runtime-reclaim-'+phase] = {
+                    'argv':['python3','-I','-S','-c',RECLAIM_PROGRAM,phase],
+                    'seconds':30,'limit':4096,'user':None,'environment':{},'workdir':None}
     except (KeyError, IndexError, TypeError, AttributeError) as exc:
         raise ValueError('worker_runtime_evidence_invalid') from exc
     seen = set()
@@ -464,6 +576,21 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
     parsed_metrics=_fuzz_campaign_metrics(fuzz['campaign'])
     if fuzz.get('campaign_metrics')!=parsed_metrics:
         raise ValueError('worker_runtime_evidence_invalid')
+
+    if v2:
+        rows = evidence['reclamations']
+        if not isinstance(rows, list) or len(rows) != len(_RECLAIM_PHASES):
+            raise ValueError('worker_runtime_evidence_invalid')
+        for phase, row in zip(_RECLAIM_PHASES, rows):
+            if not isinstance(row, dict) or row.get('id') != 'runtime-reclaim-'+phase:
+                raise ValueError('worker_runtime_evidence_invalid')
+            raw = operation(row, 4096)
+            try:
+                _reclamation_result(raw, phase)
+            except ValueError as exc:
+                raise ValueError('worker_runtime_evidence_invalid') from exc
+            if not _ok(row):
+                raise ValueError('worker_runtime_evidence_invalid')
 
     if seen != set(specs):
         raise ValueError('worker_runtime_evidence_invalid')

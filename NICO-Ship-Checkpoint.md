@@ -1,60 +1,68 @@
-# PR1641 continuation — durable owner liveness during long C++ execution
+# NICO post-merge continuation — runtime scratch and failure retention
 
-Continue the existing PR #1641 / `feat/cpp-full-project-capacity`. This descendant is based on `1bae247a9729512a809e3ec20930ae067680f7db`, tree `0cc831c0bbfa8499a995b7e47873155ca20b1866`; main/base last read `faaa10b037eb58e4175561b96dadf0d929764df4`. Preserve concurrent descendants; use non-force publication only. Do not push local source-export fixture history.
+This is the sole active mission ledger. Preserve the complete predecessor at [31269344:NICO-Ship-Checkpoint.md](https://github.com/BoneManTGRM/NICO/blob/312693443b1e70c8a065de2c4e9ca329281d162a/NICO-Ship-Checkpoint.md), including its immutable 1bae/cefff/3ff747f8 chain and the original C0–C19 requirements. Nothing in this update reduces the frozen supported scope or approval boundaries.
 
-## Immutable continuity and governing contract
+## Recovered release and coordination
 
-The complete previous checkpoint is preserved at [1bae247a:NICO-Ship-Checkpoint.md](https://github.com/BoneManTGRM/NICO/blob/1bae247a9729512a809e3ec20930ae067680f7db/NICO-Ship-Checkpoint.md). It retains cefff68f/3ff747f8 and all earlier evidence, repairs and original C0-C19 obligations. This is the sole active checkpoint. No requirement is waived by this summary.
+PR #1641 is merged at `0f14a8dba3c0fa6d11d982e007492a7f543ccfb7`. PR #1643 is also merged, at `312693443b1e70c8a065de2c4e9ca329281d162a`; its final source head was `bc36671c42b4bee73401d650d49f8b676f2f1ffd`. Do not reopen either PR or restore older versions. The corrective runtime work is based on actual main/tree `312693443b1e70c8a065de2c4e9ca329281d162a` / `0373f40d585471162c674dc7870fa6dee3784571`. Reconcile refs immediately before publication; use non-force updates and one writer.
 
-Frozen Bitcoin: `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`; 475 compiler contexts, 377 baseline tests, Debug wallet/tests/IPC and declared integration/sanitizer/fuzz scope remain. The distinct historical revision/run and all approved artifacts remain unchanged.
+The production frontend deployment `dpl_8peLtPtpFF839XWMbhwiQZkK2Dt1` is READY, carries that main SHA, and owns `app.nicoaudit.com`. Railway deployment `e045965c-ca52-42dc-858f-ef18bf563266` is SUCCESS with the same SHA. These are deployment/alias proofs, not complete serving/worker/assessment acceptance. No redundant deployment was requested. The service configuration's returned variable names did not include the configure-first qualification/activation settings. No setting was invented or enabled.
 
-## Repairs now preserved
+Frozen qualification target remains `bitcoin/bitcoin` at `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c9de7f613d2d323db41cb8ce6bf1e3e549`. The separate historical revision `0e9018e8b65611b0769545e177110e4b7fc51244` and run `comprun_7cc47a5a81695fa452354479ea23b422` remain untouched.
 
-`cefff68f` corrected functional CSV membership/order and runtime receipt integrity. `9e71beb3` fixed the worker HTTP allowlist for `project-runtime-evidence`, with unchanged lease/hash/size protections. `1bae247a` provisioned the exact upstream-pinned previous-release v0.14.3 binaries required by wallet_ancient_migration, instead of removing that test. Licensing, bounded acquisition and no-execution provisioning remain intact.
+## Actual native failure recovered
 
-Native integration run `36127119592` on 1bae247a has completed its contract and owned-project jobs. Downloaded owned artifact `10861400343`, 5,676,576 bytes, ZIP SHA256 `69c5e96f9c6d43915a47ea161996fcb26af3f88e9da7b8f7136e26b1b7db3a1c` was verified. It records VERIFIED_RUNTIME_DEPENDENCIES with the exact 24,644,309-byte archive/hash and retained member hashes. The built full-project image is `sha256:dfb699c4acf33c46fc45cdfb9d727e35e7be4ba307dbf4ae02abf5eece117cb8`; the owned receipt says PASS_OWNED_PROJECT_INTEGRATION and explicitly leaves production_qualified, bitcoin_executed and production_dispatch_exercised false. This proves real prerequisite provisioning and owned execution, not Bitcoin migration or production qualification. Its large qualification job `108052224324` was still active at the last observation and was not cancelled or duplicated.
+Downloaded and verified run `36127119592` / job `108052224324` artifact `10862967834`, ZIP SHA256 `2a6056ce7b74ce1ec501c6b0777bf91f0a40a47ac8b5ae9df5da4fb606d0fe7b`. No oversized full-job log request was repeated. The native runtime artifact is `40af4a279f63e15944ae4afd2239a669bfbd7e6a20f09285bfc9b00f71000ec2`.
 
-## Reproduced durable-execution defect and correction
+The frozen inventory contains 3,031 materialized files / 49,729,651 source bytes. The retained baseline passes 377 tests and 475 compiler contexts; generated inputs and cleanup are verified. All six selected functional tests pass, including wallet_ancient_migration and interface_ipc. The first failing native operation is `runtime-address-build`: exit 2 after 691,220 ms, with a killed linker followed by explicit `No space left on device`. Peak memory is 12,884,901,888 bytes; scratch capacity is 9,663,676,416 bytes. Reaching that ceiling and SIGKILL are not independent OOM-event proof.
 
-The configure-first wrapper passed the durable owner checkpoint only through result retention. Its probe used a separate local deadline callback during the actual long command, and did not pass the owner callback to the fresh static stage. Consequently a long build could run without renewing the at-most-300-second durable lease or observing cancellation; the retained earlier Bitcoin build lasted 752,128ms. The wrapper also validated the supplied remaining-time argument without enforcing it throughout execution.
+The old producer continued into CTest after the failed build: 222/377 tests passed and 155 were skipped. UBSan and fuzz did not execute. The runtime remained incomplete. Exact retained-artifact replay reproduces `worker_runtime_evidence_invalid` because only the address sanitizer row exists, not the required address/undefined population. This is downstream rejection of incomplete execution, not permission to weaken the validator. Preserve all original failure bytes and statuses.
 
-The wrapper now combines the existing owner callback with an actual monotonic remaining-time deadline, including acquisition data, native execution, artifact retention and return. The probe calls that external checkpoint from its existing command polling and forwards it to the separately bounded static stage. Existing container cleanup remains unconditional after ownership loss; no lease, retry, native-command, CPU/RAM/scratch/process/time or network ceiling is increased.
+The descendant run `36129521112` on `977d657a02f7c449da9455b26896052f1261159c` was still running its native job `108068531516` at the last read; its contract/toolchain/source/owned-project jobs passed. It was neither cancelled nor duplicated. Its runtime producer blob is still the same uncorrected `801fa82afd4bc713c67a1cd9450e86c52118e846`; owner-liveness changes do not repair scratch exhaustion. Reuse its terminal evidence where applicable.
 
-A second reproduction showed a caught heartbeat failure could let an inner controller return and the consumer request another heartbeat, then publish a receipt. The existing owned=False state now irreversibly rejects re-entry for that consumer invocation. No receipt or failure mutation is sent after loss of authority; the server lease still independently fences the worker.
+## Bounded corrective implementation
 
-## Verification
+After retained functional results, reclaim only the completed baseline build and temporary functional-test directory. After each sanitizer's retained results, reclaim only that completed sanitizer build before starting the next phase. Fixed phase names, descriptor-relative symlink-resistant removal, top-level type/device checks, unchanged runtime UID and before/after filesystem measurements preserve the isolation boundary. Source, private analyst snapshots and unit-test data are not cleanup targets. The outer disposable-container cleanup remains unconditional.
 
-Three real-wrapper/probe-seam regressions were observed failing for missing heartbeat, cancellation and remaining-time enforcement, then the identical three passed. Only the Docker boundary is substituted. The caught-heartbeat regression separately failed because the old consumer published after the caught conflict, then passed with the ownership latch. Two additional cases verify owner callback forwarding into the fresh static stage, including cancellation; these were added after the main RED/GREEN cycle and are not claimed as independent RED cases.
+Retain failed configure/build/discovery/corpus-stage operations before interpretation and do not execute their dependents. Evidence v2 binds the ordered reclamation operations, commands, users, exits, byte hashes, timing and space measurements. Legacy v1 remains readable with its original meaning and gains no reclamation claim. No required source/context/test, analyzer depth, resource/time ceiling, retry budget, approval control, credential scope or production setting changes.
 
-Fresh focused selection: 148 passed across wrapper/probe/static-stage/HTTP/jobs/baseline/contract/projection/selection files. A wider fresh selection including the entire consumer suite: 177 passed, one unchanged local Python 3.13 spawned-token PID-startup failure; that suite is not a complete pass. The failing fixture's two-second startup timing also failed before this correction. Its assertion/timeout remain unchanged; hosted Python 3.11 exact-candidate checks remain mandatory. Counts overlap and must not be added. All six changed Python files parse and their published Git blob hashes match tested local bytes. The evidence index is `docs/evidence/pr1641-owner-liveness-20260925/verification.json`.
+Recorded RED: 21 failures. Identical GREEN: 21 passes. Thirteen additional negative/legacy cases were added after GREEN, not claimed as independently observed RED. All new tests now live in the already-required `tests/test_cpp_runtime_execution.py`; no additional workflow or duplicate qualification campaign is added. Final affected eight-file command: 168 passed, zero failures/errors/skips, terminal exit 0. Source and test Git blobs match locally tested bytes. A report-heavy broad command exceeded the local tool deadline and is not a complete suite pass. Local transport is substituted; real owned filesystem/symlink tests pass. Native Docker and full production proof remain unproven.
+
+Exact verification and native locators: `docs/evidence/cpp-runtime-reclamation-20260925/verification.json`.
+
+## PDF recovery and independent review still required
+
+Run `comprun_29c30048215275ecbac35d179f71a1ed` remains the existing recovery target. PR #1643 records the 1,132-page composition-boundary failure, but its actual stored source/revision/contract and failing report inputs have not been retrieved in this continuation. Do not infer that it exercised the frozen complete C++ scope or that a 1,132-page PDF was stored. Recover through the supported authenticated operator workflow. Keep the 60-page boundary and verify English/es-MX continuation, unknown/missing/shared-page section boundaries, the canonical register and mandatory following content against actual inputs. Do not discard a report tail to make publication pass.
+
+No authenticated operator session has been established here. Infrastructure access does not supply it; no password, admin secret or proof credential was extracted. No production assessment, database state, human disposition, approval or delivery authorization was created or changed. Direct external reads unavailable through a tool are not proof that the service is down.
+
+The predecessor's independent-review allowance restriction remains binding. PR #1641's review-submission list is empty, but that does not disprove review elsewhere. Recover the complete review accumulator before claiming review completion. No exhausted unchanged review was resubmitted, no credits purchased, and no author self-review was represented as independent.
 
 ## Whole-row acceptance
 
-| Predicate | Status | Remaining requirement |
+| Predicate | State | Evidence / unmet scope |
 | --- | --- | --- |
-| C0 | UNPROVEN | Full runtime prerequisites and aggregate qualification. |
-| C1 | PASS, frozen native scope | Production inventory revalidation remains C18. |
-| C2 | UNPROVEN | Complete combined workload isolation/capacity. |
-| C3 | UNPROVEN | Final production owner/release/receipt chain. |
-| C4 | UNPROVEN | Native long-job heartbeat/fencing/recovery and normal-intake completion. |
-| C5 | UNPROVEN | Terminal static completion for every required context. |
-| C6 | PASS, frozen baseline only | Retained 475 compiler contexts/generated inputs, not production proof. |
-| C7 | UNPROVEN | Actual required migration, sanitizer and bounded fuzz scope. |
-| C8 | UNPROVEN | Native/canonical/findings/register/report reconciliation. |
-| C9 | UNPROVEN | Complete runtime/static/report populations and exclusions. |
-| C10 | UNPROVEN | Actual score and assurance projections. |
-| C11 | UNPROVEN | Measured combined workload within enforced budgets. |
-| C12 | UNPROVEN | Generic C/C++ and supported-language production controls. |
-| C13 | FAIL | Actual full-supported-scope Bitcoin structured output/PDF absent. |
-| C14 | UNPROVEN | Final English/es-MX/mobile/progress/recovery acceptance. |
-| C15 | UNPROVEN | Historical approvals preserved; eligible exact-edition delivery proof remains. |
-| C16 | UNPROVEN | Final candidate checks and independent complete review. |
-| C17 | FAIL | PR unmerged; final serving identities absent. |
-| C18 | FAIL | No qualified normal-production Bitcoin assessment. |
-| C19 | UNPROVEN | Actual bilingual artifact hashes/repeated retrieval/closeout. |
+| C0 | UNPROVEN | Source/control/budgets and current release recovered; actual recovery-run contract/access and final qualification remain. |
+| C1 | PASS | Retained complete frozen native inventory/acquisition; unchanged by correction. Normal-production exercise remains C18. |
+| C2 | UNPROVEN | Prior native isolation passes; complete corrected combined workload still needs proof. |
+| C3 | UNPROVEN | Dedicated final production worker/run/release binding absent. |
+| C4 | UNPROVEN | Prior liveness repair preserved; final real-transport recovery/fencing acceptance remains. |
+| C5 | UNPROVEN | Full current 475-context substantive static/fallback completion not proved. |
+| C6 | PASS | Retained frozen baseline build/generated inputs and 475 compiler contexts; not production acceptance. |
+| C7 | FAIL | ASan build failed; UBSan/fuzz absent. Corrected native instrumentation/replay proof required. |
+| C8 | UNPROVEN | Final native/canonical/register/cross-format reconciliation remains. |
+| C9 | UNPROVEN | Final static/runtime/report populations and exclusions remain. |
+| C10 | UNPROVEN | Actual production score/assurance projection remains. |
+| C11 | FAIL | Retained combined runtime exhausted scratch and reached memory ceiling; corrected workload unqualified. |
+| C12 | UNPROVEN | Hosted owned predecessor passes; corrected owned and normal-production language controls remain. |
+| C13 | FAIL | Required actual complete-scope Bitcoin report and failing-input PDF verification absent. |
+| C14 | UNPROVEN | Actual bilingual/mobile/progress/refresh/recovery acceptance remains. |
+| C15 | UNPROVEN | No human/history boundary changed; eligible exact-edition one-action proof remains. |
+| C16 | UNPROVEN | Corrective hosted CI/security and complete independent review remain. |
+| C17 | UNPROVEN | Main frontend/backend deployment mappings recovered; corrected release/worker/image serving chain incomplete. |
+| C18 | FAIL | No qualified authorized normal-production frozen Bitcoin acceptance run established. |
+| C19 | UNPROVEN | Final bilingual artifacts, repeated retrieval/hashes and complete closeout absent. |
 
-## Exact next work
+## EXACT NEXT ACTION
 
-Preserve the active 1bae native qualification and inspect its actual retained runtime outcomes. Qualify these owner-checkpoint changes on the final candidate. Verify sanitizer instrumentation/immutable execution identity, bounded fuzz replay/campaign/failure retention and measured capacity, not just flags or exit zero. Complete exact full-project image qualification/publication and independent review before merge/deploy; then obtain actual normal-intake production control and Bitcoin English/es-MX reports. No report or human approval may be synthesized.
-
-The prior independent review quota exhaustion is not waived. Do not repeat an unchanged exhausted request, purchase credits, change accounts, or substitute author review for independence. No production enablement, merge, deployment, specialist approval or delivery authorization occurs in this correction. Do not declare SHIPPED without every mandatory whole-row proof.
+Preserve the descendant native run and read its terminal retained evidence. Complete owned/focused verification of this correction, recover the actual report inputs and independent review, then use the normal narrow corrective PR process. Qualify only the changed candidate after the owned prerequisite. Complete full-project image/release binding and authenticated production control before the one justified frozen Bitcoin acceptance run. Keep all C0–C19 requirements and pending genuine human approval; do not declare SHIPPED at a code/test/merge/deployment milestone.
