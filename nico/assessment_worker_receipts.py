@@ -300,7 +300,9 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
 
 
 def _configure_first_record(identity, contract, receipt, encoded):
-    native=receipt['native']; required={'schema','status','complete_execution','error','source_population_sha256',
+    native=receipt['native']; config=contract['configuration']
+    runtime_contract=config.get('schema')=='nico.cpp-configure-first-contract.v3'
+    required={'schema','status','complete_execution','error','source_population_sha256',
         'source_count','compilation_database_sha256','configured_invocations','baseline_execution_frozen','compiled',
         'tests_executed','tests_passed','tests_discovered_count','tests_discovered_sha256','tests_executed_count',
         'tests_executed_sha256','tests_passed_count','tests_passed_sha256','tests_skipped_count','tests_skipped_sha256',
@@ -314,7 +316,10 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'clang_fallback_analyzed_sha256','boundary_verified','cleanup_verified','scratch_capacity_verified',
         'memory_peak_bytes','static_memory_peak_bytes','duration_ms','aggregate_duration_ms','artifacts',
         'canonical_findings_projected','project_option_policy','project_options','project_options_sha256'}
-    if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!='nico.cpp-configure-first-native.v1'
+    if runtime_contract:
+        required |= {'runtime_complete','runtime_plan_sha256','runtime_summary_sha256','runtime_duration_ms'}
+    expected_schema='nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'
+    if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!=expected_schema
             or native.get('source_population_sha256')!=_digest(receipt['target_hashes'])
             or type(native.get('source_count')) is not int or native['source_count']!=len(receipt['target_hashes'])
             or native.get('canonical_findings_projected') is not False
@@ -325,7 +330,6 @@ def _configure_first_record(identity, contract, receipt, encoded):
                 for k,v in native['project_options'].items())
             or native.get('project_options_sha256') != _digest(native['project_options'])):
         raise ValueError('worker_configure_first_native_invalid')
-    config=contract['configuration']
     if config['schema']=='nico.cpp-configure-first-contract.v1':
         if native['project_option_policy']!='explicit-v1' or native['project_options']!=config['project_options']:
             raise ValueError('worker_configure_first_native_invalid')
@@ -341,6 +345,12 @@ def _configure_first_record(identity, contract, receipt, encoded):
                 'clang_fallback_required_sha256','clang_fallback_analyzed_sha256'):
         if not isinstance(native.get(key),str) or re.fullmatch(r'[0-9a-f]{64}',native[key]) is None:
             raise ValueError('worker_configure_first_native_invalid')
+    if runtime_contract:
+        if (type(native.get('runtime_complete')) is not bool
+                or type(native.get('runtime_duration_ms')) is not int or native['runtime_duration_ms']<0
+                or any(not isinstance(native.get(key),str) or re.fullmatch(r'[0-9a-f]{64}',native[key]) is None
+                    for key in ('runtime_plan_sha256','runtime_summary_sha256'))):
+            raise ValueError('worker_configure_first_native_invalid')
     for key in ('source_count','configured_invocations','tests_discovered_count','tests_executed_count','tests_passed_count',
                 'tests_skipped_count','project_compiler_required_count','project_compiler_checked_count',
                 'project_static_required_count','project_static_analyzed_count','project_static_findings_count',
@@ -349,8 +359,11 @@ def _configure_first_record(identity, contract, receipt, encoded):
         if type(native.get(key)) is not int or native[key] < 0:
             raise ValueError('worker_configure_first_native_invalid')
     refs=native.get('artifacts')
-    if not isinstance(refs,dict) or not {'project-compilation-database','project-generated-context','project-compiler-evidence',
-            'project-static-environment','project-static-evidence'} <= set(refs):
+    required_refs={'project-compilation-database','project-generated-context','project-compiler-evidence',
+        'project-static-environment','project-static-evidence'}
+    if runtime_contract:
+        required_refs.add('project-runtime-evidence')
+    if not isinstance(refs,dict) or not required_refs <= set(refs):
         raise ValueError('worker_configure_first_native_invalid')
     for key,value in refs.items():
         if (not isinstance(value,dict) or value.get('key')!=key or value.get('storage_backend')!='postgres'
@@ -391,7 +404,11 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'compilation_database_sha256':native['compilation_database_sha256'],
             'project_option_policy':native['project_option_policy'],
             'project_options':deepcopy(native['project_options']),
-            'project_options_sha256':native['project_options_sha256']},
+            'project_options_sha256':native['project_options_sha256'],
+            **({'runtime_complete':native['runtime_complete'],
+                'runtime_plan_sha256':native['runtime_plan_sha256'],
+                'runtime_summary_sha256':native['runtime_summary_sha256'],
+                'runtime_duration_ms':native['runtime_duration_ms']} if runtime_contract else {})},
         'canonical_findings_projected':False,'human_review_required':True,'client_delivery_allowed':False},binding
 
 
