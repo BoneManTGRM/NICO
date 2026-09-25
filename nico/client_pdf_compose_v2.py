@@ -7,9 +7,9 @@ from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
-from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY, MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.7"
+VERSION = "nico.client-pdf-compose.v3.8"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -65,11 +65,18 @@ def _normalized(value: str) -> str:
     return " ".join(without_marks.casefold().split())
 
 
+_APPROVAL_BOUNDARY_LINES = frozenset(_normalized(value) for value in (EN_BOUNDARY, ES_BOUNDARY))
+
+
 def _meaningful_lines(value: str) -> list[str]:
     output: list[str] = []
     for raw in str(value or "").splitlines():
         line = _normalized(raw)
         if not line:
+            continue
+        # The real renderer writes its exact approval footer before body text.
+        # Ignore it for classification only; retained PDF pages keep the footer.
+        if line in _APPROVAL_BOUNDARY_LINES:
             continue
         if line.startswith("nico comprehensive ·"):
             continue
