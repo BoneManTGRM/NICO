@@ -58,3 +58,18 @@ def test_runtime_execution_failure_is_retained_and_cannot_be_complete():
     assert value['error']=='worker_runtime_fuzz_failed'
     proof=validate_runtime_evidence(value,plan())
     assert proof['complete'] is False
+
+def test_runtime_evidence_retains_raw_functional_and_sanitizer_result_reads():
+    value=execute_runtime_plan(Observe(),'container',plan(),{'BUILD_TESTS':'ON'})
+    assert 'results_read' in value['functional']
+    assert all('junit_read' in row for row in value['sanitizers'])
+    proof=validate_runtime_evidence(value,plan())
+    assert proof['complete'] is True
+
+
+def test_runtime_validator_rejects_tampered_retained_result_read():
+    import pytest
+    value=execute_runtime_plan(Observe(),'container',plan(),{'BUILD_TESTS':'ON'})
+    value['functional']['results_read']['output_sha256']='0'*64
+    with pytest.raises(ValueError,match='runtime_evidence_invalid'):
+        validate_runtime_evidence(value,plan())

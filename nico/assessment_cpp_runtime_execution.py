@@ -101,7 +101,7 @@ def _read_file(observe, container, key, path, limit):
         raise ValueError('worker_runtime_artifact_unavailable')
     raw=base64.b64decode(value['data'],validate=True)
     if not 0 < len(raw) <= limit: raise ValueError('worker_runtime_artifact_unavailable')
-    return raw
+    return row, raw
 
 
 def _parse_functional_csv(raw, selected):
@@ -166,10 +166,10 @@ def execute_runtime_plan(observe, container, plan, project_options):
             '--tmpdirprefix=/work/functional-tests',*selected]
         operation=_run(observe,'runtime-functional',container,argv,seconds=functional['seconds'],
             environment={'PYTHON_GIL':'1'},workdir='/work/build')
-        results_raw=_read_file(observe,container,'runtime-functional-results',
+        results_read,results_raw=_read_file(observe,container,'runtime-functional-results',
             '/work/build/nico-functional-results.csv',1024*1024)
         summary=_parse_functional_csv(results_raw,selected)
-        evidence['functional']={'setup':setup,'operation':operation,'results':summary,
+        evidence['functional']={'setup':setup,'operation':operation,'results_read':results_read,'results':summary,
             'results_sha256':hashlib.sha256(results_raw).hexdigest()}
         if not (_ok(setup) and _ok(operation) and summary['passed']==selected and not summary['failed'] and not summary['skipped']):
             raise ValueError('worker_runtime_functional_failed')
@@ -197,9 +197,9 @@ def execute_runtime_plan(observe, container, plan, project_options):
                 str(plan['sanitizers']['test_case_seconds']),'--output-on-failure','--output-junit',junit]
             t=_run(observe,'runtime-'+kind+'-tests',container,test_argv,
                 seconds=plan['sanitizers']['test_seconds'],environment=env)
-            junit_raw=_read_file(observe,container,'runtime-'+kind+'-junit',junit,4*1024*1024)
+            junit_read,junit_raw=_read_file(observe,container,'runtime-'+kind+'-junit',junit,4*1024*1024)
             summary=_junit(junit_raw,names)
-            item={'kind':kind,'configure':c,'build':b,'discovery':d,'tests':t,'results':summary,
+            item={'kind':kind,'configure':c,'build':b,'discovery':d,'tests':t,'junit_read':junit_read,'results':summary,
                 'junit_sha256':hashlib.sha256(junit_raw).hexdigest()}
             evidence['sanitizers'].append(item)
             if not (_ok(c) and _ok(b) and _ok(d) and _ok(t) and names
@@ -254,37 +254,97 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
             or not 0<=evidence['duration_ms']<=(plan['total_seconds']+5)*1000 or (evidence.get('error') is not None and
                 (not isinstance(evidence['error'],str) or re.fullmatch(r'worker_runtime_[a-z_]+',evidence['error']) is None))):
         raise ValueError('worker_runtime_evidence_invalid')
+
+    operation_fields={'id','argv','user','environment','workdir','exit_code','timed_out',
+        'output_truncated','duration_ms','output','output_sha256'}
+    def operation(row, maximum=4*1024*1024):
+        if (not isinstance(row,dict) or set(row)!=operation_fields
+                or not isinstance(row.get('id'),str) or not isinstance(row.get('argv'),list)
+                or not isinstance(row.get('environment'),dict)
+                or (row.get('user') is not None and not isinstance(row.get('user'),str))
+                or (row.get('workdir') is not None and not isinstance(row.get('workdir'),str))
+                or type(row.get('exit_code')) is not int
+                or type(row.get('timed_out')) is not bool or type(row.get('output_truncated')) is not bool
+                or type(row.get('duration_ms')) is not int or row['duration_ms']<0):
+            raise ValueError('worker_runtime_evidence_invalid')
+        return _output(row,maximum)
+
+    def retained_file(row, limit):
+        raw=operation(row,limit*2+4096)
+        try: value=json.loads(raw)
+        except (json.JSONDecodeError,UnicodeDecodeError) as exc:
+            raise ValueError('worker_runtime_evidence_invalid') from exc
+        if not isinstance(value,dict) or set(value)!={'data','truncated'} or value['truncated'] is not False:
+            raise ValueError('worker_runtime_evidence_invalid')
+        try: data=base64.b64decode(value['data'],validate=True)
+        except (ValueError,TypeError) as exc:
+            raise ValueError('worker_runtime_evidence_invalid') from exc
+        if not 0 < len(data) <= limit:
+            raise ValueError('worker_runtime_evidence_invalid')
+        return data
+
     functional=evidence.get('functional')
-    if not isinstance(functional,dict) or functional.get('results',{}).get('required')!=plan['functional']['selected_tests']:
+    if (not isinstance(functional,dict)
+            or set(functional)!={'setup','operation','results_read','results','results_sha256'}):
         raise ValueError('worker_runtime_evidence_invalid')
+    operation(functional['setup']); operation(functional['operation'])
+    functional_raw=retained_file(functional['results_read'],1024*1024)
+    try: parsed_functional=_parse_functional_csv(functional_raw,plan['functional']['selected_tests'])
+    except (ValueError,UnicodeError) as exc:
+        raise ValueError('worker_runtime_evidence_invalid') from exc
+    if (functional.get('results')!=parsed_functional
+            or functional.get('results_sha256')!=hashlib.sha256(functional_raw).hexdigest()):
+        raise ValueError('worker_runtime_evidence_invalid')
+
     sanitizers=evidence.get('sanitizers')
     if (not isinstance(sanitizers,list) or [row.get('kind') for row in sanitizers]!=plan['sanitizers']['kinds']):
         raise ValueError('worker_runtime_evidence_invalid')
+    parsed_sanitizers=[]
+    sanitizer_fields={'kind','configure','build','discovery','tests','junit_read','results','junit_sha256'}
+    for row in sanitizers:
+        if not isinstance(row,dict) or set(row)!=sanitizer_fields:
+            raise ValueError('worker_runtime_evidence_invalid')
+        for key in ('configure','build','discovery','tests'): operation(row[key])
+        try: names=_discover(_output(row['discovery'],4*1024*1024))
+        except (ValueError,KeyError,TypeError,json.JSONDecodeError) as exc:
+            raise ValueError('worker_runtime_evidence_invalid') from exc
+        junit_raw=retained_file(row['junit_read'],4*1024*1024)
+        try: parsed=_junit(junit_raw,names)
+        except ValueError as exc:
+            raise ValueError('worker_runtime_evidence_invalid') from exc
+        if row.get('results')!=parsed or row.get('junit_sha256')!=hashlib.sha256(junit_raw).hexdigest():
+            raise ValueError('worker_runtime_evidence_invalid')
+        parsed_sanitizers.append({'kind':row['kind'],**parsed})
+
     fuzz=evidence.get('fuzz')
-    if (not isinstance(fuzz,dict) or fuzz.get('target')!=plan['fuzz']['target']
-            or fuzz.get('corpus_sha256')!=[row['sha256'] for row in plan['fuzz']['corpus']]):
+    if (not isinstance(fuzz,dict) or set(fuzz)!={'corpus_stage','staged','configure','build','replays','campaign','target','corpus_sha256'}
+            or fuzz.get('target')!=plan['fuzz']['target']
+            or fuzz.get('corpus_sha256')!=[row['sha256'] for row in plan['fuzz']['corpus']]
+            or not isinstance(fuzz.get('replays'),list)):
         raise ValueError('worker_runtime_evidence_invalid')
-    try:
-        derived=(_ok(functional['setup']) and _ok(functional['operation'])
-            and functional['results'].get('passed')==plan['functional']['selected_tests']
-            and functional['results'].get('executed')==plan['functional']['selected_tests']
-            and not functional['results'].get('failed') and not functional['results'].get('skipped')
-            and all(_ok(row['configure']) and _ok(row['build']) and _ok(row['discovery']) and _ok(row['tests'])
-                and row.get('results',{}).get('executed')==row.get('results',{}).get('required')
-                and row.get('results',{}).get('passed')==row.get('results',{}).get('required')
-                and not row.get('results',{}).get('skipped') for row in sanitizers)
-            and _ok(fuzz.get('corpus_stage',{})) and _ok(fuzz.get('configure',{})) and _ok(fuzz.get('build',{}))
-            and all(_ok(row) for row in fuzz.get('replays',[])) and _ok(fuzz.get('campaign',{})))
-        for row in [functional['setup'],functional['operation'],
-                *[item[k] for item in sanitizers for k in ('configure','build','discovery','tests')],
-                fuzz['corpus_stage'],fuzz['configure'],fuzz['build'],*fuzz.get('replays',[]),fuzz['campaign']]:
-            _output(row,4*1024*1024)
-    except (KeyError,TypeError,ValueError):
-        raise ValueError('worker_runtime_evidence_invalid') from None
+    for key in ('corpus_stage','configure','build','campaign'): operation(fuzz[key])
+    for row in fuzz['replays']: operation(row)
+    try: staged=json.loads(_output(fuzz['corpus_stage']))
+    except (json.JSONDecodeError,ValueError,UnicodeDecodeError) as exc:
+        raise ValueError('worker_runtime_evidence_invalid') from exc
+    expected=[{'path':'/work/runtime-corpus/connect_block/s'+str(i),'sha256':row['sha256'],'bytes':row['bytes']}
+              for i,row in enumerate(plan['fuzz']['corpus'])]
+    if staged!=expected or fuzz.get('staged')!=expected:
+        raise ValueError('worker_runtime_evidence_invalid')
+
+    derived=(_ok(functional['setup']) and _ok(functional['operation'])
+        and parsed_functional['passed']==plan['functional']['selected_tests']
+        and parsed_functional['executed']==plan['functional']['selected_tests']
+        and not parsed_functional['failed'] and not parsed_functional['skipped']
+        and all(_ok(row[k]) for row in sanitizers for k in ('configure','build','discovery','tests'))
+        and all(row['passed']==row['required'] and row['executed']==row['required'] and not row['skipped']
+                for row in parsed_sanitizers)
+        and _ok(fuzz['corpus_stage']) and _ok(fuzz['configure']) and _ok(fuzz['build'])
+        and all(_ok(row) for row in fuzz['replays']) and _ok(fuzz['campaign']))
     if evidence['complete'] is not (derived and evidence['error'] is None):
         raise ValueError('worker_runtime_evidence_invalid')
-    return {'complete':evidence['complete'],'functional':functional['results'],
-        'sanitizers':[{'kind':row['kind'],**row['results']} for row in sanitizers],
+    return {'complete':evidence['complete'],'functional':parsed_functional,
+        'sanitizers':parsed_sanitizers,
         'fuzz':{'target':fuzz['target'],'replay_count':len(fuzz['replays']),
                 'campaign_completed':_ok(fuzz['campaign']),'corpus_sha256':list(fuzz['corpus_sha256'])},
         'native_evidence_sha256':_digest(evidence)}
