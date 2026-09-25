@@ -19,7 +19,7 @@ import time
 
 from nico.assessment_worker_container import _command
 from scripts.export_qualified_cpp_worker_image import (
-    MAX_ARCHIVE_BYTES, _canonical, _verify_archive_config, validate_control_proof,
+    MAX_ARCHIVE_BYTES, _canonical, _verify_archive_config, validate_control_proof, validate_full_project_qualification,
 )
 
 DESTINATION = 'ghcr.io/bonemantgrm/nico/assessment-cppcheck'
@@ -95,7 +95,7 @@ def publish_image(directory, expected_sha256, recipe, output, *, registry_token,
     if not _sha(expected_sha256) or hashlib.sha256(raw).hexdigest() != expected_sha256:
         raise ValueError('image_promotion_handoff_mismatch')
     manifest = json.loads(raw)
-    if (not isinstance(manifest, dict) or manifest.get('schema') != 'nico.qualified-image-handoff.v1'
+    if (not isinstance(manifest, dict) or manifest.get('schema') not in {'nico.qualified-image-handoff.v1','nico.qualified-image-handoff.v2'}
             or manifest.get('platform') != 'linux/amd64'
             or manifest.get('registry_published') is not False
             or manifest.get('production_qualified') is not False):
@@ -107,6 +107,13 @@ def publish_image(directory, expected_sha256, recipe, output, *, registry_token,
     proof = json.loads(_read(directory / 'qualification.json', 4 * 1024 * 1024))
     proof_hash, profiles = validate_control_proof(proof, source_sha=source_sha, image=image)
     if proof_hash != manifest.get('qualification_sha256') or profiles != manifest.get('owned_control_profiles'):
+        raise ValueError('image_promotion_qualification_mismatch')
+    if manifest['schema']=='nico.qualified-image-handoff.v2':
+        full=json.loads(_read(directory/'full-project-qualification.json',16*1024*1024))
+        full_hash=validate_full_project_qualification(full,source_sha=source_sha,image=image)
+        if full_hash!=manifest.get('full_project_qualification_sha256'):
+            raise ValueError('image_promotion_qualification_mismatch')
+    elif manifest.get('full_project_qualification_sha256') is not None:
         raise ValueError('image_promotion_qualification_mismatch')
     if hashlib.sha256(_read(recipe, 65536)).hexdigest() != manifest.get('recipe_sha256'):
         raise ValueError('image_promotion_recipe_mismatch')
