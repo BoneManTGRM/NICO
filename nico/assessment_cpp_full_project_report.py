@@ -10,6 +10,9 @@ from typing import Mapping
 import re
 
 from nico.assessment_cpp_full_project import PROFILE
+from nico.assessment_cpp_configure_first_contract import PROFILE as CONFIGURE_FIRST_PROFILE
+
+SUPPORTED_PROFILES = {PROFILE, CONFIGURE_FIRST_PROFILE}
 
 from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
 
@@ -18,7 +21,7 @@ def enrich_scanner_stage(canonical, stage):
     from nico.v2_premium_report_renderer import _is_spanish
     records = [r for r in canonical.get('scanner_execution_records') or []
                if isinstance(r, Mapping) and isinstance(r.get('cpp_build_evidence'), Mapping)
-               and r['cpp_build_evidence'].get('profile') == PROFILE]
+               and r['cpp_build_evidence'].get('profile') in SUPPORTED_PROFILES]
     if not records:
         return stage
     out = deepcopy(stage)
@@ -36,6 +39,8 @@ def enrich_scanner_stage(canonical, stage):
               'fuzz': 'fuzzing', 'native-evidence': 'evidencia de ejecución acotada'}
     for record in records:
         provenance = record.get('worker_provenance')
+        build = record['cpp_build_evidence']
+        profile = build.get('profile')
         provenance = provenance if isinstance(provenance, Mapping) else {}
         binding = provenance.get('identity') or {}
         identity = canonical.get('identity')
@@ -45,7 +50,7 @@ def enrich_scanner_stage(canonical, stage):
             and record.get('raw_artifact_retention_complete') is True
             and record.get('current_run') is True and record.get('exact_commit_match') is True
             and record.get('execution_observed_for_this_report') is True
-            and provenance.get('profile') == PROFILE and isinstance(digest, str)
+            and profile in SUPPORTED_PROFILES and provenance.get('profile') == profile and isinstance(digest, str)
             and re.fullmatch(r'[0-9a-f]{64}', digest) is not None
             and provenance.get('receipt_sha256') == digest
             and bool(identity.get('run_id')) and binding.get('run_id') == identity.get('run_id')
@@ -55,9 +60,8 @@ def enrich_scanner_stage(canonical, stage):
             gaps.append('La evidencia de ejecución del proyecto C/C++ no está vinculada a un comprobante conservado y verificado de esta evaluación.' if es
                 else 'C/C++ project execution evidence is not bound to a verified retained receipt for this assessment.')
             continue
-        build = record['cpp_build_evidence']
         rows = [r for r in build.get('stages') or [] if isinstance(r, Mapping)]
-        built = build.get('build_completed') is True
+        built = build.get('build_completed') is True or build.get('compiled') is True
         if es:
             summaries.append('Ejecución del proyecto C/C++: compilación ' + ('completada.' if built else 'no verificada.'))
         else:
@@ -124,6 +128,35 @@ def enrich_scanner_stage(canonical, stage):
             digest = context.get('capture_sha256')
             if isinstance(digest, str):
                 evidence.append(('SHA-256 de la captura de encabezados generados: ' if es else 'Generated-header capture SHA-256: ') + digest)
+        runtime = build.get('runtime_scope')
+        if isinstance(runtime, Mapping):
+            functional = runtime.get('functional') if isinstance(runtime.get('functional'), Mapping) else {}
+            required = functional.get('required') or []
+            passed = functional.get('passed') or []
+            line = (f'Pruebas funcionales en ejecución: {len(passed)}/{len(required)} aprobadas.' if es
+                    else f'Functional runtime tests: {len(passed)}/{len(required)} passed.')
+            summaries.append(line); evidence.append(line)
+            for sanitizer in runtime.get('sanitizers') or []:
+                if not isinstance(sanitizer, Mapping): continue
+                kind = str(sanitizer.get('kind') or '')
+                req = sanitizer.get('required') or []
+                ok = sanitizer.get('passed') or []
+                line = (f'Sanitizador / {kind}: {len(ok)}/{len(req)} aprobadas.' if es
+                        else f'Sanitizer / {kind}: {len(ok)}/{len(req)} passed.')
+                summaries.append(line); evidence.append(line)
+            runtime_fuzz = runtime.get('fuzz') if isinstance(runtime.get('fuzz'), Mapping) else {}
+            target = str(runtime_fuzz.get('target') or '')
+            replay = runtime_fuzz.get('replay_count')
+            executions = runtime_fuzz.get('campaign_executions')
+            signal = runtime_fuzz.get('campaign_coverage_signal')
+            duration = runtime_fuzz.get('campaign_duration_ms')
+            line = (f'Fuzzing acotado / {target}: repeticiones del corpus={replay}; ejecuciones de campaña={executions}; señal de cobertura de la herramienta={signal}.' if es
+                    else f'Bounded fuzz / {target}: corpus replays={replay}; campaign executions={executions}; tool coverage signal={signal}.')
+            summaries.append(line); evidence.append(line)
+            if type(duration) is int:
+                evidence.append((f'Duración de la campaña de fuzzing: {duration} ms.' if es else f'Fuzz campaign duration: {duration} ms.'))
+            gaps.append('El fuzzing acotado es una prueba limitada y no representa cobertura exhaustiva de vulnerabilidades ni del código.' if es
+                        else 'Bounded fuzzing is limited testing; it is not exhaustive vulnerability or source coverage.')
         fuzz = build.get('bounded_fuzz_evidence')
         if isinstance(fuzz, Mapping):
             from nico.assessment_cpp_fuzz import LIMITATION
@@ -143,6 +176,8 @@ def enrich_scanner_stage(canonical, stage):
         header_verified = (record.get('cppcheck_source_coverage') or {}).get('header_context_verified') is True
         if isinstance(fuzz, Mapping):
             gaps.append('La calificación integral del proyecto sigue incompleta.' if es else 'Full-project qualification remains incomplete.')
+        elif isinstance(runtime, Mapping):
+            pass
         elif es:
             gaps.append('La ejecución de libFuzzer no está verificada; la calificación integral sigue incompleta.' if header_verified else
                 'La ejecución de libFuzzer y la cobertura de inclusión de encabezados no están verificadas; la calificación integral sigue incompleta.')

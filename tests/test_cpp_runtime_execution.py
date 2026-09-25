@@ -22,8 +22,9 @@ def plan():
 
 class Observe:
     def __init__(self, fault=None):
-        self.fault=fault
+        self.fault=fault; self.calls={}
     def __call__(self,key,argv,**kwargs):
+        self.calls[key]=argv
         output=b''
         exit_code=1 if key==self.fault else 0
         if key=='runtime-functional-results':
@@ -34,6 +35,8 @@ class Observe:
         elif key.endswith('-junit'):
             xml=b'<testsuite tests="1"><testcase name="unit_a"/></testsuite>'
             output=json.dumps({'data':base64.b64encode(xml).decode(),'truncated':False}).encode()
+        elif key=='runtime-fuzz-campaign':
+            output=b'#2 INITED cov: 7 ft: 9 corp: 2/4b\n#256 DONE cov: 31 ft: 40 corp: 7/100b\nstat::number_of_executed_units: 256\n'
         elif key=='runtime-fuzz-corpus-stage':
             output=json.dumps([
                 {'path':'/work/runtime-corpus/connect_block/s0','sha256':hashlib.sha256(b'a').hexdigest(),'bytes':1},
@@ -50,6 +53,8 @@ def test_runtime_execution_requires_functional_sanitizers_and_bounded_fuzz():
     assert proof['functional']['passed']==['feature_a.py','mempool_a.py']
     assert [row['kind'] for row in proof['sanitizers']]==['address','undefined']
     assert proof['fuzz']['replay_count']==2 and proof['fuzz']['campaign_completed'] is True
+    assert proof['fuzz']['campaign_executions']==256 and proof['fuzz']['campaign_coverage_signal']==31
+    assert '-print_final_stats=1' in value['fuzz']['campaign']['argv']
 
 
 def test_runtime_execution_failure_is_retained_and_cannot_be_complete():

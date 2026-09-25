@@ -138,6 +138,23 @@ def _base_options(project_options):
     return ['-D'+k+'='+v for k,v in sorted(project_options.items())]
 
 
+def _fuzz_campaign_metrics(row):
+    if not _ok(row):
+        return None
+    try:
+        text=_output(row,1024*1024).decode('utf-8',errors='replace')
+    except ValueError:
+        return None
+    executed=re.search(r'stat::number_of_executed_units:\s*([0-9]+)',text)
+    coverage=re.findall(r'\bcov:\s*([0-9]+)',text)
+    if executed is None or not coverage:
+        return None
+    count=int(executed.group(1)); signal=int(coverage[-1])
+    if count < 1 or signal < 0:
+        return None
+    return {'executions':count,'coverage_signal':signal,'duration_ms':row['duration_ms']}
+
+
 def execute_runtime_plan(observe, container, plan, project_options):
     if (not callable(observe) or not isinstance(container,str) or not container
             or not isinstance(plan,dict) or plan.get('schema')!='nico.cpp-runtime-plan.v1'
@@ -230,14 +247,17 @@ def execute_runtime_plan(observe, container, plan, project_options):
                  '/work/runtime-corpus/connect_block/s'+str(i)],seconds=60,environment=fenv))
         campaign=_run(observe,'runtime-fuzz-campaign',container,
             ['/work/fuzz-build/'+fuzz['binary'],'-runs='+str(fuzz['campaign_runs']),
-             '-max_total_time='+str(fuzz['campaign_seconds']),'-seed=1','-max_len=4096',
+             '-max_total_time='+str(fuzz['campaign_seconds']),'-print_final_stats=1','-seed=1','-max_len=4096',
              '/work/runtime-campaign/connect_block'],seconds=fuzz['campaign_seconds']+30,environment=fenv)
+        campaign_metrics=_fuzz_campaign_metrics(campaign)
         evidence['fuzz']={'corpus_stage':stage,'staged':staged,'configure':fc,'build':fb,
-            'replays':replays,'campaign':campaign,'target':fuzz['target'],
+            'replays':replays,'campaign':campaign,'campaign_metrics':campaign_metrics,'target':fuzz['target'],
             'corpus_sha256':[row['sha256'] for row in fuzz['corpus']]}
         if not (staged==expected and _ok(stage) and _ok(fc) and _ok(fb)
                 and all(_ok(row) for row in replays) and _ok(campaign)):
             raise ValueError('worker_runtime_fuzz_failed')
+        if campaign_metrics is None:
+            raise ValueError('worker_runtime_fuzz_metrics_invalid')
         evidence['complete']=True
     except (ValueError,KeyError,TypeError,UnicodeError,json.JSONDecodeError) as exc:
         code=str(exc)
@@ -317,7 +337,7 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
         parsed_sanitizers.append({'kind':row['kind'],**parsed})
 
     fuzz=evidence.get('fuzz')
-    if (not isinstance(fuzz,dict) or set(fuzz)!={'corpus_stage','staged','configure','build','replays','campaign','target','corpus_sha256'}
+    if (not isinstance(fuzz,dict) or set(fuzz)!={'corpus_stage','staged','configure','build','replays','campaign','campaign_metrics','target','corpus_sha256'}
             or fuzz.get('target')!=plan['fuzz']['target']
             or fuzz.get('corpus_sha256')!=[row['sha256'] for row in plan['fuzz']['corpus']]
             or not isinstance(fuzz.get('replays'),list)):
@@ -331,6 +351,9 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
               for i,row in enumerate(plan['fuzz']['corpus'])]
     if staged!=expected or fuzz.get('staged')!=expected:
         raise ValueError('worker_runtime_evidence_invalid')
+    parsed_metrics=_fuzz_campaign_metrics(fuzz['campaign'])
+    if fuzz.get('campaign_metrics')!=parsed_metrics:
+        raise ValueError('worker_runtime_evidence_invalid')
 
     derived=(_ok(functional['setup']) and _ok(functional['operation'])
         and parsed_functional['passed']==plan['functional']['selected_tests']
@@ -340,11 +363,14 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
         and all(row['passed']==row['required'] and row['executed']==row['required'] and not row['skipped']
                 for row in parsed_sanitizers)
         and _ok(fuzz['corpus_stage']) and _ok(fuzz['configure']) and _ok(fuzz['build'])
-        and all(_ok(row) for row in fuzz['replays']) and _ok(fuzz['campaign']))
+        and all(_ok(row) for row in fuzz['replays']) and _ok(fuzz['campaign']) and parsed_metrics is not None)
     if evidence['complete'] is not (derived and evidence['error'] is None):
         raise ValueError('worker_runtime_evidence_invalid')
     return {'complete':evidence['complete'],'functional':parsed_functional,
         'sanitizers':parsed_sanitizers,
         'fuzz':{'target':fuzz['target'],'replay_count':len(fuzz['replays']),
-                'campaign_completed':_ok(fuzz['campaign']),'corpus_sha256':list(fuzz['corpus_sha256'])},
+                'campaign_completed':_ok(fuzz['campaign']),'campaign_executions':(parsed_metrics or {}).get('executions'),
+                'campaign_coverage_signal':(parsed_metrics or {}).get('coverage_signal'),
+                'campaign_duration_ms':(parsed_metrics or {}).get('duration_ms'),
+                'corpus_sha256':list(fuzz['corpus_sha256'])},
         'native_evidence_sha256':_digest(evidence)}

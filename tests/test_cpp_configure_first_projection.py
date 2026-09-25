@@ -48,3 +48,35 @@ def test_projection_preserves_full_canonical_finding_population():
     assert out["completed"] and out["verified_complete"] and out["canonical_findings_projected"]
     assert out["finding_count"]==len(out["findings"])==1
     assert out["findings"][0]["commit_sha"]=="a"*40
+
+
+def test_configure_first_runtime_evidence_renders_in_both_languages():
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    digest='a'*64
+    identity={'run_id':'run','commit_sha':'b'*40}
+    record={
+        'commit_sha':'b'*40,'raw_artifact_retention_complete':True,'raw_artifact_sha256':digest,
+        'current_run':True,'exact_commit_match':True,'execution_observed_for_this_report':True,
+        'worker_provenance':{'profile':'cpp-configure-first-v2','receipt_sha256':digest,
+            'identity':{'run_id':'run','revision':'b'*40}},
+        'cppcheck_source_coverage':{'header_context_verified':True},
+        'cpp_build_evidence':{'profile':'cpp-configure-first-v2','compiled':True,
+            'runtime_scope':{'complete':True,
+                'functional':{'required':['feature_a.py','p2p_a.py'],'executed':['feature_a.py','p2p_a.py'],
+                    'passed':['feature_a.py','p2p_a.py'],'failed':[],'skipped':[]},
+                'sanitizers':[{'kind':'address','required':['unit_a'],'executed':['unit_a'],'passed':['unit_a'],'skipped':[]},
+                    {'kind':'undefined','required':['unit_a'],'executed':['unit_a'],'passed':['unit_a'],'skipped':[]}],
+                'fuzz':{'target':'connect_block','replay_count':2,'campaign_completed':True,
+                    'campaign_executions':256,'campaign_coverage_signal':31,'campaign_duration_ms':1234,
+                    'corpus_sha256':['c'*64,'d'*64]}}}
+    }
+    for language, terms in [('en',('Functional runtime tests: 2/2 passed.','Sanitizer / address: 1/1 passed.',
+            'Bounded fuzz / connect_block: corpus replays=2; campaign executions=256; tool coverage signal=31.')),
+        ('es-MX',('Pruebas funcionales en ejecución: 2/2 aprobadas.','Sanitizador / address: 1/1 aprobadas.',
+            'Fuzzing acotado / connect_block: repeticiones del corpus=2; ejecuciones de campaña=256; señal de cobertura de la herramienta=31.'))]:
+        canonical={'report_language':language,'identity':identity,'scanner_execution_records':[record]}
+        out=enrich_scanner_stage(canonical,{'summary':'','evidence':[],'unavailable':[]})
+        rendered=' '.join([out['summary'],*out['evidence'],*out['unavailable']])
+        for term in terms: assert term in rendered
+        assert ('not exhaustive vulnerability or source coverage' in rendered if language=='en'
+                else 'no representa cobertura exhaustiva de vulnerabilidades ni del código' in rendered)
