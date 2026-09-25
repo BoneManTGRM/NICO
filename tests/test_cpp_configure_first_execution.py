@@ -22,8 +22,8 @@ def proof():
 
 def test_summary_is_hash_bound_and_keeps_canonical_projection_pending():
     targets={"CMakeLists.txt":"d"*64,"src/a.cpp":"e"*64}
-    artifacts={k:ref(k) for k in ("project-generated-context","project-compiler-evidence",
-        "project-static-environment","project-static-evidence")}
+    artifacts={k:ref(k) for k in ("project-compilation-database","project-generated-context",
+        "project-compiler-evidence","project-static-environment","project-static-evidence")}
     result=summarize_probe(proof(),targets,artifacts)
     assert result["complete_execution"] is True
     assert result["canonical_findings_projected"] is False
