@@ -156,7 +156,11 @@ def test_static_execution_has_a_fresh_enforced_budget_and_no_executable_workspac
     assert result['boundary_verified'] and result['cleanup_verified']
     assert result['analysis']['required_contexts'] == result['analysis']['analyzed_contexts']
     assert len(result['analysis']['analyzed_contexts']) == 3
-    assert result['execution_budget_seconds'] == 600 and result['wall_budget_seconds'] == 610
+    assert result['execution_budget_seconds'] == 1020 and result['wall_budget_seconds'] == 1030
+    assert result['budget_policy'] == {
+        'schema':'nico.cpp-static-combined-budget.v2',
+        'primary_seconds':540,'fallback_seconds':180,'controller_seconds':300,
+    }
     assert result['memory_peak_bytes'] == 12345678
     assert result['production_qualified'] is False
     assert checkpoints and saved[-1] == result and saved[0]['complete'] is False
@@ -236,7 +240,7 @@ def test_probe_delegates_static_only_after_baseline_cleanup_with_separate_budget
         assert image == 'sha256:'+'a'*64
         assert json.loads(database) and compiler_raw and captured['files'] == {}
         stage_calls.append(True)
-        record = dict(complete=fault != 'static-incomplete', execution_budget_seconds=600,
+        record = dict(complete=fault != 'static-incomplete', execution_budget_seconds=1020,
                       analysis={'complete':fault != 'static-incomplete', 'findings':[]},
                       error='worker_project_static_stage_analysis_incomplete' if fault else None)
         kwargs['retain'](record)
@@ -257,16 +261,16 @@ def test_probe_delegates_static_only_after_baseline_cleanup_with_separate_budget
         assert result['status'] == 'UNPROVEN'
     else:
         assert stage_calls == [True], 'static analysis must run in a fresh sandbox after baseline cleanup'
-        assert result['aggregate_execution_budget_seconds'] == 2400
-        assert result['aggregate_wall_budget_seconds'] == 2420
+        assert result['aggregate_execution_budget_seconds'] == 2820
+        assert result['aggregate_wall_budget_seconds'] == 2840
         assert result['aggregate_duration_ms'] >= result['duration_ms']
-        assert result['project_static_stage']['execution_budget_seconds'] == 600
+        assert result['project_static_stage']['execution_budget_seconds'] == 1020
         assert result['status'] == ('UNPROVEN' if fault else 'BASELINE_EXECUTED')
     assert saved[-1] == result
 
 
 @pytest.mark.parametrize('boundary', ['native-return', 'artifact-retention', 'validation'])
-@pytest.mark.parametrize('elapsed', [599, 600, 601])
+@pytest.mark.parametrize('elapsed', [1019, 1020, 1021])
 def test_static_stage_deadline_includes_final_output_retention_and_validation(
         tmp_path, monkeypatch, boundary, elapsed):
     """Returned bytes survive a deadline; late evidence never qualifies a stage."""
@@ -309,7 +313,7 @@ def test_static_stage_deadline_includes_final_output_retention_and_validation(
     assert hashlib.sha256(raw).hexdigest() == reference['sha256'] == operation['output_sha256']
     assert result['cleanup_verified'] and saved[-1] == result
     assert result['duration_ms'] == elapsed * 1000
-    if elapsed < 600:
+    if elapsed < 1020:
         assert result['complete'] and result['status'] == 'STATIC_ANALYSIS_EXECUTED'
         assert result['error'] is None
     else:
