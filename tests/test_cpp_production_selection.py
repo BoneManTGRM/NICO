@@ -28,11 +28,25 @@ def test_release_owned_selector_builds_generic_configure_first_contract():
     assert result['profile']=='cpp-configure-first-v2'
     assert result['image_digest']==IMAGE
     assert result['configuration']['expected_tree_sha']==TREE
-    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v2'
+    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v3'
     assert result['configuration']['project_option_policy']=='conservative-cmake-v1'
     assert 'project_options' not in result['configuration']
+    assert result['configuration']['runtime_scope']=={
+        'schema':'nico.cpp-runtime-scope.v1',
+        'functional_policy':'source-declared-functional-v1',
+        'functional_seconds':900,
+        'sanitizers':['address','undefined'],
+        'sanitizer_build_seconds':1200,
+        'sanitizer_test_seconds':600,
+        'sanitizer_test_case_seconds':120,
+        'fuzz_policy':'source-declared-libfuzzer-v1',
+        'fuzz_replay_runs':1,
+        'fuzz_campaign_runs':256,
+        'fuzz_campaign_seconds':300,
+        'parallel':4,
+    }
     assert result['targets']=={}
-    assert result['limits']=={'max_attempts':1,'wall_seconds':2420,'lease_seconds':300}
+    assert result['limits']=={'max_attempts':1,'wall_seconds':9000,'lease_seconds':300}
 
 def test_selector_is_fail_closed_without_generic_cpp_cmake_or_release_proof():
     assert select_configure_first_contract(repo_step(['README.md']),environ=env(),release_revision=RELEASE) is None
