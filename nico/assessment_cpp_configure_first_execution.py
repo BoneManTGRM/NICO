@@ -13,6 +13,17 @@ import re
 from nico.assessment_worker_receipts import canonical_bytes
 
 PROFILE = "cpp-configure-first-v2"
+
+
+def execution_timeout_limit(contract):
+    schema=((contract or {}).get("configuration") or {}).get("schema")
+    wall=((contract or {}).get("limits") or {}).get("wall_seconds")
+    if type(wall) is not int or wall < 1:
+        raise ValueError("worker_configure_first_execution_contract_invalid")
+    cap=8980 if schema == "nico.cpp-configure-first-contract.v3" else 2400
+    return min(cap, max(1, wall-20))
+
+
 _REQUIRED_ARTIFACTS = {
     "project-compilation-database", "project-generated-context", "project-compiler-evidence",
     "project-static-environment", "project-static-evidence",
@@ -128,7 +139,7 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
             or acquisition.get("tree_sha")!=contract["configuration"]["expected_tree_sha"]
             or not isinstance(acquisition.get("inputs"),dict) or not acquisition["inputs"]
             or acquisition.get("population_sha256")!=hashlib.sha256(canonical_bytes(acquisition["inputs"])).hexdigest()
-            or type(timeout_seconds) is not int or not 1<=timeout_seconds<=2400
+            or type(timeout_seconds) is not int or not 1<=timeout_seconds<=execution_timeout_limit(contract)
             or not callable(checkpoint) or not callable(retain_artifact)):
         raise ValueError("worker_configure_first_execution_contract_invalid")
     targets=deepcopy(acquisition["inputs"])
