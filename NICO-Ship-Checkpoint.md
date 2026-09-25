@@ -69,7 +69,7 @@ Frozen Bitcoin remains `bb5296576e8f1a9fc11c19d9a25ba02ed4547e24`, tree `186194c
 
 Source publication is available; a no-op non-force ref check succeeded. Prior Codex review allowance exhaustion remains separate: no unchanged retry, extra credits/account, waiver or author-review substitution. Earlier rejected Bitcoin discovery must not be evaded; this work is the permitted generic tool-parser repair. No merge, deployment, professional disposition or delivery authorization is claimed.
 
-EXACT NEXT ACTION: verify this second controller hot-path repair in hosted frozen Bitcoin qualification so the already-published 56-context Clang fallback can execute within the unchanged 600-second static-stage budget. Preserve exact primary/fallback artifacts and populations. If C5/C11 pass, promote only the terminal successful qualification run/artifact/image identities into the fail-closed normal-intake selector, then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual Bitcoin acceptance.
+EXACT NEXT ACTION: verify this repaired push-event image publication/retrieval and the hosted frozen Bitcoin requalification on the 8ebe static-validator descendant. Preserve exact image config/manifest and qualification run/artifact identities. If C5/C11 pass, promote only those terminal successful identities into the fail-closed normal-intake selector, then complete sanitizer/integration/fuzz runtime scope, independent review/final gates, merge/deploy and actual bilingual Bitcoin acceptance.
 
 ## Immutable continuity
 
@@ -187,3 +187,12 @@ This descendant preserves the same secret rules but compiles them into one scope
 Exact replay of retained static evidence da44104ef44287791b7c09b65991ca5d07ca0f7285a5a82cce9309f6b43461e8 produced a byte-for-byte identical 135,751,540-byte canonical proof, SHA256 becb54cf03d1b59b04ffdd46c461779fdb558e3b3961e5a18c62e1f001210ea7, with 419/475 analyzed contexts, 31,873 findings, 579 limitations and 138,106 modeled inputs. Local Python3.13 replay fell from 11.762s before this descendant to 3.707s after it. The Clang fallback request remains exactly 56 contexts and 557,374 serialized bytes.
 
 Focused regression groups pass 155/155 plus 20/20 additional Clang/redaction tests. The unchanged broader C++ aggregate exceeded the local command window after partial progress and is not credited. No analyzer invocation, secret pattern, context, finding, limitation, deadline, resource limit or completion rule changes. Hosted Bitcoin requalification remains mandatory.
+
+
+## Clean-daemon image retrieval repair
+
+Push-event worker-image release run36074435680 proved publication itself succeeded, but verify-image job107883875311 failed before any registry pull with `image_release_clean_daemon_required`. The step was named "Verify anonymous retrieval on a separate clean daemon" but did not actually create one; GitHub-hosted runner preload images therefore correctly tripped the release controller's fail-closed clean-daemon check.
+
+The verify job now uses the same isolated-daemon construction already proven in the separate retrieval workflow: stop the hosted Docker service/socket, create a new empty data/exec root, launch dockerd with bridge/iptables/ip-forward/ip-masq disabled, verify DockerRootDir equals that private root, then invoke the unchanged anonymous release verifier. No cached image can satisfy the pull. No registry credential is introduced; the package must still be anonymously retrievable, and `production_qualified` remains false after publication/retrieval.
+
+This commit intentionally carries the existing `[publish-worker-image]` trigger because the prior publication cannot be re-verified with a changed workflow definition. It is a single repair-driven publication attempt, not a reassurance retry.

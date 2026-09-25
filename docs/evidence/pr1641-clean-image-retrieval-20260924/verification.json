@@ -1,0 +1,13 @@
+{
+  "schema": "nico.pr1641-clean-image-retrieval.v1",
+  "base": "8ebe409e7d6eeb07e473e5eb0e5bbb9fb2e8287d",
+  "failed_release_run_id": 36074435680,
+  "failed_verify_job_id": 107883875311,
+  "failure": "image_release_clean_daemon_required",
+  "publication_succeeded": true,
+  "anonymous_pull_attempted": false,
+  "repair": "fresh isolated dockerd data/exec root with verified DockerRootDir",
+  "credentials_added": false,
+  "production_qualified": false,
+  "republish_reason": "workflow verification defect requires new workflow definition"
+}
