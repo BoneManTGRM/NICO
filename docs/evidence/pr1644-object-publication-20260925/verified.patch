@@ -1,0 +1,987 @@
+diff --git a/NICO-Ship-Checkpoint.md b/NICO-Ship-Checkpoint.md
+index 026b440..0c45f1a 100644
+--- a/NICO-Ship-Checkpoint.md
++++ b/NICO-Ship-Checkpoint.md
+@@ -68,3 +68,15 @@ Last verified production remains main31269344: Vercel READY dpl_8peLtPtpFF839XWM
+ ## EXACT NEXT ACTION
+ 
+ Verify the single published timing candidate and its automatic owned/native qualification without manual duplication. Preserve any successor already running on678; changed runtime scope/fallback timing invalidates only their dependent proof. Reconcile and publish the tested local functional/report correction rather than restart it, while obtaining legitimate actual-report access and complete independent review. Native qualification must establish every retained target and actual instrumentation before image/release integration, then ordinary production control followed by frozen Bitcoin and bilingual rendered/retrieval acceptance. Do not merge, activate qualification or declare SHIPPED on longer limits, green badges, partial native output or synthetic artifacts.
++
++## Reconciled artifact, functional-failure and es-MX correction
++
++This continuation is based on exact head937ce8345286c5bf4557497a260580cbb2a53d8e/treeb5c49087af64fd2df9130989e9f6da99f8dd5251. Its above timing correction and all immutable predecessors remain intact. The retrieved native-source archive records PR test merge24aebd772ceb216ee79d479203f9b70ef8d81054 with the exact same tree. No stale timing/checkpoint patch was applied wholesale.
++
++Recovered changes are now one candidate: actual compressed-byte digest/length/type verification before decompression; retention and reconstruction of corroborated functional setup/runner/result-read failures; unknown versus unexecuted EN/es-MX scope; exact configure-first Spanish failure text; independent incomplete-scanner clause grammar; late-companion stakeholder-confirmation translation. Successful native commands, target populations, existing sanitizer/fallback budgets, all resource/isolation limits, scores and genuine human approval/delivery gates are unchanged.
++
++The unchanged 75-case focused test membership produced48failures/27passes before code changes and75passes after. Dependent fixture failures are not credited as independent behavioral REDs. Final56disjoint module runs total1421distinct passes, zero failures/errors/skips; those75are included, not additive. The first combined local command hit a200-second process ceiling with no terminal JUnit and is preserved as unproven; module sharding is not pinned hosted single-process parity. Local Python3.13.5/pytest9.0.2/pypdf5.9.0/reportlab4.4.9 differs from hosted pins. Two owned21-page EN/es-MX exports pass cross-format assertions and off-page text checks; corrected Spanish scanner/companion pages were rendered and inspected. The English PDF is byte-identical to the preserved owned baseline. These are NOT Bitcoin or production review PDFs. Exact file/JUnit hashes and scope: docs/evidence/pr1644-integrated-corrections-20260925/verification.json.
++
++Publication uses an explicitly bounded, temporary data-only GitHub object-preparation job because local Git cannot resolve github.com and the large file contents must remain byte-exact. The helper executes no NICO module, test or assessed source; it can create only immutable blobs/tree and cannot update a ref or merge. Its proposed tree removes all four temporary helper paths. The authorized integrating connection must verify returned hashes, re-read the expected head, create the commit and fast-forward the existing branch without force. A helper run is not qualification or independent review.
++
++Preserve run36167659433/job108194761680; no cancellation, retry or manually duplicated native campaign was started. Routine exact-source CI after branch publication remains required. Reconcile any concurrent head before publication. PR1645 remains separate; no actual production input, valid Bitcoin PDF, full independent approval, deployment chain, normal production exercise or client authorization is supplied by these corrections. The above C0–C19 incomplete/failed rows remain open until their actual evidence is obtained. The next action is exact-source hosted checks/review plus the preserved native result, then actual-input PDF replay and authorized production qualification—not a green-badge merge.
+diff --git a/docs/evidence/pr1644-integrated-corrections-20260925/verification.json b/docs/evidence/pr1644-integrated-corrections-20260925/verification.json
+new file mode 100644
+index 0000000..3c3a468
+--- /dev/null
++++ b/docs/evidence/pr1644-integrated-corrections-20260925/verification.json
+@@ -0,0 +1,437 @@
++{
++  "schema": "nico.pr1644-integrated-corrections.v1",
++  "source_base": "937ce8345286c5bf4557497a260580cbb2a53d8e",
++  "source_tree": "b5c49087af64fd2df9130989e9f6da99f8dd5251",
++  "source_archive_sha256": "d437b5688eae60269d8b3887a6a67d9a73c6dae2e62b8648b6f00e6556c3d668",
++  "source_archive_commit": "24aebd772ceb216ee79d479203f9b70ef8d81054",
++  "source_archive_tree_matches_head": true,
++  "files": {
++    "nico/assessment_cpp_configure_first_projection.py": {
++      "git_blob": "8bef88813decab180764d7206ea8e2cfae3be94f",
++      "bytes": 11129,
++      "sha256": "3958f67324b856df29294128eb9425e0122fdbca6dc26ed5a821bacf9ef05903"
++    },
++    "nico/assessment_cpp_full_project_report.py": {
++      "git_blob": "059646850894c1a2847f35c182a5d7ed615f22c9",
++      "bytes": 17730,
++      "sha256": "01c9a73466b0ecd4b6a288431a0ec7ff41ebe946497cda99544282839e4a753c"
++    },
++    "nico/assessment_cpp_runtime_execution.py": {
++      "git_blob": "fa7d0192e40f9d7f97ef52d396963d4fa6a5dc50",
++      "bytes": 54773,
++      "sha256": "d8fa84590e8d44ff3d16d37d95c64380267e56945a1f38f173ba7071c1278e12"
++    },
++    "nico/comprehensive_client_review_companion_v2.py": {
++      "git_blob": "124be5dfbe6a1ec087414f5f3fff4663419f3581",
++      "bytes": 28333,
++      "sha256": "6210032bc8eab6b1d2f56efda9a95bdb311f7c5c8cbbd0c6ab8f5d9bc29a6e52"
++    },
++    "nico/comprehensive_spanish_canonical_report_v87.py": {
++      "git_blob": "02c8511d10538068af343259b7bb6b99adb7e7ac",
++      "bytes": 201000,
++      "sha256": "db11484ffd38956946eaffe23bc50ef24cb5e280df156bc03483b7d3fd5a56da"
++    },
++    "tests/test_cpp_configure_first_projection.py": {
++      "git_blob": "41e7c1cfc71fae49986f672995e8c9afc77b7415",
++      "bytes": 26561,
++      "sha256": "01fa2e85cc6f86d08376048a1111c3723cf66c2cdbfa54ea5ab434fbe6d393f4"
++    },
++    "tests/test_cpp_functional_failure_prefix.py": {
++      "git_blob": "844aeafe52b06f66b26aeb75ad43cb7e7a39a036",
++      "bytes": 7931,
++      "sha256": "fee8a8cf2c071ead1be4245b5c825a0afdbf4c430ce4bea6496759842316f510"
++    },
++    "tests/test_cpp_retained_compressed_identity.py": {
++      "git_blob": "4e70e65d43de20f1136aa6cfce022e94a4cfbd1b",
++      "bytes": 4811,
++      "sha256": "4bf1417ea8073dd3c9c56fb33feec58ca9a982417b7d49b922b4a790f21292f3"
++    }
++  },
++  "focused_red": {
++    "cases": 75,
++    "failed": 48,
++    "passed": 27,
++    "meaningful_red_note": "Includes dependent fixture failures; do not count every failure as an independent behavioral RED."
++  },
++  "identical_focused_green": {
++    "cases": 75,
++    "failures": 0,
++    "errors": 0,
++    "skips": 0
++  },
++  "regressions": {
++    "distinct_cases": 1421,
++    "modules": 56,
++    "failures": 0,
++    "errors": 0,
++    "skips": 0,
++    "focused_75_included": true,
++    "membership_sha256": "0848e8a934569dea3ddd4aae8760e5b5bd325dd0be9ad48147dc47ba01a09008",
++    "junit_files": [
++      {
++        "junit": "test_assessment_cpp_full_project.xml",
++        "cases": 61,
++        "sha256": "aed339ff412be281122ac32befb62ef27971546da72dad4d8c1aff58bebd082a"
++      },
++      {
++        "junit": "test_assessment_worker_archive.xml",
++        "cases": 40,
++        "sha256": "525f96e64feee6db44f266d5f395ea79163c669dd43860533414a66f52e4830e"
++      },
++      {
++        "junit": "test_assessment_worker_capacity_v1.xml",
++        "cases": 31,
++        "sha256": "20bcbd5874b3712d4b037be421aed3b98ce6a87cce0cb0c1024c9e55534c6178"
++      },
++      {
++        "junit": "test_assessment_worker_consumer.xml",
++        "cases": 30,
++        "sha256": "f3cb214778b8abc72229ef2a961ccea637446c8bfcb027c8c978e8c4e3b81c01"
++      },
++      {
++        "junit": "test_assessment_worker_http_boundary.xml",
++        "cases": 19,
++        "sha256": "0ef03b61f34a9c5e678082b0d5159f9f05390dcc2bbf144fd0248cda2977238c"
++      },
++      {
++        "junit": "test_assessment_worker_jobs.xml",
++        "cases": 29,
++        "sha256": "5c8207cdb3fa108238cf3add4a9f853a2d07864c468d134e9ad8ecd1cdc2c860"
++      },
++      {
++        "junit": "test_comprehensive_client_review_companion_v5.xml",
++        "cases": 5,
++        "sha256": "cd3f1673a70a21791b355c880869f08b43a2365e4ea6baefbb55b64235b7fb3d"
++      },
++      {
++        "junit": "test_cpp_analysis_phase_boundary.xml",
++        "cases": 8,
++        "sha256": "5e64f24cf1d19bd6a5a80d0b290a14e8ebc73ebdc45d655e804ba0532a676a95"
++      },
++      {
++        "junit": "test_cpp_baseline_execution.xml",
++        "cases": 25,
++        "sha256": "26d11088541b5ee2502352173e76cd30256f5d2bbcd174271af3a4766deea087"
++      },
++      {
++        "junit": "test_cpp_bounded_fuzz.xml",
++        "cases": 41,
++        "sha256": "9fc951cb3138133fdb1002f8e65718a9147c4576da384a6a08b4b40b99f22599"
++      },
++      {
++        "junit": "test_cpp_capnp_provisioning.xml",
++        "cases": 18,
++        "sha256": "120b6be19a37d480671ee6b8fdd7b39b1265ec783cbbbe071e2a2a196248d48d"
++      },
++      {
++        "junit": "test_cpp_clang_fallback.xml",
++        "cases": 23,
++        "sha256": "723aaf562be71820e5f75c8776004e20a9e6e62d0594a6b4a664c161de56e984"
++      },
++      {
++        "junit": "test_cpp_cmake_policy.xml",
++        "cases": 4,
++        "sha256": "2061185d6a325f3b18f479fba282229ec4967cc26792c9a119d86a0fa556f3ce"
++      },
++      {
++        "junit": "test_cpp_combined_configuration.xml",
++        "cases": 17,
++        "sha256": "9f919de7dac2a392a6a65e3acabd83a61dfb1a42c440c65c8654f9ffde7423d1"
++      },
++      {
++        "junit": "test_cpp_compilation_contexts.xml",
++        "cases": 29,
++        "sha256": "fd5ed5661859a90068bcd6b5c6fb34980614f4d07512820a2f9effad8bb119b0"
++      },
++      {
++        "junit": "test_cpp_compiler_budget_v2.xml",
++        "cases": 32,
++        "sha256": "0a4a7942aa23e79efdf578ad892a6a3da0197d2a327bf704d7e5844e8c8a48a7"
++      },
++      {
++        "junit": "test_cpp_compiler_evidence.xml",
++        "cases": 49,
++        "sha256": "87cdecfcbeef16600bc1dac2f28428913cdf1b895d1c0311f5a6e4566ec41f9b"
++      },
++      {
++        "junit": "test_cpp_configuration_qualification.xml",
++        "cases": 19,
++        "sha256": "906a2b9eb069248e8f6fb8d4805616360a56f5fc2039b4963648c30b36dd0bf3"
++      },
++      {
++        "junit": "test_cpp_configure_first_contract.xml",
++        "cases": 3,
++        "sha256": "6221e91e2ba4d4a9cae8c0f6f4fc4f0b783fd888530d05c18f5d57849e4d053a"
++      },
++      {
++        "junit": "test_cpp_configure_first_execution.xml",
++        "cases": 8,
++        "sha256": "c6ea7abd4996a164a650dc78abb1f4a277c387b47f1996f25494220789a01da3"
++      },
++      {
++        "junit": "test_cpp_configure_first_projection.xml",
++        "cases": 33,
++        "sha256": "e7411d0a022393f3d3cb9231fe45c63349e6d572d0d526f0b0c934b40165fa96"
++      },
++      {
++        "junit": "test_cpp_dependency_retention.xml",
++        "cases": 18,
++        "sha256": "4ffe59b59980724f93e9a0fadf710903ab3e5d16bd57958553a90047ec72f36d"
++      },
++      {
++        "junit": "test_cpp_fixture_tree.xml",
++        "cases": 15,
++        "sha256": "92ad3ab71d01ccd30a304e2be118bad4abb410eafdd7a89ed086cc245a1a1f9d"
++      },
++      {
++        "junit": "test_cpp_full_project_capture_budget.xml",
++        "cases": 13,
++        "sha256": "fd97379f9b7b8cc42bcc3b1012be1b393be2d8df438eb0ff9fd1f58de387b310"
++      },
++      {
++        "junit": "test_cpp_functional_failure_prefix.xml",
++        "cases": 29,
++        "sha256": "fe67232e226efe942765e6f2a795bf9670ae7022e5093055561368d80679db69"
++      },
++      {
++        "junit": "test_cpp_fuzz_tool_provisioning.xml",
++        "cases": 10,
++        "sha256": "6d1731ee117020a10998980695710c1259fc43f3d26ff9306c416496c44ae1d3"
++      },
++      {
++        "junit": "test_cpp_fuzz_workspace.xml",
++        "cases": 9,
++        "sha256": "526035ade07a5773e42646a2d601a57653cc3281f17638e093592061613d8e98"
++      },
++      {
++        "junit": "test_cpp_generated_capacity.xml",
++        "cases": 4,
++        "sha256": "f2ff11ae9a29d8ad11ca75a9c6a05bacdf555497d2ebddacee8922cc6e340543"
++      },
++      {
++        "junit": "test_cpp_generated_context.xml",
++        "cases": 81,
++        "sha256": "74b69f5b062885ab8e71ed55244483ca34171f77fa56dac3305fa156daf6c947"
++      },
++      {
++        "junit": "test_cpp_integration_workflow_schedule.xml",
++        "cases": 3,
++        "sha256": "c02de64c7a6be69878046dfee6daf7013bc4414b4d54dbd24d83a1758bc8118c"
++      },
++      {
++        "junit": "test_cpp_mixed_language_activation.xml",
++        "cases": 4,
++        "sha256": "815cd3f3bca81a778cb1641b27141ec8771358714278b7309625309f9973621a"
++      },
++      {
++        "junit": "test_cpp_native_preprocessing_truth.xml",
++        "cases": 21,
++        "sha256": "b869a70af877b2737f43ca11080ef89d4ff279e89589bb29cc37123a9b2f2ea4"
++      },
++      {
++        "junit": "test_cpp_native_test_binding.xml",
++        "cases": 42,
++        "sha256": "1eb02ce3baaea20cd2f8cced61bfaf994f87ea521d1537823c1dfc97491c68bc"
++      },
++      {
++        "junit": "test_cpp_native_test_timing.xml",
++        "cases": 31,
++        "sha256": "5de388f3c63fd9c88e2e959b5b1109257bb9abacabaf73f0b8adc55e5a776276"
++      },
++      {
++        "junit": "test_cpp_nested_cmake.xml",
++        "cases": 37,
++        "sha256": "be3e4f6a551309932eb29ef2e84eb06be055b0afb06f1b8ea28758e458326500"
++      },
++      {
++        "junit": "test_cpp_placement_tool_repair.xml",
++        "cases": 8,
++        "sha256": "30c6243b2eea9e5303ada580d742b0c7fe380b48bfc48c2629531aca1be44813"
++      },
++      {
++        "junit": "test_cpp_production_selection.xml",
++        "cases": 6,
++        "sha256": "8b3e7e05320a7220fb13ba29ec4e71a57d38940eaace06a5a055700ba6aed9e0"
++      },
++      {
++        "junit": "test_cpp_project_compiler.xml",
++        "cases": 49,
++        "sha256": "97e5bc744dd0d873605e924fdaa6c1868e9200e4f4e54ddda4c0e7670e319104"
++      },
++      {
++        "junit": "test_cpp_project_compiler_budget.xml",
++        "cases": 14,
++        "sha256": "dcd099b8927ea762168291db2860f5021b3044b6f9f484ab1b37295ebdd311a5"
++      },
++      {
++        "junit": "test_cpp_project_compiler_options.xml",
++        "cases": 42,
++        "sha256": "a80f89be6a974d18252827e3373e3aeb804d73cdece3246eaea5455ed1a51626"
++      },
++      {
++        "junit": "test_cpp_project_dependencies.xml",
++        "cases": 28,
++        "sha256": "5158819d7505c111e79c78099a122c88ecb7ab8b5978e12cb815ec1257db6445"
++      },
++      {
++        "junit": "test_cpp_project_snapshot.xml",
++        "cases": 37,
++        "sha256": "29363787c6267fac04d4d1ef6cded9fb4a8a94b78af18e46c1fb4fba0eb667af"
++      },
++      {
++        "junit": "test_cpp_project_snapshot_diagnostics.xml",
++        "cases": 5,
++        "sha256": "99b4883fea3f8b87c8aeaf321f75ecb36ce8433b78d928866138726f8c2b5f5d"
++      },
++      {
++        "junit": "test_cpp_project_static.xml",
++        "cases": 42,
++        "sha256": "72bed8b31a1897fce23835792e3f1b3d17fc88ab1cd6b0388f3e48e7b6f4cef2"
++      },
++      {
++        "junit": "test_cpp_project_static_stage.xml",
++        "cases": 36,
++        "sha256": "11638d3a6379f5ff0832145d151bc2f7719e8123b1932a24dffd2a5f3b522227"
++      },
++      {
++        "junit": "test_cpp_retained_compressed_identity.xml",
++        "cases": 13,
++        "sha256": "c4f0e3b50534fe2b6055df3dfb285c28f9769bdbd8dc957151e21bac71a6f2ad"
++      },
++      {
++        "junit": "test_cpp_runtime_dependency_provisioning.xml",
++        "cases": 18,
++        "sha256": "88962b98536c89c3c98127499f3eb73233f178aeee222d9004cf0bd50e409693"
++      },
++      {
++        "junit": "test_cpp_runtime_execution.xml",
++        "cases": 124,
++        "sha256": "8855e711708eaa3da90db6ba82be3b643c5e3b5351c9f255d29e693f12f09da0"
++      },
++      {
++        "junit": "test_cpp_runtime_scope.xml",
++        "cases": 2,
++        "sha256": "efea3738e42b15b643832a0cf6bb5f31c139d3b9dd5256fc45884ed794498bd8"
++      },
++      {
++        "junit": "test_cpp_static_environment.xml",
++        "cases": 30,
++        "sha256": "d589b57caaca7734000b48017df24dd802c6330601c6b4fce1576db4f3ba66ff"
++      },
++      {
++        "junit": "test_cpp_static_environment_integration.xml",
++        "cases": 17,
++        "sha256": "9926304829b21af45df0705204a38bd1216555cef2615328000423e11c386969"
++      },
++      {
++        "junit": "test_production_report_truth_gate_v1.xml",
++        "cases": 5,
++        "sha256": "bbcaf2b5bb75fa5fadc5443fce824e79537536dae235ca0d62ae7bad703a15cd"
++      },
++      {
++        "junit": "test_scanner_raw_artifact_storage_v1.xml",
++        "cases": 21,
++        "sha256": "a382e744264963c1d13f1684d933a1abd73c805ad16d29ef462711098c9a9126"
++      },
++      {
++        "junit": "test_scanner_status_localization_identity.xml",
++        "cases": 17,
++        "sha256": "55bf44bd5e0b8ab7cd84b4025a82acb77cc88eebf208726890305ab27200d413"
++      },
++      {
++        "junit": "test_spanish_scanner_status_identifier_v1.xml",
++        "cases": 24,
++        "sha256": "7dc26d774d5fa67259ca6deec0c515b578ef72ad36ef1fc2a79259359307a9a0"
++      },
++      {
++        "junit": "test_spanish_scanner_summary_producer.xml",
++        "cases": 42,
++        "sha256": "d865a204717ede09a97cb6e21937d390e82b4cee6575ead5b7469d9fa8574eb3"
++      }
++    ]
++  },
++  "single_process_limit": "Initial 56-module combined command hit the local 200-second process ceiling without terminal JUnit. Preserved, not counted as a pass. The isolated es-MX fuzz exporter passed; all 56 per-module commands then completed. Hosted pinned single-process parity remains mandatory.",
++  "rendered_owned_controls": [
++    {
++      "locale": "en",
++      "sha256": "1f58efcd25a45b8cf26fe7a01662a9d324ac44eb290df03abd7bbd34f8e7d9aa",
++      "pages": 21,
++      "inspection_pages": [
++        6,
++        8,
++        14
++      ],
++      "result": {
++        "language": "en",
++        "summary_in_all_formats": true,
++        "pdf_sha256": "1f58efcd25a45b8cf26fe7a01662a9d324ac44eb290df03abd7bbd34f8e7d9aa",
++        "pdf_page_count": 21,
++        "automated_draft": true,
++        "production_report": false
++      }
++    },
++    {
++      "locale": "es-MX",
++      "sha256": "2e7737a57661bcbafcd26271dbede4d3612e35d7c44f2c966b938564c4f5ae88",
++      "pages": 21,
++      "inspection_pages": [
++        6,
++        8,
++        14
++      ],
++      "result": {
++        "language": "es-MX",
++        "summary_in_all_formats": true,
++        "pdf_sha256": "2e7737a57661bcbafcd26271dbede4d3612e35d7c44f2c966b938564c4f5ae88",
++        "pdf_page_count": 21,
++        "automated_draft": true,
++        "production_report": false
++      }
++    }
++  ],
++  "render_layout": [
++    {
++      "locale": "en",
++      "off_page_text": [],
++      "pages": 21
++    },
++    {
++      "locale": "es-MX",
++      "off_page_text": [],
++      "pages": 21
++    }
++  ],
++  "english_pdf_matches_preserved_baseline": true,
++  "environment": {
++    "python": "3.13.5",
++    "pytest": "9.0.2",
++    "pypdf": "5.9.0",
++    "reportlab": "4.4.9",
++    "pinned_hosted_parity": false
++  },
++  "scope": {
++    "artifact_compressed_bytes_verified": true,
++    "functional_failed_prefix_retained": true,
++    "es_mx_exact_translations_restored": true,
++    "published_timing_changes_preserved": true,
++    "resource_limits_changed": false,
++    "assessed_source_or_populations_changed": false,
++    "native_qualification_run": 36167659433,
++    "native_qualification_final_result": "Not established by these local checks",
++    "manual_native_run_started": false,
++    "production_change": false,
++    "human_approval": false,
++    "client_delivery_authorized": false
++  },
++  "review": {
++    "integrator_source_review": "Completed for the recovered deltas; not independent approval",
++    "complete_independent_review": "Not completed"
++  },
++  "remaining": [
++    "Current and final-source native qualification and retained-evidence validation",
++    "Actual failing input verification on existing PR1645",
++    "Complete independent review",
++    "Qualified merged serving-image-worker chain",
++    "Normal production controls, frozen Bitcoin, English/es-MX output and exact-edition retrieval"
++  ]
++}
+diff --git a/nico/assessment_cpp_configure_first_projection.py b/nico/assessment_cpp_configure_first_projection.py
+index 25fd11c..8bef888 100644
+--- a/nico/assessment_cpp_configure_first_projection.py
++++ b/nico/assessment_cpp_configure_first_projection.py
+@@ -33,6 +33,10 @@ def _read_artifact(store, identity, reference, key):
+             or stored.get("compressed_bytes")!=reference.get("gzip_bytes")):
+         raise ValueError("worker_configure_first_artifact_binding_invalid")
+     compressed=stored["compressed"]
++    if (not isinstance(compressed, bytes) or not 0 < len(compressed) <= MAX_COMPRESSED
++            or len(compressed) != reference.get("gzip_bytes")
++            or hashlib.sha256(compressed).hexdigest() != reference.get("gzip_sha256")):
++        raise ValueError("worker_configure_first_artifact_digest_invalid")
+     try:
+         with gzip.GzipFile(fileobj=io.BytesIO(compressed),mode="rb") as stream:
+             raw=stream.read(min(MAX_RAW,reference.get("retained_bytes",0))+1)
+diff --git a/nico/assessment_cpp_full_project_report.py b/nico/assessment_cpp_full_project_report.py
+index a203530..0596468 100644
+--- a/nico/assessment_cpp_full_project_report.py
++++ b/nico/assessment_cpp_full_project_report.py
+@@ -135,9 +135,21 @@ def enrich_scanner_stage(canonical, stage):
+                             else 'Declared runtime scope is incomplete.')
+             functional = runtime.get('functional') if isinstance(runtime.get('functional'), Mapping) else {}
+             required = functional.get('required') or []
+-            passed = functional.get('passed') or []
+-            line = (f'Pruebas funcionales en ejecución: {len(passed)}/{len(required)} aprobadas.' if es
+-                    else f'Functional runtime tests: {len(passed)}/{len(required)} passed.')
++            passed = functional.get('passed')
++            state = functional.get('state')
++            if state == 'not_executed':
++                line = (f'Pruebas funcionales en ejecución: no ejecutadas; requeridas={len(required)}.' if es
++                        else f'Functional runtime tests: not executed; required={len(required)}.')
++            elif isinstance(passed, list):
++                line = (f'Pruebas funcionales en ejecución: {len(passed)}/{len(required)} aprobadas.' if es
++                        else f'Functional runtime tests: {len(passed)}/{len(required)} passed.')
++            else:
++                line = (f'Pruebas funcionales en ejecución: aprobadas=desconocido/{len(required)}.' if es
++                        else f'Functional runtime tests: passed=unknown/{len(required)}.')
++            if state in {'failed','timed_out'}:
++                label = ('tiempo agotado' if state == 'timed_out' else 'fallidas') if es else (
++                    'timed out' if state == 'timed_out' else 'failed')
++                line += (' Estado: ' if es else ' State: ') + label + '.'
+             summaries.append(line); evidence.append(line)
+             for sanitizer in runtime.get('sanitizers') or []:
+                 if not isinstance(sanitizer, Mapping): continue
+diff --git a/nico/assessment_cpp_runtime_execution.py b/nico/assessment_cpp_runtime_execution.py
+index bcbb1a6..fa7d019 100644
+--- a/nico/assessment_cpp_runtime_execution.py
++++ b/nico/assessment_cpp_runtime_execution.py
+@@ -350,19 +350,25 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
+         evidence['failure_diagnostics'] = []
+     try:
+         functional=plan['functional']; selected=list(functional['selected_tests'])
++        retained={'setup':None,'operation':None,'results_read':None,'results':None,'results_sha256':None}
++        evidence['functional']=retained
+         setup=_run(observe,'runtime-functional-setup',container,
+             ['python3','-I','-S','-c',"import pathlib; pathlib.Path('/work/functional-tests').mkdir(exist_ok=True)"],
+             seconds=10)
++        retained['setup']=setup
++        if not _ok(setup):
++            raise ValueError('worker_runtime_functional_failed')
+         argv=['python3','/work/build/test/functional/test_runner.py','--jobs',str(functional['parallel']),
+             '--quiet','--resultsfile=/work/build/nico-functional-results.csv',
+             '--tmpdirprefix=/work/functional-tests',*selected]
+         operation=_run(observe,'runtime-functional',container,argv,seconds=functional['seconds'],
+             environment={'PYTHON_GIL':'1'},workdir='/work/build')
++        retained['operation']=operation
+         results_read,results_raw=_read_file(observe,container,'runtime-functional-results',
+-            '/work/build/nico-functional-results.csv',1024*1024)
++            '/work/build/nico-functional-results.csv',1024*1024,
++            retain_row=lambda row: retained.update(results_read=row))
+         summary=_parse_functional_csv(results_raw,selected)
+-        evidence['functional']={'setup':setup,'operation':operation,'results_read':results_read,'results':summary,
+-            'results_sha256':hashlib.sha256(results_raw).hexdigest()}
++        retained.update(results=summary,results_sha256=hashlib.sha256(results_raw).hexdigest())
+         if not (_ok(setup) and _ok(operation) and summary['passed']==selected and not summary['failed'] and not summary['skipped']):
+             raise ValueError('worker_runtime_functional_failed')
+ 
+@@ -563,6 +569,62 @@ def _retained_file_bytes(raw, limit):
+         raise ValueError(error) from exc
+ 
+ 
++def _validate_failed_functional_prefix(evidence, plan, operation):
++    """Verify the returned functional failure; absent CSV means unknown results."""
++    error='worker_runtime_evidence_invalid'
++    def require(condition):
++        if not condition:
++            raise ValueError(error)
++    require(evidence['complete'] is False and evidence['sanitizers']==[]
++        and evidence['fuzz'] is None and evidence['reclamations']==[]
++        and evidence.get('failure_diagnostics',[])==[])
++    functional=evidence['functional']
++    require(isinstance(functional,dict) and set(functional)==
++        {'setup','operation','results_read','results','results_sha256'})
++    def read(key,row):
++        require(isinstance(row,dict) and row.get('id')==key)
++        return operation(row,2*1024*1024+4096)
++    setup=functional['setup']; read('runtime-functional-setup',setup)
++    required=list(plan['functional']['selected_tests'])
++    if not _ok(setup):
++        require(all(functional[key] is None for key in ('operation','results_read','results','results_sha256'))
++            and evidence['error']=='worker_runtime_functional_failed')
++        failed='runtime-functional-setup'
++        summary={'required':required,'executed':[],'passed':[],'failed':[],'skipped':[],'state':'not_executed'}
++    else:
++        runner=functional['operation']; read('runtime-functional',runner)
++        results_read=functional['results_read']; returned=read('runtime-functional-results',results_read)
++        if _ok(results_read):
++            raw=_retained_file_bytes(returned,1024*1024)
++            try:
++                parsed=_parse_functional_csv(raw,required)
++            except (ValueError,UnicodeError) as exc:
++                raise ValueError(error) from exc
++            require(functional['results']==parsed and functional['results_sha256']==hashlib.sha256(raw).hexdigest()
++                and (not _ok(runner) or parsed['passed']!=required or parsed['executed']!=required
++                     or bool(parsed['failed']) or bool(parsed['skipped']))
++                and evidence['error']=='worker_runtime_functional_failed')
++            summary=dict(parsed)
++        else:
++            require(functional['results'] is None and functional['results_sha256'] is None
++                and evidence['error']=='worker_runtime_artifact_unavailable')
++            summary={'required':required,'executed':None,'passed':None,'failed':None,'skipped':None}
++        summary['state']='timed_out' if runner['timed_out'] else 'failed'
++        # With valid CSV, a failed/skipped required test is a runner failure
++        # even when its process incorrectly returned zero. Missing CSV is a
++        # read failure only when the runner itself completed successfully.
++        failed=('runtime-functional' if not _ok(runner) or _ok(results_read) else 'runtime-functional-results')
++    return {'complete':False,'error':evidence['error'],'failure_operation':failed,'functional':summary,
++        'sanitizers':[],'sanitizers_not_executed':list(plan['sanitizers']['kinds']),
++        'fuzz':{'state':'not_executed','target':plan['fuzz']['target'],
++            'required_replay_count':len(plan['fuzz']['corpus']), 'replay_count':0,
++            'campaign_completed':False,'campaign_executions':None,'campaign_coverage_signal':None,
++            'campaign_duration_ms':None,'corpus_sha256':[],
++            'required_corpus_sha256':[row['sha256'] for row in plan['fuzz']['corpus']]},
++        **({'failure_diagnostics':[]} if evidence['schema']=='nico.cpp-runtime-evidence.v3' else {}),
++        'native_evidence_sha256':_digest(evidence)}
++
++
+ def _validate_failed_runtime_prefix(evidence, plan, operation):
+     """Reconstruct a corroborated v2 abort without inventing its missing suffix.
+ 
+@@ -571,6 +633,8 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
+     native failure and no later execution except that test's result-file read.
+     The returned record is explicitly incomplete and grants no completion credit.
+     """
++    if evidence['sanitizers']==[] and evidence['fuzz'] is None and evidence['reclamations']==[]:
++        return _validate_failed_functional_prefix(evidence,plan,operation)
+     error = 'worker_runtime_evidence_invalid'
+     rows = {}; raw = {}; order = []
+     def require(condition):
+diff --git a/nico/comprehensive_client_review_companion_v2.py b/nico/comprehensive_client_review_companion_v2.py
+index 4e17ae5..124be5d 100644
+--- a/nico/comprehensive_client_review_companion_v2.py
++++ b/nico/comprehensive_client_review_companion_v2.py
+@@ -15,6 +15,9 @@ MAX_CLIENT_REVIEW_PAGES = 45
+ # presentation boundary as well so Spanish correctness does not depend on bootstrap
+ # monkey-patch ordering.
+ _SPANISH_DYNAMIC_PHRASES = {
++    "Dates, owners, dependencies, and budget require explicit stakeholder confirmation.": (
++        "Las fechas, los responsables, las dependencias y el presupuesto requieren confirmación explícita de las partes interesadas."
++    ),
+     "Review-Required Candidate Register": "Registro de candidatos que requieren revisión",
+     "Material confirmado findings": "Hallazgos materiales confirmados",
+     "verificada material findings": "hallazgos materiales verificados",
+diff --git a/nico/comprehensive_spanish_canonical_report_v87.py b/nico/comprehensive_spanish_canonical_report_v87.py
+index 0f3db03..02c8511 100644
+--- a/nico/comprehensive_spanish_canonical_report_v87.py
++++ b/nico/comprehensive_spanish_canonical_report_v87.py
+@@ -22,6 +22,8 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
+ # Downstream compaction identifies those semantic sections by their localized
+ # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
+ _CANONICAL_PARITY_EXACT = {
++    "Configure-first execution is incomplete; retained native evidence requires repair.": "La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
++    "cppcheck: Configure-first execution is incomplete; retained native evidence requires repair.": "cppcheck: La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
+     "The dedicated worker retained native scanner evidence. Individual tool records state completion and limitations.": "El trabajador dedicado conservó evidencia nativa de los analizadores. Cada registro indica el estado de ejecución y sus limitaciones.",
+     "The selected worker profile does not execute this requested tool.": "El perfil seleccionado del trabajador no ejecuta esta herramienta solicitada.",
+     "Native target execution or parsing is incomplete; retained observations require review.": "La ejecución o el análisis nativo de los objetivos está incompleto; las observaciones conservadas requieren revisión.",
+@@ -3065,6 +3067,16 @@ def _translate_presentation(value: Any) -> str:
+         ),
+         text,
+     )
++    # Translate this clause independently: the following candidate sentence
++    # may already be localized before the older combined grammar is reached.
++    text = re.sub(
++        r"(\d+) scanner execution\(s\) remain incomplete\.",
++        lambda match: (
++            f"{match.group(1)} "
++            f"{'ejecución de analizador permanece incompleta' if int(match.group(1)) == 1 else 'ejecuciones de analizadores permanecen incompletas'}."
++        ),
++        text,
++    )
+     text = re.sub(
+         r"(\d+) resulting candidates remain pending human disposition\.",
+         lambda match: (
+diff --git a/tests/test_cpp_configure_first_projection.py b/tests/test_cpp_configure_first_projection.py
+index 3dba4f4..41e7c1c 100644
+--- a/tests/test_cpp_configure_first_projection.py
++++ b/tests/test_cpp_configure_first_projection.py
+@@ -334,3 +334,74 @@ def test_partial_execution_does_not_relax_retained_report_identity_gate(change):
+     text = ' '.join([rendered['summary'],*rendered['evidence'],*rendered['unavailable']])
+     assert 'not bound to a verified retained receipt' in text
+     assert 'Functional runtime tests: 1/1 passed.' not in text
++
++
++@pytest.mark.parametrize('locale,unknown,unexecuted', [
++    ('en', 'passed=unknown/1', 'Sanitizer / undefined: not executed.'),
++    ('es-MX', 'aprobadas=desconocido/1', 'Sanitizador / undefined: no ejecutado.'),
++])
++def test_failed_runtime_complete_export_retains_unknowns_and_human_boundary(tmp_path, locale, unknown, unexecuted):
++    """Use the public exporter, not only the scanner-stage string helper."""
++    import io
++    from pypdf import PdfReader
++    from scripts.qualify_cpp_full_project_integration import render_result
++    ident, plan, receipt, encoded, record, reconstruction = _failed_runtime_complete_static_fixture()
++    record = project_configure_first_record(record, ident, plan, receipt, reconstruction)
++    digest = hashlib.sha256(encoded).hexdigest()
++    record.update(raw_artifact_retention_complete=True, raw_artifact_sha256=digest, artifact_hash=digest)
++    before = deepcopy(record)
++    result = render_result({'canonical_record': record}, tmp_path, locale)
++    assert result['automated_draft'] is True and result['production_report'] is False
++    assert record == before
++    assert record['status'] == 'failed'
++    assert record['completed'] is False and record['verified_complete'] is False
++    assert record['human_review_required'] is True and record['client_delivery_allowed'] is False
++    stem = tmp_path / ('owned-project-' + locale)
++    text = '\n'.join(page.extract_text() or '' for page in PdfReader(io.BytesIO(stem.with_suffix('.pdf').read_bytes())).pages)
++    for rendered in (text, stem.with_suffix('.md').read_text(), stem.with_suffix('.html').read_text()):
++        normalized = ' '.join(rendered.split())
++        assert unknown in normalized
++        assert unexecuted in normalized
++        if locale == 'es-MX':
++            assert 'Configure-first execution is incomplete' not in normalized
++            assert 'scanner execution(s) remain incomplete' not in normalized
++            assert 'Dates, owners, dependencies, and budget require' not in normalized
++            assert 'la evidencia nativa conservada requiere reparación' in normalized
++
++
++@pytest.mark.parametrize('prefix', ['', 'cppcheck: '])
++def test_configure_first_failure_translation_is_exact_and_does_not_allow_new_english(prefix):
++    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
++    reason = 'Configure-first execution is incomplete; retained native evidence requires repair.'
++    translated = _translate_presentation_field(prefix + reason, 'unavailable')
++    assert translated == prefix + ('La ejecución con configuración inicial está incompleta; '
++                                  'la evidencia nativa conservada requiere reparación.')
++    with pytest.raises(ValueError, match='Spanish presentation'):
++        _translate_presentation_field(prefix + reason.replace('requires repair', 'has unreviewed new conditions'),
++                                      'unavailable')
++
++
++@pytest.mark.parametrize('count', [0, 1, 4])
++@pytest.mark.parametrize('with_candidates', [False, True])
++def test_incomplete_scanner_clause_localizes_independently_of_candidate_clause(count, with_candidates):
++    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
++    text = f'{count} scanner execution(s) remain incomplete.'
++    if with_candidates:
++        text += ' 2 resulting candidates remain pending human disposition.'
++    translated = _translate_presentation_field(text, 'summary')
++    unit = 'ejecución de analizador permanece incompleta' if count == 1 else 'ejecuciones de analizadores permanecen incompletas'
++    assert f'{count} {unit}.' in translated
++    assert 'scanner execution' not in translated
++    if with_candidates:
++        assert '2 candidatos resultantes siguen pendientes de disposición humana.' in translated
++
++
++def test_blank_roadmap_late_companion_localizes_confirmation_requirement():
++    from nico.comprehensive_client_review_companion_v2 import review_sections
++    canonical = {'assessment': {}, 'roadmap': []}
++    original = deepcopy(canonical)
++    spanish = next(row for row in review_sections(canonical, spanish=True) if row['id'] == 'six_month_roadmap')
++    english = next(row for row in review_sections(canonical, spanish=False) if row['id'] == 'six_month_roadmap')
++    assert spanish['limitations'] == ['Las fechas, los responsables, las dependencias y el presupuesto requieren confirmación explícita de las partes interesadas.']
++    assert english['limitations'] == ['Dates, owners, dependencies, and budget require explicit stakeholder confirmation.']
++    assert canonical == original
+diff --git a/tests/test_cpp_functional_failure_prefix.py b/tests/test_cpp_functional_failure_prefix.py
+new file mode 100644
+index 0000000..844aeaf
+--- /dev/null
++++ b/tests/test_cpp_functional_failure_prefix.py
+@@ -0,0 +1,149 @@
++"""Owned transport failures at the functional stage; no assessed code executes."""
++from copy import deepcopy
++import base64
++import hashlib
++import json
++import pytest
++
++from nico.assessment_cpp_runtime_execution import execute_runtime_plan, validate_runtime_evidence
++from tests.test_cpp_runtime_execution import Observe, plan, csv_bytes
++
++OPTIONS={'BUILD_TESTS':'ON'}
++
++class FunctionalFault(Observe):
++    def __init__(self,mode):
++        super().__init__(); self.mode=mode
++    def __call__(self,key,argv,**kwargs):
++        response=super().__call__(key,argv,**kwargs)
++        if key=='runtime-functional-setup' and self.mode=='setup':
++            response.update(exit_code=1,output=b'owned setup failure')
++        if key=='runtime-functional' and self.mode=='timeout':
++            response.update(exit_code=124,timed_out=True,output=b'owned timeout')
++        if key=='runtime-functional' and self.mode=='failed':
++            response.update(exit_code=1)
++        if key=='runtime-functional-results':
++            if self.mode in {'timeout','read'}:
++                response.update(exit_code=1,output=b'owned missing CSV')
++            elif self.mode in {'failed','skipped'}:
++                raw=csv_bytes([['feature_a.py','Failed' if self.mode=='failed' else 'Skipped','1'],
++                               ['mempool_a.py','Passed','1'],['ALL','Failed' if self.mode=='failed' else 'Passed','1']])
++                response['output']=json.dumps({'data':base64.b64encode(raw).decode(),'truncated':False}).encode()
++        return response
++
++
++def _run(mode):
++    transport=FunctionalFault(mode)
++    native=execute_runtime_plan(transport,'owned-container',plan(),OPTIONS)
++    return native,transport
++
++
++def test_failed_functional_setup_does_not_run_dependents():
++    native,transport=_run('setup')
++    assert list(transport.calls)==['runtime-functional-setup']
++    verified=validate_runtime_evidence(native,plan(),project_options=OPTIONS)
++    assert verified['complete'] is False
++    assert verified['failure_operation']=='runtime-functional-setup'
++    assert verified['functional']['state']=='not_executed'
++    assert verified['functional']['executed']==[]
++    assert verified['sanitizers_not_executed']==['address','undefined']
++
++
++@pytest.mark.parametrize('mode',['timeout','read','failed','skipped'])
++def test_functional_failure_is_retained_and_reconstructible(mode):
++    native,transport=_run(mode)
++    assert native['functional'] is not None
++    assert list(transport.calls)==['runtime-functional-setup','runtime-functional','runtime-functional-results']
++    verified=validate_runtime_evidence(native,plan(),project_options=OPTIONS)
++    assert verified['complete'] is False
++    assert verified['sanitizers']==[]
++    assert verified['sanitizers_not_executed']==['address','undefined']
++    assert verified['fuzz']['state']=='not_executed'
++    assert verified['functional']['required']==plan()['functional']['selected_tests']
++    if mode in {'timeout','read'}:
++        assert verified['functional']['passed'] is None
++        assert verified['functional']['executed'] is None
++    elif mode=='failed':
++        assert verified['functional']['failed']==['feature_a.py']
++        assert verified['functional']['executed']==plan()['functional']['selected_tests']
++    else:
++        assert verified['functional']['skipped']==['feature_a.py']
++        assert verified['functional']['executed']==['mempool_a.py']
++    assert verified['failure_operation']==('runtime-functional-results' if mode=='read' else 'runtime-functional')
++
++
++def _render(functional,language):
++    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
++    digest='a'*64; revision='b'*40
++    record={'commit_sha':revision,'raw_artifact_retention_complete':True,
++        'raw_artifact_sha256':digest,'current_run':True,'exact_commit_match':True,
++        'execution_observed_for_this_report':True,
++        'worker_provenance':{'profile':'cpp-configure-first-v2','receipt_sha256':digest,
++            'identity':{'run_id':'owned','revision':revision}},
++        'cppcheck_source_coverage':{'header_context_verified':True},
++        'cpp_build_evidence':{'profile':'cpp-configure-first-v2','compiled':True,
++            'runtime_scope':{'complete':False,'functional':functional,'sanitizers':[],
++                'sanitizers_not_executed':['address','undefined'],
++                'fuzz':{'state':'not_executed','target':'owned','required_replay_count':2}}}}
++    rendered=enrich_scanner_stage({'report_language':language,
++        'identity':{'run_id':'owned','commit_sha':revision},'scanner_execution_records':[record]},
++        {'summary':'','evidence':[],'unavailable':[]})
++    return ' '.join([rendered['summary'],*rendered['evidence'],*rendered['unavailable']])
++
++
++def test_unknown_functional_result_is_not_zero_in_either_locale():
++    functional={'required':['owned_a','owned_b'],'passed':None,'executed':None,'state':'timed_out'}
++    for language,term in [('en','passed=unknown/2'),('es-MX','aprobadas=desconocido/2')]:
++        text=_render(functional,language)
++        assert term in text
++        assert 'None' not in text
++
++
++@pytest.mark.parametrize('mutation', ['command','user','workdir','environment','output_hash','bool_exit',
++    'negative_duration','missing_read','false_complete','wrong_error','future_sanitizer','future_fuzz',
++    'future_reclamation','future_diagnostic','wrong_plan'])
++def test_unknown_functional_prefix_cannot_accept_tampered_evidence(mutation):
++    native,_=_run('timeout')
++    wrong=deepcopy(native)
++    row=wrong['functional']['operation']
++    if mutation=='command': row['argv'][0]='other'
++    elif mutation=='user': row['user']='0:0'
++    elif mutation=='workdir': row['workdir']='/wrong'
++    elif mutation=='environment': row['environment']={}
++    elif mutation=='output_hash': row['output_sha256']='0'*64
++    elif mutation=='bool_exit': row['exit_code']=True
++    elif mutation=='negative_duration': row['duration_ms']=-1
++    elif mutation=='missing_read': wrong['functional']['results_read']=None
++    elif mutation=='false_complete': wrong['complete']=True
++    elif mutation=='wrong_error': wrong['error']='worker_runtime_sanitizer_failed'
++    elif mutation=='future_sanitizer': wrong['sanitizers']=[{'kind':'address'}]
++    elif mutation=='future_fuzz': wrong['fuzz']={}
++    elif mutation=='future_reclamation': wrong['reclamations']=[{}]
++    elif mutation=='future_diagnostic': wrong['failure_diagnostics']=[{}]
++    else: wrong['plan_sha256']='0'*64
++    with pytest.raises(ValueError,match='worker_runtime_evidence_invalid'):
++        validate_runtime_evidence(wrong,plan(),project_options=OPTIONS)
++
++
++def test_all_passed_functional_results_cannot_hide_required_future_stages():
++    native=execute_runtime_plan(Observe(),'owned-container',plan(),OPTIONS)
++    native.update(complete=False,error='worker_runtime_functional_failed',sanitizers=[],fuzz=None,reclamations=[])
++    with pytest.raises(ValueError,match='worker_runtime_evidence_invalid'):
++        validate_runtime_evidence(native,plan(),project_options=OPTIONS)
++
++
++@pytest.mark.parametrize('mode',['setup','timeout','read','failed','skipped'])
++def test_verified_prefix_does_not_mutate_source_and_has_exact_native_digest(mode):
++    native,_=_run(mode);original=deepcopy(native)
++    first=validate_runtime_evidence(native,plan(),project_options=OPTIONS)
++    second=validate_runtime_evidence(native,plan(),project_options=OPTIONS)
++    from nico.assessment_worker_receipts import canonical_bytes
++    assert first==second
++    assert first['native_evidence_sha256']==hashlib.sha256(canonical_bytes(native)).hexdigest()
++    assert original==native
++
++
++@pytest.mark.parametrize('locale,word',[('en','not executed; required=2'),('es-MX','no ejecutadas; requeridas=2')])
++def test_setup_failure_is_not_rendered_as_executed(locale,word):
++    native,_=_run('setup')
++    verified=validate_runtime_evidence(native,plan(),project_options=OPTIONS)
++    assert word in _render(verified['functional'],locale)
+diff --git a/tests/test_cpp_retained_compressed_identity.py b/tests/test_cpp_retained_compressed_identity.py
+new file mode 100644
+index 0000000..4e70e65
+--- /dev/null
++++ b/tests/test_cpp_retained_compressed_identity.py
+@@ -0,0 +1,91 @@
++"""Owned SQLite artifact corruption controls; never a production store."""
++from copy import deepcopy
++import gzip
++import hashlib
++import sqlite3
++
++import pytest
++from nico.assessment_cpp_configure_first_projection import _read_artifact
++from nico.assessment_worker_jobs import JobIdentity
++from nico.scanner_raw_artifact_storage_v1 import ScannerArtifactStore
++
++
++@pytest.fixture
++def stored(tmp_path):
++    database = tmp_path / 'owned.sqlite3'
++    store = ScannerArtifactStore(lambda: sqlite3.connect(database), dialect='sqlite')
++    store.ensure_schema()
++    identity = JobIdentity('customer', 'project', 'run', 'scan', 'owned/control', 'a'*40, 'b'*64, 'c'*40)
++    key = 'project-static-evidence'
++    raw = b'{"source":"owned-generated-fixture","findings":[]}'
++    compressed = gzip.compress(raw, mtime=0)
++    binding = {'customer_id':identity.customer_id, 'project_id':identity.project_id,
++        'run_id':identity.run_id, 'scan_id':identity.scan_id, 'repository':identity.repository_id,
++        'commit_sha':identity.revision, 'scanner_name':'cppcheck:'+key}
++    raw_hash = hashlib.sha256(raw).hexdigest()
++    artifact_id = store.put(binding, compressed, raw_hash)
++    reference = {'artifact_id':artifact_id, 'key':key, 'storage_backend':'postgres',
++        'sha256':raw_hash,'gzip_sha256':hashlib.sha256(compressed).hexdigest(),
++        'gzip_bytes':len(compressed),'retained_bytes':len(raw)}
++    return store, identity, reference, key, raw, compressed
++
++
++@pytest.mark.parametrize('position',[4,5,6,7,9])
++def test_changed_compressed_header_rejects_even_when_raw_bytes_match(stored,position):
++    store,identity,reference,key,raw,compressed = stored
++    changed=bytearray(compressed); changed[position] ^= 1; changed=bytes(changed)
++    assert gzip.decompress(changed) == raw
++    assert hashlib.sha256(changed).hexdigest() != reference['gzip_sha256']
++    with store.connect() as connection:
++        connection.execute('UPDATE scanner_raw_artifacts SET gzip_blob=? WHERE artifact_id=?',
++                           (changed,reference['artifact_id']))
++        connection.commit()
++    # Cached digest columns deliberately stay unchanged in this owned fault.
++    assert store.get(reference['artifact_id'],limit=10000)['gzip_sha256']==reference['gzip_sha256']
++    with pytest.raises(ValueError,match='worker_configure_first_artifact_digest_invalid'):
++        _read_artifact(store,identity,reference,key)
++
++
++def test_unchanged_compressed_edition_reopens_and_reads_identically(stored):
++    store,identity,reference,key,raw,compressed=stored
++    reopened=ScannerArtifactStore(store.connect,dialect='sqlite')
++    assert _read_artifact(store,identity,reference,key)==raw
++    assert _read_artifact(reopened,identity,reference,key)==raw
++    assert reopened.get(reference['artifact_id'],limit=10000)['compressed']==compressed
++
++
++def test_wrong_raw_digest_still_rejects(stored):
++    store,identity,reference,key,raw,compressed=stored
++    wrong=deepcopy(reference); wrong['sha256']='f'*64
++    with pytest.raises(ValueError,match='worker_configure_first_artifact_binding_invalid'):
++        _read_artifact(store,identity,wrong,key)
++
++
++def test_wrong_tenant_still_rejects(stored):
++    from dataclasses import replace
++    store,identity,reference,key,raw,compressed=stored
++    with pytest.raises(ValueError,match='worker_configure_first_artifact_binding_invalid'):
++        _read_artifact(store,replace(identity,customer_id='different'),reference,key)
++
++
++@pytest.mark.parametrize('bad',[b'', 'text', bytearray(b'bytes'), memoryview(b'bytes')])
++def test_wrong_compressed_type_or_empty_bytes_reject_before_decoding(stored,bad,monkeypatch):
++    import nico.assessment_cpp_configure_first_projection as module
++    store,identity,reference,key,raw,compressed=stored
++    original=store.get(reference['artifact_id'],limit=10000)
++    original['compressed']=bad
++    monkeypatch.setattr(store,'get',lambda *args,**kwargs:original)
++    monkeypatch.setattr(module.gzip,'GzipFile',lambda *a,**kw:pytest.fail('invalid bytes must not reach decompression'))
++    with pytest.raises(ValueError,match='worker_configure_first_artifact_digest_invalid'):
++        _read_artifact(store,identity,reference,key)
++
++
++def test_actual_compressed_byte_limit_precedes_decoding(stored,monkeypatch):
++    import nico.assessment_cpp_configure_first_projection as module
++    store,identity,reference,key,raw,compressed=stored
++    original=store.get(reference['artifact_id'],limit=10000)
++    original['compressed']=b'x'*(module.MAX_COMPRESSED+1)
++    monkeypatch.setattr(store,'get',lambda *args,**kwargs:original)
++    monkeypatch.setattr(module.gzip,'GzipFile',lambda *a,**kw:pytest.fail('oversized bytes must not reach decompression'))
++    with pytest.raises(ValueError,match='worker_configure_first_artifact_digest_invalid'):
++        _read_artifact(store,identity,reference,key)

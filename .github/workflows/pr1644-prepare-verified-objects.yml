@@ -1,0 +1,36 @@
+name: PR1644 Prepare Verified Source Objects
+on:
+  push:
+    branches: ['fix/cpp-runtime-scratch-retention']
+    paths:
+      - '.github/workflows/pr1644-prepare-verified-objects.yml'
+      - 'scripts/pr1644_prepare_verified_objects.py'
+      - 'docs/evidence/pr1644-object-publication-20260925/**'
+permissions:
+  contents: read
+concurrency:
+  group: nico-pr1644-data-only-object-preparation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'BoneManTGRM/NICO' && github.actor == 'BoneManTGRM' && github.event_name == 'push' && github.ref == 'refs/heads/fix/cpp-runtime-scratch-retention'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Prepare only exact verified blobs and tree; never update a ref
+        env:
+          NICO_OBJECT_TOKEN: ${{ github.token }}
+        run: python3 -I -S scripts/pr1644_prepare_verified_objects.py
+      - name: Retain object identities for connector verification and publication
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr1644-prepared-objects-${{ github.sha }}
+          path: ${{ runner.temp }}/pr1644-prepared-objects/result.json
+          if-no-files-found: error
+          retention-days: 7
