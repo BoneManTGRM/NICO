@@ -176,6 +176,6 @@ def test_existing_native_workflow_enables_new_budget_for_owned_and_large_control
         return next(s['run'] for s in job['steps'] if marker in s.get('run', ''))
     assert '--extended-compiler-budget' in command(owned, 'qualify_cpp_project_generated_context')
     assert '--extended-compiler-budget' in command(large, 'qualify_cpp_project_configuration')
-    assert large['timeout-minutes'] == 50
+    assert large['timeout-minutes'] == 155
     assert large['needs'] == ['owned-project-integration']
     assert 'tests/test_cpp_project_compiler_budget.py' in path.read_text()

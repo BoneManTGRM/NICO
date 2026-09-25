@@ -285,7 +285,7 @@ def test_owned_native_control_and_large_snapshot_are_wired_without_new_permissio
     text = json.dumps(control)
     assert 'scripts.qualify_cpp_project_generated_context' in text, 'missing real owned snapshot control'
     assert '--capture-generated-context' in json.dumps(baseline), 'missing frozen Bitcoin snapshot execution'
-    assert control['timeout-minutes'] == 10 and baseline['timeout-minutes'] == 50
+    assert control['timeout-minutes'] == 10 and baseline['timeout-minutes'] == 155
     assert baseline['needs'] == ['owned-project-integration']
     assert workflow['permissions'] == {'contents': 'read'}
     assert 'tests/test_cpp_project_snapshot.py' in json.dumps(workflow['jobs']['contract-regressions'])

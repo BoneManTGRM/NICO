@@ -204,7 +204,7 @@ def test_both_owned_and_large_qualification_use_v2_without_global_budget_change(
     for name in ['owned-project-integration','project-baseline-qualification']:
         runs = '\n'.join(s.get('run','') for s in workflow['jobs'][name]['steps'])
         assert '--extended-compiler-budget' in runs
-    assert workflow['jobs']['project-baseline-qualification']['timeout-minutes'] == 50
+    assert workflow['jobs']['project-baseline-qualification']['timeout-minutes'] == 155
     assert workflow['permissions'] == {'contents':'read'}
     assert 'tests/test_cpp_compiler_budget_v2.py' in json.dumps(workflow['jobs']['contract-regressions'])
 
