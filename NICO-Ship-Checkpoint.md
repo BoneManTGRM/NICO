@@ -1,3 +1,23 @@
+# PR #1644: collection verified; fuzz toolchain link correction prepared
+
+Full run 36235924285 completed on `8dc23f905f42ef63123edf998610d55c0f313070`.
+Baseline 377/377, compiler 475/475, static contexts 475/475, functional 6/6,
+and ASan 377/377 passed. UBSan retained the same one failed `net_tests` case.
+The new collection policy continued into fuzz staging/configure, then stopped
+at a separate Cap'n Proto link failure (`__cxa_call_terminate`, exit 2, no timeout).
+
+The next correction selects `/usr/local` GCC 14 headers/runtime for Clang in the
+pinned image and requires owned negative/positive Cap'n Proto link and sanitizer/
+fuzzer controls during image construction. Local contracts: 1324 passed, one
+native-toolchain skip. Exact-image and full Bitcoin execution are not yet proven
+for this correction. Details and retained evidence:
+`docs/evidence/pr1644-clang-gcc-runtime-alignment/README.md`.
+
+The UBSan finding, actual authenticated assessment replay, complete review, and
+production-shipping hold remain open. Neither PR is merged.
+
+---
+
 # NICO — completed-failure collection correction; native qualification still required
 
 Continue existing PR1644 and PR1645. This ledger does not authorize merge, production shipping, report approval or client delivery. Preserve every original C0–C19 requirement, fixed source/populations, isolation/resource boundaries, genuine human approvals and complete independent-review requirements.

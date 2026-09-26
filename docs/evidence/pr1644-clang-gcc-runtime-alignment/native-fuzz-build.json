@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "cmake",
+    "--build",
+    "/work/fuzz-build",
+    "--parallel",
+    "1",
+    "--target",
+    "fuzz"
+  ],
+  "duration_ms": 550166,
+  "environment": {},
+  "exit_code": 2,
+  "id": "runtime-fuzz-build",
+  "output_sha256": "b07a48041cdd8d51eb8878774bbfc0afa33549b6169cc48b23d18fcf531344e2",
+  "output_truncated": false,
+  "timed_out": false,
+  "user": null,
+  "workdir": null,
+  "run_id": 36235924285,
+  "artifact_id": 10904614857,
+  "artifact_sha256": "89d7ccc1dd290979c9af2d6f05db1740a0ff56cf468b6ad293a6637941aedea0",
+  "published_source": "8dc23f905f42ef63123edf998610d55c0f313070",
+  "first_failure_operation": "runtime-undefined-tests",
+  "overall_complete": false
+}

@@ -25,6 +25,7 @@ COPY project-dependencies /opt/project-dependency-inputs
 COPY llvm /opt/llvm-inputs
 COPY cppcheck /opt/tool-src
 COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py
+COPY verify_cpp_runtime_toolchain.py /opt/verify_cpp_runtime_toolchain.py
 COPY cmake.whl /opt/cmake.whl
 COPY pycapnp.whl /opt/pycapnp.whl
 COPY runtime-dependencies/payload /opt/nico-runtime
@@ -58,6 +59,12 @@ ENV PATH=/opt/cmake-wheel/cmake/data/bin:/usr/local/bin:/usr/bin:/bin
 ENV PYTHONPATH=/opt/pycapnp
 ENV PREVIOUS_RELEASES_DIR=/opt/nico-runtime/previous-releases
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
+# Clang must use the headers and runtime that built the pinned static libraries.
+# Its default distribution search selects /usr's GCC instead of /usr/local's GCC 14.
+RUN printf '%s\n' '--gcc-toolchain=/usr/local' > /usr/lib/llvm-17/bin/clang.cfg \
+    && cp /usr/lib/llvm-17/bin/clang.cfg /usr/lib/llvm-17/bin/clang++.cfg \
+    && timeout 30s python3 /opt/verify_cpp_runtime_toolchain.py > /opt/nico-cpp-runtime-toolchain.json \
+       || { cat /opt/nico-cpp-runtime-toolchain.json; exit 1; }
 RUN python3 -c "import capnp; assert capnp.__version__ == '2.2.1'"
 LABEL org.nico.cppcheck.repair="placement-new-initializer-ast-v1"
 USER 1000:1000
