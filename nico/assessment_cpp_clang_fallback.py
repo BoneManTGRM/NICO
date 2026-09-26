@@ -31,6 +31,8 @@ VERSION = '17.0.6'
 LIMITS = {'wall_seconds': 180, 'case_seconds': 45, 'parallel': 4}
 # Explicit v2 admission retains v1 evidence semantics and the parent stage cap.
 EXTENDED_LIMITS = {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 4}
+# v4 is scheduling-only; it does not admit the unpublished v3 timeout extension.
+LOW_CONTENTION_LIMITS = {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 2}
 STREAM_LIMIT = 32 * 1024 * 1024
 REQUEST_LIMIT = 8 * 1024 * 1024
 PLIST_LIMIT = 4 * 1024 * 1024
@@ -85,7 +87,8 @@ def _request_limits(request):
     if not isinstance(request, dict) or not isinstance(request.get('schema'), str):
         raise ValueError('worker_clang_fallback_request_invalid')
     versions = {'nico.cpp-clang-fallback-request.v1': LIMITS,
-                'nico.cpp-clang-fallback-request.v2': EXTENDED_LIMITS}
+                'nico.cpp-clang-fallback-request.v2': EXTENDED_LIMITS,
+                'nico.cpp-clang-fallback-request.v4': LOW_CONTENTION_LIMITS}
     expected = versions.get(request.get('schema'))
     limits = request.get('limits')
     if (expected is None or not isinstance(limits, dict) or limits != expected
@@ -94,8 +97,9 @@ def _request_limits(request):
     return dict(expected)
 
 
-def clang_fallback_request(primary_request, primary_proof, *, extended_budget=False):
-    if type(extended_budget) is not bool:
+def clang_fallback_request(primary_request, primary_proof, *, extended_budget=False, contention_aware=False):
+    if (type(extended_budget) is not bool or type(contention_aware) is not bool
+            or (contention_aware and not extended_budget)):
         raise ValueError('worker_clang_fallback_request_invalid')
     if (not isinstance(primary_request, dict)
             or primary_request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2'}
@@ -116,12 +120,15 @@ def clang_fallback_request(primary_request, primary_proof, *, extended_budget=Fa
             'invocation': argv, 'dropped_arguments': dropped,
             'source_dependencies': dict(row['source_dependencies']),
             'generated_dependencies': dict(row['generated_dependencies'])})
-    result = {'schema': ('nico.cpp-clang-fallback-request.v2' if extended_budget else 'nico.cpp-clang-fallback-request.v1'), 'tool_version': VERSION,
+    result = {'schema': ('nico.cpp-clang-fallback-request.v4' if contention_aware
+                         else 'nico.cpp-clang-fallback-request.v2' if extended_budget
+                         else 'nico.cpp-clang-fallback-request.v1'), 'tool_version': VERSION,
         'primary_request_sha256': _digest(_canonical(primary_request)),
         'cppcheck_evidence_sha256': primary_proof['native_evidence_sha256'],
         'compiler_evidence_sha256': primary_request['compiler_evidence_sha256'],
         'required_contexts': required, 'primary_analyzed_contexts': primary_proof['analyzed_contexts'],
-        'contexts': contexts, 'limits': dict(EXTENDED_LIMITS if extended_budget else LIMITS)}
+        'contexts': contexts, 'limits': dict(LOW_CONTENTION_LIMITS if contention_aware
+                                            else EXTENDED_LIMITS if extended_budget else LIMITS)}
     if 'compiler_environment' in primary_request:
         result['compiler_environment_sha256'] = primary_request['compiler_environment']['native_evidence_sha256']
     if len(_canonical(result)) > REQUEST_LIMIT:
@@ -307,7 +314,7 @@ def run_clang_fallback():
 
 PROGRAM=('import base64, hashlib, json, os, plistlib, re, stat, subprocess, time, zlib\n'
     'from pathlib import Path\nfrom concurrent.futures import ThreadPoolExecutor\n'
-    +f'CLANG={CLANG!r}\nCLANGXX={CLANGXX!r}\nVERSION={VERSION!r}\nLIMITS={LIMITS!r}\nEXTENDED_LIMITS={EXTENDED_LIMITS!r}\n'
+    +f'CLANG={CLANG!r}\nCLANGXX={CLANGXX!r}\nVERSION={VERSION!r}\nLIMITS={LIMITS!r}\nEXTENDED_LIMITS={EXTENDED_LIMITS!r}\nLOW_CONTENTION_LIMITS={LOW_CONTENTION_LIMITS!r}\n'
     +f'STREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\nPLIST_LIMIT={PLIST_LIMIT}\nSTORED_PLIST_LIMIT={STORED_PLIST_LIMIT}\nGENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
     +f'_DROP_EXACT={_DROP_EXACT!r}\n_DROP_PREFIX={_DROP_PREFIX!r}\n'
     +'\n'.join(inspect.getsource(f) for f in (_canonical,_digest,_stable_bytes,_verify_input,_run,_regular_bytes,

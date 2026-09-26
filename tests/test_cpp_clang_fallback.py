@@ -151,7 +151,8 @@ def test_static_stage_retains_substantive_fallback_beyond_old_per_case_limit(tmp
     call=next(kwargs for argv,kwargs in docker.calls if api().PROGRAM in argv)
     assert call['timeout']>480 and call['timeout']<=490
     req=json.loads(call['input_bytes'])
-    assert req['limits']=={'wall_seconds':480,'case_seconds':120,'parallel':4}
+    assert req['limits']=={'wall_seconds':480,'case_seconds':120,'parallel':2}
+    assert req['schema']=='nico.cpp-clang-fallback-request.v4'
     assert len(result['analysis']['analyzed_contexts'])==len(result['analysis']['required_contexts'])
     assert result['cleanup_verified'] is True
 

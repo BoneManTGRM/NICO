@@ -325,11 +325,30 @@ def _fuzz_campaign_metrics(row):
     return {'executions':count,'coverage_signal':signal,'duration_ms':row['duration_ms']}
 
 
+def _sanitizer_test_parallel(plan):
+    """Validate release-owned scheduling, preserving the historical plan."""
+    policy = plan.get('schema') if isinstance(plan, dict) else None
+    sanitizer = plan.get('sanitizers') if isinstance(plan, dict) else None
+    if not isinstance(sanitizer, dict):
+        raise ValueError('worker_runtime_scheduling_invalid')
+    parallel = sanitizer.get('parallel')
+    if type(parallel) is not int or not 1 <= parallel <= 4:
+        raise ValueError('worker_runtime_scheduling_invalid')
+    if policy == 'nico.cpp-runtime-plan.v1' and 'test_parallel' not in sanitizer:
+        return parallel
+    if (policy == 'nico.cpp-runtime-plan.v2'
+            and type(sanitizer.get('test_parallel')) is int
+            and sanitizer['test_parallel'] == min(2, parallel)):
+        return sanitizer['test_parallel']
+    raise ValueError('worker_runtime_scheduling_invalid')
+
+
 def execute_runtime_plan(observe, container, plan, project_options, *, capture_failure_diagnostics=True):
     if (not callable(observe) or not isinstance(container,str) or not container
-            or not isinstance(plan,dict) or plan.get('schema')!='nico.cpp-runtime-plan.v1'
+            or not isinstance(plan,dict) or plan.get('schema') not in ('nico.cpp-runtime-plan.v1','nico.cpp-runtime-plan.v2')
             or plan.get('total_seconds')!=6000 or not isinstance(project_options,dict)):
         raise ValueError('worker_runtime_execution_contract_invalid')
+    test_parallel = _sanitizer_test_parallel(plan)
     start=time.monotonic()
     deadline=start+plan['total_seconds']
     transport=observe
@@ -405,7 +424,7 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
             if plan.get('unit_test_data') is not None:
                 env['DIR_UNIT_TEST_DATA']='/work/unit_test_data'
             test_argv=['python3','-I','-S','-c',LOG_EXEC_PROGRAM,log,'ctest','--test-dir',directory,
-                '--parallel',str(plan['sanitizers']['parallel']),'--timeout',
+                '--parallel',str(test_parallel),'--timeout',
                 str(plan['sanitizers']['test_case_seconds']),'--output-on-failure','--output-junit',junit]
             t=_run(observe,'runtime-'+kind+'-tests',container,test_argv,
                 seconds=plan['sanitizers']['test_seconds'],environment=env)
@@ -524,7 +543,7 @@ def _runtime_operation_specs(plan, project_options, *, failure_diagnostics=False
             environment['DIR_UNIT_TEST_DATA'] = '/work/unit_test_data'
         add(prefix+'-tests', ['python3', '-I', '-S', '-c', LOG_EXEC_PROGRAM,
             directory+'/nico-runtime-ctest.log', 'ctest', '--test-dir', directory,
-            '--parallel', str(plan['sanitizers']['parallel']), '--timeout',
+            '--parallel', str(_sanitizer_test_parallel(plan)), '--timeout',
             str(plan['sanitizers']['test_case_seconds']), '--output-on-failure',
             '--output-junit', directory+'/nico-runtime-junit.xml'],
             plan['sanitizers']['test_seconds'], environment=environment)

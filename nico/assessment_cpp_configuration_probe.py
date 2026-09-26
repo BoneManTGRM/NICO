@@ -111,7 +111,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if type(extended_compiler_budget) is not bool or (extended_compiler_budget and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     if (runtime_plan is not None and (baseline_execution is None or not isinstance(runtime_plan,dict)
-            or runtime_plan.get('schema')!='nico.cpp-runtime-plan.v1' or runtime_plan.get('total_seconds')!=6000)):
+            or runtime_plan.get('schema') not in ('nico.cpp-runtime-plan.v1','nico.cpp-runtime-plan.v2') or runtime_plan.get('total_seconds')!=6000)):
         raise ValueError('worker_configuration_probe_runtime_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:

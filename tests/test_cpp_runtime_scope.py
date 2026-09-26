@@ -28,7 +28,9 @@ def test_runtime_plan_is_derived_from_exact_source_interfaces(tmp_path):
         'sanitizer_test_seconds':600,'sanitizer_test_case_seconds':120,'fuzz_policy':'source-declared-libfuzzer-v1',
         'fuzz_replay_runs':1,'fuzz_campaign_runs':256,'fuzz_campaign_seconds':300,'parallel':4}
     plan=derive_runtime_plan(root,targets,{'ENABLE_IPC':'ON','ENABLE_WALLET':'ON'},scope)
-    assert plan['schema']=='nico.cpp-runtime-plan.v1'
+    assert plan['schema']=='nico.cpp-runtime-plan.v2'
+    assert plan['sanitizers']['test_parallel']==2
+    assert plan['sanitizers']['parallel']==4
     assert plan['total_seconds']==6000
     assert plan['unit_test_data']['commit_sha']=='b33d85102d169b54d966ea315ad81a636680aefa'
     assert plan['unit_test_data']['sha256']=='cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095'
