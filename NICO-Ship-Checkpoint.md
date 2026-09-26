@@ -1,3 +1,40 @@
+# Current native result and bounded build correction — 2026-09-26
+
+Full native run 36241917330 on parent 3cbe702 completed with failure at 14:43 UTC.
+Baseline 377/377, compiler/static contexts 475/475, functional 6/6 and ASan 377/377
+completed successfully. UBSan retained the same failed net_tests (376/377 passed).
+The Clang/GCC link repair got past mpgen, then the serial fuzz build timed out at
+1200.132 seconds. Replays and campaign remain unexecuted. Hash-verified retained
+evidence reconstructs identically before and after this correction.
+
+Runtime plan v3 now schedules at most two fuzz build workers, keeping campaigns
+serial and historical v1/v2 commands exact. Source, populations, instrumentation,
+deadlines, resource ceilings and qualification gates are unchanged. Local workflow
+contracts: 1375 passed, one native-toolchain skip; 24 new cases. Independent
+review: no blocking defect, 45 affected tests passed. Actual two-worker Bitcoin
+completion and memory use remain unproven. Evidence and exact limits:
+docs/evidence/pr1644-fuzz-build-scheduling/README.md.
+
+Existing f32 native run 36247114532 and diagnostic 36247114503 were pending at
+the last check; no running qualification was cancelled or manually duplicated.
+New candidate CI/native evidence must be evaluated at its own published head.
+
+PDF head c6f9f4c7ad53c791d53e0a10dcb303e190078394 passed both normal CI paths;
+remediation attempt 2 passed after an HTTP 500 in the first attempt. Actual
+assessment comprun_34a469900baa742c0d557f42634b318f remains blocked at final report
+generation on frozen 312693443b1e, revision 67, with no final PDF. Supported
+review/recovery access exposes no retained-input export without operator approval;
+approval must not be manufactured to obtain that input. Actual-input EN/es-MX
+rendered acceptance requires a legitimate export or equivalent supported access.
+No repeated recovery, raw-record diagnostic reroute, report approval or client
+delivery was attempted. Neither PR is merged; production remains unqualified.
+
+The owner authorized publication and merging when ready without another permission
+request. All original C0-C19 gates and both PR histories remain authoritative.
+Earlier snapshots follow unchanged; their running states are historical.
+
+---
+
 # Current authorization and review — 2026-09-26
 
 The owner explicitly authorized finishing both existing PRs and merging when

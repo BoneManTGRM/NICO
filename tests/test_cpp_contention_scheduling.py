@@ -41,7 +41,8 @@ def source_and_scope(tmp_path):
 def test_new_plan_caps_test_concurrency_without_changing_builds_or_clocks(tmp_path):
     source, targets, scope = source_and_scope(tmp_path)
     before = deepcopy(scope)
-    derived = scope_api.derive_runtime_plan(source, targets, {}, scope)
+    derived = scope_api.derive_runtime_plan(source, targets, {}, scope,
+        plan_schema='nico.cpp-runtime-plan.v2')
     assert derived['schema'] == 'nico.cpp-runtime-plan.v2'
     assert derived['sanitizers']['test_parallel'] == 2
     assert derived['sanitizers']['parallel'] == 4
@@ -116,7 +117,8 @@ def test_real_static_orchestrator_reduces_parallelism_but_not_coverage_or_case_l
 def test_plan_scheduling_never_exceeds_existing_parallel_limit(tmp_path, parallel):
     source, targets, scope = source_and_scope(tmp_path)
     scope['parallel'] = parallel
-    current = scope_api.derive_runtime_plan(source, targets, {}, scope)
+    current = scope_api.derive_runtime_plan(source, targets, {}, scope,
+        plan_schema='nico.cpp-runtime-plan.v2')
     historical = scope_api.derive_runtime_plan(source, targets, {}, scope,
         plan_schema='nico.cpp-runtime-plan.v1')
     assert runtime._sanitizer_test_parallel(current) == min(parallel, 2)
@@ -230,7 +232,7 @@ def test_retained_runtime_rejects_cross_schema_corruption_even_after_plan_rehash
         scope_api.validate_retained_runtime(_canonical(corrupted), targets, {}, scope)
 
 
-@pytest.mark.parametrize('bad', [None, True, 1, {}, [], 'nico.cpp-runtime-plan.v3'])
+@pytest.mark.parametrize('bad', [None, True, 1, {}, [], 'nico.cpp-runtime-plan.v4'])
 def test_unknown_or_nonstring_plan_schema_is_rejected(tmp_path, bad):
     source, targets, scope = source_and_scope(tmp_path)
     with pytest.raises(ValueError, match='worker_runtime_scope_unsupported'):

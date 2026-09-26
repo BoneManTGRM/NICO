@@ -370,19 +370,37 @@ def _sanitizer_test_parallel(plan):
         raise ValueError('worker_runtime_scheduling_invalid')
     if policy == 'nico.cpp-runtime-plan.v1' and 'test_parallel' not in sanitizer:
         return parallel
-    if (policy == 'nico.cpp-runtime-plan.v2'
+    if (policy in ('nico.cpp-runtime-plan.v2', 'nico.cpp-runtime-plan.v3')
             and type(sanitizer.get('test_parallel')) is int
             and sanitizer['test_parallel'] == min(2, parallel)):
         return sanitizer['test_parallel']
     raise ValueError('worker_runtime_scheduling_invalid')
 
 
+def _fuzz_build_parallel(plan):
+    """Bind build scheduling separately from the single-process fuzz campaign."""
+    _sanitizer_test_parallel(plan)
+    fuzz = plan.get('fuzz')
+    if (not isinstance(fuzz, dict) or type(fuzz.get('parallel')) is not int
+            or fuzz['parallel'] != 1):
+        raise ValueError('worker_runtime_scheduling_invalid')
+    if plan['schema'] in ('nico.cpp-runtime-plan.v1', 'nico.cpp-runtime-plan.v2'):
+        if 'build_parallel' not in fuzz:
+            return 1
+    elif (plan['schema'] == 'nico.cpp-runtime-plan.v3'
+            and type(fuzz.get('build_parallel')) is int
+            and fuzz['build_parallel'] == min(2, plan['sanitizers']['parallel'])):
+        return fuzz['build_parallel']
+    raise ValueError('worker_runtime_scheduling_invalid')
+
+
 def execute_runtime_plan(observe, container, plan, project_options, *, capture_failure_diagnostics=True):
     if (not callable(observe) or not isinstance(container,str) or not container
-            or not isinstance(plan,dict) or plan.get('schema') not in ('nico.cpp-runtime-plan.v1','nico.cpp-runtime-plan.v2')
+            or not isinstance(plan,dict) or plan.get('schema') not in ('nico.cpp-runtime-plan.v1','nico.cpp-runtime-plan.v2','nico.cpp-runtime-plan.v3')
             or plan.get('total_seconds')!=6000 or not isinstance(project_options,dict)):
         raise ValueError('worker_runtime_execution_contract_invalid')
     test_parallel = _sanitizer_test_parallel(plan)
+    fuzz_build_parallel = _fuzz_build_parallel(plan)
     start=time.monotonic()
     deadline=start+plan['total_seconds']
     transport=observe
@@ -515,7 +533,7 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
         if not _ok(fc):
             raise ValueError('worker_runtime_fuzz_failed')
         fb=_run(observe,'runtime-fuzz-build',container,
-            ['cmake','--build','/work/fuzz-build','--parallel','1','--target',fuzz['build_target']],
+            ['cmake','--build','/work/fuzz-build','--parallel',str(fuzz_build_parallel),'--target',fuzz['build_target']],
             seconds=1200)
         evidence['fuzz']['build']=fb
         if not _ok(fb):
@@ -603,7 +621,7 @@ def _runtime_operation_specs(plan, project_options, *, failure_diagnostics=False
         '-G', 'Unix Makefiles', '-DCMAKE_BUILD_TYPE=Debug',
         '-DCMAKE_C_COMPILER=/usr/lib/llvm-17/bin/clang', '-DCMAKE_CXX_COMPILER=/usr/lib/llvm-17/bin/clang++',
         '-DBUILD_FOR_FUZZING=ON', '-DSANITIZERS=address,fuzzer,undefined'], 90)
-    add('runtime-fuzz-build', ['cmake', '--build', '/work/fuzz-build', '--parallel', '1',
+    add('runtime-fuzz-build', ['cmake', '--build', '/work/fuzz-build', '--parallel', str(_fuzz_build_parallel(plan)),
         '--target', fuzz['build_target']], 1200)
     environment = {'FUZZ': fuzz['target'], 'ASAN_OPTIONS': 'detect_leaks=0:halt_on_error=1',
         'UBSAN_OPTIONS': 'halt_on_error=1'}
