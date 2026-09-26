@@ -522,15 +522,18 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
             raise ValueError('worker_runtime_fuzz_failed')
         fenv={'FUZZ':fuzz['target'],'ASAN_OPTIONS':'detect_leaks=0:halt_on_error=1',
               'UBSAN_OPTIONS':'halt_on_error=1'}
-        replays=[]
+        replays=evidence['fuzz']['replays']
         for i,row in enumerate(fuzz['corpus']):
             replays.append(_run(observe,'runtime-fuzz-replay-'+str(i),container,
                 ['/work/fuzz-build/'+fuzz['binary'],'-runs='+str(fuzz['replay_runs']),
                  '/work/runtime-corpus/connect_block/s'+str(i)],seconds=60,environment=fenv))
+            if not _ok(replays[-1]):
+                raise ValueError('worker_runtime_fuzz_failed')
         campaign=_run(observe,'runtime-fuzz-campaign',container,
             ['/work/fuzz-build/'+fuzz['binary'],'-runs='+str(fuzz['campaign_runs']),
              '-max_total_time='+str(fuzz['campaign_seconds']),'-print_final_stats=1','-seed=1','-max_len=4096',
              '/work/runtime-campaign/connect_block'],seconds=fuzz['campaign_seconds']+30,environment=fenv)
+        evidence['fuzz']['campaign']=campaign
         campaign_metrics=_fuzz_campaign_metrics(campaign)
         evidence['fuzz']={'corpus_stage':stage,'staged':staged,'configure':fc,'build':fb,
             'replays':replays,'campaign':campaign,'campaign_metrics':campaign_metrics,'target':fuzz['target'],
@@ -824,9 +827,14 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
         require(isinstance(fuzz, dict) and set(fuzz) == fuzz_fields
             and fuzz['target'] == plan['fuzz']['target']
             and fuzz['corpus_sha256'] == [r['sha256'] for r in plan['fuzz']['corpus']]
-            and fuzz['replays'] == [] and fuzz['campaign'] is None and fuzz['campaign_metrics'] is None)
+            and isinstance(fuzz['replays'],list)
+            and len(fuzz['replays']) <= len(plan['fuzz']['corpus'])
+            and fuzz['campaign'] is None and fuzz['campaign_metrics'] is None)
     for key, suffix in (('corpus_stage','corpus-stage'),('configure','configure'),('build','build')):
         put('runtime-fuzz-'+suffix, fuzz[key] if fuzz is not None else None)
+    replays = fuzz['replays'] if fuzz is not None else []
+    for index in range(len(plan['fuzz']['corpus'])):
+        put('runtime-fuzz-replay-'+str(index), replays[index] if index < len(replays) else None)
     if fuzz is not None:
         require(fuzz['corpus_stage'] is not None)
         if _ok(fuzz['corpus_stage']):
@@ -850,22 +858,29 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
     present = [key for key in order if key in rows]
     require(present == order[:len(present)])
     failures = [key for key in present if not _ok(rows[key])]
-    require(bool(failures))
     nonfatal = set(continuable)
     for key in continuable:
         nonfatal.update((key.removesuffix('-tests')+'-test-log', key.removesuffix('-tests')+'-resources'))
     aborting = [key for key in failures if key not in nonfatal]
-    require(bool(aborting))
-    failed = aborting[0]
-    after = present[present.index(failed)+1:]
+    # A budget exhausted between fuzz operations has no failed native command.
+    # Accept only the real deadline code with elapsed-budget corroboration and
+    # a contiguous, successful fuzz prefix; never invent the unstarted command.
+    deadline_abort = (v4 and evidence['error'] == 'worker_runtime_deadline'
+        and evidence['duration_ms'] >= plan['total_seconds']*1000
+        and fuzz is not None and not aborting)
+    require(bool(aborting) or deadline_abort)
+    failed = aborting[0] if aborting else None
+    after = present[present.index(failed)+1:] if failed is not None else []
     is_sanitizer_test = failed in {'runtime-'+kind+'-tests' for kind in kinds}
-    test_prefix = failed.removesuffix('-tests')
+    test_prefix = failed.removesuffix('-tests') if failed is not None else ''
     diagnostic_suffix = [test_prefix+'-test-log',test_prefix+'-resources'] if v3 and is_sanitizer_test else []
     require((not after and not diagnostic_suffix) or (is_sanitizer_test
         and after in (diagnostic_suffix, diagnostic_suffix+[test_prefix+'-junit'])))
     junit_key = test_prefix+'-junit'
 
-    if failed.startswith('runtime-reclaim-'):
+    if deadline_abort:
+        expected_error = 'worker_runtime_deadline'
+    elif failed.startswith('runtime-reclaim-'):
         expected_error = 'worker_runtime_reclamation_failed'
     elif failed.startswith('runtime-fuzz-'):
         expected_error = 'worker_runtime_fuzz_failed'
@@ -875,13 +890,14 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
         expected_error = 'worker_runtime_sanitizer_failed'
     require(evidence['error'] == expected_error)
     return {'complete':False, 'error':evidence['error'], 'failure_operation':failed,
-        **({'first_failure_operation':failures[0]} if v4 else {}),
+        **({'first_failure_operation':failures[0] if failures else None} if v4 else {}),
         'functional':parsed_functional, 'sanitizers':parsed_sanitizers,
         'sanitizers_not_executed':kinds[len(sanitizers):],
         'fuzz':{'state':'not_executed' if fuzz is None else 'failed',
             'target':plan['fuzz']['target'],'required_replay_count':len(plan['fuzz']['corpus']),
-            'replay_count':0,'campaign_completed':False,'campaign_executions':None,
-            'campaign_coverage_signal':None,'campaign_duration_ms':None,'corpus_sha256':[],
+            'replay_count':len(replays),'campaign_completed':False,'campaign_executions':None,
+            'campaign_coverage_signal':None,'campaign_duration_ms':None,
+            'corpus_sha256':[row['sha256'] for row in plan['fuzz']['corpus'][:len(replays)]],
             'required_corpus_sha256':[row['sha256'] for row in plan['fuzz']['corpus']]},
         **({'failure_diagnostics':parsed_diagnostics} if v3 else {}),
         'native_evidence_sha256':_digest(evidence)}

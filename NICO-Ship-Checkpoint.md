@@ -1,3 +1,27 @@
+# Current authorization and review — 2026-09-26
+
+The owner explicitly authorized finishing both existing PRs and merging when
+ready. This supersedes historical requests to seek merge permission again; it
+cannot establish missing acceptance evidence or approve client delivery.
+
+This commit corrects fuzz abort and prefix retention. 1351 local contracts passed,
+one native-toolchain test skipped. Independent affected verification passed232;
+full applicable code review found no further concrete blocker. Retained native
+run36235924285 reconstructs identically and remains failed. Full run36241917330
+on parent3cbe702 is still executing; this new executor requires native verification.
+See docs/evidence/pr1644-fuzz-abort-retention/README.md.
+
+PDF PR1645 now contains6a8cebdd with truthful final-PDF availability checks.
+Authenticated actual-run review succeeded, but final PDF download was unavailable.
+Supported exact-run recovery identifies a final-render deadline on NICO source
+312693443b1e; the owner's authorized bounded same-run resume returned the same
+blocked final stage. No replacement assessment, approval or delivery was created.
+Actual-input rendering acceptance remains open. Neither PR is merged.
+
+All prior ledgers and original requirements follow unchanged as historical evidence.
+
+---
+
 # PR #1644: collection verified; fuzz toolchain link correction prepared
 
 Full run 36235924285 completed on `8dc23f905f42ef63123edf998610d55c0f313070`.
