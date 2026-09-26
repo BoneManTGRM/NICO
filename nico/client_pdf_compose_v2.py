@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY, MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.9"
+VERSION = "nico.client-pdf-compose.v3.10"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -165,6 +165,7 @@ def compose_compact_client_pdf(
 
     retained: list[Any] = []
     replacing_legacy_register = False
+    preserving_primary_tail = False
     from nico.comprehensive_pdf_reflow_v1 import _content_lines, _has_standard_header
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
@@ -179,6 +180,7 @@ def compose_compact_client_pdf(
             start = register_starts[0]
             following_primary = any(index > start for index in primary_starts)
             replacing_legacy_register = not following_primary
+            preserving_primary_tail = following_primary
             if start > 0 or following_primary:
                 # Mixed pages contain primary content: retain their actual bytes,
                 # even when this leaves a small superseded register fragment.
@@ -187,6 +189,7 @@ def compose_compact_client_pdf(
         if replacing_legacy_register:
             if primary_starts:
                 replacing_legacy_register = False
+                preserving_primary_tail = True
                 if primary_starts[0] > 0:
                     # A new section can start below a continued finding table.
                     retained.append(page)
@@ -199,6 +202,7 @@ def compose_compact_client_pdf(
                 # rather than silently consuming the rest of the report.
                 replacing_legacy_register = False
                 preserve_primary_content = True
+                preserving_primary_tail = True
         # Apply the existing final-reflow empty-page rule before the intermediate
         # budget. A footer-only overflow must not displace required report content.
         if _has_standard_header(extracted) and not _content_lines(extracted):
@@ -251,9 +255,10 @@ def compose_compact_client_pdf(
             # page has no independent evidence and would create duplicate title,
             # pagination, and generated-at facts.
             continue
-        # A finding reference does not override a primary-section boundary or
-        # the decision above to preserve unclassified post-register content.
-        if not preserve_primary_content and _finding_detail(extracted):
+        # A finding reference cannot override a primary-section decision, even
+        # on a continuation page without a repeated heading. Only a new explicit
+        # legacy register boundary resets preservation of the primary tail.
+        if not (preserve_primary_content or preserving_primary_tail) and _finding_detail(extracted):
             continue
         retained.append(page)
 
