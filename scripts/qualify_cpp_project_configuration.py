@@ -318,8 +318,11 @@ def qualify_configuration_checkout(args):
     if collection_policy:
         from nico.assessment_cpp_collection import validate_project_collection
         from nico.assessment_cpp_project_snapshot import _stable_bytes, PROJECT_GENERATED_STREAM_LIMIT
+        # The CLI accepts relative output paths. Preserve no-follow descriptor
+        # reads: make the root absolute without resolving symbolic links.
+        artifact_root = args.output.absolute()
         decision = validate_project_collection(evidence,
-            lambda ref: _stable_bytes(args.output, ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
+            lambda ref: _stable_bytes(artifact_root, ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
             manifest_raw=raw, baseline_raw=raw_execution, scope_raw=raw_runtime,
             producer_source_sha=producer, image=args.image)
         # The original receipt/status and failed native results remain untouched.

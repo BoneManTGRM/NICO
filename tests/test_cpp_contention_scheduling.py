@@ -232,7 +232,7 @@ def test_retained_runtime_rejects_cross_schema_corruption_even_after_plan_rehash
         scope_api.validate_retained_runtime(_canonical(corrupted), targets, {}, scope)
 
 
-@pytest.mark.parametrize('bad', [None, True, 1, {}, [], 'nico.cpp-runtime-plan.v4'])
+@pytest.mark.parametrize('bad', [None, True, 1, {}, [], 'nico.cpp-runtime-plan.v5'])
 def test_unknown_or_nonstring_plan_schema_is_rejected(tmp_path, bad):
     source, targets, scope = source_and_scope(tmp_path)
     with pytest.raises(ValueError, match='worker_runtime_scope_unsupported'):

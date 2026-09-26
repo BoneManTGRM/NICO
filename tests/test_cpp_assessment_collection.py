@@ -229,6 +229,69 @@ def test_cli_defaults_keep_legacy_receipt_and_new_policy_requires_explicit_choic
     assert not (output/'collection-acceptance.json').exists()
 
 
+@pytest.mark.parametrize('kind', [None, 'undefined'])
+@pytest.mark.parametrize('output_form', ['absolute', 'relative', 'linked_directory', 'linked_parent'])
+def test_cli_collects_retained_evidence_with_safe_output_paths(tmp_path, monkeypatch, kind, output_form):
+    """Replay owned retained native results through argparse and final acceptance.
+
+    Source acquisition and native execution are substituted; the output reader,
+    receipt retention, all collection validators and decision writer are real.
+    """
+    from scripts import qualify_cpp_project_configuration as script
+    from nico import assessment_cpp_configuration_probe as probe_module
+    from nico import assessment_cpp_runtime_scope as runtime_module
+
+    receipt, read, kwargs = bundle(tmp_path, kind=kind)
+    runtime = json.loads(read(receipt['runtime']['artifact']))
+    probe = deepcopy(receipt['probe'])
+    probe['runtime_evidence'] = runtime['evidence']
+
+    def replay_probe(*args, **options):
+        options['retain'](deepcopy(probe))
+        return deepcopy(probe)
+
+    monkeypatch.setattr(script, 'freeze_configuration_checkout',
+                        lambda *args: deepcopy(receipt['source']))
+    monkeypatch.setattr(runtime_module, 'capture_runtime_interfaces',
+                        lambda *args: deepcopy(runtime['interfaces']))
+    monkeypatch.setattr(probe_module, 'probe_project_configuration', replay_probe)
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path/'retained'
+    if output_form == 'relative':
+        output = Path('retained')
+    elif output_form == 'linked_directory':
+        (tmp_path/'linked').symlink_to(output, target_is_directory=True)
+        output = Path('linked')
+    elif output_form == 'linked_parent':
+        (tmp_path/'linked').symlink_to(tmp_path, target_is_directory=True)
+        output = Path('linked/retained')
+    argv = ['qualify_cpp_project_configuration', '--image', kwargs['image'],
+            '--qualification-source', 'unused-source', '--output', str(output),
+            '--accept-completed-collection', '--producer-source-sha', kwargs['producer_source_sha']]
+    for option, key in [('qualification-manifest', 'manifest_raw'),
+                        ('baseline-execution-contract', 'baseline_raw'),
+                        ('runtime-scope-contract', 'scope_raw')]:
+        path = tmp_path/(option+'.json'); path.write_bytes(kwargs[key])
+        argv += ['--'+option, str(path)]
+    monkeypatch.setattr(sys, 'argv', argv)
+    decision_path = tmp_path/'retained/collection-acceptance.json'
+    if output_form.startswith('linked'):
+        with pytest.raises(ValueError, match='qualification_artifact_path_invalid'):
+            script.main()
+        assert not decision_path.exists()
+    else:
+        script.main()
+        decision = json.loads(decision_path.read_bytes())
+        saved = json.loads((tmp_path/'retained/receipt.json').read_bytes())
+        assert decision == validate_project_collection(saved, read, **kwargs)
+        assert decision['collection_complete'] is True
+        assert decision['target_tests_passed'] is (kind is None)
+        assert saved['runtime']['complete'] is (kind is None)
+        assert saved['probe']['runtime_summary'] == receipt['probe']['runtime_summary']
+        assert saved['status'] == receipt['status']
+        assert decision['production_qualified'] is False
+
+
 @pytest.mark.parametrize('fault', ['producer', 'image', 'source', 'manifest_hash', 'baseline_hash', 'scope_hash',
     'cleanup', 'boundary', 'static_image', 'static_source', 'static_population', 'runtime_summary',
     'compiler_population', 'artifact_hash', 'production', 'historical_schema', 'runtime_plan',

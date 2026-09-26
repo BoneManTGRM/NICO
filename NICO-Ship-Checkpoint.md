@@ -1,3 +1,40 @@
+# Latest native repair — September 26, 2026
+
+Full run 36272142582 on PR merge checkout a65f40441f597fce702bdbce37332651780fa3c7
+(branch dc2521cb) finished FAILURE at 23:05 UTC. Artifact 10918006148 was downloaded,
+ZIP/member hashes checked, and compiler/static/runtime evidence reconstructed with
+identical original results. Baseline 377/377, compiler/static 475/475 and functional
+6/6 completed. ASan timed out at 900.046 seconds, exit 124; JUnit was unavailable.
+Its 376 Passed progress lines are not a completed population. UBSan and fuzz did
+not execute. Original receipt and all incomplete statuses remain unchanged.
+
+This candidate fixes the relative CLI artifact-root error using absolute(), without
+resolving links. It also adds runtime plan v4 with documented CTest COST scheduling
+for the 16 ASan suites whose prior retained duration was at least 25 seconds. Only
+transient generated scheduling metadata changes; historical plans and UBSan keep
+their old commands. Population, binary, instrumentation, parallelism, deadlines,
+resources, result interpretation and qualification requirements remain unchanged.
+
+Independent review found no blocking defect. The full workflow selection passed
+1,526 tests with one local native-toolchain skip; combined C++/PDF checks passed
+539 distinct cases, including the actual frontend-handler wrapper. There are 36
+new regression cases. Exact hashes and any final focused verification are retained
+in docs/evidence/pr1644-sanitizer-ordering/verification.json. Real CTest 3.31.6
+controls preserve membership, commands, failures and timeouts. Historical v3 native
+reconstruction remains identical and the real timed-out run remains rejected by
+completed-collection acceptance.
+
+The illustrative ordering model leaves only about eight seconds of margin. Actual
+published-candidate native completion is still required. No repeat of the successful
+old CI, manual duplicate qualification, timeout extension, test suppression, target
+source change, merge or production action is implied. The historical UBSan finding
+remains. PDF #1645 remains c6f9f4c with its separate actual-input acceptance unmet;
+no report approval or client delivery is authorized by these repairs.
+
+Earlier complete histories follow unchanged.
+
+---
+
 # Current collection policy — September 26, 2026
 
 The owner explicitly authorized implementing reviewed separation of completed NICO

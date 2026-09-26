@@ -102,8 +102,8 @@ def _select_functional_tests(rows: list[str], project_options: dict[str,str], ta
     return selected
 
 
-def derive_runtime_plan(source, targets, project_options, scope, *, plan_schema="nico.cpp-runtime-plan.v3"):
-    if plan_schema not in ("nico.cpp-runtime-plan.v1", "nico.cpp-runtime-plan.v2", "nico.cpp-runtime-plan.v3"):
+def derive_runtime_plan(source, targets, project_options, scope, *, plan_schema="nico.cpp-runtime-plan.v4"):
+    if plan_schema not in ("nico.cpp-runtime-plan.v1", "nico.cpp-runtime-plan.v2", "nico.cpp-runtime-plan.v3", "nico.cpp-runtime-plan.v4"):
         raise ValueError("worker_runtime_scope_unsupported")
     if (not isinstance(targets,dict) or not targets or not isinstance(project_options,dict)
             or not isinstance(scope,dict) or scope.get('schema')!='nico.cpp-runtime-scope.v1'
@@ -137,6 +137,7 @@ def derive_runtime_plan(source, targets, project_options, scope, *, plan_schema=
         if len(raw)!=row['bytes'] or hashlib.sha256(raw).hexdigest()!=row['sha256']:
             raise ValueError('worker_runtime_scope_asset_invalid')
         corpus.append(deepcopy(row))
+    from nico.assessment_cpp_test_schedule import ADDRESS_COSTS_MS
     return {
         'schema':plan_schema,'total_seconds':scope['total_seconds'],
         'unit_test_data':unit_data,
@@ -148,9 +149,11 @@ def derive_runtime_plan(source, targets, project_options, scope, *, plan_schema=
             'interface':'SANITIZERS','kinds':list(scope['sanitizers']),
             'build_seconds':scope['sanitizer_build_seconds'],'test_seconds':scope['sanitizer_test_seconds'],
             'test_case_seconds':scope['sanitizer_test_case_seconds'],'parallel':scope['parallel'],
+            **({'test_schedule':'retained-address-cost-v1', 'address_costs_ms':dict(ADDRESS_COSTS_MS)}
+               if plan_schema == 'nico.cpp-runtime-plan.v4' else {}),
             # Compile throughput stays unchanged; runtime tests share fewer slots.
             **({'test_parallel':min(2, scope['parallel'])}
-               if plan_schema in ('nico.cpp-runtime-plan.v2', 'nico.cpp-runtime-plan.v3') else {}),
+               if plan_schema in ('nico.cpp-runtime-plan.v2', 'nico.cpp-runtime-plan.v3', 'nico.cpp-runtime-plan.v4') else {}),
         },
         'fuzz':{
             'policy':scope['fuzz_policy'],'build_target':'fuzz','binary':'bin/fuzz','target':'connect_block',
@@ -158,7 +161,7 @@ def derive_runtime_plan(source, targets, project_options, scope, *, plan_schema=
             'corpus':corpus,'replay_runs':scope['fuzz_replay_runs'],'campaign_runs':scope['fuzz_campaign_runs'],
             'campaign_seconds':scope['fuzz_campaign_seconds'],'parallel':1,
             **({'build_parallel':min(2, scope['parallel'])}
-               if plan_schema == 'nico.cpp-runtime-plan.v3' else {}),
+               if plan_schema in ('nico.cpp-runtime-plan.v3', 'nico.cpp-runtime-plan.v4') else {}),
         },
     }
 
@@ -177,7 +180,7 @@ def capture_runtime_interfaces(source, targets):
 
 
 def derive_runtime_plan_from_interfaces(interfaces, targets, project_options, scope, *,
-                                        plan_schema="nico.cpp-runtime-plan.v3"):
+                                        plan_schema="nico.cpp-runtime-plan.v4"):
     expected=set(_RUNTIME_INTERFACES)
     if _OPTIONAL_UNIT_INTERFACE in targets:
         expected.add(_OPTIONAL_UNIT_INTERFACE)
@@ -236,7 +239,7 @@ def validate_retained_runtime(raw, targets, project_options, scope):
             or value.get('schema')!='nico.cpp-runtime-retained.v1'):
         raise ValueError('worker_runtime_retained_invalid')
     if not isinstance(value['plan'], dict) or value['plan'].get('schema') not in (
-            'nico.cpp-runtime-plan.v1', 'nico.cpp-runtime-plan.v2', 'nico.cpp-runtime-plan.v3'):
+            'nico.cpp-runtime-plan.v1', 'nico.cpp-runtime-plan.v2', 'nico.cpp-runtime-plan.v3', 'nico.cpp-runtime-plan.v4'):
         raise ValueError('worker_runtime_retained_invalid')
     # Reconstruct historical scheduling exactly; never relabel old evidence.
     plan=derive_runtime_plan_from_interfaces(value['interfaces'],targets,project_options,scope,

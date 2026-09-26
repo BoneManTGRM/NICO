@@ -26,7 +26,8 @@ def test_current_plan_only_adds_bounded_fuzz_build_scheduling(tmp_path, parallel
     source, targets, scope = source_and_scope(tmp_path)
     scope['parallel'] = parallel
     before = deepcopy(scope)
-    current = scope_api.derive_runtime_plan(source, targets, {}, scope)
+    current = scope_api.derive_runtime_plan(source, targets, {}, scope,
+        plan_schema='nico.cpp-runtime-plan.v3')
     historical = scope_api.derive_runtime_plan(source, targets, {}, scope,
         plan_schema='nico.cpp-runtime-plan.v2')
     assert current['schema'] == 'nico.cpp-runtime-plan.v3'
