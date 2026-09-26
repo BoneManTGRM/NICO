@@ -876,3 +876,17 @@ for (const changed of ['revision', 'artifact']) test(`retained export refuses ch
   assert.equal(h.downloads.length, 0);
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
+
+for (const locale of ['en', 'es-MX']) test(`retained digest without final PDF stays unavailable in ${locale}`, async () => {
+  const value = fixture(false);
+  value.status = 'blocked';
+  delete value.reports;
+  const h = harness({locale, get: async () => response(value)});
+  await h.load();
+  assert.match(h.text(), locale === 'en' ? /verified final PDF is not available/ : /PDF final verificado no está disponible/);
+  assert.doesNotMatch(h.text(), locale === 'en' ? /final assessment report is available independently/ : /informe final de evaluación está disponible independientemente/);
+  assert.equal(h.button(h.reviewLabel).props.disabled, true);
+  assert.equal(h.button(h.approveLabel).props.disabled, true);
+  assert.equal(h.downloads.length, 0);
+  assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
+});

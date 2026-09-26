@@ -65,6 +65,7 @@ const COPY = {
     exactRunId: "Exact Comprehensive run ID",
     security: "Use the private operator password configured for NICO in Railway. It stays only in this open page and is never stored in the URL or browser storage.",
     enterReviewer: "Enter the exact Comprehensive run ID and operator password. Reviewer name and role may be blank for operator approval and client-delivery permission.",
+    finalPdfUnavailable: "Assessment status loaded. A verified final PDF is not available for this run. Final report generation or validation must be resolved before review and approval. A retained artifact digest alone does not establish a completed final report.",
     loaded: "The immutable Comprehensive review package is loaded. The final assessment report is available independently of optional reviewer/client metadata.",
     loadFailed: "Unable to load final review.",
     finalDecision: "FINAL REPORT AND REVIEW STATE",
@@ -162,6 +163,7 @@ const COPY = {
     exactRunId: "ID exacto de ejecución Comprehensive",
     security: "Usa la contraseña privada del operador configurada para NICO en Railway. Permanece únicamente en esta página abierta y nunca se guarda en la URL ni en el almacenamiento del navegador.",
     enterReviewer: "Ingresa el ID exacto de Comprehensive y la contraseña del operador. El nombre y la función del revisor pueden quedar vacíos para la aprobación del operador y el permiso de entrega al cliente.",
+    finalPdfUnavailable: "Se cargó el estado de la evaluación. El PDF final verificado no está disponible para esta ejecución. Es necesario resolver la generación o validación del informe final antes de revisarlo y aprobarlo. Un hash de artefacto conservado no demuestra que el informe final esté terminado.",
     loaded: "El paquete inmutable de Comprehensive está cargado. El informe final de evaluación está disponible independientemente de los metadatos opcionales del revisor/cliente.",
     loadFailed: "No fue posible cargar la revisión final.",
     finalDecision: "INFORME FINAL Y ESTADO DE REVISIÓN",
@@ -275,6 +277,20 @@ function reviewCertificateFrom(value: ReviewResponse | null | undefined): JsonRe
 function reportFrom(value: ReviewResponse | null | undefined): JsonRecord {
   const operatorReports = asRecord(operatorEditionFrom(value).reports);
   return Object.keys(operatorReports).length ? operatorReports : asRecord(value?.reports);
+}
+
+function reviewPdfAvailable(value: ReviewResponse | null | undefined): boolean {
+  const report = reportFrom(value);
+  const digest = String(asRecord(asRecord(asRecord(value?.review_artifact_identity).artifact_digests).pdf).sha256 || "");
+  // A retained identity may describe an earlier stage. Only the validated final
+  // payload can feed this page's embedded-PDF download and approval workflow.
+  // Signature and exact-byte digest verification still occur before download.
+  return typeof report.pdf_base64 === "string" && Boolean(report.pdf_base64.trim())
+    && /^[0-9a-f]{64}$/i.test(digest);
+}
+
+function reviewLoadNotice(value: ReviewResponse, locale: Locale): string {
+  return reviewPdfAvailable(value) ? COPY[locale].loaded : COPY[locale].finalPdfUnavailable;
 }
 
 function stableIdentity(value: unknown): string {
@@ -426,6 +442,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const edition = useMemo(() => acceptedEditionFrom(result), [result]);
   const certificate = useMemo(() => reviewCertificateFrom(result), [result]);
   const report = useMemo(() => reportFrom(result), [result]);
+  const finalPdfAvailable = reviewPdfAvailable(result);
   const reviewArtifactIdentity = asRecord(result?.review_artifact_identity);
   const currentReviewDigest = String(
     reviewArtifactIdentity.report_artifact_digest || "",
@@ -459,6 +476,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const finalActionAuthorityReady = approvalCompleted && !operatorApprovalCompleted
     ? canonicalApprovalReady : approvalAuthorityReady;
   const approvalNextStep = !approvalAuthorityReady ? copy.enterReviewer
+    : result && !finalPdfAvailable ? copy.finalPdfUnavailable
     : !finalActionAuthorityReady ? copy.legacyDeliveryRequired
     : approvalCompleted ? copy.approvalReady
     : !exactEditionDownloaded ? copy.reviewDownloadRequired
@@ -630,8 +648,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
     setDownloadedArtifactDigest("");
     setConfirmed(false);
     try {
-      setResult(await requestJson(statusUrl(), {headers: headers()}));
-      setNotice(copy.loaded);
+      const current = await requestJson(statusUrl(), {headers: headers()});
+      setResult(current);
+      setNotice(reviewLoadNotice(current, locale));
     } catch (caught) {
       setResult(null);
       setError(caught instanceof Error ? caught.message : copy.loadFailed);
@@ -731,7 +750,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   }
 
   async function downloadFinalReport(): Promise<void> {
-    if (!operatorReady || !currentReviewPdfDigest || !result) {
+    if (!operatorReady || !finalPdfAvailable || !result) {
       setError(copy.pdfMissing);
       document.dispatchEvent(new Event("nico:pdf-action-finished"));
       return;
@@ -757,7 +776,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       await downloadFinalReport();
       return;
     }
-    if (!result || !finalActionAuthorityReady
+    if (!result || !finalPdfAvailable || !finalActionAuthorityReady
       || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))) {
       setError(approvalNextStep);
       document.dispatchEvent(new Event("nico:pdf-action-finished"));
@@ -982,8 +1001,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
         {!approvalCompleted ? <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!exactEditionDownloaded || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label> : null}
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
         <div className={styles.downloadActions}>
-          <button className={deliveryAllowed ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !operatorReady || !currentReviewPdfDigest} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
-          {!deliveryAllowed ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !finalActionAuthorityReady || !currentReviewPdfDigest || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button> : null}
+          <button className={deliveryAllowed ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !operatorReady || !finalPdfAvailable} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
+          {!deliveryAllowed ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !finalPdfAvailable || !finalActionAuthorityReady || !currentReviewPdfDigest || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button> : null}
           {approvalCompleted && !deliveryAllowed ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
           {deliveryAllowed && !operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
         </div>

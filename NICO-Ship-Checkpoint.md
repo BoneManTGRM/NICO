@@ -1,3 +1,15 @@
+# September 26 — exact final-PDF availability and authenticated observation
+
+Continue PR1644 and PR1645 through completion; owner explicitly authorizes merging both when ready. All evidence and acceptance requirements below remain. No merge/deployment/approval/client delivery performed.
+
+The actual run comprun_34a469900baa742c0d557f42634b318f is now authenticated in the review UI: revision67, retained report digest f24f7e38ce4c654c8a1c7b55f0d834cc1a03688ae717d695daa0342ba206937c. Its supported review download returned “The completed assessment response did not contain the exact PDF artifact.” Authentication is cleared; actual final PDF recovery and replay are not.
+
+See docs/evidence/pr1645-final-pdf-availability/verification.json. The UI no longer equates retained metadata with an available final PDF. New14 policy cases and full70 frontend handlers passed; TypeScript check passed. Independent full-repository scoped review found no blocking implementation defect, with102 focused Python tests and70 frontend tests passed. This review does not verify actual-input replay, physical iPhone behavior, or native C++ qualification. Older limited-review statements below remain historical.
+
+PR1644 at3cbe702 still awaits terminal run36241917330 evidence and disposition of its retained UBSan result. Final combined integration and hosted verification remain required. No earlier failure or requirement is erased.
+
+---
+
 # NICO — report recovery published; primary continuation conservation completed locally
 
 Continue existing PR1644 and PR1645. All original C0–C19 requirements, source/population/resource/isolation boundaries, historical failures, full applicable independent review and human approval/delivery requirements remain binding. Shipping remains held. No synthetic/local result permits merge or production acceptance.

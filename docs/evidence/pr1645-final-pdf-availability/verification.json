@@ -1,0 +1,55 @@
+{
+  "schema": "nico.pr1645.final-pdf-availability.v1",
+  "base_commit": "9766691140e5b89f67546d2d837ab8c564aa8b25",
+  "actual_run": "comprun_34a469900baa742c0d557f42634b318f",
+  "observed_revision": 67,
+  "observed_report_artifact_digest": "f24f7e38ce4c654c8a1c7b55f0d834cc1a03688ae717d695daa0342ba206937c",
+  "observed_pdf_digest": "44c048ee1602f684f587f2c0bb749d8268cd0b568135dacd9cd88d66f938ebfd",
+  "actual_browser_result": "Authenticated review loaded; Download report for review returned: The completed assessment response did not contain the exact PDF artifact.",
+  "correction": "Do not announce final PDF availability or enable embedded PDF download/approval from digest-only metadata. Require final PDF payload and digest; retain subsequent signature/exact-byte validation. EN/es-MX messages explain incomplete generation/validation.",
+  "tests": {
+    "new_policy_cases": 14,
+    "focused": 30,
+    "affected_python": {
+      "passed": 112,
+      "skipped": 1,
+      "skip_reason": "Frontend TypeScript was not yet installed at test collection; separately executed full70 frontend handlers after npm ci."
+    },
+    "frontend": {
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0
+    },
+    "typecheck": "npm run lint (tsc --noEmit) exit0",
+    "preimage_behavior": {
+      "cases": 2,
+      "failed": 2,
+      "reason": "Both EN/es-MX actual TSX handler tests reproduce the unconditional false availability notice on the unchanged preimage."
+    },
+    "frontend_wrapper_after_install": {
+      "passed": 1,
+      "skipped": 0
+    }
+  },
+  "independent_review": {
+    "agent": "pdf_review",
+    "blocking_code_findings": 0,
+    "python_passed": 102,
+    "frontend_passed": 70,
+    "ui_sha256": "5ab584f04f0fa890ccf1b6dd5d61b994dde12099149148e26ff18e7e98a2bd9a",
+    "limitations": [
+      "Actual missing PDF recovery and exact-input replay not verified",
+      "Physical iPhone interaction not verified",
+      "Native C++ qualification not verified"
+    ]
+  },
+  "actual_missing_pdf_recovered": false,
+  "actual_replay_completed": false,
+  "production_changed": false,
+  "approval_or_delivery_changed": false,
+  "files": {
+    "apps/web/app/operations/final-review/ComprehensiveFinalReviewWorkspace.tsx": "5ab584f04f0fa890ccf1b6dd5d61b994dde12099149148e26ff18e7e98a2bd9a",
+    "tests/test_final_review_pdf_availability.py": "0cc11e8f295c2bed534a74634b3f065e9af618f1d0e71b5237f4ec66375ae92c",
+    "tests/frontend/final_review_approval.test.cjs": "253a2e1077de64b9e00ba243c1730452a24270e38423b90fc64ad67ec61fcf2b"
+  }
+}
