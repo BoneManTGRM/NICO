@@ -216,6 +216,15 @@ def qualify_configuration_checkout(args):
         'stage':'source_inventory','source':None,'probe':None,
         'production_dispatch_exercised':False,'production_qualified':False,
         'compiled':False,'tests_executed':False}
+    collection_policy = getattr(args, 'accept_completed_collection', False)
+    if collection_policy:
+        import re
+        producer = getattr(args, 'producer_source_sha', None)
+        if (not isinstance(producer, str) or re.fullmatch(r'[a-f0-9]{40}', producer) is None
+                or getattr(args, 'baseline_execution_contract', None) is None
+                or getattr(args, 'runtime_scope_contract', None) is None):
+            raise ValueError('qualification_collection_contract_invalid')
+        evidence.update(schema='nico.cpp-configuration-qualification.v2', producer_source_sha=producer)
     def retain():
         data=canonical_bytes(evidence)
         if len(data)>16*1024*1024: raise ValueError('qualification_evidence_budget')
@@ -306,7 +315,22 @@ def qualify_configuration_checkout(args):
         retain()
         print(json.dumps({'status':evidence['status'],'stage':evidence['stage'],
                           'compiled':evidence['compiled'],'tests_executed':evidence['tests_executed'],'production_qualified':False}))
-    if evidence['stage']!='completed':
+    if collection_policy:
+        from nico.assessment_cpp_collection import validate_project_collection
+        from nico.assessment_cpp_project_snapshot import _stable_bytes, PROJECT_GENERATED_STREAM_LIMIT
+        decision = validate_project_collection(evidence,
+            lambda ref: _stable_bytes(args.output, ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
+            manifest_raw=raw, baseline_raw=raw_execution, scope_raw=raw_runtime,
+            producer_source_sha=producer, image=args.image)
+        # The original receipt/status and failed native results remain untouched.
+        # This additive decision is not an image-promotion or production credential.
+        path = args.output / 'collection-acceptance.json'
+        with path.open('xb') as handle:
+            handle.write(canonical_bytes(decision)); handle.flush(); os.fsync(handle.fileno())
+        print(json.dumps({'collection_complete': True,
+                          'target_tests_passed': decision['target_tests_passed'],
+                          'full_project_qualified': False, 'production_qualified': False}))
+    elif evidence['stage']!='completed':
         raise ValueError('qualification_configuration_unproven')
 
 
@@ -323,6 +347,9 @@ def main():
     parser.add_argument('--project-static-analysis', action='store_true')
     parser.add_argument('--extended-compiler-budget', action='store_true')
     parser.add_argument('--compiler-environment', action='store_true')
+    parser.add_argument('--accept-completed-collection', action='store_true',
+        help='Use the explicit collection policy while retaining failed target qualification.')
+    parser.add_argument('--producer-source-sha', help='NICO revision producing this collection receipt.')
     parser.add_argument('--output', type=Path, default=Path('cpp-configuration-qualification'))
     qualify_configuration_checkout(parser.parse_args())
 

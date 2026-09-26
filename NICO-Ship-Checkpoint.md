@@ -1,3 +1,48 @@
+# Current collection policy — September 26, 2026
+
+The owner explicitly authorized implementing reviewed separation of completed NICO
+collection from passed target tests, plus investigating a supported failed-report
+input export. This narrowly supersedes the earlier prohibition on changing collection
+acceptance. Historical target qualification, production, approval/delivery and all
+other applicable C0–C19 requirements remain unchanged.
+
+This commit adds opt-in qualification receipt v2 and a separate source/image/producer-
+bound collection decision. It revalidates all raw baseline/compiler/static/runtime
+populations, native operation membership/argv, source/configuration/artifact bindings,
+failed-test diagnostics and complete fuzz work. Only completed Failed sanitizer tests
+with retained diagnostics and verified resources are admitted as findings. The target
+failure, UNPROVEN probe status, runtime.complete=false and original error remain.
+Old callers retain v1 exit semantics. Image promotion does not accept the new decision;
+full_project_qualified and production_qualified remain false.
+
+Complete native run36250553285 on bda72c7 finished FAILURE at20:09UTC September26.
+Artifact10913709745,20,848,472bytes,SHA256
+80df3cb7989587655cb5ffbfb470b37d851c6dd2f108f227e6695a464c3749ca.
+Baseline377pass,compiler/static475,functional6,ASan377pass;UBSan376/377 with net_tests
+failed at streams.cpp:99. Fuzz build948.902seconds,2replays passed,campaign256executions.
+New policy data-revalidation accepts completed collection in a separately labelled
+prospective v2 copy, preserving the identical original runtime summary and historical
+receipt. This is not new native execution or retroactive run success.
+
+Final local exact contracts:1490passed,1native-toolchain skip. Combined with PDFc6f9f4c:
+503distinct Python checks passed, including actual frontend-handler wrapper, no skips.
+Independent review's transport-binding blocker was repaired; all seven original
+substitutions fail and109focused checks pass. Details and immutable hash evidence:
+docs/evidence/pr1644-collection-acceptance/. Exact published-head hosted verification
+is required next; no unchanged historical native job was rerun manually.
+
+PDFPR1645 remainsc6f9f4c7ad53c791d53e0a10dcb303e190078394. Code review found no durable
+exact renderer-input capsule for blocked runcomprun_34a469900baa742c0d557f42634b318f
+revision67. Its worker context existed only in temporary storage. Retained Markdown/HTML
+are sibling outputs and can fall back to earlier stages; they cannot prove failed PDF
+input fidelity. No misleading export, record extraction, report approval, delivery,
+repeated recovery or production mutation was performed. Actual-input replay remains
+a separate unmet requirement. Neither PR is merged; production remains312693443b1e.
+
+Earlier complete histories follow unchanged.
+
+---
+
 # Current native result and bounded build correction — 2026-09-26
 
 Full native run 36241917330 on parent 3cbe702 completed with failure at 14:43 UTC.
