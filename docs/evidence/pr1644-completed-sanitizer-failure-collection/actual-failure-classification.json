@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "undefined",
+    "exit_code": 8,
+    "timed_out": false,
+    "eligible_for_later_collection": true,
+    "original_complete": false,
+    "original_error": "worker_runtime_sanitizer_failed"
+  }
+]

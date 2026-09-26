@@ -111,7 +111,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if type(extended_compiler_budget) is not bool or (extended_compiler_budget and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     if (runtime_plan is not None and (baseline_execution is None or not isinstance(runtime_plan,dict)
-            or runtime_plan.get('schema')!='nico.cpp-runtime-plan.v1' or runtime_plan.get('total_seconds')!=6000)):
+            or runtime_plan.get('schema') not in ('nico.cpp-runtime-plan.v1','nico.cpp-runtime-plan.v2','nico.cpp-runtime-plan.v3') or runtime_plan.get('total_seconds')!=6000)):
         raise ValueError('worker_configuration_probe_runtime_contract_invalid')
     from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
     if baseline_execution is not None:
@@ -169,8 +169,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
         result.update(schema='nico.cpp-project-configuration-probe.v5', project_compiler=None)
     if project_static_analysis:
         result.update(schema='nico.cpp-project-configuration-probe.v6', project_static=None,
-            project_static_stage=None, aggregate_execution_budget_seconds=2820,
-            aggregate_wall_budget_seconds=2840, aggregate_duration_ms=0)
+            project_static_stage=None, aggregate_execution_budget_seconds=execution_seconds+1020,
+            aggregate_wall_budget_seconds=execution_seconds+1040, aggregate_duration_ms=0)
 
     if baseline_execution is not None:
         result.update(baseline_execution=dict(baseline_execution), baseline_execution_frozen=None,

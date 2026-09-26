@@ -33,6 +33,10 @@ def _read_artifact(store, identity, reference, key):
             or stored.get("compressed_bytes")!=reference.get("gzip_bytes")):
         raise ValueError("worker_configure_first_artifact_binding_invalid")
     compressed=stored["compressed"]
+    if (not isinstance(compressed, bytes) or not 0 < len(compressed) <= MAX_COMPRESSED
+            or len(compressed) != reference.get("gzip_bytes")
+            or hashlib.sha256(compressed).hexdigest() != reference.get("gzip_sha256")):
+        raise ValueError("worker_configure_first_artifact_digest_invalid")
     try:
         with gzip.GzipFile(fileobj=io.BytesIO(compressed),mode="rb") as stream:
             raw=stream.read(min(MAX_RAW,reference.get("retained_bytes",0))+1)
@@ -82,7 +86,11 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     analysis=primary
     if "project-static-clang-fallback" in refs:
         fallback_raw=_read_artifact(store,identity,refs["project-static-clang-fallback"],"project-static-clang-fallback")
-        fallback_request=clang_fallback_request(static_request,primary)
+        fallback_schema=_json(fallback_raw).get('schema')
+        fallback_request=clang_fallback_request(static_request,primary,
+            extended_budget=fallback_schema in ('nico.cpp-clang-fallback-evidence.v2',
+                                               'nico.cpp-clang-fallback-evidence.v4'),
+            contention_aware=fallback_schema=='nico.cpp-clang-fallback-evidence.v4')
         fallback=validate_clang_fallback(fallback_raw,fallback_request,static_request)
         analysis=merge_static_analysis(primary,fallback)
     checks=[
@@ -121,9 +129,15 @@ def reconstruct_configure_first(identity, contract, receipt, store):
 
 def project_configure_first_record(record, identity, contract, receipt, reconstruction):
     native=receipt["native"]; analysis=reconstruction["analysis"]; runtime=reconstruction.get("runtime")
-    if (not native["complete_execution"] or not analysis["complete"]
-            or (runtime is not None and runtime["summary"]["complete"] is not True)):
+    # Reconstruction is source/receipt-bound even when required execution failed.
+    # Runtime failure must not erase independently verified static observations.
+    if runtime is not None:
+        record=deepcopy(record)
+        record.setdefault("cpp_build_evidence", {})["runtime_scope"]=deepcopy(runtime["summary"])
+    if analysis["complete"] is not True:
         return record
+    execution_complete = (native["complete_execution"] is True
+        and (runtime is None or runtime["summary"]["complete"] is True))
     findings=[]
     primary_ref=native["artifacts"]["project-static-evidence"]["artifact_id"]
     fallback_ref=(native["artifacts"].get("project-static-clang-fallback") or {}).get("artifact_id")
@@ -136,9 +150,13 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
             ("rule_id","path","line","column","context_id","source_sha256","commit_sha","configuration_sha256")})
         findings.append(finding)
     output=deepcopy(record)
-    output.update(status="completed",completed=True,verified_complete=True,verified_for_this_report=True,
-        execution_observed_for_this_report=True,returncode_valid=True,findings=findings,
-        finding_count=len(findings),reason="",canonical_findings_projected=True)
+    output.update(execution_observed_for_this_report=True,findings=findings,
+        finding_count=len(findings),canonical_findings_projected=True)
+    if execution_complete:
+        output.update(status="completed",completed=True,verified_complete=True,
+            verified_for_this_report=True,returncode_valid=True,reason="")
+    # Otherwise retain the producer's failure and incomplete/invalid-exit flags.
+    # Canonical projection proves observation identity, not whole-scope success.
     output["cppcheck_source_coverage"].update(
         requested_target_count=len(receipt["target_hashes"]),
         observed_target_count=len(receipt["target_hashes"]),

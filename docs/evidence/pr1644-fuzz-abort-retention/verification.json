@@ -1,0 +1,31 @@
+{
+  "parent": "3cbe70235948e3a89ff44a71418524a6ddad7171",
+  "files": {
+    "nico/assessment_cpp_runtime_execution.py": "09da712fef3e8819eef6e375c97aac86b0e859d078b2458064a01a826a63ba76",
+    "tests/test_cpp_fuzz_abort_retention.py": "24f99145a40967c93eb382291bb79c58a883b6286e2b627ac217ea92cf7092cc",
+    ".github/workflows/cpp-full-project-integration.yml": "05148335f9c48c2b0f5a991841d2284d7f57f1a1a7a60489ca5d3063b25cf3da"
+  },
+  "tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "1",
+    "tests": "1352",
+    "time": "137.252",
+    "timestamp": "2026-09-26T21:57:51.227455+08:00",
+    "hostname": "3c7a8239b217"
+  },
+  "junit_sha256": "306d496f376426c41598c9aedc6967cfe08832cf59050adeb99ae60e884a3850",
+  "new_cases": 27,
+  "independent_focused_passed": 232,
+  "preimage_reproductions": {
+    "source": "3cbe70235948e3a89ff44a71418524a6ddad7171",
+    "preimage_timeout_executed_suffix": true,
+    "preimage_deadline_lost_two_replays": true,
+    "native_execution": false
+  },
+  "historical_run": 36235924285,
+  "historical_summary_identical": true,
+  "native_execution": false,
+  "qualification_complete": false
+}

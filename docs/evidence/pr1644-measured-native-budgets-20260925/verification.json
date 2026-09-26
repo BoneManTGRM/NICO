@@ -1,0 +1,118 @@
+{
+  "scope": "Measured sanitizer and versioned fallback timing correction within unchanged shared and outer envelopes; not qualification",
+  "base_commit": "67834a956ed4cc51f3a806ded88959952f7b4d2d",
+  "base_tree": "2626b805a3d0056ae0a0651e1b58fbbb97e69102",
+  "qualification": {
+    "run": 36155314745,
+    "job": 108141988099,
+    "source": "3ebda0ae506be282e5ffd3fb8098ebf1452260a9",
+    "artifact": 10875864140,
+    "zip_bytes": 20320531,
+    "zip_sha256": "ccbb8f8287d68d7242cb086dd9682b829fc0bd70478a9c704dc8ab2743b6bce1"
+  },
+  "observed": {
+    "baseline_passed": 377,
+    "compiler_checked": 475,
+    "functional_passed": 6,
+    "asan_build_exit": 0,
+    "asan_suite_timeout_ms": 600046,
+    "asan_diagnostic_log_bytes": 124089,
+    "asan_log_only": {"passed": 372, "case_timeouts": 4, "unresolved": 1},
+    "junit_retained": false,
+    "canonical_asan_outcome_counts": "unknown",
+    "memory_peak_bytes": 9264336896,
+    "memory_oom_events": 0,
+    "memory_oom_kill_events": 0,
+    "scratch_available_bytes": 3683282944,
+    "scratch_capacity_bytes": 9663676416,
+    "static_primary_analyzed": 419,
+    "static_required": 475,
+    "fallback_required": 56,
+    "fallback_analyzed": 35,
+    "fallback_timed_out": 11,
+    "fallback_not_started": 10,
+    "combined_analyzed": 454,
+    "native_candidate_observations": 31873,
+    "confirmed_vulnerabilities": "not established"
+  },
+  "selected_policy": {
+    "sanitizer_suite_seconds": 900,
+    "sanitizer_case_seconds": 300,
+    "fallback_v1": {"wall_seconds": 180, "case_seconds": 45, "parallel": 4},
+    "fallback_v2": {"wall_seconds": 480, "case_seconds": 120, "parallel": 4},
+    "static_shared_execution_seconds": 1020,
+    "static_wall_seconds": 1030,
+    "runtime_seconds": 6000,
+    "durable_seconds": 9000,
+    "lease_seconds": 300,
+    "attempts": 1,
+    "hosted_minutes": 155,
+    "resource_limits_changed": false,
+    "target_or_test_population_changed": false,
+    "phase_maxima_are_additive": false,
+    "old_artifacts_relabelled": false,
+    "measured_new_limit_sufficiency": "unproven"
+  },
+  "tests": {
+    "initial_red_failed": 2,
+    "identical_green_passed": 2,
+    "prepublication_policy_red": {"failed": 3, "passed": 3},
+    "identical_policy_green_passed": 6,
+    "final_disjoint_groups": [92, 221],
+    "final_distinct_passed": 313,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "exit_codes": [0, 0],
+    "counts_overlap_earlier_runs": true,
+    "source_and_embedded_syntax": "passed",
+    "commands": [
+      "python -m pytest -q tests/test_cpp_clang_fallback.py tests/test_cpp_project_static_stage.py tests/test_cpp_production_selection.py tests/test_cpp_configure_first_contract.py tests/test_cpp_runtime_scope.py tests/test_cpp_configure_first_projection.py",
+      "python -m pytest -q tests/test_cpp_project_static.py tests/test_cpp_static_environment.py tests/test_cpp_static_environment_integration.py tests/test_cpp_configure_first_execution.py tests/test_cpp_runtime_execution.py"
+    ],
+    "environment": "Python 3.13.5 / pytest 9.0.2 / pypdf 5.9.0; not pinned hosted parity"
+  },
+  "data_only_replay": {
+    "original_bytes_unchanged": true,
+    "original_v1_fallback_preserved": true,
+    "original_600_120_runtime_scope_preserved": true,
+    "compiler_checked": 475,
+    "combined_static_analyzed": 454,
+    "runtime_complete": false,
+    "native_execution_performed": false,
+    "replay_json_sha256": "7e060c1d9c3e49c70c049612e30e3fcdeef81e2ad2850bc0d2a98f179f79e09e"
+  },
+  "review": {
+    "mechanism": "Supplied-material read-only agent",
+    "tests_executed": false,
+    "artifacts_retrieved": false,
+    "full_independent_clearance": false,
+    "disposition": "Insufficient for complete review; no concrete code finding provided",
+    "rejected_claims": [
+      "ASan duration incorrectly compared with fallback-stage budgets",
+      "Sequential shared-deadline phases incorrectly described as concurrent",
+      "Extended windows do not prove completion or inherent timeout"
+    ]
+  },
+  "files": {
+    "nico/assessment_cpp_clang_fallback.py": "b955ad4ced6a1b58d3450f0f102ef8881d421fd2",
+    "nico/assessment_cpp_project_static.py": "2c8477da49c46b5342a49781a15837e11ae0af5f",
+    "nico/assessment_cpp_configure_first_projection.py": "25fd11c75e4a645e49cd0604878ab5dc1fcc9c38",
+    "nico/assessment_cpp_production_selection.py": "98c35421863598679fabe87be1f112b9eb56bd7b",
+    "tests/test_cpp_project_static_stage.py": "fac5166b34e936f8e4c4c18723a7c495e08f40b9",
+    "tests/test_cpp_production_selection.py": "c224e8d61bc064eda70cd43d9fa6ffb0064cb3d7",
+    "tests/test_cpp_clang_fallback.py": "174b2dd26c785bdd6c6d558c6e71731c0a76dbb2",
+    "tests/fixtures/cpp/bitcoin-runtime-scope.json": "ad7cfc020e2d6587add60a8da69f6f5774d0426a"
+  },
+  "logs_sha256": {
+    "final-native.txt": "dec82d59cecd97432684f57894ed74809cadceb7c3f4059a6f478c33363cb7ad",
+    "final-native.xml": "8bed5e4c8c96eb4856439ab91d08c8580bf5ec6124ca5881f63619053f53e6f1",
+    "final-additional.txt": "cfec6b0fcee726c75725f65226dcc8d41778858fdeeb35f44c0aa1ed41503227",
+    "final-additional.xml": "a8ead92101ffd5c8d9a03f2939133725dc40b736e89b8aaad42779ea2ecea1cd",
+    "policy-red.txt": "706967eb5e5f2c4834636236618e3a93df0cec98b3e1743e095f05fc17596b72",
+    "policy-green.txt": "046673a151408bef10be2cbcefe11926e7f35bb47ac4201a67c2d57929fd08d5"
+  },
+  "publication_guard": "Caught a test transcription mismatch before publication and restored the exact tested merged-limitations assertion; mismatched blob ef9bd8e0f7fa024725ff2496232ef0a8addbf895 is not part of the branch.",
+  "pending_local_work": "Functional failed-setup/CSV retention, strict partial validation and bilingual unknown-state/export repairs remain local, not included here.",
+  "production_acceptance": "unproven"
+}

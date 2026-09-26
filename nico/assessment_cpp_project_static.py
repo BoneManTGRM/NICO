@@ -32,9 +32,12 @@ from nico.assessment_cpp_static_environment import (analyzer_environment_argumen
 TOOL_VERSION = '2.17.1'
 CHECKS = 'warning,style,performance,portability,information,missingInclude'
 LIMITS = {'wall_seconds': 540, 'case_seconds': 90, 'parallel': 4}
-STAGE_BUDGET = {'schema': 'nico.cpp-static-combined-budget.v2',
-    'primary_seconds': 540, 'fallback_seconds': 180, 'controller_seconds': 300}
-STAGE_EXECUTION_SECONDS = sum(v for k, v in STAGE_BUDGET.items() if k.endswith('_seconds'))
+# Phase maxima share the existing aggregate deadline; they are not additive
+# allowances. Every command, retention and validation remains deadline-fenced.
+STAGE_BUDGET = {'schema': 'nico.cpp-static-combined-budget.v3',
+    'primary_seconds': 540, 'fallback_seconds': 480, 'controller_seconds': 300,
+    'shared_execution_seconds': 1020, 'limits_share_execution_envelope': True}
+STAGE_EXECUTION_SECONDS = STAGE_BUDGET['shared_execution_seconds']
 STAGE_WALL_SECONDS = STAGE_EXECUTION_SECONDS + 10
 STREAM_LIMIT = 48 * 1024 * 1024
 REQUEST_LIMIT = 16 * 1024 * 1024
@@ -581,14 +584,15 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
             from nico.assessment_cpp_clang_fallback import (PROGRAM as CLANG_FALLBACK_PROGRAM,
                 STREAM_LIMIT as CLANG_FALLBACK_STREAM_LIMIT, clang_fallback_request,
                 validate_clang_fallback, merge_static_analysis)
-            fallback_request = clang_fallback_request(request, primary_analysis)
+            fallback_request = clang_fallback_request(request, primary_analysis,
+                extended_budget=True, contention_aware=True)
             if fallback_request['contexts']:
                 result['phase'] = 'analysis_fallback'; save()
                 fallback_observed = observe('project-static-clang-fallback',
                     ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive', name,
                      'python3', '-I', '-S', '-c', CLANG_FALLBACK_PROGRAM],
                     data=_canonical(fallback_request), limit=CLANG_FALLBACK_STREAM_LIMIT,
-                    seconds=190, external=True)
+                    seconds=fallback_request['limits']['wall_seconds']+10, external=True)
                 if (fallback_observed['exit_code'] != 0 or fallback_observed['timed_out']
                         or fallback_observed['output_truncated']):
                     raise ValueError('worker_project_static_stage_fallback_failed')

@@ -1,0 +1,85 @@
+{
+  "scope": "Exact nonsecret deployment-ID disposition for existing PR1644; not full capability qualification",
+  "base_commit": "a928951f7ea38db182cf717cdf1f63bb88e3eda3",
+  "base_tree": "bd13c3c394ae0178ea9d826b90c0a46ed7770a1e",
+  "source_artifact_id": 10864729586,
+  "source_archive_sha256": "46f573fcddea30910358b76a17cb10a1713569698c7c940eacdc998ece12b307",
+  "scanner_artifact_id": 10864619748,
+  "scanner_archive_sha256": "b8f68ec097acc9615d6e8f2eebc49e674afde363ffbc12e81711e0a9527f0c16",
+  "railway_metadata": {
+    "source_commit": "312693443b1e70c8a065de2c4e9ca329281d162a",
+    "deployment_status": "SUCCESS",
+    "deployment_identifier_sha256": "1980b2f6dab7776d10baa4343cca6b20d8af6aaec1a99137932989a3a81fff37",
+    "read_method": "authenticated Railway.list-deployments, exact NICO service and production environment"
+  },
+  "required_match": {
+    "file": "NICO-Ship-Checkpoint.md",
+    "detector": "RailwayApp",
+    "Verified": "exact boolean false",
+    "raw_sha256": "1980b2f6dab7776d10baa4343cca6b20d8af6aaec1a99137932989a3a81fff37"
+  },
+  "red": {
+    "command": "python -m pytest -q tests/test_security_audit_pr1644_deployment.py",
+    "exit": 1,
+    "failed": 2,
+    "passed": 23,
+    "reason": "known nonsecret and mixed-population blocker counts",
+    "warning": "unchanged express_score_assurance_export_v1 invalid escape sequence"
+  },
+  "focused_green": {
+    "command": "python -m pytest -q tests/test_security_audit_pr1644_deployment.py",
+    "exit": 0,
+    "passed": 25
+  },
+  "affected_green": {
+    "command": "python -m pytest -q tests/test_security_audit_pr1644_deployment.py tests/test_security_audit_pr1641_deployment.py tests/test_security_audit_gate.py tests/test_security_llvm_signing_fingerprint.py",
+    "exit": 0,
+    "passed": 116,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "counts_overlap": true
+  },
+  "local_environment": {
+    "python": "3.13.5",
+    "pytest": "9.0.2",
+    "pypdf": "5.9.0",
+    "pinned_hosted_parity_proven": false
+  },
+  "native_artifact_replay": {
+    "gate_before": "blocked",
+    "gate_after": "passed",
+    "observations_before": 104,
+    "observations_after": 104,
+    "dispositions_changed": 1,
+    "all_other_scanner_records_identical": true,
+    "raw_files_unchanged": 22,
+    "human_review_requirements_identical": true,
+    "approval_or_delivery_changed": false
+  },
+  "native_execution_changed": false,
+  "worker_budget_changed": false,
+  "independent_review": "pending",
+  "hosted_security_gate": "pending",
+  "files": {
+    "scripts/security_audit_gate.py": {
+      "bytes": 29651,
+      "git_blob": "fe7eacb713ccaa609fc2b53ca6997dea33f47b5b",
+      "sha256": "fe4cc1e44fcb41e5f38571f60a587390b57fbb7ec936c9eec252b3b3fc688f89"
+    },
+    "tests/test_security_audit_pr1644_deployment.py": {
+      "bytes": 3671,
+      "git_blob": "86c032ed1a79c17359e6ab034fa0f585bc089418",
+      "sha256": "92eb15efa4e6aca8281418acff90fac8941afe8ade9d52b10216ef8a343736ab"
+    }
+  },
+  "local_evidence_sha256": {
+    "red.txt": "f57f99b84d96f7f2e320a243c68f5caf96c93dc2764159025c3f87bb8132b565",
+    "red.xml": "0810433b9bc8e74b2f9609d885518c8ab305555243cb9c81bff69dd5970cf652",
+    "focused-green.txt": "50886ddae3b374c3062fbe873c12bb786017c5a8ded064cfcd76ee5e5e79b05e",
+    "focused-green.xml": "dccbdcdd1540410c89af7df5343eb9b86204d7ac437137d65ade39ed55c3d2a3",
+    "green.txt": "4afc6616853040018c683cb5fb5b6afe0da7b01c35a5d0b25973ca8100255588",
+    "green.xml": "4317323fbe967370cfebb891c540ad6dde46032c1d75f0deafb42b9f06e434ba",
+    "replay.json": "dbf4d27233979f337ab8504217aaa0c7f6456a974f7b7a96c9835f4ed87ddab6"
+  }
+}
