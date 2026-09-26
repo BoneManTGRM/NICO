@@ -1,0 +1,130 @@
+{
+  "schema": "nico.pr1645-renderer-footer-verification.v1",
+  "parent_commit": "3a25652b8591d72ce096680d11f46e80912a9dfe",
+  "parent_tree": "25ea10ff2af4ee87f142c7cede0918a4f72d9082",
+  "defect": "The actual premium renderer emits the approval footer before body text. The composer treats this exact footer as primary content, retains the register start, and exits register-discard state on continuation pages.",
+  "repair": "Ignore only the two existing exact normalized approval-boundary lines during classification. Retained PDF page bytes, approval footers, required content and 60-page boundary remain intact.",
+  "files": {
+    "nico/client_pdf_compose_v2.py": {
+      "bytes": 13414,
+      "git_blob_sha": "7163098426c5ed02b8104bcacff51a38d621aa61",
+      "sha256": "5f0d7229f3cdc820a024feb979a25811512911e151878c4b6c3d91c264eba7ef"
+    },
+    "tests/test_client_pdf_real_footer_conservation.py": {
+      "bytes": 4836,
+      "git_blob_sha": "e77304c3434e713cbef117b46848b3b9406e1039",
+      "sha256": "c604c5db953f589e5c06f28cf87c4abb42f33ef1612ee6489c5d4154bbf4c10e"
+    }
+  },
+  "verified_preimages": {
+    "nico/client_pdf_compose_v2.py": "8cd348edce7cbc549f699d30164e2f8d0e7bea4b",
+    "tests/test_client_pdf_register_conservation.py": "8b28f284c371ec58573e8a8c0aa5284bd5cf46eb",
+    "nico/comprehensive_premium_pdf_v6.py": "0b012fc6fcd1e7a7bd98a59698ea3aa252fcd0db",
+    "nico/comprehensive_client_ready_projection_v1.py": "d6b6f99c243288dda2c2e25e3a6edba213841967",
+    "nico/comprehensive_pdf_reflow_v1.py": "dd6d0344c8de7063b95c388ad953752b11357c13"
+  },
+  "verification": {
+    "focused_command": "python -m pytest -q tests/test_client_pdf_real_footer_conservation.py",
+    "same_final_tests_red": {
+      "failures": 4,
+      "passed": 4,
+      "reason": "Two actual-renderer controls exceed budget at 79 pages; two footer-first controls incorrectly retain superseded detail."
+    },
+    "same_final_tests_green": {
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "affected_command": "python -m pytest -q tests/test_client_pdf_real_footer_conservation.py tests/test_client_pdf_register_conservation.py tests/test_client_pdf_compose_v2.py tests/test_comprehensive_client_ready_projection_v1.py tests/test_compact_ci_boundary_publication_v81.py tests/test_decision_grade_report_surfaces_v1.py",
+    "affected_and_fresh_prepublication": {
+      "passed": 59,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "includes_all_8_new_and_22_prior_boundary_tests": true
+    },
+    "broader_attempt": "61 passed and 2 FileNotFoundErrors in Spanish UI source tests because the scoped archive omits apps/web. Preserved as incomplete; no assertions weakened. The final 59-case selection does not claim that UI coverage.",
+    "environment": "Python 3.13.5 / pytest 9.0.2 / pypdf 5.9.0 / reportlab 4.4.9; not pinned hosted parity or full checkout.",
+    "artifact_sha256": {
+      "footer-final-red.xml": "7642c1a54501bef5cad2ce36e41bf14b138e48974542a560849b5c4233c01c81",
+      "footer-final-green.xml": "2bfc190962be7da82c55210eca84dce0c88c604dc73f865463102b8ae73c6e3c",
+      "footer-final-affected.xml": "ff0372d5c97463a6b4edb2553b6dbffe16f1d25f2e9d1cb59edf605eb0375205",
+      "footer-prepublication.xml": "4130b23f317f7c1d0a19e8faa479cf7379a09d08a0d5375c4c0f61ac1b7a061d",
+      "footer-affected.xml": "8e3afb7da9f9c4efb977be1d7253af0e916a90854e6d9ff33b62804eee2e62de",
+      "capture_footer_controls.py": "cb71446d8e374412a1851f339dc45506f126599a3b110460aaea1bc88f8fafff"
+    }
+  },
+  "owned_controls": [
+    {
+      "locale": "en",
+      "old_composer_error": "client-ready PDF cannot preserve every primary and required page within the 60-page boundary: 79",
+      "scope": "Owned premium-renderer control, localized footer; not actual production input or full Spanish report",
+      "original_pages": 72,
+      "corrected_pages": 17,
+      "files": {
+        "base": {
+          "path": "en-base.pdf",
+          "bytes": 153342,
+          "sha256": "611032b7b7dc667a6dfda4e875508783aa1792d72f9f86c1ff09df4ec70e051d"
+        },
+        "register": {
+          "path": "en-register.pdf",
+          "bytes": 4918,
+          "sha256": "45a585a0521940b44d971babaf25bcefe019424687bd55b9e980068fb639bad4"
+        },
+        "gate": {
+          "path": "en-gate.pdf",
+          "bytes": 1413,
+          "sha256": "d9b96076092efca92687a1e9e89e7d1ec20eb0378899c64979095754ba19b755"
+        },
+        "corrected": {
+          "path": "en-corrected.pdf",
+          "bytes": 18073,
+          "sha256": "c9da179e54f0bf42e990297d60a3bdab32e7bb63b59fcc10030c6216e81ff4c6"
+        }
+      },
+      "off_page_words": [],
+      "all_180_ids_once_and_primary_and_footer_assertions": "checked by original test after capture return"
+    },
+    {
+      "locale": "es-MX",
+      "old_composer_error": "client-ready PDF cannot preserve every primary and required page within the 60-page boundary: 79",
+      "scope": "Owned premium-renderer control, localized footer; not actual production input or full Spanish report",
+      "original_pages": 72,
+      "corrected_pages": 17,
+      "files": {
+        "base": {
+          "path": "es-MX-base.pdf",
+          "bytes": 154261,
+          "sha256": "0fdb04e2b5f433dc4844922074a5418bc83e56f25867eec452270be8e7cefc50"
+        },
+        "register": {
+          "path": "es-MX-register.pdf",
+          "bytes": 4918,
+          "sha256": "45a585a0521940b44d971babaf25bcefe019424687bd55b9e980068fb639bad4"
+        },
+        "gate": {
+          "path": "es-MX-gate.pdf",
+          "bytes": 1425,
+          "sha256": "5581a3579b197c7c85a24c47a3062e0c34e8482ac9051d9502c6aebb21463182"
+        },
+        "corrected": {
+          "path": "es-MX-corrected.pdf",
+          "bytes": 18193,
+          "sha256": "a69f71f7175637e6f605129188aea995836e30e83efbf6735869c226c6c6462f"
+        }
+      },
+      "off_page_words": [],
+      "all_180_ids_once_and_primary_and_footer_assertions": "checked by original test after capture return"
+    }
+  ],
+  "visual_inspection": "All 34 corrected control pages rendered. Both 17-page contact sheets and the Spanish-footer scope page inspected. Intermediate composer pagination is not final navigation proof.",
+  "actual_failed_run_replayed": false,
+  "full_bilingual_production_report": false,
+  "native_execution_performed": false,
+  "independent_review": false,
+  "merge_readiness": false,
+  "deployment_performed": false,
+  "remaining": "Actual immutable self-assessment input replay and applicable independent review remain required. Native PR1644 qualification is separate. The previously blocked production-record diagnostic is not included or retried."
+}

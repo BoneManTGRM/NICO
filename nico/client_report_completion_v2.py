@@ -41,7 +41,7 @@ from nico.comprehensive_client_review_companion_v2 import (
 )
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_package
 
-VERSION = "nico.client-report-completion.v11"
+VERSION = "nico.client-report-completion.v12"
 
 _REVIEW_SECTION_TITLES = (
     "Functional QA",
@@ -249,6 +249,23 @@ def _validate_final_surfaces(
                 + ", ".join(missing_boundary)
             )
 
+    # These guards used to inspect only the disposable legacy PDF. Keep them
+    # on the actual delivered surface when the redundant legacy pass is absent.
+    normalized_extracted = " ".join(extracted.casefold().split())
+    if code and not any(marker in normalized_extracted for marker in (
+        "compact finding and remediation register",
+        "registro compacto de hallazgos y remediación",
+        "registro compacto de hallazgos y remediacion",
+    )):
+        raise ValueError("final client PDF omitted the compact finding register")
+    for item in canonical.get("not_applicable_scanner_records") or []:
+        if not isinstance(item, Mapping):
+            continue
+        name = _text(item.get("scanner_name") or item.get("tool"))
+        if name and name.casefold() not in normalized_extracted:
+            raise ValueError(f"final client PDF omitted not-applicable analyzer: {name}")
+    legacy._assert_no_control_glyphs(pdf)
+
     compact_pdf = legacy._compact(extracted)
     for item in code[:60]:
         location = _text(item.get("location"))
@@ -292,11 +309,24 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     """Finalize a bounded client PDF while retaining full JSON/CSV evidence."""
 
     prepared = prepare_client_report_package(package)
-    # The legacy pass retains compatibility and the accepted premium cover. The
-    # authoritative pass below removes duplicate finding cards and raw evidence
-    # dumps before composing one review companion, one compact register, and one
-    # human-review gate.
-    result = legacy.finalize_client_report_package(prepared)
+    from nico.comprehensive_rendered_package_reuse_v1 import _has_bound_rendered_surfaces
+
+    compatibility_prepared = not _has_bound_rendered_surfaces(prepared)
+    if compatibility_prepared:
+        # Prepare legacy data/text without rendering the detailed PDF that the
+        # compact composer would discard. Validate the final authoritative PDF.
+        result, source_canonical, source_register, source_markdown, _, _ = (
+            legacy._prepare_completion_text(prepared)
+        )
+        result["json"] = source_canonical
+        result["markdown"] = source_markdown
+        result["scanner_applicability"] = deepcopy(
+            (source_canonical.get("assessment") or {}).get("scanner_applicability_summary") or {}
+        )
+    else:
+        # Preserve the installed reuse path and its exact receipt for packages
+        # that have already completed the single-pass renderer.
+        result = legacy.finalize_client_report_package(prepared)
     canonical = normalize_client_assessment_truth(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
@@ -341,6 +371,10 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     rendered_html = render_client_html(markdown, title, spanish=spanish)
 
     base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    if compatibility_prepared:
+        base_pdf = legacy._replace_stale_pdf_text(base_pdf)
+        base_pdf = legacy._sanitize_pdf_control_glyphs(base_pdf)
+        legacy._assert_no_control_glyphs(base_pdf)
     review_pdf = render_comprehensive_review_companion_pdf(
         canonical,
         spanish=spanish,
@@ -379,6 +413,18 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
     review_page_count = len(PdfReader(io.BytesIO(review_pdf)).pages)
     completion = deepcopy(dict(result.get("client_report_completion") or {}))
+    if compatibility_prepared:
+        completion.update({
+            "verification_and_exit_criteria_distinct": bool(
+                (source_register.get("summary") or {}).get("verification_and_exit_criteria_distinct")
+            ),
+            "legacy_scanner_only_provenance_replaced": True,
+            "full_evidence_appendix_preserved": (
+                "Evidence Appendix" in source_markdown or "Apéndice de evidencia" in source_markdown
+            ),
+            "obsolete_empty_finding_copy_removed": True,
+            "secret_values_retained": False,
+        })
     completion.update(
         {
             "version": VERSION,

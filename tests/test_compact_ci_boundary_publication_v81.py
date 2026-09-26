@@ -75,12 +75,14 @@ def _register() -> dict:
         (True, "es-MX", "BORRADOR AUTOMATIZADO", _ES_REVIEW_TITLES),
     ),
 )
+@pytest.mark.parametrize("already_rendered", (False, True))
 def test_direct_compact_finalizer_binds_ci_boundary_after_review_rebuild(
     monkeypatch: pytest.MonkeyPatch,
     spanish: bool,
     language: str,
     status: str,
     review_titles: tuple[str, ...],
+    already_rendered: bool,
 ) -> None:
     canonical = {
         "report_language": language,
@@ -111,7 +113,7 @@ def test_direct_compact_finalizer_binds_ci_boundary_after_review_rebuild(
         "markdown": "legacy markdown",
         "html": "legacy html",
         "pdf_base64": base64.b64encode(base_pdf).decode("ascii"),
-        "premium_report_renderer": {},
+        "premium_report_renderer": {"single_pass_renderer": True} if already_rendered else {},
         "phase17_artifact_rebuild": {},
         "client_report_completion": {},
     }
@@ -121,6 +123,18 @@ def test_direct_compact_finalizer_binds_ci_boundary_after_review_rebuild(
         completion.legacy,
         "finalize_client_report_package",
         lambda value: dict(value),
+    )
+    # This test isolates CI/CD publication from finding preparation. Compact
+    # compatibility finalization now uses the text-only preparation seam;
+    # completed packages still use the legacy finalizer stub above.
+    monkeypatch.setattr(
+        completion.legacy,
+        "_prepare_completion_text",
+        lambda value: (
+            dict(value), dict(value["json"]),
+            value["json"]["client_finding_remediation_register"],
+            value["markdown"], value["html"], spanish,
+        ),
     )
     monkeypatch.setattr(completion, "normalize_client_assessment_truth", lambda value: dict(value))
     monkeypatch.setattr(completion, "_install_register", lambda value: value)

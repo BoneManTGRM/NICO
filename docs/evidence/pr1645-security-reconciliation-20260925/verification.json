@@ -1,0 +1,54 @@
+{
+  "scope": "Reuse the exact already-published PR1644 nonsecret disposition and tests on PR1645; no PDF/runtime behavior change",
+  "base_commit": "7f674d3855d1ededa1813f5fbe2f2db96e9b6260",
+  "base_tree": "117e6d562c578d0ffbaf6585d40f59bb2eada9fc",
+  "security_run": 36142624912,
+  "security_artifact": 10867931568,
+  "security_zip_sha256": "42f03496284200a798264b2435cd3968a0245b2912ee068c03460b29c2e017ed",
+  "baseline_gate_blob": "948e4655657920647cbf1d40602a808fe876dfa7",
+  "candidate_gate_blob": "fe7eacb713ccaa609fc2b53ca6997dea33f47b5b",
+  "reused_test_blob": "86c032ed1a79c17359e6ab034fa0f585bc089418",
+  "reused_from_commit": "f9a57a4b467d28f9a9bddeca5777285559932180",
+  "deployment_metadata": {
+    "method": "authenticated Railway.list-deployments for the established NICO production service",
+    "status": "SUCCESS",
+    "source_commit": "312693443b1e70c8a065de2c4e9ca329281d162a",
+    "identifier_sha256": "1980b2f6dab7776d10baa4343cca6b20d8af6aaec1a99137932989a3a81fff37"
+  },
+  "differential_replay": {
+    "before_gate": "blocked",
+    "before_blockers": 2,
+    "after_gate": "passed",
+    "after_blockers": 0,
+    "observations_before": 105,
+    "observations_after": 105,
+    "dispositions_changed": 2,
+    "reason": "The same already-proved nonsecret deployment identifier occurs in two immutable checkpoint commits",
+    "raw_files_byte_identical": 22,
+    "other_scanner_records_identical": true,
+    "human_review_requirements_identical": true,
+    "client_delivery_allowed": false
+  },
+  "fresh_tests": {
+    "command": "python -m pytest -q tests/test_security_audit_pr1644_deployment.py tests/test_security_audit_pr1641_deployment.py tests/test_security_audit_gate.py tests/test_security_llvm_signing_fingerprint.py",
+    "passed": 116,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "exit": 0,
+    "warnings": ["Unchanged express_score_assurance_export_v1.py invalid escape sequence"],
+    "environment": "Python 3.13.5 / pytest 9.0.2 / pypdf 5.9.0; recovered exact 3ebda0 source export",
+    "scope_limit": "Exact gate/test blob verification, not full PR1645 or pinned hosted qualification; no new TDD cycle claimed for reused repair"
+  },
+  "local_evidence_sha256": {
+    "replay.json": "5cd4492d0fc7acb7ebc68259207985c4a9a7cc20ebc13a7c6565eeaf9c8602da",
+    "tests.txt": "42c41a3905bf67d7350ddc53134a04d42a275eb4973ff4beb4a706ff26544843",
+    "tests.xml": "c18560ca2c3dc22fc67358e1f08581f9365d904c9a8fb779ec6bfa7128e027aa"
+  },
+  "pdf_composer_changed": false,
+  "native_execution_changed": false,
+  "qualification_or_approval_changed": false,
+  "independent_complete_review": "unproven",
+  "actual_failing_pdf_input_replay": "unproven",
+  "new_hosted_security_result": "pending"
+}

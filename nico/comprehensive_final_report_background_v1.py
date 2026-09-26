@@ -604,7 +604,10 @@ class FinalReportPublicationCoordinator:
                         context=context,
                     )
                 except Exception:
-                    pass
+                    # A transient canonical-store failure must not permanently
+                    # abandon an active lease. Recheck on the existing interval;
+                    # a stopped/fenced task still exits at the loop condition.
+                    continue
                 stop.set()
                 return
 
