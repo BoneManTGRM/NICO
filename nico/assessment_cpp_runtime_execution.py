@@ -304,6 +304,40 @@ def _junit(raw, required):
     return {'required':required,'executed':executed,'passed':passed,'skipped':skipped}
 
 
+def _completed_sanitizer_test_failure(operation, summary, junit_raw):
+    """Recognize a completed CTest failure, never a timeout or missing test.
+
+    This permits collection of independent later evidence; it does not turn the
+    failed target test into successful qualification. Exact commands, retained
+    bytes and population membership are validated separately by the caller.
+    """
+    from xml.etree import ElementTree as ET
+    if (operation.get('exit_code') != 8 or operation.get('timed_out') is not False
+            or operation.get('output_truncated') is not False
+            or not summary.get('required') or summary.get('skipped')
+            or summary.get('executed') != summary.get('required')
+            or summary.get('passed') == summary.get('required')):
+        return False
+    if b'<!DOCTYPE' in junit_raw.upper() or b'<!ENTITY' in junit_raw.upper():
+        return False
+    try:
+        root = ET.fromstring(junit_raw)
+    except ET.ParseError:
+        return False
+    failed = set(summary['required']) - set(summary['passed'])
+    failures = []
+    for case in root.findall('testcase'):
+        if case.get('name') not in failed:
+            continue
+        failure = case.find('failure')
+        if (failure is None or failure.get('message') != 'Failed'
+                or case.find('error') is not None or case.find('skipped') is not None
+                or case.get('status', 'run') not in {'run', 'fail'}):
+            return False
+        failures.append(case.get('name'))
+    return len(failures) == len(failed) and set(failures) == failed
+
+
 def _base_options(project_options):
     return ['-D'+k+'='+v for k,v in sorted(project_options.items())]
 
@@ -362,11 +396,12 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
     observe=bounded_observe
     if type(capture_failure_diagnostics) is not bool:
         raise ValueError('worker_runtime_diagnostic_contract_invalid')
-    evidence={'schema':'nico.cpp-runtime-evidence.v3' if capture_failure_diagnostics else 'nico.cpp-runtime-evidence.v2','plan_sha256':_digest(plan),
+    evidence={'schema':'nico.cpp-runtime-evidence.v4' if capture_failure_diagnostics else 'nico.cpp-runtime-evidence.v2','plan_sha256':_digest(plan),
         'functional':None,'sanitizers':[],'fuzz':None,'complete':False,'error':None,'duration_ms':0,
         'reclamations':[]}
     if capture_failure_diagnostics:
         evidence['failure_diagnostics'] = []
+    completed_test_failure = False
     try:
         functional=plan['functional']; selected=list(functional['selected_tests'])
         retained={'setup':None,'operation':None,'results_read':None,'results':None,'results_sha256':None}
@@ -447,7 +482,13 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
                 junit_sha256=hashlib.sha256(junit_raw).hexdigest())
             if not (_ok(c) and _ok(b) and _ok(d) and _ok(t) and names
                     and summary['executed']==names and summary['passed']==names and not summary['skipped']):
-                raise ValueError('worker_runtime_sanitizer_failed')
+                if (capture_failure_diagnostics
+                        and _completed_sanitizer_test_failure(t, summary, junit_raw)):
+                    # The child process has exited and all required results are
+                    # retained. Keep its failure, then collect independent stages.
+                    completed_test_failure = True
+                else:
+                    raise ValueError('worker_runtime_sanitizer_failed')
             _reclaim(observe, container, evidence, kind)
 
         fuzz=plan['fuzz']
@@ -499,7 +540,9 @@ def execute_runtime_plan(observe, container, plan, project_options, *, capture_f
             raise ValueError('worker_runtime_fuzz_failed')
         if campaign_metrics is None:
             raise ValueError('worker_runtime_fuzz_metrics_invalid')
-        evidence['complete']=True
+        evidence['complete']=not completed_test_failure
+        if completed_test_failure:
+            evidence['error']='worker_runtime_sanitizer_failed'
     except (ValueError,KeyError,TypeError,UnicodeError,json.JSONDecodeError) as exc:
         code=str(exc)
         evidence['error']=code if re.fullmatch(r'worker_runtime_[a-z_]+',code) else 'worker_runtime_failed'
@@ -640,7 +683,7 @@ def _validate_failed_functional_prefix(evidence, plan, operation):
             'campaign_completed':False,'campaign_executions':None,'campaign_coverage_signal':None,
             'campaign_duration_ms':None,'corpus_sha256':[],
             'required_corpus_sha256':[row['sha256'] for row in plan['fuzz']['corpus']]},
-        **({'failure_diagnostics':[]} if evidence['schema']=='nico.cpp-runtime-evidence.v3' else {}),
+        **({'failure_diagnostics':[]} if evidence['schema'] in {'nico.cpp-runtime-evidence.v3','nico.cpp-runtime-evidence.v4'} else {}),
         'native_evidence_sha256':_digest(evidence)}
 
 
@@ -704,7 +747,9 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
                 raise ValueError(error) from exc
     reclaim('baseline')
 
-    v3 = evidence['schema'] == 'nico.cpp-runtime-evidence.v3'
+    v4 = evidence['schema'] == 'nico.cpp-runtime-evidence.v4'
+    v3 = evidence['schema'] in {'nico.cpp-runtime-evidence.v3','nico.cpp-runtime-evidence.v4'}
+    continuable = set()
     diagnostics = evidence.get('failure_diagnostics', [])
     require(isinstance(diagnostics,list) and len(diagnostics)<=len(plan['sanitizers']['kinds']))
     diagnostic_by_kind = {}
@@ -755,6 +800,8 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
                     raise ValueError(error) from exc
                 require(row['results'] == results
                     and row['junit_sha256'] == hashlib.sha256(junit_raw).hexdigest())
+                if v4 and _completed_sanitizer_test_failure(row['tests'], results, junit_raw):
+                    continuable.add(prefix+'-tests')
             else:
                 require(row['results'] is None and row['junit_sha256'] is None)
             timed_out = any(row[key] is not None and row[key]['timed_out']
@@ -793,10 +840,10 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
         else:
             require(fuzz['staged'] is None)
 
-    # A later failure cannot conceal an earlier skipped/failed test group.
-    # Reclamation or another stage is permitted only after a complete group.
+    # Preserve every earlier failure. Only v4 may proceed after a fully
+    # enumerated, non-timeout target-test failure; all other aborts stay terminal.
     for index, result in enumerate(parsed_sanitizers):
-        if result['state'] != 'complete':
+        if result['state'] != 'complete' and 'runtime-'+result['kind']+'-tests' not in continuable:
             require(index == len(parsed_sanitizers)-1 and fuzz is None
                 and result['kind'] not in reclamation_by_phase)
 
@@ -804,7 +851,12 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
     require(present == order[:len(present)])
     failures = [key for key in present if not _ok(rows[key])]
     require(bool(failures))
-    failed = failures[0]
+    nonfatal = set(continuable)
+    for key in continuable:
+        nonfatal.update((key.removesuffix('-tests')+'-test-log', key.removesuffix('-tests')+'-resources'))
+    aborting = [key for key in failures if key not in nonfatal]
+    require(bool(aborting))
+    failed = aborting[0]
     after = present[present.index(failed)+1:]
     is_sanitizer_test = failed in {'runtime-'+kind+'-tests' for kind in kinds}
     test_prefix = failed.removesuffix('-tests')
@@ -823,6 +875,7 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
         expected_error = 'worker_runtime_sanitizer_failed'
     require(evidence['error'] == expected_error)
     return {'complete':False, 'error':evidence['error'], 'failure_operation':failed,
+        **({'first_failure_operation':failures[0]} if v4 else {}),
         'functional':parsed_functional, 'sanitizers':parsed_sanitizers,
         'sanitizers_not_executed':kinds[len(sanitizers):],
         'fuzz':{'state':'not_executed' if fuzz is None else 'failed',
@@ -834,15 +887,16 @@ def _validate_failed_runtime_prefix(evidence, plan, operation):
         'native_evidence_sha256':_digest(evidence)}
 
 def validate_runtime_evidence(evidence, plan, *, project_options=None):
-    v3 = isinstance(evidence, dict) and evidence.get('schema') == 'nico.cpp-runtime-evidence.v3'
-    v2 = isinstance(evidence, dict) and evidence.get('schema') in {'nico.cpp-runtime-evidence.v2','nico.cpp-runtime-evidence.v3'}
+    v4 = isinstance(evidence, dict) and evidence.get('schema') == 'nico.cpp-runtime-evidence.v4'
+    v3 = isinstance(evidence, dict) and evidence.get('schema') in {'nico.cpp-runtime-evidence.v3','nico.cpp-runtime-evidence.v4'}
+    v2 = isinstance(evidence, dict) and evidence.get('schema') in {'nico.cpp-runtime-evidence.v2','nico.cpp-runtime-evidence.v3','nico.cpp-runtime-evidence.v4'}
     fields = {'schema','plan_sha256','functional','sanitizers','fuzz','complete','error','duration_ms'}
     if v2:
         fields.add('reclamations')
     if v3:
         fields.add('failure_diagnostics')
     if (not isinstance(evidence,dict) or set(evidence)!=fields
-            or evidence.get('schema') not in {'nico.cpp-runtime-evidence.v1', 'nico.cpp-runtime-evidence.v2','nico.cpp-runtime-evidence.v3'}
+            or evidence.get('schema') not in {'nico.cpp-runtime-evidence.v1', 'nico.cpp-runtime-evidence.v2','nico.cpp-runtime-evidence.v3','nico.cpp-runtime-evidence.v4'}
             or evidence.get('plan_sha256')!=_digest(plan)
             or plan.get('total_seconds')!=6000
             or type(evidence.get('complete')) is not bool or type(evidence.get('duration_ms')) is not int
@@ -909,7 +963,7 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
         except (KeyError, TypeError, AttributeError, UnicodeError) as exc:
             raise ValueError('worker_runtime_evidence_invalid') from exc
 
-    if v3 and evidence['failure_diagnostics'] != []:
+    if v3 and not v4 and evidence['failure_diagnostics'] != []:
         raise ValueError('worker_runtime_evidence_invalid')
 
     functional=evidence.get('functional')
@@ -929,6 +983,19 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
     if (not isinstance(sanitizers,list) or [row.get('kind') for row in sanitizers]!=plan['sanitizers']['kinds']):
         raise ValueError('worker_runtime_evidence_invalid')
     parsed_sanitizers=[]
+    completed_test_failures=[]
+    parsed_diagnostics=[]
+    diagnostic_by_kind={}
+    if v4:
+        diagnostics=evidence['failure_diagnostics']
+        if not isinstance(diagnostics,list) or len(diagnostics)>len(plan['sanitizers']['kinds']):
+            raise ValueError('worker_runtime_evidence_invalid')
+        for diagnostic in diagnostics:
+            if (not isinstance(diagnostic,dict) or set(diagnostic)!={'kind','log_read','resources'}
+                    or diagnostic['kind'] not in plan['sanitizers']['kinds']
+                    or diagnostic['kind'] in diagnostic_by_kind):
+                raise ValueError('worker_runtime_evidence_invalid')
+            diagnostic_by_kind[diagnostic['kind']]=diagnostic
     sanitizer_fields={'kind','configure','build','discovery','tests','junit_read','results','junit_sha256'}
     for row in sanitizers:
         if not isinstance(row,dict) or set(row)!=sanitizer_fields:
@@ -943,7 +1010,30 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
             raise ValueError('worker_runtime_evidence_invalid') from exc
         if row.get('results')!=parsed or row.get('junit_sha256')!=hashlib.sha256(junit_raw).hexdigest():
             raise ValueError('worker_runtime_evidence_invalid')
-        parsed_sanitizers.append({'kind':row['kind'],**parsed})
+        if v4:
+            failed = not _ok(row['tests'])
+            if (row['kind'] in diagnostic_by_kind) is not failed:
+                raise ValueError('worker_runtime_evidence_invalid')
+            if failed:
+                if not _completed_sanitizer_test_failure(row['tests'],parsed,junit_raw):
+                    raise ValueError('worker_runtime_evidence_invalid')
+                diagnostic=diagnostic_by_kind[row['kind']]
+                prefix='runtime-'+row['kind']
+                if (not isinstance(diagnostic['log_read'],dict) or not isinstance(diagnostic['resources'],dict)
+                        or diagnostic['log_read'].get('id')!=prefix+'-test-log'
+                        or diagnostic['resources'].get('id')!=prefix+'-resources'):
+                    raise ValueError('worker_runtime_evidence_invalid')
+                raw_log=operation(diagnostic['log_read'],2*1024*1024+4096)
+                raw_resource=operation(diagnostic['resources'],4096)
+                parsed_diagnostics.append({'kind':row['kind'],**_runtime_diagnostic_summary(
+                    diagnostic['log_read'],diagnostic['resources'],raw_log,raw_resource)})
+                completed_test_failures.append(prefix+'-tests')
+            if (not all(_ok(row[k]) for k in ('configure','build','discovery','junit_read'))
+                    or parsed['executed']!=names or parsed['skipped']
+                    or (not failed and parsed['passed']!=names)):
+                raise ValueError('worker_runtime_evidence_invalid')
+        parsed_sanitizers.append({'kind':row['kind'],**parsed,
+            **({'state':'complete' if _ok(row['tests']) else 'failed'} if v4 else {})})
 
     fuzz=evidence.get('fuzz')
     if (not isinstance(fuzz,dict) or set(fuzz)!={'corpus_stage','staged','configure','build','replays','campaign','campaign_metrics','target','corpus_sha256'}
@@ -981,7 +1071,14 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
                 raise ValueError('worker_runtime_evidence_invalid')
 
     required_specs = {key for key in specs if not (v3 and key.endswith(('-test-log','-resources')))}
+    if v4:
+        required_specs |= {operation['id'] for diagnostic in diagnostic_by_kind.values()
+                           for operation in (diagnostic['log_read'],diagnostic['resources'])}
     if seen != required_specs:
+        raise ValueError('worker_runtime_evidence_invalid')
+    if (v4 and completed_test_failures and all(_ok(fuzz[k]) for k in ('corpus_stage','configure','build','campaign'))
+            and all(_ok(row) for row in fuzz['replays']) and parsed_metrics is not None
+            and evidence['error']!='worker_runtime_sanitizer_failed'):
         raise ValueError('worker_runtime_evidence_invalid')
 
     derived=(_ok(functional['setup']) and _ok(functional['operation'])
@@ -997,6 +1094,11 @@ def validate_runtime_evidence(evidence, plan, *, project_options=None):
     if evidence['complete'] is not (derived and evidence['error'] is None):
         raise ValueError('worker_runtime_evidence_invalid')
     return {'complete':evidence['complete'],'functional':parsed_functional,
+        **({'error':evidence['error'],
+             'first_failure_operation':(completed_test_failures + [row['id']
+                 for row in [*fuzz['replays'],fuzz['campaign']] if not _ok(row)]
+                 + (['runtime-fuzz-campaign'] if parsed_metrics is None else []) + [None])[0],
+             'failure_diagnostics':parsed_diagnostics} if v4 else {}),
         'sanitizers':parsed_sanitizers,
         'fuzz':{'target':fuzz['target'],'replay_count':len(fuzz['replays']),
                 'campaign_completed':_ok(fuzz['campaign']),'campaign_executions':(parsed_metrics or {}).get('executions'),

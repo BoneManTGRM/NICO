@@ -493,7 +493,7 @@ def test_timeout_retains_bounded_log_and_resource_evidence_before_missing_junit(
     assert 'runtime-address-test-log' in calls
     assert 'runtime-address-resources' in calls
     assert calls.index('runtime-address-tests') < calls.index('runtime-address-test-log') < calls.index('runtime-address-junit')
-    assert value['schema'] == 'nico.cpp-runtime-evidence.v3'
+    assert value['schema'] == 'nico.cpp-runtime-evidence.v4'
     proof = runtime.validate_runtime_evidence(value, plan(), project_options={'BUILD_TESTS': 'ON'})
     assert proof['complete'] is False
     assert proof['failure_operation'] == 'runtime-address-tests'

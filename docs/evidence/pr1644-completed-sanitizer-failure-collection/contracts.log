@@ -1,0 +1,36 @@
+........................................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 16%]
+........................................................................ [ 21%]
+........................................................................ [ 27%]
+........................................................................ [ 32%]
+........................................................................ [ 38%]
+........................................................................ [ 43%]
+........................................................................ [ 49%]
+........................................................................ [ 54%]
+........................................................................ [ 60%]
+........................................................................ [ 65%]
+...........................s............................................ [ 70%]
+........................................................................ [ 76%]
+........................................................................ [ 81%]
+........................................................................ [ 87%]
+........................................................................ [ 92%]
+........................................................................ [ 98%]
+........................                                                 [100%]
+=============================== warnings summary ===============================
+../nico-venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /workspace/scratch/1d5cd22c72d5/nico-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_cpp_bounded_fuzz.py: 6 warnings
+tests/test_cpp_generated_context.py: 6 warnings
+tests/test_cpp_combined_configuration.py: 6 warnings
+tests/test_cpp_compiler_evidence.py: 6 warnings
+tests/test_assessment_cpp_full_project.py: 6 warnings
+tests/test_cpp_native_test_binding.py: 6 warnings
+tests/test_cpp_configure_first_projection.py: 6 warnings
+  /workspace/scratch/1d5cd22c72d5/nico-venv/lib/python3.12/site-packages/pypdf/_page.py:1342: DeprecationWarning: Calling `PageObject.replace_contents()` for pages not assigned to a writer is deprecated and will be removed in pypdf 7.0.0. Attach the page to the writer first or use `PdfWriter(clone_from=...)` directly. The existing approach has proved being unreliable.
+    self.replace_contents(ContentStream(new_content_array, self.pdf))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1319 passed, 1 skipped, 43 warnings in 107.54s (0:01:47)

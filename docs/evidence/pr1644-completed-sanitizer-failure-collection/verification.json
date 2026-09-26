@@ -1,0 +1,168 @@
+{
+  "schema": "nico.completed-sanitizer-failure-collection-candidate.v1",
+  "publication_state": "LOCAL_UNPUBLISHED",
+  "parent_commit": "0c8ed5758cfae7ef66eb749655dc2ea9e9fe8c81",
+  "parent_tree": "fc3756a267db477b1ccc06d7797ec6a44af2e1e0",
+  "scope": "Collect independent remaining checks after a completed CTest failure while preserving failure and complete=false. Historical abort grammar is unchanged.",
+  "native_run": 36207402575,
+  "native_artifact": 10896373460,
+  "native_archive_sha256": "d460f23b62fc54474a5fb2aa0880f54b7b1d71d009af3b06c16c87632d533286",
+  "native_summary": {
+    "schema": "nico.native-data-revalidation.v1",
+    "run_id": 36207402575,
+    "source": {
+      "repository": "bitcoin/bitcoin",
+      "commit_sha": "bb5296576e8f1a9fc11c19d9a25ba02ed4547e24",
+      "tree_sha": "186194c9de7f613d2d323db41cb8ce6bf1e3e549"
+    },
+    "source_file_sha256": "22712c377e971375572841027cd903ab83861ce58dc748b57a611f7394e0397a",
+    "artifact_sha256": "d460f23b62fc54474a5fb2aa0880f54b7b1d71d009af3b06c16c87632d533286",
+    "compiler": {
+      "required_contexts": 475,
+      "checked_contexts": 475
+    },
+    "static": {
+      "required_contexts": 475,
+      "analyzed_contexts": 475,
+      "complete": true
+    },
+    "functional": {
+      "required": 6,
+      "executed": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "sanitizers": [
+      {
+        "kind": "address",
+        "state": "complete",
+        "required": 377,
+        "executed": 377,
+        "passed": 377,
+        "skipped": 0
+      },
+      {
+        "kind": "undefined",
+        "state": "failed",
+        "required": 377,
+        "executed": 377,
+        "passed": 376,
+        "skipped": 0
+      }
+    ],
+    "runtime_error": "worker_runtime_sanitizer_failed",
+    "runtime_complete": false,
+    "failure_operation": "runtime-undefined-tests",
+    "fuzz": {
+      "state": "not_executed",
+      "target": "connect_block",
+      "required_replay_count": 2,
+      "replay_count": 0,
+      "campaign_completed": false,
+      "campaign_executions": null,
+      "campaign_coverage_signal": null,
+      "campaign_duration_ms": null,
+      "corpus_sha256": [],
+      "required_corpus_sha256": [
+        "b711ed78d4987553c5a9fe7ca143ea017af39215f87e6c222b0796779edb3b44",
+        "e7cf46a078fed4fafd0b5e3aff144802b853f8ae459a4f0c14add3314b7cc3a6"
+      ]
+    },
+    "static_observations": 31873,
+    "observations_are_not_confirmed_vulnerabilities": true,
+    "analyzer_header_coverage_verified": false,
+    "new_native_execution": false,
+    "production_qualified": false,
+    "validation_source": "0c8ed5758cfae7ef66eb749655dc2ea9e9fe8c81"
+  },
+  "files": {
+    "nico/assessment_cpp_runtime_execution.py": {
+      "sha256": "d1cf5a289191f0208cc9505c3af28e34fdb94f9a2a06a16b3b563f0c54d81508",
+      "git_blob_sha": "28669c8e746dd64b85d9483616c07910d3fb695a",
+      "preimage_git_blob_sha": "1fef091b54f580ffdb84c8f371da050812b0c790"
+    },
+    "tests/test_cpp_runtime_execution.py": {
+      "sha256": "d99c8e864284887f0d49290e8fbffd29488721f0a721fdbe84903e3c1956144d",
+      "git_blob_sha": "5925aaafa751c189523633bcc0935d1df389e59e",
+      "preimage_git_blob_sha": "77c788155d4d0bf29ba7ce3dc5e6961726fe3bf4"
+    },
+    "tests/test_cpp_completed_sanitizer_failure_collection.py": {
+      "sha256": "4c5c3ff7d35376069ffc2173388f3e6f5ba3919bbbead828cd6db9cc900ef278",
+      "git_blob_sha": "cc13fecc8b0030d4b49a471636545c5a8fd75123",
+      "preimage_git_blob_sha": null
+    },
+    ".github/workflows/cpp-full-project-integration.yml": {
+      "sha256": "4cc47c85fba39207e4a65e299d89e022c2c0f64df22199f580199644ab5adc13",
+      "git_blob_sha": "666470c3f01cfa09f28240025b2d84a73d9fb597",
+      "preimage_git_blob_sha": "789bccf0fa03fb5938b41d4216a4acd22884fdf6"
+    }
+  },
+  "initial_tests": {
+    "tests": 14,
+    "failures": 10,
+    "errors": 0,
+    "skipped": 0,
+    "sha256": "16934738a67225be55a9520d0bfe55ea75e1e0f8f3852ec4d9aced8207546f8f"
+  },
+  "red_scope": "Three execution-flow cases failed because no independent later checks were collected. Seven corruption tests stopped at their prerequisite for that absent suffix; they are not seven independent reproduced integrity defects. Four abort/historical controls passed.",
+  "final_tests": {
+    "tests": 311,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "sha256": "1900d64ead5ca35fee99e0867d5cea2622a800e3f80297d2828dfe0bd4255da0"
+  },
+  "new_test_cases": 22,
+  "tests_are_transport_controls_not_native_execution": true,
+  "intermediate_failure": "One existing assertion expected default evidence schema v3; updated only that current-emitter assertion to v4. All other existing test assertions remain unchanged.",
+  "protected_function_asts_unchanged": [
+    "_runtime_operation_specs",
+    "_sanitizer_test_parallel",
+    "_reclaim",
+    "_reclamation_result"
+  ],
+  "workflow_change": "Add the new regression module to the existing contract-regression pytest command only.",
+  "no_changes_to": [
+    "assessed Bitcoin source",
+    "timeouts",
+    "test membership",
+    "memory or CPU limits",
+    "sanitizer halting policy",
+    "image recipe",
+    "qualification acceptance gates",
+    "report approvals",
+    "production settings"
+  ],
+  "historical_summary_before_after_byte_identical": true,
+  "historical_summary_sha256": "e5209165176a98b40d2c49fa52624583b114115d133333196a1df384d8406e70",
+  "actual_input_classification": [
+    {
+      "archive": "NICO-native-36207402575.zip",
+      "kind": "undefined",
+      "junit_sha256": "8608bfb6716291021236178866fd48ed1d472f9e34c4c00c9665819da1c5fe9f",
+      "collection_may_continue_without_marking_success": true,
+      "original_complete": false,
+      "original_error": "worker_runtime_sanitizer_failed"
+    },
+    {
+      "archive": "NICO-qualification-36188616532.zip",
+      "kind": "address",
+      "junit_sha256": "53a462afaeff683b937499d2dbb2953f62aebd01ff544f1adf57a4651b741f30",
+      "collection_may_continue_without_marking_success": false,
+      "original_complete": false,
+      "original_error": "worker_runtime_sanitizer_failed"
+    }
+  ],
+  "local_environment": "Scoped archived source; Python 3.13.5. Not full checkout or pinned hosted parity.",
+  "packaging_verification": "An initial hand-built patch omitted Git new-file metadata. Format repaired, then git apply --check and full byte-for-byte applied-file verification performed. This was a packaging error, not a test or native result.",
+  "triage_tool_limitation": "The generic classifier initially matched a negated timeout sentence; that result was rejected as contradicted by the primary record. With only the exact diagnostic it returned unknown_unclassified. This is not independent source review.",
+  "publication_boundary": "Current GitHub tool set has read/download operations but no create-commit/update-ref/merge action. A normal local git ls-remote failed with Could not resolve host: github.com. No alternate path around a safety denial was used.",
+  "independent_review_complete": false,
+  "candidate_native_run_performed": false,
+  "qualification_passed": false,
+  "merged": false,
+  "deployed": false,
+  "actual_failed_self_assessment_replayed": false,
+  "remaining": "Publish through authorized write-capable execution, full native collection and outcome disposition, complete independent review, authenticated actual-input EN/es-MX replay, final integration and no-deployment-safe merge."
+}
