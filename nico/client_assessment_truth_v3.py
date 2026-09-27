@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.canonical_section_status_v1 import normalize_scored_sections
@@ -279,8 +279,37 @@ def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[dict[str, Any]]:
             yield from _iter_mappings(item, depth=depth + 1)
 
 
+def _score_sync_read_input(canonical: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep a read-only predicate from copying retained JSON evidence.
+
+    Preserve the historical deepcopy path for custom containers/scalars whose
+    copy behavior may change their projection. Exact JSON containers need no
+    copy: the score-sync walkers only read them and retain no references.
+    """
+    root = dict(canonical)
+    pending = [root]
+    seen: set[int] = set()
+    while pending:
+        value = pending.pop()
+        kind = type(value)
+        if kind in (dict, list):
+            identity = id(value)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            if kind is dict:
+                if any(type(key) is not str for key in value):
+                    return deepcopy(root)
+                pending.extend(value.values())
+            else:
+                pending.extend(value)
+        elif kind not in (str, int, float, bool, type(None)):
+            return deepcopy(root)
+    return root
+
+
 def _contains_score_sync(canonical: Mapping[str, Any]) -> bool:
-    for item in _iter_mappings(deepcopy(dict(canonical))):
+    for item in _iter_mappings(_score_sync_read_input(canonical)):
         if item.get("final_report_input_scores_synchronized") is True:
             return True
     return False

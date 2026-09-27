@@ -70,10 +70,10 @@ def serialized_canonical_evidence_literal(value: Any, key: Any) -> bool:
     if not source_leaf:
         return False
 
-    # This bare scanner label introduces renderer-owned applicability prose, not
+    # These bare scanner labels introduce renderer-owned limitation prose, not
     # a canonical field path. Keep unknown suffixes under the strict translator;
     # dotted scanner provenance paths and their exact values remain protected.
-    if source_path == "osv-scanner":
+    if source_path in {"osv-scanner", "eslint"}:
         return False
 
     from nico import comprehensive_spanish_canonical_report_v87 as canonical

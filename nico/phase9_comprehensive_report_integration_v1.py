@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.client_finding_remediation_register_v5 import (

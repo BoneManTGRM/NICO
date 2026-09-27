@@ -24,6 +24,9 @@ _HOTSPOT_LINE = re.compile(
     r":(?P<line>\d+)\s*[·-]\s*(?P<symbol>[^·]+?)\s*[·-]\s*complexity\s+(?P<complexity>\d+)",
     re.IGNORECASE,
 )
+# Every hotspot match requires this same case-insensitive literal. Avoid the
+# unanchored path pattern's quadratic no-match scan on unrelated long evidence.
+_HOTSPOT_REQUIRED = re.compile("complexity", re.IGNORECASE)
 _SECRET_PATTERNS = (
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{12,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{12,}"),
@@ -496,7 +499,7 @@ def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[
                 "exact_commit_match": True,
             }
             output.append(_canonical_record(base, commit_sha))
-        for match in _HOTSPOT_LINE.finditer(raw):
+        for match in (_HOTSPOT_LINE.finditer(raw) if _HOTSPOT_REQUIRED.search(raw) else ()):
             path = match.group("path").replace("\\", "/")
             if _non_production(path):
                 continue

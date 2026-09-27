@@ -4,7 +4,8 @@ import base64
 import hashlib
 import io
 import unicodedata
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
+from nico.report_pdf_text import extract_pdf_page_texts
 from typing import Any, Mapping
 
 from pypdf import PdfReader, PdfWriter
@@ -127,8 +128,8 @@ def _validate_review_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
     if not pdf.startswith(b"%PDF"):
         raise ValueError("single-pass premium renderer did not produce a valid PDF")
     _assert_no_control_glyphs(pdf)
-    reader = PdfReader(io.BytesIO(pdf))
-    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+    pages = extract_pdf_page_texts(pdf)
+    extracted = "\n".join(pages)
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     for required in (
         _text(identity.get("run_id")),
@@ -139,7 +140,7 @@ def _validate_review_pdf(pdf: bytes, canonical: Mapping[str, Any]) -> int:
 
     if not _has_human_review_gate(extracted):
         raise ValueError("review PDF omitted the human review and acceptance gate")
-    return len(reader.pages)
+    return len(pages)
 
 
 def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
@@ -149,6 +150,14 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
         prepared.get("json") if isinstance(prepared.get("json"), Mapping) else {}
     )
     prepared["json"] = canonical
+    # Establish the full authoritative projection before using the existing
+    # finalized-render guard. Retained raw evidence is restored before return;
+    # all downstream repair, reconciliation and artifact binding sees it intact.
+    from nico.phase17_canonical_artifact_rebuild_v1 import (
+        _bounded_localized_preparation_input,
+        _restore_render_scanner_register,
+    )
+    prepared, retained_register, compact_register = _bounded_localized_preparation_input(prepared)
 
     result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
     canonical = _project(
@@ -236,6 +245,8 @@ def rebuild_single_pass_premium_artifacts(package: Mapping[str, Any]) -> dict[st
             "premium_report_renderer": contract,
         }
     )
+    if retained_register is not None:
+        result = _restore_render_scanner_register(result, retained_register, compact_register)
     return result
 
 

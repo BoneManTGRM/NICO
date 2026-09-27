@@ -4,7 +4,7 @@ import base64
 import hashlib
 import io
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Mapping
 
 from pypdf import PdfReader

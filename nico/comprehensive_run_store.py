@@ -13,6 +13,7 @@ from nico.comprehensive_run_record import (
     restore_comprehensive_run_record,
     validate_comprehensive_run_record,
 )
+from nico.comprehensive_run_storage_codec_v1 import decode_run_storage, encode_run_storage
 
 VERSION = "nico.comprehensive_run_store.v6"
 MAX_PUBLIC_INTAKE_RESERVATION_BYTES = 128 * 1024
@@ -46,12 +47,16 @@ def _review_history_sha256(history: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _decode_run_payload(payload: Any) -> dict[str, Any]:
+def _decode_json_object_payload(payload: Any) -> dict[str, Any]:
     if isinstance(payload, str):
         payload = json.loads(payload)
     if not isinstance(payload, dict):
         raise ValueError("persisted_payload_must_be_object")
     return payload
+
+
+def _decode_run_payload(payload: Any) -> dict[str, Any]:
+    return decode_run_storage(_decode_json_object_payload(payload))
 
 
 def _public_intake_payload_json(payload: Mapping[str, Any]) -> str:
@@ -333,7 +338,7 @@ class ComprehensiveRunStore:
         *,
         lease_owner: bool = False,
     ) -> dict[str, Any]:
-        payload = _decode_run_payload(row[10])
+        payload = _decode_json_object_payload(row[10])
         status = str(row[2])
         if status == "acquiring" and _public_intake_payload_sha256(payload) != str(
             row[1]
@@ -537,7 +542,7 @@ class ComprehensiveRunStore:
             existing = cursor.fetchone()
             terminal_payload = _public_intake_payload_json(
                 _terminal_public_intake_payload(
-                    _decode_run_payload(existing[0]) if existing is not None else {}
+                    _decode_json_object_payload(existing[0]) if existing is not None else {}
                 )
             )
             cursor.execute(
@@ -592,7 +597,7 @@ class ComprehensiveRunStore:
                 connection.commit()
                 return False
             terminal_payload = _public_intake_payload_json(
-                _terminal_public_intake_payload(_decode_run_payload(existing[0]))
+                _terminal_public_intake_payload(_decode_json_object_payload(existing[0]))
             )
             cursor.execute(
                 f"""
@@ -642,7 +647,7 @@ class ComprehensiveRunStore:
             existing = cursor.fetchone()
             terminal_payload = _public_intake_payload_json(
                 _terminal_public_intake_payload(
-                    _decode_run_payload(existing[0]) if existing is not None else {}
+                    _decode_json_object_payload(existing[0]) if existing is not None else {}
                 )
             )
             cursor.execute(
@@ -797,7 +802,7 @@ class ComprehensiveRunStore:
         if row is None:
             return None
 
-        projection = _decode_run_payload(row[0])
+        projection = _decode_json_object_payload(row[0])
         claimed_projection_sha256 = str(row[1] or "").strip().casefold()
         if claimed_projection_sha256 != _browser_projection_sha256(projection):
             raise ValueError("browser_projection_hash_mismatch")
@@ -1297,10 +1302,7 @@ class ComprehensiveRunStore:
 
     def _row_values(self, record: dict[str, Any]) -> tuple[Any, ...]:
         identity = record["identity"]
-        payload: Any = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        if self._dialect == "postgres":
-            # psycopg accepts serialized JSON for JSONB columns without requiring a hard dependency here.
-            payload = payload
+        payload = encode_run_storage(record)
         return (
             identity["run_id"],
             identity["customer_id"],

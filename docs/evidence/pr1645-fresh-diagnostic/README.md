@@ -74,3 +74,7 @@ Git can merge both existing PRs without modifying that already-qualified branch.
 The entire PDF checkpoint, including all earlier history and the fresh diagnostic
 authorization, is preserved verbatim in [full-checkpoint.md](full-checkpoint.md).
 The PR descriptions retain the latest hosted results. Neither history is discarded.
+
+The first real hosted diagnostic failed. Its immutable evidence, specific repair
+and compatibility limits are recorded in [repair-sept27.md](repair-sept27.md).
+No earlier preparation-only result is treated as hosted acceptance.

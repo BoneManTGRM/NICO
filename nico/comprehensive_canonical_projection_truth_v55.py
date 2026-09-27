@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
+from collections.abc import Mapping
+from nico.report_json_copy import deepcopy
 from functools import wraps
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable
+
+from nico.client_finding_remediation_register_v4 import _plain_report_containers
 
 VERSION = "nico.comprehensive_canonical_projection_truth.v57"
 _NORMALIZER_MARKER = "_nico_comprehensive_canonical_projection_truth_v55"
@@ -491,7 +494,10 @@ def _sync_counts(value: Any, *, total: int, exact: int, operational: int) -> Any
 
 
 def normalize_final_projection(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    output = deepcopy(dict(canonical))
+    # The projection walkers allocate every JSON container without modifying
+    # the source. Keep historical deepcopy semantics for non-JSON graphs.
+    plain_containers = _plain_report_containers(canonical)
+    output = dict(canonical) if plain_containers else deepcopy(dict(canonical))
     records, completed, incomplete, coverage = _scanner_population(output)
     output = _sync_scanner_projection(
         output,
@@ -501,7 +507,9 @@ def normalize_final_projection(canonical: Mapping[str, Any]) -> dict[str, Any]:
         coverage=coverage,
     )
     output["scanner_execution_records"] = deepcopy(records)
-    assessment = deepcopy(dict(output.get("assessment") or {}))
+    assessment = dict(output.get("assessment") or {})
+    if not plain_containers:
+        assessment = deepcopy(assessment)
     assessment["scanner_execution_records"] = deepcopy(records)
     assessment["completed_scanner_records"] = deepcopy(completed)
     assessment["incomplete_scanner_records"] = deepcopy(incomplete)

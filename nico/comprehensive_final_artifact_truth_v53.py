@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import io
 import json
 import re
 from copy import deepcopy
@@ -46,10 +45,9 @@ def _pdf_text(pdf: bytes) -> str:
     if not pdf.startswith(b"%PDF"):
         return ""
     try:
-        from pypdf import PdfReader
+        from nico.report_pdf_text import extract_pdf_page_texts
 
-        reader = PdfReader(io.BytesIO(pdf))
-        text = " ".join((page.extract_text() or "") for page in reader.pages)
+        text = " ".join(extract_pdf_page_texts(pdf))
         return " ".join(text.split())[:1_500_000]
     except Exception:
         return ""

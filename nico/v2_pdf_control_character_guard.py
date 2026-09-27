@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import io
 from functools import wraps
 from typing import Any, Callable, Mapping
+
+from nico.report_pdf_text import extract_pdf_page_texts
 
 VERSION = "nico.v2.pdf-control-character-guard.v1"
 _MARKER = "__nico_pdf_control_character_guard_v1__"
@@ -24,9 +25,7 @@ def _pdf_safe_markdown(markdown: str) -> str:
 
 
 def _assert_no_control_glyphs(pdf: bytes) -> None:
-    from pypdf import PdfReader
-
-    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    text = "\n".join(extract_pdf_page_texts(pdf))
     invalid = sorted(
         {
             ord(char)

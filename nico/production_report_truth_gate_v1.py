@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Mapping
 
 from nico.report_artifact_filename import normalize_report_artifact_filenames

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import re
-from copy import deepcopy
-from typing import Any, Iterable, Mapping
+from collections.abc import Mapping
+from nico.report_json_copy import deepcopy
+from typing import Any, Iterable
 
 from nico import client_finding_remediation_register_v3 as v3
 from nico.client_assessment_truth_v3 import normalize_repository_path
@@ -496,11 +497,45 @@ def _sync_count_mirrors(value: Any, count: int, scanner_issue_count: int) -> Any
     return output
 
 
+def _plain_report_containers(value: Any) -> bool:
+    """Identify data whose mutable containers the final projection recreates.
+
+    Only exact JSON types qualify. Custom mappings, tuples and mutable opaque
+    leaves retain the historical deepcopy path and its alias/type semantics.
+    Shared dict/list references are safe: the projection already recreates each
+    occurrence separately. Cyclic inputs still fail in the recursive projection.
+    """
+    pending = [value]
+    seen: set[int] = set()
+    while pending:
+        item = pending.pop()
+        kind = type(item)
+        if kind in (str, int, float, bool, type(None)):
+            continue
+        if kind not in (dict, list):
+            return False
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if kind is dict:
+            if any(type(key) is not str for key in item):
+                return False
+            pending.extend(item.values())
+        else:
+            pending.extend(item)
+    return True
+
+
 def synchronize_canonical_finding_surfaces(
     canonical: Mapping[str, Any],
     register: Mapping[str, Any],
 ) -> dict[str, Any]:
-    result = deepcopy(dict(canonical))
+    # Every retained dict/list is recreated by _sync_count_mirrors below. Avoid
+    # first cloning the complete JSON evidence tree only to replace that clone.
+    plain_containers = (
+        _plain_report_containers(canonical) and _plain_report_containers(register)
+    )
+    result = dict(canonical) if plain_containers else deepcopy(dict(canonical))
     findings = canonical_findings_from_register(register)
     by_id = _canonical_by_identity(findings)
 
@@ -521,7 +556,9 @@ def synchronize_canonical_finding_surfaces(
     result["finding_register_count"] = count
     result["canonical_finding_count"] = count
 
-    assessment = deepcopy(dict(result.get("assessment") or {}))
+    assessment = dict(result.get("assessment") or {})
+    if not plain_containers:
+        assessment = deepcopy(assessment)
     assessment["finding_population"] = deepcopy(summary)
     assessment["finding_register_count"] = count
     assessment["canonical_finding_count"] = count

@@ -6,7 +6,7 @@ import base64
 import html
 import io
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from pypdf import PdfReader, PdfWriter

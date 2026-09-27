@@ -1,0 +1,54 @@
+{
+  "schema": "nico.pr1645.local-retained-input-replay.v1",
+  "checked_at": "2026-09-27T06:16:17.442930+00:00",
+  "source_index_tree": "f3163bb9417ade813ab74e596ec15d4c41f5b184",
+  "source_parent": "ce97c2ceb3d1d21bd9cb1c573fdb42d9ec2e4a6f",
+  "original_input_sha256": "2368424bb0ea51773a21028bd6e17629a450a4222407ae1c911c11ac1c87d440",
+  "local_session": 61148,
+  "exit_code": 0,
+  "result_status": "blocked",
+  "elapsed_seconds_including_result_serialization": 892.2042377920006,
+  "alarm_seconds": 900,
+  "result_reason": "v2_production_publication_failed:ValueError:client-ready PDF cannot preserve every primary and required page within the 60-page boundary: 1174",
+  "final_pdf_accepted": false,
+  "pre_finalizer_capture_is_partial_only": true,
+  "base_pdf_pages": 1180,
+  "required_composition_pages": 1174,
+  "source_component_rows": 2499,
+  "source_interaction_rows": 21802,
+  "focused_tests": {
+    "passed": 233,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 31.06
+  },
+  "hosted_acceptance": false,
+  "production_qualified": false,
+  "files": {
+    "validation/en-replay-cached-result.json": {
+      "size_bytes": 160501962,
+      "sha256": "6fa920dba8519608ba49e030035d7a3de6c5b6a93d9fef089ddb126c79aa39e1"
+    },
+    "validation/en-replay-cached-result-pre-finalizer.json": {
+      "size_bytes": 84136341,
+      "sha256": "38bb3d57bd6800e6b7d4f618dec39ef72217ba10e89cf28451298eb4bd4c050d"
+    },
+    "validation/en-pre-finalizer-base.pdf": {
+      "size_bytes": 2619169,
+      "sha256": "26c8bd6d17e3858956d9ebb82820c90ba6ff5cf2458c567cbf9bb87fc037d206"
+    },
+    "validation/en-pre-finalizer-page-samples.json": {
+      "size_bytes": 20421,
+      "sha256": "7f9488ca32b93208121f917bfcb5719f94a72c816e2b2139d25f927055c7c14e"
+    },
+    "validation/en-replay-cached.log": {
+      "size_bytes": 64520,
+      "sha256": "988de27c46df665d242564fcd7db1801f7d037a84def2a30d8cc62a0e0fa37ae"
+    },
+    "validation/report-repair-final-focused.xml": {
+      "size_bytes": 38181,
+      "sha256": "68e8d2edcc2040db3ff49b2fc11ac22ff4724152561a44469566ef631b0892e4"
+    }
+  }
+}

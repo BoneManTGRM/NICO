@@ -12,6 +12,8 @@ from typing import Any, Callable
 
 from pypdf import PdfReader, PdfWriter
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 from nico import comprehensive_ci_boundary_compat_v74 as ci_v74
 from nico import comprehensive_report_language_truth_v77 as language_truth
 
@@ -49,10 +51,7 @@ def _html_text(value: Any) -> str:
 def _pdf_text(pdf: bytes) -> str:
     try:
         return _normalize_text(
-            "\n".join(
-                page.extract_text() or ""
-                for page in PdfReader(io.BytesIO(pdf)).pages
-            )
+            "\n".join(extract_pdf_page_texts(pdf))
         )
     except Exception as exc:
         raise ValueError("rendered CI/CD producer could not read the final PDF") from exc
