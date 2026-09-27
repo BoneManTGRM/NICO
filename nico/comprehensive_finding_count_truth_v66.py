@@ -37,6 +37,15 @@ def _replace_count_prose(
     operational_count: int,
     top_title: str,
 ) -> str:
+    lowered = value.casefold().replace("ı", "i").replace("i̇", "i") if type(value) is str else ""
+    if (
+        type(value) is str
+        and "canonical" not in lowered
+        and "exact-source" not in lowered
+        and "operational/context" not in lowered
+        and "unresolved priority" not in lowered
+    ):
+        return value
     output = value
     output = re.sub(
         r"The canonical register contains\s+\d+\s+unique decision-grade findings?\.",
@@ -104,7 +113,8 @@ def _reconcile_value(
 ) -> Any:
     if depth > 16:
         return deepcopy(value)
-    if type(value) is str:
+    kind = type(value)
+    if kind is str:
         if _replace_string is not None and len(value) <= 4096:
             return _replace_string(value)
         return _replace_count_prose(
@@ -112,7 +122,10 @@ def _reconcile_value(
             exact_source_count=exact_source_count,
             operational_count=operational_count, top_title=top_title,
         )
-    if isinstance(value, Mapping):
+    is_mapping = kind is dict
+    if not is_mapping and (kind is not list and kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)):
+        is_mapping = isinstance(value, Mapping)
+    if is_mapping:
         output: dict[str, Any] = {}
         for raw_key, child in value.items():
             key = str(raw_key)
@@ -140,7 +153,7 @@ def _reconcile_value(
                     _replace_string=_replace_string,
                 )
         return output
-    if isinstance(value, list):
+    if kind is list or ((kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, list)):
         return [
             _reconcile_value(
                 child,
@@ -153,7 +166,7 @@ def _reconcile_value(
             )
             for child in value
         ]
-    if isinstance(value, tuple):
+    if kind is tuple or ((kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, tuple)):
         return tuple(
             _reconcile_value(
                 child,
@@ -166,7 +179,7 @@ def _reconcile_value(
             )
             for child in value
         )
-    if isinstance(value, str):
+    if kind is str or isinstance(value, str):
         if _replace_string is not None and type(value) is str and len(value) <= 4096:
             return _replace_string(value)
         return _replace_count_prose(

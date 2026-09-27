@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from nico.report_json_copy import deepcopy
 import re
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from nico import comprehensive_client_readiness_v59 as v59
 from nico.phase14_analyzer_evidence_v1 import apply_analyzer_evidence
@@ -741,6 +742,10 @@ def reconcile_authoritative_scanner_truth(
     health["applicability_unproven_scanners"] = unproven_names
     output["evidence_health_summary"] = health
     def applicable_counts(value: Any) -> Any:
+        kind = type(value)
+        if (kind is str or kind is int or kind is float
+                or kind is bool or kind is type(None)):
+            return value
         if isinstance(value, list):
             return [applicable_counts(item) for item in value]
         if not isinstance(value, Mapping):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 

@@ -54,18 +54,26 @@ def _integer(value: Any) -> int:
 def _iter_mappings(value: Any, depth: int = 0) -> Iterable[Mapping[str, Any]]:
     if depth > 14:
         return
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is dict:
         yield value
         for child in value.values():
-            kind = type(child)
-            if (kind is not str and kind is not int and kind is not float
-                    and kind is not bool and kind is not type(None)):
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _iter_mappings(child, depth + 1)
+    elif kind is list or kind is tuple:
+        for child in value:
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _iter_mappings(child, depth + 1)
+    elif (kind is str or kind is int or kind is float or kind is bool or kind is type(None)):
+        return
+    elif isinstance(value, Mapping):
+        yield value
+        for child in value.values():
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
                 yield from _iter_mappings(child, depth + 1)
     elif isinstance(value, (list, tuple)):
         for child in value:
-            kind = type(child)
-            if (kind is not str and kind is not int and kind is not float
-                    and kind is not bool and kind is not type(None)):
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
                 yield from _iter_mappings(child, depth + 1)
 
 
@@ -232,9 +240,13 @@ def _non_production_path(path: str) -> bool:
     )
 
 
-def _complexity_hotspots(raw_stages: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _complexity_hotspots(
+    raw_stages: Mapping[str, Any],
+    *,
+    nodes: Iterable[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     selected: dict[tuple[str, int, str], dict[str, Any]] = {}
-    for node in _iter_mappings(raw_stages):
+    for node in nodes if nodes is not None else _iter_mappings(raw_stages):
         hotspots = _mapping_items(node.get("hotspots"))
         for item in hotspots:
             path = _path_from_hotspot(item)
@@ -393,9 +405,13 @@ def _synthesized_complexity_findings(
     return _canonicalize(findings)
 
 
-def _finding_summary_candidates(raw_stages: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+def _finding_summary_candidates(
+    raw_stages: Mapping[str, Any],
+    *,
+    nodes: Iterable[Mapping[str, Any]] | None = None,
+) -> list[Mapping[str, Any]]:
     values: list[Mapping[str, Any]] = []
-    for node in _iter_mappings(raw_stages):
+    for node in nodes if nodes is not None else _iter_mappings(raw_stages):
         summary = node.get("finding_summary")
         if isinstance(summary, Mapping):
             values.append(summary)
@@ -428,8 +444,12 @@ def _normalize_count_group(value: Any) -> dict[str, int]:
     }
 
 
-def _review_candidate_summary(raw_stages: Mapping[str, Any]) -> dict[str, Any]:
-    candidates = _finding_summary_candidates(raw_stages)
+def _review_candidate_summary(
+    raw_stages: Mapping[str, Any],
+    *,
+    nodes: Iterable[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    candidates = _finding_summary_candidates(raw_stages, nodes=nodes)
     source = max(candidates, key=_summary_quality) if candidates else {}
     by_category_raw = source.get("by_category") if isinstance(source.get("by_category"), Mapping) else {}
     by_tool_raw = source.get("by_tool") if isinstance(source.get("by_tool"), Mapping) else {}
@@ -504,9 +524,13 @@ def _safe_review_candidate(item: Mapping[str, Any]) -> dict[str, Any] | None:
     return {key: value for key, value in output.items() if value not in (None, "")}
 
 
-def _review_candidate_register(raw_stages: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _review_candidate_register(
+    raw_stages: Mapping[str, Any],
+    *,
+    nodes: Iterable[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
-    for node in _iter_mappings(raw_stages):
+    for node in nodes if nodes is not None else _iter_mappings(raw_stages):
         candidate = _safe_review_candidate(node)
         if not candidate:
             continue
@@ -520,6 +544,8 @@ def _review_candidate_register(raw_stages: Mapping[str, Any]) -> list[dict[str, 
 def _ci_operational_context(
     raw_stages: Mapping[str, Any],
     assessment: Mapping[str, Any],
+    *,
+    nodes: Iterable[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
     for section in assessment.get("sections") or []:
@@ -529,7 +555,7 @@ def _ci_operational_context(
         trend = contract.get("operational_trend") if isinstance(contract.get("operational_trend"), Mapping) else {}
         if trend:
             candidates.append(deepcopy(dict(trend)))
-    for node in _iter_mappings(raw_stages):
+    for node in nodes if nodes is not None else _iter_mappings(raw_stages):
         if any(
             key in node
             for key in (
@@ -595,12 +621,17 @@ def restore_decision_content(
     output = deepcopy(dict(canonical))
     updated_assessment = deepcopy(dict(assessment))
     structured = _structured_findings(raw_stages, updated_assessment)
-    hotspots = _complexity_hotspots(raw_stages)
+    retained_nodes = list(_iter_mappings(raw_stages))
+    hotspots = _complexity_hotspots(raw_stages, nodes=retained_nodes)
     synthesized = [] if structured else _synthesized_complexity_findings(hotspots, commit_sha)
     findings = structured or synthesized
-    review_summary = _review_candidate_summary(raw_stages)
-    review_register = _review_candidate_register(raw_stages)
-    ci_context = _ci_operational_context(raw_stages, updated_assessment)
+    review_summary = _review_candidate_summary(raw_stages, nodes=retained_nodes)
+    review_register = _review_candidate_register(raw_stages, nodes=retained_nodes)
+    ci_context = _ci_operational_context(
+        raw_stages,
+        updated_assessment,
+        nodes=retained_nodes,
+    )
     observations, observation_summary = _source_risk_observations(raw_stages, commit_sha)
     if observation_summary:
         output["source_risk_observations"] = deepcopy(observations)

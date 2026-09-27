@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from collections.abc import Mapping
 from typing import Any
+
+from nico.report_json_copy import deepcopy
 
 
 VERSION = "nico.comprehensive_maturity_label_truth.v1"
@@ -37,7 +38,7 @@ def _text(value: Any, limit: int = 240) -> str:
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
+    return value if type(value) is dict or isinstance(value, Mapping) else {}
 
 
 def _candidate_label(value: Any) -> str:
@@ -52,7 +53,11 @@ def _candidate_label(value: Any) -> str:
 def _contract_label(node: Any, *, depth: int = 0) -> str:
     if depth > 9:
         return ""
-    if isinstance(node, Mapping):
+    kind = type(node)
+    if kind is dict or (
+        (kind is not list and kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None))
+        and isinstance(node, Mapping)
+    ):
         contract = node.get("client_readiness_contract")
         if isinstance(contract, Mapping):
             label = _candidate_label(contract.get("maturity_label"))
@@ -68,7 +73,7 @@ def _contract_label(node: Any, *, depth: int = 0) -> str:
             label = _contract_label(value, depth=depth + 1)
             if label:
                 return label
-    elif isinstance(node, (list, tuple)):
+    elif kind is list or kind is tuple or isinstance(node, (list, tuple)):
         for value in node:
             kind = type(value)
             if (kind is str or kind is int or kind is float
@@ -137,6 +142,8 @@ def _replace_text(
     path: str,
     replacements: list[dict[str, str]],
 ) -> str:
+    if type(value) is str and "maturity" not in value.casefold().replace("ı", "i").replace("i̇", "i"):
+        return value
     output = value
     for pattern in _EXPLICIT_TEXT_PATTERNS:
         def replace(match: re.Match[str]) -> str:
@@ -164,14 +171,15 @@ def _synchronize_node(
     path: str,
     replacements: list[dict[str, str]],
 ) -> Any:
-    if isinstance(node, str):
+    kind = type(node)
+    if kind is str or isinstance(node, str):
         return _replace_text(
             node,
             canonical_label=canonical_label,
             path=path,
             replacements=replacements,
         )
-    if isinstance(node, list):
+    if kind is list or isinstance(node, list):
         return [
             _synchronize_node(
                 value,
@@ -181,7 +189,7 @@ def _synchronize_node(
             )
             for index, value in enumerate(node)
         ]
-    if isinstance(node, tuple):
+    if kind is tuple or isinstance(node, tuple):
         return tuple(
             _synchronize_node(
                 value,
@@ -191,7 +199,7 @@ def _synchronize_node(
             )
             for index, value in enumerate(node)
         )
-    if not isinstance(node, Mapping):
+    if kind is not dict and not isinstance(node, Mapping):
         return deepcopy(node)
 
     output: dict[str, Any] = {}

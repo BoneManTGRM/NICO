@@ -6,7 +6,7 @@ import html
 import io
 import json
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Callable, Iterable
 

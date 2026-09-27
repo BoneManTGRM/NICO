@@ -127,12 +127,16 @@ def _normalize_location_text(value: Any) -> str:
 def _normalize_paths(value: Any, *, key: str = "", depth: int = 0) -> Any:
     if depth > 9:
         return deepcopy(value)
-    if type(value) is str:
+    kind = type(value)
+    if kind is str:
         lowered = key.casefold()
         if "path" in lowered or "file" in lowered or "location" in lowered:
             return _normalize_location_text(value)
         return value
-    if isinstance(value, Mapping):
+    is_mapping = kind is dict
+    if not is_mapping and (kind is not list and kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)):
+        is_mapping = isinstance(value, Mapping)
+    if is_mapping:
         output: dict[str, Any] = {}
         for child_key, child in value.items():
             normalized_key = str(child_key).casefold()
@@ -147,11 +151,11 @@ def _normalize_paths(value: Any, *, key: str = "", depth: int = 0) -> Any:
                     depth=depth + 1,
                 )
         return output
-    if isinstance(value, list):
+    if kind is list or ((kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, list)):
         return [_normalize_paths(item, key=key, depth=depth + 1) for item in value]
-    if isinstance(value, tuple):
+    if kind is tuple or ((kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, tuple)):
         return tuple(_normalize_paths(item, key=key, depth=depth + 1) for item in value)
-    if isinstance(value, str) and any(marker in key.casefold() for marker in ("path", "file", "location")):
+    if (kind is str or isinstance(value, str)) and any(marker in key.casefold() for marker in ("path", "file", "location")):
         return _normalize_location_text(value)
     return deepcopy(value)
 
@@ -298,7 +302,7 @@ def _score_sync_read_input(canonical: Mapping[str, Any]) -> dict[str, Any]:
     while pending:
         value = pending.pop()
         kind = type(value)
-        if kind in (dict, list):
+        if (kind is dict or kind is list):
             identity = id(value)
             if identity in seen:
                 continue
@@ -309,7 +313,7 @@ def _score_sync_read_input(canonical: Mapping[str, Any]) -> dict[str, Any]:
                 pending.extend(value.values())
             else:
                 pending.extend(value)
-        elif kind not in (str, int, float, bool, type(None)):
+        elif (kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)):
             return deepcopy(root)
     return root
 

@@ -9,6 +9,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico import client_report_completion_v2 as completion
+from nico import comprehensive_placeholder_sanitization_v1 as sanitization
 from nico.comprehensive_placeholder_sanitization_v1 import (
     VERSION,
     assert_parser_placeholders_absent,
@@ -222,3 +223,88 @@ def test_phase17_installs_sanitizer_before_final_client_composition() -> None:
     )
     assert '"parser_placeholders_absent": True' in source
     assert VERSION == "nico.comprehensive-placeholder-sanitization.v1"
+
+
+def test_plain_json_sanitization_preserves_source_and_builds_independent_outputs() -> None:
+    source = {
+        "evidence": [{"symbol": "<arrow>", "path": "src/a.py", "counts": [None, 1.5, True]}],
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+    before = json.dumps(source)
+    assert sanitization._plain_json_sanitization_tree(source) is True
+
+    result = sanitize_canonical_placeholder_identifiers(source)
+
+    assert list(result)[:3] == list(source)
+    assert result["evidence"][0]["symbol"] == "anonymous callback"
+    assert result["human_review_required"] is True
+    assert result["client_delivery_allowed"] is False
+    result["evidence"][0]["counts"].append("output only")
+    result["evidence"][0]["path"] = "changed.py"
+    assert json.dumps(source) == before
+
+
+def test_shared_nested_evidence_uses_fallback_and_preserves_independent_mirrors() -> None:
+    finding = {"symbol": "<arrow>", "anchors": [{"path": "src/a.py"}]}
+    source = {"primary": finding, "mirror": finding}
+    assert sanitization._plain_json_sanitization_tree(source) is False
+
+    result = sanitize_canonical_placeholder_identifiers(source)
+
+    assert result["primary"] == result["mirror"]
+    assert result["primary"] is not result["mirror"]
+    result["primary"]["anchors"][0]["path"] = "changed.py"
+    assert result["mirror"]["anchors"][0]["path"] == "src/a.py"
+    assert finding == {"symbol": "<arrow>", "anchors": [{"path": "src/a.py"}]}
+
+
+def test_custom_deepcopy_fallback_retains_each_legacy_copy_boundary() -> None:
+    calls = []
+
+    class Evidence:
+        def __deepcopy__(self, memo):
+            calls.append(self)
+            result = type(self)()
+            memo[id(self)] = result
+            return result
+
+    evidence = Evidence()
+    source = {"outer": {"opaque": evidence, "symbol": "<arrow>"}}
+    assert sanitization._plain_json_sanitization_tree(source) is False
+    assert calls == []
+
+    result = sanitize_canonical_placeholder_identifiers(source)
+
+    # Legacy behavior copies the root mapping, nested mapping, then opaque leaf.
+    assert len(calls) == 3
+    assert calls[0] is evidence
+    assert calls[1] is not calls[0] and calls[2] is not calls[1]
+    assert isinstance(result["outer"]["opaque"], Evidence)
+    assert result["outer"]["opaque"] is not evidence
+    assert result["outer"]["symbol"] == "anonymous callback"
+    assert source["outer"]["symbol"] == "<arrow>"
+
+
+def test_unusual_keys_keep_legacy_copy_and_string_conversion() -> None:
+    calls = []
+
+    class EvidenceKey:
+        def __deepcopy__(self, memo):
+            calls.append("copied")
+            return "copied-key"
+
+        def __str__(self):
+            return "original-key"
+
+    key = EvidenceKey()
+    source = {7: "<arrow>", key: "retained evidence"}
+    assert sanitization._plain_json_sanitization_tree(source) is False
+
+    result = sanitize_canonical_placeholder_identifiers(source)
+
+    assert calls == ["copied"]
+    assert list(result)[:2] == ["7", "copied-key"]
+    assert result["7"] == "anonymous callback"
+    assert result["copied-key"] == "retained evidence"
+    assert list(source) == [7, key]

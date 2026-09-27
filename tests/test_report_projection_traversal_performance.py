@@ -5,6 +5,10 @@ from copy import deepcopy
 import pytest
 from nico import client_finding_remediation_register_v3 as register3
 from nico import client_finding_remediation_register_v4 as register4
+from nico import client_finding_remediation_register_v1 as register1
+from nico import client_assessment_truth_v3 as assessment_truth
+from nico import comprehensive_maturity_label_truth_v1 as maturity
+from nico import v2_scanner_reconciliation as scanners
 
 from nico import comprehensive_finding_count_truth_v66 as counts
 from nico import comprehensive_decision_content_restoration_v66 as restoration
@@ -67,3 +71,51 @@ def test_mapping_walk_retains_order_duplicates_custom_mappings_and_depth_boundar
     # The established depth limit bounds cycles without deduplicating evidence.
     cycled = list(walker(root))
     assert sum(item is root for item in cycled) == limit + 1
+
+
+class _ScalarEqualMeta(type):
+    def __eq__(cls, other):
+        return other is str or cls is other
+
+    __hash__ = type.__hash__
+
+
+class _ScalarEqualMapping(dict, metaclass=_ScalarEqualMeta):
+    pass
+
+
+@pytest.mark.parametrize("walker", [
+    register1._iter_mappings, register3._iter_mappings,
+    register4._iter_mappings, restoration._iter_mappings,
+])
+def test_mapping_type_equality_cannot_hide_nested_evidence(walker):
+    child = _ScalarEqualMapping({"finding_id": "retained"})
+    root = {"children": [child, (child,)]}
+    assert [id(item) for item in walker(root)] == [id(root), id(child), id(child)]
+    assert list(walker(child))[0] is child
+
+
+def test_type_equality_cannot_hide_scanner_records_or_source_strings():
+    child = _ScalarEqualMapping({"scanner_name": "eslint", "description": "retained"})
+    assert list(scanners._records({"nested": [child]})) == [child]
+    assert list(register1._iter_strings({"nested": child})) == ["eslint", "retained"]
+
+
+def test_type_equality_cannot_bypass_truth_projection():
+    source = _ScalarEqualMapping({"summary": "Canonical findings: 99"})
+    result = counts._reconcile_value(
+        source, canonical_count=2, exact_source_count=1,
+        operational_count=1, top_title="Finding",
+    )
+    assert result == {"summary": "Canonical findings: 2"}
+    assert type(result) is dict
+    assert source["summary"] == "Canonical findings: 99"
+
+    paths = _ScalarEqualMapping({"summary": "retained"})
+    projected = assessment_truth._normalize_paths(paths)
+    assert projected == {"summary": "retained"}
+    assert type(projected) is dict
+    assert projected is not paths
+
+    labels = _ScalarEqualMapping({"client_readiness_contract": {"maturity_label": "High"}})
+    assert maturity._contract_label(labels) == "High"

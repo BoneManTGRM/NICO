@@ -145,3 +145,30 @@ def test_missing_canonical_maturity_label_remains_fail_closed_and_unchanged() ->
     assert manifest["reason"] == "canonical_maturity_label_unavailable"
     assert manifest["human_review_required"] is True
     assert manifest["client_delivery_allowed"] is False
+
+
+def test_unicode_case_insensitive_maturity_aliases_are_reconciled() -> None:
+    stages = _stages()
+    evidence = stages["evidence_reconciliation_and_scoring"]["evidence"]
+    evidence["unicode_aliases"] = ["Maturıty label: Low", "Maturİty label: Low"]
+    synchronized, manifest = synchronize_maturity_label_truth(stages)
+    assert synchronized["evidence_reconciliation_and_scoring"]["evidence"]["unicode_aliases"] == [
+        "Maturıty label: Exceptional", "Maturİty label: Exceptional",
+    ]
+    assert evidence["unicode_aliases"] == ["Maturıty label: Low", "Maturİty label: Low"]
+    assert manifest["scores_changed"] is False
+
+
+def test_maturity_prose_subclasses_keep_legacy_regex_behavior() -> None:
+    class SourceText(str):
+        def casefold(self):
+            raise AssertionError("Source text must use the legacy regex path")
+
+    stages = _stages()
+    source = SourceText("Unrelated source text")
+    stages["evidence_reconciliation_and_scoring"]["evidence"]["subclass"] = source
+    synchronized, _manifest = synchronize_maturity_label_truth(stages)
+    result = synchronized["evidence_reconciliation_and_scoring"]["evidence"]["subclass"]
+    assert result == source
+    assert type(result) is str
+    assert type(source) is SourceText

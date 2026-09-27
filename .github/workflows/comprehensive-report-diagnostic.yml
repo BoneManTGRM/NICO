@@ -79,6 +79,10 @@ jobs:
           tests/test_report_projection_copy_parity.py
           tests/test_report_json_copy.py
           tests/test_report_projection_traversal_performance.py
+          tests/test_comprehensive_placeholder_sanitization_v1.py
+          tests/test_comprehensive_finding_count_truth_v66.py
+          tests/test_comprehensive_maturity_label_truth_v1.py
+          tests/test_comprehensive_decision_content_restoration_v66.py
           tests/test_comprehensive_finding_count_truth_v66.py
           tests/test_comprehensive_maturity_label_truth_v1.py
           tests/test_finding_risk_scan_prefilter.py

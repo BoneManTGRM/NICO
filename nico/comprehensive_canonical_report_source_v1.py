@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
+
+from nico.report_json_copy import deepcopy
 
 from nico.comprehensive_decision_content_restoration_v67 import (
     restore_decision_content,

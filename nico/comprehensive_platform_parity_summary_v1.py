@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import io
 from functools import wraps
-from typing import Any, Iterator, Mapping
+from collections.abc import Mapping
+from typing import Any, Iterator
 
 VERSION = "nico.comprehensive-platform-parity-summary.v1.2"
 _PDF_MARKER = "_nico_platform_parity_pdf_v1"
@@ -34,6 +35,10 @@ def _normalized(value: Any) -> str:
 
 
 def _iter_platform_records(value: Any) -> Iterator[Mapping[str, Any]]:
+    kind = type(value)
+    if (kind is str or kind is int or kind is float
+            or kind is bool or kind is type(None)):
+        return
     if isinstance(value, Mapping):
         identity = _normalized(
             value.get("stage_id")

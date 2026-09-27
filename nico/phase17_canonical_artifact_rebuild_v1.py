@@ -5,7 +5,8 @@ import hashlib
 import io
 from nico.report_json_copy import deepcopy
 from nico.report_pdf_text import pdf_text_cache_scope
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from pypdf import PdfReader
 

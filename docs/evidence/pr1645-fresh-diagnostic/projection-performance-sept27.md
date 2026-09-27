@@ -76,3 +76,41 @@ repeat accepted native qualification. The original UBSan target finding and
 production_qualified=false remain. Merge PDF first and C++ second only after
 report acceptance, with the existing Vercel/Railway production hold verified.
 No report approval, client delivery or production deployment is authorized here.
+
+
+## Follow-up candidate after 10c840b
+
+The published 10c840b ordinary workflow set passed, but its local English replay
+still reached 900 seconds. The next source tree 8e2653e1cc300171b61dbfe824a7624793032df0
+completed the same English input in 847.621 worker seconds (857.025 total),
+producing 51 PDF pages. All four original source-table instances retained exact
+row order/content hashes; the only additional table was the four-row authorization
+matrix. Full canonical exports, table digest references, primary PDF content,
+and review/delivery gates were checked. That candidate's Spanish replay failed
+at 900 seconds. These are local retained-input results, not PostgreSQL acceptance.
+
+A subsequent combined candidate also timed out on retained Spanish input
+77348c48e10f738fbb2eda52c38236c392d3dc3934d81ebeb5814a2e89241a1b.
+Interrupted local sessions are recorded as interrupted, not timeout or success.
+
+This follow-up reduces redundant plain-JSON subtree copies in placeholder
+sanitization, shares one ordered decision-restoration traversal, extends measured
+copy-helper adoption, and avoids recursive scalar work. Plain-JSON sanitization
+rejects aliases, cycles, deep graphs, custom types and unusual keys before taking
+the fast path; those retain the legacy copy path. Its retained assessment output
+hash stayed 1da726638482bb6aae0d449464f0218a356f99fb513e7d5122c09a413b4f2b14;
+local benchmark changed from 1.362 to 0.873 seconds. This is not a full-render claim.
+
+Text prefilters preserve Python case-insensitive Unicode matches (including
+both Turkish I forms), and string subclasses retain the original regex path.
+All Unicode code points were checked for ASCII-letter regex equivalence.
+Scalar guards use identity comparisons, preserving custom metaclass behavior.
+The risk parser only skips a known pattern when its required dot or colon is
+absent. Original regex parsing remains authoritative for eligible strings.
+
+Independent review found and corrected Unicode and custom-metaclass regressions
+before the final replay restart. Eight hundred walker differential comparisons,
+300 sanitizer graph comparisons, custom-copy side-effect checks, and focused
+regression modules passed. Final frozen-source bilingual isolated replays and
+the broader affected-module suite are in progress; no final hosted acceptance,
+merge, production qualification, human approval or delivery is claimed here.

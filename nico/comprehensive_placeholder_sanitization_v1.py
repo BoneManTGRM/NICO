@@ -5,7 +5,8 @@ import io
 import re
 from nico.report_json_copy import deepcopy
 from functools import wraps
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 VERSION = "nico.comprehensive-placeholder-sanitization.v1"
 _MARKER = "_nico_comprehensive_placeholder_sanitization_v1"
@@ -50,15 +51,51 @@ def _clean_title(value: Any, record: Mapping[str, Any]) -> str:
     return _PLACEHOLDER_RE.sub("anonymous callback", title)
 
 
+def _plain_json_sanitization_tree(value: Any) -> bool:
+    """Restrict copy elision to shallow-enough, unaliased exact JSON trees."""
+    pending = [(value, 0)]
+    seen: set[int] = set()
+    while pending:
+        node, depth = pending.pop()
+        kind = type(node)
+        if (kind is str or kind is int or kind is float
+                or kind is bool or kind is type(None)):
+            continue
+        if kind is not dict and kind is not list:
+            return False
+        if depth >= 64:
+            return False
+        identity = id(node)
+        if identity in seen:
+            return False
+        seen.add(identity)
+        if kind is dict:
+            for key, child in node.items():
+                if type(key) is not str:
+                    return False
+                pending.append((child, depth + 1))
+        else:
+            pending.extend((child, depth + 1) for child in node)
+    return True
+
+
 def _sanitize_value(value: Any) -> Any:
+    # Each output container is rebuilt below. For an exact JSON tree the input
+    # copies at every mapping are redundant; opaque graphs retain legacy copies.
+    return _sanitize_value_recursive(
+        value, copy_mappings=not _plain_json_sanitization_tree(value)
+    )
+
+
+def _sanitize_value_recursive(value: Any, *, copy_mappings: bool) -> Any:
     if isinstance(value, Mapping):
-        source = deepcopy(dict(value))
+        source = deepcopy(dict(value)) if copy_mappings else value
         output: dict[str, Any] = {}
         for raw_key, raw_value in source.items():
             key = str(raw_key)
             normalized_key = key.casefold()
             if isinstance(raw_value, Mapping) or isinstance(raw_value, (list, tuple)):
-                output[key] = _sanitize_value(raw_value)
+                output[key] = _sanitize_value_recursive(raw_value, copy_mappings=copy_mappings)
                 continue
             if isinstance(raw_value, str):
                 if normalized_key in _IDENTIFIER_FIELDS and _identifier_placeholder(raw_value):
@@ -74,9 +111,9 @@ def _sanitize_value(value: Any) -> Any:
             output[key] = deepcopy(raw_value)
         return output
     if isinstance(value, list):
-        return [_sanitize_value(item) for item in value]
+        return [_sanitize_value_recursive(item, copy_mappings=copy_mappings) for item in value]
     if isinstance(value, tuple):
-        return tuple(_sanitize_value(item) for item in value)
+        return tuple(_sanitize_value_recursive(item, copy_mappings=copy_mappings) for item in value)
     if isinstance(value, str):
         return _PLACEHOLDER_RE.sub("anonymous callback", value)
     return deepcopy(value)

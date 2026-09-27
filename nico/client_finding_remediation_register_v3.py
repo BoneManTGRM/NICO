@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import re
-from copy import deepcopy
 from collections.abc import Iterable, Mapping
 from typing import Any
+
+from nico.report_json_copy import deepcopy
 
 from nico import client_finding_remediation_register_v2 as legacy
 from nico.client_assessment_truth_v3 import (
@@ -165,26 +166,38 @@ def _verification_values(item: Mapping[str, Any], values: Any) -> list[str]:
 def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]:
     if depth > 10:
         return
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is dict:
         yield value
         for key, child in value.items():
             if str(key).casefold() in _SKIP_KEYS:
                 continue
-            kind = type(child)
-            if (kind is not str and kind is not int and kind is not float
-                    and kind is not bool and kind is not type(None)):
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _iter_mappings(child, depth=depth + 1)
+    elif kind is list or kind is tuple:
+        for child in value:
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _iter_mappings(child, depth=depth + 1)
+    elif (kind is str or kind is int or kind is float or kind is bool or kind is type(None)):
+        return
+    elif isinstance(value, Mapping):
+        yield value
+        for key, child in value.items():
+            if str(key).casefold() in _SKIP_KEYS:
+                continue
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
                 yield from _iter_mappings(child, depth=depth + 1)
     elif isinstance(value, (list, tuple)):
         for child in value:
-            kind = type(child)
-            if (kind is not str and kind is not int and kind is not float
-                    and kind is not bool and kind is not type(None)):
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
                 yield from _iter_mappings(child, depth=depth + 1)
 
 
 def _source_context_index(canonical: Mapping[str, Any]) -> dict[tuple[str, int], dict[str, str]]:
     index: dict[tuple[str, int], dict[str, str]] = {}
     for item in _iter_mappings(canonical):
+        if not (item.get("path") or item.get("file_path") or item.get("location")):
+            continue
         path, line, _, _ = _parse_location(item)
         if not path or line is None:
             continue

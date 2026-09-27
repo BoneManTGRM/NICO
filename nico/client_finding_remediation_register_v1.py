@@ -4,10 +4,11 @@ import hashlib
 import html
 import io
 import re
-from copy import deepcopy
 from pathlib import PurePosixPath
 from collections.abc import Iterable, Mapping
 from typing import Any
+
+from nico.report_json_copy import deepcopy
 
 VERSION = "nico.client-finding-remediation-register.v1"
 MAX_PDF_CODE_FINDINGS = 60
@@ -184,7 +185,20 @@ def _code_path(path: str) -> bool:
 def _iter_strings(value: Any, *, depth: int = 0) -> Iterable[str]:
     if depth > 7:
         return
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is dict:
+        for key, item in value.items():
+            if str(key) in _SKIP_RECURSIVE_KEYS:
+                continue
+            yield from _iter_strings(item, depth=depth + 1)
+    elif kind is list or kind is tuple or kind is set:
+        for item in value:
+            yield from _iter_strings(item, depth=depth + 1)
+    elif kind is str:
+        yield value
+    elif (kind is int or kind is float or kind is bool or kind is type(None)):
+        return
+    elif isinstance(value, Mapping):
         for key, item in value.items():
             if str(key) in _SKIP_RECURSIVE_KEYS:
                 continue
@@ -199,15 +213,31 @@ def _iter_strings(value: Any, *, depth: int = 0) -> Iterable[str]:
 def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]:
     if depth > 7:
         return
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is dict:
         yield value
         for key, item in value.items():
             if str(key) in _SKIP_RECURSIVE_KEYS:
                 continue
-            yield from _iter_mappings(item, depth=depth + 1)
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
+    elif kind is list or kind is tuple:
+        for item in value:
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
+    elif (kind is str or kind is int or kind is float or kind is bool or kind is type(None)):
+        return
+    elif isinstance(value, Mapping):
+        yield value
+        for key, item in value.items():
+            if str(key) in _SKIP_RECURSIVE_KEYS:
+                continue
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
     elif isinstance(value, (list, tuple)):
         for item in value:
-            yield from _iter_mappings(item, depth=depth + 1)
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
 
 
 def _rule_id(item: Mapping[str, Any]) -> str:
@@ -467,6 +497,10 @@ def _complexity_records(canonical: Mapping[str, Any], commit_sha: str) -> list[d
 
 def _line_matches(raw: str, pattern: re.Pattern[str], starts: re.Pattern[str]) -> Iterable[re.Match[str]]:
     """Use the original parser without retrying failed path suffixes."""
+    # Both parsers require a file extension and line delimiter.
+    if (pattern is _RISK_LINE or pattern is _HOTSPOT_LINE) and type(raw) is str:
+        if "." not in raw or ":" not in raw:
+            return
     position = 0
     while position < len(raw):
         match = pattern.match(raw, position)

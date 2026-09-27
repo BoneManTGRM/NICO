@@ -6,13 +6,14 @@ approval or delivery credit. It never accepts a caller-selected URL or blob path
 from __future__ import annotations
 
 import base64
-from copy import deepcopy
 from datetime import UTC, datetime
 import hashlib
 import json
 import re
 import time
 from typing import Any, Mapping
+
+from nico.report_json_copy import deepcopy
 
 VERSION = "nico.report-execution-provenance.v1"
 FRONTEND_URL = "https://app.nicoaudit.com/api/release"
