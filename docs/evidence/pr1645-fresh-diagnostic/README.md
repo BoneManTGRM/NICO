@@ -44,3 +44,33 @@ inspection remain pending and must be recorded before merge.
 Independent review identified retry retention and missing successful-attempt
 binding; both were repaired with focused regressions before publication. Final
 review and hosted evidence are recorded in the existing PR, preserving prior history.
+
+## Merge-time production hold
+
+The connected Railway service has automatic deployment enabled for main. It must
+be disabled using its supported service auto-deploy setting before either PR is
+merged; the current live deployment must remain unchanged. This configuration
+change is separate from committing or deploying a candidate.
+
+Vercel Git integration is active. The available project-detail operation cannot
+return its configured root, and the browser is signed out. The main-only
+`git.deploymentEnabled` hold is therefore present at both supported application
+roots: repository root and `apps/web`. The repository root file changes only Git
+deployment eligibility; the app file preserves its existing build settings.
+Vercel's documented branch mapping disables main automatic Git deployments while
+leaving unspecified preview branches enabled. No deployment or release-proof
+check is relabelled. Manual/API deployments are not blocked by these settings and
+must not be initiated while the shipping hold applies.
+
+The hold is reversible for a separately verified production release: remove the
+main-only Vercel entries and re-enable the Railway service setting after its release
+gates are satisfied. Production proof remains unproven while the hold is active.
+Reference: https://vercel.com/docs/project-configuration/git-configuration
+
+## Shared ledger integration
+
+The root checkpoint is preserved byte-for-byte from the qualified C++ branch so
+Git can merge both existing PRs without modifying that already-qualified branch.
+The entire PDF checkpoint, including all earlier history and the fresh diagnostic
+authorization, is preserved verbatim in [full-checkpoint.md](full-checkpoint.md).
+The PR descriptions retain the latest hosted results. Neither history is discarded.
