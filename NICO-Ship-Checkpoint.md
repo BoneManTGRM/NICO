@@ -1,3 +1,33 @@
+# Fresh diagnostic acceptance authorized — September 27, 2026
+
+The owner answered “Finish” to the explicit proposal to replace the impossible
+historical failed-input replay with a fresh source-based assessment retaining its
+exact renderer inputs and verifying English and es-MX PDFs. This narrowly replaces
+the historical-input requirement; it does not waive real rendering, final integration,
+independent review, production qualification, or approval/delivery boundaries.
+The historical comprun_34a469900baa742c0d557f42634b318f remains blocked and unreplayed.
+
+C++ native run36279706996 on43aa6d7c completed SUCCESS at2026-09-27T02:09:26Z.
+Independent reconstruction verified baseline377/377, compiler/static475/475,
+functional6/6, ASan377/377, UBSan376/377 with net_tests failure retained, both fuzz
+replays and256campaign executions. Complete collection is accepted. Target tests,
+image and production qualification remain false. This result is not rerun here.
+
+The new diagnostic runner uses the genuine source providers, run coordinator and
+isolated final renderer against frozen NICO312693443b1e70c8a065de2c4e9ca329281d162a.
+A dedicated local PostgreSQL service separates all state from production. Each
+renderer attempt retains exact JSON input before invocation and hashes its outcome.
+The successful persisted final PDF must bind to one retained attempt. Existing
+900second render limits, real failures, review-required status and delivery-blocked
+status remain. Two fresh runs cover English and es-MX. No fixture results are
+substituted; unavailable scanner evidence remains unavailable. Hosted execution
+and rendered inspection are still required, not inferred from local tests.
+
+Evidence and scope: docs/evidence/pr1645-fresh-diagnostic/README.md.
+No merge or production deployment occurs in this preparatory commit.
+
+---
+
 # September 26 — exact final-PDF availability and authenticated observation
 
 Continue PR1644 and PR1645 through completion; owner explicitly authorizes merging both when ready. All evidence and acceptance requirements below remain. No merge/deployment/approval/client delivery performed.
