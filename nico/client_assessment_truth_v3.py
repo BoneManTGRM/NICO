@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
-from typing import Any, Iterable, Mapping
+from nico.report_json_copy import deepcopy
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from nico.canonical_section_status_v1 import normalize_scored_sections
 
@@ -126,7 +127,16 @@ def _normalize_location_text(value: Any) -> str:
 def _normalize_paths(value: Any, *, key: str = "", depth: int = 0) -> Any:
     if depth > 9:
         return deepcopy(value)
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is str:
+        lowered = key.casefold()
+        if "path" in lowered or "file" in lowered or "location" in lowered:
+            return _normalize_location_text(value)
+        return value
+    is_mapping = kind is dict
+    if not is_mapping and (kind is not list and kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)):
+        is_mapping = isinstance(value, Mapping)
+    if is_mapping:
         output: dict[str, Any] = {}
         for child_key, child in value.items():
             normalized_key = str(child_key).casefold()
@@ -141,11 +151,11 @@ def _normalize_paths(value: Any, *, key: str = "", depth: int = 0) -> Any:
                     depth=depth + 1,
                 )
         return output
-    if isinstance(value, list):
+    if kind is list or ((kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, list)):
         return [_normalize_paths(item, key=key, depth=depth + 1) for item in value]
-    if isinstance(value, tuple):
+    if kind is tuple or ((kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, tuple)):
         return tuple(_normalize_paths(item, key=key, depth=depth + 1) for item in value)
-    if isinstance(value, str) and any(marker in key.casefold() for marker in ("path", "file", "location")):
+    if (kind is str or isinstance(value, str)) and any(marker in key.casefold() for marker in ("path", "file", "location")):
         return _normalize_location_text(value)
     return deepcopy(value)
 
@@ -279,8 +289,37 @@ def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[dict[str, Any]]:
             yield from _iter_mappings(item, depth=depth + 1)
 
 
+def _score_sync_read_input(canonical: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep a read-only predicate from copying retained JSON evidence.
+
+    Preserve the historical deepcopy path for custom containers/scalars whose
+    copy behavior may change their projection. Exact JSON containers need no
+    copy: the score-sync walkers only read them and retain no references.
+    """
+    root = dict(canonical)
+    pending = [root]
+    seen: set[int] = set()
+    while pending:
+        value = pending.pop()
+        kind = type(value)
+        if (kind is dict or kind is list):
+            identity = id(value)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            if kind is dict:
+                if any(type(key) is not str for key in value):
+                    return deepcopy(root)
+                pending.extend(value.values())
+            else:
+                pending.extend(value)
+        elif (kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)):
+            return deepcopy(root)
+    return root
+
+
 def _contains_score_sync(canonical: Mapping[str, Any]) -> bool:
-    for item in _iter_mappings(deepcopy(dict(canonical))):
+    for item in _iter_mappings(_score_sync_read_input(canonical)):
         if item.get("final_report_input_scores_synchronized") is True:
             return True
     return False

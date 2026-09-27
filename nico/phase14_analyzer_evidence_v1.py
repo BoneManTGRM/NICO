@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any
 
 VERSION = "nico.phase14.analyzer-evidence.v3"

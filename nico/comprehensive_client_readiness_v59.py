@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from functools import wraps
-from typing import Any, Callable, Mapping, Pattern
+from collections.abc import Mapping
+from typing import Any, Callable, Pattern
 
 from nico import comprehensive_report_truth_stabilization_v52 as legacy_truth
 from nico.comprehensive_engagement_metadata_v1 import (
@@ -360,6 +361,10 @@ def _symbols(node: Any) -> set[str]:
     """Collect authored code symbols without inspecting immutable evidence payloads."""
 
     output: set[str] = set()
+    kind = type(node)
+    if (kind is str or kind is int or kind is float
+            or kind is bool or kind is type(None)):
+        return output
     if isinstance(node, Mapping):
         for key in ("symbol", "function", "component", "function_name"):
             value = node.get(key)

@@ -5,7 +5,7 @@ import hashlib
 import html
 import io
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Mapping
 
 VERSION = "nico.v2.report-quality-repairs.v2"

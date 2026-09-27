@@ -5,9 +5,10 @@ import io
 import os
 import re
 import sys
-from copy import deepcopy
 from importlib import metadata
 from typing import Any, Callable
+
+from nico.report_json_copy import deepcopy
 
 VERSION = "nico.comprehensive_release_provenance.v1"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")

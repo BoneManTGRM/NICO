@@ -461,7 +461,15 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
+def _prepare_completion_text(
+    package: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], Mapping[str, Any], str, str, bool]:
+    """Prepare the legacy data/text contract without rendering or approving a PDF.
+
+    The compact finalizer supplies and validates its own authoritative register,
+    provenance and companion pages. It must not render the disposable detailed
+    register merely to discard it in that later composition.
+    """
     result = prepare_client_report_package(package)
     canonical = deepcopy(dict(result.get("json") or {}))
     register = canonical.get("client_finding_remediation_register")
@@ -486,6 +494,12 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
         else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
     )
     rendered_html = _html_from_markdown(markdown, title, spanish=spanish)
+
+    return result, canonical, register, markdown, rendered_html, spanish
+
+
+def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
+    result, canonical, register, markdown, rendered_html, spanish = _prepare_completion_text(package)
 
     base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
     register_pdf = render_finding_register_pdf(register, spanish=spanish)

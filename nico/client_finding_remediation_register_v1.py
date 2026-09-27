@@ -4,9 +4,11 @@ import hashlib
 import html
 import io
 import re
-from copy import deepcopy
 from pathlib import PurePosixPath
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
+
+from nico.report_json_copy import deepcopy
 
 VERSION = "nico.client-finding-remediation-register.v1"
 MAX_PDF_CODE_FINDINGS = 60
@@ -22,6 +24,23 @@ _RISK_LINE = re.compile(
 _HOTSPOT_LINE = re.compile(
     r"(?:Actionable\s+hotspot\s+)?(?P<path>[A-Za-z0-9_@./+\-]+\.(?:py|js|jsx|ts|tsx))"
     r":(?P<line>\d+)\s*[·-]\s*(?P<symbol>[^·]+?)\s*[·-]\s*complexity\s+(?P<complexity>\d+)",
+    re.IGNORECASE,
+)
+# Every hotspot match requires this same case-insensitive literal. Avoid the
+# unanchored path pattern's quadratic no-match scan on unrelated long evidence.
+_HOTSPOT_REQUIRED = re.compile("complexity", re.IGNORECASE)
+# Once a path-only start fails, retrying each suffix of its maximal path-character
+# run cannot succeed: the extension, colon, and remaining fields are identical.
+# Consider only later run boundaries, using the parser's same Unicode flags. The
+# optional hotspot prefix is also eligible inside a run ("xActionable ...").
+_RISK_LINE_START = re.compile(
+    r"(?<![A-Za-z0-9_@./+\-])[A-Za-z0-9_@./+\-]+"
+    r"\.(?:py|js|jsx|ts|tsx|java|go|rb|rs|cs|php|swift|kt|kts):",
+    re.IGNORECASE,
+)
+_HOTSPOT_LINE_START = re.compile(
+    r"Actionable\s+hotspot\s+|(?<![A-Za-z0-9_@./+\-])"
+    r"[A-Za-z0-9_@./+\-]+\.(?:py|js|jsx|ts|tsx):",
     re.IGNORECASE,
 )
 _SECRET_PATTERNS = (
@@ -166,7 +185,20 @@ def _code_path(path: str) -> bool:
 def _iter_strings(value: Any, *, depth: int = 0) -> Iterable[str]:
     if depth > 7:
         return
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is dict:
+        for key, item in value.items():
+            if str(key) in _SKIP_RECURSIVE_KEYS:
+                continue
+            yield from _iter_strings(item, depth=depth + 1)
+    elif kind is list or kind is tuple or kind is set:
+        for item in value:
+            yield from _iter_strings(item, depth=depth + 1)
+    elif kind is str:
+        yield value
+    elif (kind is int or kind is float or kind is bool or kind is type(None)):
+        return
+    elif isinstance(value, Mapping):
         for key, item in value.items():
             if str(key) in _SKIP_RECURSIVE_KEYS:
                 continue
@@ -181,15 +213,31 @@ def _iter_strings(value: Any, *, depth: int = 0) -> Iterable[str]:
 def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]:
     if depth > 7:
         return
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is dict:
         yield value
         for key, item in value.items():
             if str(key) in _SKIP_RECURSIVE_KEYS:
                 continue
-            yield from _iter_mappings(item, depth=depth + 1)
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
+    elif kind is list or kind is tuple:
+        for item in value:
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
+    elif (kind is str or kind is int or kind is float or kind is bool or kind is type(None)):
+        return
+    elif isinstance(value, Mapping):
+        yield value
+        for key, item in value.items():
+            if str(key) in _SKIP_RECURSIVE_KEYS:
+                continue
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
     elif isinstance(value, (list, tuple)):
         for item in value:
-            yield from _iter_mappings(item, depth=depth + 1)
+            if (type(item) is not str and type(item) is not int and type(item) is not float and type(item) is not bool and type(item) is not type(None)):
+                yield from _iter_mappings(item, depth=depth + 1)
 
 
 def _rule_id(item: Mapping[str, Any]) -> str:
@@ -447,6 +495,28 @@ def _complexity_records(canonical: Mapping[str, Any], commit_sha: str) -> list[d
     return output
 
 
+def _line_matches(raw: str, pattern: re.Pattern[str], starts: re.Pattern[str]) -> Iterable[re.Match[str]]:
+    """Use the original parser without retrying failed path suffixes."""
+    # Both parsers require a file extension and line delimiter.
+    if (pattern is _RISK_LINE or pattern is _HOTSPOT_LINE) and type(raw) is str:
+        if "." not in raw or ":" not in raw:
+            return
+    position = 0
+    while position < len(raw):
+        match = pattern.match(raw, position)
+        if match is not None:
+            yield match
+            # A hotspot can end inside a path-character run: "complexity
+            # 30next.py:2 ...". Try this exact position before boundary search
+            # so non-overlapping finditer behavior is preserved.
+            position = match.end()
+        else:
+            candidate = starts.search(raw, position + 1)
+            if candidate is None:
+                return
+            position = candidate.start()
+
+
 def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     # Sample prose is a legacy fallback, not authority to promote a retained
@@ -466,7 +536,7 @@ def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[
     }
     observation_lines = {anchor[:3] for anchor in observation_anchors}
     for raw in _iter_strings(canonical):
-        for match in _RISK_LINE.finditer(raw):
+        for match in _line_matches(raw, _RISK_LINE, _RISK_LINE_START):
             path = match.group("path").replace("\\", "/")
             if _non_production(path):
                 continue
@@ -496,7 +566,7 @@ def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[
                 "exact_commit_match": True,
             }
             output.append(_canonical_record(base, commit_sha))
-        for match in _HOTSPOT_LINE.finditer(raw):
+        for match in (_line_matches(raw, _HOTSPOT_LINE, _HOTSPOT_LINE_START) if _HOTSPOT_REQUIRED.search(raw) else ()):
             path = match.group("path").replace("\\", "/")
             if _non_production(path):
                 continue

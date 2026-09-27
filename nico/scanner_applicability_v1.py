@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from typing import Any, Mapping
+from nico.report_json_copy import deepcopy
+from collections.abc import Mapping
+from typing import Any
 
 VERSION = "nico.scanner-applicability.v2"
 _NOT_APPLICABLE = "not_applicable"
@@ -65,6 +66,13 @@ def _scanner_name(value: Any) -> str:
     }.get(normalized, normalized)
 
 
+def _is_repository_path_key(normalized_key: str) -> bool:
+    return normalized_key in {
+        "path", "paths", "file", "files", "filename", "filenames",
+        "tree", "root_items", "top_level_items", "deployment_manifests", "location",
+    } or normalized_key.endswith(("_path", "_paths", "_file", "_files"))
+
+
 def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> list[str]:
     """Collect positive repository path evidence without reading scanner errors as files."""
 
@@ -86,15 +94,20 @@ def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> li
     if not isinstance(value, str):
         return []
 
+    # Exact string leaves under descriptive keys cannot be repository paths.
+    # Reject them before normalizing large literal evidence; container traversal
+    # and subclass/custom-value behavior above remain unchanged.
+    if type(value) is str and type(normalized_key) is str:
+        path_like_key = _is_repository_path_key(normalized_key)
+        if not path_like_key:
+            return []
+
     text = _text(value).replace("\\", "/")
     lowered = text.casefold()
     if any(marker in lowered for marker in _NEGATIVE_PATH_CONTEXT):
         return []
 
-    path_like_key = normalized_key in {
-        "path", "paths", "file", "files", "filename", "filenames",
-        "tree", "root_items", "top_level_items", "deployment_manifests", "location",
-    } or normalized_key.endswith(("_path", "_paths", "_file", "_files"))
+    path_like_key = _is_repository_path_key(normalized_key)
     # Report definitions and recommendations may mention supported suffixes or
     # example filenames. Those descriptions are not observed repository inputs.
     if not path_like_key:

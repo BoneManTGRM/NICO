@@ -4,9 +4,10 @@ import base64
 import html as html_lib
 import io
 import re
-from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
+
+from nico.report_json_copy import deepcopy
 
 VERSION = "nico.comprehensive_cross_format_finality.v52"
 _PATCH_MARKER = "_nico_comprehensive_cross_format_finality_v52"

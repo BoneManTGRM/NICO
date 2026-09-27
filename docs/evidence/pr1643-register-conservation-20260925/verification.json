@@ -1,0 +1,160 @@
+{
+  "schema": "nico.engineering-verification.v1",
+  "mission": "Post-merge C/C++ capability and Bitcoin report continuation",
+  "date": "2026-09-25",
+  "author_verification_only": true,
+  "independent_review_complete": false,
+  "base_commit": "312693443b1e70c8a065de2c4e9ca329281d162a",
+  "source_candidate": "798c49a8813a989b676c2699833526d5141f3f87",
+  "branch": "fix/client-pdf-register-conservation",
+  "source_blobs": {
+    "baseline_composer": "5b17f17c34ab68d2188970c75f53137973db4621",
+    "candidate_composer": "8cd348edce7cbc549f699d30164e2f8d0e7bea4b",
+    "new_tests": "8b28f284c371ec58573e8a8c0aa5284bd5cf46eb",
+    "unchanged_existing_compose_tests": "4805e60c80c96a2174ed70253976e8860c08ed5a"
+  },
+  "source_sha256": {
+    "nico/client_pdf_compose_v2.py": "9f5cd8fa84afe5fc0d35d6461a0ac46a5c0cb4ea9fece9aea1cc19aedb0c1a8d",
+    "tests/test_client_pdf_register_conservation.py": "df5320a1c912c994b4cb9c498f2f971a3a2a88d23b42d24b20d0ee688c928e8f"
+  },
+  "local_environment": {
+    "python_family": "3.13",
+    "pypdf": "5.9.0",
+    "pinned_hosted_environment_equivalent": false,
+    "warning": "Pre-existing invalid escape sequence in express_score_assurance_export_v1.py:113 was not changed."
+  },
+  "pdf_tests": {
+    "red": {
+      "command": "python -m pytest -q tests/test_client_pdf_register_conservation.py",
+      "tests": 22, "failed": 16, "passed": 6, "errors": 0, "skipped": 0, "exit_code": 1,
+      "junit_sha256": "a0bae171eb06659278fe54ecad75f6e360b7ef1963cf4fe8c920a68ab09f3f58"
+    },
+    "green": {
+      "command": "python -m pytest -q tests/test_client_pdf_register_conservation.py",
+      "tests": 22, "passed": 22, "failed": 0, "errors": 0, "skipped": 0, "exit_code": 0,
+      "junit_sha256": "7284201f9f2bcfe21d9a16dfde94cf7796f5dffdc74d1e54239c8541287b58a5"
+    },
+    "affected_groups": [
+      {
+        "command": "python -m pytest -q tests/test_client_pdf_compose_v2.py tests/test_client_pdf_register_conservation.py tests/test_client_pdf_status_sanitizer_v1.py",
+        "passed": 37, "failed": 0, "errors": 0, "skipped": 0, "exit_code": 0,
+        "junit_sha256": "a967e72b63b997915226e8c781660d24b36388665bb6a2df647c66be656405d6"
+      },
+      {
+        "command": "python -m pytest -q tests/test_client_report_completion_v2.py tests/test_comprehensive_client_ready_projection_v1.py",
+        "passed": 14, "failed": 0, "errors": 0, "skipped": 0, "exit_code": 0,
+        "junit_sha256": "ce3c12dfc072f7f72177e7400f438f450093398c4d4061bbf3c82cd1931a54a3"
+      }
+    ],
+    "distinct_affected_passes": 51,
+    "count_rule": "37 plus 14 disjoint cases. The 22 new cases are included in the 37 and must not be added again.",
+    "coverage": [
+      "English and es-MX section headings",
+      "Unknown following primary section with and without a later appendix",
+      "Heading prefixes inside prose",
+      "Primary content before or after a register heading on a shared page",
+      "Known following section below a continued finding fragment",
+      "Unheaded field-label continuation pages",
+      "Unknown content terminates discard state",
+      "Absent register and small report compatibility",
+      "Resume-heading mention inside a finding sentence",
+      "Ambiguous long tail must fail the unchanged 60-page boundary"
+    ],
+    "full_repository_ci_pass": false,
+    "actual_failing_production_input_replayed": false
+  },
+  "synthetic_render_verification": {
+    "renderer": "PyMuPDF",
+    "contact_sheet_visually_inspected": true,
+    "pages_per_locale": 5,
+    "primary_pages_pixel_identical_to_base": [1, 2, 3],
+    "out_of_page_text_spans": 0,
+    "en_pdf_sha256": "c25be7091d0990fe36dbfc8dba01d2cfdbe877981a1e23fec44c1c428af2706f",
+    "es_MX_pdf_sha256": "5a125f9e817cef2caf9ae3a6c4a0f5104d81c0839be000ee8165d87e581bc8e3",
+    "limitation": "These are labeled synthetic boundary controls, not Bitcoin reports, production inputs, complete language parity, or physical-device evidence."
+  },
+  "verification_bundle": {
+    "name": "NICO-register-conservation-verification.zip",
+    "bytes": 35550,
+    "sha256": "8c41d7ec65f4e1e29dbb4fdf9b1ca1e8efbcb066f5a08a2db974e731c2acf841",
+    "location": "Generated conversation attachment; not a deployed NICO report or a GitHub Actions artifact."
+  },
+  "native_failure_replay": {
+    "target_commit": "bb5296576e8f1a9fc11c19d9a25ba02ed4547e24",
+    "target_tree": "186194c9de7f613d2d323db41cb8ce6bf1e3e549",
+    "validator_blob": "801fa82afd4bc713c67a1cd9450e86c52118e846",
+    "plan_sha256": "09588b0e6222ec84538b9467c0c8366debbfee06accf22f54078a54c961976d1",
+    "plan_binding": "Actual retained plan canonical SHA256 equals both the native evidence and qualification receipt fields.",
+    "replays": [
+      {
+        "run_id": 36127119592, "job_id": 108052224324, "artifact_id": 10862967834,
+        "zip_bytes": 12316739,
+        "zip_sha256": "2a6056ce7b74ce1ec501c6b0777bf91f0a40a47ac8b5ae9df5da4fb606d0fe7b",
+        "runtime_artifact_sha256": "40af4a279f63e15944ae4afd2239a669bfbd7e6a20f09285bfc9b00f71000ec2",
+        "address_build_output_sha256": "c38f4a00d7f9e5555a12d6e702c67316f3505b578d75e6152824631999842410",
+        "address_build_duration_ms": 691220,
+        "aggregate_probe_duration_ms": 2552410
+      },
+      {
+        "run_id": 36129521112, "job_id": 108068531516, "artifact_id": 10865403350,
+        "zip_bytes": 12320340,
+        "zip_sha256": "4249b1b26d0cabc76704e0f29b093c708acdc0736b87d4f0ba09a7ffa0f361df",
+        "runtime_artifact_sha256": "417664b22dc225a1ef08ead0d5979de51c6229ea20af7b50b7284de950c72fc2",
+        "address_build_output_sha256": "81063d09aff0b5dc5fe15ff6aba2a71dcf6c770d6a059578d8c60bae5706f0c5",
+        "address_build_duration_ms": 509792,
+        "aggregate_probe_duration_ms": 1893486
+      }
+    ],
+    "matching_outcomes": {
+      "baseline_tests": {"required": 377, "executed": 377, "passed": 377, "skipped": 0},
+      "compiler_contexts": {"required": 475, "attempted": 475, "checked": 475},
+      "functional_tests": {"required": 6, "executed": 6, "passed": 6, "skipped": 0},
+      "address_build": {"exit_code": 2, "timed_out": false, "output_truncated": false},
+      "address_tests": {"required": 377, "executed": 222, "passed": 222, "skipped": 155, "exit_code": 8},
+      "undefined_executed": false,
+      "fuzz_executed": false,
+      "static_stage_executed": false,
+      "runtime_complete": false,
+      "runtime_error": "worker_runtime_sanitizer_failed",
+      "memory_peak_bytes": 12884901888,
+      "scratch_capacity_bytes": 9663676416,
+      "boundary_verified": true,
+      "cleanup_verified": true
+    },
+    "first_native_errors": [
+      "collect2: fatal error: ld terminated with signal 9 [Killed]",
+      "No space left on device"
+    ],
+    "first_validator_rejection": {
+      "function": "validate_runtime_evidence",
+      "line": 430,
+      "error": "worker_runtime_evidence_invalid",
+      "required_sanitizers": ["address", "undefined"],
+      "retained_sanitizers": ["address"]
+    },
+    "classification": "Native sanitizer build/resource failure precedes the rejection of an incomplete sanitizer population. No malformed evidence was accepted and no completion flag was changed.",
+    "limits": "No memory.events OOM-kill counter or per-directory peak usage was retained; signal 9 alone does not identify the killer. Resource cleanup or a changed limit still requires owned reproduction and measured native qualification.",
+    "native_source_changed_by_this_correction": false,
+    "new_native_campaign_started": false
+  },
+  "production_input_boundary": {
+    "run_id": "comprun_29c30048215275ecbac35d179f71a1ed",
+    "run_state_retrieved": false,
+    "canonical_inputs_retrieved": false,
+    "diagnostic_pdf_retrieved": false,
+    "railway_read_only_audit": "Only deployment, configuration and bounded logs were accessible. No run-record or artifact-read operation was available.",
+    "browser_attempt": "Firecrawl rejected the requested zero-data-retention session because ZDR is not enabled for its team; no authenticated session or protected report inputs were obtained.",
+    "other_observed_run": "comprun_702dd65cbc9013a81c1819ef68044f8b",
+    "other_run_evidence": "HTTP 200 /continue traffic only. Its source, contract, progress, completion and artifact state were not established."
+  },
+  "review_accumulator": [
+    {"id":"PDF-CONSERVATION-1","status":"locally_repaired_unreviewed","requirement":"Do not discard unknown following primary pages or recognized shared primary pages."},
+    {"id":"NATIVE-CAPACITY-1","status":"open","requirement":"Complete the combined sanitizer, fuzz and static workload without dropping frozen targets or exceeding enforced resources."},
+    {"id":"ACTUAL-PDF-REPLAY-1","status":"blocked_on_authenticated_inputs","requirement":"Replay the actual production failure and inspect its full rendered bilingual outputs."},
+    {"id":"INDEPENDENT-REVIEW-1","status":"open","requirement":"Genuine independent review of final changed surfaces and complete capability; prior exhausted allowance is not waived."}
+  ],
+  "production_qualified": false,
+  "bitcoin_report_verified": false,
+  "human_approval_recorded": false,
+  "client_delivery_authorized": false
+}

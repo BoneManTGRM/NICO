@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 import re
 from typing import Any, Mapping
 

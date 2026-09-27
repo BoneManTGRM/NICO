@@ -193,15 +193,15 @@ def _validate_review_pdf(
     expected_sections: list[Mapping[str, Any]],
     spanish: bool,
 ) -> None:
-    from pypdf import PdfReader
+    from nico.report_pdf_text import extract_pdf_page_texts
 
     from nico.v2_pdf_control_character_guard import _assert_no_control_glyphs
 
     if not pdf.startswith(b"%PDF"):
         raise ValueError("report quality repair produced an invalid PDF")
     _assert_no_control_glyphs(pdf)
-    reader = PdfReader(io.BytesIO(pdf))
-    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+    pages = extract_pdf_page_texts(pdf)
+    extracted = "\n".join(pages)
     normalized = _semantic(extracted)
 
     if _contains_legacy_bare_draft(extracted):
@@ -234,9 +234,9 @@ def _validate_review_pdf(
 
     if expected_sections:
         scorecard_pages = [
-            page.extract_text() or ""
-            for page in reader.pages
-            if "Canonical Technical Scorecard" in (page.extract_text() or "")
+            text
+            for text in pages
+            if "Canonical Technical Scorecard" in text
         ]
         if len(scorecard_pages) != 1:
             raise ValueError("review PDF must contain exactly one technical scorecard")

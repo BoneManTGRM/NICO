@@ -1,0 +1,83 @@
+{
+  "schema": "nico.primary-continuation-conservation.v1",
+  "repository": "BoneManTGRM/NICO",
+  "pr": 1645,
+  "base_commit": "c7320fe02c7252bbc824025c0ca048c01b0cba5a",
+  "base_tree": "8d582b024db08a82e2e655d7329c3fc6cbebb6e5",
+  "defect": "After retaining a post-register primary section start, v3.9 could discard its next primary page because a finding reference activated the page-wide heuristic.",
+  "correction": "Preserve the primary tail across continuation pages; rederive/reset this state only at a new explicit legacy-register boundary. Existing companion, appendix, cover and page-budget rules remain unchanged.",
+  "files": [
+    {"path":"nico/client_pdf_compose_v2.py","preimage_blob":"1760a124b35a2af0f1b58ff38478ea66e8d0261e","blob_sha":"cf06c66698194cef00ee6ba473776ff2269184fa","sha256":"b4e323add74a2dd18d4dc54f4fba5386aae8df01d27a46dbc895be5fc420ff8f","bytes":14003},
+    {"path":"tests/test_client_pdf_primary_continuation.py","blob_sha":"d3d86d105ed8356f3e169925e1476bfe14739f6c","sha256":"4116a8651b2abf5f45d2607c6091023d3ed1aa098df81071622f11af0c8e092d","bytes":3300}
+  ],
+  "tests": {
+    "focused_command": "python -m pytest -q tests/test_client_pdf_primary_continuation.py",
+    "identical_v39_preimage": {"tests":12,"failures":10,"errors":0,"skipped":0,"exit_code":1,"junit_sha256":"e0650c3ba8bc78390d243decd978e5ca66b9815c930c7eb41e53ce574daf56c6"},
+    "identical_v310_candidate": {"tests":12,"failures":0,"errors":0,"skipped":0,"exit_code":0,"junit_sha256":"17c6f4ae758c395b8638332acc0d7c43829b83f0543da6aa4624fbd23af3e122"},
+    "affected_command": "python -m pytest -q tests/test_client_pdf_primary_continuation.py tests/test_client_pdf_primary_finding_references.py tests/test_client_pdf_register_conservation.py tests/test_client_pdf_real_footer_conservation.py tests/test_client_pdf_compose_v2.py tests/test_client_pdf_status_sanitizer_v1.py tests/test_compact_ci_boundary_publication_v81.py",
+    "affected": {"tests":71,"failures":0,"errors":0,"skipped":0,"exit_code":0,"junit_sha256":"b594a246e33cfc315ec9cde1d94c68acc10944bfe976fd0d538dcd3e9b7c68ee"},
+    "real_finalizer_command": "python -m pytest -q tests/test_client_report_single_composition.py",
+    "real_finalizer": {"tests":6,"failures":0,"errors":0,"skipped":0,"exit_code":0,"junit_sha256":"f3f62d4d4f0777f6e2c2403dec8027ab36f7933a6b06647313c7ab482d947150"},
+    "distinct_passes":77,
+    "count_note":"The71 affected cases include the12 new cases; six finalizer cases are disjoint. Do not add earlier overlapping selections.",
+    "unchanged_test_blobs": {
+      "tests/test_client_pdf_register_conservation.py":"8b28f284c371ec58573e8a8c0aa5284bd5cf46eb",
+      "tests/test_client_pdf_real_footer_conservation.py":"e77304c3434e713cbef117b46848b3b9406e1039",
+      "tests/test_client_pdf_primary_finding_references.py":"b2b8c64747d209f36a4c972201c2d02883cb14d0",
+      "tests/test_compact_ci_boundary_publication_v81.py":"c06f50fb4740832b42e35d2f00731a4e402aed96",
+      "tests/test_client_report_single_composition.py":"5e7705bccd92e4cb5407cfe4f1f2053330ca69d8"
+    },
+    "coverage":"EN/es-MX; known and unknown following headings; both finding-reference heuristics; shared register/primary page; explicit subsequent register reset; standalone-card removal;180-finding real-renderer control;60page fail-closed boundary;80-finding real finalizer and reuse.",
+    "local_environment":"Scoped Python3.13.5/pytest9.0.2/pypdf5.9.0/reportlab4.4.9; not full-checkout or hosted dependency parity."
+  },
+  "rendered_controls": {
+    "kind":"Owned synthetic PDFs, not production reports; Spanish controls use localized heading/footer with explicit English test markers.",
+    "cases":4,
+    "before_pages_each":4,
+    "after_pages_each":5,
+    "after_pages_rendered":20,
+    "prior_retained_pages_compared":16,
+    "prior_retained_text_and_pixels_equal":true,
+    "off_page_words":0,
+    "restored_EN_and_esMX_pages_visually_inspected":true,
+    "after_sha256": {
+      "en-known":"aec33256d5f5918197f1d6e4898815b33852590fff12d620fd85363ab9709c8b",
+      "en-unknown":"3173c640ca1f670599eb4dc71abed19805e00ef7db7b76b7e4581bf9d3165e27",
+      "es-MX-known":"4f9cdf9dbca4d9cdd24354cd24cb45dd15edff9d831480726a4d4007f4f469d5",
+      "es-MX-unknown":"7ece8088634092fc148affaa0f3dec8f95eea5b47bf88393ae0825a24ace4e52"
+    }
+  },
+  "preceding_watchdog_candidate": {
+    "commit":"c7320fe02c7252bbc824025c0ca048c01b0cba5a",
+    "push_run":36209551628,
+    "push_aggregate_job":108314518137,
+    "push_aggregate_passed":true,
+    "pr_run":36209554405,
+    "pr_aggregate_job":108314845098,
+    "pr_aggregate_passed":true,
+    "scope":"Both current-head CI aggregate gates passed after watchdog publication; not proof of actual production-timeout cause."
+  },
+  "independent_supplied_source_critique": {
+    "thread_id":"9f87ae3f-b184-4e51-97a4-1ceaedc74211",
+    "scope":"All five production-change areas in PR1645 were supplied as actual snippets/diffs and directly required context; no infrastructure actions.",
+    "initial_findings":"State persistence, if/elif indentation, register authorship and watchdog semantics were questioned.",
+    "disposition":"All proposed findings withdrawn after actual code and tested invariants contradicted them. Retraction still contained inaccurate control-flow wording; that wording is not adopted as source evidence.",
+    "tests_executed_by_reviewer":false,
+    "repository_or_native_artifacts_fetched_by_reviewer":false,
+    "full_capability_review_complete":false
+  },
+  "actual_input_boundary": {
+    "run_id":"comprun_34a469900baa742c0d557f42634b318f",
+    "normal_status_read":"401 specialist_authentication_required",
+    "response_date":"2026-09-26T02:03:17Z",
+    "immutable_input_retrieved":false,
+    "library_lookup":"No matching immutable input was obtained; unrelated exported runs were not substituted."
+  },
+  "cpp_branch":"0c8ed5758cfae7ef66eb749655dc2ea9e9fe8c81",
+  "cpp_full_run":36207402575,
+  "native_change_in_this_commit":false,
+  "native_qualification_claimed":false,
+  "denied_operations_retried_or_rerouted":false,
+  "merge_or_deployment_performed":false,
+  "approval_or_delivery_changed":false
+}

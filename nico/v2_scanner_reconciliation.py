@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from copy import deepcopy
-from typing import Any, Iterable, Mapping
+from nico.report_json_copy import deepcopy
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 KNOWN_SCANNERS = {
     "bandit", "eslint", "gitleaks", "trufflehog", "semgrep", "typescript",
@@ -44,17 +45,35 @@ def _name(value: Any) -> str:
 def _records(value: Any, depth: int = 0) -> Iterable[Mapping[str, Any]]:
     if depth > 10:
         return
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is dict:
         scanner = _name(value.get("scanner_name") or value.get("scanner") or value.get("tool"))
         if scanner in KNOWN_SCANNERS:
             yield value
         for key, child in value.items():
             if key in {"findings", "issues", "results"} and scanner in KNOWN_SCANNERS:
                 continue
-            yield from _records(child, depth + 1)
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _records(child, depth + 1)
+    elif kind is list or kind is tuple:
+        for child in value:
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _records(child, depth + 1)
+    elif (kind is str or kind is int or kind is float or kind is bool or kind is type(None)):
+        return
+    elif isinstance(value, Mapping):
+        scanner = _name(value.get("scanner_name") or value.get("scanner") or value.get("tool"))
+        if scanner in KNOWN_SCANNERS:
+            yield value
+        for key, child in value.items():
+            if key in {"findings", "issues", "results"} and scanner in KNOWN_SCANNERS:
+                continue
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _records(child, depth + 1)
     elif isinstance(value, (list, tuple)):
         for child in value:
-            yield from _records(child, depth + 1)
+            if (type(child) is not str and type(child) is not int and type(child) is not float and type(child) is not bool and type(child) is not type(None)):
+                yield from _records(child, depth + 1)
 
 
 def _artifact_hash(record: Mapping[str, Any]) -> str:

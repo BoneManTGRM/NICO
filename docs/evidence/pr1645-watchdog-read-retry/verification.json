@@ -1,0 +1,67 @@
+{
+  "schema": "nico.watchdog-read-retry-publication.v1",
+  "repository": "BoneManTGRM/NICO",
+  "pr": 1645,
+  "base_commit": "8dad406085c1364ce153a0e3381f16058baccc04",
+  "base_tree": "67f3d7d0005eb5b0ba5407af6ac1b6d74bb7817a",
+  "change": "Retry pre-expiry canonical-store failures on the existing watchdog interval rather than permanently stop the monitor.",
+  "files": [
+    {
+      "path": "nico/comprehensive_final_report_background_v1.py",
+      "preimage_blob": "d49329a2af5018621a197fbb7ae462af15949b0c",
+      "candidate_blob": "bd339991037b58ebc108db5d11240609ccaf0ce8",
+      "candidate_sha256": "44d35b823e0d336a4f6bd654099e0a4cebf5c391514d6f23bfdb37804fc434d3"
+    },
+    {
+      "path": "tests/test_comprehensive_final_report_watchdog_v1.py",
+      "preimage_blob": "eed3258eff4672ba70d6d889f20ef2bad65a52af",
+      "candidate_blob": "8b84c315c7bcc124ec1dbe4e69dd78546a29aaea",
+      "candidate_sha256": "53346e3913f624e90d4f7d0a31276aaae82934724044baca74cbabf7c920affc"
+    }
+  ],
+  "unchanged": ["all original test functions", "rendering and queue deadlines", "single recovery allowance", "canonical publication lease fencing", "source and scoring rules", "approval and delivery restrictions", "native execution", "production configuration"],
+  "fresh_verification": {
+    "red_command": "python -m pytest -q tests/test_comprehensive_final_report_watchdog_v1.py -k transient_canonical_read --junitxml=../evidence/fresh-red.xml",
+    "red": {"tests": 2, "failures": 2, "errors": 0, "skipped": 0, "exit_code": 1, "junit_sha256": "18c64a44ca82d235fdcaf2c0cd55b8b5dced1d21c81b71a0a3ef0ad477f01a80"},
+    "red_reason": "The watchdog abandoned recovery after one read error; unchanged production with the new one-read and three-read fault cases.",
+    "red_warning": "Existing invalid escape sequence in express_score_assurance_export_v1.py during initial import.",
+    "green_command": "python -m pytest -q tests/test_comprehensive_final_report_watchdog_v1.py tests/test_comprehensive_final_report_queue_deadline_v1.py tests/test_comprehensive_final_report_async_publication_v1.py tests/test_comprehensive_final_report_durable_lifetime_v1.py tests/test_comprehensive_final_report_execution_boundary_v4.py tests/test_comprehensive_final_report_local_deadline_v3.py tests/test_comprehensive_final_report_physical_exit_hardening_v2.py tests/test_comprehensive_runtime_postgres_timeout_v1.py --junitxml=../evidence/fresh-green.xml",
+    "green": {"tests": 39, "failures": 0, "errors": 0, "skipped": 0, "exit_code": 0, "junit_sha256": "d41891f72d0c95e23bb47f2b0451efe6c2373151c1473a91e04a1ecd495284db"},
+    "all_original_functions_ast_unchanged": true,
+    "new_cases_included_in_39": 2,
+    "local_python": "3.13.5",
+    "local_pytest": "9.0.2",
+    "source_archive_sha256": "5b3d2a4e22c8be0b0d5a1b0d9c336746ddf4dd96ff799b99b6a1a8a6fa26e181",
+    "source_scope": "Scoped 0c8ed575 archive; changed-file preimages independently match exact PDF branch blobs. Not full branch checkout or hosted dependency parity."
+  },
+  "preserved_prior_package": {
+    "sha256": "e1dfc5ed397e75ac25af0fcf654f83e9e2e874542e95b5d2c579ba2858a5c20b",
+    "filename": "NICO-checks-watchdog-repair-UNPUBLISHED.zip",
+    "patch_sha256": "a432cbe61207b2f0ae0ba9d3107974146d09e2af00c5a297b9c07858f147aee5",
+    "note": "These published code and test blobs are byte-identical to the retained prepared patch; prior repeated test counts are not added."
+  },
+  "hosted_failure": {
+    "run_id": 36198806448,
+    "event": "push",
+    "head_sha": "8dad406085c1364ce153a0e3381f16058baccc04",
+    "failed_job": 108280648930,
+    "aggregate_failed_job": 108282496500,
+    "artifact_sha256": "63c6d92d383edc837bf914756d30bc4190a225107b46a4f7aa806e3578e6e8bd",
+    "same_head_pr_run": 36198809918,
+    "same_head_pr_run_passed": true,
+    "exact_hosted_failure_root_cause_proven": false
+  },
+  "bounded_review": {
+    "reviewer": "Railway connected agent, supplied source only; no infrastructure actions",
+    "thread_id": "568c78d0-3d02-4182-99a4-e0db41cf1c95",
+    "initial_claim": "Persistent storage failures introduce a new slot/lease leak.",
+    "disposition": "Withdrawn after verifying original exception path never released the slot either; new code preserves periodic monitoring. Reviewer response had inaccurate control-flow paraphrases, so this is not accepted as full independent PR review.",
+    "scope": "One exception-handler change and its two injected-fault cases",
+    "full_pr_review_complete": false
+  },
+  "remaining": ["both push and pull-request hosted checks", "legitimate actual failed-input replay", "complete rendered report acceptance", "complete applicable independent review", "shared checkpoint reconciliation", "full C++ native qualification"],
+  "limitations": ["Persistent unavailable storage and post-fence failures are not fully repaired by this patch.", "The real production timeout and exact hosted timing failure are not proven caused solely by this defect."],
+  "production_shipped": false,
+  "merge_approved_by_this_evidence": false,
+  "denied_operations_retried_or_rerouted": false
+}

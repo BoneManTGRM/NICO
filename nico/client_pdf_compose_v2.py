@@ -7,9 +7,9 @@ from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
-from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY, MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.6"
+VERSION = "nico.client-pdf-compose.v3.10"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -65,11 +65,18 @@ def _normalized(value: str) -> str:
     return " ".join(without_marks.casefold().split())
 
 
+_APPROVAL_BOUNDARY_LINES = frozenset(_normalized(value) for value in (EN_BOUNDARY, ES_BOUNDARY))
+
+
 def _meaningful_lines(value: str) -> list[str]:
     output: list[str] = []
     for raw in str(value or "").splitlines():
         line = _normalized(raw)
         if not line:
+            continue
+        # The real renderer writes its exact approval footer before body text.
+        # Ignore it for classification only; retained PDF pages keep the footer.
+        if line in _APPROVAL_BOUNDARY_LINES:
             continue
         if line.startswith("nico comprehensive ·"):
             continue
@@ -94,6 +101,26 @@ def _finding_detail(value: str) -> bool:
     ):
         return True
     return "nico-code-" in text and "action:" in text and "cyclomatic_complexity" in text
+
+
+_LEGACY_REGISTER_FIELD_LABELS = frozenset((
+    "category / status", "location", "layer 1 — evidence / fact",
+    "layer 2 — interpretation", "layer 3 — business inference",
+    "layer 4 — recommendation", "owner / effort", "cost of inaction",
+    "residual risk", "acceptance criteria", "roadmap / backlog",
+    "campo", "categoria / estado", "ubicacion", "hecho observado",
+    "interpretacion", "impacto empresarial", "recomendacion",
+    "responsable / esfuerzo", "costo de no actuar", "riesgo residual",
+))
+
+
+def _legacy_register_continuation(lines: list[str]) -> bool:
+    """Recognize legacy finding/field starts, never arbitrary following pages."""
+    if not lines:
+        return False
+    return bool(re.match(r"^p[0-4]\s*[·•]\s+", lines[0])) or (
+        lines[0] in _LEGACY_REGISTER_FIELD_LABELS
+    )
 
 
 def _optional_pdf_reader(pdf: bytes | None, *, label: str) -> PdfReader | None:
@@ -138,23 +165,44 @@ def compose_compact_client_pdf(
 
     retained: list[Any] = []
     replacing_legacy_register = False
+    preserving_primary_tail = False
     from nico.comprehensive_pdf_reflow_v1 import _content_lines, _has_standard_header
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
 
-        # The compact register appended below is the authoritative client-facing
-        # finding register. Legacy premium reports can span hundreds or thousands
-        # of continuation pages whose individual finding IDs do not match the
-        # older _finding_detail heuristic. Once the legacy register begins, omit
-        # the whole section until a known following primary section starts.
-        if _page_heading(extracted, _LEGACY_REGISTER_SECTION_HEADINGS):
-            replacing_legacy_register = True
+        lines = _meaningful_lines(extracted)
+        register_starts = [index for index, line in enumerate(lines)
+                           if line in _LEGACY_REGISTER_SECTION_HEADINGS]
+        primary_starts = [index for index, line in enumerate(lines)
+                          if line in _REGISTER_SECTION_RESUME_HEADINGS]
+        preserve_primary_content = bool(primary_starts)
+        if register_starts:
+            start = register_starts[0]
+            following_primary = any(index > start for index in primary_starts)
+            replacing_legacy_register = not following_primary
+            preserving_primary_tail = following_primary
+            if start > 0 or following_primary:
+                # Mixed pages contain primary content: retain their actual bytes,
+                # even when this leaves a small superseded register fragment.
+                retained.append(page)
             continue
         if replacing_legacy_register:
-            if _page_heading(extracted, _REGISTER_SECTION_RESUME_HEADINGS):
+            if primary_starts:
                 replacing_legacy_register = False
-            else:
+                preserving_primary_tail = True
+                if primary_starts[0] > 0:
+                    # A new section can start below a continued finding table.
+                    retained.append(page)
+                    continue
+            elif _legacy_register_continuation(lines):
                 continue
+            else:
+                # Unknown content is not proof of another finding page. End the
+                # discard state and let the unchanged page budget fail closed
+                # rather than silently consuming the rest of the report.
+                replacing_legacy_register = False
+                preserve_primary_content = True
+                preserving_primary_tail = True
         # Apply the existing final-reflow empty-page rule before the intermediate
         # budget. A footer-only overflow must not displace required report content.
         if _has_standard_header(extracted) and not _content_lines(extracted):
@@ -187,8 +235,6 @@ def compose_compact_client_pdf(
         if not detailed_review_evidence and _page_heading(
             extracted,
             (
-                "finding and remediation register",
-                "registro de hallazgos y remediacion",
                 "analyzer applicability and provenance",
                 "procedencia y aplicabilidad de analizadores",
                 "human review and acceptance gate",
@@ -209,7 +255,10 @@ def compose_compact_client_pdf(
             # page has no independent evidence and would create duplicate title,
             # pagination, and generated-at facts.
             continue
-        if _finding_detail(extracted):
+        # A finding reference cannot override a primary-section decision, even
+        # on a continuation page without a repeated heading. Only a new explicit
+        # legacy register boundary resets preservation of the primary tail.
+        if not (preserve_primary_content or preserving_primary_tail) and _finding_detail(extracted):
             continue
         retained.append(page)
 

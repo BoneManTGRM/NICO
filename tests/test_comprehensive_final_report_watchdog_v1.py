@@ -7,6 +7,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 import nico.comprehensive_final_report_background_v1 as background
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_final_report_background_v1 import FinalReportPublicationCoordinator
@@ -384,3 +386,96 @@ def test_final_report_job_terminal_status_cannot_be_reopened(tmp_path: Path) -> 
     assert job is not None
     assert job["status"] == "expired"
     assert job["heartbeat_epoch"] == 20.0
+
+
+@pytest.mark.parametrize("failed_reads", (1, 3))
+def test_watchdog_retries_a_transient_canonical_read_before_expiry(
+    tmp_path: Path,
+    monkeypatch,
+    failed_reads: int,
+) -> None:
+    """A failed storage read must not silently terminate the only watchdog."""
+    background.reset_final_report_publication_tasks_for_tests()
+    _accelerate_watchdog(monkeypatch)
+    store = _store(tmp_path)
+    record = _record("comprun_watchdog_transient_read")
+    store.create(record)
+    coordinator = FinalReportPublicationCoordinator(store)
+    first_started = threading.Event()
+    release_first = threading.Event()
+    second_started = threading.Event()
+    read_failed = threading.Event()
+    faults: list[str] = []
+    expired_lease: list[str | None] = [None]
+    evaluate_deadline = background._job_deadline_state
+    load_record = store.load
+    calls: list[str] = []
+    original_threads: list[threading.Thread] = []
+
+    def controlled_deadline(job, *, now_epoch: float) -> dict:
+        observed = evaluate_deadline(job, now_epoch=now_epoch)
+        if not observed["active"] or observed["phase"] != "rendering":
+            return observed
+        elapsed = (
+            observed["deadline_seconds"] + 1.0
+            if job.get("lease_id") == expired_lease[0]
+            else 0.0
+        )
+        return evaluate_deadline(job, now_epoch=observed["started_epoch"] + elapsed)
+
+    def load_with_one_failure(run_id: str) -> dict:
+        if (
+            run_id == record["identity"]["run_id"]
+            and threading.current_thread().name.startswith("nico-final-report-watchdog-")
+            and expired_lease[0] is not None
+            and len(faults) < failed_reads
+        ):
+            faults.append(run_id)
+            read_failed.set()
+            raise sqlite3.OperationalError("controlled transient read failure")
+        return load_record(run_id)
+
+    def executor(context: dict) -> dict:
+        calls.append(context["run_id"])
+        if len(calls) == 1:
+            first_started.set()
+            assert release_first.wait(10.0), "test did not release the old renderer"
+            return _valid_result(context, suffix="stale")
+        assert len(calls) == 2, "storage retry must not add a renderer retry"
+        second_started.set()
+        return _valid_result(context, suffix="recovered")
+
+    monkeypatch.setattr(background, "_job_deadline_state", controlled_deadline)
+    monkeypatch.setattr(store, "load", load_with_one_failure)
+    try:
+        claimed = coordinator.advance(record, executor, _context(record))
+        assert first_started.wait(2.0)
+        lease_id = claimed["stage_results"][FINAL_REPORT_STAGE_ID]["stage_execution"]["lease_id"]
+        with background._LOCAL_TASKS_LOCK:
+            original_threads.extend(
+                value for value in background._LOCAL_TASKS[lease_id].values()
+                if isinstance(value, threading.Thread)
+            )
+        expired_lease[0] = lease_id
+        assert read_failed.wait(2.0), "the controlled read fault was not exercised"
+        assert second_started.wait(2.0), "the watchdog abandoned recovery after one read error"
+        completed = _wait_for_complete(store, record["identity"]["run_id"])
+        assert len(completed.get("recovery_history") or []) == 1
+        assert len(calls) == 2
+        assert len(faults) == failed_reads
+        assert store.load_final_report_job(lease_id)["status"] == "expired"
+        assert completed["stage_results"][FINAL_REPORT_STAGE_ID]["report_package"]["report_id"].endswith("_recovered")
+        release_first.set()
+        for worker in original_threads:
+            worker.join(timeout=2.0)
+        assert not any(worker.is_alive() for worker in original_threads)
+        persisted = store.load(record["identity"]["run_id"])
+        assert persisted["stage_results"][FINAL_REPORT_STAGE_ID]["report_package"]["report_id"].endswith("_recovered")
+        assert len(persisted.get("recovery_history") or []) == 1
+        assert persisted["human_review_required"] is True
+        assert persisted["client_delivery_allowed"] is False
+    finally:
+        release_first.set()
+        background.reset_final_report_publication_tasks_for_tests()
+        for worker in original_threads:
+            worker.join(timeout=2.0)

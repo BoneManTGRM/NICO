@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
-from typing import Any, Mapping
+from nico.report_json_copy import deepcopy
+from collections.abc import Mapping
+from typing import Any
 
 VERSION = "nico.report-artifact-filename.v1"
 

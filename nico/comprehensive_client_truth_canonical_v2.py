@@ -4,7 +4,7 @@ import base64
 import html
 import io
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
 

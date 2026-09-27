@@ -6,7 +6,7 @@ import html
 import io
 import json
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Callable, Iterable
 
@@ -564,6 +564,8 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
+    from nico.comprehensive_source_table_presentation_v1 import source_table_summary
+
     cell_style = ParagraphStyle("SourceEvidenceCell", fontName="Helvetica", fontSize=7.1, leading=9.0)
     title_style = ParagraphStyle("SourceEvidenceTitle", parent=cell_style, fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, spaceBefore=5, spaceAfter=3, keepWithNext=True)
     def cell(value: Any, heading: bool = False, literal: bool = False) -> Any:
@@ -575,9 +577,36 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
         reference = cell(f"{label}: {observed.get('observation_sha256', '')}")
         reference.keepWithNext = True
         flowables.append(reference)
-    for table in _source_tables(stage):
+    # Only original structured source tables use the large-inventory summary.
+    # Generated coverage, provenance and limitation tables retain every PDF row.
+    structured_count = sum(
+        1 for table in stage.get("structured_tables") or []
+        if isinstance(table, dict) and table.get("columns") and isinstance(table.get("rows"), list)
+    )
+    for table_index, table in enumerate(_source_tables(stage)):
         rows = table["rows"]
         columns = table["columns"]
+        summary = source_table_summary(table) if table_index < structured_count else None
+        if summary is not None:
+            flowables.append(cell(table["title"], True))
+            row_label = "Filas completas conservadas" if spanish else "Complete retained rows"
+            digest_label = "SHA-256 de la tabla completa" if spanish else "Complete table SHA-256"
+            flowables.append(cell(f"{row_label}: {summary['row_count']}", literal=True))
+            flowables.append(cell(f"{digest_label}: {summary['sha256']}", literal=True))
+            flowables.append(cell(summary["reference_token"], literal=True))
+            disclosure = (
+                "Este PDF presenta el resumen de la tabla. Todas las filas, columnas y valores, sin abreviar, "
+                "se conservan en el JSON de evidencia canónica de esta misma edición. El hash vincula el "
+                "título, las columnas y las filas completas en su orden original; no establece verificación "
+                "en ejecución, aprobación humana ni autorización de entrega."
+                if spanish else
+                "This PDF presents the table summary. Every complete row, column and value is retained "
+                "in this same edition's canonical evidence JSON. The hash binds the title, columns and "
+                "complete rows in their original order; it does not establish runtime verification, "
+                "human approval or delivery authorization."
+            )
+            flowables += [cell(disclosure, literal=True), Spacer(1, 5)]
+            continue
         # row_limit bounds each layout batch, not the substantive evidence retained.
         # Existing report page, byte and process-time limits remain unchanged.
         batch_size = max(1, row_limit)

@@ -1,0 +1,143 @@
+{
+  "schema": "nico.pr1645.concise-source-local-replay.v1",
+  "scope": "local exact retained input; hosted source acquisition and PostgreSQL acceptance pending",
+  "candidate_source_commit": "cb1482e025e36f1bac2d91cfaf8865c6c73c6a33",
+  "combined_tree": "99ede2962d4657c6b09e7db28c8f5abefb36a8b2",
+  "english": {
+    "input_sha256": "2368424bb0ea51773a21028bd6e17629a450a4222407ae1c911c11ac1c87d440",
+    "result_sha256": "c0e01db09f544996073555f77515d06e14206d06f907476ca582982f338a6933",
+    "result_bytes": 350344888,
+    "status": "complete",
+    "pdf_sha256": "17c716002d06ba252acd0a40cc5a9a023d6230278d2a668b2805646c2b00cd72",
+    "pdf_bytes": 2050003,
+    "pdf_pages": 51,
+    "canonical_json_sha256": "601a815c396205746fdfab6a9f71be6ae7f66c50d1ce21e1c60da088950cb85c",
+    "evidence_manifest_sha256": "f95c352e2b347e8ce1aeeea04cdca518c32a34ca1c77646d1608fe08f44c83cc",
+    "binding": {
+      "table_instances": 5,
+      "summarized_tables": 2,
+      "canonical_json_sha256": "601a815c396205746fdfab6a9f71be6ae7f66c50d1ce21e1c60da088950cb85c"
+    },
+    "source_tables": [
+      {
+        "stage_id": "architecture_and_data_flow",
+        "sha256": "a0332abafe38691b6ff37ea70ed32cf1c651a86e09f6f2896f33a46c73d990e2",
+        "row_count": 2499
+      },
+      {
+        "stage_id": "architecture_and_data_flow",
+        "sha256": "7047880d021e5a753518622c1ef240ca321c70000902e08872a6a6b7dedbd7c4",
+        "row_count": 21802
+      },
+      {
+        "stage_id": "architecture_and_data_flow",
+        "sha256": "164819ad81e338f503a5e55ada595ee995f6e927d5d5a033703e2469a14c8fb1",
+        "row_count": 2
+      },
+      {
+        "stage_id": "authorization_and_scope",
+        "sha256": "6519133af7e2233cf40b3ff149c676aa88b89a9292159b5ab897f5ecd1ea02a9",
+        "row_count": 4
+      },
+      {
+        "stage_id": "deployment_and_infrastructure",
+        "sha256": "164819ad81e338f503a5e55ada595ee995f6e927d5d5a033703e2469a14c8fb1",
+        "row_count": 2
+      }
+    ],
+    "human_review_required": true,
+    "client_delivery_allowed": false,
+    "approval_status": "pending_human_approval",
+    "report_finality": "automated_draft",
+    "source_summary_pages": [
+      17
+    ]
+  },
+  "english_elapsed_seconds_including_result_serialization": 788.9319248219981,
+  "english_archive": {
+    "bytes": 57434395,
+    "sha256": "3b239b21d1865773b9ac86fdafa2987b1592240c8e2003f1ea6a38d8bcc51b21"
+  },
+  "es_MX": {
+    "input_sha256": "8f51b6f8490f303d2940ff9c0cfbef84d692431ee91e7c6fa695f74c1bad2970",
+    "result_sha256": "015e41b03345503fe2655f3b4abca05ea076c8b29a200fa97fd9b0bb7f7f00b6",
+    "result_bytes": 350735926,
+    "status": "complete",
+    "pdf_sha256": "2d30998a06f30c488f39050e54d16c457c93410eb87efff0b7a77fcef0f602e9",
+    "pdf_bytes": 2024818,
+    "pdf_pages": 52,
+    "canonical_json_sha256": "7f0628258267880d27dee342e970bd794a5472e2f6d17a93485b7e1007feebab",
+    "evidence_manifest_sha256": "82692e49e2d2e367ded5d77c67ac3053a6bc0ed5b7c7d2220edf6a3943e6291d",
+    "binding": {
+      "table_instances": 5,
+      "summarized_tables": 2,
+      "canonical_json_sha256": "7f0628258267880d27dee342e970bd794a5472e2f6d17a93485b7e1007feebab"
+    },
+    "source_tables": [
+      {
+        "stage_id": "architecture_and_data_flow",
+        "sha256": "a0332abafe38691b6ff37ea70ed32cf1c651a86e09f6f2896f33a46c73d990e2",
+        "row_count": 2499
+      },
+      {
+        "stage_id": "architecture_and_data_flow",
+        "sha256": "7047880d021e5a753518622c1ef240ca321c70000902e08872a6a6b7dedbd7c4",
+        "row_count": 21802
+      },
+      {
+        "stage_id": "architecture_and_data_flow",
+        "sha256": "164819ad81e338f503a5e55ada595ee995f6e927d5d5a033703e2469a14c8fb1",
+        "row_count": 2
+      },
+      {
+        "stage_id": "authorization_and_scope",
+        "sha256": "6519133af7e2233cf40b3ff149c676aa88b89a9292159b5ab897f5ecd1ea02a9",
+        "row_count": 4
+      },
+      {
+        "stage_id": "deployment_and_infrastructure",
+        "sha256": "164819ad81e338f503a5e55ada595ee995f6e927d5d5a033703e2469a14c8fb1",
+        "row_count": 2
+      }
+    ],
+    "human_review_required": true,
+    "client_delivery_allowed": false,
+    "approval_status": "pending_human_approval",
+    "report_finality": "automated_draft",
+    "source_summary_pages": [
+      18
+    ]
+  },
+  "production_qualified": false,
+  "hosted_storage_acceptance": false,
+  "es_MX_elapsed_seconds_including_result_serialization": 823.7492782729969,
+  "es_MX_archive": {
+    "bytes": 43579245,
+    "sha256": "1e912077d3945bf9886ab7564647ad27ab47ffe454afeeddcc7c77a15debb3fe"
+  },
+  "integration": {
+    "tree": "99ede2962d4657c6b09e7db28c8f5abefb36a8b2",
+    "distinct_python_tests": 313,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "runtime_seconds": 43.68,
+    "scope": "workflow retention and safety selection plus canonical rebuild, retained export, final-review PDF availability, source profile and layout regressions"
+  },
+  "visual_review": {
+    "english_pages_screened": 51,
+    "es_MX_pages_screened": 52,
+    "full_resolution_source_pages": {
+      "en": [
+        17,
+        18
+      ],
+      "es-MX": [
+        18,
+        19
+      ]
+    },
+    "observed_clipping_or_missing_primary_tail": false,
+    "spanish_eslint_unavailable_evidence_retained": true
+  }
+}

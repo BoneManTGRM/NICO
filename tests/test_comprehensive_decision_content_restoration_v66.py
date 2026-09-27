@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from nico import comprehensive_decision_content_restoration_v66 as restoration
 from nico.comprehensive_decision_content_restoration_v66 import (
     restore_decision_content,
 )
@@ -138,6 +139,48 @@ def test_restores_rich_structured_findings_without_duplicate_cards() -> None:
     assert restored["findings_register"][0]["rollback"].startswith("Revert")
     assert manifest["structured_finding_count_recovered"] == 1
     assert manifest["complexity_finding_count_synthesized"] == 0
+
+
+def test_shared_retained_mapping_scan_preserves_each_projection() -> None:
+    raw_stages = {
+        "repository_and_delivery_evidence": {
+            "complexity_evidence": {
+                "hotspots": [{
+                    "path": "nico/report.py",
+                    "line": 7,
+                    "name": "render",
+                    "cyclomatic_complexity": 45,
+                }]
+            },
+            "finding_summary": {
+                "raw_total": 1,
+                "review_required_total": 1,
+                "by_category": {"static": {"raw": 1, "review_required": 1}},
+            },
+            "candidate": {
+                "category": "static",
+                "status": "review_required",
+                "rule_id": "review-rule",
+                "title": "Review candidate",
+            },
+            "workflow": {"successful_runs": 4, "non_success_runs": 1},
+        }
+    }
+    assessment = _base_assessment()
+    nodes = list(restoration._iter_mappings(raw_stages))
+
+    assert restoration._complexity_hotspots(
+        raw_stages, nodes=nodes
+    ) == restoration._complexity_hotspots(raw_stages)
+    assert restoration._review_candidate_summary(
+        raw_stages, nodes=nodes
+    ) == restoration._review_candidate_summary(raw_stages)
+    assert restoration._review_candidate_register(
+        raw_stages, nodes=nodes
+    ) == restoration._review_candidate_register(raw_stages)
+    assert restoration._ci_operational_context(
+        raw_stages, assessment, nodes=nodes
+    ) == restoration._ci_operational_context(raw_stages, assessment)
 
 
 def test_restores_actionable_exact_sha_hotspots_when_register_is_missing() -> None:

@@ -188,6 +188,52 @@ def test_four_phase_pdf_updates_toc_without_changing_page_count() -> None:
     assert apply_four_phase_pdf(rendered, canonical) == rendered
 
 
+def test_bookmark_search_extracts_each_reached_page_once_for_all_candidates(monkeypatch) -> None:
+    from pypdf._page import PageObject
+
+    buffer = io.BytesIO()
+    page = canvas.Canvas(buffer, pagesize=letter, invariant=1)
+    titles = ["NICO Comprehensive", "Table of Contents"] + ["Evidence"] * 14 + [
+        "Dependency / Library Ecosystem",
+        "Human Review and Acceptance Gate",
+        "Functional QA",
+        "Human Review and Exact-Artifact Approval Record",
+    ]
+    for title in titles:
+        page.drawString(54, 730, title)
+        page.showPage()
+    page.save()
+    calls = 0
+    extract = PageObject.extract_text
+
+    def counted(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return extract(self, *args, **kwargs)
+
+    monkeypatch.setattr(PageObject, "extract_text", counted)
+    rendered = apply_four_phase_pdf(buffer.getvalue(), _canonical())
+    # Bound the full TOC search, bookmark search and final PDF validation together.
+    # Candidate-title and phase counts must not multiply page extraction work.
+    assert calls <= 4 * len(titles) + 2
+    reader = PdfReader(io.BytesIO(rendered))
+    destinations = {}
+
+    def collect(items):
+        for item in items:
+            if isinstance(item, list):
+                collect(item)
+            else:
+                destinations[str(item.title)] = reader.get_destination_page_number(item)
+
+    collect(reader.outline)
+    assert destinations["Automated Technical Triage"] == 16
+    assert destinations["Human Review by Exception"] == 17
+    assert destinations["Broader Professional Assessment"] == 18
+    # Original first matching page wins, even when a more specific title is later.
+    assert destinations["Approval and Client Delivery"] == 17
+
+
 def test_finalizer_publishes_all_four_phases_across_surfaces() -> None:
     result = finalize_four_phase_report_package(_package(_canonical()))
     assert result["json"]["four_phase_program"]["phase_count"] == 4

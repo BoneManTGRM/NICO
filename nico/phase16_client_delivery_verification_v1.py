@@ -4,8 +4,9 @@ import base64
 import hashlib
 import json
 import re
-from copy import deepcopy
-from typing import Any, Mapping
+from nico.report_json_copy import deepcopy
+from collections.abc import Mapping
+from typing import Any
 
 from nico.comprehensive_client_ready_projection_v1 import (
     APPROVAL_SUFFIX,

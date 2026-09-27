@@ -24,6 +24,10 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 _CANONICAL_PARITY_EXACT = {
     "The dedicated worker retained native scanner evidence. Individual tool records state completion and limitations.": "El trabajador dedicado conservó evidencia nativa de los analizadores. Cada registro indica el estado de ejecución y sus limitaciones.",
     "The selected worker profile does not execute this requested tool.": "El perfil seleccionado del trabajador no ejecuta esta herramienta solicitada.",
+    # Exact scanner-owned absence and the final renderer's derived display label.
+    # This changes presentation only; the unavailable execution record stays raw.
+    "eslint is not installed in the worker image.": "eslint no está instalado en la imagen del trabajador.",
+    "eslint: eslint is not installed in the worker image.": "eslint: eslint no está instalado en la imagen del trabajador.",
     "Native target execution or parsing is incomplete; retained observations require review.": "La ejecución o el análisis nativo de los objetivos está incompleto; las observaciones conservadas requieren revisión.",
     "Native XML was not completely parsed.": "El XML nativo no se analizó por completo.",
     "Native target is outside the frozen population.": "El objetivo nativo está fuera de la población fijada.",

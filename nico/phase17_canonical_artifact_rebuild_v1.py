@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
-from copy import deepcopy
-from typing import Any, Mapping
+from nico.report_json_copy import deepcopy
+from nico.report_pdf_text import pdf_text_cache_scope
+from collections.abc import Mapping
+from typing import Any
 
 from pypdf import PdfReader
 
@@ -591,6 +593,7 @@ def build_localized_markdown_projection(
         release_comprehensive_spanish_render_input_cache_v94()
 
 
+@pdf_text_cache_scope()
 def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """Build one bounded client package from canonical finding and scanner truth.
 
@@ -602,11 +605,16 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """
 
     from nico import client_report_completion_v2 as completion
+    from nico.source_table_export_binding import (
+        capture_source_table_evidence,
+        validate_source_table_evidence,
+    )
     from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
         release_comprehensive_spanish_render_input_cache_v94,
     )
 
     try:
+        source_tables = capture_source_table_evidence(package.get("json") or {})
         prepared = _prepare_client_artifact_package(package)
         rendered = rebuild_single_pass_premium_artifacts(prepared)
 
@@ -639,6 +647,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             finalized["canonical_truth_sha256"] = canonical_sha256(
                 final_canonical
             )
+        validate_source_table_evidence(source_tables, finalized)
         return finalized
     finally:
         # Render-input cache entries retain the entire canonical tree and its localized
@@ -646,6 +655,33 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         # are attempt-scoped and can be released on both success and failure. The bounded
         # translation-string caches remain warm for later Spanish assessments.
         release_comprehensive_spanish_render_input_cache_v94()
+
+
+def _restore_render_scanner_register(
+    package: Mapping[str, Any],
+    retained_register: Mapping[str, Any],
+    compact_register: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Restore exact evidence before quality repair, reconciliation and binding.
+
+    The single-pass presentation compiler must preserve all register metadata.
+    A changed or missing compact register cannot be hidden by reattaching the
+    retained evidence. Compact intermediates never reach final validation.
+    """
+    canonical = package.get("json")
+    assessment = canonical.get("assessment") if isinstance(canonical, Mapping) else None
+    actual = assessment.get(_SCANNER_REGISTER_FIELD) if isinstance(assessment, Mapping) else None
+    expected = dict(compact_register or {})
+    expected["findings"] = []
+    if not isinstance(actual, Mapping) or canonical_sha256(actual) != canonical_sha256(expected):
+        raise ValueError("render_scanner_register_metadata_changed")
+    restored_assessment = dict(assessment)
+    restored_assessment[_SCANNER_REGISTER_FIELD] = deepcopy(dict(retained_register))
+    restored_canonical = dict(canonical)
+    restored_canonical["assessment"] = restored_assessment
+    result = dict(package)
+    result["json"] = restored_canonical
+    return result
 
 
 __all__ = [

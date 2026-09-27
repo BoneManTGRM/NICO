@@ -56,11 +56,11 @@ def test_report_action_does_not_become_more_restrictive_when_reviewer_is_supplie
 
 def test_report_download_does_not_require_human_review_acknowledgement() -> None:
     assert (
-        'disabled={loading || !operatorReady || !currentReviewPdfDigest} onClick={downloadFinalReport}'
+        'disabled={loading || !operatorReady || !finalPdfAvailable} onClick={downloadFinalReport}'
         in WORKSPACE
     )
     assert (
-        'disabled={loading || !finalActionAuthorityReady || !currentReviewPdfDigest || '
+        'disabled={loading || !finalPdfAvailable || !finalActionAuthorityReady || !currentReviewPdfDigest || '
         '(!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}'
         in WORKSPACE
     )

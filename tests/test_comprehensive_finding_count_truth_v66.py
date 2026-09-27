@@ -60,3 +60,44 @@ def test_zero_finding_truth_remains_zero_when_no_findings_exist() -> None:
     assert restored["stage_summaries"][0]["summary"].endswith("0 unique decision-grade findings.")
     assert restored["stage_summaries"][0]["findings"] == ["No unresolved priority finding retained"]
     assert manifest["canonical_finding_count"] == 0
+
+
+def test_unrelated_large_prose_is_byte_for_byte_unchanged() -> None:
+    prose = "retained source evidence " * 10_000
+    canonical = {
+        "canonical_findings": [],
+        "stage_summaries": [{"summary": prose}],
+        "assessment": {},
+    }
+
+    restored, _manifest = reconcile_finding_count_truth(canonical)
+
+    assert restored["stage_summaries"][0]["summary"] == prose
+
+
+def test_unicode_case_insensitive_count_aliases_are_reconciled() -> None:
+    canonical = {
+        "canonical_findings": [{"title": "First"}, {"title": "Second"}],
+        "stage_summaries": [{"findings": [
+            "Canonıcal findings: 99", "Canonİcal findings: 99",
+        ]}],
+        "assessment": {},
+    }
+    restored, _manifest = reconcile_finding_count_truth(canonical)
+    assert restored["stage_summaries"][0]["findings"] == [
+        "Canonical findings: 2", "Canonical findings: 2",
+    ]
+    assert canonical["stage_summaries"][0]["findings"][0] == "Canonıcal findings: 99"
+
+
+def test_count_prose_subclasses_keep_legacy_regex_behavior() -> None:
+    class SourceText(str):
+        def casefold(self):
+            raise AssertionError("Source text must use the legacy regex path")
+
+    source = SourceText("Unrelated source text")
+    canonical = {"canonical_findings": [], "assessment": {"description": source}}
+    restored, _manifest = reconcile_finding_count_truth(canonical)
+    assert restored["assessment"]["description"] == source
+    assert type(restored["assessment"]["description"]) is str
+    assert type(canonical["assessment"]["description"]) is SourceText

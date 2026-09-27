@@ -478,9 +478,17 @@ def _iter_mappings(value: Any, depth: int = 0):
     if isinstance(value, dict):
         yield value
         for child in value.values():
+            kind = type(child)
+            if (kind is str or kind is int or kind is float
+                    or kind is bool or kind is type(None)):
+                continue
             yield from _iter_mappings(child, depth + 1)
     elif isinstance(value, list):
         for child in value:
+            kind = type(child)
+            if (kind is str or kind is int or kind is float
+                    or kind is bool or kind is type(None)):
+                continue
             yield from _iter_mappings(child, depth + 1)
 
 

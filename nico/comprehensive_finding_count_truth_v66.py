@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
-from typing import Any, Mapping
+from nico.report_json_copy import deepcopy
+from functools import lru_cache
+from collections.abc import Mapping
+from typing import Any
 
 VERSION = "nico.comprehensive-finding-count-truth.v66"
 
@@ -35,6 +37,15 @@ def _replace_count_prose(
     operational_count: int,
     top_title: str,
 ) -> str:
+    lowered = value.casefold().replace("ı", "i").replace("i̇", "i") if type(value) is str else ""
+    if (
+        type(value) is str
+        and "canonical" not in lowered
+        and "exact-source" not in lowered
+        and "operational/context" not in lowered
+        and "unresolved priority" not in lowered
+    ):
+        return value
     output = value
     output = re.sub(
         r"The canonical register contains\s+\d+\s+unique decision-grade findings?\.",
@@ -98,10 +109,23 @@ def _reconcile_value(
     operational_count: int,
     top_title: str,
     depth: int = 0,
+    _replace_string=None,
 ) -> Any:
     if depth > 16:
         return deepcopy(value)
-    if isinstance(value, Mapping):
+    kind = type(value)
+    if kind is str:
+        if _replace_string is not None and len(value) <= 4096:
+            return _replace_string(value)
+        return _replace_count_prose(
+            value, canonical_count=canonical_count,
+            exact_source_count=exact_source_count,
+            operational_count=operational_count, top_title=top_title,
+        )
+    is_mapping = kind is dict
+    if not is_mapping and (kind is not list and kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)):
+        is_mapping = isinstance(value, Mapping)
+    if is_mapping:
         output: dict[str, Any] = {}
         for raw_key, child in value.items():
             key = str(raw_key)
@@ -126,9 +150,10 @@ def _reconcile_value(
                     operational_count=operational_count,
                     top_title=top_title,
                     depth=depth + 1,
+                    _replace_string=_replace_string,
                 )
         return output
-    if isinstance(value, list):
+    if kind is list or ((kind is not tuple and kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, list)):
         return [
             _reconcile_value(
                 child,
@@ -137,10 +162,11 @@ def _reconcile_value(
                 operational_count=operational_count,
                 top_title=top_title,
                 depth=depth + 1,
+                _replace_string=_replace_string,
             )
             for child in value
         ]
-    if isinstance(value, tuple):
+    if kind is tuple or ((kind is not str and kind is not int and kind is not float and kind is not bool and kind is not type(None)) and isinstance(value, tuple)):
         return tuple(
             _reconcile_value(
                 child,
@@ -149,10 +175,13 @@ def _reconcile_value(
                 operational_count=operational_count,
                 top_title=top_title,
                 depth=depth + 1,
+                _replace_string=_replace_string,
             )
             for child in value
         )
-    if isinstance(value, str):
+    if kind is str or isinstance(value, str):
+        if _replace_string is not None and type(value) is str and len(value) <= 4096:
+            return _replace_string(value)
         return _replace_count_prose(
             value,
             canonical_count=canonical_count,
@@ -184,12 +213,25 @@ def reconcile_finding_count_truth(
         findings[0].get("title") or findings[0].get("decision_title")
     ) if findings else ""
 
+    # Repeated source rows carry the same immutable prose. Cache only this
+    # projection's short builtin strings; never share report text across calls.
+    @lru_cache(maxsize=4096)
+    def replace_string(value: str) -> str:
+        return _replace_count_prose(
+            value,
+            canonical_count=canonical_count,
+            exact_source_count=exact_source_count,
+            operational_count=operational_count,
+            top_title=top_title,
+        )
+
     output["stage_summaries"] = _reconcile_value(
         output.get("stage_summaries") or [],
         canonical_count=canonical_count,
         exact_source_count=exact_source_count,
         operational_count=operational_count,
         top_title=top_title,
+        _replace_string=replace_string,
     )
     assessment = (
         output.get("assessment")
@@ -202,6 +244,7 @@ def reconcile_finding_count_truth(
         exact_source_count=exact_source_count,
         operational_count=operational_count,
         top_title=top_title,
+        _replace_string=replace_string,
     )
     assessment["decision_grade_finding_count"] = canonical_count
     assessment["exact_source_finding_count"] = exact_source_count

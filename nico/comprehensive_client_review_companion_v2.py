@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import io
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 VERSION = "nico.comprehensive-client-review-companion.v2.2"

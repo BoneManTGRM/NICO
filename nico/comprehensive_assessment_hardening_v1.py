@@ -974,16 +974,26 @@ def _iter_mappings(value: Any, depth: int = 0) -> Iterable[dict[str, Any]]:
                 "stderr",
             }:
                 continue
+            kind = type(child)
+            if (kind is str or kind is int or kind is float
+                    or kind is bool or kind is type(None)):
+                continue
             yield from _iter_mappings(child, depth + 1)
     elif isinstance(value, list):
         for child in value:
+            kind = type(child)
+            if (kind is str or kind is int or kind is float
+                    or kind is bool or kind is type(None)):
+                continue
             yield from _iter_mappings(child, depth + 1)
 
 
 def _contains_score_sync(canonical: Mapping[str, Any]) -> bool:
+    from nico.client_assessment_truth_v3 import _score_sync_read_input
+
     return any(
         item.get("final_report_input_scores_synchronized") is True
-        for item in _iter_mappings(deepcopy(dict(canonical)))
+        for item in _iter_mappings(_score_sync_read_input(canonical))
     )
 
 

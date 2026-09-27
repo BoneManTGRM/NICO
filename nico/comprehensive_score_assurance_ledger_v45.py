@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import wraps
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from collections.abc import Mapping
 from typing import Any, Callable
 
