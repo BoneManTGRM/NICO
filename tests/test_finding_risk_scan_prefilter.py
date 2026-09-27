@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import re
 from copy import deepcopy
 from types import SimpleNamespace
@@ -10,6 +11,11 @@ from nico import client_finding_remediation_register_v1 as register
 
 
 SHA = "a" * 40
+_LEGACY_RISK = re.compile(
+    r"(?P<path>[A-Za-z0-9_@./+\-]+\.(?:py|js|jsx|ts|tsx|java|go|rb|rs|cs|php|swift|kt|kts))"
+    r":(?P<line>\d+)(?::(?P<column>\d+))?:\s*(?P<rule>[A-Za-z0-9_.\-]+)\s*[—-]\s*(?P<message>.+)",
+    re.IGNORECASE,
+)
 _LEGACY_HOTSPOT = re.compile(
     r"(?:Actionable\s+hotspot\s+)?(?P<path>[A-Za-z0-9_@./+\-]+\.(?:py|js|jsx|ts|tsx))"
     r":(?P<line>\d+)\s*[·-]\s*(?P<symbol>[^·]+?)\s*[·-]\s*complexity\s+(?P<complexity>\d+)",
@@ -18,13 +24,20 @@ _LEGACY_HOTSPOT = re.compile(
 
 
 def _matches(pattern, raw):
-    return [(match.span(), match.groups(), match.groupdict()) for match in pattern.finditer(raw)]
+    return _match_values(pattern.finditer(raw))
+
+
+def _match_values(matches):
+    return [(match.span(), match.groups(), match.groupdict(), match.regs) for match in matches]
 
 
 def _legacy_records(canonical, monkeypatch):
-    # The proposed optimization changes only this required-literal guard. Making
-    # the guard unconditional runs the existing parser/traversal as before.
+    # Independent copies of both original expressions drive the same record
+    # assembly, with candidate scanning and the literal guard disabled.
     with monkeypatch.context() as patch:
+        patch.setattr(register, "_RISK_LINE", _LEGACY_RISK)
+        patch.setattr(register, "_HOTSPOT_LINE", _LEGACY_HOTSPOT)
+        patch.setattr(register, "_line_matches", lambda raw, pattern, starts: pattern.finditer(raw))
         patch.setattr(register, "_HOTSPOT_REQUIRED", SimpleNamespace(search=lambda raw: True))
         return register._risk_string_records(canonical, SHA)
 
@@ -60,7 +73,7 @@ def _assert_record_parity(canonical, monkeypatch):
 def test_prefilter_preserves_exact_hotspot_spans_and_groups(raw):
     assert register._HOTSPOT_LINE.pattern == _LEGACY_HOTSPOT.pattern
     assert register._HOTSPOT_LINE.flags == _LEGACY_HOTSPOT.flags
-    guarded = _matches(register._HOTSPOT_LINE, raw) if register._HOTSPOT_REQUIRED.search(raw) else []
+    guarded = _match_values(register._line_matches(raw, register._HOTSPOT_LINE, register._HOTSPOT_LINE_START)) if register._HOTSPOT_REQUIRED.search(raw) else []
     assert guarded == _matches(_LEGACY_HOTSPOT, raw)
 
 
@@ -153,21 +166,15 @@ def test_skip_keys_and_depth_seven_eight_are_unchanged(monkeypatch):
 
 
 def test_absent_literal_skips_hotspot_matcher_but_keeps_risk_matcher(monkeypatch):
-    risk_pattern = register._RISK_LINE
-    hotspot_pattern = register._HOTSPOT_LINE
+    original = register._line_matches
     risk_calls = []
     hotspot_calls = []
 
-    def risk_matches(raw):
-        risk_calls.append(raw)
-        return risk_pattern.finditer(raw)
+    def matches(raw, pattern, starts):
+        (risk_calls if pattern is register._RISK_LINE else hotspot_calls).append(raw)
+        return original(raw, pattern, starts)
 
-    def hotspot_matches(raw):
-        hotspot_calls.append(raw)
-        return hotspot_pattern.finditer(raw)
-
-    monkeypatch.setattr(register, "_RISK_LINE", SimpleNamespace(finditer=risk_matches))
-    monkeypatch.setattr(register, "_HOTSPOT_LINE", SimpleNamespace(finditer=hotspot_matches))
+    monkeypatch.setattr(register, "_line_matches", matches)
     values = ["a" * 128, "src/risk.py:4: python_eval_exec — Retain this finding."]
     actual = register._risk_string_records({"evidence": values}, SHA)
     assert risk_calls == values
@@ -175,15 +182,76 @@ def test_absent_literal_skips_hotspot_matcher_but_keeps_risk_matcher(monkeypatch
     assert [row["path"] for row in actual] == ["src/risk.py"]
 
 
-def test_literal_presence_runs_original_hotspot_matcher_even_without_valid_match(monkeypatch):
-    original = register._HOTSPOT_LINE
+def test_literal_presence_runs_hotspot_scanner_even_without_valid_match(monkeypatch):
+    original = register._line_matches
     calls = []
 
-    def matches(raw):
-        calls.append(raw)
-        return original.finditer(raw)
+    def matches(raw, pattern, starts):
+        if pattern is register._HOTSPOT_LINE:
+            calls.append(raw)
+        return original(raw, pattern, starts)
 
-    monkeypatch.setattr(register, "_HOTSPOT_LINE", SimpleNamespace(finditer=matches))
+    monkeypatch.setattr(register, "_line_matches", matches)
     raw = "A retained complexity explanation without a valid source anchor."
     assert register._risk_string_records({"evidence": raw}, SHA) == []
     assert calls == [raw]
+
+
+@pytest.mark.parametrize("raw", [
+    "xActionable hotspot src/first.py:1 · first · complexity 30",
+    "Actionable hotspotActionable hotspot src/first.py:1 · first · complexity 30",
+    "src/first.py:1 · first · complexity 30next.py:2 · next · complexity 31",
+    "src/first.py:1 · first · complexity 30xActionable hotspot next.py:2 · next · complexity 31",
+    "src/first.py:1 - src/second.py:2 - symbol - complexity 30",
+    "src/first.py:1 · first · complexity 30.py:2 · empty_stem · complexity 31",
+    "src/first.py:1 · first · complexity 30x.py:2 · second · complexity 31",
+    "!İıſK.py:١٢:٣: python_eval_exec — first\n!Kİıſ.tſ:٤ · line\none · COMPLEXİTY ٣٧",
+    "src/example.KT:2:3: some_rule - line one\nline two\nsrc/example.kts:4: rule- suffix",
+    "bad.py:no · symbol · complexity 32\nvalid.py:2 · valid · complexity 33",
+    "a" * 6000 + " complexity elsewhere\nvalid.py:3: rule — Retained risk.\n"
+    "valid.py:4 · symbol · complexity 30next.py:5 · next · complexity 31",
+    "a" * 6000 + ".py:invalid · symbol · complexity 20",
+])
+def test_candidate_scan_preserves_original_match_and_group_spans(raw):
+    for original, pattern, starts in [
+        (_LEGACY_RISK, register._RISK_LINE, register._RISK_LINE_START),
+        (_LEGACY_HOTSPOT, register._HOTSPOT_LINE, register._HOTSPOT_LINE_START),
+    ]:
+        assert pattern.pattern == original.pattern
+        assert pattern.flags == original.flags
+        assert _match_values(register._line_matches(raw, pattern, starts)) == _matches(original, raw)
+
+
+def test_failed_long_path_run_does_not_retry_each_character():
+    raw = "a" * 30000 + " complexity elsewhere\nvalid.py:3 · symbol · complexity 30"
+    for pattern, starts in [
+        (register._RISK_LINE, register._RISK_LINE_START),
+        (register._HOTSPOT_LINE, register._HOTSPOT_LINE_START),
+    ]:
+        calls = []
+
+        def match(value, position):
+            calls.append(position)
+            return pattern.match(value, position)
+
+        list(register._line_matches(raw, SimpleNamespace(match=match), starts))
+        assert len(calls) < 10
+        assert not any(0 < position < 30000 for position in calls)
+
+
+def test_seeded_mixed_text_scan_parity_against_independent_original_regexes():
+    rng = random.Random(9387)
+    fragments = [
+        "", "x", "a" * 120, ".py", "Actionable", "Actionable hotspot ",
+        "!", " ", "\n", "\t", "\u2003", "·", "-", "—", "complexity 30", "٣٠",
+        "src/a.py:1 · first · complexity 30", "src/b.tsx:2 - second - COMPLEXıTY 31",
+        "ſrc/Kİı.py:١:٢: r_İſK — review", "src/c.java:4: rule - security message",
+        "src/no.py:invalid · unsupported · complexity", "src/d.js:4 - a\nb - complexity 32",
+    ]
+    for _ in range(1500):
+        raw = "".join(rng.choices(fragments, k=rng.randrange(1, 10)))
+        for original, pattern, starts in [
+            (_LEGACY_RISK, register._RISK_LINE, register._RISK_LINE_START),
+            (_LEGACY_HOTSPOT, register._HOTSPOT_LINE, register._HOTSPOT_LINE_START),
+        ]:
+            assert _match_values(register._line_matches(raw, pattern, starts)) == _matches(original, raw), raw

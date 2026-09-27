@@ -1,5 +1,9 @@
 # Retained diagnostic failure and bounded repair
 
+The subsequent hosted deadline failure and measured follow-up repair are recorded
+in [performance-sept27.md](performance-sept27.md). Earlier evidence below is
+retained unchanged and is not relabelled as hosted acceptance.
+
 The original fresh diagnostic, run 36290136900, failed on 2026-09-27 at
 04:40:56 UTC. Neither language produced a final accepted PDF. This is separate
 from the unrecoverable historical production assessment and from the completed

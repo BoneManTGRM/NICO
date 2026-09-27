@@ -27,6 +27,20 @@ _HOTSPOT_LINE = re.compile(
 # Every hotspot match requires this same case-insensitive literal. Avoid the
 # unanchored path pattern's quadratic no-match scan on unrelated long evidence.
 _HOTSPOT_REQUIRED = re.compile("complexity", re.IGNORECASE)
+# Once a path-only start fails, retrying each suffix of its maximal path-character
+# run cannot succeed: the extension, colon, and remaining fields are identical.
+# Consider only later run boundaries, using the parser's same Unicode flags. The
+# optional hotspot prefix is also eligible inside a run ("xActionable ...").
+_RISK_LINE_START = re.compile(
+    r"(?<![A-Za-z0-9_@./+\-])[A-Za-z0-9_@./+\-]+"
+    r"\.(?:py|js|jsx|ts|tsx|java|go|rb|rs|cs|php|swift|kt|kts):",
+    re.IGNORECASE,
+)
+_HOTSPOT_LINE_START = re.compile(
+    r"Actionable\s+hotspot\s+|(?<![A-Za-z0-9_@./+\-])"
+    r"[A-Za-z0-9_@./+\-]+\.(?:py|js|jsx|ts|tsx):",
+    re.IGNORECASE,
+)
 _SECRET_PATTERNS = (
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{12,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{12,}"),
@@ -450,6 +464,24 @@ def _complexity_records(canonical: Mapping[str, Any], commit_sha: str) -> list[d
     return output
 
 
+def _line_matches(raw: str, pattern: re.Pattern[str], starts: re.Pattern[str]) -> Iterable[re.Match[str]]:
+    """Use the original parser without retrying failed path suffixes."""
+    position = 0
+    while position < len(raw):
+        match = pattern.match(raw, position)
+        if match is not None:
+            yield match
+            # A hotspot can end inside a path-character run: "complexity
+            # 30next.py:2 ...". Try this exact position before boundary search
+            # so non-overlapping finditer behavior is preserved.
+            position = match.end()
+        else:
+            candidate = starts.search(raw, position + 1)
+            if candidate is None:
+                return
+            position = candidate.start()
+
+
 def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     # Sample prose is a legacy fallback, not authority to promote a retained
@@ -469,7 +501,7 @@ def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[
     }
     observation_lines = {anchor[:3] for anchor in observation_anchors}
     for raw in _iter_strings(canonical):
-        for match in _RISK_LINE.finditer(raw):
+        for match in _line_matches(raw, _RISK_LINE, _RISK_LINE_START):
             path = match.group("path").replace("\\", "/")
             if _non_production(path):
                 continue
@@ -499,7 +531,7 @@ def _risk_string_records(canonical: Mapping[str, Any], commit_sha: str) -> list[
                 "exact_commit_match": True,
             }
             output.append(_canonical_record(base, commit_sha))
-        for match in (_HOTSPOT_LINE.finditer(raw) if _HOTSPOT_REQUIRED.search(raw) else ()):
+        for match in (_line_matches(raw, _HOTSPOT_LINE, _HOTSPOT_LINE_START) if _HOTSPOT_REQUIRED.search(raw) else ()):
             path = match.group("path").replace("\\", "/")
             if _non_production(path):
                 continue

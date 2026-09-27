@@ -342,6 +342,22 @@ def apply_four_phase_pdf(
     writer.append(reader, import_outline=True)
     if marker.casefold() not in existing_keys:
         parent = writer.add_outline_item(marker, target_index)
+        # Page content is stable after the overlay. Extract only pages actually
+        # reached by the original left-to-right search, once for all candidates
+        # and phases. Keep its first-match order, fallback and TOC exclusion.
+        search_pages: dict[int, str | None] = {}
+
+        def searchable_text(index: int, page: Any) -> str | None:
+            if index not in search_pages:
+                raw = page.extract_text() or ""
+                lines = [_text(line, 240) for line in str(raw).splitlines()
+                         if _text(line, 240)]
+                search_pages[index] = (
+                    None if any(line in {"Table of Contents", "Índice", "Tabla de contenido"}
+                                for line in lines[:1])
+                    else _text(raw, 30_000).casefold()
+                )
+            return search_pages[index]
         for phase, (candidates, fallback) in zip(
             program.get("phases") or [],
             _phase_bookmark_targets(len(reader.pages)),
@@ -351,15 +367,8 @@ def apply_four_phase_pdf(
                     index
                     for index, page in enumerate(reader.pages)
                     if index != target_index
-                    and not any(
-                        line in {"Table of Contents", "Índice", "Tabla de contenido"}
-                        for line in _page_lines(page)[:1]
-                    )
-                    and any(
-                        value.casefold()
-                        in _text(page.extract_text(), 30_000).casefold()
-                        for value in candidates
-                    )
+                    and (text := searchable_text(index, page)) is not None
+                    and any(value.casefold() in text for value in candidates)
                 ),
                 fallback,
             )

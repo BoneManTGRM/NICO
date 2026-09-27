@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
 

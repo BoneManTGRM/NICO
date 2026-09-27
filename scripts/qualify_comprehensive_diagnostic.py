@@ -161,6 +161,79 @@ def final_package(record, identity):
     return package, raw
 
 
+def advance_diagnostic_run(service, run_id, record):
+    """Observe a live publication without repeatedly decoding its evidence tree.
+
+    The diagnostic calls this only after validating its dedicated local database.
+    Its last integrity-validated record is suitable for progress while the canonical
+    row and live lease remain unchanged. The coordinator still owns deadlines,
+    cancellation, recovery and publication. Every transition returns to the original
+    bounded resume path, which refreshes canonical truth before acceptance.
+    """
+    from nico import comprehensive_final_report_background_v1 as background
+
+    lease_id = background._marker_lease(record)
+    identity = record.get("identity") or {}
+    if (lease_id and not record.get("terminal")
+            and record.get("current_stage") == FINAL_STAGE
+            and identity.get("run_id") == run_id):
+        try:
+            store = service._store
+            p = store.placeholder
+            # Read metadata and the exact lease together. A still-running local
+            # worker cannot hide a canonical cancellation or superseding revision.
+            with store._connection() as connection:
+                cursor = connection.cursor()
+                cursor.execute(f"""
+                    SELECT runs.revision, runs.integrity_sha256, runs.status,
+                           runs.terminal, runs.customer_id, runs.project_id,
+                           runs.repository, runs.commit_sha, runs.evidence_ledger_id,
+                           jobs.status, jobs.started_epoch, jobs.heartbeat_epoch
+                    FROM nico_comprehensive_runs AS runs
+                    INNER JOIN nico_comprehensive_final_report_jobs AS jobs
+                        ON jobs.run_id = runs.run_id
+                    WHERE runs.run_id = {p} AND jobs.lease_id = {p}
+                    """, (run_id, lease_id))
+                row = cursor.fetchone()
+            expected = (
+                record.get("revision"), record.get("integrity_sha256"),
+                record.get("status"), record.get("terminal"),
+                *(identity.get(key) for key in (
+                    "customer_id", "project_id", "repository", "commit_sha", "evidence_ledger_id",
+                )),
+            )
+            if row is not None and tuple(row[:9]) == expected:
+                job = {"status": row[9], "started_epoch": row[10], "heartbeat_epoch": row[11]}
+                now = time.time()
+                deadline = background._job_deadline_state(job, now_epoch=now)
+                if (deadline["active"] and not deadline["overdue"]
+                        and float(job["started_epoch"]) > 0
+                        and background._job_fresh(job, now_epoch=now)
+                        and background._local_task_active(lease_id)):
+                    return record
+        except Exception:
+            # Observation is optional. Storage errors and malformed state must use
+            # the established canonical read/recovery path rather than conceal failure.
+            pass
+    return service.resume(run_id, max_stages=1)
+
+
+def poll_diagnostic_run(service, run_id, record, *, started, language):
+    last_progress = None
+    while not record.get("terminal") and record.get("status") not in {"blocked", "failed", "error"}:
+        if time.monotonic() - started > 5400:
+            raise TimeoutError("diagnostic_whole_run_deadline")
+        record = advance_diagnostic_run(service, run_id, record)
+        progress = (record.get("current_stage"), record.get("status"), len(record.get("completed_stages") or []))
+        if progress != last_progress:
+            print(json.dumps({"language": language, "stage": progress[0], "status": progress[1],
+                              "completed_stages": progress[2]}), flush=True)
+            last_progress = progress
+        if not record.get("terminal"):
+            time.sleep(2)
+    return record
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", required=True)
@@ -211,20 +284,9 @@ def main():
         language = identity["report_language"]
         service.start(**identity, authorized=True, assessment_depth="strategic")
         started = time.monotonic()
-        last_progress = None
         record = service.load_read_only(run_id)
         try:
-            while not record.get("terminal") and record.get("status") not in {"blocked", "failed", "error"}:
-                if time.monotonic() - started > 5400:
-                    raise TimeoutError("diagnostic_whole_run_deadline")
-                record = service.resume(run_id, max_stages=1)
-                progress = (record.get("current_stage"), record.get("status"), len(record.get("completed_stages") or []))
-                if progress != last_progress:
-                    print(json.dumps({"language": language, "stage": progress[0], "status": progress[1],
-                                      "completed_stages": progress[2]}), flush=True)
-                    last_progress = progress
-                if not record.get("terminal"):
-                    time.sleep(2)
+            record = poll_diagnostic_run(service, run_id, record, started=started, language=language)
             retain(output / (language + "-run.json"), encoded(record))
             package, pdf = final_package(record, identity)
             capture = accepted_capture(output, identity, producer, digest(pdf))

@@ -1,10 +1,16 @@
 import base64
 import json
+import sqlite3
+import threading
+import time
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 from scripts.qualify_comprehensive_diagnostic import (
-    FINAL_STAGE, accepted_capture, digest, encoded, final_package, isolated_database, observe_worker, retain,
+    FINAL_STAGE, accepted_capture, advance_diagnostic_run, digest, encoded, final_package,
+    isolated_database, observe_worker, poll_diagnostic_run, retain,
 )
 
 
@@ -161,3 +167,176 @@ def test_missing_capture_or_substituted_retained_bytes_cannot_pass(tmp_path):
     path.write_bytes(b'{}')
     with pytest.raises(ValueError, match="artifact_mismatch"):
         accepted_capture(tmp_path, bound_identity, producer, digest(pdf))
+
+
+@pytest.fixture
+def active_publication(tmp_path, monkeypatch):
+    from nico import comprehensive_final_report_background_v1 as background
+    from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+    from nico.comprehensive_run_record import apply_comprehensive_stage_result, create_comprehensive_run_record
+    from nico.comprehensive_run_store import ComprehensiveRunStore
+
+    store = ComprehensiveRunStore(lambda: sqlite3.connect(tmp_path / "observation.sqlite"))
+    store.ensure_schema()
+    identity = {key: value for key, value in context().items() if key != "prior_stage_results"}
+    record = create_comprehensive_run_record(**identity, authorized=True)
+    for stage in COMPREHENSIVE_STAGES:
+        if stage == FINAL_STAGE:
+            break
+        record = apply_comprehensive_stage_result(record, stage_id=stage, result={"status": "complete"})
+    lease = "frpub_diagnostic_observation"
+    now = time.time()
+    record = apply_comprehensive_stage_result(record, stage_id=FINAL_STAGE,
+        result=background._running_result(context(), lease_id=lease, started_epoch=now))
+    store.create(record)
+    store.create_final_report_job(lease_id=lease, run_id="new-run", status="rendering",
+        started_epoch=now, heartbeat_epoch=now, updated_at=record["updated_at"])
+
+    stop, release = threading.Event(), threading.Event()
+    worker = threading.Thread(target=release.wait, daemon=True)
+    worker.start()
+    state = {"stop": stop, "invoke_thread": worker}
+    monkeypatch.setitem(background._LOCAL_TASKS, lease, state)
+    service = SimpleNamespace(_store=store, resume=Mock(side_effect=lambda run_id, **kw: store.load(run_id)))
+    yield SimpleNamespace(service=service, store=store, record=record, lease=lease,
+                          stop=stop, release=release, worker=worker)
+    stop.set()
+    release.set()
+    worker.join(timeout=2)
+
+
+@pytest.mark.parametrize("status", ["queued", "rendering", "running"])
+def test_live_publication_observation_avoids_canonical_load_without_stopping_worker(active_publication, monkeypatch, status):
+    case = active_publication
+    case.store.update_final_report_job(case.lease, status=status, heartbeat_epoch=time.time(), updated_at="now")
+    load = Mock(wraps=case.store.load)
+    monkeypatch.setattr(case.store, "load", load)
+    before = encoded(case.record)
+    for _ in range(3):
+        assert advance_diagnostic_run(case.service, "new-run", case.record) is case.record
+    load.assert_not_called()
+    case.service.resume.assert_not_called()
+    assert not case.stop.is_set() and case.worker.is_alive()
+    assert encoded(case.record) == before
+
+
+@pytest.mark.parametrize("status", ["complete", "blocked", "failed", "cancelled", "superseded", "expired"])
+def test_every_terminal_lease_refreshes_canonical_record_once(active_publication, status):
+    case = active_publication
+    case.store.update_final_report_job(case.lease, status=status, heartbeat_epoch=time.time(), updated_at="now")
+    refreshed = advance_diagnostic_run(case.service, "new-run", case.record)
+    assert refreshed == case.record and refreshed is not case.record
+    case.service.resume.assert_called_once_with("new-run", max_stages=1)
+
+
+@pytest.mark.parametrize("column,value", [
+    ("revision", 999), ("integrity_sha256", "changed"), ("status", "blocked"),
+    ("terminal", 1), ("customer_id", "other"), ("project_id", "other"),
+    ("repository", "other/repo"), ("commit_sha", "b" * 40), ("evidence_ledger_id", "other"),
+])
+def test_canonical_revision_cancellation_or_identity_change_refreshes_despite_live_worker(active_publication, column, value):
+    case = active_publication
+    with case.store._connection() as connection:
+        connection.execute(f"UPDATE nico_comprehensive_runs SET {column} = ? WHERE run_id = ?", (value, "new-run"))
+        connection.commit()
+    advance_diagnostic_run(case.service, "new-run", case.record)
+    case.service.resume.assert_called_once_with("new-run", max_stages=1)
+    assert case.worker.is_alive() and not case.stop.is_set()
+
+
+@pytest.mark.parametrize("change", ["missing", "wrong_run", "stale_heartbeat", "render_deadline", "queue_deadline", "missing_start"])
+def test_missing_stale_or_overdue_lease_uses_existing_recovery_path(active_publication, change):
+    from nico import comprehensive_final_report_background_v1 as background
+
+    case = active_publication
+    now = time.time()
+    with case.store._connection() as connection:
+        if change == "missing":
+            connection.execute("DELETE FROM nico_comprehensive_final_report_jobs WHERE lease_id = ?", (case.lease,))
+        elif change == "wrong_run":
+            connection.execute("UPDATE nico_comprehensive_final_report_jobs SET run_id = 'other' WHERE lease_id = ?", (case.lease,))
+        elif change == "stale_heartbeat":
+            connection.execute("UPDATE nico_comprehensive_final_report_jobs SET heartbeat_epoch = ? WHERE lease_id = ?",
+                (now - background._orphan_seconds() - 1, case.lease))
+        else:
+            status = "queued" if change == "queue_deadline" else "rendering"
+            budget = background._max_queue_seconds() if status == "queued" else background._max_publication_seconds()
+            started = 0 if change == "missing_start" else now - budget - 1
+            connection.execute("UPDATE nico_comprehensive_final_report_jobs SET status = ?, started_epoch = ? WHERE lease_id = ?",
+                (status, started, case.lease))
+        connection.commit()
+    advance_diagnostic_run(case.service, "new-run", case.record)
+    case.service.resume.assert_called_once_with("new-run", max_stages=1)
+
+
+@pytest.mark.parametrize("change", ["stopped", "exited", "orphaned"])
+def test_cancelled_or_missing_local_worker_returns_to_bounded_resume(active_publication, change):
+    from nico import comprehensive_final_report_background_v1 as background
+
+    case = active_publication
+    if change == "stopped":
+        case.stop.set()
+    elif change == "exited":
+        case.release.set()
+        case.worker.join(timeout=2)
+    else:
+        background._LOCAL_TASKS.pop(case.lease)
+    advance_diagnostic_run(case.service, "new-run", case.record)
+    case.service.resume.assert_called_once_with("new-run", max_stages=1)
+
+
+def test_observation_error_falls_back_and_does_not_hide_canonical_failure(active_publication, monkeypatch):
+    case = active_publication
+    monkeypatch.setattr(case.store, "_connection", Mock(side_effect=OSError("observation failed")))
+    case.service.resume.side_effect = RuntimeError("canonical read failed")
+    with pytest.raises(RuntimeError, match="canonical read failed"):
+        advance_diagnostic_run(case.service, "new-run", case.record)
+    case.service.resume.assert_called_once_with("new-run", max_stages=1)
+
+
+def test_completion_acceptance_uses_refreshed_canonical_result(active_publication):
+    case = active_publication
+    completed, identity, pdf = package_record()
+    case.service.resume.side_effect = None
+    case.service.resume.return_value = completed
+    case.store.update_final_report_job(case.lease, status="complete", heartbeat_epoch=time.time(), updated_at="now")
+    refreshed = advance_diagnostic_run(case.service, "new-run", case.record)
+    assert refreshed is completed
+    assert final_package(refreshed, identity)[1] == pdf
+    with pytest.raises(ValueError, match="not_review_ready"):
+        final_package(case.record, identity)
+    case.service.resume.assert_called_once_with("new-run", max_stages=1)
+
+
+def test_polling_keeps_two_second_cadence_then_returns_fresh_completion(active_publication, monkeypatch):
+    case = active_publication
+    completed, identity, pdf = package_record()
+    sleeps = []
+    def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            case.store.update_final_report_job(case.lease, status="complete", heartbeat_epoch=time.time(), updated_at="now")
+            case.service.resume.side_effect = None
+            case.service.resume.return_value = completed
+    monkeypatch.setattr("scripts.qualify_comprehensive_diagnostic.time.sleep", sleep)
+    result = poll_diagnostic_run(case.service, "new-run", case.record, started=time.monotonic(), language="es-MX")
+    assert sleeps == [2, 2]
+    assert result is completed
+    assert final_package(result, identity)[1] == pdf
+    case.service.resume.assert_called_once_with("new-run", max_stages=1)
+
+
+def test_whole_run_deadline_still_expires_while_only_observing_live_worker(active_publication, monkeypatch):
+    case = active_publication
+    clock = [5399.0]
+    sleeps = []
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+    monkeypatch.setattr("scripts.qualify_comprehensive_diagnostic.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("scripts.qualify_comprehensive_diagnostic.time.sleep", sleep)
+    with pytest.raises(TimeoutError, match="diagnostic_whole_run_deadline"):
+        poll_diagnostic_run(case.service, "new-run", case.record, started=0.0, language="es-MX")
+    assert sleeps == [2]
+    assert not case.stop.is_set() and case.worker.is_alive()
+    case.service.resume.assert_not_called()

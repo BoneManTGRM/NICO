@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from copy import deepcopy
-from typing import Any, Iterable, Mapping
+from nico.report_json_copy import deepcopy
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from nico.v2_assessment_pipeline import canonicalize_findings
 
