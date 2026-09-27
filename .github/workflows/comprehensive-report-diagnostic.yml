@@ -82,6 +82,8 @@ jobs:
           tests/test_report_pdf_text_integration.py
           tests/test_score_sync_readonly_projection.py
           tests/test_prepared_render_evidence_retention.py
+          tests/test_source_table_export_binding.py
+          tests/test_comprehensive_source_table_presentation.py
       - name: Run fresh NICO assessments and retain exact renderer inputs
         env:
           GITHUB_TOKEN: ${{ github.token }}

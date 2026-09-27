@@ -166,3 +166,86 @@ English/es-MX final acceptance and hosted PostgreSQL persistence remain unproven
 No further full replay or hosted diagnostic is justified merely to rediscover
 this deterministic page-budget conflict. C++ collection acceptance is unchanged.
 The exact hashes and local replay limits are in `local-replay-sept27.json`.
+
+## Authorized concise source-table presentation
+
+On September 27 the owner accepted the proposed concise PDF with complete,
+hash-bound source-table exports. This supersedes the presentation decision above;
+it does not change the 60-page PDF boundary, 900-second renderer deadline, source
+population, canonical rows, scanner findings, human approval or delivery rules.
+
+Original structured source tables above 48 rows now render as a title, exact row
+count, SHA256 and visible `NICO-TABLE-<sha256>-<row_count>` reference in the PDF.
+The digest covers the exact title, columns and ordered rows using UTF-8 JSON with
+sorted keys, compact separators, no ASCII escaping and no non-finite numbers.
+Small source tables and independently generated coverage, provenance and
+limitation tables remain fully printed. Markdown, HTML and canonical JSON keep
+the complete source tables. The existing retained-edition evidence-package route
+provides the exact manifest-bound canonical JSON; no report approval is performed.
+
+Before preparation, the renderer captures stage-bound commitments for every
+structured source-table instance, including duplicates. After finalization it
+checks both canonical surfaces against those commitments and verifies the exact
+canonical export and detached-manifest hashes and byte sizes. Every large-table
+digest/count token must appear in the final PDF. Output-only recomputed hashes
+cannot legitimize changed or omitted rows. Small legacy packages without exports
+retain their prior path; present exports must still preserve all original rows.
+
+The retained 2,499-row component and 21,802-row interaction tables produce two-page
+source sections in each language, with unchanged canonical evidence. This is a
+section-level control, not full report acceptance. A generated 61-row unavailable
+source-path table remains fully printed. The existing source-profile and layout
+selection passed 16 tests. Independent preservation review found a small-table
+export omission gap; it was repaired, and all 34 binding contracts then passed.
+Exact full-input replays and hosted PostgreSQL/final-report acceptance remain
+pending until their terminal evidence is recorded.
+
+## Exact English replay completed
+
+The exact retained English input now returned complete in 788.932 seconds,
+including result serialization, within the unchanged 900-second execution budget.
+The final PDF is 51 pages, 2,050,003 bytes, SHA256
+`17c716002d06ba252acd0a40cc5a9a023d6230278d2a668b2805646c2b00cd72`.
+The complete result is 350,344,888 bytes, SHA256
+`c0e01db09f544996073555f77515d06e14206d06f907476ca582982f338a6933`.
+Both canonical surfaces retain all five structured table instances, including
+all 2,499 component rows and 21,802 interaction rows. Canonical JSON and detached
+manifest hashes/byte sizes, exact final PDF references and pending-approval /
+blocked-delivery flags were checked independently of the rendering return code.
+All 51 pages were visually screened; the source-summary and coverage continuation
+pages were inspected at full resolution. No clipped source summaries or missing
+primary/roadmap tail was observed. This is local replay evidence, not hosted
+PostgreSQL acceptance or report approval. Spanish and final hosted evidence remain
+pending. Exact metadata are retained in `concise-replay-sept27.json`.
+
+## Exact Spanish replay and combined candidate completed
+
+The exact retained es-MX input returned complete in 823.749 seconds including
+result serialization, within the unchanged 900-second budget. Its final PDF has
+52 pages, 2,024,818 bytes, SHA256
+`2d30998a06f30c488f39050e54d16c457c93410eb87efff0b7a77fcef0f602e9`.
+The complete result has 350,735,926 bytes, SHA256
+`015e41b03345503fe2655f3b4abca05ea076c8b29a200fa97fd9b0bb7f7f00b6`.
+All five original structured source-table instances, including all 2,499 component
+rows and 21,802 interaction rows, match the pre-finalization commitments and exact
+canonical export. The detached manifest, final PDF hash and source-summary tokens
+were independently checked. All 52 pages were visually screened, with pages18–19
+inspected at full resolution. The missing ESLint evidence is explicitly translated
+and retained; no clipping or missing primary/roadmap tail was observed. Human
+approval remains pending and client delivery blocked in both languages.
+
+The source candidate `cb1482e025e36f1bac2d91cfaf8865c6c73c6a33` merges cleanly
+with qualified C++ head43aa into tree
+`99ede2962d4657c6b09e7db28c8f5abefb36a8b2`. The actual combined worktree passed
+313 distinct Python checks, no failures/errors/skips, in43.68 seconds. This covers
+the diagnostic retention/safety workflow selection and canonical rebuild, retained
+exports, final-review PDF availability, source-profile and layout regressions.
+Both complete replay outputs, exact inputs' identities, verification scripts, logs
+and rendered PDFs are durably retained; hashes are in `concise-replay-sept27.json`.
+
+This closes local exact-input report acceptance only. A fresh hosted diagnostic
+using the final published source must still prove genuine source acquisition,
+PostgreSQL persistence and final English/es-MX PDFs. Current-head hosted CI, the
+production deployment holds and final merge checks remain pending. No historical
+failed assessment was recovered or approved, and no production qualification or
+client delivery is implied.

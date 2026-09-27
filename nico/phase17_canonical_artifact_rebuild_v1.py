@@ -604,11 +604,16 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     """
 
     from nico import client_report_completion_v2 as completion
+    from nico.source_table_export_binding import (
+        capture_source_table_evidence,
+        validate_source_table_evidence,
+    )
     from nico.comprehensive_spanish_final_report_runtime_cache_v94 import (
         release_comprehensive_spanish_render_input_cache_v94,
     )
 
     try:
+        source_tables = capture_source_table_evidence(package.get("json") or {})
         prepared = _prepare_client_artifact_package(package)
         rendered = rebuild_single_pass_premium_artifacts(prepared)
 
@@ -641,6 +646,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             finalized["canonical_truth_sha256"] = canonical_sha256(
                 final_canonical
             )
+        validate_source_table_evidence(source_tables, finalized)
         return finalized
     finally:
         # Render-input cache entries retain the entire canonical tree and its localized
