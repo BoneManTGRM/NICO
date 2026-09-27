@@ -1,0 +1,103 @@
+{
+  "schema": "nico.native-data-revalidation.v2",
+  "run_id": 36272142582,
+  "collection_decision": {
+    "collection_complete": false,
+    "error": "worker_runtime_collection_incomplete"
+  },
+  "baseline": {
+    "required": 377,
+    "executed": 377,
+    "passed": 377,
+    "skipped": 0
+  },
+  "archive_member_sha256": {
+    "cpp-baseline-qualification/artifacts/project-compiler-evidence-97ea54fae209d81eb50067357de6fafc9e1bc7415627d8407f7bee3d2b72c453.json": "97ea54fae209d81eb50067357de6fafc9e1bc7415627d8407f7bee3d2b72c453",
+    "cpp-baseline-qualification/artifacts/project-generated-context-0e208e5f8363e0ec6fcaffd58406a1efc41d7b2f2312075c943fcaadda497109.json": "0e208e5f8363e0ec6fcaffd58406a1efc41d7b2f2312075c943fcaadda497109",
+    "cpp-baseline-qualification/artifacts/project-runtime-evidence-67a627261cd6136e8df5d3d45f2d9a63798ad22298d2554722121ff198e3ab79.json": "67a627261cd6136e8df5d3d45f2d9a63798ad22298d2554722121ff198e3ab79",
+    "cpp-baseline-qualification/artifacts/project-static-clang-fallback-46402029ec5f3ee3e2344ed80b953bce82a0eed0a4c19983575914883b1337e3.json": "46402029ec5f3ee3e2344ed80b953bce82a0eed0a4c19983575914883b1337e3",
+    "cpp-baseline-qualification/artifacts/project-static-environment-fd555d3c4b53edcfda7f37b8bcbe0cf1c2f58a0940a16c79dce9cb7bda534399.json": "fd555d3c4b53edcfda7f37b8bcbe0cf1c2f58a0940a16c79dce9cb7bda534399",
+    "cpp-baseline-qualification/artifacts/project-static-evidence-a5e44c3d3db601b41158ffb0530abec0bf78e2a93b5a5802e5a223924a3aee78.json": "a5e44c3d3db601b41158ffb0530abec0bf78e2a93b5a5802e5a223924a3aee78",
+    "cpp-baseline-qualification/receipt.json": "dd2c89b212e2b050921901005d54bae2980fb2f50fb8bfab782df42972483e47",
+    "full-project-image-id.txt": "6b625b3661caf8042d14903a5094f60e2a66d285445b8fb0b40b35e5d12e4b44",
+    "full-project-image.json": "fcf3c4b955539f5d48c837df31162d3b3d36c1ce300d2272c9f7e4b469d4896e",
+    "cpp-runtime-toolchain.json": "a24482a46ab78977609df4ff4c9541e37b9bc9b1c2a27966e01c282fc4675b57",
+    "toolchain/full-project/llvm/receipt.json": "4cde9cb748513ba6067e5eb91eea865ae1273b5450230bc27f55ea208431ce69",
+    "toolchain/full-project/project-dependencies/receipt.json": "01b6b6c58d3bfdc55fedf3d8891539cc449be8a8b81692c1fc18909fc39aac3b",
+    "toolchain/full-project/project-dependencies/lock.json": "0f1c79b682a748d1b8b00472fc81358a07d3205843b9c75a22626a4d0e7e226d",
+    "toolchain/full-project/capnp-source/receipt.json": "cc11eae4b09e1c92b9bb89478ccdc1bb8ad536f637f47b6c3419716125c80df0",
+    "toolchain/full-project/capnp-source/lock.json": "234208ddffb52d2b75147308ed6829b7d000758ade7c7523b3090aa5a22d605d",
+    "toolchain/full-project/runtime-dependencies/lock.json": "7f9ba2d688817b78ed250be6de875b07dcaebbceb847acd09f221b68243bbce6",
+    "toolchain/full-project/runtime-dependencies/receipt.json": "60e8592c7ae37f7be2876af2ed5d67dcc2cd6faebb0db2f7a4fc258cf01a0ab5",
+    "toolchain/full-project/runtime-dependencies/SHA256SUMS": "e8a7a621b3fdc30680abd0a583b2fcc5731241cefbd7a5b061387754dfef1465"
+  },
+  "original_receipt_sha256": "dd2c89b212e2b050921901005d54bae2980fb2f50fb8bfab782df42972483e47",
+  "original_receipt_unchanged": true,
+  "reconstructed_runtime_summary_identical": true,
+  "validation_module_sha256": {
+    "nico/assessment_cpp_collection.py": "d12434fefb3f53ebaa3ba0fbfcb99b51db495653f7e51fa074968aa28990f881",
+    "nico/assessment_cpp_collection_transport.py": "a30ecddefbb7eabcecaa02cf06dbf4d81224fbf4a68298731604da3a3218cf26",
+    "nico/assessment_cpp_runtime_collection.py": "03291cb33d82429639dd09a9611c1b60c13942678d2b9b832f11e6b7e9b51799",
+    "scripts/qualify_cpp_project_configuration.py": "f2543f7e73d2ecaab82cfe2696be932b290a87bd4f8b4aadd43ed69cfc6ebc24"
+  },
+  "source": {
+    "repository": "bitcoin/bitcoin",
+    "commit_sha": "bb5296576e8f1a9fc11c19d9a25ba02ed4547e24",
+    "tree_sha": "186194c9de7f613d2d323db41cb8ce6bf1e3e549"
+  },
+  "source_file_sha256": "22712c377e971375572841027cd903ab83861ce58dc748b57a611f7394e0397a",
+  "artifact_sha256": "d79dd0536821971869309baf3f521769657f1cf41994544638c8bdce043d0af9",
+  "compiler": {
+    "required_contexts": 475,
+    "checked_contexts": 475
+  },
+  "static": {
+    "required_contexts": 475,
+    "analyzed_contexts": 475,
+    "complete": true
+  },
+  "functional": {
+    "required": 6,
+    "executed": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "sanitizers": [
+    {
+      "kind": "address",
+      "state": "timed_out",
+      "required": 377,
+      "executed": null,
+      "passed": null,
+      "skipped": null
+    }
+  ],
+  "runtime_error": "worker_runtime_artifact_unavailable",
+  "runtime_complete": false,
+  "first_failure_operation": "runtime-address-tests",
+  "failure_operation": "runtime-address-tests",
+  "fuzz": {
+    "state": "not_executed",
+    "target": "connect_block",
+    "required_replay_count": 2,
+    "replay_count": 0,
+    "campaign_completed": false,
+    "campaign_executions": null,
+    "campaign_coverage_signal": null,
+    "campaign_duration_ms": null,
+    "corpus_sha256": [],
+    "required_corpus_sha256": [
+      "b711ed78d4987553c5a9fe7ca143ea017af39215f87e6c222b0796779edb3b44",
+      "e7cf46a078fed4fafd0b5e3aff144802b853f8ae459a4f0c14add3314b7cc3a6"
+    ]
+  },
+  "static_observations": 31873,
+  "observations_are_not_confirmed_vulnerabilities": true,
+  "analyzer_header_coverage_verified": false,
+  "new_native_execution": false,
+  "production_qualified": false,
+  "validation_base_source": "dc2521cb",
+  "producer_source_sha": "a65f40441f597fce702bdbce37332651780fa3c7",
+  "validation_local_change": "CLI artifact root made absolute without resolving symlinks"
+}

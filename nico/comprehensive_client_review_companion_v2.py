@@ -15,6 +15,9 @@ MAX_CLIENT_REVIEW_PAGES = 45
 # presentation boundary as well so Spanish correctness does not depend on bootstrap
 # monkey-patch ordering.
 _SPANISH_DYNAMIC_PHRASES = {
+    "Dates, owners, dependencies, and budget require explicit stakeholder confirmation.": (
+        "Las fechas, los responsables, las dependencias y el presupuesto requieren confirmación explícita de las partes interesadas."
+    ),
     "Review-Required Candidate Register": "Registro de candidatos que requieren revisión",
     "Material confirmado findings": "Hallazgos materiales confirmados",
     "verificada material findings": "hallazgos materiales verificados",

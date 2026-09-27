@@ -1,0 +1,113 @@
+{
+  "schema": "nico.cpp-collection-publication-verification.v1",
+  "parent_commit": "0c8ed5758cfae7ef66eb749655dc2ea9e9fe8c81",
+  "parent_tree": "fc3756a267db477b1ccc06d7797ec6a44af2e1e0",
+  "source": "recovered exact candidate.patch; no changes to recovered code/test/workflow bytes",
+  "python": "3.12.14",
+  "dependencies": "installed repository requirements.txt",
+  "contracts": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "1",
+    "tests": "1320",
+    "time": "107.524",
+    "timestamp": "2026-09-26T18:25:22.388587+08:00",
+    "hostname": "3c7a8239b217"
+  },
+  "passed": 1319,
+  "skipped": 1,
+  "skip_reason": "owned CMake control requires unavailable local toolchain",
+  "exit_code": 0,
+  "selection": [
+    "/workspace/scratch/1d5cd22c72d5/NICO/../nico-venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_cpp_fixture_tree.py",
+    "tests/test_cpp_bounded_fuzz.py",
+    "tests/test_cpp_fuzz_tool_provisioning.py",
+    "tests/test_cpp_generated_context.py",
+    "tests/test_cpp_combined_configuration.py",
+    "tests/test_cpp_compiler_evidence.py",
+    "tests/test_assessment_cpp_full_project.py",
+    "tests/test_cpp_analysis_phase_boundary.py",
+    "tests/test_cpp_native_test_binding.py",
+    "tests/test_cpp_native_test_timing.py",
+    "tests/test_cpp_nested_cmake.py",
+    "tests/test_cpp_project_compiler_options.py",
+    "tests/test_cpp_project_dependencies.py",
+    "tests/test_cpp_dependency_retention.py",
+    "tests/test_assessment_worker_archive.py",
+    "tests/test_assessment_worker_capacity_v1.py",
+    "tests/test_assessment_worker_jobs.py",
+    "tests/test_assessment_worker_consumer.py",
+    "tests/test_assessment_worker_http_boundary.py",
+    "tests/test_cpp_cmake_policy.py",
+    "tests/test_cpp_configure_first_contract.py",
+    "tests/test_cpp_configure_first_execution.py",
+    "tests/test_cpp_configure_first_projection.py",
+    "tests/test_cpp_production_selection.py",
+    "tests/test_cpp_runtime_scope.py",
+    "tests/test_cpp_contention_scheduling.py",
+    "tests/test_cpp_completed_sanitizer_failure_collection.py",
+    "tests/test_cpp_runtime_execution.py",
+    "tests/test_cpp_fuzz_workspace.py",
+    "tests/test_cpp_integration_workflow_schedule.py",
+    "tests/test_cpp_full_project_capture_budget.py",
+    "tests/test_cpp_mixed_language_activation.py",
+    "tests/test_cpp_configuration_qualification.py",
+    "tests/test_cpp_compilation_contexts.py",
+    "tests/test_cpp_project_snapshot.py",
+    "tests/test_cpp_project_compiler.py",
+    "tests/test_cpp_project_compiler_budget.py",
+    "tests/test_cpp_compiler_budget_v2.py",
+    "tests/test_cpp_generated_capacity.py",
+    "tests/test_cpp_project_static.py",
+    "tests/test_cpp_native_preprocessing_truth.py",
+    "tests/test_cpp_static_environment.py",
+    "tests/test_cpp_static_environment_integration.py",
+    "tests/test_cpp_clang_fallback.py",
+    "tests/test_cpp_placement_tool_repair.py",
+    "tests/test_cpp_project_static_stage.py",
+    "tests/test_cpp_project_snapshot_diagnostics.py",
+    "tests/test_cpp_capnp_provisioning.py",
+    "tests/test_cpp_runtime_dependency_provisioning.py",
+    "tests/test_cpp_baseline_execution.py",
+    "--junitxml=../validation/contracts.xml"
+  ],
+  "native_summary_byte_identical": true,
+  "real_failure_classification": [
+    {
+      "kind": "undefined",
+      "exit_code": 8,
+      "timed_out": false,
+      "eligible_for_later_collection": true,
+      "original_complete": false,
+      "original_error": "worker_runtime_sanitizer_failed"
+    }
+  ],
+  "new_native_execution": false,
+  "native_qualification_passed": false,
+  "independent_review_complete": false,
+  "actual_failed_assessment_replayed": false,
+  "preliminary_test_command_error": "An initial focused command named a nonexistent test module and exited 4 without running tests; replaced with exact workflow test list, not a product failure.",
+  "artifacts": {
+    "contracts.xml": {
+      "bytes": 205014,
+      "sha256": "a3d48df62b78bc8c8457458f1043946ffa5787fb9965cd36d1441711856aff58"
+    },
+    "contracts.log": {
+      "bytes": 2872,
+      "sha256": "7a9478b8ae375252d314404c054faff9ae95581b44cf2b57506f515e6427b110"
+    },
+    "native-revalidation.json": {
+      "bytes": 1931,
+      "sha256": "e5209165176a98b40d2c49fa52624583b114115d133333196a1df384d8406e70"
+    },
+    "actual-failure-classification.json": {
+      "bytes": 212,
+      "sha256": "abfbdc0aabcdf0c94dbbd9a419dee1d33a6bc8f2245705b64d26f16c65c22c35"
+    }
+  }
+}

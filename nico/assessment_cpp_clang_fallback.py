@@ -29,6 +29,10 @@ CLANG = '/usr/lib/llvm-17/bin/clang'
 CLANGXX = '/usr/lib/llvm-17/bin/clang++'
 VERSION = '17.0.6'
 LIMITS = {'wall_seconds': 180, 'case_seconds': 45, 'parallel': 4}
+# Explicit v2 admission retains v1 evidence semantics and the parent stage cap.
+EXTENDED_LIMITS = {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 4}
+# v4 is scheduling-only; it does not admit the unpublished v3 timeout extension.
+LOW_CONTENTION_LIMITS = {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 2}
 STREAM_LIMIT = 32 * 1024 * 1024
 REQUEST_LIMIT = 8 * 1024 * 1024
 PLIST_LIMIT = 4 * 1024 * 1024
@@ -79,7 +83,24 @@ def _fallback_plan(context):
             '-fno-color-diagnostics', source, '-o', stem + '.plist'], dropped
 
 
-def clang_fallback_request(primary_request, primary_proof):
+def _request_limits(request):
+    if not isinstance(request, dict) or not isinstance(request.get('schema'), str):
+        raise ValueError('worker_clang_fallback_request_invalid')
+    versions = {'nico.cpp-clang-fallback-request.v1': LIMITS,
+                'nico.cpp-clang-fallback-request.v2': EXTENDED_LIMITS,
+                'nico.cpp-clang-fallback-request.v4': LOW_CONTENTION_LIMITS}
+    expected = versions.get(request.get('schema'))
+    limits = request.get('limits')
+    if (expected is None or not isinstance(limits, dict) or limits != expected
+            or any(type(value) is not int for value in limits.values())):
+        raise ValueError('worker_clang_fallback_request_invalid')
+    return dict(expected)
+
+
+def clang_fallback_request(primary_request, primary_proof, *, extended_budget=False, contention_aware=False):
+    if (type(extended_budget) is not bool or type(contention_aware) is not bool
+            or (contention_aware and not extended_budget)):
+        raise ValueError('worker_clang_fallback_request_invalid')
     if (not isinstance(primary_request, dict)
             or primary_request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2'}
             or not isinstance(primary_proof, dict)
@@ -99,12 +120,15 @@ def clang_fallback_request(primary_request, primary_proof):
             'invocation': argv, 'dropped_arguments': dropped,
             'source_dependencies': dict(row['source_dependencies']),
             'generated_dependencies': dict(row['generated_dependencies'])})
-    result = {'schema': 'nico.cpp-clang-fallback-request.v1', 'tool_version': VERSION,
+    result = {'schema': ('nico.cpp-clang-fallback-request.v4' if contention_aware
+                         else 'nico.cpp-clang-fallback-request.v2' if extended_budget
+                         else 'nico.cpp-clang-fallback-request.v1'), 'tool_version': VERSION,
         'primary_request_sha256': _digest(_canonical(primary_request)),
         'cppcheck_evidence_sha256': primary_proof['native_evidence_sha256'],
         'compiler_evidence_sha256': primary_request['compiler_evidence_sha256'],
         'required_contexts': required, 'primary_analyzed_contexts': primary_proof['analyzed_contexts'],
-        'contexts': contexts, 'limits': dict(LIMITS)}
+        'contexts': contexts, 'limits': dict(LOW_CONTENTION_LIMITS if contention_aware
+                                            else EXTENDED_LIMITS if extended_budget else LIMITS)}
     if 'compiler_environment' in primary_request:
         result['compiler_environment_sha256'] = primary_request['compiler_environment']['native_evidence_sha256']
     if len(_canonical(result)) > REQUEST_LIMIT:
@@ -138,6 +162,7 @@ def _decode_plist(value, digest):
 
 def collect_clang_fallback(request):
     import resource
+    limits = _request_limits(request)
     if os.getuid() != 1001 or os.getgid() != 1001:
         raise ValueError('worker_clang_fallback_identity')
     fields = {'schema','tool_version','primary_request_sha256','cppcheck_evidence_sha256',
@@ -145,8 +170,7 @@ def collect_clang_fallback(request):
     if 'compiler_environment_sha256' in request:
         fields.add('compiler_environment_sha256')
     if (not isinstance(request, dict) or set(request) != fields
-            or request.get('schema') != 'nico.cpp-clang-fallback-request.v1'
-            or request.get('tool_version') != VERSION or request.get('limits') != LIMITS
+            or request.get('tool_version') != VERSION
             or not isinstance(request.get('contexts'), list) or len(request['contexts']) > 20000):
         raise ValueError('worker_clang_fallback_request_invalid')
     parent = Path('/work/analysis'); info = parent.lstat()
@@ -156,7 +180,7 @@ def collect_clang_fallback(request):
     resource.setrlimit(resource.RLIMIT_FSIZE, (PLIST_LIMIT, PLIST_LIMIT))
     environment = {'PATH':'/usr/lib/llvm-17/bin:/usr/local/bin:/usr/bin:/bin','LANG':'C.UTF-8',
         'HOME':str(directory),'TMPDIR':str(directory),'LD_LIBRARY_PATH':'/usr/local/lib64:/usr/local/lib'}
-    start=time.monotonic(); deadline=start+LIMITS['wall_seconds']
+    start=time.monotonic(); deadline=start+limits['wall_seconds']
     version=_run([CLANG,'-dumpversion'],str(directory/'version'),min(deadline,start+5),environment)
     version_ok=(version['exit_code']==0 and not version['timed_out'] and not version['output_truncated']
                 and base64.b64decode(version['output'],validate=True).strip()==VERSION.encode())
@@ -171,7 +195,7 @@ def collect_clang_fallback(request):
             for path,sha in context['source_dependencies'].items(): _verify_input('/work/source',path,sha)
             for path,sha in context['generated_dependencies'].items(): _verify_input('/work/analysis/generated-baseline',path,sha,None,True)
             stem=str(directory/('u'+str(context['index'])))
-            record['execution']=_run(context['invocation'],stem,min(deadline,time.monotonic()+LIMITS['case_seconds']),environment)
+            record['execution']=_run(context['invocation'],stem,min(deadline,time.monotonic()+limits['case_seconds']),environment)
             plist_path=Path(stem+'.plist')
             if plist_path.exists():
                 raw=_regular_bytes(plist_path,PLIST_LIMIT)
@@ -179,9 +203,9 @@ def collect_clang_fallback(request):
         except (ValueError,OSError,KeyError,TypeError) as exc:
             code=str(exc); record['error']=code if re.fullmatch(r'worker_clang_fallback_[a-z_]+',code) else 'worker_clang_fallback_unavailable'
         return record
-    with ThreadPoolExecutor(max_workers=LIMITS['parallel']) as pool:
+    with ThreadPoolExecutor(max_workers=limits['parallel']) as pool:
         records=list(pool.map(one,request['contexts']))
-    result={'schema':'nico.cpp-clang-fallback-evidence.v1','request_sha256':_digest(_canonical(request)),
+    result={'schema':request['schema'].replace('-request.', '-evidence.'),'request_sha256':_digest(_canonical(request)),
             'analyst_uid':os.getuid(),'version':version,'records':records,'duration_ms':int((time.monotonic()-start)*1000)}
     if len(_canonical(result))>STREAM_LIMIT: raise ValueError('worker_clang_fallback_output_limit')
     return result
@@ -201,13 +225,14 @@ def _execution(value, maximum):
 
 def validate_clang_fallback(raw, request, primary_request):
     from nico.assessment_cpp_full_project import _json
+    limits = _request_limits(request)
     if not isinstance(raw,bytes) or not 0<len(raw)<=STREAM_LIMIT: raise ValueError('worker_clang_fallback_output_limit')
     evidence=_json(raw)
     if (not isinstance(evidence,dict) or set(evidence)!={'schema','request_sha256','analyst_uid','version','records','duration_ms'}
-            or evidence['schema']!='nico.cpp-clang-fallback-evidence.v1'
+            or evidence['schema']!=request['schema'].replace('-request.', '-evidence.')
             or evidence['request_sha256']!=_digest(_canonical(request))
             or evidence['analyst_uid']!=1001 or type(evidence['analyst_uid']) is not int
-            or type(evidence['duration_ms']) is not int or not 0<=evidence['duration_ms']<=183000
+            or type(evidence['duration_ms']) is not int or not 0<=evidence['duration_ms']<=(limits['wall_seconds']+3)*1000
             or not isinstance(evidence['records'],list) or len(evidence['records'])!=len(request['contexts'])):
         raise ValueError('worker_clang_fallback_evidence_invalid')
     okay,version=_execution(evidence['version'],8000)
@@ -224,7 +249,7 @@ def validate_clang_fallback(raw, request, primary_request):
         if row['execution'] is None:
             if row['error'] is None or row['plist'] or row['plist_sha256'] is not None: raise ValueError('worker_clang_fallback_missing_execution')
             limitations.append({'context_id':row['context_id'],'rule_id':row['error'],'analyzer':'clang-static-analyzer'}); continue
-        success,_=_execution(row['execution'],48000); duration+=row['execution']['duration_ms']; attempted.append(row['context_id'])
+        success,_=_execution(row['execution'],(limits['case_seconds']+3)*1000); duration+=row['execution']['duration_ms']; attempted.append(row['context_id'])
         if not success or row['error']:
             limitations.append({'context_id':row['context_id'],'rule_id':row['error'] or 'clang_native_execution_incomplete','analyzer':'clang-static-analyzer'}); continue
         if not row['plist'] or row['plist_sha256'] is None:
@@ -253,7 +278,7 @@ def validate_clang_fallback(raw, request, primary_request):
                 'source_sha256':sha,'context_id':row['context_id'],'native_evidence_sha256':native_sha,'analyzer':'clang-static-analyzer'}
             finding['id']='cpp-clang-context-'+_digest(_canonical({k:v for k,v in finding.items() if k!='native_evidence_sha256'})); findings.append(finding)
         if not blocked: analyzed.append(row['context_id'])
-    if duration>evidence['duration_ms']*LIMITS['parallel']+1000: raise ValueError('worker_clang_fallback_duration_invalid')
+    if duration>evidence['duration_ms']*limits['parallel']+1000: raise ValueError('worker_clang_fallback_duration_invalid')
     return {'required_contexts':[c['context_id'] for c in request['contexts']],'attempted_contexts':attempted,
         'analyzed_contexts':analyzed,'complete':len(analyzed)==len(request['contexts']),'findings':findings,
         'limitations':limitations,'native_evidence_sha256':native_sha,'static_analysis_executed':bool(attempted),'tool_version':VERSION}
@@ -289,9 +314,9 @@ def run_clang_fallback():
 
 PROGRAM=('import base64, hashlib, json, os, plistlib, re, stat, subprocess, time, zlib\n'
     'from pathlib import Path\nfrom concurrent.futures import ThreadPoolExecutor\n'
-    +f'CLANG={CLANG!r}\nCLANGXX={CLANGXX!r}\nVERSION={VERSION!r}\nLIMITS={LIMITS!r}\n'
+    +f'CLANG={CLANG!r}\nCLANGXX={CLANGXX!r}\nVERSION={VERSION!r}\nLIMITS={LIMITS!r}\nEXTENDED_LIMITS={EXTENDED_LIMITS!r}\nLOW_CONTENTION_LIMITS={LOW_CONTENTION_LIMITS!r}\n'
     +f'STREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\nPLIST_LIMIT={PLIST_LIMIT}\nSTORED_PLIST_LIMIT={STORED_PLIST_LIMIT}\nGENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
     +f'_DROP_EXACT={_DROP_EXACT!r}\n_DROP_PREFIX={_DROP_PREFIX!r}\n'
     +'\n'.join(inspect.getsource(f) for f in (_canonical,_digest,_stable_bytes,_verify_input,_run,_regular_bytes,
-        _fallback_plan,_encode_plist,collect_clang_fallback,run_clang_fallback))
+        _fallback_plan,_encode_plist,_request_limits,collect_clang_fallback,run_clang_fallback))
     +'\nrun_clang_fallback()\n')

@@ -81,3 +81,21 @@ def test_snapshot_handler_passes_only_internal_selected_contract(monkeypatch):
         'authorized_by':'owner','authorization_scope':'assessment','run_scanners':True,'tools':[]}
     result=handlers._snapshot_scanner_handler(context,outputs)
     assert result['status']=='queued' and seen=={'cpp_contract':selected}
+
+
+def test_runtime_selector_uses_measured_sanitizer_budget_without_expanding_outer_contract():
+    import json
+    from pathlib import Path
+    from nico.assessment_cpp_configure_first_contract import validate_configuration
+    paths=['CMakeLists.txt','src/a.cpp','test/functional/test_runner.py','test/fuzz/test_runner.py',
+           'src/test/fuzz/CMakeLists.txt','src/test/fuzz/connect_block.cpp']
+    result=select_configure_first_contract(repo_step(paths),environ=env(),release_revision=RELEASE)
+    runtime=result['configuration']['runtime_scope']
+    assert runtime['sanitizer_test_seconds']==900
+    assert runtime['sanitizer_test_case_seconds']==300
+    assert runtime['total_seconds']==6000
+    assert result['limits']=={'max_attempts':1,'wall_seconds':9000,'lease_seconds':300}
+    assert runtime['sanitizers']==['address','undefined']
+    assert validate_configuration(result['configuration']) == result['configuration']
+    fixture=json.loads((Path(__file__).parent/'fixtures/cpp/bitcoin-runtime-scope.json').read_text())
+    assert fixture==runtime

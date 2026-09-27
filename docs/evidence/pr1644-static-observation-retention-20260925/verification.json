@@ -1,0 +1,75 @@
+{
+  "scope": "Retain independently reconstructed complete static observations despite required runtime failure; no completion promotion",
+  "base_commit": "3ebda0ae506be282e5ffd3fb8098ebf1452260a9",
+  "base_tree": "dbb92835b130f7aa81341c304c67ddab755312cc",
+  "baseline_blobs": {
+    "nico/assessment_cpp_configure_first_projection.py": "648dffae0c7eb0999f8636ead8431bec9db46aff",
+    "tests/test_cpp_configure_first_projection.py": "837fd4838b4e288ebc90aab55e6f1d2060ab8114"
+  },
+  "files": {
+    "nico/assessment_cpp_configure_first_projection.py": {
+      "bytes": 10715,
+      "git_blob": "2e2c2b6f6ace3ad573d5f0860a728a5567934f11",
+      "sha256": "768f48837f82ea389eb428ce1a4952702a99a65d2020e9321c9637085280f984"
+    },
+    "tests/test_cpp_configure_first_projection.py": {
+      "bytes": 21969,
+      "git_blob": "3dba4f4f8e09678ce5652c27d0c69102e8d0ae0b",
+      "sha256": "6d5caff89eb21ea5a6b3d6096aab7de777160bcf457a626694542bb1ba5ed176"
+    }
+  },
+  "red": {
+    "failed": 3, "passed": 0, "deselected": 9, "exit": 1,
+    "boundary": "Actual receipt producer to canonical projection and existing EN/es-MX report gate; owned synthetic native reconstruction"
+  },
+  "identical_green": {"passed": 3, "deselected": 9, "exit": 0},
+  "additional_tests": 10,
+  "new_cases_total": 13,
+  "affected_tests": {
+    "disjoint_groups": [159, 107], "distinct_cases": 266,
+    "failed": 0, "errors": 0, "skipped": 0, "exit_codes": [0, 0],
+    "counts_overlap_new_cases": true,
+    "commands": [
+      "python -m pytest -q tests/test_cpp_configure_first_projection.py tests/test_cpp_configure_first_execution.py tests/test_cpp_configure_first_contract.py tests/test_cpp_runtime_execution.py tests/test_cpp_runtime_scope.py",
+      "python -m pytest -q tests/test_assessment_worker_jobs.py tests/test_assessment_worker_http_boundary.py tests/test_cpp_production_selection.py tests/test_cpp_clang_fallback.py tests/test_cpp_project_static.py tests/test_production_report_truth_gate_v1.py"
+    ]
+  },
+  "complete_path_differential": {
+    "populations": [0, 1, 2, 17], "outputs_identical": true,
+    "scope": "Owned synthetic complete projection seam; not native execution"
+  },
+  "protected_invariants": [
+    "Raw receipt/artifact validators unchanged",
+    "Failed overall execution retains failed status and false completion/returncode flags",
+    "Findings remain review-required candidates",
+    "Exact context/source/configuration/artifact and observation IDs retained",
+    "Renderer still rejects missing/stale retention and run/revision identity",
+    "Human review required and delivery blocked",
+    "No native, resource, deadline, workflow, score or approval change"
+  ],
+  "local_environment": {"python": "3.13.5", "pytest": "9.0.2", "pypdf": "5.9.0", "pinned_hosted_parity": false},
+  "review": {
+    "scope": "Independent supplied-material source review of projection delta only",
+    "result": "No concrete consequential defect identified in supplied delta",
+    "executed_tests": false, "retrieved_source_or_artifacts": false, "full_capability_review": false,
+    "caveats": [
+      "Reviewer conflated whole execution failure with static failure in prose; static complete is independently reconstructed, runtime failed.",
+      "Reviewer empty-population example is not the actual two-finding regression.",
+      "Author test results and data-retention tests are not independently executed evidence."
+    ]
+  },
+  "actual_native_complete_static_with_failed_runtime_replay": "Pending current run36155314745; no production receipt imported",
+  "hosted_candidate_checks": "pending", "production_acceptance": "unproven",
+  "local_evidence_sha256": {
+    "red.txt": "041799036af78d254eb347ad638c9123e13f3f0fe8d39d848405adc42bb54d17",
+    "red.xml": "ad8748ee7a9371469bc75beb17f99ac9a73f5515eb4cd31ead7c27f3cd2c31a2",
+    "green.txt": "c286d4c7c81bc90fc67be8ac2c4f17480936bf7005cb6d6b006112da1b2b5e4b",
+    "green.xml": "93ff2dac8d5fcc4d5b74a2ce8c5271a24379a00a4f4008ad13a9a68c62d15c46",
+    "affected.txt": "9c39db9a6b49d44a6d1df146a42253b7d3752dacd77811c650a91d4134d864da",
+    "affected.xml": "516a1fd9655f6b3ba9ed5ebb46a35c369f031b23189a6a89ec42bb47162e3432",
+    "downstream.txt": "5ec63110b58d8e1caf25972b0eefc45eb919e8fcbcbc400bcc61a4deb00baa34",
+    "downstream.xml": "34cf1bc78e4fb9ad24fa29f69c2d583f18e64b78d43b4b30a9c53a6b68340cd9",
+    "complete-differential.json": "601f7bc2feaa262f01a9bafdb378c735893545d85350bed545666d6946065eef",
+    "source.patch": "786740bd1e16c77421dda7d489b9d6ee371f611aebf0ccaac3eb0a5bda343aea"
+  }
+}

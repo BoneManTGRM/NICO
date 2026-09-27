@@ -1,0 +1,201 @@
+{
+  "schema": "nico.cpp-contention-scheduling-verification.v1",
+  "parent_commit": "b7a16195e56fc550025fd9e86bcbdb0aa8bdbe85",
+  "parent_tree": "ff1db0d025f366a914d14649812a2a3803d2346b",
+  "scope": "Reduce sanitizer-test and Clang fallback concurrency without changing time limits, required populations, tool recipes, or approval restrictions.",
+  "files": {
+    "nico/assessment_cpp_runtime_scope.py": {
+      "git_blob_sha": "d9acaeeedb636e35a8abd8858e122117e6f55cc1",
+      "sha256": "94893ab168edd01f646e58501ae2494f72de42cf2ca4d7b15baa8cfd9538500b",
+      "bytes": 12609,
+      "preimage_blob": "1cf680a9340af9bca095c8a0b34ebab71b47160a"
+    },
+    "nico/assessment_cpp_runtime_execution.py": {
+      "git_blob_sha": "1fef091b54f580ffdb84c8f371da050812b0c790",
+      "sha256": "a1bc79bb1c1316702017ae6e6b9d3c52eaebb568cef8376c9775ed01d5d7adca",
+      "bytes": 55741,
+      "preimage_blob": "fa7d0192e40f9d7f97ef52d396963d4fa6a5dc50"
+    },
+    "nico/assessment_cpp_clang_fallback.py": {
+      "git_blob_sha": "2a836a9c1351bd0d13287f88212f3c04f6116b89",
+      "sha256": "c8907d166d30b969a4062b4c50b953f3999cdfa65097a72c44d6c8ec244d1593",
+      "bytes": 21293,
+      "preimage_blob": "b955ad4ced6a1b58d3450f0f102ef8881d421fd2"
+    },
+    "nico/assessment_cpp_configure_first_projection.py": {
+      "git_blob_sha": "d68fddd106caa82b855a7d163a7bedc52646cf89",
+      "sha256": "a23db8fe4dc8ebbd3149d66c67f49d577dbeaa15b214dc30dd994003c8246b2d",
+      "bytes": 11344,
+      "preimage_blob": "8bef88813decab180764d7206ea8e2cfae3be94f"
+    },
+    "nico/assessment_cpp_configuration_probe.py": {
+      "git_blob_sha": "0f60dbdc54ea985ff9e590a6b06374b3f4a74ae3",
+      "sha256": "fe857d217031ab77100f65477ba818bff6011c1bfe3c977c0f96ad332b7287be",
+      "bytes": 35852,
+      "preimage_blob": "2434e9d44b2eb6edf6c0902edf25031c16d1f5ec"
+    },
+    "nico/assessment_cpp_project_static.py": {
+      "git_blob_sha": "0152b864b5d4f76fcc4389c30d7299feed256946",
+      "sha256": "0f9fb05d600be2af360ce1ce6cca0b761f2920b5654fd24545022f60a9fa6d10",
+      "bytes": 39462,
+      "preimage_blob": "2c8477da49c46b5342a49781a15837e11ae0af5f"
+    },
+    "tests/test_cpp_contention_scheduling.py": {
+      "git_blob_sha": "c7d7fa06a689f96c10e963c9725c38986f879cc4",
+      "sha256": "71279751b522273c56f448b0678c1dd739100539b22eb21d33807fe52246c57e",
+      "bytes": 13453,
+      "preimage_blob": null
+    },
+    "tests/test_cpp_runtime_scope.py": {
+      "git_blob_sha": "dfdd11c541fb9f5920b37422c514f176fe2150fd",
+      "sha256": "410172970c346be254a7fcf00e3978f730470059a7ac94ffcfab1d683ce85490",
+      "bytes": 4168,
+      "preimage_blob": "844ba84360933e94334e7a67713ddb870ca418aa"
+    },
+    "tests/test_cpp_clang_fallback.py": {
+      "git_blob_sha": "adc63fd357e64dfb42c155d24166555123db13d9",
+      "sha256": "de1abdae4b9728ab609a212a1062956b28adc71eb951718687f93a1671c4ed32",
+      "bytes": 15279,
+      "preimage_blob": "174b2dd26c785bdd6c6d558c6e71731c0a76dbb2"
+    },
+    ".github/workflows/cpp-full-project-integration.yml": {
+      "git_blob_sha": "789bccf0fa03fb5938b41d4216a4acd22884fdf6",
+      "sha256": "a0e4a807c4d7a06cc1f6846eaeb1ad82d406a1d09304f206b5476af3a80c1aeb",
+      "bytes": 18312,
+      "preimage_blob": "c826370c2bfda4c9156b998f866585f79fa29854"
+    }
+  },
+  "native_diagnostic": {
+    "run": 36188616676,
+    "artifact_id": 10892711952,
+    "archive_sha256": "8aeffd523b95ec838e7a4e064827e2504c6266c53e3cb28829b76cf6aa6be273",
+    "verified_operation_outputs": 58,
+    "test_seconds": 158.828,
+    "clang_seconds": 85.985,
+    "case_limits": [
+      300,
+      120
+    ],
+    "source": {
+      "commit_sha": "bb5296576e8f1a9fc11c19d9a25ba02ed4547e24",
+      "repository": "bitcoin/bitcoin",
+      "tree_sha": "186194c9de7f613d2d323db41cb8ce6bf1e3e549"
+    },
+    "historical_image": "sha256:af3dca8369807e879366438e6106242384deabfd51929e8df61e8ae53bee22dc",
+    "diagnostic_image": "sha256:c796bed0f5e8efb65633457f461a25e473eb4d83a073029d5dca61b86e30b9ec",
+    "image_identical": false,
+    "binary_unchanged_during_test": true,
+    "asan_symbol_observed": true,
+    "cpu_measurements": null,
+    "oom_events": {
+      "high": 0,
+      "low": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_group_kill": 0,
+      "oom_kill": 0
+    },
+    "full_project_qualified": false,
+    "new_two_worker_policy_qualified": false
+  },
+  "historical_reconstruction": [
+    {
+      "run": "36167659433",
+      "sha256": "d4933e0120105b8427ebe813cfec2f8487e5d801b980e7cbfbc942adc0ffd41e",
+      "runtime_complete": false,
+      "plan_schema": "nico.cpp-runtime-plan.v1",
+      "fallback_schema": "nico.cpp-clang-fallback-request.v2",
+      "fallback_complete": false
+    }
+  ],
+  "selected_policies": {
+    "runtime_plan": "nico.cpp-runtime-plan.v2",
+    "sanitizer_test_parallel": 2,
+    "sanitizer_build_parallel": 4,
+    "clang_fallback_request": "nico.cpp-clang-fallback-request.v4",
+    "clang_parallel": 2,
+    "unchanged_seconds": {
+      "sanitizer_case": 300,
+      "sanitizer_suite": 900,
+      "runtime": 6000,
+      "durable_job": 9000,
+      "clang_case": 120,
+      "clang_fallback": 480,
+      "static_execution": 1020,
+      "static_wall": 1030
+    },
+    "historical_policy": "Retained runtime plan v1 and fallback requests v1/v2 retain original scheduling and require exact native argv and digest verification.",
+    "rejected_candidate": "Earlier 450/240-second candidate and fallback v3 remain unpublished and unadmitted. No denied fixture is included or retried."
+  },
+  "verification": {
+    "junit": {
+      "scheduling-red.xml": {
+        "tests": 3,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "5bd96be72e0a2d81d782aff2ce70126dff97c55f925668792b8f641fa4554b20"
+      },
+      "final-red.xml": {
+        "tests": 23,
+        "failures": 23,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "2aba6caddae7984efaac261c686d82f2cb056980533772d96e1d3e867ddd6e44"
+      },
+      "scheduling-final-v2.xml": {
+        "tests": 30,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "08cac1123658a8644a651aa561b73c1981b74b8025e9696651e36447882f14a3"
+      },
+      "affected.xml": {
+        "tests": 363,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "bea4bfb0f9f32b69d1f28587589ab531b0f76b98ef6aaeba9577faceb579568c"
+      },
+      "affected-green.xml": {
+        "tests": 363,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "a34c69fefbdeac1a5a817bea088aa7e22853f1fb86c3e1d7729e400eda8331b6"
+      },
+      "final-publication.xml": {
+        "tests": 370,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "ffbb647fcba5d654b57c54ca307aab9a7e9d7997e6e441d74b6ecd26b07551ab"
+      }
+    },
+    "final_command": "python -m pytest -q tests/test_cpp_contention_scheduling.py tests/test_cpp_runtime_scope.py tests/test_cpp_runtime_execution.py tests/test_cpp_clang_fallback.py tests/test_cpp_project_static_stage.py tests/test_cpp_configure_first_execution.py tests/test_cpp_configure_first_projection.py tests/test_cpp_configuration_qualification.py tests/test_cpp_native_test_timing.py tests/test_cpp_integration_workflow_schedule.py tests/test_native_timeout_diagnostic.py tests/test_cpp_full_project_capture_budget.py tests/test_cpp_runtime_dependency_provisioning.py",
+    "distinct_final_passes": 370,
+    "new_cases": 30,
+    "counts_overlap_not_additive": true,
+    "red_scope": "Initial three-case run exposes current plan-schema assertion, unsupported new-plan execution, and unchanged four-worker static scheduling. Expanded preimage run includes missing-new-API failures and is not claimed as 23 behavioral REDs.",
+    "preserved_attempts": "Intermediate failures from test transport setup and old current-version/parallel expectations were corrected. Historical scheduling and failure assertions remain covered. Broader combined invocation exceeded the local command timeout without terminal JUnit; it is not a passing result.",
+    "environment": "Scoped source archive; Python 3.13.5, pytest 9.0.2. No Docker/native candidate execution locally. Not full checkout or pinned hosted parity.",
+    "workflow_diff": "Only adds the new scheduling test to the existing contract-regression pytest invocation; all other workflow objects and the original runtime fixture remain unchanged."
+  },
+  "review": {
+    "type": "Independent supplied-code connected-agent critique",
+    "thread": "c7ac05b7-5eed-4e99-900d-8952f5d133cc",
+    "verdict": "No concrete defect in supplied scheduling delta after checking exact plan hashes/native argv and cross-schema corruption tests. Initial misattribution claim withdrawn.",
+    "reviewer_executed_tests": false,
+    "full_independent_review_complete": false
+  },
+  "not_established": [
+    "two_worker_full_native_completion",
+    "complete_sanitizer_and_fuzz_qualification",
+    "actual_failed_report_input_replay",
+    "full_independent_PR_review",
+    "production_acceptance"
+  ],
+  "production_qualified": false,
+  "merge_or_deployment_performed": false,
+  "report_approval_or_delivery_changed": false
+}

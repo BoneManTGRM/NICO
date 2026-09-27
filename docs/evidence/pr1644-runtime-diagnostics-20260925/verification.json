@@ -1,0 +1,251 @@
+{
+  "base_commit": "f9a57a4b467d28f9a9bddeca5777285559932180",
+  "base_tree": "801958f3924fce4432bc08811f8f227281563de2",
+  "files": {
+    "nico/assessment_cpp_configuration_probe.py": {
+      "bytes": 35817,
+      "git_blob": "2434e9d44b2eb6edf6c0902edf25031c16d1f5ec",
+      "sha256": "eb1f14fffff3c29a582a654da2b362a1cd0efea17de82c3669a9bb0c43b7fb62"
+    },
+    "nico/assessment_cpp_configure_first_projection.py": {
+      "bytes": 10475,
+      "git_blob": "648dffae0c7eb0999f8636ead8431bec9db46aff",
+      "sha256": "b515d1ee7d7071f951973b994aecd0028069dabea99b80c674cc7906c2727797"
+    },
+    "nico/assessment_cpp_full_project_report.py": {
+      "bytes": 16886,
+      "git_blob": "a203530fdaf3bc75cc686cdfcadf185a3097cd8c",
+      "sha256": "8643ab5f7401a608a66ec3a667b53bfe74c0767cb58480d4415535ca045fdf7f"
+    },
+    "nico/assessment_cpp_runtime_execution.py": {
+      "bytes": 50737,
+      "git_blob": "bcbb1a61cb0f01b8529fc3d7246d72f04896824e",
+      "sha256": "374b5b0550e2bd742f7b40adcd5782a2ea2a23d75f613ed16db5aca154486606"
+    },
+    "tests/test_cpp_compiler_budget_v2.py": {
+      "bytes": 13581,
+      "git_blob": "e46249077f4994d9e115231d009cb5f379251f11",
+      "sha256": "4a690e618421bf296af604cfb3dd09698987340c5521d3d231f63220fa885174"
+    },
+    "tests/test_cpp_configure_first_projection.py": {
+      "bytes": 10679,
+      "git_blob": "837fd4838b4e288ebc90aab55e6f1d2060ab8114",
+      "sha256": "4dd5f2861a7e4a6705c92e3ee8713a4f54af17d4eece217c7dedda07b726b914"
+    },
+    "tests/test_cpp_runtime_execution.py": {
+      "bytes": 30669,
+      "git_blob": "77c788155d4d0bf29ba7ce3dc5e6961726fe3bf4",
+      "sha256": "20cfa56a3199086ee41c9fe33e509c12ed5e773f64f3ef1789b828a0e44d8d6c"
+    }
+  },
+  "focused_verification": {
+    "command": "python -m pytest -q tests/test_cpp_runtime_execution.py tests/test_cpp_runtime_scope.py tests/test_cpp_configure_first_projection.py tests/test_cpp_configure_first_execution.py tests/test_cpp_compiler_budget_v2.py",
+    "counts_overlap_full_contract": true,
+    "exit": 0,
+    "passed": 175
+  },
+  "local_contract": {
+    "earlier_timeouts_and_failures_preserved": true,
+    "errors": 0,
+    "failed": 0,
+    "groups": [
+      "batch-00",
+      "batch-01",
+      "batch-02",
+      "batch-03",
+      "batch-04",
+      "batch-05",
+      "batch-06",
+      "batch-08",
+      "batch-09",
+      "batch-10",
+      "batch-11",
+      "batch-12",
+      "batch-13",
+      "batch-14",
+      "batch-15",
+      "batch-16",
+      "batch-17",
+      "batch-18",
+      "batch-19",
+      "batch-20",
+      "batch-21",
+      "batch-22",
+      "batch-23",
+      "batch-24",
+      "batch-07-reconciled",
+      "interruption-metadata"
+    ],
+    "passed_unique_cases": 1224,
+    "pinned_hosted_parity": false,
+    "required_unique_cases": 1224,
+    "scope": "entire 48-file hosted contract selection, local execution only",
+    "skipped": 0,
+    "special_environment": "Two owned interruption cases use a separate empty synthetic Git identity; no assessed code or release identity is established. All other cases use the source export without Git metadata.",
+    "terminal_invocations": 26
+  },
+  "local_environment": {
+    "pinned_hosted_parity": false,
+    "pypdf": "5.9.0",
+    "pytest": "9.0.2",
+    "python": "3.13.5"
+  },
+  "local_log_index_sha256": "d74651a65a629dd934d598428b22c8ba7e4a89a9f290db9e73999983815bf126",
+  "local_proof_hashes": {
+    "aggregate-red.txt": "8795c4f9d343f139180781fd42af49829341170b986e2fbd5491a55aa0d003f9",
+    "contract-nodes.json": "ec15a856949bbed4b5db8b78841eff4514bc6479f0bdb0857ed06f4d9177d670",
+    "contract-reconciliation.json": "1ec4e2ca5adba22756d99a44adf2d2e0dd5e154a9dd45e153c1cb91f9fdc2b32",
+    "correction-final.txt": "3e63ab7b0294be15a47dee5333f5e798090eb082b7ace4c628b827dc49dbcb34",
+    "diagnostic-red.txt": "7bd2008e63af49ae3e33839f49eed8d27c7f6647451c0e7db7af73b75ffaf834",
+    "final-native-replay.json": "e2b126f54d63e2390f4e4ec5e58bdc6ea3ab91a57d9d23778d9ba1dbc448e402",
+    "malformed-red.txt": "8db377701c2c66b91710892f11e8b9b7d2b3e260171ee9fa61e7b84177e5ac50",
+    "prefix-red.txt": "e06c2ebae03a6ddd2f872400613c966324f4af2a806b543148f2543b543814a2",
+    "prior-skip-red.txt": "7bd019c7f8f375b30f20864adc52f05969eb97828a15abde5f4dab14b1e3731f",
+    "projection-red.txt": "bc33e867ce3d0b0fbad7c46c848b716bd305b7fe6b3871f21d28131403b65c71"
+  },
+  "metadata_only_budget_fix": {
+    "actual_execution_seconds_changed": false,
+    "with_runtime": [
+      8820,
+      8840
+    ],
+    "without_runtime": [
+      2820,
+      2840
+    ]
+  },
+  "native_replay": [
+    {
+      "archive_bytes": 12247026,
+      "archive_sha256": "9b24b90726eec8a2bb8f48a2a98ac9045a1b0443cba43cff6f1e708542284996",
+      "artifact_id": 10869635450,
+      "asan_build": {
+        "duration_ms": 935195,
+        "exit_code": 0,
+        "timed_out": false
+      },
+      "asan_executed": null,
+      "asan_required": 377,
+      "asan_state": "timed_out",
+      "asan_tests": {
+        "duration_ms": 600039,
+        "exit_code": 124,
+        "timed_out": true
+      },
+      "cleanup_verified": true,
+      "complete": false,
+      "error": "worker_runtime_artifact_unavailable",
+      "failure_operation": "runtime-address-tests",
+      "functional_passed": 6,
+      "fuzz_state": "not_executed",
+      "native_evidence_sha256": "3abf03a9ae0d67b94a454c935042d9514bb20d2d04bbd5d66795f084a5dbe509",
+      "plan_sha256": "09588b0e6222ec84538b9467c0c8366debbfee06accf22f54078a54c961976d1",
+      "raw_archive_unchanged": true,
+      "retained_runtime_sha256": "e6cee023503d8f91ccb447654d65220c759f2abf6cc08efb049d28f56b445127",
+      "sanitizers_not_executed": [
+        "undefined"
+      ]
+    },
+    {
+      "archive_bytes": 12246131,
+      "archive_sha256": "b97c52ea854d08741b159f333dfbb2897f5b834954561887db39588424f61a21",
+      "artifact_id": 10871429455,
+      "asan_build": {
+        "duration_ms": 864960,
+        "exit_code": 0,
+        "timed_out": false
+      },
+      "asan_executed": null,
+      "asan_required": 377,
+      "asan_state": "timed_out",
+      "asan_tests": {
+        "duration_ms": 600065,
+        "exit_code": 124,
+        "timed_out": true
+      },
+      "cleanup_verified": true,
+      "complete": false,
+      "error": "worker_runtime_artifact_unavailable",
+      "failure_operation": "runtime-address-tests",
+      "functional_passed": 6,
+      "fuzz_state": "not_executed",
+      "native_evidence_sha256": "c360926c0ffd983377b64879622ba88d8ab630b9136d1d5d7e64e82ce6fbc19a",
+      "plan_sha256": "09588b0e6222ec84538b9467c0c8366debbfee06accf22f54078a54c961976d1",
+      "raw_archive_unchanged": true,
+      "retained_runtime_sha256": "9fd42dc30d8f36e1f8ad0dc0d9588142d8a38c48ffb21b33f1e2ddc3b1f4280c",
+      "sanitizers_not_executed": [
+        "undefined"
+      ]
+    }
+  ],
+  "outstanding": [
+    "ASan test timeout root cause and complete runtime/native qualification",
+    "qualified full-project image publication and serving binding",
+    "PR1645 actual failing-input verification",
+    "authorized normal-production controls and frozen Bitcoin run",
+    "actual English/es-MX reports, repeated retrieval and human boundaries"
+  ],
+  "preserved_limits": {
+    "attempts": 1,
+    "cpu": 4,
+    "durable_seconds": 9000,
+    "lease_seconds": 300,
+    "memory_gib": 12,
+    "runtime_seconds": 6000,
+    "sanitizer_test_seconds": 600,
+    "scratch_gib": 9,
+    "worker_job_minutes": 155
+  },
+  "publication_integrity": {
+    "all_seven_uploaded_blobs_equal_local_tested_bytes": true,
+    "one_test_transcription_mismatch_caught_before_branch_publication": true,
+    "wrong_unreferenced_blob_not_selected": "9d614f59e731cfaa4ea5327dcec5ab5440f1ad30"
+  },
+  "red_green": [
+    {
+      "case": "v2 native failure prefix and missing JUnit",
+      "green_passed": 31,
+      "red_failed": 17,
+      "red_passed": 14
+    },
+    {
+      "case": "bounded timeout diagnostics",
+      "green_passed": 2,
+      "red_failed": 2
+    },
+    {
+      "case": "partial projection and locales",
+      "green_passed": 5,
+      "red_failed": 5
+    },
+    {
+      "case": "earlier skipped sanitizer hidden by later failure",
+      "green_passed": 1,
+      "red_failed": 1
+    },
+    {
+      "case": "aggregate runtime budget labels",
+      "green_passed": 2,
+      "red_failed": 1,
+      "red_passed": 1
+    },
+    {
+      "case": "malformed nested evidence",
+      "green_passed": 5,
+      "red_failed": 3,
+      "red_passed": 2
+    }
+  ],
+  "review": {
+    "disposition": "no material defect identified in supplied logic; no full-capability/production approval",
+    "full_capability_review": "UNPROVEN",
+    "mechanism": "separate read-only supplied-material agent",
+    "scope": "separate read-only supplied-material review of failed-prefix logic, resource reader and diagnostic summary; no independent tests/artifact retrieval/full pipeline execution"
+  },
+  "scope": "PR1644 failed-prefix reconstruction, bounded timeout diagnostics, truthful runtime projection and budget labels; not native qualification",
+  "syntax": {
+    "embedded_programs": 4,
+    "passed": true,
+    "python_files": 7
+  }
+}

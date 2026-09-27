@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import yaml
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_TEST_FILES = {
@@ -94,3 +95,33 @@ control.main()
     assert evidence['controls'][0]['receipt'] == {'synthetic_retention_test': True}
     assert 'persisted_record' not in evidence['controls'][0]
     assert evidence['reports'] == [] and evidence['production_qualified'] is False
+
+
+@pytest.mark.parametrize("filename", [
+    "cpp-full-project-integration.yml", "native-timeout-diagnostic.yml",
+])
+def test_pending_native_workflows_are_queued_without_replacing_each_other(filename):
+    # cancel-in-progress=false protects a running job, NOT the default pending slot.
+    # Both participants must opt into GitHub's FIFO queue to preserve diagnostics.
+    workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
+    concurrency = workflow["concurrency"]
+    assert concurrency.get("queue") == "max", "pending native evidence can be cancelled"
+    assert concurrency["cancel-in-progress"] is False
+    assert concurrency["group"] == "cpp-full-project-integration-${{ github.ref }}"
+
+
+def test_native_queue_remains_serial_and_preserves_existing_execution_boundaries():
+    directory = ROOT / ".github/workflows"
+    full = yaml.safe_load((directory / "cpp-full-project-integration.yml").read_text())
+    diagnostic = yaml.safe_load((directory / "native-timeout-diagnostic.yml").read_text())
+    assert full["concurrency"] == diagnostic["concurrency"]
+    assert full["permissions"] == {"contents": "read"}
+    assert diagnostic["permissions"] == {"contents": "read", "actions": "read"}
+    assert full["jobs"]["project-baseline-qualification"]["timeout-minutes"] == 155
+    isolated = diagnostic["jobs"]["isolated-diagnostic"]
+    assert isolated["timeout-minutes"] == 55
+    assert "head.repo.full_name == github.repository" in isolated["if"]
+    guard = next(step for step in isolated["steps"] if step.get("id") == "need")
+    assert 'test "$status" = completed' in guard["run"]
+    assert "success) echo 'required=false'" in guard["run"]
+    assert "failure) echo 'required=true'" in guard["run"]

@@ -224,3 +224,21 @@ def test_compiler_cannot_promote_evidence_at_or_after_parent_deadline(tmp_path, 
     else:
         assert result['status'] == 'UNPROVEN' and not static_calls
         assert result['error'] == 'worker_configuration_probe_deadline'
+
+
+@pytest.mark.parametrize('runtime_enabled', [False, True])
+def test_reported_aggregate_envelope_includes_the_frozen_runtime_budget(tmp_path,runtime_enabled):
+    from tests.test_cpp_runtime_execution import plan
+    root,targets=source(tmp_path)
+    def failed_image(*args,**kwargs):
+        return {'exit_code':1,'timed_out':False,'output_truncated':False,'output':b''}
+    result=probe.probe_project_configuration(root,targets,'sha256:'+'a'*64,
+        project_options={'BUILD_TESTS':'ON'},baseline_execution=contract(),
+        capture_generated_context=True,project_compiler_evidence=True,project_static_analysis=True,
+        command=failed_image,retain_artifact=lambda *args:None,
+        runtime_plan=plan() if runtime_enabled else None)
+    runtime_seconds=6000 if runtime_enabled else 0
+    assert result['execution_budget_seconds']==1800+runtime_seconds
+    assert result['aggregate_execution_budget_seconds']==2820+runtime_seconds
+    assert result['aggregate_wall_budget_seconds']==2840+runtime_seconds
+    assert result['status']=='UNPROVEN'
