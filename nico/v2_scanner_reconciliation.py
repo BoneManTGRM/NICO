@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from copy import deepcopy
-from typing import Any, Iterable, Mapping
+from nico.report_json_copy import deepcopy
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 KNOWN_SCANNERS = {
     "bandit", "eslint", "gitleaks", "trufflehog", "semgrep", "typescript",

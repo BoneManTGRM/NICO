@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import PurePosixPath

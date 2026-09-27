@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from copy import deepcopy
 from functools import wraps
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from typing import Any
 
 VERSION = "nico.comprehensive_scanner_completion_projection.v56"
 _MARKER = "_nico_comprehensive_scanner_completion_projection_v56"

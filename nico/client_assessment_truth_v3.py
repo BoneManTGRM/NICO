@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from nico.report_json_copy import deepcopy
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from nico.canonical_section_status_v1 import normalize_scored_sections
 
@@ -126,6 +127,11 @@ def _normalize_location_text(value: Any) -> str:
 def _normalize_paths(value: Any, *, key: str = "", depth: int = 0) -> Any:
     if depth > 9:
         return deepcopy(value)
+    if type(value) is str:
+        lowered = key.casefold()
+        if "path" in lowered or "file" in lowered or "location" in lowered:
+            return _normalize_location_text(value)
+        return value
     if isinstance(value, Mapping):
         output: dict[str, Any] = {}
         for child_key, child in value.items():

@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import re
 from copy import deepcopy
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from nico import client_finding_remediation_register_v2 as legacy
 from nico.client_assessment_truth_v3 import (
@@ -12,6 +13,7 @@ from nico.client_assessment_truth_v3 import (
     normalize_repository_path,
     scanner_configuration_error,
 )
+
 
 VERSION = "nico.client-finding-remediation-register.v5"
 _GENERIC_EXIT_CRITERION = (
@@ -168,10 +170,16 @@ def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]
         for key, child in value.items():
             if str(key).casefold() in _SKIP_KEYS:
                 continue
-            yield from _iter_mappings(child, depth=depth + 1)
+            kind = type(child)
+            if (kind is not str and kind is not int and kind is not float
+                    and kind is not bool and kind is not type(None)):
+                yield from _iter_mappings(child, depth=depth + 1)
     elif isinstance(value, (list, tuple)):
         for child in value:
-            yield from _iter_mappings(child, depth=depth + 1)
+            kind = type(child)
+            if (kind is not str and kind is not int and kind is not float
+                    and kind is not bool and kind is not type(None)):
+                yield from _iter_mappings(child, depth=depth + 1)
 
 
 def _source_context_index(canonical: Mapping[str, Any]) -> dict[tuple[str, int], dict[str, str]]:

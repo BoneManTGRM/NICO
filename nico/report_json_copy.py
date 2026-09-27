@@ -30,12 +30,14 @@ def deepcopy(value: Any, memo: Any = _MEMO_UNSET) -> Any:
     if memo is not _MEMO_UNSET:
         return _legacy_deepcopy(value, memo)
 
+    kind = type(value)
+    if kind is str or kind is int or kind is float or kind is bool or kind is _NONE_TYPE:
+        return value
+
     copies: dict[int, Any] = {}
 
     def clone(item: Any, depth: int = 0) -> Any:
         kind = type(item)
-        if kind is str or kind is int or kind is float or kind is bool or kind is _NONE_TYPE:
-            return item
         if kind is not dict and kind is not list:
             raise _UseLegacyCopy
         identity = id(item)
@@ -43,17 +45,26 @@ def deepcopy(value: Any, memo: Any = _MEMO_UNSET) -> Any:
             return copies[identity]
         if depth >= _FAST_DEPTH_LIMIT:
             raise _UseLegacyCopy
+        # Exact builtin shallow copies retain immutable scalar identities in C.
+        # Memoize before replacing containers so aliases and cycles stay intact.
+        result = item.copy()
+        copies[identity] = result
         if kind is dict:
-            result: Any = {}
-            copies[identity] = result
             for key, child in item.items():
                 if type(key) is not str:
                     raise _UseLegacyCopy
+                child_kind = type(child)
+                if (child_kind is str or child_kind is int or child_kind is float
+                        or child_kind is bool or child_kind is _NONE_TYPE):
+                    continue
                 result[key] = clone(child, depth + 1)
         else:
-            result = []
-            copies[identity] = result
-            result.extend(clone(child, depth + 1) for child in item)
+            for index, child in enumerate(item):
+                child_kind = type(child)
+                if (child_kind is str or child_kind is int or child_kind is float
+                        or child_kind is bool or child_kind is _NONE_TYPE):
+                    continue
+                result[index] = clone(child, depth + 1)
         return result
 
     try:

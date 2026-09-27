@@ -9,6 +9,7 @@ from typing import Any, Iterable
 from nico import client_finding_remediation_register_v3 as v3
 from nico.client_assessment_truth_v3 import normalize_repository_path
 
+
 VERSION = "nico.client-finding-remediation-register.v8"
 _DIRECT_FINDING_SURFACES = (
     "canonical_findings",
@@ -86,10 +87,16 @@ def _iter_mappings(value: Any, *, depth: int = 0) -> Iterable[Mapping[str, Any]]
         for key, child in value.items():
             if str(key).casefold() in _SKIP_KEYS:
                 continue
-            yield from _iter_mappings(child, depth=depth + 1)
+            kind = type(child)
+            if (kind is not str and kind is not int and kind is not float
+                    and kind is not bool and kind is not type(None)):
+                yield from _iter_mappings(child, depth=depth + 1)
     elif isinstance(value, (list, tuple)):
         for child in value:
-            yield from _iter_mappings(child, depth=depth + 1)
+            kind = type(child)
+            if (kind is not str and kind is not int and kind is not float
+                    and kind is not bool and kind is not type(None)):
+                yield from _iter_mappings(child, depth=depth + 1)
 
 
 def _clean_location(value: Any) -> str:

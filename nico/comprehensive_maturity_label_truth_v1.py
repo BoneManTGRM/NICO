@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
+
 
 VERSION = "nico.comprehensive_maturity_label_truth.v1"
 
@@ -59,11 +61,19 @@ def _contract_label(node: Any, *, depth: int = 0) -> str:
         for key, value in node.items():
             if str(key).casefold() in _HEAVY_FIELDS:
                 continue
+            kind = type(value)
+            if (kind is str or kind is int or kind is float
+                    or kind is bool or kind is type(None)):
+                continue
             label = _contract_label(value, depth=depth + 1)
             if label:
                 return label
     elif isinstance(node, (list, tuple)):
         for value in node:
+            kind = type(value)
+            if (kind is str or kind is int or kind is float
+                    or kind is bool or kind is type(None)):
+                continue
             label = _contract_label(value, depth=depth + 1)
             if label:
                 return label

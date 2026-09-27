@@ -6,6 +6,7 @@ on:
       - '.github/workflows/comprehensive-report-diagnostic.yml'
       - 'scripts/qualify_comprehensive_diagnostic.py'
       - 'tests/test_comprehensive_diagnostic_runner.py'
+      - 'tests/test_report_projection_traversal_performance.py'
   workflow_dispatch:
 
 permissions:
@@ -77,6 +78,9 @@ jobs:
           tests/test_spanish_unavailable_eslint_report.py
           tests/test_report_projection_copy_parity.py
           tests/test_report_json_copy.py
+          tests/test_report_projection_traversal_performance.py
+          tests/test_comprehensive_finding_count_truth_v66.py
+          tests/test_comprehensive_maturity_label_truth_v1.py
           tests/test_finding_risk_scan_prefilter.py
           tests/test_report_pdf_text.py
           tests/test_report_pdf_text_integration.py

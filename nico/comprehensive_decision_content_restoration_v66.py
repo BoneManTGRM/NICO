@@ -57,10 +57,16 @@ def _iter_mappings(value: Any, depth: int = 0) -> Iterable[Mapping[str, Any]]:
     if isinstance(value, Mapping):
         yield value
         for child in value.values():
-            yield from _iter_mappings(child, depth + 1)
+            kind = type(child)
+            if (kind is not str and kind is not int and kind is not float
+                    and kind is not bool and kind is not type(None)):
+                yield from _iter_mappings(child, depth + 1)
     elif isinstance(value, (list, tuple)):
         for child in value:
-            yield from _iter_mappings(child, depth + 1)
+            kind = type(child)
+            if (kind is not str and kind is not int and kind is not float
+                    and kind is not bool and kind is not type(None)):
+                yield from _iter_mappings(child, depth + 1)
 
 
 def _mapping_items(value: Any) -> list[dict[str, Any]]:

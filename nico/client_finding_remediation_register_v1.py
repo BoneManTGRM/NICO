@@ -6,7 +6,8 @@ import io
 import re
 from copy import deepcopy
 from pathlib import PurePosixPath
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 VERSION = "nico.client-finding-remediation-register.v1"
 MAX_PDF_CODE_FINDINGS = 60

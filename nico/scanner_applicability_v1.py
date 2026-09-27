@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Mapping
 
 VERSION = "nico.scanner-applicability.v2"

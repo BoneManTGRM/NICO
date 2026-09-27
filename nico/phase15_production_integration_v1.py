@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from copy import deepcopy
+from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.phase12_report_remediation_v1 import remediate_assessment
