@@ -67,6 +67,9 @@ def job_and_download(files, *, archive=None, selected=None, tree_change=None):
             raw = json.dumps({'sha': REVISION, 'tree': {'sha': TREE}}).encode()
         elif '/git/trees/' in url:
             raw = json.dumps({'sha': TREE, 'truncated': False, 'tree': entries}).encode()
+        elif url.startswith('https://raw.githubusercontent.com/owned/control/' + REVISION + '/'):
+            from urllib.parse import unquote
+            raw = files[unquote(url.split('/' + REVISION + '/', 1)[1])]
         else:
             assert url == ARCHIVE_URL, 'large population still uses one request per blob: ' + url
             raw = compressed
@@ -95,6 +98,92 @@ def test_large_population_uses_one_archive_and_preserves_all_original_bytes(tmp_
     assert (root / 'main.cpp').stat().st_mode & 0o777 == 0o555
     assert (root / 'sum.cpp').stat().st_mode & 0o777 == 0o444
     assert not list(tmp_path.glob('.nico-source-*'))
+
+
+@pytest.mark.parametrize('derive', [False, True])
+def test_export_subst_materializes_original_git_bytes_not_archive_expansion(tmp_path, derive):
+    files = fixture()
+    files['.gitattributes'] = b'main.cpp export-subst\n'
+    files['main.cpp'] = b'const char* revision = "$Format:%H$";\n'
+    def change(path, info, raw):
+        if path == 'main.cpp':
+            raw = raw.replace(b'$Format:%H$', REVISION.encode()); info.size = len(raw)
+        return [(info, raw)]
+    job, download, calls = job_and_download(files, archive=make_archive(files, change))
+    if derive:
+        job = configure_first_job(files)
+    tmp_path.chmod(0o700)
+    root, evidence = acquire_public_github_inputs(job, tmp_path, lambda: None, download=download)
+    assert (root / 'main.cpp').read_bytes() == files['main.cpp']
+    assert evidence['inputs']['main.cpp'] == hashlib.sha256(files['main.cpp']).hexdigest()
+    assert evidence['source_bytes'] == sum(map(len, files.values()))
+    assert evidence['transport']['exact_blob_overrides'] == ['main.cpp']
+    assert evidence['transport']['network_requests'] == len(calls) == 5
+
+
+@pytest.mark.parametrize('kind', ['raw_digest', 'attributes_digest', 'symlink', 'missing'])
+def test_export_subst_does_not_bypass_blob_or_archive_structure_checks(tmp_path, kind):
+    files = fixture(); files['.gitattributes'] = b'main.cpp export-subst\n'
+    def change(path, info, raw):
+        if path == 'main.cpp' and kind == 'missing': return []
+        if path == 'main.cpp' and kind == 'symlink':
+            info.type = tarfile.SYMTYPE; info.linkname = 'sum.cpp'; info.size = 0
+        return [(info, raw)]
+    job, download, _ = job_and_download(files, archive=make_archive(files, change))
+    def corrupt(url, destination, **kwargs):
+        download(url, destination, **kwargs)
+        target = 'main.cpp' if kind == 'raw_digest' else '.gitattributes'
+        if kind in {'raw_digest', 'attributes_digest'} and 'raw.githubusercontent.com' in url and url.endswith('/' + target):
+            destination.write_bytes(b'x' * destination.stat().st_size)
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError, match='worker_source_'):
+        acquire_public_github_inputs(job, tmp_path, lambda: None, download=corrupt)
+    assert not (tmp_path / 'source').exists()
+
+
+def test_export_subst_original_still_must_match_frozen_sha256(tmp_path):
+    files = fixture(); files['.gitattributes'] = b'main.cpp export-subst\n'
+    job, download, _ = job_and_download(files)
+    job['contract']['targets']['main.cpp'] = 'f' * 64
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError, match='worker_source_digest_mismatch'):
+        acquire_public_github_inputs(job, tmp_path, lambda: None, download=download)
+    assert not (tmp_path / 'source').exists()
+
+
+def test_nested_literal_attributes_use_directory_relative_originals(tmp_path):
+    files = fixture(); files['include/.gitattributes'] = b'h0000.hpp export-subst\n'
+    def change(path, info, raw):
+        if path == 'include/h0000.hpp': raw += b'expanded'; info.size = len(raw)
+        return [(info, raw)]
+    _, root, evidence, _ = acquire(tmp_path, files=files, archive=make_archive(files, change))
+    assert (root / 'include/h0000.hpp').read_bytes() == files['include/h0000.hpp']
+    assert evidence['transport']['exact_blob_overrides'] == ['include/h0000.hpp']
+
+
+@pytest.mark.parametrize('rule', [b'*.cpp', b'../main.cpp', b'/main.cpp', b'"main.cpp"', b'[attr]main.cpp'])
+def test_unsupported_attribute_syntax_cannot_exempt_corrupt_archive(tmp_path, rule):
+    files = fixture(); files['.gitattributes'] = rule + b' export-subst\n'
+    def change(path, info, raw):
+        if path == 'main.cpp': raw = b'x' * len(raw)
+        return [(info, raw)]
+    job, download, _ = job_and_download(files, archive=make_archive(files, change))
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError, match='worker_source_digest_mismatch'):
+        acquire_public_github_inputs(job, tmp_path, lambda: None, download=download)
+    assert not (tmp_path / 'source').exists()
+
+
+def test_export_subst_request_count_is_bounded(tmp_path, monkeypatch):
+    import nico.assessment_worker_source as source
+    files = fixture(); files['.gitattributes'] = b'main.cpp export-subst\nsum.cpp export-subst\n'
+    monkeypatch.setattr(source, 'MAX_EXPORT_SUBST_FILES', 1)
+    job, download, calls = job_and_download(files)
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError, match='worker_source_export_subst_budget'):
+        acquire_public_github_inputs(job, tmp_path, lambda: None, download=download)
+    assert len(calls) == 3 and ARCHIVE_URL not in calls
+    assert not (tmp_path / 'source').exists()
 
 
 def test_archive_transport_receipt_retains_budgets_hash_and_actual_populations(tmp_path):
