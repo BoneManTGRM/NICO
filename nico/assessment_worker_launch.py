@@ -132,11 +132,17 @@ def provision_image(expected_id, reference, repository, root, checkpoint, *, com
 def run(job_id, backend, reference):
     repository, revision = actions_identity()
     reference = image_reference(reference, repository)
+    registry_token = os.environ.pop('NICO_WORKER_IMAGE_PULL_TOKEN', None)
     transport = WorkerTransport(backend, job_id, revision, ActionsWorkerToken(job_id))
 
     def acquire(job, root, checkpoint):
         from nico.assessment_worker_source import acquire_public_github_inputs
-        image = provision_image(job['contract']['image_digest'], reference, repository, root, checkpoint)
+        nonlocal registry_token
+        try:
+            image = provision_image(job['contract']['image_digest'], reference, repository, root, checkpoint,
+                                    registry_token=registry_token)
+        finally:
+            registry_token = None
         source, evidence = acquire_public_github_inputs(job, root, checkpoint)
         return source, {**evidence, **image}
 

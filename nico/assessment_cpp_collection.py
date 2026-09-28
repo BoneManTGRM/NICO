@@ -1,6 +1,7 @@
 """Completed evidence collection is separate from a clean assessed target.
 
-This decision is not consumed by image promotion or production qualification.
+The v3 image handoff revalidates this decision before publication.
+It does not grant production qualification or activation.
 It reconstructs native evidence; it never changes the original probe result.
 """
 from __future__ import annotations

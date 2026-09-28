@@ -23,8 +23,13 @@ and both signed release SHAs to match the serving backend. No operator session o
 production-proof credential is used. If main advances beyond the serving release,
 the claim fails; changing the workflow ref does not repair release alignment.
 
-After claiming, the launcher pulls a repository-owned public GHCR image by immutable
+After claiming, the launcher pulls a repository-owned GHCR image by immutable
 manifest reference and checks its Docker config ID against the frozen job contract.
+The dedicated job explicitly supplies its short-lived package-read token for private
+image retrieval. The launcher removes it from the process environment before claiming,
+uses it only for image provisioning, removes the temporary Docker configuration, and
+clears its reference before source acquisition. No registry token is sent to the backend
+or injected into assessed-code containers.
 It then fetches the exact anonymous GitHub commit/tree and selected original bytes.
 Redirects, ambient credentials, truncated trees, unsupported file types, oversized
 inputs, LFS pointers and content substitutions fail before assessed-code execution.
