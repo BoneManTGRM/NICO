@@ -216,6 +216,17 @@ def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
     if snapshot.get("status") != "attached":
         return _result(context, "blocked", reason="attached_snapshot_required")
     scan_id = _scan_id(context)
+    cpp_contract = None
+    if not scan_id:
+        from nico.assessment_cpp_production_selection import select_configure_first_contract
+
+        # Reuse release-owned selection with this run's retained source evidence.
+        # Public fields cannot choose a worker, and existing scans are never re-enqueued.
+        cpp_contract = select_configure_first_contract({
+            "status": _prior(context, "repository_and_delivery_evidence").get("status"),
+            "repository_snapshot": snapshot,
+            "repository_evidence": _repo(context),
+        })
     scan = get_scan(scan_id) if scan_id else start_snapshot_scan(
         {
             "repository": context["repository"],
@@ -241,7 +252,8 @@ def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
                 else context.get("provider_credential_used")
             ),
             "tools": [],
-        }
+        },
+        **({"cpp_contract": cpp_contract} if cpp_contract is not None else {}),
     )
     status = _text(scan.get("status"), 40).lower()
     if status in {"queued", "running"}:
