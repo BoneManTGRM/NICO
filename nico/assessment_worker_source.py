@@ -26,6 +26,69 @@ MAX_BYTES = 16 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_ARCHIVE_EXPANDED_BYTES = 128 * 1024 * 1024
 ARCHIVE_MINIMUM_POPULATION = 32
+MAX_ATTRIBUTE_FILES = 64
+MAX_EXPORT_SUBST_FILES = 32
+
+
+def _archive_originals(name, revision, stage, entries, checkpoint, deadline, download):
+    """Plan exact-blob acquisition before reading an export-substituted archive.
+
+    Only literal relative export-subst paths are supported. Other attribute
+    syntax never grants an exception to archive verification. Originals and
+    attribute declarations must match the pinned tree; no repository code runs.
+    """
+    attributes = sorted(p for p in entries if PurePosixPath(p).name == '.gitattributes')
+    if len(attributes) > MAX_ATTRIBUTE_FILES:
+        raise ValueError('worker_source_attributes_budget')
+    requests_made = 0
+
+    def original(path, maximum):
+        nonlocal requests_made
+        if (not path or len(path) > 1000 or path.startswith('/') or ':' in path or '\\' in path
+                or PurePosixPath(path).as_posix() != path
+                or any(p in {'.', '..', '.git'} for p in path.split('/'))
+                or any(ord(c) < 32 or ord(c) == 127 for c in path)):
+            raise ValueError('worker_source_archive_path_invalid')
+        entry = entries[path]
+        size = entry.get('size')
+        if (entry.get('type') != 'blob' or entry.get('mode') not in {'100644', '100755'}
+                or type(size) is not int or not 0 <= size <= maximum):
+            raise ValueError('worker_source_type_or_size_invalid')
+        output = stage / ('original-' + str(requests_made))
+        url = 'https://raw.githubusercontent.com/' + name + '/' + revision + '/' + quote(path, safe='/')
+        download(url, output, limit=max(1, size), checkpoint=checkpoint, deadline=deadline)
+        requests_made += 1
+        if output.is_symlink() or not output.is_file() or output.stat().st_size != size:
+            raise ValueError('worker_source_digest_mismatch')
+        raw = output.read_bytes()
+        digest = hashlib.sha1(b'blob ' + str(size).encode() + b'\0' + raw, usedforsecurity=False).hexdigest()
+        if digest != entry.get('sha'):
+            raise ValueError('worker_source_digest_mismatch')
+        return raw
+
+    paths = set()
+    for attribute in attributes:
+        raw = original(attribute, 65536)
+        try:
+            lines = raw.decode('utf-8').splitlines()
+        except UnicodeError:
+            raise ValueError('worker_source_attributes_invalid') from None
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 2 or 'export-subst' not in fields[1:]:
+                continue
+            literal = fields[0]
+            # Deliberately do not interpret globs, quoting, macros or traversal.
+            if (not re.fullmatch(r'[A-Za-z0-9_.\-/]+', literal)
+                    or literal.startswith('/') or any(p in {'', '.', '..', '.git'} for p in literal.split('/'))):
+                continue
+            path = (PurePosixPath(attribute).parent / literal).as_posix()
+            if path in entries:
+                paths.add(path)
+            if len(paths) > MAX_EXPORT_SUBST_FILES:
+                raise ValueError('worker_source_export_subst_budget')
+    originals = {path: original(path, MAX_BYTES) for path in sorted(paths)}
+    return originals, requests_made
 
 
 def _download_child(url, destination, limit):
@@ -114,11 +177,12 @@ def _materialize_archive(name, revision, stage, entries, population, inputs,
                          checkpoint, deadline, download):
     """Stream a pinned GitHub archive; never extract paths, links or special files.
 
-    All regular members are checked against the HTTPS-pinned tree's Git blob
-    hashes. Only frozen selected bytes are written, with an independent SHA256
-    check. Tar padding, extended headers and trailing data share one expansion
+    Regular members use tree-verified archive bytes, except declared export-subst
+    paths which use separately tree-verified originals. Only selected bytes are
+    written, with an independent SHA256 check. Tar padding, extended headers and trailing data share one expansion
     budget. No failed archive silently falls back to a different acquisition.
     """
+    originals, extra_requests = _archive_originals(name, revision, stage, entries, checkpoint, deadline, download)
     archive_path = stage / 'source.tar.gz'
     url = 'https://codeload.github.com/' + name + '/tar.gz/' + revision
     download(url, archive_path, limit=MAX_ARCHIVE_BYTES, checkpoint=checkpoint, deadline=deadline)
@@ -186,7 +250,9 @@ def _materialize_archive(name, revision, stage, entries, population, inputs,
                         continue
                     if (member.type not in {tarfile.REGTYPE, tarfile.AREGTYPE} or member.sparse is not None
                             or entry.get('type') != 'blob' or entry.get('mode') not in {'100644', '100755'}
-                            or type(entry.get('size')) is not int or member.size != entry['size']):
+                            or type(entry.get('size')) is not int
+                            or (path in originals and not 0 <= member.size <= MAX_BYTES)
+                            or (path not in originals and member.size != entry['size'])):
                         raise ValueError('worker_source_archive_type_or_size_invalid')
                     selected = path in population
                     output = inputs / path if selected else None
@@ -205,20 +271,26 @@ def _materialize_archive(name, revision, stage, entries, population, inputs,
                                 raw = content.read(65536)
                                 if not raw:
                                     break
-                                if selected and count == 0 and raw.startswith(b'version https://git-lfs.github.com/spec/v1'):
+                                if selected and path not in originals and count == 0 and raw.startswith(b'version https://git-lfs.github.com/spec/v1'):
                                     raise ValueError('worker_source_type_unsupported')
                                 count += len(raw)
                                 if count > member.size:
                                     raise ValueError('worker_source_archive_type_or_size_invalid')
                                 blob.update(raw); sha256.update(raw)
-                                if handle is not None:
+                                if handle is not None and path not in originals:
                                     handle.write(raw)
+                        if path in originals:
+                            original = originals[path]
+                            if selected and original.startswith(b'version https://git-lfs.github.com/spec/v1'):
+                                raise ValueError('worker_source_type_unsupported')
+                            if handle is not None:
+                                handle.write(original)
                     finally:
                         if handle is not None:
                             handle.close()
-                    digest256 = sha256.hexdigest()
+                    digest256 = hashlib.sha256(originals[path]).hexdigest() if path in originals else sha256.hexdigest()
                     expected256 = population.get(path) if selected else None
-                    if (count != member.size or blob.hexdigest() != entry.get('sha')
+                    if (count != member.size or (path not in originals and blob.hexdigest() != entry.get('sha'))
                             or (selected and expected256 is not None and digest256 != expected256)):
                         raise ValueError('worker_source_digest_mismatch')
                     if selected and expected256 is None:
@@ -241,7 +313,8 @@ def _materialize_archive(name, revision, stage, entries, population, inputs,
         raise ValueError('worker_source_archive_invalid') from None
     return {'kind': 'github_exact_commit_tar', 'archive_sha256': archive_hash,
         'compressed_bytes': archive_path.stat().st_size, 'expanded_bytes': reader.count,
-        'archive_files': files, 'selected_files': len(materialized), 'network_requests': 3}
+        'archive_files': files, 'selected_files': len(materialized), 'network_requests': 3 + extra_requests,
+        **({'exact_blob_overrides': sorted(originals)} if originals else {})}
 
 
 def acquire_public_github_inputs(job, root, checkpoint, *, download=download_public):
