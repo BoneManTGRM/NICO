@@ -64,8 +64,13 @@ def verify_worker_token(token: str, job_id: str) -> WorkerAuthority:
     }
     if any(claims.get(key) != value for key, value in expected.items()):
         raise ValueError("worker_authority_mismatch")
-    # This version trusts only the dedicated, non-reusable protected-main workflow.
-    if claims.get("environment") or claims.get("job_workflow_ref"):
+    # GitHub may include the job workflow identity for this direct workflow.
+    # Accept only the same protected-main file and exact release; a different
+    # reusable workflow, partial pair, or malformed identity remains forbidden.
+    job_identity_present = "job_workflow_ref" in claims or "job_workflow_sha" in claims
+    if (claims.get("environment") or (job_identity_present and (
+            claims.get("job_workflow_ref") != expected["workflow_ref"]
+            or claims.get("job_workflow_sha") != release))):
         raise ValueError("worker_authority_mismatch")
     if any(type(claims.get(key)) is not int for key in ("iat", "nbf", "exp")):
         raise ValueError("worker_lifetime_invalid")
