@@ -201,6 +201,7 @@ def test_dedicated_workflow_accepts_only_job_identity_and_keeps_narrow_permissio
     assert set(trigger) == {'workflow_dispatch'}
     assert set(trigger['workflow_dispatch']['inputs']) == {'job_id'}
     assert workflow['permissions'] == {'contents': 'read', 'id-token': 'write'}
+    assert workflow['jobs']['consume']['permissions'] == {'contents': 'read', 'id-token': 'write', 'packages': 'read'}
     assert workflow['jobs']['consume']['timeout-minutes'] == 155
     assert 'environment' not in workflow['jobs']['consume']
     for step in workflow['jobs']['consume']['steps']:
@@ -296,7 +297,7 @@ def test_image_provisioning_lease_loss_stops_before_source_acquisition(monkeypat
         sequence.append('claimed')
         def checkpoint(): raise ValueError('worker_local_lease_expired')
         return acquire({'contract': {'image_digest': 'sha256:' + 'd' * 64}}, tmp_path, checkpoint)
-    def provision(*args):
+    def provision(*args, **kwargs):
         sequence.append('provision')
         args[-1]()
     monkeypatch.setattr(launch, 'consume_one_job', consume)
@@ -331,3 +332,29 @@ def test_production_provisioning_is_bound_to_retained_receipt_not_discarded():
     retained['provisioning']['commit_sha'] = 'd' * 40
     with pytest.raises(ValueError, match='provisioning'):
         validate_receipt(selected, plan, job['lease_id'], job['worker_id'], retained)
+
+
+def test_registry_credential_removed_before_source_and_not_reused(monkeypatch, tmp_path):
+    from nico import assessment_worker_launch as launch
+    from nico import assessment_worker_source as source
+    environment(monkeypatch)
+    monkeypatch.setenv('NICO_WORKER_IMAGE_PULL_TOKEN', 'synthetic-package-pull')
+    calls = []
+    def provision(*args, registry_token):
+        assert 'NICO_WORKER_IMAGE_PULL_TOKEN' not in launch.os.environ
+        calls.append(registry_token)
+        return {'image_config_id': 'sha256:' + 'd' * 64}
+    def acquire_source(*args):
+        assert 'NICO_WORKER_IMAGE_PULL_TOKEN' not in launch.os.environ
+        return tmp_path, {}
+    def consume(transport, *, acquire):
+        job = {'contract': {'image_digest': 'sha256:' + 'd' * 64}}
+        acquire(job, tmp_path, lambda: None)
+        acquire(job, tmp_path, lambda: None)
+        return 'complete'
+    monkeypatch.setattr(launch, 'provision_image', provision)
+    monkeypatch.setattr(launch, 'consume_one_job', consume)
+    monkeypatch.setattr(source, 'acquire_public_github_inputs', acquire_source)
+    assert launch.run('workerjob_' + 'a' * 64, 'https://backend.example.invalid',
+        'ghcr.io/bonemantgrm/nico/assessment-cppcheck@sha256:' + 'e' * 64) == 'complete'
+    assert calls == ['synthetic-package-pull', None]
