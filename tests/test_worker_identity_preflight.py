@@ -21,7 +21,7 @@ def test_real_signed_identity_passes_without_returning_claims(signed_worker):
 @pytest.mark.parametrize('changes,failed_check', [
     ({'sub': 'private-sensitive-subject'}, 'sub'),
     ({'workflow_sha': 'e' * 40}, 'workflow_sha'),
-    ({'job_workflow_ref': 'private-sensitive-reusable'}, 'no_reusable_workflow'),
+    ({'job_workflow_ref': 'private-sensitive-reusable'}, 'job_workflow_identity'),
     ({'environment': 'private-sensitive-environment'}, 'no_environment'),
 ])
 def test_scope_rejection_explains_only_boolean_checks(signed_worker, changes, failed_check):
@@ -75,3 +75,14 @@ def test_main_reports_only_a_fixed_code_when_token_acquisition_fails(monkeypatch
     assert preflight.main() == 1
     assert json.loads(capsys.readouterr().out) == {
         'status': 'failed', 'code': 'worker_identity_preflight_unavailable'}
+
+
+def test_exact_self_workflow_reports_verified_boolean_identity(signed_worker):
+    sign, _, claims = signed_worker
+    result = preflight.inspect_token(sign({
+        'job_workflow_ref': claims['workflow_ref'],
+        'job_workflow_sha': claims['workflow_sha'],
+    }), JOB)
+    assert result['status'] == 'verified'
+    assert all(result['checks'].values())
+    assert claims['workflow_ref'] not in json.dumps(result)

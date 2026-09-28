@@ -92,3 +92,36 @@ def test_unknown_repository_identity_or_malformed_release_fails_closed(signed_wo
     monkeypatch.setenv("NICO_RELEASE_COMMIT_SHA", RELEASE)
     with pytest.raises(ValueError):
         auth.verify_worker_token(sign(), JOB)
+
+
+def test_exact_self_workflow_identity_is_accepted(signed_worker):
+    sign, _, claims = signed_worker
+    authority = auth.verify_worker_token(sign({
+        'job_workflow_ref': claims['workflow_ref'], 'job_workflow_sha': RELEASE,
+    }), JOB)
+    assert authority.job_id == JOB
+    assert authority.release_revision == RELEASE
+
+
+@pytest.mark.parametrize('field,value', [
+    ('job_workflow_ref', None), ('job_workflow_ref', ''),
+    ('job_workflow_ref', 'BoneManTGRM/NICO/.github/workflows/other.yml@refs/heads/main'),
+    ('job_workflow_ref', 'BoneManTGRM/NICO/' + auth.WORKFLOW + '@refs/heads/feature'),
+    ('job_workflow_ref', 'other/NICO/' + auth.WORKFLOW + '@refs/heads/main'),
+    ('job_workflow_sha', None), ('job_workflow_sha', ''),
+    ('job_workflow_sha', 'd' * 40), ('job_workflow_sha', 123),
+])
+def test_job_workflow_pair_cannot_expand_authority(signed_worker, field, value):
+    sign, _, claims = signed_worker
+    pair = {'job_workflow_ref': claims['workflow_ref'], 'job_workflow_sha': RELEASE}
+    pair[field] = value
+    with pytest.raises(ValueError, match='worker_authority_mismatch'):
+        auth.verify_worker_token(sign(pair), JOB)
+
+
+@pytest.mark.parametrize('missing', ['job_workflow_ref', 'job_workflow_sha'])
+def test_partial_job_workflow_pair_is_rejected(signed_worker, missing):
+    sign, _, claims = signed_worker
+    pair = {'job_workflow_ref': claims['workflow_ref'], 'job_workflow_sha': RELEASE}
+    with pytest.raises(ValueError, match='worker_authority_mismatch'):
+        auth.verify_worker_token(sign(pair, missing=missing), JOB)

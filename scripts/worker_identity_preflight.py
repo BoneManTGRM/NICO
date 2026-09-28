@@ -59,7 +59,12 @@ def inspect_token(token, job_id):
     numeric_times = all(type(claims.get(key)) is int for key in ('iat', 'nbf', 'exp'))
     checks.update(
         no_environment=not bool(claims.get('environment')),
-        no_reusable_workflow=not bool(claims.get('job_workflow_ref')),
+        job_workflow_identity=(
+            ('job_workflow_ref' not in claims and 'job_workflow_sha' not in claims)
+            or (claims.get('job_workflow_ref') == expected['workflow_ref']
+                and claims.get('job_workflow_sha') == release)),
+        job_workflow_ref_matches=claims.get('job_workflow_ref', expected['workflow_ref']) == expected['workflow_ref'],
+        job_workflow_sha_matches=claims.get('job_workflow_sha', release) == release,
         numeric_times=numeric_times,
         lifetime=bool(numeric_times and 0 < claims['exp'] - claims['iat'] <= 600
                       and claims['exp'] > time.time()),
