@@ -1030,7 +1030,6 @@ def _pdf(
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import (
-            CondPageBreak,
             KeepTogether,
             PageBreak,
             Paragraph,
@@ -1427,20 +1426,14 @@ def _pdf(
         story += _source_pdf_tables(stage, spanish=localize_presentation is not None, width=doc.width)
 
     story += [PageBreak(), p(localized("Evidence Appendix"), h1), p(localized("The appendix preserves full bounded stage evidence for the immutable run. It is intentionally separate from the decision-oriented body."), body)]
-    for stage_index, stage in enumerate(stages):
+    for stage in stages:
         stage_id = str(stage.get("stage_id") or "")
         client_literal_stage = (
             stage_id == "client_evidence_summary"
             or stage_id.startswith("client_human_evidence_")
         )
-        # Let the next section use the space below a briefing continuation.
-        # Reserve enough room for its heading and opening context.
-        after_briefing = (
-            stage_index > 0
-            and stages[stage_index - 1].get("stage_id") == "risk_reduction_and_executive_briefing"
-        )
         story += [
-            CondPageBreak(2.5 * inch) if after_briefing else PageBreak(),
+            PageBreak(),
             p(stage["title"], h1),
             p(f"{localized('Stage ID')}: {stage['stage_id']} · {localized('Status')}: {localized(stage['status'].upper())}", small),
             p(stage["summary"], body),
@@ -1449,28 +1442,27 @@ def _pdf(
         evidence_rows.extend([item] for item in bullets(
             stage["evidence"], limit=100, client_literal=client_literal_stage,
         ))
+        briefing_findings = bool(stage["findings"] and stage_id == "risk_reduction_and_executive_briefing")
+        finding_row_start = len(evidence_rows)
+        if briefing_findings:
+            # One repeating section heading covers evidence and recommendations.
+            # Separate tables duplicate the internal-evidence marker and cause
+            # compact client sanitization to discard the entire section.
+            evidence_rows.append([p(localized("Findings"), h2)])
+            evidence_rows.extend([item] for item in bullets(stage["findings"], limit=50))
         evidence_table = Table(evidence_rows, colWidths=[doc.width], repeatRows=1, hAlign="LEFT")
         evidence_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ]))
-        story.append(evidence_table)
-        if stage["findings"] and stage_id == "risk_reduction_and_executive_briefing":
-            # Repeat the section context on overflow pages, just as the retained
-            # evidence table does. A bare final bullet otherwise loses its parent
-            # heading when the client package composes physical pages.
-            finding_rows = [[p(f"{stage['title']} — {localized('Retained Evidence')}", h3)]]
-            finding_rows.append([p(localized("Findings"), h2)])
-            finding_rows.extend([item] for item in bullets(stage["findings"], limit=50))
-            finding_table = Table(finding_rows, colWidths=[doc.width], repeatRows=1, hAlign="LEFT")
-            finding_table.setStyle(TableStyle([
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        if briefing_findings:
+            evidence_table.setStyle(TableStyle([
+                ("TOPPADDING", (0, finding_row_start), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, finding_row_start), (-1, -1), 0),
             ]))
-            story.append(finding_table)
-        elif stage["findings"]:
+        story.append(evidence_table)
+        if stage["findings"] and not briefing_findings:
             story += [p(localized("Findings"), h2), *bullets(stage["findings"], limit=50)]
         if stage["unavailable"]:
             story += [p(localized("Unavailable or Limited Evidence"), h2), *bullets(stage["unavailable"], limit=50)]
