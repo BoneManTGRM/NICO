@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tarfile
 import time
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -133,7 +134,8 @@ def test_export_subst_does_not_bypass_blob_or_archive_structure_checks(tmp_path,
     def corrupt(url, destination, **kwargs):
         download(url, destination, **kwargs)
         target = 'main.cpp' if kind == 'raw_digest' else '.gitattributes'
-        if kind in {'raw_digest', 'attributes_digest'} and 'raw.githubusercontent.com' in url and url.endswith('/' + target):
+        if (kind in {'raw_digest', 'attributes_digest'}
+                and urlsplit(url).netloc == 'raw.githubusercontent.com' and url.endswith('/' + target)):
             destination.write_bytes(b'x' * destination.stat().st_size)
     tmp_path.chmod(0o700)
     with pytest.raises(ValueError, match='worker_source_'):
