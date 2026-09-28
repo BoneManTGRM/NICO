@@ -7,6 +7,7 @@ from pypdf import PdfReader
 
 from nico.comprehensive_pdf_embedded_fonts_v1 import install_comprehensive_pdf_embedded_fonts_v1
 from nico.comprehensive_report_package import _pdf
+from nico.client_pdf_status_sanitizer_v1 import _drop_internal_page
 
 
 def test_oversized_briefing_keeps_chapter_and_continuation_context():
@@ -35,7 +36,10 @@ def test_oversized_briefing_keeps_chapter_and_continuation_context():
     finding_pages = [p for p in pages[appendix + 1:] if "ITEM-" in p]
     assert len(finding_pages) > 1
     assert all("Risk Reduction and Executive Briefing" in p for p in finding_pages)
-    assert "Six-Month Roadmap" in finding_pages[-1]
+    assert all(not _drop_internal_page(p) for p in finding_pages)
+    # The client composer classifies whole pages: distinct appendix stages must
+    # retain their page boundary even when a briefing continuation is short.
+    assert "Six-Month Roadmap" not in finding_pages[-1]
     for i in range(12):
         assert "\n".join(finding_pages).count(f"ITEM-{i:02d}") == 1
     assert (identity, assessment, stages) == before
