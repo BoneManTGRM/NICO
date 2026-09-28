@@ -36,6 +36,13 @@ jobs:
           python-version: '3.11'
       - name: Install trusted controller dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Verify signed worker identity without claiming a job
+        env:
+          NICO_WORKER_JOB_ID: ${{ inputs.job_id }}
+          NICO_RELEASE_COMMIT_SHA: ${{ github.sha }}
+          NICO_ASSESSMENT_WORKER_REPOSITORY: ${{ github.repository }}
+          NICO_ASSESSMENT_WORKER_REPOSITORY_ID: ${{ github.repository_id }}
+        run: python -m scripts.worker_identity_preflight
       - name: Consume one authorized job using its dedicated OIDC audience
         env:
           NICO_WORKER_IMAGE_PULL_TOKEN: ${{ github.token }}
