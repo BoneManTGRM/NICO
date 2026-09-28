@@ -37,3 +37,31 @@ def test_failed_or_missing_controls_cannot_claim_toolchain_success(failure):
     assert result['status'] == 'UNPROVEN' and result['error']
     assert result['assessed_source_executed'] is False
     assert result['native_qualification_completed'] is False
+
+
+def test_full_image_supports_standalone_worker_interpreter_as_runtime_user():
+    """The image build runs the launcher's exact interpreter mode as uid 1000."""
+    import shlex
+    image = Path('docker/assessment-full-project-fuzz.Dockerfile').read_text()
+    launcher = Path('nico/assessment_worker_container.py').read_text()
+    link = 'ln -s /usr/bin/python3 /usr/local/bin/python'
+    preflight = next(line.removeprefix('RUN ') for line in image.splitlines()
+                     if line.startswith('RUN python -I -S '))
+    argv = shlex.split(preflight)
+    assert argv[:4] == ['python', '-I', '-S', '-c']
+    assert '"--entrypoint=python", image, "-I", "-S", "-c", PROGRAM' in launcher
+    assert image.index(link) < image.index('USER 1000:1000') < image.index('RUN ' + preflight)
+    assert 'sys.flags.isolated and sys.flags.no_site' in argv[4]
+    assert '(os.getuid(), os.getgid()) == (1000, 1000)' in argv[4]
+    compile(argv[4], '<image-runtime-interpreter-preflight>', 'exec')
+
+
+def test_pr_full_image_runs_release_standalone_control_before_project_controls():
+    workflow = yaml.safe_load(Path('.github/workflows/cpp-full-project-integration.yml').read_text())
+    steps = workflow['jobs']['owned-project-integration']['steps']
+    runs = [step.get('run', '') for step in steps]
+    control = 'python -m scripts.qualify_cppcheck_worker_control --image "$(cat full-project-image-id.txt)"'
+    index = runs.index(control)
+    assert index < next(i for i, run in enumerate(runs) if 'scripts.qualify_cpp_full_project_integration' in run)
+    assert steps[index].get('continue-on-error', False) is False
+    assert 'if' not in steps[index]

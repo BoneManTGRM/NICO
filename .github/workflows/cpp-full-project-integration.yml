@@ -138,6 +138,8 @@ jobs:
           test "$(du -sb cpp-analyzer-toolchain | cut -f1)" -le 67108864
           test "$(stat -c %s cpp-analyzer-toolchain/cppcheck)" -le 33554432
           (cd cpp-analyzer-toolchain && find . -type f -print0 | sort -z | xargs -0 sha256sum) > cpp-analyzer-toolchain-SHA256SUMS
+      - name: Verify standalone worker compatibility on the same full-project image
+        run: python -m scripts.qualify_cppcheck_worker_control --image "$(cat full-project-image-id.txt)"
       - name: Exercise owned project through worker lease, receipt and report
         run: python -m scripts.qualify_cpp_full_project_integration --generated-headers --bounded-fuzz --project-dependencies --project-compiler-options --image "$(cat full-project-image-id.txt)"
       - name: Verify immutable generated-source snapshots on owned positive and negative controls
@@ -165,6 +167,7 @@ jobs:
           name: cpp-project-integration-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             cpp-full-project-integration/
+            cppcheck-worker-control.json
             cpp-generated-context-qualification/
             cpp-analyzer-toolchain/
             cpp-analyzer-toolchain-SHA256SUMS
