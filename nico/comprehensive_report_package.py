@@ -1377,8 +1377,8 @@ def _pdf(
         selected = _chapter_stages(stages, stage_ids)
         if not selected:
             continue
-        story += [PageBreak(), p(localized(chapter), h1)]
-        for stage in selected:
+        story.append(PageBreak())
+        for stage_index, stage in enumerate(selected):
             stage_id = str(stage.get("stage_id") or "")
             client_literal_stage = (
                 stage_id == "client_evidence_summary"
@@ -1388,6 +1388,11 @@ def _pdf(
                 p(f"{stage['title']} · {localized(stage['status'].upper())}", h2),
                 p(stage["summary"], body),
             ]
+            if stage_index == 0:
+                # Keep the grouping heading inside its first section. A separate
+                # heading can survive after a page-based client projection removes
+                # the section that follows it.
+                block.insert(0, p(localized(chapter), h1))
             # Public-provider access truth is a compact, client-critical contract:
             # provider/repository/revision, access mode, credential use, pagination,
             # source fingerprint, snapshot identity, approval boundaries, and explicit
@@ -1407,7 +1412,10 @@ def _pdf(
                 )
             )
             if stage["findings"]:
-                block.extend([p(localized("Findings"), h3), *bullets(stage["findings"], limit=12)])
+                finding_bullets = bullets(stage["findings"], limit=12)
+                if stage_id == "risk_reduction_and_executive_briefing":
+                    finding_bullets = [KeepTogether([item]) for item in finding_bullets]
+                block.extend([p(localized("Findings"), h3), *finding_bullets])
             if stage["unavailable"]:
                 block.extend([p(localized("Evidence Limitations"), h3), *bullets(stage["unavailable"], limit=12)])
             story.append(KeepTogether(block))
@@ -1434,14 +1442,27 @@ def _pdf(
         evidence_rows.extend([item] for item in bullets(
             stage["evidence"], limit=100, client_literal=client_literal_stage,
         ))
+        briefing_findings = bool(stage["findings"] and stage_id == "risk_reduction_and_executive_briefing")
+        finding_row_start = len(evidence_rows)
+        if briefing_findings:
+            # One repeating section heading covers evidence and recommendations.
+            # Separate tables duplicate the internal-evidence marker and cause
+            # compact client sanitization to discard the entire section.
+            evidence_rows.append([p(localized("Findings"), h2)])
+            evidence_rows.extend([item] for item in bullets(stage["findings"], limit=50))
         evidence_table = Table(evidence_rows, colWidths=[doc.width], repeatRows=1, hAlign="LEFT")
         evidence_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ]))
+        if briefing_findings:
+            evidence_table.setStyle(TableStyle([
+                ("TOPPADDING", (0, finding_row_start), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, finding_row_start), (-1, -1), 0),
+            ]))
         story.append(evidence_table)
-        if stage["findings"]:
+        if stage["findings"] and not briefing_findings:
             story += [p(localized("Findings"), h2), *bullets(stage["findings"], limit=50)]
         if stage["unavailable"]:
             story += [p(localized("Unavailable or Limited Evidence"), h2), *bullets(stage["unavailable"], limit=50)]

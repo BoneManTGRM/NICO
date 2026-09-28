@@ -1118,9 +1118,11 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # adds only the canonical assurance paragraph beside Markdown/HTML headline
 # scores. PDF text changes only its two dependent artifact hashes; canonical
 # assessment truth and every page-count/parity/approval assertion remain intact.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('7c6d1ced076d61a3960e1f3bd743ba9214c9eb74e03461c66b4e8a471a5785c9', 19314), 'html': ('936051dbc7b244c141b82703e7bc858ce0e4f62837d85f1aebbeb969fc84b03d', 23677), 'pdf_base64': ('a308ca44dc7f2999544c6a9507dda6b03b8fb52b461234a1cc5573f572276899', 186280), 'pdf_sha256': '40c9a2f346e1462cb9b6f13585ef198b0e1c95961b4161a57606cc59d799580a', 'page_count': 23}
+# Briefing findings now share the repeating evidence table. PDF drawing bytes
+# change; Markdown/HTML, page counts, semantic parity and approval gates do not.
+SMALL_ENGLISH_GOLDEN = {'markdown': ('7c6d1ced076d61a3960e1f3bd743ba9214c9eb74e03461c66b4e8a471a5785c9', 19314), 'html': ('936051dbc7b244c141b82703e7bc858ce0e4f62837d85f1aebbeb969fc84b03d', 23677), 'pdf_base64': ('c4d077be9a47a667815f010d6612e727d457c789418b3c29f1c070a74fe5ea26', 186260), 'pdf_sha256': '85c98a3d6c6fef2e45bde69c4827d494e5d740d1384cbcfbc063def9984ffb9a', 'page_count': 23}
 RICH_ENGLISH_GOLDEN = {'markdown': ('91d6065e83ea908d6dba3814293192429cb3a0192babfdad6b2765b1f3aa7b0e', 21018), 'html': ('f1c11430f2177d9ebf29fd65fdf8b9918f089a4fe88c395714ba413c06654b0d', 25687), 'pdf_base64': ('9b82617293d928d2f2a30e85455f51184c0602af5f28d3c28587bf67b72f3821', 288904), 'pdf_sha256': '6751ec17b09eabb2d3f1c83e8f9b31497eca91e49a5526dffb3675ca2a92e968', 'page_count': 48}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('bf7ad4d4af0f7dd3ca0d0f0d9de06724bd4b254fa4c8aef08907cb780d6aff3d', 19357), 'html': ('2b9b9dea73efb74fb9eb5770ea01815a01e7de9a98b6d114016870083bc96107', 23699), 'pdf_base64': ('cc641e928beccd59a0c0761debe03017741db89658255bb466555b1a6e6a9550', 181084), 'pdf_sha256': '9e21b8c51bd6b7d18bbb0cd4a86e41dc3330ccab6e8588e6f493bfa662a831a2', 'page_count': 22}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('bf7ad4d4af0f7dd3ca0d0f0d9de06724bd4b254fa4c8aef08907cb780d6aff3d', 19357), 'html': ('2b9b9dea73efb74fb9eb5770ea01815a01e7de9a98b6d114016870083bc96107', 23699), 'pdf_base64': ('c9964b50527ca98406e5459fee8437a5725c46201d2c09dc633257b2f1b8f7ac', 181092), 'pdf_sha256': 'ad6ac4133b28f95c775258a203a42122d09890665dd75431a99cb9c3c392373e', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",
