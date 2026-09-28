@@ -34,6 +34,7 @@ from nico.spanish_client_evidence_summary_contract_v1 import (
 import spanish_comprehensive_live_acceptance_v1 as base
 import spanish_comprehensive_live_acceptance_v2 as telemetry
 from provider_neutral_repository_locator_contract_v1 import SPANISH_REPOSITORY_LABEL
+from production_proof_repository_scope_v1 import proof_repository_scope
 from comprehensive_production_export_retention_v1 import (
     capture_terminal_exports,
     collect_supported_exports,
@@ -57,12 +58,20 @@ GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 PROOF_CLIENT_NAME = "Cody Jenkins"
 PROOF_PROJECT_NAME = "NICO Audit"
 PROOF_PRIMARY_TECHNICAL_CONTACT = "Cody — Repository owner / project lead"
-PROOF_ACCESS_METHOD = "Public GitHub repository via HTTPS/API — read-only access"
-PROOF_AUTHORIZED_SCOPE = (
-    "BoneManTGRM/NICO — entire repository, current main branch, including source "
-    "code, configuration, CI/CD workflows, dependency manifests, documentation, "
-    "and repository metadata. Read-only technical and security assessment."
-)
+# Configured from the explicit target before fresh intake or retained-run checks.
+PROOF_ACCESS_METHOD = ""
+PROOF_AUTHORIZED_SCOPE = ""
+PROOF_REPOSITORY_IDENTITY = ""
+
+
+def _configure_proof_repository(repository: str) -> None:
+    global PROOF_ACCESS_METHOD, PROOF_AUTHORIZED_SCOPE, PROOF_REPOSITORY_IDENTITY
+    scope = proof_repository_scope(repository)
+    PROOF_ACCESS_METHOD = scope["access_method"]
+    PROOF_AUTHORIZED_SCOPE = scope["authorized_scope"]
+    PROOF_REPOSITORY_IDENTITY = scope["repository_identity"]
+
+
 SPANISH_ACCESS_METHOD_LABEL = "Método de acceso"
 SPANISH_PRIMARY_CONTACT_LABEL = "Contacto técnico principal"
 SPANISH_AUTHORIZED_SCOPE_LABEL = "Alcance autorizado"
@@ -708,6 +717,7 @@ def _verify_localized_spanish_terminal_artifacts(
         run_id=run_id,
     )
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), dict) else {}
+    assert proof_repository_scope(str(identity.get("repository") or canonical.get("repository") or ""))["repository_identity"] == PROOF_REPOSITORY_IDENTITY
     assert str(identity.get("run_id") or "") == run_id
     assert str(identity.get("commit_sha") or "").lower() == expected_commit_sha
     assert str(identity.get("customer_name") or identity.get("client_name") or "") == PROOF_CLIENT_NAME
@@ -937,6 +947,7 @@ def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
 def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
     """Run the real compact-mobile intake with distinctive commercial metadata."""
 
+    _configure_proof_repository(args.repository)
     exclusion_fixture = _exclusion_fixture()
     context = browser.new_context(
         viewport=(

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
 
+from production_proof_repository_scope_v1 import validate_report_repository_scope
+
 _ROOT = Path(__file__).resolve().parents[1]
 _NICO_ROOT = _ROOT / "nico"
 
@@ -90,7 +92,7 @@ PHASE2_IMPLEMENTATION = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Bind successful production acceptance and Phase 2 software-completion evidence into one NICO Comprehensive report.")
-    for name in ("source-pdf", "acceptance-json", "audit-json", "release-json", "status-json", "expected-sha", "output-pdf", "output-manifest"):
+    for name in ("source-pdf", "source-json", "acceptance-json", "audit-json", "release-json", "status-json", "expected-sha", "output-pdf", "output-manifest"):
         parser.add_argument(f"--{name}", required=True)
     for name in ("workflow-run-id", "mobile-run-id", "ios-run-id", "artifact-id", "artifact-name", "artifact-digest", "acceptance-completed-at"):
         parser.add_argument(f"--{name}", default="")
@@ -113,6 +115,9 @@ def main() -> int:
         )
 
     text, source_pages = pdf_text(source)
+    repository = validate_report_repository_scope(
+        load_json(Path(args.source_json)), acceptance, audit, text
+    )
     report = extract_report(text, assessed_commit_sha)
     validate_external(
         acceptance,
@@ -167,7 +172,7 @@ def main() -> int:
         "report_variant": "post-acceptance-bound-automated-draft",
         "additional_report_product_created": False,
         "source_report_preserved": True,
-        "repository": acceptance.get("authorized_repository") or audit.get("repository"),
+        "repository": repository,
         "commit_sha": args.expected_sha,
         "release_sha": args.expected_sha,
         "assessed_commit_sha": assessed_commit_sha,

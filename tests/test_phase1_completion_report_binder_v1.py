@@ -23,6 +23,8 @@ PHASE2_OBSERVATION = ROOT / "docs" / "phase2-completion-observation.json"
 def report_text(sha: str) -> str:
     return f"""
     NICO Comprehensive Immutable commit: {sha}
+    example/repo — Read-only assessment.
+    Public GitHub repository via HTTPS/API — read-only access
     Current-evidence candidates requiring new technical triage: 62; fresh automated triage completed=62.
     Technical triage coverage: 629/629 (100.0%).
     Exact carry-forward: 567; location-changed: 0; evidence-changed: 28.
@@ -368,7 +370,14 @@ def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_a
     status_path = tmp_path / "status.json"
 
     _write_source_pdf(source_pdf, assessed_sha)
+    source_json = tmp_path / "source.json"
+    metadata = {"authorized_scope": "example/repo — Read-only assessment.",
+                "access_method": "Public GitHub repository via HTTPS/API — read-only access"}
+    _write_json(source_json, {"identity": {"repository": "example/repo", "commit_sha": assessed_sha, **metadata},
+                              "engagement_metadata": metadata})
     acceptance, audit, release, status = evidence(release_sha, assessed_sha)
+    acceptance["repository"] = "example/repo"
+    audit["repository"] = "example/repo"
     if release_schema == "v2":
         release = frontend_v2_evidence(release_sha)
     _write_json(acceptance_path, acceptance)
@@ -381,6 +390,7 @@ def test_binder_end_to_end_produces_phase1_and_phase2_completion_truth_without_a
             sys.executable,
             str(BINDER),
             "--source-pdf", str(source_pdf),
+            "--source-json", str(source_json),
             "--acceptance-json", str(acceptance_path),
             "--audit-json", str(audit_path),
             "--release-json", str(release_path),
