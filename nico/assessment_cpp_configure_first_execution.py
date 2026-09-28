@@ -187,6 +187,9 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
     import base64
     database=base64.b64decode(result.get("compilation_database") or "",validate=True)
     if not database or hashlib.sha256(database).hexdigest()!=result.get("compilation_database_sha256"):
+        error=result.get("error")
+        if isinstance(error,str) and re.fullmatch(r"worker_configuration_probe_[a-z_]{1,37}",error):
+            raise ValueError(error)
         raise ValueError("worker_configure_first_database_missing")
     sink("project-compilation-database",database)
     if runtime_plan is not None:

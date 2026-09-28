@@ -22,13 +22,39 @@ _OFF = frozenset({
 })
 
 
-def _declared_options(text: str) -> set[str]:
+def _uncommented(text: str) -> str:
     text = re.sub(r"#\[\[.*?\]\]", "", text, flags=re.DOTALL)
-    text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def _declared_options(text: str) -> set[str]:
     return set(re.findall(
         r"(?is)(?:^|\n)\s*(?:option|cmake_dependent_option)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\b",
         text,
     ))
+
+
+def _omit_inactive_dependents(text: str, options: dict[str, str]) -> dict[str, str]:
+    # CMake stores explicitly supplied inactive dependent options as INTERNAL.
+    # That cache value is not proof of the effective value. Leave such options
+    # to their source-declared fallback only when simple, policy-controlled
+    # dependencies prove they are inactive and the fallback matches our policy.
+    # Unknown expressions remain explicit and subject to strict cache checks.
+    pattern = (r'(?im)^\s*cmake_dependent_option\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)'
+               r'\s+"[^"\\]*"\s+(?:ON|OFF)\s+"([^"\\]*)"\s+(ON|OFF)\s*\)')
+    result = dict(options)
+    dependent_names = set(re.findall(
+        r'(?im)^\s*cmake_dependent_option\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)', text))
+    for name, dependencies, fallback in re.findall(pattern, text):
+        terms = dependencies.split(';')
+        if (name not in result or fallback != options[name]
+                or not all(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', term) for term in terms)):
+            continue
+        # Use only retained explicit parents, so dependent-option chains cannot
+        # justify each other's omission from unverified cache values.
+        if any(term not in dependent_names and options.get(term) == 'OFF' for term in terms):
+            result.pop(name)
+    return result
 
 
 def validate_project_options(value: dict[str, str]) -> dict[str, str]:
@@ -61,9 +87,10 @@ def derive_project_options(source: Path, targets: dict[str, str], policy: str) -
     if not raw or len(raw) > MAX_CMAKE_BYTES or hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError("worker_cmake_policy_source_invalid")
     try:
-        declared = _declared_options(raw.decode("utf-8"))
+        text = _uncommented(raw.decode("utf-8"))
+        declared = _declared_options(text)
     except UnicodeDecodeError as exc:
         raise ValueError("worker_cmake_policy_source_invalid") from exc
     result = {name: "ON" for name in sorted(declared & _ON)}
     result.update({name: "OFF" for name in sorted(declared & _OFF)})
-    return validate_project_options(result)
+    return validate_project_options(_omit_inactive_dependents(text, result))
