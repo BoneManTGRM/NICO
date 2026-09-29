@@ -41,6 +41,18 @@ tests are not a substitute for this native PostgreSQL gate.
 
 ## Remaining work
 
+Follow-up in this repair classifies the exact retained aggregate-capacity error
+separately from invalid file types, timeout, truncation and other capture errors.
+The incomplete receipt now states that generated capture exceeded its bound and
+that later compiler/static/runtime analysis receives no completion credit. The
+32 MiB cap and failed/incomplete flags remain unchanged. This fixes reporting of
+the limit; it does not establish full native execution support at Bitcoin size.
+The ordinary parent storage failure is independently responsible for blocking
+the report: composition preserves the parent's failed/snapshot-unverified state.
+After that failure is repaired, existing composition can retain the child's
+failed tool result in a report without bypassing parent snapshot verification.
+Ninety focused storage, snapshot, receipt and proof tests pass for both changes.
+
 This patch does not solve the C++ aggregate capture limit, complete static/runtime
 analysis, produce a report, or qualify a new production release. Inspect CI and
 reviews before merge. Diagnose/report bounded unexecuted scope without raising

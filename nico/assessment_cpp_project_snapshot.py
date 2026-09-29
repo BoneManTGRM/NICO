@@ -33,6 +33,28 @@ PROJECT_GENERATED_STREAM_LIMIT = 48 * 1024 * 1024
 PROJECT_HEADER_SUFFIXES = ('.h', '.hh', '.hpp', '.hxx', '.inc', '.inl', '.ipp', '.tpp', '.txx')
 
 
+def is_project_snapshot_capacity_failure(value):
+    """Classify a retained limit diagnostic; this grants no execution credit."""
+    if not isinstance(value, dict):
+        return False
+    detail = value.get('failed_input')
+    if (value.get('schema') != 'nico.cpp-generated-failure.v1'
+            or value.get('configuration') != 'baseline'
+            or value.get('phase') != 'project_snapshot'
+            or value.get('error') != 'worker_generated_type_or_size_invalid'
+            or not isinstance(detail, dict) or detail.get('phase') != 'initial_read'):
+        return False
+    observed = detail.get('observed')
+    if not isinstance(observed, dict) or observed.get('type') != 'regular' or observed.get('links') != 1:
+        return False
+    total, remaining, size = (detail.get('captured_bytes_before'),
+                              detail.get('effective_max_bytes'), observed.get('bytes'))
+    return (all(type(n) is int for n in (total, remaining, size))
+            and 0 <= total <= PROJECT_GENERATED_MAX_BYTES
+            and remaining == min(PROJECT_GENERATED_MAX_FILE_BYTES, PROJECT_GENERATED_MAX_BYTES-total)
+            and 0 <= remaining < size <= PROJECT_GENERATED_MAX_FILE_BYTES)
+
+
 def _project_paths(paths):
     if (not isinstance(paths, list) or len(paths) > PROJECT_GENERATED_MAX_FILES
             or any(not isinstance(p, str) or len(p) > 1000

@@ -389,7 +389,11 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'findings':[],'finding_count':native['project_static_findings_count'],'scanner_tool_version':contract['tool_version'],
         'applicable':True,'evidence_required':True,
         'reason':('Configure-first execution completed; canonical findings projection from retained native artifacts is pending.'
-                  if execution_complete else 'Configure-first execution is incomplete; retained native evidence requires repair.'),
+                  if execution_complete else
+                  'Generated-file capture exceeded its bounded capacity. The retained build/test fields describe earlier execution; '
+                  'compiler, static and later runtime analysis are incomplete and receive no completion credit.'
+                  if native['error']=='worker_configuration_probe_snapshot_capacity_exceeded' else
+                  'Configure-first execution is incomplete; retained native evidence requires repair.'),
         'worker_provenance':{'job_id':identity.job_id,'worker_id':receipt['worker_id'],
             'release_revision':identity.release_revision,'image_digest':contract['image_digest'],
             'contract_sha256':identity.contract_sha256,'configuration_sha256':receipt['configuration_sha256'],
