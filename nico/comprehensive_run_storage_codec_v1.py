@@ -20,6 +20,8 @@ from typing import Any
 
 ENVELOPE_KEY = "__nico_comprehensive_run_storage_v1__"
 STORAGE_SCHEMA = "nico.comprehensive_run_storage.v1"
+_TOKEN_SCHEMA = "nico.comprehensive_run_storage.v2"
+_TOKEN_ENCODING = "zlib+json-token-refs-v1+base64"
 COMPRESSION_THRESHOLD_BYTES = 8 * 1024 * 1024
 # A bounded decoder admits the observed ~295 MiB complete diagnostic record.
 # The storage object remains comfortably below PostgreSQL's 256 MiB limit.
@@ -30,6 +32,32 @@ _ENVELOPE_FIELDS = {"schema", "encoding", "size_bytes", "sha256", "data"}
 
 
 def encode_run_storage(record: dict[str, Any]) -> str:
+    """Keep legacy transport unless lossless long-range references are needed."""
+    try:
+        return _encode_legacy_run_storage(record)
+    except ValueError as exc:
+        if str(exc) != "run_storage_compressed_size_limit":
+            raise
+    # Leave the exception scope to release the old compressor and its traceback.
+    # The fallback preserves BOTH existing caps and the exact canonical JSON hash.
+    from nico.comprehensive_run_storage_dedup_v1 import encode_tokens
+
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    size, sha256, packed = encode_tokens(
+        encoder.iterencode(record),
+        max_uncompressed=MAX_UNCOMPRESSED_BYTES,
+        max_compressed=MAX_COMPRESSED_BYTES,
+    )
+    return json.dumps({ENVELOPE_KEY: {
+        "schema": _TOKEN_SCHEMA,
+        "encoding": _TOKEN_ENCODING,
+        "size_bytes": size,
+        "sha256": sha256,
+        "data": base64.b64encode(packed).decode("ascii"),
+    }}, sort_keys=True, separators=(",", ":"))
+
+
+def _encode_legacy_run_storage(record: dict[str, Any]) -> str:
     """Return canonical JSON or a versioned, length/hash-bound zlib envelope."""
     if ENVELOPE_KEY in record:
         raise ValueError("run_storage_reserved_envelope_key")
@@ -83,7 +111,8 @@ def decode_run_storage(payload: dict[str, Any]) -> dict[str, Any]:
     envelope = payload[ENVELOPE_KEY]
     if not isinstance(envelope, dict) or set(envelope) != _ENVELOPE_FIELDS:
         raise ValueError("run_storage_envelope_shape_invalid")
-    if envelope["schema"] != STORAGE_SCHEMA or envelope["encoding"] != "zlib+base64":
+    token_encoding = (envelope["schema"], envelope["encoding"]) == (_TOKEN_SCHEMA, _TOKEN_ENCODING)
+    if not token_encoding and (envelope["schema"] != STORAGE_SCHEMA or envelope["encoding"] != "zlib+base64"):
         raise ValueError("run_storage_envelope_version_invalid")
     size = envelope["size_bytes"]
     if type(size) is not int or not 0 < size <= MAX_UNCOMPRESSED_BYTES:
@@ -101,6 +130,13 @@ def decode_run_storage(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("run_storage_base64_invalid") from exc
     if len(packed) > MAX_COMPRESSED_BYTES:
         raise ValueError("run_storage_compressed_size_limit")
+    if token_encoding:
+        from nico.comprehensive_run_storage_dedup_v1 import decode_tokens
+
+        decoded_payload = json.loads(decode_tokens(packed, size=size, sha256=claimed_digest))
+        if not isinstance(decoded_payload, dict) or ENVELOPE_KEY in decoded_payload:
+            raise ValueError("run_storage_decoded_record_invalid")
+        return decoded_payload
     decoder = zlib.decompressobj()
     output = io.BytesIO()
     digest = hashlib.sha256()
