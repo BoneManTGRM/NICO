@@ -62,6 +62,28 @@ def test_original_bytes_survive_disposable_file_loss_and_database_reopen(artifac
     assert not path.exists()
 
 
+def test_binary_source_preview_is_jsonb_safe_without_changing_retained_bytes(artifacts):
+    m, store, reopen, root, path, binding, record, raw, compressed = artifacts
+    record['findings'] = [{'code': 'before\x00after\ud800', 'message': 'Español 😀\n'}]
+    raw = json.dumps({'findings': record['findings']}).encode()
+    compressed = gzip.compress(raw, mtime=0)
+    path.write_bytes(compressed)
+    record['raw_artifact_sha256'] = sha(raw)
+    record['raw_artifact'].update(sha256=sha(raw), gzip_sha256=sha(compressed),
+                                retained_bytes=len(raw), gzip_bytes=len(compressed))
+    persisted = m.persist_scanner_result(record, binding=binding, raw_root=root)
+    assert persisted['findings'][0]['code'] == r'before\u0000after\ud800'
+    assert persisted['findings'][0]['message'] == 'Español 😀\n'
+    assert record['findings'][0]['code'] == 'before\x00after\ud800'
+    assert persisted['text_encoding']['escaped_codepoints'] == 2
+    assert persisted['completed'] is True and persisted['verified'] is True
+    encoded = json.dumps(persisted, ensure_ascii=False).encode('utf-8')
+    assert b'\x00' not in encoded
+    retained = m.read_scanner_artifact(persisted, binding=binding, raw_root=root)
+    assert retained.raw == raw and retained.compressed == compressed
+    assert persisted['raw_artifact_sha256'] == sha(raw)
+
+
 @pytest.mark.parametrize("field", ["run_id", "scan_id", "customer_id", "project_id", "repository", "commit_sha", "scanner_name"])
 def test_durable_reader_rejects_every_wrong_binding(artifacts, field):
     m, store, reopen, root, path, binding, record, raw, compressed = artifacts
