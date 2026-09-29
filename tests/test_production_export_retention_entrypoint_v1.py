@@ -76,6 +76,10 @@ def acceptance(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     retention = importlib.import_module("comprehensive_production_export_retention_v1")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(proof.ENGAGEMENT_PROOF_FIXTURE_ENV, "supplied")
+    # Match production entrypoint initialization to the rendered fixture target.
+    for name in ("PROOF_ACCESS_METHOD", "PROOF_AUTHORIZED_SCOPE", "PROOF_REPOSITORY_IDENTITY"):
+        monkeypatch.setattr(proof, name, getattr(proof, name))
+    proof._configure_proof_repository("BoneManTGRM/NICO")
     metadata = {**proof._expected_engagement_metadata(),
                 "repository_inference_prohibited": True, "directly_scored": False}
     package, english = deepcopy(_render_fixed_families(

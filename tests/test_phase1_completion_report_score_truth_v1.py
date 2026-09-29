@@ -73,3 +73,31 @@ def test_extract_report_rejects_missing_numeric_score_separation(score_evidence:
 def test_extract_report_rejects_non_none_or_conflicting_score_effects(score_evidence: str) -> None:
     with pytest.raises(ValueError, match="non-none score-effect evidence"):
         extract_report(_report_text(score_evidence), EXPECTED_SHA)
+
+
+@pytest.mark.parametrize("score_evidence", [
+    "Score effect: None; Technical score effect: None",
+    "Score effect: assurance-only while authorized human disposition remains pending. "
+    "Score effect: None; Technical score effect: None",
+    "Score effect:\nNone; Technical\nscore effect: None",
+])
+def test_extract_report_accepts_pdf_display_labels(score_evidence):
+    assert extract_report(_report_text(score_evidence), EXPECTED_SHA)["work_units"] == 3
+
+
+@pytest.mark.parametrize("score_evidence", [
+    "Score effect: None; Technical score effect: penalty",
+    "score_effect: none; Score effect: workload_penalty",
+    "No numeric technical-maturity or Evidence-Adjusted score effect. Technical score effect: penalty",
+    "Technical score effect: assurance-only",
+])
+def test_display_conflicts_fail_even_with_other_positive_evidence(score_evidence):
+    with pytest.raises(ValueError, match="non-none score-effect evidence"):
+        extract_report(_report_text(score_evidence), EXPECTED_SHA)
+
+
+def test_rendered_triage_labels_preserve_counts():
+    text = _report_text("Score effect: None; Technical score effect: None")
+    text = text.replace("not_actionable=", "not actionable=").replace("needs_review=", "needs review=")
+    report = extract_report(text, EXPECTED_SHA)
+    assert (report["not_actionable"], report["needs_review"], report["confirmed"]) == (1, 2, 0)

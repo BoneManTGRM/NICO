@@ -56,20 +56,26 @@ def _require_score_separation(compact: str) -> None:
     """Require explicit proof that operational workload does not change numeric scores.
 
     Historical completion-bound reports used one fixed sentence. Current canonical
-    reports expose the same truth through structured ``score_effect`` fields. Accept
-    either representation, but fail closed if any structured field reports a value
+    reports expose the same truth through structured ``score_effect`` fields or
+    human-readable PDF labels. Accept these representations, but fail closed if
+    any numeric score-effect field reports a value
     other than ``none`` or if no score-separation evidence is present.
     """
 
     normalized = compact.lower()
-    structured_values = [
-        match.group(1).lower().replace("-", "_")
-        for match in re.finditer(
-            r"`?(?:score_effect|technical_score_effect)`?\s*:\s*([a-z0-9_-]+)",
-            normalized,
-            re.I,
-        )
-    ]
+    structured_values = []
+    for match in re.finditer(
+        r"(?<![a-z0-9_])`?((?:technical[_\s]+)?score[_\s]+effect)`?\s*:\s*([a-z0-9_-]+)",
+        normalized,
+        re.I,
+    ):
+        label, value = match.groups()
+        # Candidate-review assurance is a distinct, existing narrative field.
+        # It is not positive proof of numeric-score separation, nor does it
+        # contradict an explicit operational score-effect value of None.
+        if label == "score effect" and value == "assurance-only":
+            continue
+        structured_values.append(value.replace("-", "_"))
     non_none = sorted({value for value in structured_values if value != "none"})
     if non_none:
         raise ValueError(
@@ -112,8 +118,8 @@ def extract_report(text: str, expected_assessed_sha: str) -> dict[str, Any]:
         "coverage_done": _one(r"Technical triage coverage:\s*(\d+)/\d+", compact, "triage coverage"),
         "coverage_total": _one(r"Technical triage coverage:\s*\d+/(\d+)", compact, "triage coverage total"),
         "carry_forward": _one(r"Exact carry-forward:\s*(\d+)", compact, "carry-forward"),
-        "not_actionable": _one(r"not_actionable=(\d+)", compact, "not_actionable verdict"),
-        "needs_review": _one(r"needs_review=(\d+)", compact, "needs_review verdict"),
+        "not_actionable": _one(r"not[_\s]+actionable=(\d+)", compact, "not_actionable verdict"),
+        "needs_review": _one(r"needs[_\s]+review=(\d+)", compact, "needs_review verdict"),
         "confirmed": _one(r"confirmed=(\d+)", compact, "confirmed verdict"),
         "individual": _one(r"Individual human attention:\s*(\d+)", compact, "individual review"),
         "grouped": _one(r"grouped-review eligible candidates:\s*(\d+)", compact, "grouped review"),

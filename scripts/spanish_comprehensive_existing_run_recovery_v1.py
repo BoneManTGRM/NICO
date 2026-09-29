@@ -444,6 +444,7 @@ def _wait_existing_run_to_terminal(
 
 
 def run_recovery(browser: Any, args: argparse.Namespace) -> dict[str, Any]:
+    spanish._configure_proof_repository(args.repository)
     origin = args.frontend_url.rstrip("/")
     release_sha = _require_git_sha(
         args.expected_sha,
