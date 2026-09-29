@@ -76,8 +76,15 @@ def test_live_bitcoin_aggregate_limit_is_distinct_from_invalid_file_or_unknown_e
         bad['failed_input']['observed'][key] = replacement
         assert not snapshot.is_project_snapshot_capacity_failure(bad)
     bad = deepcopy(value)
-    bad['failed_input']['effective_max_bytes'] += 1
+    bad['failed_input']['effective_max_bytes'] = snapshot.PROJECT_GENERATED_MAX_BYTES + 1
     assert not snapshot.is_project_snapshot_capacity_failure(bad)
     assert not snapshot.is_project_snapshot_capacity_failure({})
     assert not snapshot.is_project_snapshot_capacity_failure(None)
-    assert snapshot.PROJECT_GENERATED_MAX_BYTES == 33554432
+    # The retained production failure exceeded the prior 32 MiB aggregate by
+    # 176,024 bytes. The bounded 40 MiB aggregate admits that exact next file.
+    assert snapshot.PROJECT_GENERATED_MAX_BYTES == 41943040
+    assert value['failed_input']['captured_bytes_before'] + value['failed_input']['observed']['bytes'] \
+        <= snapshot.PROJECT_GENERATED_MAX_BYTES
+    # Base64 plus two MiB of metadata fits the paired stream boundary.
+    expanded = 4 * ((snapshot.PROJECT_GENERATED_MAX_BYTES + 2) // 3)
+    assert expanded + 2 * 1024 * 1024 <= snapshot.PROJECT_GENERATED_STREAM_LIMIT == 58720256

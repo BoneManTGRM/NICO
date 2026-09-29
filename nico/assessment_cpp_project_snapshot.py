@@ -24,12 +24,14 @@ from nico.assessment_cpp_generated_context import (
 # Project-wide snapshots are opt-in. The earlier header-only contract and all
 # four earlier embedded programs above retain their exact bytes and limits.
 PROJECT_GENERATED_MAX_FILES = 2048
-# Byte-table headers can expand well beyond their raw asset size. This
-# per-file bound shares, rather than raises, the existing aggregate allowance.
+# Byte-table headers can expand well beyond their raw asset size. Keep the
+# single-file boundary unchanged; grant the aggregate eight MiB of measured
+# headroom for projects such as Bitcoin that generate several bounded tables.
+# The transport limit covers base64's 4/3 expansion plus bounded JSON metadata.
 PROJECT_GENERATED_MAX_FILE_BYTES = 32 * 1024 * 1024
-PROJECT_GENERATED_MAX_BYTES = 32 * 1024 * 1024
+PROJECT_GENERATED_MAX_BYTES = 40 * 1024 * 1024
 PROJECT_GENERATED_SCAN_LIMIT = 40000
-PROJECT_GENERATED_STREAM_LIMIT = 48 * 1024 * 1024
+PROJECT_GENERATED_STREAM_LIMIT = 56 * 1024 * 1024
 PROJECT_HEADER_SUFFIXES = ('.h', '.hh', '.hpp', '.hxx', '.inc', '.inl', '.ipp', '.tpp', '.txx')
 
 
@@ -49,9 +51,10 @@ def is_project_snapshot_capacity_failure(value):
         return False
     total, remaining, size = (detail.get('captured_bytes_before'),
                               detail.get('effective_max_bytes'), observed.get('bytes'))
+    capacity = total + remaining if type(total) is int and type(remaining) is int else -1
     return (all(type(n) is int for n in (total, remaining, size))
-            and 0 <= total <= PROJECT_GENERATED_MAX_BYTES
-            and remaining == min(PROJECT_GENERATED_MAX_FILE_BYTES, PROJECT_GENERATED_MAX_BYTES-total)
+            and 0 < capacity <= PROJECT_GENERATED_MAX_BYTES and 0 <= total <= capacity
+            and remaining == min(PROJECT_GENERATED_MAX_FILE_BYTES, capacity-total)
             and 0 <= remaining < size <= PROJECT_GENERATED_MAX_FILE_BYTES)
 
 

@@ -51,7 +51,15 @@ The ordinary parent storage failure is independently responsible for blocking
 the report: composition preserves the parent's failed/snapshot-unverified state.
 After that failure is repaired, existing composition can retain the child's
 failed tool result in a report without bypassing parent snapshot verification.
-Ninety focused storage, snapshot, receipt and proof tests pass for both changes.
+The per-file cap remains 32 MiB. The aggregate generated-byte cap is raised from
+32 to 40 MiB, a bounded eight-MiB increment; the paired encoded-stream boundary
+is raised from 48 to 56 MiB to cover base64 expansion plus two MiB of metadata.
+The production failure needed only 176,024 more raw bytes to admit its next file.
+File-count, traversal, ownership, link, type, digest, immutable-input, CPU,
+container, and memory controls remain unchanged. Capacity diagnostics retain
+the historical limit they prove, rather than being reinterpreted under the new
+limit. Ninety focused storage, snapshot, receipt and proof tests passed before
+this capacity adjustment; the adjusted exact-head suite is recorded in CI.
 
 This patch does not solve the C++ aggregate capture limit, complete static/runtime
 analysis, produce a report, or qualify a new production release. Inspect CI and
