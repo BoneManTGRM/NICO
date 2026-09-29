@@ -235,6 +235,9 @@ export default function ComprehensiveRecoveryPanel({
           headers: {
             "Accept": "application/json",
             "Cache-Control": "no-store",
+            // Read the revision-bound summary, not the full retained report.
+            // Keep Resume on its existing explicit one-stage mutation path.
+            "X-NICO-Browser-Projection": "terminal-manifest-v1",
           },
         },
       );
