@@ -10,7 +10,7 @@ from nico import assessment_cpp_project_compiler as compiler
 from tests.test_cpp_project_snapshot import contexts, layout
 
 
-def test_expanded_raw_header_is_captured_without_changing_aggregate_budget(tmp_path):
+def test_expanded_raw_header_is_captured_with_bounded_aggregate_headroom(tmp_path):
     build, destination = layout(tmp_path)
     # Synthetic byte-table expansion: 16 source characters per raw byte plus
     # one newline per eight bytes. No upstream source or executable is used.
@@ -23,8 +23,8 @@ def test_expanded_raw_header_is_captured_without_changing_aggregate_budget(tmp_p
     assert value['files']['generated/expanded.h']['sha256'] == sha256(header).hexdigest()
     assert (destination / 'generated/expanded.h').read_bytes() == header
     assert snapshot.validate_project_snapshot(value, contexts()) == value
-    assert snapshot.PROJECT_GENERATED_MAX_BYTES == 32 * 1024 * 1024
-    assert snapshot.PROJECT_GENERATED_STREAM_LIMIT == 48 * 1024 * 1024
+    assert snapshot.PROJECT_GENERATED_MAX_BYTES == 40 * 1024 * 1024
+    assert snapshot.PROJECT_GENERATED_STREAM_LIMIT == 56 * 1024 * 1024
     assert value['analysis_executed'] is False
     assert value['header_dependencies_verified'] is False
 

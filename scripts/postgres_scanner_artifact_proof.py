@@ -46,7 +46,8 @@ def run_proof(database_url: str) -> dict:
     binding = {"run_id": "scanner_proof_run_" + suffix, "scan_id": "scanner_proof_scan_" + suffix,
                "customer_id": "scanner_proof_customer_" + suffix, "project_id": "scanner_proof_project_" + suffix,
                "repository": "synthetic/scanner-artifact-proof", "commit_sha": "a" * 40, "scanner_name": "synthetic"}
-    raw = b'{"synthetic":true,"observations":["original scanner bytes"]}'
+    preview = 'original scanner bytes\x00with lone surrogate\ud800'
+    raw = json.dumps({'synthetic': True, 'observations': [preview]}).encode()
     compressed = gzip.compress(raw, mtime=0)
     raw_hash, gzip_hash = (hashlib.sha256(value).hexdigest() for value in (raw, compressed))
     previous_adapter = STORE.adapter
@@ -57,6 +58,7 @@ def run_proof(database_url: str) -> dict:
             blob = root / "synthetic.json.gz"
             blob.write_bytes(compressed)
             record = {"tool": binding["scanner_name"], "commit_sha": binding["commit_sha"], "status": "completed",
+                      "findings": [{"code": preview}],
                       "raw_artifact_sha256": raw_hash,
                       "raw_artifact": {"storage_key": blob.name, "sha256": raw_hash, "gzip_sha256": gzip_hash,
                                        "retained_bytes": len(raw), "gzip_bytes": len(compressed), "redacted": True}}
@@ -68,6 +70,9 @@ def run_proof(database_url: str) -> dict:
             restored = STORE.get("scanner_runs", binding["scan_id"])
             _require(bool(restored), "scanner_record_missing")
             retained = restored["scanner_results"][0]
+            _require(retained['findings'][0]['code'] == r'original scanner bytes\u0000with lone surrogate\ud800'
+                     and retained['text_encoding']['escaped_codepoints'] == 2,
+                     'jsonb_display_text_not_preserved')
             read = artifacts.read_scanner_artifact(retained, binding=binding, raw_root=root)
             _require(read.metadata["availability"] == "verified" and read.raw == raw and read.compressed == compressed,
                      "original_bytes_not_preserved")

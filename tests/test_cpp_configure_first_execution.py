@@ -100,6 +100,18 @@ def test_incomplete_configure_first_receipt_retains_available_artifacts_and_exac
     assert record['reason']=='Configure-first execution is incomplete; retained native evidence requires repair.'
 
 
+def test_capacity_limit_is_reported_without_scanner_completion_credit():
+    identity,plan,receipt=incomplete_receipt(runtime=True)
+    receipt['native']['error']='worker_configuration_probe_snapshot_capacity_exceeded'
+    receipt['native_sha256']=_digest(receipt['native'])
+    _,record,_=validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+    assert record['status']=='failed'
+    assert record['completed'] is False and record['verified_for_this_report'] is False
+    assert record['canonical_findings_projected'] is False and record['findings']==[]
+    assert 'bounded capacity' in record['reason'] and 'no completion credit' in record['reason']
+    assert record['cpp_build_evidence']['configure_error']==receipt['native']['error']
+
+
 def test_incomplete_artifact_population_cannot_claim_complete_execution():
     identity,plan,receipt=incomplete_receipt()
     receipt['native']['complete_execution']=True
