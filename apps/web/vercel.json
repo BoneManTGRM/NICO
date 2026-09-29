@@ -5,7 +5,7 @@
   "outputDirectory": ".next",
   "git": {
     "deploymentEnabled": {
-      "main": false
+      "main": true
     }
   }
 }
