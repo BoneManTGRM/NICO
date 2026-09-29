@@ -61,3 +61,30 @@ def test_failed_project_entrypoint_retains_metadata_and_sanitizes_other_errors(m
 def test_diagnostics_are_registered_in_the_existing_workflow():
     text=(Path(__file__).resolve().parents[1]/'.github/workflows/cpp-full-project-integration.yml').read_text()
     assert 'tests/test_cpp_project_snapshot_diagnostics.py' in text
+
+
+def test_live_bitcoin_aggregate_limit_is_distinct_from_invalid_file_or_unknown_error():
+    from copy import deepcopy
+    value = {'schema':'nico.cpp-generated-failure.v1', 'configuration':'baseline',
+             'phase':'project_snapshot', 'error':'worker_generated_type_or_size_invalid',
+             'failed_input':{'path':'src/test/data/sighash.json.h', 'phase':'initial_read',
+                 'captured_bytes_before':32230555, 'effective_max_bytes':1323877,
+                 'observed':{'type':'regular', 'bytes':1499901, 'links':1}}}
+    assert snapshot.is_project_snapshot_capacity_failure(value)
+    for key, replacement in [('links',2), ('type','symlink'), ('bytes',True), ('bytes',1323877)]:
+        bad = deepcopy(value)
+        bad['failed_input']['observed'][key] = replacement
+        assert not snapshot.is_project_snapshot_capacity_failure(bad)
+    bad = deepcopy(value)
+    bad['failed_input']['effective_max_bytes'] = snapshot.PROJECT_GENERATED_MAX_BYTES + 1
+    assert not snapshot.is_project_snapshot_capacity_failure(bad)
+    assert not snapshot.is_project_snapshot_capacity_failure({})
+    assert not snapshot.is_project_snapshot_capacity_failure(None)
+    # The retained production failure exceeded the prior 32 MiB aggregate by
+    # 176,024 bytes. The bounded 40 MiB aggregate admits that exact next file.
+    assert snapshot.PROJECT_GENERATED_MAX_BYTES == 41943040
+    assert value['failed_input']['captured_bytes_before'] + value['failed_input']['observed']['bytes'] \
+        <= snapshot.PROJECT_GENERATED_MAX_BYTES
+    # Base64 plus two MiB of metadata fits the paired stream boundary.
+    expanded = 4 * ((snapshot.PROJECT_GENERATED_MAX_BYTES + 2) // 3)
+    assert expanded + 2 * 1024 * 1024 <= snapshot.PROJECT_GENERATED_STREAM_LIMIT == 58720256

@@ -234,6 +234,46 @@ def read_scanner_artifact(record: Mapping[str, Any], *, binding: Mapping[str, An
         return failure("durable_storage_unavailable")
 
 
+def _jsonb_display_text(record: dict[str, Any]) -> dict[str, Any]:
+    """Escape unrepresentable display text after immutable raw-byte retention.
+
+    PostgreSQL JSONB cannot represent NUL or lone UTF-16 surrogate codepoints.
+    Scanner snippets may contain these even though their JSON is valid. Keep
+    the original compressed evidence and hashes untouched; label the display
+    transformation explicitly instead of dropping a finding or failing storage.
+    """
+    count = 0
+
+    def walk(value):
+        nonlocal count
+        if isinstance(value, str):
+            chars = []
+            for char in value:
+                code = ord(char)
+                if code == 0 or 0xD800 <= code <= 0xDFFF:
+                    chars.append('\\u%04x' % code)
+                    count += 1
+                else:
+                    chars.append(char)
+            return ''.join(chars)
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        if isinstance(value, dict):
+            # Do not rename fields, merge keys, or rewrite source identities.
+            if any(isinstance(key, str) and any(ord(c) == 0 or 0xD800 <= ord(c) <= 0xDFFF for c in key)
+                   for key in value):
+                raise ValueError('scanner_record_key_unrepresentable')
+            return {key: walk(item) for key, item in value.items()}
+        return value
+
+    result = walk(record)
+    if count:
+        result['text_encoding'] = {'schema': 'nico.scanner-display-text.v1',
+            'escaped_codepoints': count, 'representation': 'literal_unicode_escape',
+            'original_raw_artifact_unchanged': True}
+    return result
+
+
 def persist_scanner_result(record: Mapping[str, Any], *, binding: Mapping[str, Any], raw_root: Path | str | None = None) -> dict[str, Any]:
     """Complete durable retention before the worker publishes tool success."""
     output = deepcopy(dict(record))
@@ -259,6 +299,7 @@ def persist_scanner_result(record: Mapping[str, Any], *, binding: Mapping[str, A
         output.update(source)
         output["raw_artifact_retention_complete"] = True
         output["raw_artifact_durability"] = {"version": VERSION, "status": "persisted", "backend": "postgres", "original_compressed_bytes_preserved": True}
+        output = _jsonb_display_text(output)
         output["artifact_hash"] = _sha(json.dumps({key: value for key, value in output.items() if key != "artifact_hash"}, sort_keys=True, separators=(",", ":"), default=str).encode())
         return output
     except ImmutableArtifactConflict:
