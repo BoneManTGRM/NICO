@@ -444,6 +444,14 @@ def probe_project_configuration(source, targets, image, *, project_options,
                     limit=PROJECT_GENERATED_STREAM_LIMIT, seconds=30, external=True)
                 if (snapshot_observed['exit_code'] != 0 or snapshot_observed['timed_out']
                         or snapshot_observed['output_truncated']):
+                    from nico.assessment_cpp_project_snapshot import is_project_snapshot_capacity_failure
+                    if not snapshot_observed['timed_out'] and not snapshot_observed['output_truncated']:
+                        try:
+                            capacity = is_project_snapshot_capacity_failure(_json(snapshot_observed['output']))
+                        except (ValueError, TypeError):
+                            capacity = False
+                        if capacity:
+                            raise ValueError('worker_configuration_probe_snapshot_capacity_exceeded')
                     raise ValueError('worker_configuration_probe_snapshot_failed')
                 try:
                     snapshot = validate_project_snapshot(_json(snapshot_observed['output']), contexts)
