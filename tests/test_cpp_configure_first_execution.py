@@ -1,6 +1,10 @@
 from copy import deepcopy
+from dataclasses import asdict
 import hashlib
-from nico.assessment_worker_receipts import canonical_bytes
+import pytest
+
+from nico.assessment_worker_jobs import JobIdentity, _digest
+from nico.assessment_worker_receipts import canonical_bytes, publish_receipt, validate_receipt
 from nico.assessment_cpp_configure_first_execution import summarize_probe
 
 def ref(key, raw=b"x"):
@@ -45,6 +49,99 @@ def test_summary_rejects_artifact_identity_substitution():
     import pytest
     with pytest.raises(ValueError,match="artifact_reference"):
         summarize_probe(proof(),targets,artifacts)
+
+
+def incomplete_receipt(*, runtime=False):
+    from tests.test_cpp_configure_first_contract import contract
+
+    plan=contract()
+    if runtime:
+        plan['configuration'].pop('project_options')
+        plan['configuration'].update(schema='nico.cpp-configure-first-contract.v3',
+            project_option_policy='conservative-cmake-v1',runtime_scope={
+                'schema':'nico.cpp-runtime-scope.v1','total_seconds':6000,
+                'functional_policy':'source-declared-functional-v1','functional_seconds':900,
+                'sanitizers':['address','undefined'],'sanitizer_build_seconds':1200,
+                'sanitizer_test_seconds':600,'sanitizer_test_case_seconds':120,
+                'fuzz_policy':'source-declared-libfuzzer-v1','fuzz_replay_runs':1,
+                'fuzz_campaign_runs':256,'fuzz_campaign_seconds':300,'parallel':4})
+        plan['limits']={'max_attempts':1,'wall_seconds':9000,'lease_seconds':300}
+    identity=JobIdentity('customer','project','run','scan','owner/repo','a'*40,_digest(plan),'c'*40)
+    targets={'CMakeLists.txt':'d'*64,'src/a.cpp':'e'*64}
+    failed=proof()
+    failed.update(status='UNPROVEN',error='worker_configuration_probe_compiler_incomplete')
+    failed['project_compiler'].update(checked_contexts=['c1'],complete=False)
+    failed['project_static']={}
+    failed['project_static_stage']={}
+    artifacts={key:ref(key) for key in (
+        'project-compilation-database','project-generated-context','project-compiler-evidence')}
+    native=summarize_probe(failed,targets,artifacts)
+    native.update(project_option_policy='conservative-cmake-v1' if runtime else 'explicit-v1',
+        project_options={},project_options_sha256=_digest({}))
+    if runtime:
+        native.update(schema='nico.cpp-configure-first-native.v2',runtime_complete=False,
+            runtime_plan_sha256='f'*64,runtime_summary_sha256=_digest({}),runtime_duration_ms=0)
+    receipt={'schema':'nico.worker-native-receipt.v7','identity':asdict(identity),'lease_id':'e'*32,
+        'worker_id':'github:1:2:3','image_digest':plan['image_digest'],'tool_version':plan['tool_version'],
+        'configuration_sha256':_digest(plan['configuration']),'target_hashes':targets,'native':native,
+        'native_sha256':_digest(native)}
+    return identity,plan,receipt
+
+
+@pytest.mark.parametrize('runtime',[False,True])
+def test_incomplete_configure_first_receipt_retains_available_artifacts_and_exact_probe_failure(runtime):
+    identity,plan,receipt=incomplete_receipt(runtime=runtime)
+    _,record,_=validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+    assert record['status']=='failed' and record['completed'] is False
+    assert record['canonical_findings_projected'] is False
+    assert record['worker_provenance']['native_artifacts']==receipt['native']['artifacts']
+    assert record['cpp_build_evidence']['configure_error']=='worker_configuration_probe_compiler_incomplete'
+    assert record['cpp_build_evidence']['configure_status']=='UNPROVEN'
+    assert record['reason']=='Configure-first execution is incomplete; retained native evidence requires repair.'
+
+
+def test_incomplete_artifact_population_cannot_claim_complete_execution():
+    identity,plan,receipt=incomplete_receipt()
+    receipt['native']['complete_execution']=True
+    receipt['native_sha256']=_digest(receipt['native'])
+    with pytest.raises(ValueError,match='worker_configure_first_native_invalid'):
+        validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+
+
+def test_incomplete_receipt_still_requires_retained_compilation_database():
+    identity,plan,receipt=incomplete_receipt()
+    receipt['native']['artifacts'].pop('project-compilation-database')
+    receipt['native_sha256']=_digest(receipt['native'])
+    with pytest.raises(ValueError,match='worker_configure_first_native_invalid'):
+        validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+
+
+def test_incomplete_probe_error_is_bounded_before_retention():
+    identity,plan,receipt=incomplete_receipt()
+    receipt['native']['error']='unbounded diagnostic text'
+    receipt['native_sha256']=_digest(receipt['native'])
+    with pytest.raises(ValueError,match='worker_configure_first_native_invalid'):
+        validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+
+
+def test_partial_configure_first_publication_skips_full_reconstruction():
+    identity,plan,receipt=incomplete_receipt()
+
+    class Adapter:
+        _connect=lambda self: (_ for _ in ()).throw(AssertionError('partial receipt must not read missing artifacts'))
+
+    class Jobs:
+        adapter=Adapter()
+        def get(self, actual):
+            assert actual==identity
+            return {'contract':plan,'native_artifacts':deepcopy(receipt['native']['artifacts'])}
+        def complete(self, actual, lease, receipt_sha256, **kwargs):
+            assert actual==identity and lease=='e'*32
+            assert kwargs['worker_id']=='github:1:2:3' and callable(kwargs['publish'])
+            return {'status':'completed','receipt_sha256':receipt_sha256}
+
+    result=publish_receipt(Jobs(),identity,'e'*32,'github:1:2:3',receipt)
+    assert result['status']=='completed'
 
 
 def test_configure_first_v2_derives_options_before_probe(tmp_path, monkeypatch):

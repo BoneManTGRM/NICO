@@ -320,6 +320,10 @@ def _configure_first_record(identity, contract, receipt, encoded):
         required |= {'runtime_complete','runtime_plan_sha256','runtime_summary_sha256','runtime_duration_ms'}
     expected_schema='nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'
     if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!=expected_schema
+            or native.get('status') not in {'UNPROVEN','BASELINE_EXECUTED'}
+            or (native.get('error') is not None
+                and (not isinstance(native.get('error'),str)
+                     or re.fullmatch(r'worker_configuration_probe_[a-z_]+',native['error']) is None))
             or native.get('source_population_sha256')!=_digest(receipt['target_hashes'])
             or type(native.get('source_count')) is not int or native['source_count']!=len(receipt['target_hashes'])
             or native.get('canonical_findings_projected') is not False
@@ -363,7 +367,8 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'project-static-environment','project-static-evidence'}
     if runtime_contract:
         required_refs.add('project-runtime-evidence')
-    if not isinstance(refs,dict) or not required_refs <= set(refs):
+    if (not isinstance(refs,dict) or 'project-compilation-database' not in refs
+            or (native.get('complete_execution') is True and not required_refs <= set(refs))):
         raise ValueError('worker_configure_first_native_invalid')
     for key,value in refs.items():
         if (not isinstance(value,dict) or value.get('key')!=key or value.get('storage_backend')!='postgres'
@@ -401,6 +406,7 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'all_repository_configurations_analyzed':native['project_static_complete']},
         'cpp_build_evidence':{'profile':contract['profile'],'compiled':native['compiled'],'tests_executed':native['tests_executed'],
             'tests_passed':native['tests_passed'],'configured_invocations':native['configured_invocations'],
+            'configure_status':native['status'],'configure_error':native['error'],
             'compilation_database_sha256':native['compilation_database_sha256'],
             'project_option_policy':native['project_option_policy'],
             'project_options':deepcopy(native['project_options']),
@@ -463,9 +469,19 @@ def publish_receipt(jobs: WorkerJobs, identity: JobIdentity, lease: str, worker:
     raw_sha = hashlib.sha256(raw).hexdigest()
     store = ScannerArtifactStore(jobs.adapter._connect)
     if job["contract"].get("profile") == "cpp-configure-first-v2":
-        from nico.assessment_cpp_configure_first_projection import reconstruct_configure_first, project_configure_first_record
-        reconstruction=reconstruct_configure_first(identity,job["contract"],receipt,store)
-        record=project_configure_first_record(record,identity,job["contract"],receipt,reconstruction)
+        native=receipt["native"]
+        required={"project-compilation-database","project-generated-context","project-compiler-evidence",
+                  "project-static-environment","project-static-evidence"}
+        if job["contract"]["configuration"].get("schema") == "nico.cpp-configure-first-contract.v3":
+            required.add("project-runtime-evidence")
+        # Complete retained populations are reconstructed before publication.
+        # A bounded incomplete producer result may legitimately stop before a
+        # later artifact exists; retain that truthful failure record without
+        # converting it into canonical findings or completion credit.
+        if required <= set(native["artifacts"]):
+            from nico.assessment_cpp_configure_first_projection import reconstruct_configure_first, project_configure_first_record
+            reconstruction=reconstruct_configure_first(identity,job["contract"],receipt,store)
+            record=project_configure_first_record(record,identity,job["contract"],receipt,reconstruction)
 
     def publish(connection, _job):
         row = connection.execute("SELECT payload FROM scanner_runs WHERE scan_id=%s FOR UPDATE",
