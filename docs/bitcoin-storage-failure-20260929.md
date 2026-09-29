@@ -45,8 +45,8 @@ Follow-up in this repair classifies the exact retained aggregate-capacity error
 separately from invalid file types, timeout, truncation and other capture errors.
 The incomplete receipt now states that generated capture exceeded its bound and
 that later compiler/static/runtime analysis receives no completion credit. The
-32 MiB cap and failed/incomplete flags remain unchanged. This fixes reporting of
-the limit; it does not establish full native execution support at Bitcoin size.
+failed/incomplete flags remain unchanged. This fixes reporting of the limit;
+it does not establish full native execution support at Bitcoin size.
 The ordinary parent storage failure is independently responsible for blocking
 the report: composition preserves the parent's failed/snapshot-unverified state.
 After that failure is repaired, existing composition can retain the child's
@@ -61,8 +61,9 @@ the historical limit they prove, rather than being reinterpreted under the new
 limit. Ninety focused storage, snapshot, receipt and proof tests passed before
 this capacity adjustment; the adjusted exact-head suite is recorded in CI.
 
-This patch does not solve the C++ aggregate capture limit, complete static/runtime
-analysis, produce a report, or qualify a new production release. Inspect CI and
-reviews before merge. Diagnose/report bounded unexecuted scope without raising
-resource caps or granting completion credit. Do not retry the production run
+The new aggregate allowance has not yet been proven sufficient for the entire
+Bitcoin snapshot. This patch does not establish complete static/runtime analysis,
+produce a report, or qualify a new production release. Inspect CI and reviews
+before merge. Diagnose/report bounded unexecuted scope without further capacity
+changes or granting completion credit. Do not retry the production run
 unchanged or change its historical records.
