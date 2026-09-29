@@ -50,3 +50,54 @@ def test_policy_output_validator_rejects_worker_invented_option():
         validate_project_options({'UNRELATED_PROJECT_SWITCH':'OFF'})
     with pytest.raises(ValueError,match='options_invalid'):
         validate_project_options({'BUILD_TESTS':'OFF'})
+
+
+@pytest.mark.parametrize('declaration,expected', [
+    ('cmake_dependent_option(BUILD_GUI_TESTS "tests" ON "BUILD_GUI;BUILD_TESTS" OFF)', False),
+    ('cmake_dependent_option(BUILD_GUI_TESTS "tests" ON "BUILD_TESTS" OFF)', True),
+    ('cmake_dependent_option(BUILD_GUI_TESTS "tests" ON "UNKNOWN" OFF)', True),
+    ('cmake_dependent_option(BUILD_GUI_TESTS "tests" ON "NOT BUILD_GUI" OFF)', True),
+    ('cmake_dependent_option(BUILD_GUI_TESTS "tests" ON "BUILD_GUI" ON)', True),
+    ('option(BUILD_GUI_TESTS "tests" ON)', True),
+])
+def test_dependent_options_require_proven_inactive_matching_fallback(tmp_path, declaration, expected):
+    root, targets = materialized(tmp_path, 'option(BUILD_GUI "gui" ON)\n'
+        'option(BUILD_TESTS "tests" OFF)\n' + declaration + '\n')
+    options = derive_project_options(root, targets, POLICY)
+    assert ('BUILD_GUI_TESTS' in options) is expected
+    assert options['BUILD_GUI'] == 'OFF'
+    assert options['BUILD_TESTS'] == 'ON'
+
+
+def test_dependent_parent_cannot_justify_omission(tmp_path):
+    root, targets = materialized(tmp_path, '''
+cmake_dependent_option(BUILD_GUI "gui" OFF "UNKNOWN" ON)
+cmake_dependent_option(BUILD_GUI_TESTS "tests" ON "BUILD_GUI" OFF)
+''')
+    assert derive_project_options(root, targets, POLICY)['BUILD_GUI_TESTS'] == 'OFF'
+
+
+def test_real_cmake_inactive_dependent_uses_fallback_without_internal_override(tmp_path):
+    import shutil
+    import subprocess
+    cmake = shutil.which('cmake')
+    if cmake is None:
+        pytest.skip('CMake required for native cache semantics regression')
+    root, targets = materialized(tmp_path, '''
+cmake_minimum_required(VERSION 3.22)
+project(DependentOptions NONE)
+include(CMakeDependentOption)
+option(BUILD_GUI "gui" ON)
+option(BUILD_TESTS "tests" OFF)
+cmake_dependent_option(BUILD_GUI_TESTS "tests" ON "BUILD_GUI;BUILD_TESTS" OFF)
+if(BUILD_GUI OR BUILD_GUI_TESTS OR NOT BUILD_TESTS)
+  message(FATAL_ERROR "Incorrect effective baseline options")
+endif()
+''')
+    options = derive_project_options(root, targets, POLICY)
+    subprocess.run([cmake, '-S', str(root), '-B', str(tmp_path/'build'),
+        *[f'-D{k}={v}' for k, v in options.items()]], check=True, capture_output=True)
+    cache = (tmp_path/'build/CMakeCache.txt').read_text()
+    assert 'BUILD_GUI:BOOL=OFF' in cache
+    assert 'BUILD_TESTS:BOOL=ON' in cache
+    assert 'BUILD_GUI_TESTS:INTERNAL' not in cache
