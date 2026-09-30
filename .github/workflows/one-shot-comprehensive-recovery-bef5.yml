@@ -93,10 +93,20 @@ jobs:
               SESSION_HEADER,
               acquire_production_proof_session,
           )
-          from comprehensive_recovery_observation_v1 import recovery_boundary_observed
+          from comprehensive_recovery_observation_v1 import recovery_boundary_observed, retryable_recovery_read, validate_recovered_pdf
 
           origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
-          session, retained = acquire_production_proof_session(origin)
+          # Session exchange signs a stateless, release-bound token; it does not
+          # advance an assessment. Retry only bounded transient routing failures.
+          for auth_attempt in range(3):
+              try:
+                  session, retained = acquire_production_proof_session(origin)
+                  break
+              except urllib.error.HTTPError as exc:
+                  body = exc.read(3000).decode("utf-8", errors="replace")
+                  if auth_attempt == 2 or not retryable_recovery_read(exc.code, body):
+                      raise
+                  time.sleep(5)
           if retained["release_sha"] != os.environ["RELEASE_SHA"]:
               raise RuntimeError("Recovery proof session release mismatch")
           run_id = os.environ["TARGET_RUN_ID"]
@@ -115,12 +125,23 @@ jobs:
               if data is not None:
                   headers["Content-Type"] = "application/json"
               req = urllib.request.Request(url, data=data, method=method, headers=headers)
-              try:
-                  with urllib.request.urlopen(req, timeout=timeout) as response:
-                      raw = response.read()
-              except urllib.error.HTTPError as exc:
-                  body = exc.read().decode("utf-8", errors="replace")
-                  raise RuntimeError(f"HTTP {exc.code} {method} {url}: {body[:3000]}") from exc
+              attempts = 3 if method == "GET" else 1
+              for read_attempt in range(attempts):
+                  try:
+                      with urllib.request.urlopen(req, timeout=timeout) as response:
+                          raw = response.read()
+                      break
+                  except urllib.error.HTTPError as exc:
+                      body = exc.read().decode("utf-8", errors="replace")
+                      if method == "GET" and read_attempt + 1 < attempts and retryable_recovery_read(exc.code, body):
+                          print(f"Transient exact-run read HTTP {exc.code}; retrying bounded read.", flush=True)
+                          time.sleep(5)
+                          continue
+                      raise RuntimeError(f"HTTP {exc.code} {method} {url}: {body[:3000]}") from exc
+                  except (urllib.error.URLError, TimeoutError):
+                      if method != "GET" or read_attempt + 1 >= attempts:
+                          raise
+                      time.sleep(5)
               value = json.loads(raw.decode("utf-8"))
               if not isinstance(value, dict):
                   raise RuntimeError(f"Expected JSON object from {method} {url}")
@@ -140,6 +161,7 @@ jobs:
                   "revision": payload.get("revision", record.get("revision")),
                   "terminal": bool(payload.get("terminal") if "terminal" in payload else record.get("terminal")),
                   "current_stage": current_stage,
+                  "current_stage_complete": current_stage in (payload.get("completed_stages") or record.get("completed_stages") or []),
                   "current_stage_reason": str(stage_result.get("reason") or ""),
                   "current_stage_technical_reason": str(stage_result.get("technical_reason") or ""),
                   "progress_percent": payload.get("progress_percent", record.get("progress_percent")),
@@ -180,6 +202,7 @@ jobs:
                           f"Recovery continuation {attempt}: re-entering blocked exact run at {final['current_stage']}",
                           flush=True,
                       )
+                  before_continuation_revision = int(final["revision"])
                   try:
                       continued_payload = request_json(
                           "POST",
@@ -223,13 +246,15 @@ jobs:
                               + json.dumps(final, sort_keys=True),
                               flush=True,
                           )
-                          if recovery_boundary_observed(final, initial_revision=int(initial["revision"])):
+                          if recovery_boundary_observed(final, initial_revision=before_continuation_revision):
                               break
                       else:
                           raise RuntimeError(
                               "Final-report recovery did not reach a terminal boundary within 60 minutes"
                           )
-                      break
+                      if final["terminal"]:
+                          break
+                      continue
 
                   time.sleep(2)
               else:
@@ -261,7 +286,28 @@ jobs:
           if final["client_delivery_allowed"]:
               raise RuntimeError(f"Client delivery became allowed without review: {final}")
           if initial["current_stage"] == final["current_stage"] and initial["status"] == final["status"]:
-              raise RuntimeError(f"Exact run did not advance beyond the stale production failure: {final}")
+              if initial["status"].lower() in blocked_states:
+                  raise RuntimeError(f"Exact run did not advance beyond the stale production failure: {final}")
+
+          pdf_request = urllib.request.Request(f"{endpoint}/report/pdf", headers={
+              "Accept": "application/pdf", "Cache-Control": "no-store", SESSION_HEADER: session,
+          })
+          for read_attempt in range(3):
+              try:
+                  with urllib.request.urlopen(pdf_request, timeout=270) as response:
+                      pdf = response.read(128 * 1024 * 1024 + 1)
+                      if len(pdf) > 128 * 1024 * 1024:
+                          raise RuntimeError("recovered_pdf_read_limit")
+                      pdf_proof = validate_recovered_pdf(pdf, dict(response.headers), run_id=run_id, commit_sha=final["commit_sha"])
+                  break
+              except urllib.error.HTTPError as exc:
+                  body = exc.read(3000).decode("utf-8", errors="replace")
+                  if read_attempt == 2 or not retryable_recovery_read(exc.code, body):
+                      raise
+                  time.sleep(5)
+          Path("audit-results/bitcoin-recovery-PENDING-HUMAN-APPROVAL.pdf").write_bytes(pdf)
+          proof["artifact_verification"] = pdf_proof
+          Path("audit-results/exact-comprehensive-recovery-bef5.json").write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
           print("Exact preserved Comprehensive run reached its post-automation review boundary.", flush=True)
           print(json.dumps(final, indent=2, sort_keys=True), flush=True)
@@ -272,7 +318,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: exact-comprehensive-recovery-bef5-${{ github.sha }}-${{ github.run_id }}
-          path: audit-results/exact-comprehensive-recovery-bef5.json
+          path: |
+            audit-results/exact-comprehensive-recovery-bef5.json
+            audit-results/bitcoin-recovery-PENDING-HUMAN-APPROVAL.pdf
           if-no-files-found: warn
           retention-days: 90
 
