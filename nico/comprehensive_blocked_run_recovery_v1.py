@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-VERSION = "nico.comprehensive_blocked_run_recovery.v11"
+VERSION = "nico.comprehensive_blocked_run_recovery.v12"
 _DECISION_REPORT_STAGE = "decision_report_generation"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
@@ -22,6 +22,7 @@ _RECOVERABLE_REASONS_BY_STAGE = {
     },
     _FINAL_REPORT_STAGE: {
         "detached_stage_execution_failed",
+        "run_storage_compressed_size_limit",
         "final_report_execution_timeout",
         "final_report_publication_deadline_exceeded",
         "v2_production_publication_failed",
