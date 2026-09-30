@@ -392,8 +392,9 @@ def configure_first_job(files):
             'max_receipt_bytes':8*1024*1024},
         'deadline_epoch':time.time()+60,'source_access':{'mode':'anonymous_public','credential_used':False}}
 
-def test_configure_first_profile_derives_complete_regular_population(tmp_path):
-    files=fixture(); job,download,calls=job_and_download(files); job=configure_first_job(files)
+@pytest.mark.parametrize('count', [4, 31, 32, 33])
+def test_configure_first_profile_derives_complete_regular_population(tmp_path, count):
+    files=fixture(count); job,download,calls=job_and_download(files); job=configure_first_job(files)
     tmp_path.chmod(0o700)
     root,evidence=acquire_public_github_inputs(job,tmp_path,lambda:None,download=download)
     assert evidence['schema']=='nico.github_https_tree_materialization.v2'
@@ -402,7 +403,27 @@ def test_configure_first_profile_derives_complete_regular_population(tmp_path):
     assert evidence['inputs']=={p:hashlib.sha256(raw).hexdigest() for p,raw in files.items()}
     assert evidence['excluded_entries']==[]
     assert {p.relative_to(root).as_posix():p.read_bytes() for p in root.rglob('*') if p.is_file()}==files
-    assert calls[-1]==ARCHIVE_URL
+    if count >= 32:
+        assert calls[-1]==ARCHIVE_URL
+    else:
+        assert ARCHIVE_URL not in calls and len(calls)==len(files)+2
+
+
+@pytest.mark.parametrize('count', [4, 31])
+def test_configure_first_small_population_rejects_changed_blob_bytes(tmp_path, count):
+    files=fixture(count); _,download,_=job_and_download(files); job=configure_first_job(files)
+    corrupted=[]
+    def corrupt(url,destination,**kwargs):
+        download(url,destination,**kwargs)
+        if urlsplit(url).netloc=='raw.githubusercontent.com' and url.endswith('/main.cpp'):
+            destination.write_bytes(b'x'*len(files['main.cpp']))
+            corrupted.append('main.cpp')
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError,match='worker_source_digest_mismatch'):
+        acquire_public_github_inputs(job,tmp_path,lambda:None,download=corrupt)
+    assert corrupted==['main.cpp']
+    assert not (tmp_path/'source').exists()
+    assert not list(tmp_path.glob('.nico-source-*'))
 
 def test_configure_first_profile_rejects_tree_substitution(tmp_path):
     files=fixture(); job,download,_=job_and_download(files); job=configure_first_job(files)

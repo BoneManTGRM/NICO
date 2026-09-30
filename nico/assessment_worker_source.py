@@ -434,8 +434,12 @@ def acquire_public_github_inputs(job, root, checkpoint, *, download=download_pub
                 download(url, output, limit=max(1, entry['size']), checkpoint=checkpoint, deadline=deadline)
                 raw = output.read_bytes()
                 oid = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw, usedforsecurity=False).hexdigest()
-                if len(raw) != entry['size'] or hashlib.sha256(raw).hexdigest() != digest or oid != entry['sha']:
+                digest256 = hashlib.sha256(raw).hexdigest()
+                if (len(raw) != entry['size'] or oid != entry['sha']
+                        or (digest is not None and digest256 != digest)):
                     raise ValueError('worker_source_digest_mismatch')
+                if digest is None:
+                    population[path] = digest256
                 if raw.startswith(b'version https://git-lfs.github.com/spec/v1'):
                     raise ValueError('worker_source_type_unsupported')
                 output.chmod(0o555 if profile in {'cpp-full-project-v1','cpp-configure-first-v2'} and entry['mode'] == '100755' else 0o444)
