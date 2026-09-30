@@ -78,3 +78,20 @@ def test_diagnostic_workflow_cannot_publish_a_release_success():
     assert job['steps'][-1]['run'].rstrip().endswith('exit 1')
     assert 'blocked-run-diagnostic-' in job['steps'][-2]['with']['name']
     assert all('/continue' not in str(step) for step in job['steps'])
+
+
+def test_bef5_one_shot_diagnostic_is_read_only_and_oidc_bound():
+    import yaml
+    path = Path(__file__).parents[1] / '.github/workflows/one-shot-comprehensive-recovery-bef5.yml'
+    workflow = yaml.safe_load(path.read_text())
+    job = workflow['jobs']['diagnose-preserved-run']
+    assert '[diagnose-comprun-bef5]' in job['if']
+    assert job['environment'] == 'production-smoke'
+    assert job['permissions'] == {'contents': 'read', 'id-token': 'write'}
+    rendered = json.dumps(job, sort_keys=True)
+    assert 'production_blocked_run_diagnostic_v1.py' in rendered
+    assert 'comprun_bef5c30980944b6b975039be9dfb17fd' in rendered
+    assert 'e7aef7e86da79000aa42f5ba6d13b0d123d9da7c' in rendered
+    assert '/continue' not in rendered
+    assert 'authorize-delivery' not in rendered
+    assert 'review_authorized' not in rendered
