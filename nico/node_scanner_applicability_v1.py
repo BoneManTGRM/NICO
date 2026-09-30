@@ -25,25 +25,143 @@ _TS_COMMAND = re.compile(r'(?<![\w-])(?:tsc|ts-node|tsx)(?![\w-])')
 MAX_QT_TRANSLATION_BYTES = 4 * 1024 * 1024
 
 
+# Bounded named-context subset of Qt's TS 2.0/2.1 schema
+# (qttools/src/linguist/shared/ts.xsd). Text/byte nodes, locations,
+# source/comment history, plural forms and length variants are supported.
+# Other legal Qt extensions (for example dependencies/extra-* or top-level
+# messages) remain unsupported input signals; unknown nodes are never ignored.
+_QT_CHILDREN = {
+    'TS': ('context',),
+    'context': ('name', 'comment', 'message'),
+    'message': ('location', 'source', 'oldsource', 'comment', 'oldcomment',
+                'extracomment', 'translatorcomment', 'translation', 'userdata'),
+    'translation': ('byte', 'numerusform', 'lengthvariant'),
+    'numerusform': ('byte', 'lengthvariant'),
+    **{name: ('byte',) for name in ('name', 'source', 'oldsource', 'comment',
+        'oldcomment', 'extracomment', 'translatorcomment', 'lengthvariant')},
+    'location': (), 'byte': (), 'userdata': (),
+}
+_QT_ATTRIBUTES = {
+    'TS': {'version', 'language', 'sourcelanguage'}, 'context': {'encoding'},
+    'message': {'id', 'numerus'}, 'location': {'filename', 'line'},
+    'translation': {'type', 'variants'}, 'numerusform': {'variants'},
+    'byte': {'value'},
+}
+_QT_MIXED = frozenset({'name', 'source', 'oldsource', 'comment', 'oldcomment',
+    'extracomment', 'translatorcomment', 'translation', 'numerusform',
+    'lengthvariant', 'userdata'})
+
+
+def _qt_structure(root: ET.Element) -> bool:
+    if root.tag != 'TS' or root.get('version') not in {'2.0', '2.1'}:
+        return False
+    contexts = list(root)
+    if not contexts or not any(message.find('source') is not None
+            for context in contexts for message in context.findall('message')):
+        return False
+    for node in root.iter():
+        allowed = _QT_CHILDREN.get(node.tag)
+        if allowed is None or set(node.attrib) - _QT_ATTRIBUTES.get(node.tag, set()):
+            return False
+        children = list(node)
+        tags = [child.tag for child in children]
+        if any(tag not in allowed for tag in tags):
+            return False
+        if node.tag not in _QT_MIXED and (
+                (node.text or '').strip() or any((child.tail or '').strip() for child in children)):
+            return False
+        if node.tag in {'context', 'message'}:
+            order = [allowed.index(tag) for tag in tags]
+            repeated = {'message'} if node.tag == 'context' else {'location'}
+            if order != sorted(order) or any(tags.count(tag) > 1 for tag in set(tags) - repeated):
+                return False
+        if node.tag == 'context' and (
+                not tags or tags[0] != 'name' or 'message' not in tags):
+            return False
+        if node.tag == 'message' and node.get('numerus', 'no') not in {'yes', 'no'}:
+            return False
+        if node.tag in {'translation', 'numerusform'}:
+            if node.get('variants', 'no') not in {'yes', 'no'}:
+                return False
+            kinds = set(tags)
+            if len(kinds) > 1 or (
+                    kinds - {'byte'} and ((node.text or '').strip()
+                    or any((child.tail or '').strip() for child in children))):
+                return False
+            if node.get('variants') == 'yes' and (
+                    kinds - {'lengthvariant'} or (node.text or '').strip()
+                    or any((child.tail or '').strip() for child in children)):
+                return False
+            if 'lengthvariant' in kinds and node.get('variants') != 'yes':
+                return False
+        if node.tag == 'translation':
+            if node.get('type') not in {None, 'unfinished', 'vanished', 'obsolete'}:
+                return False
+            # Plural translations and length variants cannot be conflated.
+            # An empty unfinished plural translation is still a legal document.
+        if node.tag == 'message':
+            translation = node.find('translation')
+            if translation is not None:
+                forms = any(child.tag == 'numerusform' for child in translation)
+                if forms and node.get('numerus') != 'yes':
+                    return False
+                if node.get('numerus') == 'yes' and (
+                        translation.get('variants') == 'yes'
+                        or any(child.tag != 'numerusform' for child in translation)
+                        or (translation.text or '').strip()):
+                    return False
+        if node.tag == 'byte':
+            value = node.get('value', '')
+            if not re.fullmatch(r'(?:[0-9]{1,7}|x[0-9a-fA-F]{1,6})', value):
+                return False
+            point = int(value[1:], 16) if value.startswith('x') else int(value)
+            if point > 0x10ffff:
+                return False
+    return True
+
+
+class _QtTreeBuilder(ET.TreeBuilder):
+    def pi(self, target, text):
+        # Qt TS does not support processing instructions. The XML declaration
+        # is handled by the parser itself and never invokes this callback.
+        raise ValueError('unsupported_qt_processing_instruction')
+
+
 def _qt_translation(path: Path, relative: str) -> dict[str, Any] | None:
-    """Recognize the complete Qt translation document; suffix alone is ambiguous."""
+    """Recognize bounded supported Qt XML only after encoding-aware rejection."""
     try:
         if not 0 < path.stat().st_size <= MAX_QT_TRANSLATION_BYTES:
             return None
         with path.open('rb') as source:
             raw = source.read(MAX_QT_TRANSLATION_BYTES + 1)
-        if len(raw) > MAX_QT_TRANSLATION_BYTES or b'<!ENTITY' in raw.upper():
+        if len(raw) > MAX_QT_TRANSLATION_BYTES:
             return None
-        root = ET.fromstring(raw)
-        contexts = root.findall('context')
-        if (root.tag != 'TS' or root.get('version') not in {'2.0', '2.1'}
-                or not contexts or not all(context.find('name') is not None for context in contexts)
-                or not any(context.find('message/source') is not None for context in contexts)):
+        # Decode without parsing or expanding entities. BOM-less UTF-16 and
+        # UTF-32 are unsupported and cannot establish TypeScript absence.
+        utf16 = raw.startswith((b'\xff\xfe', b'\xfe\xff'))
+        if raw.startswith((b'\xff\xfe\x00\x00', b'\x00\x00\xfe\xff')):
+            return None
+        text = raw.decode('utf-16' if utf16 else 'utf-8-sig')
+        if '\x00' in text or '<!ENTITY' in text.upper():
+            return None
+        declaration = re.match(r'<\?xml\s+[^?]*\?>', text)
+        encoding = re.search(r'\bencoding\s*=\s*["\']([^"\']+)["\']',
+                             declaration.group() if declaration else '', re.IGNORECASE)
+        if encoding:
+            supported = {'utf-16', 'utf-16le' if raw.startswith(b'\xff\xfe') else 'utf-16be'} if utf16 else {'utf-8', 'utf8'}
+            if encoding.group(1).lower() not in supported:
+                return None
+        if any(re.fullmatch(r'<!DOCTYPE\s+TS\s*>', item) is None
+               for item in re.findall(r'<!DOCTYPE[^>]*>', text, re.IGNORECASE)):
+            return None
+        root = ET.fromstring(raw, parser=ET.XMLParser(target=_QtTreeBuilder()))
+        if not _qt_structure(root):
             return None
         return {'path': relative, 'format': 'qt-ts-xml-v1',
                 'sha256': hashlib.sha256(raw).hexdigest(), 'size_bytes': len(raw)}
-    except (OSError, ET.ParseError, ValueError):
+    except (OSError, ET.ParseError, ValueError, UnicodeError):
         return None
+
 REASONS = {
     'npm-audit': 'The complete assessed checkout contains no JavaScript dependency manifest or lockfile; npm-audit is not applicable. Standalone JavaScript remains in ESLint scope.',
     'typescript': 'The complete assessed checkout contains no TypeScript source, configuration, or declared compiler input; TypeScript compilation is not applicable. JavaScript remains in ESLint scope.',
