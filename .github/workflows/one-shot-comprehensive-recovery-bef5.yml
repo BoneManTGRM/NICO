@@ -93,6 +93,7 @@ jobs:
               SESSION_HEADER,
               acquire_production_proof_session,
           )
+          from comprehensive_recovery_observation_v1 import recovery_boundary_observed
 
           origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
           session, retained = acquire_production_proof_session(origin)
@@ -136,6 +137,7 @@ jobs:
                   "repository": str(payload.get("repository") or identity.get("repository") or ""),
                   "commit_sha": str(payload.get("commit_sha") or identity.get("commit_sha") or ""),
                   "status": str(payload.get("status") or record.get("status") or "unknown"),
+                  "revision": payload.get("revision", record.get("revision")),
                   "terminal": bool(payload.get("terminal") if "terminal" in payload else record.get("terminal")),
                   "current_stage": current_stage,
                   "current_stage_reason": str(stage_result.get("reason") or ""),
@@ -194,10 +196,11 @@ jobs:
                       f"Continuation {attempt}: {json.dumps(final, sort_keys=True)}",
                       flush=True,
                   )
-                  if final["terminal"]:
+                  dispatched = continued_payload.get("operation") == "continuation_dispatched"
+                  if final["terminal"] and not dispatched:
                       break
 
-                  if final["current_stage"] == "final_comprehensive_report_generation":
+                  if dispatched or final["current_stage"] == "final_comprehensive_report_generation":
                       deadline = time.time() + 60 * 60
                       while time.time() < deadline:
                           time.sleep(5)
@@ -209,7 +212,7 @@ jobs:
                               + json.dumps(final, sort_keys=True),
                               flush=True,
                           )
-                          if final["terminal"]:
+                          if recovery_boundary_observed(final, initial_revision=int(initial["revision"])):
                               break
                       else:
                           raise RuntimeError(
@@ -340,4 +343,3 @@ jobs:
           path: audit-results/blocked-run-diagnostic.json
           if-no-files-found: warn
           retention-days: 30
-
