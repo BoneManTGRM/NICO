@@ -18,7 +18,7 @@ jobs:
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
       NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
-      TARGET_RUN_ID: comprun_bef5b60fbb744bbea5fcf3c5c89b7ecd
+      TARGET_RUN_ID: comprun_bef5c30980944b6b975039be9dfb17fd
       RELEASE_SHA: ${{ github.sha }}
       GITHUB_TOKEN: ${{ github.token }}
 
