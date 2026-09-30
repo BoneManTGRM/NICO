@@ -23,6 +23,11 @@ _RUN = re.compile(r"comprun_[0-9a-f]{32}\Z")
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _CODE = re.compile(r"[a-z][a-z0-9_]{2,100}\Z")
 STAGE = "final_comprehensive_report_generation"
+_WORKER_ERROR_TYPES = frozenset({
+    "ValueError", "RuntimeError", "TypeError", "KeyError", "MemoryError",
+    "RecursionError", "OSError", "TimeoutError", "WorkerPayloadError",
+    "WorkerProcessExit", "IsolatedFinalReportCancelled",
+})
 
 
 def source_catalog(directory: Path) -> tuple[set[str], list[tuple[str, int, str]]]:
@@ -48,6 +53,36 @@ def source_catalog(directory: Path) -> tuple[set[str], list[tuple[str, int, str]
 
 def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _known_code(value: Any, codes: set[str]) -> str:
+    if not isinstance(value, str):
+        return "unrecognized"
+    candidate = value.split(":", 1)[0].strip()
+    return candidate if candidate in codes else "unrecognized"
+
+
+def _worker_diagnostic(failure: dict[str, Any], *, codes: set[str],
+                       fragments: list[tuple[str, int, str]]) -> dict[str, Any]:
+    """Retain static worker failure hints, never its dynamic exception message."""
+    execution = _mapping(failure.get("stage_execution"))
+    raw_error = failure.get("worker_error", execution.get("worker_error"))
+    error = raw_error if isinstance(raw_error, str) else ""
+    error_type = failure.get("worker_error_type", execution.get("worker_error_type"))
+    failure_class = failure.get("worker_failure_class", execution.get("worker_failure_class"))
+    exit_code = failure.get("worker_exit_code", execution.get("worker_exit_code"))
+    return {
+        "error_code": _known_code(error, codes),
+        "error_type": error_type if isinstance(error_type, str) and error_type in _WORKER_ERROR_TYPES else "unrecognized",
+        "failure_class": _known_code(failure_class, codes),
+        "exit_code": exit_code if type(exit_code) is int and -255 <= exit_code <= 255 else None,
+        "message_sha256": hashlib.sha256(error.encode()).hexdigest(),
+        "source_literal_matches": [
+            {"file": file, "line": line, "text": text}
+            for file, line, text in fragments if text in error
+        ][:16],
+        "dynamic_error_text_retained": False,
+    }
 
 
 def diagnose(*, client: Any, run_id: str, expected_commit: str,
@@ -88,7 +123,7 @@ def diagnose(*, client: Any, run_id: str, expected_commit: str,
     worker_error_type = (
         worker_error_type
         if isinstance(worker_error_type, str)
-        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.]{0,100}", worker_error_type)
+        and worker_error_type in _WORKER_ERROR_TYPES
         else "unrecognized"
     )
     recognized_worker_codes = sorted({
@@ -113,6 +148,7 @@ def diagnose(*, client: Any, run_id: str, expected_commit: str,
         "worker_recognized_source_codes": recognized_worker_codes,
         "worker_source_literal_matches": worker_matches,
         "worker_diagnostic_text_retained": False,
+        "worker": _worker_diagnostic(failure, codes=codes, fragments=fragments),
         "matches_are_diagnostic_hints_not_root_cause_proof": True,
     })
     return {"schema": "nico.blocked-run-diagnostic.v1", "run_id": run_id,

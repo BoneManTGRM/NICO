@@ -22,15 +22,15 @@ def payload():
             'worker_failure_class': 'child_exception',
             'secret': SECRET}}}, 'customer_id': SECRET}
 
-def call(value, status=200):
+def call(value, status=200, *, codes=None, fragments=None):
     seen = []
     def handler(request):
         seen.append(request)
         return httpx.Response(status, json=value, headers={'Location': 'https://evil.invalid/'})
     with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False) as client:
         result = diagnose(client=client, run_id=RUN, expected_commit=COMMIT,
-            codes={'final_report_provider_failed', 'run_storage_compressed_size_limit'},
-        fragments=[
+            codes={'final_report_provider_failed', 'run_storage_compressed_size_limit'} if codes is None else codes,
+        fragments=fragments if fragments is not None else [
             ('unit.py', 12, 'Canonical artifact is not valid: '),
             ('storage.py', 99, 'run_storage_compressed_size_limit'),
         ])
@@ -125,4 +125,52 @@ def test_dynamic_worker_error_text_is_never_retained():
     assert result['failure']['worker_recognized_source_codes'] == []
     assert result['failure']['worker_source_literal_matches'] == []
     assert result['failure']['worker_diagnostic_text_retained'] is False
+    assert SECRET not in json.dumps(result)
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_recognizes_worker_cause_instead_of_only_generic_message(nested):
+    data = payload()
+    failure = data['record']['stage_results']['final_comprehensive_report_generation']
+    details = {
+        'worker_error': 'run_storage_compressed_size_limit:' + SECRET,
+        'worker_error_type': 'ValueError',
+        'worker_failure_class': 'child_exception',
+        'worker_exit_code': 0,
+    }
+    if nested:
+        for field in details:
+            failure.pop(field, None)
+        failure['stage_execution'] = details
+    else:
+        failure.update(details)
+    result, requests = call(data, codes={'run_storage_compressed_size_limit', 'child_exception'},
+        fragments=[('codec.py', 20, 'run_storage_compressed_size_limit')])
+    worker = result['failure']['worker']
+    assert worker['error_code'] == 'run_storage_compressed_size_limit'
+    assert worker['error_type'] == 'ValueError'
+    assert worker['failure_class'] == 'child_exception'
+    assert worker['exit_code'] == 0
+    assert worker['source_literal_matches'] == [
+        {'file': 'codec.py', 'line': 20, 'text': 'run_storage_compressed_size_limit'}]
+    assert worker['dynamic_error_text_retained'] is False
+    assert SECRET not in json.dumps(result)
+    assert len(requests) == 1 and requests[0].method == 'GET'
+
+
+@pytest.mark.parametrize('field', ['worker_error', 'worker_error_type', 'worker_failure_class'])
+def test_unrecognized_worker_diagnostics_never_retain_dynamic_text(field):
+    data = payload()
+    data['record']['stage_results']['final_comprehensive_report_generation'][field] = SECRET
+    result, _ = call(data)
+    assert SECRET not in json.dumps(result)
+    assert result['failure']['worker']['error_code'] == 'unrecognized'
+
+
+@pytest.mark.parametrize('exit_code', [True, '0', 256, -256, {'private': SECRET}])
+def test_worker_exit_code_is_strictly_bounded(exit_code):
+    data = payload()
+    data['record']['stage_results']['final_comprehensive_report_generation']['worker_exit_code'] = exit_code
+    result, _ = call(data)
+    assert result['failure']['worker']['exit_code'] is None
     assert SECRET not in json.dumps(result)
