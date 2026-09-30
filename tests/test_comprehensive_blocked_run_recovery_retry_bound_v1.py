@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from nico.comprehensive_blocked_run_recovery_v1 import (
+    VERSION,
     rewind_blocked_run_for_final_artifact_recovery,
 )
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
