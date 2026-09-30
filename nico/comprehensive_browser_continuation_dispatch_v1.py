@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 from contextlib import contextmanager
 from typing import Any, Iterator, Mapping
@@ -9,6 +10,29 @@ VERSION = "nico.comprehensive_browser_continuation_dispatch.v1"
 
 _ACTIVE_RUNS: set[str] = set()
 _ACTIVE_RUNS_LOCK = threading.RLock()
+_SAFE_FAILURE_CODES = frozenset({
+    "run_storage_uncompressed_size_limit", "run_storage_compressed_size_limit",
+    "invalid_run_record", "unexpected_stage", "stale_revision",
+    "review_history_commitment_cannot_be_truncated",
+    "review_history_commitment_prefix_mismatch",
+    "review_history_commitment_uncommitted_events",
+    "review_history_commitment_payload_invalid",
+})
+
+
+def _log_continuation_failure(run_id: str, exc: BaseException) -> None:
+    """Expose only static codes; never log record content or exception messages."""
+    try:
+        code = str(exc).split(":", 1)[0]
+        kind = type(exc).__name__
+        print("NICO_BROWSER_CONTINUATION_FAILURE " + json.dumps({
+            "run_id": run_id,
+            "error_code": code if code in _SAFE_FAILURE_CODES else "unrecognized",
+            "error_type": kind if kind in {"ValueError", "RuntimeError", "TypeError", "MemoryError", "ComprehensiveRunConflict"} else "unrecognized",
+            "content_retained": False,
+        }, sort_keys=True), flush=True)
+    except Exception:
+        return
 
 
 def _advisory_lock_key(run_id: str) -> int:
@@ -115,10 +139,10 @@ def dispatch_browser_continuation(
                     body,
                     browser_projection=True,
                 )
-        except BaseException:
+        except BaseException as exc:
             # The next exact-run projection remains the public failure/recovery source.
             # Background exception details must not cross the client boundary.
-            pass
+            _log_continuation_failure(normalized_run_id, exc)
         finally:
             with _ACTIVE_RUNS_LOCK:
                 _ACTIVE_RUNS.discard(normalized_run_id)

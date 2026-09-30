@@ -70,6 +70,10 @@ jobs:
             --output audit-results/postgres-worker-job-proof.json
       - name: Prove authenticated worker receipt publication and durable polling
         run: python scripts/postgres_worker_protocol_proof.py --evidence audit-results/postgres-worker-protocol-proof.json
+      - name: Qualify near-cap run save and fresh-process reload on real Postgres
+        run: |
+          python scripts/postgres_run_storage_capacity_proof.py --transport v2 --output audit-results/run-storage-capacity-v2.json
+          python scripts/postgres_run_storage_capacity_proof.py --transport v3 --output audit-results/run-storage-capacity-v3.json
       - name: Verify evidence is bounded and passing
         run: |
           python - <<'PY'

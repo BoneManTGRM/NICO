@@ -220,7 +220,7 @@ def test_direct_storage_limit_reason_is_recoverable_in_current_generation() -> N
     )
 
 
-def test_capacity_observer_gets_only_one_attempt_after_consumed_v12_budget() -> None:
+def test_capacity_repair_gets_only_one_attempt_after_consumed_v13_budget() -> None:
     blocked = _blocked_storage_limit_record()
     blocked["stage_results"]["final_comprehensive_report_generation"]["technical_reason"] = (
         "detached_stage_execution_failed:stage=final_comprehensive_report_generation"
@@ -229,7 +229,7 @@ def test_capacity_observer_gets_only_one_attempt_after_consumed_v12_budget() -> 
         "source_failed_stage": "final_comprehensive_report_generation",
         "source_reason": "detached_stage_execution_failed",
         "recovery_budget_scope": "source_failed_stage_recovery_generation",
-        "recovery_generation": "nico.comprehensive_blocked_run_recovery.v12",
+        "recovery_generation": "nico.comprehensive_blocked_run_recovery.v13",
     }
     blocked["recovery_history"] = [prior]
     blocked["integrity_sha256"] = _record_hash(blocked)
