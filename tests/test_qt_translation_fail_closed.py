@@ -214,3 +214,83 @@ def test_comments_with_pi_like_text_are_supported(tmp_path):
     (tmp_path / 'input.ts').write_text(text)
     assert justified_inapplicability(inspect_node_inputs(tmp_path, SHA),
                                     'typescript', SHA)
+
+@pytest.mark.parametrize('suffix', ['.mts', '.cts'], ids=['mts', 'cts'])
+def test_supported_typescript_suffixes_cannot_justify_absence(tmp_path, suffix):
+    folder = tmp_path / 'src'
+    folder.mkdir()
+    (folder / 'translation.ts').write_text(QT)
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    assert inventory['typescript_input_paths'] == []
+    path = 'src/module' + suffix
+    (tmp_path / path).write_text('export const value: number = 1;')
+    record = normalize_scanner_applicability_canonical(
+        canonical(inventory, ['src/translation.ts', path]))['requested_scanner_records'][0]
+    assert record['applicability_state'] == 'applicability_unproven'
+    assert record['evidence_required'] is True
+    # A fresh complete inventory also keeps the same real source required.
+    fresh = inspect_node_inputs(tmp_path, SHA)
+    assert fresh['typescript_input_paths'] == [path]
+    assert not justified_inapplicability(fresh, 'typescript', SHA)
+
+def test_jsconfig_cannot_justify_absence(tmp_path):
+    (tmp_path / 'translation.ts').write_text(QT)
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    assert inventory['typescript_input_paths'] == []
+    (tmp_path / 'jsconfig.json').write_text('{"compilerOptions":{"checkJs":true}}')
+    record = normalize_scanner_applicability_canonical(
+        canonical(inventory, ['translation.ts', 'jsconfig.json']))['requested_scanner_records'][0]
+    assert record['applicability_state'] == 'applicability_unproven'
+    assert record['evidence_required'] is True
+    fresh = inspect_node_inputs(tmp_path, SHA)
+    assert fresh['typescript_input_paths'] == ['jsconfig.json']
+    assert not justified_inapplicability(fresh, 'typescript', SHA)
+
+@pytest.mark.parametrize(('qt_path', 'other_path'), [
+    ('src/Foo.ts', ' src/Foo.ts'),
+    ('src/Foo.ts', "'src/Foo.ts"),
+    ('src dir/Foo.ts', 'src  dir/Foo.ts'),
+], ids=['leading-space', 'leading-punctuation', 'internal-whitespace'])
+def test_git_path_identity_precedes_text_cleanup(tmp_path, qt_path, other_path):
+    qt = tmp_path / qt_path
+    qt.parent.mkdir(parents=True)
+    qt.write_text(QT)
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    assert inventory['typescript_input_paths'] == []
+    other = tmp_path / other_path
+    other.parent.mkdir(parents=True)
+    other.write_text('export const value: number = 1;')
+    record = normalize_scanner_applicability_canonical(
+        canonical(inventory, [qt_path, other_path]))['requested_scanner_records'][0]
+    assert record['applicability_state'] == 'applicability_unproven'
+    assert record['evidence_required'] is True
+    fresh = inspect_node_inputs(tmp_path, SHA)
+    assert fresh['typescript_input_paths'] == [other_path]
+    assert not justified_inapplicability(fresh, 'typescript', SHA)
+
+
+def test_formatted_qt_path_is_unproven(tmp_path):
+    folder = tmp_path / 'src'
+    folder.mkdir()
+    (folder / 'Foo.ts').write_text(QT)
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    # A presentation wrapper is not the exact Git identity certified by inventory.
+    record = normalize_scanner_applicability_canonical(
+        canonical(inventory, ['"src/Foo.ts"']))['requested_scanner_records'][0]
+    assert record['applicability_state'] == 'applicability_unproven'
+    assert record['evidence_required'] is True
+
+def test_negative_word_in_git_path_cannot_justify_absence(tmp_path):
+    folder = tmp_path / 'src'
+    folder.mkdir()
+    (folder / 'translation.ts').write_text(QT)
+    inventory = inspect_node_inputs(tmp_path, SHA)
+    assert inventory['typescript_input_paths'] == []
+    (folder / 'missing.ts').write_text('export const value: number = 1;')
+    record = normalize_scanner_applicability_canonical(canonical(
+        inventory, ['src/translation.ts', 'src/missing.ts']))['requested_scanner_records'][0]
+    assert record['applicability_state'] == 'applicability_unproven'
+    assert record['evidence_required'] is True
+    fresh = inspect_node_inputs(tmp_path, SHA)
+    assert fresh['typescript_input_paths'] == ['src/missing.ts']
+    assert not justified_inapplicability(fresh, 'typescript', SHA)

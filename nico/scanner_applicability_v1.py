@@ -73,7 +73,8 @@ def _is_repository_path_key(normalized_key: str) -> bool:
     } or normalized_key.endswith(("_path", "_paths", "_file", "_files"))
 
 
-def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> list[str]:
+def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0,
+                             preserve_identity: bool = False) -> list[str]:
     """Collect positive repository path evidence without reading scanner errors as files."""
 
     if depth > 7:
@@ -84,12 +85,14 @@ def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> li
     if isinstance(value, Mapping):
         output: list[str] = []
         for child_key, item in value.items():
-            output.extend(_repository_path_strings(item, key=str(child_key), depth=depth + 1))
+            output.extend(_repository_path_strings(item, key=str(child_key), depth=depth + 1,
+                                                   preserve_identity=preserve_identity))
         return output
     if isinstance(value, (list, tuple, set)):
         output: list[str] = []
         for item in value:
-            output.extend(_repository_path_strings(item, key=key, depth=depth + 1))
+            output.extend(_repository_path_strings(item, key=key, depth=depth + 1,
+                                                   preserve_identity=preserve_identity))
         return output
     if not isinstance(value, str):
         return []
@@ -102,9 +105,14 @@ def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> li
         if not path_like_key:
             return []
 
-    text = _text(value).replace("\\", "/")
-    lowered = text.casefold()
-    if any(marker in lowered for marker in _NEGATIVE_PATH_CONTEXT):
+    # Git identities retain whitespace/punctuation; legacy presentation cleanup
+    # is deferred until after exact Qt exclusion. Custom values retain prior behavior.
+    exact_identity = preserve_identity and type(value) is str
+    text = (value if exact_identity else _text(value)).replace("\\", "/")
+    # Preserve legacy error-context detection without changing the path identity.
+    lowered = _text(text).casefold()
+    # Marker words (for example missing.ts) are legal observed Git identities.
+    if not exact_identity and any(marker in lowered for marker in _NEGATIVE_PATH_CONTEXT):
         return []
 
     path_like_key = _is_repository_path_key(normalized_key)
@@ -112,11 +120,11 @@ def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> li
     # example filenames. Those descriptions are not observed repository inputs.
     if not path_like_key:
         return []
-    return [text.strip("`'\" ,.;:()[]{}")]
+    return [text if exact_identity else text.strip("`'\" ,.;:()[]{}")]
 
 
 def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
-    paths = [item.replace("\\", "/") for item in _repository_path_strings(canonical)]
+    paths = [item.replace("\\", "/") for item in _repository_path_strings(canonical, preserve_identity=True)]
     # A complete, source-bound inventory may establish that a .ts path is Qt XML.
     # Exclude only those exact observed paths; unknown TypeScript still conflicts
     # with a claimed empty inventory and remains required/unproven.
@@ -130,7 +138,8 @@ def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
             translations.update(item['path'].replace('\\', '/')
                                 for item in inventory.get('qt_translation_files', []))
     # Git path identity is case-sensitive; classify names only after exact exclusion.
-    paths = [path.casefold() for path in paths if path not in translations]
+    paths = [_text(path).strip("`'\" ,.;:()[]{}").casefold()
+             for path in paths if path not in translations]
     basenames = [path.rsplit("/", 1)[-1] for path in paths]
     node_manifest = any(name in _NODE_MANIFEST_NAMES for name in basenames)
     node_source = any(path.endswith((".js", ".jsx", ".ts", ".tsx")) for path in paths)
@@ -156,8 +165,8 @@ def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
     return {
         "node_manifest": node_manifest,
         "node_source": node_source,
-        "typescript_source": any(path.endswith((".ts", ".tsx")) for path in paths),
-        "typescript_config": any(name.startswith("tsconfig") and name.endswith(".json") for name in basenames),
+        "typescript_source": any(path.endswith((".ts", ".tsx", ".mts", ".cts")) for path in paths),
+        "typescript_config": any(name.startswith(("tsconfig", "jsconfig")) and name.endswith(".json") for name in basenames),
         "python_manifest": python_manifest,
         "python_source": python_source,
         "cpp_source": any(path.endswith(('.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx')) for path in paths),

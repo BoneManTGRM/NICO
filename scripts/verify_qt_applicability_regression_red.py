@@ -1,4 +1,4 @@
-"""Run the same three minimal regressions against the immutable old implementation."""
+"""Prove fail-closed applicability boundaries on immutable source."""
 import hashlib
 import json
 from pathlib import Path
@@ -7,8 +7,19 @@ import sys
 import xml.etree.ElementTree as ET
 
 BASELINE = 'd3fbd5cbc318d188b8c2d230942569ad41a1fb9c'
-NAMES = {'test_utf16_entity_remains_required', 'test_unknown_qt_element_remains_required',
-         'test_case_distinct_path_cannot_be_suppressed'}
+FUNCTIONS = {'test_utf16_entity_remains_required', 'test_unknown_qt_element_remains_required',
+             'test_case_distinct_path_cannot_be_suppressed', 'test_jsconfig_cannot_justify_absence',
+             'test_supported_typescript_suffixes_cannot_justify_absence',
+             'test_git_path_identity_precedes_text_cleanup', 'test_formatted_qt_path_is_unproven',
+             'test_negative_word_in_git_path_cannot_justify_absence'}
+NAMES = (FUNCTIONS - {'test_supported_typescript_suffixes_cannot_justify_absence',
+                      'test_git_path_identity_precedes_text_cleanup'}) | {
+    'test_supported_typescript_suffixes_cannot_justify_absence[mts]',
+    'test_supported_typescript_suffixes_cannot_justify_absence[cts]',
+    'test_git_path_identity_precedes_text_cleanup[leading-space]',
+    'test_git_path_identity_precedes_text_cleanup[leading-punctuation]',
+    'test_git_path_identity_precedes_text_cleanup[internal-whitespace]',
+}
 source = Path('qt-baseline')
 observed = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'],
                           check=True, capture_output=True, text=True, timeout=30).stdout.strip()
@@ -35,18 +46,26 @@ results.mkdir(parents=True, exist_ok=True)
 junit = results.resolve() / 'red.xml'
 completed = subprocess.run([
     sys.executable, '-m', 'pytest', '-q', 'tests/test_qt_translation_fail_closed.py',
-    '-k', ' or '.join(sorted(NAMES)), '--junitxml=' + str(junit),
+    '-k', ' or '.join(sorted(FUNCTIONS)), '--junitxml=' + str(junit),
 ], cwd=source, capture_output=True, text=True, timeout=90)
 (results / 'red.log').write_text(completed.stdout + completed.stderr, encoding='utf-8')
 cases = list(ET.parse(junit).getroot().iter('testcase'))
 failed = {case.get('name') for case in cases if case.find('failure') is not None}
 errors = [case for case in cases if case.find('error') is not None]
-if completed.returncode != 1 or len(cases) != 3 or failed != NAMES or errors:
+if completed.returncode != 1 or len(cases) != len(NAMES) or failed != NAMES or errors:
     raise RuntimeError('qt_minimal_regressions_did_not_fail_at_expected_boundaries')
 expected_boundaries = {
     'test_utf16_entity_remains_required': "qt_translation_files",
     'test_unknown_qt_element_remains_required': "qt_translation_files",
     'test_case_distinct_path_cannot_be_suppressed': "applicability_state",
+    'test_jsconfig_cannot_justify_absence': "applicability_state",
+    'test_supported_typescript_suffixes_cannot_justify_absence[mts]': "applicability_state",
+    'test_supported_typescript_suffixes_cannot_justify_absence[cts]': "applicability_state",
+    'test_git_path_identity_precedes_text_cleanup[leading-space]': "applicability_state",
+    'test_git_path_identity_precedes_text_cleanup[leading-punctuation]': "applicability_state",
+    'test_git_path_identity_precedes_text_cleanup[internal-whitespace]': "applicability_state",
+    'test_formatted_qt_path_is_unproven': "applicability_state",
+    'test_negative_word_in_git_path_cannot_justify_absence': "applicability_state",
 }
 for case in cases:
     detail = case.find('failure').text or ''

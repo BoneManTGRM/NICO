@@ -43,7 +43,7 @@ jobs:
         pip install -r requirements.txt
         pip install --no-deps -e .
 
-    - name: Prove all three minimal regressions fail on the original source
+    - name: Prove the fail-closed applicability boundaries
       run: python scripts/verify_qt_applicability_regression_red.py
 
     - name: Run focused fail-closed regressions on the corrected source
@@ -54,6 +54,7 @@ jobs:
           tests/test_node_scanner_applicability_inventory.py \
           tests/test_scanner_applicability_v2.py \
           tests/test_scanner_completion_gate.py \
+          tests/test_docker_scanner_install_auth.py \
           --junitxml=audit-results/qt-applicability/green.xml
 
     - name: Acquire the frozen Bitcoin corpus without executing assessed source
