@@ -10,6 +10,7 @@ import fnmatch
 import json
 import os
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -21,6 +22,28 @@ NODE_DEPENDENCY_NAMES = frozenset({
 })
 _SHA = re.compile(r'[0-9a-f]{40}\Z')
 _TS_COMMAND = re.compile(r'(?<![\w-])(?:tsc|ts-node|tsx)(?![\w-])')
+MAX_QT_TRANSLATION_BYTES = 4 * 1024 * 1024
+
+
+def _qt_translation(path: Path, relative: str) -> dict[str, Any] | None:
+    """Recognize the complete Qt translation document; suffix alone is ambiguous."""
+    try:
+        if not 0 < path.stat().st_size <= MAX_QT_TRANSLATION_BYTES:
+            return None
+        with path.open('rb') as source:
+            raw = source.read(MAX_QT_TRANSLATION_BYTES + 1)
+        if len(raw) > MAX_QT_TRANSLATION_BYTES or b'<!ENTITY' in raw.upper():
+            return None
+        root = ET.fromstring(raw)
+        contexts = root.findall('context')
+        if (root.tag != 'TS' or root.get('version') not in {'2.0', '2.1'}
+                or not contexts or not all(context.find('name') is not None for context in contexts)
+                or not any(context.find('message/source') is not None for context in contexts)):
+            return None
+        return {'path': relative, 'format': 'qt-ts-xml-v1',
+                'sha256': hashlib.sha256(raw).hexdigest(), 'size_bytes': len(raw)}
+    except (OSError, ET.ParseError, ValueError):
+        return None
 REASONS = {
     'npm-audit': 'The complete assessed checkout contains no JavaScript dependency manifest or lockfile; npm-audit is not applicable. Standalone JavaScript remains in ESLint scope.',
     'typescript': 'The complete assessed checkout contains no TypeScript source, configuration, or declared compiler input; TypeScript compilation is not applicable. JavaScript remains in ESLint scope.',
@@ -43,6 +66,7 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
     paths: list[str] = []
     dependencies: list[str] = []
     typescript: list[str] = []
+    qt_translations: list[dict[str, Any]] = []
     python: list[str] = []
     cpp: list[str] = []
     manifests: list[dict[str, str]] = []
@@ -81,7 +105,11 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
             if lower.endswith(('.ts', '.tsx', '.mts', '.cts')) or (
                 lower.startswith(('tsconfig', 'jsconfig')) and lower.endswith('.json')
             ):
-                typescript.append(relative)
+                translation = _qt_translation(path, relative) if lower.endswith('.ts') else None
+                if translation is not None:
+                    qt_translations.append(translation)
+                else:
+                    typescript.append(relative)
             if lower == 'package.json':
                 try:
                     if path.stat().st_size > 1_048_576:
@@ -117,6 +145,7 @@ def inspect_node_inputs(repo: Path, commit_sha: str, *, max_entries: int = 100_0
         'inspected_paths_sha256': hashlib.sha256(json.dumps(sorted(paths), ensure_ascii=False, separators=(',', ':')).encode()).hexdigest(),
         'node_dependency_paths': sorted(set(dependencies)),
         'typescript_input_paths': sorted(set(typescript)),
+        'qt_translation_files': sorted(qt_translations, key=lambda item: item['path']),
         'python_input_paths': sorted(set(python)),
         'cpp_input_paths': sorted(set(cpp)),
         'package_manifests': sorted(manifests, key=lambda item: item['path']),
@@ -140,6 +169,25 @@ def valid_input_inventory(value: Any, expected_commit: str) -> bool:
         or value.get('inventory_sha256') != inventory_digest(value)
     ):
         return False
+    if not isinstance(value.get('typescript_input_paths'), list):
+        return False
+    translations = value.get('qt_translation_files', [])
+    if not isinstance(translations, list):
+        return False
+    seen: set[str] = set()
+    for item in translations:
+        if not isinstance(item, Mapping):
+            return False
+        path = item.get('path')
+        if (not isinstance(path, str) or not path.lower().endswith('.ts')
+                or path.startswith('/') or '..' in path.split('/') or path in seen
+                or path in value.get('typescript_input_paths', [])
+                or item.get('format') != 'qt-ts-xml-v1'
+                or not re.fullmatch(r'[0-9a-f]{64}', str(item.get('sha256') or ''))
+                or type(item.get('size_bytes')) is not int
+                or not 0 < item['size_bytes'] <= MAX_QT_TRANSLATION_BYTES):
+            return False
+        seen.add(path)
     return True
 
 

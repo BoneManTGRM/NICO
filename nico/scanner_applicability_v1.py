@@ -117,6 +117,19 @@ def _repository_path_strings(value: Any, *, key: str = "", depth: int = 0) -> li
 
 def _repository_signals(canonical: Mapping[str, Any]) -> dict[str, bool]:
     paths = [item.casefold().replace("\\", "/") for item in _repository_path_strings(canonical)]
+    # A complete, source-bound inventory may establish that a .ts path is Qt XML.
+    # Exclude only those exact observed paths; unknown TypeScript still conflicts
+    # with a claimed empty inventory and remains required/unproven.
+    from nico.node_scanner_applicability_v1 import valid_input_inventory
+    translations: set[str] = set()
+    for record in _record_list(canonical):
+        inventory = record.get('applicability_evidence')
+        commit = str(record.get('commit_sha') or record.get('target_commit_sha') or '')
+        if (_scanner_name(record.get('scanner_name') or record.get('tool')) == 'typescript'
+                and valid_input_inventory(inventory, commit)):
+            translations.update(item['path'].casefold().replace('\\', '/')
+                                for item in inventory.get('qt_translation_files', []))
+    paths = [path for path in paths if path not in translations]
     basenames = [path.rsplit("/", 1)[-1] for path in paths]
     node_manifest = any(name in _NODE_MANIFEST_NAMES for name in basenames)
     node_source = any(path.endswith((".js", ".jsx", ".ts", ".tsx")) for path in paths)
