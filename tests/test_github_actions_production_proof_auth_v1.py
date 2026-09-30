@@ -7,6 +7,7 @@ import pytest
 from nico.github_actions_proof_auth_v1 import (
     CONSUMER_WORKFLOW_PATHS,
     CONSUMER_ENVIRONMENT,
+    RECOVERY_WORKFLOW_PATHS,
     expected_release_sha,
     validate_github_actions_claims,
 )
@@ -160,6 +161,62 @@ def test_only_exact_environment_bound_consumers_are_accepted(monkeypatch, workfl
             validate_github_actions_claims({**claims, field: wrong})
     with pytest.raises(ValueError, match="environment"):
         validate_github_actions_claims({k: v for k, v in claims.items() if k != "environment"})
+
+
+
+
+@pytest.mark.parametrize("workflow_path", sorted(RECOVERY_WORKFLOW_PATHS))
+def test_only_exact_environment_bound_recovery_workflow_is_accepted(
+    monkeypatch, workflow_path
+):
+    _environment(monkeypatch)
+    claims = {
+        **CLAIMS,
+        "event_name": "push",
+        "environment": CONSUMER_ENVIRONMENT,
+        "sub": f"repo:BoneManTGRM/NICO:environment:{CONSUMER_ENVIRONMENT}",
+        "workflow_ref": f"BoneManTGRM/NICO/{workflow_path}@refs/heads/main",
+    }
+    accepted = validate_github_actions_claims(claims)
+    assert accepted["proof_role"] == "recovery"
+    assert accepted["sha"] == SHA
+    for field, wrong in (
+        ("repository", "other/repo"),
+        ("ref", "refs/heads/feature"),
+        ("sha", "b" * 40),
+        ("environment", "production"),
+        ("sub", CLAIMS["sub"]),
+        ("event_name", "workflow_run"),
+        ("event_name", "pull_request"),
+        ("run_attempt", "0"),
+        ("workflow_ref", "BoneManTGRM/NICO/.github/workflows/untrusted.yml@refs/heads/main"),
+    ):
+        with pytest.raises(ValueError, match="github_actions_oidc_claim_mismatch"):
+            validate_github_actions_claims({**claims, field: wrong})
+
+
+def test_recovery_session_can_only_read_and_continue_preserved_run(monkeypatch):
+    _environment(monkeypatch)
+    token, _ = issue_specialist_session(
+        {"authority": "github_actions_production_proof"},
+        scope=PRODUCTION_PROOF_SCOPE,
+        retained_claims={**CLAIMS, "proof_role": "recovery"},
+    )
+    client = TestClient(_app())
+    headers = {"X-NICO-Operator-Session": token}
+    assert client.get("/assessment/comprehensive-run/comprun_test", headers=headers).status_code == 200
+    assert client.get("/assessment/comprehensive-run/comprun_test/report/json", headers=headers).status_code == 200
+    assert client.post("/assessment/comprehensive-run/comprun_test/continue", headers=headers).status_code == 200
+    for path in (
+        "/assessment/comprehensive-intake",
+        "/assessment/comprehensive-run/comprun_test/review",
+        "/assessment/comprehensive-run/comprun_test/authorize-delivery",
+    ):
+        assert client.post(path, headers=headers).status_code == 403
+    assert client.get(
+        "/assessment/comprehensive-run/comprun_test/approved-delivery-package",
+        headers=headers,
+    ).status_code == 403
 
 
 def test_retired_finalizer_identity_is_not_accepted(monkeypatch):

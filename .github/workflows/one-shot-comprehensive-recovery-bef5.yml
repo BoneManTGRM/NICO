@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   recover-preserved-run:
@@ -18,6 +19,7 @@ jobs:
     env:
       NICO_PRODUCTION_FRONTEND_URL: ${{ vars.NICO_PRODUCTION_FRONTEND_URL || 'https://app.nicoaudit.com' }}
       NICO_PRODUCTION_BACKEND_STATUS_CONTEXT: ${{ vars.NICO_PRODUCTION_BACKEND_STATUS_CONTEXT || 'successful-cat - NICO' }}
+      NICO_GITHUB_ACTIONS_OIDC_AUDIENCE: https://app.nicoaudit.com/nico-production-proof
       TARGET_RUN_ID: comprun_bef5c30980944b6b975039be9dfb17fd
       RELEASE_SHA: ${{ github.sha }}
       GITHUB_TOKEN: ${{ github.token }}
@@ -79,13 +81,23 @@ jobs:
 
           import json
           import os
+          import sys
           import time
           import urllib.error
           import urllib.request
           from pathlib import Path
           from typing import Any
 
+          sys.path.insert(0, str((Path.cwd() / "scripts").resolve()))
+          from github_actions_nico_proof_auth_v1 import (
+              SESSION_HEADER,
+              acquire_production_proof_session,
+          )
+
           origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
+          session, retained = acquire_production_proof_session(origin)
+          if retained["release_sha"] != os.environ["RELEASE_SHA"]:
+              raise RuntimeError("Recovery proof session release mismatch")
           run_id = os.environ["TARGET_RUN_ID"]
           endpoint = f"{origin}/api/nico/assessment/comprehensive-run/{run_id}"
           blocked_states = {"blocked", "failed", "error", "interrupted", "rejected"}
@@ -97,6 +109,7 @@ jobs:
                   "Cache-Control": "no-store",
                   "User-Agent": "nico-one-shot-comprehensive-recovery",
                   "X-NICO-Browser-Projection": "terminal-manifest-v1",
+                  SESSION_HEADER: session,
               }
               if data is not None:
                   headers["Content-Type"] = "application/json"
