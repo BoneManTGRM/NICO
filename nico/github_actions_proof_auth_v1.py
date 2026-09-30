@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 import jwt
 
-VERSION = "nico.github_actions_proof_auth.v3"
+VERSION = "nico.github_actions_proof_auth.v4"
 ISSUER = "https://token.actions.githubusercontent.com"
 JWKS_URL = f"{ISSUER}/.well-known/jwks"
 DEFAULT_AUDIENCE = "https://app.nicoaudit.com/nico-production-proof"
@@ -19,12 +19,17 @@ CONSUMER_WORKFLOW_PATHS = frozenset({
     ".github/workflows/ios-webkit-paint-proof.yml",
     ".github/workflows/two-service-production-acceptance.yml",
 })
+RECOVERY_WORKFLOW_PATHS = frozenset({
+    ".github/workflows/one-shot-comprehensive-recovery-bef5.yml",
+})
 CONSUMER_ENVIRONMENT = "production-smoke"
+ENVIRONMENT_BOUND_WORKFLOW_PATHS = CONSUMER_WORKFLOW_PATHS | RECOVERY_WORKFLOW_PATHS
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _RUN_ID = re.compile(r"^[1-9][0-9]{0,19}$")
 _WORKFLOW_EVENT_POLICY = {
     DEFAULT_WORKFLOW_PATH: {"push", "workflow_dispatch"},
     **{path: {"workflow_run"} for path in CONSUMER_WORKFLOW_PATHS},
+    **{path: {"push"} for path in RECOVERY_WORKFLOW_PATHS},
 }
 
 
@@ -86,6 +91,7 @@ def _allowed_workflow_paths(explicit_workflow_path: str | None) -> dict[str, set
     configured = expected_workflow_path()
     policy = {configured: set(_WORKFLOW_EVENT_POLICY.get(configured, {"push", "workflow_dispatch"}))}
     policy.update({path: {"workflow_run"} for path in CONSUMER_WORKFLOW_PATHS})
+    policy.update({path: {"push"} for path in RECOVERY_WORKFLOW_PATHS})
     return policy
 
 
@@ -99,8 +105,8 @@ def validate_github_actions_claims(
 ) -> dict[str, str]:
     """Validate an exact trusted production-proof workflow identity.
 
-    Only the canonical Spanish producer and the three named, environment-bound
-    consumers are accepted. Each workflow has an explicit event policy, while exact
+    Only the canonical Spanish producer, named read-only consumers, and the
+    exact environment-bound recovery workflow are accepted. Each workflow has an explicit event policy, while exact
     repository, protected main ref, deployed release SHA, subject, run identity,
     signature, issuer, audience, and lifetime remain mandatory.
     """
@@ -128,14 +134,16 @@ def validate_github_actions_claims(
         observed_workflow_path = observed_workflow_ref[len(repo_prefix) : -len(workflow_suffix)]
     allowed_events = workflow_policy.get(observed_workflow_path, set())
     is_consumer = observed_workflow_path in CONSUMER_WORKFLOW_PATHS
+    is_recovery = observed_workflow_path in RECOVERY_WORKFLOW_PATHS
+    is_environment_bound = observed_workflow_path in ENVIRONMENT_BOUND_WORKFLOW_PATHS
     expected_subject = (
         f"repo:{expected_repo}:environment:{CONSUMER_ENVIRONMENT}"
-        if is_consumer
+        if is_environment_bound
         else f"repo:{expected_repo}:ref:{expected_branch_ref}"
     )
     # An environment subject does not prove a branch. Keep the independent exact
     # ref and SHA comparisons below, and require the signed environment claim too.
-    expected_environment = CONSUMER_ENVIRONMENT if is_consumer else ""
+    expected_environment = CONSUMER_ENVIRONMENT if is_environment_bound else ""
     checks = {
         "repository": observed_repo == expected_repo,
         "ref": observed_ref == expected_branch_ref,
@@ -154,7 +162,7 @@ def validate_github_actions_claims(
         )
 
     return {
-        "proof_role": "consumer" if is_consumer else "producer",
+        "proof_role": "consumer" if is_consumer else ("recovery" if is_recovery else "producer"),
         "repository": observed_repo,
         "ref": observed_ref,
         "sha": observed_sha,
