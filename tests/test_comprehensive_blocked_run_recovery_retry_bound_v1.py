@@ -218,3 +218,33 @@ def test_direct_storage_limit_reason_is_recoverable_in_current_generation() -> N
     assert recovered["recovery_history"][-1]["source_reason"] == (
         "run_storage_compressed_size_limit"
     )
+
+
+def test_capacity_observer_gets_only_one_attempt_after_consumed_v12_budget() -> None:
+    blocked = _blocked_storage_limit_record()
+    blocked["stage_results"]["final_comprehensive_report_generation"]["technical_reason"] = (
+        "detached_stage_execution_failed:stage=final_comprehensive_report_generation"
+    )
+    prior = {
+        "source_failed_stage": "final_comprehensive_report_generation",
+        "source_reason": "detached_stage_execution_failed",
+        "recovery_budget_scope": "source_failed_stage_recovery_generation",
+        "recovery_generation": "nico.comprehensive_blocked_run_recovery.v12",
+    }
+    blocked["recovery_history"] = [prior]
+    blocked["integrity_sha256"] = _record_hash(blocked)
+    recovered = rewind_blocked_run_for_final_artifact_recovery(blocked)
+    assert recovered["status"] == "running"
+    assert recovered["identity"] == blocked["identity"]
+    assert recovered["completed_stages"] == blocked["completed_stages"]
+    assert recovered["recovery_history"][0] == prior
+    assert recovered["recovery_history"][-1]["recovery_generation"] == VERSION
+    assert recovered["human_review_required"] is True
+    assert recovered["client_delivery_allowed"] is False
+    failed_again = apply_comprehensive_stage_result(
+        recovered,
+        stage_id="final_comprehensive_report_generation",
+        result=blocked["stage_results"]["final_comprehensive_report_generation"],
+    )
+    assert rewind_blocked_run_for_final_artifact_recovery(failed_again) == failed_again
+    assert validate_comprehensive_run_record(failed_again)["status"] == "valid"
