@@ -103,7 +103,7 @@ def issue_specialist_session(
     if normalized_scope == PRODUCTION_PROOF_SCOPE:
         claims = retained_claims if isinstance(retained_claims, Mapping) else {}
         proof_role = str(claims.get("proof_role") or "producer")
-        if proof_role not in {"producer", "consumer"}:
+        if proof_role not in {"producer", "consumer", "recovery"}:
             raise ValueError("production_proof_session_role_invalid")
         payload["proof_role"] = proof_role
         for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt"):
@@ -152,7 +152,7 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
         for key in ("repository", "ref", "sha", "workflow_ref", "run_id", "run_attempt")
     ):
         return None
-    if scope == PRODUCTION_PROOF_SCOPE and payload.get("proof_role", "producer") not in {"producer", "consumer"}:
+    if scope == PRODUCTION_PROOF_SCOPE and payload.get("proof_role", "producer") not in {"producer", "consumer", "recovery"}:
         return None
     return payload
 
@@ -168,6 +168,17 @@ def _production_proof_request_allowed(method: str, path: str) -> bool:
     normalized_method = str(method or "").upper()
     if normalized_method == "POST" and path == "/assessment/comprehensive-intake":
         return True
+    if normalized_method == "GET" and _PROOF_STATUS.fullmatch(path):
+        return True
+    if normalized_method == "POST" and _PROOF_CONTINUE.fullmatch(path):
+        return True
+    if normalized_method == "GET" and _PROOF_ARTIFACT.fullmatch(path):
+        return True
+    return False
+
+
+def _recovery_proof_request_allowed(method: str, path: str) -> bool:
+    normalized_method = str(method or "").upper()
     if normalized_method == "GET" and _PROOF_STATUS.fullmatch(path):
         return True
     if normalized_method == "POST" and _PROOF_CONTINUE.fullmatch(path):
@@ -276,14 +287,24 @@ async def _specialist_access_middleware(
     else:
         return _authentication_response(401, "specialist_authentication_required")
 
-    if (
-        authority.get("scope") == PRODUCTION_PROOF_SCOPE
-        and (
+    if authority.get("scope") == PRODUCTION_PROOF_SCOPE:
+        proof_role = str(authority.get("proof_role") or "producer")
+        forbidden = (
             not _production_proof_request_allowed(request.method, request.url.path)
-            or (authority.get("proof_role") == "consumer" and request.method != "GET")
+            or (proof_role == "consumer" and request.method != "GET")
+            or (
+                proof_role == "recovery"
+                and not _recovery_proof_request_allowed(
+                    request.method,
+                    request.url.path,
+                )
+            )
         )
-    ):
-        return _authentication_response(403, "production_proof_session_scope_forbidden")
+        if forbidden:
+            return _authentication_response(
+                403,
+                "production_proof_session_scope_forbidden",
+            )
 
     key = _credential_fingerprint(request, raw_token, session_token)
     general_limit = _integer_env("NICO_SPECIALIST_REQUEST_LIMIT_PER_MINUTE", 240, 30, 5000)
