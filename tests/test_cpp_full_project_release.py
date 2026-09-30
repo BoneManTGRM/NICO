@@ -64,13 +64,56 @@ def test_main_manual_release_identity(trusted):
 
 
 @pytest.mark.parametrize('key,value', [
-    ('GITHUB_EVENT_NAME','pull_request'), ('GITHUB_EVENT_NAME','push'),
+    ('GITHUB_EVENT_NAME','pull_request'),
     ('GITHUB_REF','refs/heads/feat/cpp-full-project-capacity'), ('GITHUB_RUN_ATTEMPT','2'),
     ('GITHUB_WORKFLOW_SHA','c'*40), ('GITHUB_REPOSITORY_ID','1'),
     ('RUNNER_ENVIRONMENT','self-hosted'), ('GITHUB_WORKFLOW_REF','other'),
     ('GITHUB_JOB','qualify-image'), ('NICO_IMAGE_HANDOFF_SHA256','')])
 def test_wrong_release_context_rejected(trusted, monkeypatch, key, value):
     monkeypatch.setenv(key, value)
+    with pytest.raises(ValueError, match='identity'):
+        release.identity('publish')
+
+
+
+
+def test_marked_main_push_release_identity(trusted, monkeypatch, tmp_path):
+    event = tmp_path / 'event.json'
+    event.write_text(json.dumps({
+        'ref': 'refs/heads/main',
+        'head_commit': {'message': 'Release exact C++ worker [cpp-qualify]'},
+    }))
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+    monkeypatch.setenv('GITHUB_EVENT_PATH', str(event))
+    assert release.identity('publish') == ('a'*40, 'b'*64)
+
+
+@pytest.mark.parametrize('payload', [
+    {'ref': 'refs/heads/main', 'head_commit': {'message': 'ordinary main push'}},
+    {'ref': 'refs/heads/main', 'head_commit': None},
+    {},
+])
+def test_unmarked_or_incomplete_push_release_identity_rejected(
+    trusted, monkeypatch, tmp_path, payload
+):
+    event = tmp_path / 'event.json'
+    event.write_text(json.dumps(payload))
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+    monkeypatch.setenv('GITHUB_EVENT_PATH', str(event))
+    with pytest.raises(ValueError, match='identity'):
+        release.identity('publish')
+
+
+def test_push_release_identity_rejects_missing_or_malformed_event(
+    trusted, monkeypatch, tmp_path
+):
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+    monkeypatch.delenv('GITHUB_EVENT_PATH', raising=False)
+    with pytest.raises(ValueError, match='identity'):
+        release.identity('publish')
+    event = tmp_path / 'event.json'
+    event.write_text('{')
+    monkeypatch.setenv('GITHUB_EVENT_PATH', str(event))
     with pytest.raises(ValueError, match='identity'):
         release.identity('publish')
 
@@ -84,8 +127,11 @@ def test_legacy_handoff_cannot_publish_from_new_controller(trusted, tmp_path):
 def test_release_workflow_separates_collection_from_write_authority():
     path = Path(__file__).parents[1] / '.github/workflows/cpp-full-project-release.yml'
     workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-    assert set(workflow['on']) == {'workflow_dispatch'}
+    assert set(workflow['on']) == {'workflow_dispatch', 'push'}
+    assert workflow['on']['push']['branches'] == ['main']
     jobs = workflow['jobs']
+    assert '[cpp-qualify]' in jobs['qualify-image']['if']
+    assert '[cpp-qualify]' in jobs['publish-image']['if']
     assert workflow['permissions'] == {'contents':'read'}
     assert 'permissions' not in jobs['qualify-image']
     assert jobs['publish-image']['permissions']['packages'] == 'write'

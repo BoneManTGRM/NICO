@@ -22,6 +22,24 @@ SAFE_ERRORS = {'image_release_clean_daemon_required', 'worker_container_control_
     'image_release_retrieval_deadline', 'image_release_identity_invalid', 'image_release_publication_invalid'}
 
 
+def _trusted_release_event():
+    event = os.environ.get('GITHUB_EVENT_NAME', '')
+    if event == 'workflow_dispatch':
+        return True
+    if event != 'push':
+        return False
+    path = os.environ.get('GITHUB_EVENT_PATH', '')
+    if not path:
+        return False
+    try:
+        payload = json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    commit = payload.get('head_commit') if isinstance(payload, dict) else None
+    message = str(commit.get('message') or '') if isinstance(commit, dict) else ''
+    return '[cpp-qualify]' in message
+
+
 def identity(mode):
     revision = os.environ.get('GITHUB_SHA', '')
     anchor = os.environ.get('NICO_IMAGE_HANDOFF_SHA256', '')
@@ -29,7 +47,7 @@ def identity(mode):
     if (mode not in {'publish', 'verify'}
             or os.environ.get('GITHUB_REPOSITORY') != REPOSITORY
             or os.environ.get('GITHUB_REPOSITORY_ID') != '1282576027'
-            or os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch'
+            or not _trusted_release_event()
             or os.environ.get('GITHUB_REF') != BRANCH
             or os.environ.get('GITHUB_WORKFLOW_REF') not in (
                 {WORKFLOW, RETRIEVAL_WORKFLOW} if mode == 'verify' else {WORKFLOW})
