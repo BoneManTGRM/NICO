@@ -1302,7 +1302,23 @@ class ComprehensiveRunStore:
 
     def _row_values(self, record: dict[str, Any]) -> tuple[Any, ...]:
         identity = record["identity"]
-        payload = encode_run_storage(record)
+        try:
+            payload = encode_run_storage(record)
+        except ValueError as exc:
+            if str(exc) == "run_storage_uncompressed_size_limit":
+                from nico import comprehensive_run_storage_codec_v1 as codec
+                from nico.comprehensive_run_storage_capacity_v1 import measure_rejected_run
+
+                # Failure-only, streaming counters. No run body or credentials are
+                # logged, and observer failure must never replace the rejection.
+                try:
+                    measurement = measure_rejected_run(
+                        record, storage_limit_bytes=codec.MAX_UNCOMPRESSED_BYTES,
+                    )
+                    print("NICO_RUN_STORAGE_CAPACITY " + json.dumps(measurement, sort_keys=True), flush=True)
+                except Exception:
+                    measurement = None
+            raise
         return (
             identity["run_id"],
             identity["customer_id"],
