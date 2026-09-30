@@ -22,6 +22,8 @@ ENVELOPE_KEY = "__nico_comprehensive_run_storage_v1__"
 STORAGE_SCHEMA = "nico.comprehensive_run_storage.v1"
 _TOKEN_SCHEMA = "nico.comprehensive_run_storage.v2"
 _TOKEN_ENCODING = "zlib+json-token-refs-v1+base64"
+_CHUNK_SCHEMA = "nico.comprehensive_run_storage.v3"
+_CHUNK_ENCODING = "zlib+json-chunk-refs-v1+base64"
 COMPRESSION_THRESHOLD_BYTES = 8 * 1024 * 1024
 # A bounded decoder admits the observed ~295 MiB complete diagnostic record.
 # The storage object remains comfortably below PostgreSQL's 256 MiB limit.
@@ -43,14 +45,32 @@ def encode_run_storage(record: dict[str, Any]) -> str:
     from nico.comprehensive_run_storage_dedup_v1 import encode_tokens
 
     encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    size, sha256, packed = encode_tokens(
-        encoder.iterencode(record),
-        max_uncompressed=MAX_UNCOMPRESSED_BYTES,
-        max_compressed=MAX_COMPRESSED_BYTES,
-    )
+    encoded = None
+    try:
+        encoded = encode_tokens(
+            encoder.iterencode(record),
+            max_uncompressed=MAX_UNCOMPRESSED_BYTES,
+            max_compressed=MAX_COMPRESSED_BYTES,
+        )
+    except ValueError as exc:
+        if str(exc) != "run_storage_compressed_size_limit":
+            raise
+    schema, encoding = _TOKEN_SCHEMA, _TOKEN_ENCODING
+    if encoded is None:
+        # Release the token encoder's failed buffers before the bounded retry.
+        # Chunk references also cover repeated collections of short JSON values.
+        from nico.comprehensive_run_storage_chunks_v1 import encode_chunks
+
+        encoded = encode_chunks(
+            encoder.iterencode(record),
+            max_uncompressed=MAX_UNCOMPRESSED_BYTES,
+            max_compressed=MAX_COMPRESSED_BYTES,
+        )
+        schema, encoding = _CHUNK_SCHEMA, _CHUNK_ENCODING
+    size, sha256, packed = encoded
     return json.dumps({ENVELOPE_KEY: {
-        "schema": _TOKEN_SCHEMA,
-        "encoding": _TOKEN_ENCODING,
+        "schema": schema,
+        "encoding": encoding,
         "size_bytes": size,
         "sha256": sha256,
         "data": base64.b64encode(packed).decode("ascii"),
@@ -112,7 +132,8 @@ def decode_run_storage(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(envelope, dict) or set(envelope) != _ENVELOPE_FIELDS:
         raise ValueError("run_storage_envelope_shape_invalid")
     token_encoding = (envelope["schema"], envelope["encoding"]) == (_TOKEN_SCHEMA, _TOKEN_ENCODING)
-    if not token_encoding and (envelope["schema"] != STORAGE_SCHEMA or envelope["encoding"] != "zlib+base64"):
+    chunk_encoding = (envelope["schema"], envelope["encoding"]) == (_CHUNK_SCHEMA, _CHUNK_ENCODING)
+    if not token_encoding and not chunk_encoding and (envelope["schema"] != STORAGE_SCHEMA or envelope["encoding"] != "zlib+base64"):
         raise ValueError("run_storage_envelope_version_invalid")
     size = envelope["size_bytes"]
     if type(size) is not int or not 0 < size <= MAX_UNCOMPRESSED_BYTES:
@@ -130,10 +151,13 @@ def decode_run_storage(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("run_storage_base64_invalid") from exc
     if len(packed) > MAX_COMPRESSED_BYTES:
         raise ValueError("run_storage_compressed_size_limit")
-    if token_encoding:
-        from nico.comprehensive_run_storage_dedup_v1 import decode_tokens
+    if token_encoding or chunk_encoding:
+        if chunk_encoding:
+            from nico.comprehensive_run_storage_chunks_v1 import decode_chunks as decode_references
+        else:
+            from nico.comprehensive_run_storage_dedup_v1 import decode_tokens as decode_references
 
-        decoded_payload = json.loads(decode_tokens(packed, size=size, sha256=claimed_digest))
+        decoded_payload = json.loads(decode_references(packed, size=size, sha256=claimed_digest))
         if not isinstance(decoded_payload, dict) or ENVELOPE_KEY in decoded_payload:
             raise ValueError("run_storage_decoded_record_invalid")
         return decoded_payload
