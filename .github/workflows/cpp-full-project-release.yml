@@ -15,7 +15,13 @@ concurrency:
 
 jobs:
   qualify-image:
-    if: github.repository == 'BoneManTGRM/NICO' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    if: >-
+      github.repository == 'BoneManTGRM/NICO' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' &&
+        contains(github.event.head_commit.message, '[cpp-qualify]')))
     outputs:
       handoff_sha256: ${{ steps.handoff-anchor.outputs.sha256 }}
     runs-on: ubuntu-24.04
