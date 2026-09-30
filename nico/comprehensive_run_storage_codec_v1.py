@@ -25,9 +25,10 @@ _TOKEN_ENCODING = "zlib+json-token-refs-v1+base64"
 _CHUNK_SCHEMA = "nico.comprehensive_run_storage.v3"
 _CHUNK_ENCODING = "zlib+json-chunk-refs-v1+base64"
 COMPRESSION_THRESHOLD_BYTES = 8 * 1024 * 1024
-# A bounded decoder admits the observed ~295 MiB complete diagnostic record.
+# The measured Bitcoin publication record is 748,581,807 canonical bytes.
+# A 1 GiB expanded cap leaves bounded room for subsequent lifecycle metadata.
 # The storage object remains comfortably below PostgreSQL's 256 MiB limit.
-MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+MAX_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
 MAX_COMPRESSED_BYTES = 128 * 1024 * 1024
 _CHUNK_BYTES = 64 * 1024
 _ENVELOPE_FIELDS = {"schema", "encoding", "size_bytes", "sha256", "data"}

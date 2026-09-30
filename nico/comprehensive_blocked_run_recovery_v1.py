@@ -7,9 +7,9 @@ from typing import Any, Mapping
 from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
 from nico.comprehensive_run_record import _record_hash, validate_comprehensive_run_record
 
-# The failure-only capacity observer needs one fresh, bounded publication attempt
-# after the v12 storage repair. Prior attempts remain immutable recovery evidence.
-VERSION = "nico.comprehensive_blocked_run_recovery.v13"
+# The measured expanded-size repair gets one bounded publication attempt after
+# v13 measured the rejected result. Prior attempts remain immutable evidence.
+VERSION = "nico.comprehensive_blocked_run_recovery.v14"
 _DECISION_REPORT_STAGE = "decision_report_generation"
 _FINAL_REPORT_STAGE = "final_comprehensive_report_generation"
 _CROSS_FORMAT_STAGE = "cross_format_truth_verification"
