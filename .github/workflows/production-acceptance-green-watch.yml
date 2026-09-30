@@ -1,6 +1,10 @@
 name: NICO Production Acceptance Green Watch
 
 on:
+  workflow_run:
+    workflows: ["Unified Production Acceptance"]
+    types: [completed]
+    branches: [main]
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
