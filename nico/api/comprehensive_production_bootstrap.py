@@ -132,6 +132,7 @@ def _attempt_transient_database_recovery(
 
 
 def _refresh_runtime_diagnostics(target: FastAPI) -> dict[str, Any]:
+    from nico.assessment_cpp_production_selection import configure_first_readiness
     base = dict(getattr(target.state, "nico_comprehensive_production_runtime", {}) or {})
     runtime, attempted, recovered = _attempt_transient_database_recovery(target, base)
     non_storage_ready = base.get("non_storage_readiness_verified") is True
@@ -173,6 +174,7 @@ def _refresh_runtime_diagnostics(target: FastAPI) -> dict[str, Any]:
         "runtime_recovery_attempted": attempted,
         "runtime_recovered": recovered,
         "live_persistence_probe": live_probe,
+        "cpp_configure_first_selection": configure_first_readiness(),
         "same_canonical_store_recovery_only": True,
         "automatic_cross_store_fallback": False,
         "error_detail_exposed": False,
