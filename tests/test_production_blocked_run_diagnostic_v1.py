@@ -14,6 +14,12 @@ def payload():
         'record': {'stage_results': {'final_comprehensive_report_generation': {
             'status': 'blocked', 'reason': 'final_report_provider_failed',
             'error_message': 'Canonical artifact is not valid: ' + SECRET,
+            'worker_error_type': 'ValueError',
+            'worker_error': (
+                'isolated_final_report_worker_failed:ValueError:'
+                'run_storage_compressed_size_limit:' + SECRET
+            ),
+            'worker_failure_class': 'child_exception',
             'secret': SECRET}}}, 'customer_id': SECRET}
 
 def call(value, status=200):
@@ -23,7 +29,11 @@ def call(value, status=200):
         return httpx.Response(status, json=value, headers={'Location': 'https://evil.invalid/'})
     with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False) as client:
         result = diagnose(client=client, run_id=RUN, expected_commit=COMMIT,
-            codes={'final_report_provider_failed'}, fragments=[('unit.py', 12, 'Canonical artifact is not valid: ')])
+            codes={'final_report_provider_failed', 'run_storage_compressed_size_limit'},
+        fragments=[
+            ('unit.py', 12, 'Canonical artifact is not valid: '),
+            ('storage.py', 99, 'run_storage_compressed_size_limit'),
+        ])
     return result, seen
 
 def test_retains_only_static_diagnostic_fragments():
@@ -34,6 +44,15 @@ def test_retains_only_static_diagnostic_fragments():
     assert result['failure']['reason'] == 'final_report_provider_failed'
     assert len(result['failure']['message_sha256']) == 64
     assert result['failure']['source_literal_matches'][0]['text'] == 'Canonical artifact is not valid: '
+    assert result['failure']['worker_error_type'] == 'ValueError'
+    assert result['failure']['worker_recognized_source_codes'] == [
+        'run_storage_compressed_size_limit'
+    ]
+    assert result['failure']['worker_source_literal_matches'][0]['text'] == (
+        'run_storage_compressed_size_limit'
+    )
+    assert result['failure']['worker_diagnostic_text_retained'] is False
+    assert len(result['failure']['worker_error_sha256']) == 64
     assert SECRET not in json.dumps(result)
 
 @pytest.mark.parametrize('status', [302, 401, 403, 409, 500])
@@ -95,3 +114,15 @@ def test_bef5_one_shot_diagnostic_is_read_only_and_oidc_bound():
     assert '/continue' not in rendered
     assert 'authorize-delivery' not in rendered
     assert 'review_authorized' not in rendered
+
+
+def test_dynamic_worker_error_text_is_never_retained():
+    data = payload()
+    data['record']['stage_results']['final_comprehensive_report_generation'][
+        'worker_error'
+    ] = 'totally_dynamic_' + SECRET
+    result, _ = call(data)
+    assert result['failure']['worker_recognized_source_codes'] == []
+    assert result['failure']['worker_source_literal_matches'] == []
+    assert result['failure']['worker_diagnostic_text_retained'] is False
+    assert SECRET not in json.dumps(result)
