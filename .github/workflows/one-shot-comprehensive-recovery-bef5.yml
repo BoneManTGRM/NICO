@@ -159,6 +159,17 @@ jobs:
 
           history: list[dict[str, Any]] = [initial]
           current = initial
+          if current["terminal"] and current["status"].lower() in blocked_states:
+              # Zero stages uses the synchronous recovery boundary without executing
+              # a scanner or report stage. Observe its durable result before dispatch.
+              try:
+                  prepared_payload = request_json("POST", f"{endpoint}/continue", {"max_stages": 0})
+              except Exception:
+                  # Do not replay an ambiguous write; reconcile its persisted truth.
+                  prepared_payload = request_json("GET", endpoint, timeout=90)
+              current = exact(prepared_payload)
+              history.append(current)
+              print("Prepared exact-run recovery state:", json.dumps(current, sort_keys=True), flush=True)
           if current["terminal"] and current["status"].lower() not in blocked_states:
               final = current
           else:
