@@ -1,7 +1,16 @@
 import hashlib
 import pytest
 
-from scripts.comprehensive_recovery_observation_v1 import recovery_boundary_observed, retryable_recovery_read, validate_recovered_pdf
+from scripts.comprehensive_recovery_observation_v1 import recovery_boundary_observed, retryable_recovery_read, validate_recovered_pdf, recovery_maintenance_tick_due
+
+
+def test_maintenance_is_bounded_to_incomplete_final_report_after_fresh_read():
+    active = {"terminal": False, "current_stage_complete": False, "current_stage": "final_comprehensive_report_generation"}
+    assert recovery_maintenance_tick_due(active, elapsed_seconds=60, ticks=0)
+    assert not recovery_maintenance_tick_due(active, elapsed_seconds=59, ticks=0)
+    assert not recovery_maintenance_tick_due(active, elapsed_seconds=60, ticks=30)
+    for change in ({"terminal": True}, {"current_stage_complete": True}, {"current_stage": "cross_format_truth_verification"}):
+        assert not recovery_maintenance_tick_due({**active, **change}, elapsed_seconds=60, ticks=0)
 
 
 def test_old_terminal_acknowledgement_and_active_revision_are_not_results():

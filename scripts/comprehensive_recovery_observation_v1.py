@@ -27,6 +27,17 @@ def retryable_recovery_read(status: int, body: str) -> bool:
                 and value.get("message") == "Application not found")
 
 
+def recovery_maintenance_tick_due(view: Mapping[str, Any], *, elapsed_seconds: float, ticks: int) -> bool:
+    """Status projections do not reclaim final-report leases after worker loss."""
+    return bool(
+        elapsed_seconds >= 60
+        and ticks < 30
+        and view.get("terminal") is False
+        and view.get("current_stage_complete") is False
+        and view.get("current_stage") == "final_comprehensive_report_generation"
+    )
+
+
 def validate_recovered_pdf(data: bytes, headers: Mapping[str, str], *, run_id: str, commit_sha: str) -> dict:
     observed = {key.lower(): value for key, value in headers.items()}
     digest = hashlib.sha256(data).hexdigest()

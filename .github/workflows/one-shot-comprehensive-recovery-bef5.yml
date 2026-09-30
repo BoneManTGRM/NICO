@@ -93,7 +93,7 @@ jobs:
               SESSION_HEADER,
               acquire_production_proof_session,
           )
-          from comprehensive_recovery_observation_v1 import recovery_boundary_observed, retryable_recovery_read, validate_recovered_pdf
+          from comprehensive_recovery_observation_v1 import recovery_boundary_observed, retryable_recovery_read, validate_recovered_pdf, recovery_maintenance_tick_due
 
           origin = os.environ["NICO_PRODUCTION_FRONTEND_URL"].rstrip("/")
           # Session exchange signs a stateless, release-bound token; it does not
@@ -236,6 +236,8 @@ jobs:
 
                   if dispatched or final["current_stage"] == "final_comprehensive_report_generation":
                       deadline = time.time() + 60 * 60
+                      maintenance_ticks = 0
+                      last_maintenance = time.monotonic()
                       while time.time() < deadline:
                           time.sleep(5)
                           observed_payload = request_json("GET", endpoint, timeout=90)
@@ -248,6 +250,22 @@ jobs:
                           )
                           if recovery_boundary_observed(final, initial_revision=before_continuation_revision):
                               break
+                          if recovery_maintenance_tick_due(final, elapsed_seconds=time.monotonic() - last_maintenance, ticks=maintenance_ticks):
+                              # A fresh exact-run read precedes each tick. The canonical
+                              # coordinator owns lease fencing, deadlines and retry budget.
+                              # Active leases are a no-op; orphaned leases are reconciled.
+                              # Never replay a transport-ambiguous continuation.
+                              maintenance_ticks += 1
+                              last_maintenance = time.monotonic()
+                              try:
+                                  tick_payload = request_json("POST", f"{endpoint}/continue", {"max_stages": 1}, timeout=270)
+                              except Exception:
+                                  tick_payload = request_json("GET", endpoint, timeout=90)
+                              final = exact(tick_payload)
+                              history.append(final)
+                              print(f"Final-report maintenance tick {maintenance_ticks}: " + json.dumps(final, sort_keys=True), flush=True)
+                              if recovery_boundary_observed(final, initial_revision=before_continuation_revision):
+                                  break
                       else:
                           raise RuntimeError(
                               "Final-report recovery did not reach a terminal boundary within 60 minutes"
