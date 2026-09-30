@@ -36,6 +36,32 @@ def _settings(environ, release_revision):
             'qualification_artifact_sha256':artifact}
 
 
+def configure_first_readiness(*, environ=None, release_revision=None):
+    """Expose static selection conditions without credentials or native-run claims."""
+    if environ is None:
+        environ = os.environ
+    if release_revision is None:
+        try:
+            from nico.github_actions_proof_auth_v1 import expected_release_sha
+            release_revision = expected_release_sha()
+        except Exception:
+            release_revision = ''
+    checks = {
+        'enabled': environ.get('NICO_CPP_CONFIGURE_FIRST_ENABLED') == '1',
+        'dispatch_enabled': environ.get('NICO_ASSESSMENT_WORKER_DISPATCH_ENABLED') == '1',
+        'image_configured': re.fullmatch(r'sha256:[0-9a-f]{64}', environ.get('NICO_CPP_CONFIGURE_FIRST_IMAGE_CONFIG_ID', '')) is not None,
+        'release_bound': (re.fullmatch(r'[0-9a-f]{40}', str(release_revision or '')) is not None
+            and environ.get('NICO_CPP_CONFIGURE_FIRST_QUALIFIED_RELEASE') == release_revision),
+        'qualification_receipt_configured': (
+            re.fullmatch(r'[1-9][0-9]{0,19}', environ.get('NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_RUN_ID', '')) is not None
+            and re.fullmatch(r'[0-9a-f]{64}', environ.get('NICO_CPP_CONFIGURE_FIRST_QUALIFICATION_ARTIFACT_SHA256', '')) is not None),
+    }
+    return {'schema': 'nico.cpp-selection-readiness.v1', **checks,
+        'selection_settings_valid': all(checks.values()),
+        'reason': next((name + '_not_satisfied' for name, passed in checks.items() if not passed), ''),
+        'evidence_scope': 'configuration_only', 'native_run_success_inferred': False}
+
+
 def select_configure_first_contract(repo_step, *, environ=None, release_revision=None):
     if not isinstance(repo_step,dict) or repo_step.get('status')!='complete':
         return None

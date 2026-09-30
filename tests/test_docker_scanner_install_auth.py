@@ -102,8 +102,10 @@ def test_nico_ci_isolates_every_test_file_and_preserves_one_final_gate() -> None
     assert "pytest-shard-${{ matrix.shard }}.txt" in shards
 
     assert "name: test" in gate
-    assert "needs: [quality, test_shards]" in gate
+    assert "needs: [qt_applicability, quality, test_shards]" in gate
+    assert "QT_RESULT: ${{ needs.qt_applicability.result }}" in gate
     assert "QUALITY_RESULT: ${{ needs.quality.result }}" in gate
     assert "SHARDS_RESULT: ${{ needs.test_shards.result }}" in gate
+    assert 'test "$QT_RESULT" = "success"' in gate
     assert 'test "$QUALITY_RESULT" = "success"' in gate
     assert 'test "$SHARDS_RESULT" = "success"' in gate

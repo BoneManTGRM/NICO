@@ -13,8 +13,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  qt_applicability:
+    name: qt-applicability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - name: Check out the exact proposed source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+
+    - name: Check out the immutable regression baseline
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: d3fbd5cbc318d188b8c2d230942569ad41a1fb9c
+        path: qt-baseline
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      with:
+        python-version: "3.11"
+
+    - name: Install NICO regression dependencies before acquiring assessed source
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        pip install -r requirements.txt
+        pip install --no-deps -e .
+
+    - name: Prove the fail-closed applicability boundaries
+      run: python scripts/verify_qt_applicability_regression_red.py
+
+    - name: Run focused fail-closed regressions on the corrected source
+      run: |
+        python -m pytest -q \
+          tests/test_qt_translation_fail_closed.py \
+          tests/test_qt_translation_scanner_applicability.py \
+          tests/test_node_scanner_applicability_inventory.py \
+          tests/test_scanner_applicability_v2.py \
+          tests/test_scanner_completion_gate.py \
+          tests/test_docker_scanner_install_auth.py \
+          --junitxml=audit-results/qt-applicability/green.xml
+
+    - name: Acquire the frozen Bitcoin corpus without executing assessed source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: bitcoin/bitcoin
+        ref: e7aef7e86da79000aa42f5ba6d13b0d123d9da7c
+        path: qt-corpus
+        persist-credentials: false
+        submodules: false
+        lfs: false
+
+    - name: Verify complete original corpus membership and exact classification
+      run: |
+        python scripts/verify_qt_translation_corpus.py \
+          --source qt-corpus \
+          --manifest tests/fixtures/qt/bitcoin-e7-translations.json \
+          --output audit-results/qt-applicability/bitcoin-corpus.json
+
+    - name: Retain baseline failures and corrected-source proof
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: always()
+      with:
+        name: qt-applicability-${{ github.run_id }}-${{ github.run_attempt }}
+        path: audit-results/qt-applicability/
+        if-no-files-found: error
+
   quality:
     name: quality
+    needs: qt_applicability
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -134,6 +204,7 @@ jobs:
 
   test_shards:
     name: test-shard-${{ matrix.shard }}
+    needs: qt_applicability
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -366,16 +437,18 @@ jobs:
 
   test:
     name: test
-    needs: [quality, test_shards]
+    needs: [qt_applicability, quality, test_shards]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
     - name: Require every NICO CI boundary
       env:
+        QT_RESULT: ${{ needs.qt_applicability.result }}
         QUALITY_RESULT: ${{ needs.quality.result }}
         SHARDS_RESULT: ${{ needs.test_shards.result }}
       run: |
+        test "$QT_RESULT" = "success"
         test "$QUALITY_RESULT" = "success"
         test "$SHARDS_RESULT" = "success"
         echo "NICO quality checks and every isolated test file passed."
