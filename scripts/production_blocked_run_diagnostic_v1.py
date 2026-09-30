@@ -82,9 +82,39 @@ def diagnose(*, client: Any, run_id: str, expected_commit: str,
         key: failure.get(key) if isinstance(failure.get(key), str) and failure[key] in codes
         else "unrecognized" for key in ("reason", "error_code")
     }
-    safe_failure.update({"message_sha256": hashlib.sha256(message.encode()).hexdigest(),
-                         "source_literal_matches": matches,
-                         "matches_are_diagnostic_hints_not_root_cause_proof": True})
+    worker_error = failure.get("worker_error")
+    worker_error = worker_error if isinstance(worker_error, str) else ""
+    worker_error_type = failure.get("worker_error_type")
+    worker_error_type = (
+        worker_error_type
+        if isinstance(worker_error_type, str)
+        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.]{0,100}", worker_error_type)
+        else "unrecognized"
+    )
+    recognized_worker_codes = sorted({
+        code
+        for code in codes
+        if len(code) >= 8
+        and re.search(
+            rf"(?<![a-z0-9_]){re.escape(code)}(?![a-z0-9_])",
+            worker_error,
+        )
+    })[:16]
+    worker_matches = [
+        {"file": file, "line": line, "text": text}
+        for file, line, text in fragments
+        if text in worker_error
+    ][:16]
+    safe_failure.update({
+        "message_sha256": hashlib.sha256(message.encode()).hexdigest(),
+        "source_literal_matches": matches,
+        "worker_error_type": worker_error_type,
+        "worker_error_sha256": hashlib.sha256(worker_error.encode()).hexdigest(),
+        "worker_recognized_source_codes": recognized_worker_codes,
+        "worker_source_literal_matches": worker_matches,
+        "worker_diagnostic_text_retained": False,
+        "matches_are_diagnostic_hints_not_root_cause_proof": True,
+    })
     return {"schema": "nico.blocked-run-diagnostic.v1", "run_id": run_id,
             "commit_sha": expected_commit, "stage": STAGE, "status": "blocked",
             "terminal": True, "http_status": 200, "production_modified": False,
