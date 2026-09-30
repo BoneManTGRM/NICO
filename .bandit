@@ -1,5 +1,0 @@
-[bandit]
-# Keep the production scanner bounded and deterministic. No Bandit rule is skipped.
-# Bandit's .bandit INI format uses `exclude`; the production runner also supplies
-# the same bounded paths explicitly so configuration discovery cannot drift.
-exclude = tests,test,fixtures,fixture,examples,example,samples,sample,generated,vendor,vendors,dist,build,coverage,node_modules,.next,.venv,venv,audit-results
