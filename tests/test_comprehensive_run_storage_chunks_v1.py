@@ -189,24 +189,31 @@ def test_v3_envelope_still_requires_exact_valid_record():
 
 def test_store_chunk_transport_keeps_revision_and_review_history(tmp_path, monkeypatch):
     import sqlite3
-    from nico.comprehensive_run_record import create_comprehensive_run_record
+    from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
+    from nico.comprehensive_run_record import apply_comprehensive_stage_result, create_comprehensive_run_record
     from nico.comprehensive_run_store import ComprehensiveRunConflict, ComprehensiveRunStore
     lower_cap(monkeypatch)
     db = tmp_path / "runs.sqlite3"
     store = ComprehensiveRunStore(lambda: sqlite3.connect(db))
     store.ensure_schema()
-    record = create_comprehensive_run_record(run_id="comprun_chunk_storage", repository="owner/repo",
-        commit_sha="a" * 40, evidence_ledger_id="ledger_chunks", customer_id="customer",
-        project_id="project", authorized=True)
-    record["storage_fixture"] = repeated_record()
-    original = store.create(record)
-    assert store.load(original["identity"]["run_id"]) == original
+    original = store.create(create_comprehensive_run_record(
+        run_id="comprun_chunk_storage", repository="owner/repo", commit_sha="a" * 40,
+        evidence_ledger_id="ledger_chunks", customer_id="customer", project_id="project", authorized=True,
+    ))
+    # Use the real stage transition so the fixture retains a valid canonical hash.
+    advanced = apply_comprehensive_stage_result(
+        original, stage_id=COMPREHENSIVE_STAGES[0],
+        result={"status": "complete", "evidence": repeated_record()},
+    )
+    saved = store.save(advanced, expected_revision=original["revision"])
+    assert store.load(saved["identity"]["run_id"]) == saved
+    assert store.list_recent(customer_id="customer", project_id="project") == [saved]
     with sqlite3.connect(db) as connection:
         value = json.loads(connection.execute("SELECT payload FROM nico_comprehensive_runs").fetchone()[0])
         assert value[codec.ENVELOPE_KEY]["schema"] == codec._CHUNK_SCHEMA
     with pytest.raises(ComprehensiveRunConflict, match="stale_revision"):
-        store.save(original, expected_revision=original["revision"] - 1)
+        store.save(advanced, expected_revision=original["revision"])
     with sqlite3.connect(db) as connection:
         connection.execute("UPDATE nico_comprehensive_review_history_commitments SET event_count = 1")
     with pytest.raises(ValueError, match="review_history_commitment_cannot_be_truncated"):
-        store.load(original["identity"]["run_id"])
+        store.load(saved["identity"]["run_id"])
