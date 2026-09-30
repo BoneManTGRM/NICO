@@ -128,13 +128,18 @@ jobs:
           def projection(payload: dict[str, Any]) -> dict[str, Any]:
               record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
               identity = record.get("identity") if isinstance(record.get("identity"), dict) else {}
+              current_stage = str(payload.get("current_stage") or record.get("current_stage") or "")
+              stage_results = record.get("stage_results") if isinstance(record.get("stage_results"), dict) else {}
+              stage_result = stage_results.get(current_stage) if isinstance(stage_results.get(current_stage), dict) else {}
               return {
                   "run_id": str(payload.get("run_id") or identity.get("run_id") or ""),
                   "repository": str(payload.get("repository") or identity.get("repository") or ""),
                   "commit_sha": str(payload.get("commit_sha") or identity.get("commit_sha") or ""),
                   "status": str(payload.get("status") or record.get("status") or "unknown"),
                   "terminal": bool(payload.get("terminal") if "terminal" in payload else record.get("terminal")),
-                  "current_stage": str(payload.get("current_stage") or record.get("current_stage") or ""),
+                  "current_stage": current_stage,
+                  "current_stage_reason": str(stage_result.get("reason") or ""),
+                  "current_stage_technical_reason": str(stage_result.get("technical_reason") or ""),
                   "progress_percent": payload.get("progress_percent", record.get("progress_percent")),
                   "human_review_required": bool(payload.get("human_review_required", record.get("human_review_required", True))),
                   "client_delivery_allowed": bool(payload.get("client_delivery_allowed", record.get("client_delivery_allowed", False))),
@@ -191,6 +196,27 @@ jobs:
                   )
                   if final["terminal"]:
                       break
+
+                  if final["current_stage"] == "final_comprehensive_report_generation":
+                      deadline = time.time() + 60 * 60
+                      while time.time() < deadline:
+                          time.sleep(5)
+                          observed_payload = request_json("GET", endpoint, timeout=90)
+                          final = exact(observed_payload)
+                          history.append(final)
+                          print(
+                              "Final-report recovery poll: "
+                              + json.dumps(final, sort_keys=True),
+                              flush=True,
+                          )
+                          if final["terminal"]:
+                              break
+                      else:
+                          raise RuntimeError(
+                              "Final-report recovery did not reach a terminal boundary within 60 minutes"
+                          )
+                      break
+
                   time.sleep(2)
               else:
                   raise RuntimeError("Exact run did not reach a terminal boundary within 30 bounded stage continuations")
