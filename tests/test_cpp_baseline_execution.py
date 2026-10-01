@@ -53,13 +53,14 @@ class Native(Docker):
                 raw = (json.dumps({'kind':'ctestInfo','version':{'major':1,'minor':0},
                                'tests':[{'name':'owned_suite','command':['/work/build/owned']}]}).encode()
                    if '--show-only=json-v1' in args else b'')
-            return {'exit_code':8 if self.fault == 'test' and '--show-only=json-v1' not in args else 0,
+            return {'exit_code':8 if self.fault in ('test', 'target_failure') and '--show-only=json-v1' not in args else 0,
                     'timed_out':False,
                     'output_truncated': self.fault == 'truncated' and '--output-junit' in args,
                     'output':raw}
         if probe.READ_PROGRAM in args and '/work/build/nico-baseline-junit.xml' in args:
             self.calls.append((args, kwargs))
-            outcome = '<failure/>' if self.fault == 'junit' else ''
+            outcome = ('<failure message="Failed"/>' if self.fault == 'target_failure'
+                else '<failure/>' if self.fault == 'junit' else '')
             raw = ('<testsuite tests="1"><testcase name="owned_suite">'+outcome+'</testcase></testsuite>').encode()
             return {'exit_code':0,'timed_out':False,'output_truncated':False,
                     'output':json.dumps({'data':base64.b64encode(raw).decode(),'truncated':False}).encode()}
@@ -120,6 +121,42 @@ def test_failure_preserves_evidence_and_never_passes_whole_scope(tmp_path,fault)
         assert result['compiled'] is True
         assert result['tests_executed'] is True and result['tests_passed'] is False
     assert saved[-1] == result
+
+
+def test_native_target_failure_is_executed_evidence_not_probe_failure(tmp_path):
+    result, docker, saved = execute(tmp_path, 'target_failure')
+    assert result['status'] == 'BASELINE_EXECUTED'
+    assert result['error'] is None
+    assert result['compiled'] is True and result['tests_executed'] is True
+    assert result['tests_passed'] is False
+    assert result['tests_result']['executed'] == ['owned_suite']
+    assert result['tests_result']['passed'] == []
+    assert result['full_project_qualified'] is False
+    assert result['cleanup_verified'] is True
+    assert saved[-1] == result
+
+
+@pytest.mark.parametrize('case', [
+    '<testcase name="owned_suite" status="bogus"/>',
+    '<testcase name="owned_suite" status="fail"/>',
+    '<testcase name="owned_suite" status="bogus"><failure/></testcase>',
+    '<testcase name="owned_suite" status="fail"><failure message="Timeout"/></testcase>',
+    '<testcase name="owned_suite" status="fail"><error message="Failed"/></testcase>',
+    '<testcase name="owned_suite" status="fail"><failure message="Failed"/><skipped/></testcase>',
+])
+def test_inconsistent_junit_outcome_is_not_target_failure_evidence(tmp_path, case):
+    root, targets = source(tmp_path)
+    docker=Native(targets,'target_failure')
+    def command(args, **kwargs):
+        if probe.READ_PROGRAM in args and '/work/build/nico-baseline-junit.xml' in args:
+            raw=('<testsuite tests="1">'+case+'</testsuite>').encode()
+            return {'exit_code':0,'timed_out':False,'output_truncated':False,
+                'output':json.dumps({'data':base64.b64encode(raw).decode(),'truncated':False}).encode()}
+        return docker(args,**kwargs)
+    result=probe.probe_project_configuration(root,targets,'sha256:'+'a'*64,
+        project_options={'BUILD_TESTS':'ON'},baseline_execution=contract(),command=command)
+    assert result['status']=='UNPROVEN'
+    assert result['error']=='worker_configuration_probe_native_tests_failed'
 
 
 def test_wrong_frozen_database_stops_before_build(tmp_path):

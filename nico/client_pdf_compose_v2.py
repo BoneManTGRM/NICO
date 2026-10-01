@@ -3,13 +3,14 @@ from __future__ import annotations
 import io
 import re
 import unicodedata
+from datetime import datetime
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
 from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY, MAX_CLIENT_PDF_PAGES
 
-VERSION = "nico.client-pdf-compose.v3.10"
+VERSION = "nico.client-pdf-compose.v3.11"
 CORE_REVIEW_COMPANION_PAGES = 8
 
 _REVIEW_SECTION_HEADINGS = (
@@ -92,6 +93,50 @@ def _page_heading(value: str, headings: tuple[str, ...]) -> bool:
         return False
     first = lines[0]
     return any(first == heading or first.startswith(f"{heading} ") for heading in headings)
+
+
+_LEGACY_COVER_TITLES = frozenset((
+    "comprehensive technical assessment",
+    "evaluacion tecnica integral",
+))
+
+
+def _secondary_legacy_cover(value: str) -> bool:
+    """Recognize title/identity-only covers without discarding mixed evidence."""
+    lines = _meaningful_lines(value)
+    if lines and lines[0] == "nico":
+        lines = lines[1:]
+    if not lines or lines[0] not in _LEGACY_COVER_TITLES:
+        return False
+    if len(lines) == 1:
+        return True
+
+    fields: set[str] = set()
+    for line in lines[1:]:
+        if re.fullmatch(r"(?:document page|pagina del documento) \d+ (?:of|de) \d+", line):
+            continue
+        if re.fullmatch(r"(?:https?://[^/\s]+/)?[\w.-]+/[\w.-]+/?", line):
+            continue
+        for field, pattern in (
+            ("commit", r"(?:immutable commit|commit inmutable): [0-9a-f]{40}"),
+            ("run", r"(?:run id|id de ejecucion): [a-z0-9][a-z0-9_.:-]{0,127}"),
+            ("generated", r"(?:generated|generado): (\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?)"),
+        ):
+            match = re.fullmatch(pattern, line)
+            if match:
+                if field in fields:
+                    return False
+                if field == "generated":
+                    try:
+                        datetime.fromisoformat(match[1].replace("z", "+00:00"))
+                    except ValueError:
+                        return False
+                fields.add(field)
+                break
+        else:
+            # Empty/malformed metadata or substantive tails are not cover proof.
+            return False
+    return fields == {"commit", "run", "generated"}
 
 
 def _finding_detail(value: str) -> bool:
@@ -244,13 +289,7 @@ def compose_compact_client_pdf(
             ),
         ):
             continue
-        if page_index > 0 and _page_heading(
-            extracted,
-            (
-                "comprehensive technical assessment",
-                "evaluacion tecnica integral",
-            ),
-        ):
+        if page_index > 0 and _secondary_legacy_cover(extracted):
             # The branded cover is retained as page zero. A second legacy title
             # page has no independent evidence and would create duplicate title,
             # pagination, and generated-at facts.

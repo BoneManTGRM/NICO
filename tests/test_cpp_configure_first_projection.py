@@ -43,7 +43,8 @@ def test_projection_preserves_full_canonical_finding_population():
             "artifacts":{"project-static-evidence":{"artifact_id":"scanartifact_"+"3"*64}}}}
     reconstruction={"analysis":{"complete":True,"required_contexts":["e"*64],"analyzed_contexts":["e"*64],
         "findings":[finding],"limitations":[],"native_evidence_sha256":"4"*64},
-        "compiler":{"native_evidence_sha256":"5"*64}}
+        "compiler":{"native_evidence_sha256":"5"*64},
+        "baseline":{"collection_complete":True,"native_evidence_sha256":"6"*64}}
     out=project_configure_first_record(record,ident,{},receipt,reconstruction)
     assert out["completed"] and out["verified_complete"] and out["canonical_findings_projected"]
     assert out["finding_count"]==len(out["findings"])==1
@@ -80,6 +81,30 @@ def test_configure_first_runtime_evidence_renders_in_both_languages():
         for term in terms: assert term in rendered
         assert ('not exhaustive vulnerability or source coverage' in rendered if language=='en'
                 else 'no representa cobertura exhaustiva de vulnerabilidades ni del código' in rendered)
+
+
+def test_baseline_target_failure_is_disclosed_in_both_report_languages():
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    digest='a'*64
+    record={'commit_sha':'b'*40,'raw_artifact_retention_complete':True,
+        'raw_artifact_sha256':digest,'current_run':True,'exact_commit_match':True,
+        'execution_observed_for_this_report':True,
+        'worker_provenance':{'profile':'cpp-configure-first-v2','receipt_sha256':digest,
+            'identity':{'run_id':'run','revision':'b'*40}},
+        'cpp_build_evidence':{'profile':'cpp-configure-first-v2','compiled':True,
+            'tests_executed':True,'tests_passed':False,'tests_discovered_count':3,
+            'tests_executed_count':3,'tests_passed_count':2,'tests_skipped_count':0}}
+    for locale, expected in [('en','Baseline native tests: executed=3/3; passed=2/3.'),
+            ('es-MX','Pruebas nativas base: ejecutadas=3/3; aprobadas=2/3.')]:
+        canonical={'report_language':locale,'identity':{'run_id':'run','commit_sha':'b'*40},
+            'scanner_execution_records':[record]}
+        out=enrich_scanner_stage(canonical,{'summary':'','evidence':[],'unavailable':[]})
+        text=' '.join([out['summary'],*out['evidence']])
+        assert expected in text
+        assert ('assessed-target test failure' in text if locale=='en'
+            else 'falla de pruebas del repositorio evaluado' in text)
+        assert not any('not bound to a verified retained receipt' in gap
+            or 'no está vinculada a un comprobante' in gap for gap in out['unavailable'])
 
 
 def test_partial_runtime_evidence_is_projected_without_promoting_scanner():
@@ -301,11 +326,13 @@ def test_failed_projection_copies_findings_coverage_and_runtime_without_mutating
 
 def test_runtime_failure_does_not_change_static_observation_identity():
     ident,plan,receipt,_,record,reconstruction = _failed_runtime_complete_static_fixture()
+    reconstruction['baseline'] = {'collection_complete':True, 'native_evidence_sha256':'7'*64}
     failed = project_configure_first_record(record,ident,plan,receipt,reconstruction)
     completed_receipt = deepcopy(receipt)
     completed_reconstruction = deepcopy(reconstruction)
     completed_receipt['native']['complete_execution'] = True
     completed_reconstruction['runtime']['summary']['complete'] = True
+    completed_reconstruction['baseline'] = {'collection_complete':True, 'native_evidence_sha256':'7'*64}
     # The projection seam receives already-validated reconstruction. This paired
     # case compares observation identity only; it is not native execution proof.
     completed = project_configure_first_record(record,ident,plan,completed_receipt,completed_reconstruction)

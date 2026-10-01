@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import io
 
+import pytest
+
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 
@@ -99,3 +101,65 @@ def test_quality_repair_does_not_overlay_duplicate_cover_boundary() -> None:
     first_page = PdfReader(io.BytesIO(repaired)).pages[0].extract_text() or ""
 
     assert first_page.count(EN_BOUNDARY) == 1
+
+@pytest.mark.parametrize("language,unscored", (("en", "NOT SCORED"), ("es-MX", "SIN PUNTUACIÓN")))
+@pytest.mark.parametrize("technical,adjusted,expected", (
+    (None, None, (None, None)),
+    (False, True, (None, None)),
+    (83, None, ("83/100", None)),
+    (None, 71, (None, "71/100")),
+    (83, 71, ("83/100", "71/100")),
+))
+def test_dark_cover_localizes_unscored_values_without_changing_scores(
+    language, unscored, technical, adjusted, expected,
+) -> None:
+    from nico.v2_dark_branded_cover import _cover
+
+    canonical = {
+        "identity": {"repository": "owned/report-control", "commit_sha": COMMIT,
+                     "run_id": "owned-report-control", "generated_at": "2026-10-01T16:00:00Z"},
+        "assessment": {"technical_score": technical, "canonical_evidence_adjusted_score": adjusted},
+        "canonical_findings": [],
+    }
+    pdf = _cover(canonical, spanish=language == "es-MX")
+    text = PdfReader(io.BytesIO(pdf)).pages[0].extract_text() or ""
+    normalized = " ".join(text.split())
+    labels = tuple(value if value is not None else unscored for value in expected)
+
+    for value in labels:
+        assert value in normalized
+    if language == "es-MX":
+        assert "NOT SCORED" not in text
+        assert "Pendiente" in text and "Bloqueada" in text
+    else:
+        assert "SIN PUNTUACIÓN" not in text
+        assert "Pending" in text and "Blocked" in text
+    if technical is None or isinstance(technical, bool):
+        assert labels[0] == unscored
+    if adjusted is None or isinstance(adjusted, bool):
+        assert labels[1] == unscored
+    assert COMMIT in text
+    assert "owned/report-control" in text
+
+
+@pytest.mark.parametrize("spanish,label", ((False, "NOT SCORED"), (True, "SIN PUNTUACIÓN")))
+def test_dark_cover_unscored_card_values_fit_existing_card_width(spanish, label) -> None:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from nico.v2_dark_branded_cover import _cover
+
+    pdf = _cover({"identity": {"repository": "owned/report-control"}, "assessment": {}}, spanish=spanish)
+    reader = PdfReader(io.BytesIO(pdf))
+    card_values = []
+
+    def inspect(text, cm, tm, font, font_size):
+        if text.strip() == label and tm[5] > 600:
+            card_values.append((font_size, text.strip()))
+
+    reader.pages[0].extract_text(visitor_text=inspect)
+    card_width = (letter[0] - 84 - 9 * 3) / 4
+
+    assert len(card_values) == 2
+    for font_size, text in card_values:
+        assert 10 <= font_size <= 15
+        assert stringWidth(text, "Helvetica-Bold", font_size) <= card_width - 20 + 0.01

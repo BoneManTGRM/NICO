@@ -362,9 +362,18 @@ def _configure_first_record(identity, contract, receipt, encoded):
                 'clang_fallback_analyzed_count'):
         if type(native.get(key)) is not int or native[key] < 0:
             raise ValueError('worker_configure_first_native_invalid')
+    if native.get('complete_execution') is True:
+        discovered=native['tests_discovered_count']
+        passed=native['tests_passed_count']
+        if (discovered < 1 or native['tests_executed_count'] != discovered
+                or native['tests_executed_sha256'] != native['tests_discovered_sha256']
+                or native['tests_skipped_count'] != 0 or passed > discovered
+                or native['tests_passed'] is not (passed == discovered)
+                or (passed == discovered and native['tests_passed_sha256'] != native['tests_discovered_sha256'])):
+            raise ValueError('worker_configure_first_native_invalid')
     refs=native.get('artifacts')
     required_refs={'project-compilation-database','project-generated-context','project-compiler-evidence',
-        'project-static-environment','project-static-evidence'}
+        'project-static-environment','project-static-evidence','project-baseline-evidence'}
     if runtime_contract:
         required_refs.add('project-runtime-evidence')
     if (not isinstance(refs,dict) or 'project-compilation-database' not in refs
@@ -410,6 +419,10 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'all_repository_configurations_analyzed':native['project_static_complete']},
         'cpp_build_evidence':{'profile':contract['profile'],'compiled':native['compiled'],'tests_executed':native['tests_executed'],
             'tests_passed':native['tests_passed'],'configured_invocations':native['configured_invocations'],
+            'tests_discovered_count':native['tests_discovered_count'],
+            'tests_executed_count':native['tests_executed_count'],
+            'tests_passed_count':native['tests_passed_count'],
+            'tests_skipped_count':native['tests_skipped_count'],
             'configure_status':native['status'],'configure_error':native['error'],
             'compilation_database_sha256':native['compilation_database_sha256'],
             'project_option_policy':native['project_option_policy'],

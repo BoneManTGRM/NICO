@@ -60,7 +60,7 @@ def _bind_runtime_projection(native, probe):
                  and row['invocation'] == [*prefix, container, *value['argv']])
 
 
-def _operations(rows, artifact):
+def _operations(rows, artifact, *, allow_baseline_failure=False):
     """Check transport results and bytes, independently of summary flags."""
     _require(isinstance(rows, list) and 0 < len(rows) < 256)
     result, seen = {}, set()
@@ -71,7 +71,8 @@ def _operations(rows, artifact):
         # Runtime operations have their own exact-argv/result validator.
         if key.startswith('runtime-'):
             continue
-        _require(type(row['exit_code']) is int and row['exit_code'] == 0
+        _require(type(row['exit_code']) is int and (row['exit_code'] == 0
+                  or (allow_baseline_failure and key == 'baseline-tests' and row['exit_code'] == 8))
                  and row['timed_out'] is False and row['output_truncated'] is False
                  and type(row['duration_ms']) is int and row['duration_ms'] >= 0)
         raw = (artifact(row['output_artifact']) if row.get('output_artifact')
@@ -81,9 +82,9 @@ def _operations(rows, artifact):
     return result
 
 
-def validate_baseline_collection(probe, contract, artifact):
+def validate_baseline_collection(probe, contract, artifact, *, allow_target_failure=False):
     """Bind complete baseline membership and native argv to the frozen contract."""
-    ops = _operations(probe['operations'], artifact)
+    ops = _operations(probe['operations'], artifact, allow_baseline_failure=allow_target_failure)
     _require(probe['baseline_execution'] == contract)
     create = ops['create'][0]['invocation']
     name = create[create.index('--name') + 1]
@@ -129,8 +130,15 @@ def validate_baseline_collection(probe, contract, artifact):
     _require(files['baseline-junit'] == base64.b64decode(results['junit'], validate=True)
              and results['junit_truncated'] is False and results['log_truncated'] is False)
     executed, passed, skipped = _junit(files['baseline-junit'], names)
-    _require(executed == passed == names and skipped == []
+    _require(executed == names and skipped == []
              and results['executed'] == executed and results['passed'] == passed and results['skipped'] == [])
+    from nico.assessment_cpp_runtime_execution import _completed_sanitizer_test_failure
+    success = ops['baseline-tests'][0]['exit_code'] == 0 and passed == names
+    failure = allow_target_failure and _completed_sanitizer_test_failure(
+        ops['baseline-tests'][0],
+        {'required': names, 'executed': executed, 'passed': passed, 'skipped': skipped},
+        files['baseline-junit'])
+    _require(success or failure)
     return {'required': names, 'executed': executed, 'passed': passed, 'skipped': skipped}
 
 
