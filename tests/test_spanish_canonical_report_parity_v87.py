@@ -1118,10 +1118,16 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # adds only the canonical assurance paragraph beside Markdown/HTML headline
 # scores. PDF text changes only its two dependent artifact hashes; canonical
 # assessment truth and every page-count/parity/approval assertion remain intact.
+# PR1685 differential: exact f9c2 baseline reproduces the previous goldens.
+# The corrected composer removes only the secondary identity-only legacy cover
+# from small/rich PDFs; all substantive pages survive unchanged except page labels.
+# Their contents and bookmarks shift by one page and remove that cover entry.
+# Markdown/HTML and all phase9 English bytes remain identical. Bilingual semantic,
+# page-boundary, manifest, repeat-render and human-gate assertions remain active.
 # Briefing findings now share the repeating evidence table. PDF drawing bytes
 # change; Markdown/HTML, page counts, semantic parity and approval gates do not.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('7c6d1ced076d61a3960e1f3bd743ba9214c9eb74e03461c66b4e8a471a5785c9', 19314), 'html': ('936051dbc7b244c141b82703e7bc858ce0e4f62837d85f1aebbeb969fc84b03d', 23677), 'pdf_base64': ('c4d077be9a47a667815f010d6612e727d457c789418b3c29f1c070a74fe5ea26', 186260), 'pdf_sha256': '85c98a3d6c6fef2e45bde69c4827d494e5d740d1384cbcfbc063def9984ffb9a', 'page_count': 23}
-RICH_ENGLISH_GOLDEN = {'markdown': ('91d6065e83ea908d6dba3814293192429cb3a0192babfdad6b2765b1f3aa7b0e', 21018), 'html': ('f1c11430f2177d9ebf29fd65fdf8b9918f089a4fe88c395714ba413c06654b0d', 25687), 'pdf_base64': ('9b82617293d928d2f2a30e85455f51184c0602af5f28d3c28587bf67b72f3821', 288904), 'pdf_sha256': '6751ec17b09eabb2d3f1c83e8f9b31497eca91e49a5526dffb3675ca2a92e968', 'page_count': 48}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('7c6d1ced076d61a3960e1f3bd743ba9214c9eb74e03461c66b4e8a471a5785c9', 19314), 'html': ('936051dbc7b244c141b82703e7bc858ce0e4f62837d85f1aebbeb969fc84b03d', 23677), 'pdf_base64': ('ce70764b762a0df5314220133bdf7b9ed5d332d178f04f5617db8c8c72f0781e', 182352), 'pdf_sha256': '19e9d272ac20842214dcf82ec5ee3b1aa7d0c9764ba8ea65c79e9671bdda38d4', 'page_count': 22}
+RICH_ENGLISH_GOLDEN = {'markdown': ('91d6065e83ea908d6dba3814293192429cb3a0192babfdad6b2765b1f3aa7b0e', 21018), 'html': ('f1c11430f2177d9ebf29fd65fdf8b9918f089a4fe88c395714ba413c06654b0d', 25687), 'pdf_base64': ('558357fcfda52b5ff03a6de6a81e536ccc5adce22a5382c694f6fa7dde651f70', 284956), 'pdf_sha256': '3f63a025b3d7b38bca56bbadfcea4483ac46221ef43e8a6320e9096173d0825c', 'page_count': 47}
 PHASE9_ENGLISH_GOLDEN = {'markdown': ('bf7ad4d4af0f7dd3ca0d0f0d9de06724bd4b254fa4c8aef08907cb780d6aff3d', 19357), 'html': ('2b9b9dea73efb74fb9eb5770ea01815a01e7de9a98b6d114016870083bc96107', 23699), 'pdf_base64': ('c9964b50527ca98406e5459fee8437a5725c46201d2c09dc633257b2f1b8f7ac', 181092), 'pdf_sha256': 'ad6ac4133b28f95c775258a203a42122d09890665dd75431a99cb9c3c392373e', 'page_count': 22}
 
 SPANISH_OUTLINE = {
@@ -1433,8 +1439,8 @@ rich_english = render(rich_input("en"))
 rich_spanish = render(rich_input("es-MX"))
 assert fingerprint(rich_english[0]) == RICH_ENGLISH_GOLDEN
 assert_structural_parity(rich_english, rich_spanish)
-assert len(rich_english[2]) == len(rich_spanish[2]) == 48
-assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 39
+assert len(rich_english[2]) == len(rich_spanish[2]) == 47
+assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 38
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_english[0]["markdown"])) == 88
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_spanish[0]["markdown"])) == 88
 
