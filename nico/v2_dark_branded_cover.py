@@ -12,19 +12,20 @@ from nico.comprehensive_client_ready_projection_v1 import (
     clean_finding_title,
 )
 
-VERSION = "nico.v2.dark-branded-cover.v3.3"
+VERSION = "nico.v2.dark-branded-cover.v3.4"
 
 
 def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def _score_pair(assessment: Mapping[str, Any]) -> tuple[str, str]:
+def _score_pair(assessment: Mapping[str, Any], *, spanish: bool = False) -> tuple[str, str]:
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
     technical = assessment.get("technical_score", maturity.get("technical_score", maturity.get("presented_score", maturity.get("score"))))
     adjusted = assessment.get("canonical_evidence_adjusted_score", assessment.get("evidence_adjusted_score", maturity.get("evidence_adjusted_score", technical)))
-    technical_label = f"{int(round(technical))}/100" if isinstance(technical, (int, float)) and not isinstance(technical, bool) else "NOT SCORED"
-    adjusted_label = f"{int(round(adjusted))}/100" if isinstance(adjusted, (int, float)) and not isinstance(adjusted, bool) else "NOT SCORED"
+    unscored = "SIN PUNTUACIÓN" if spanish else "NOT SCORED"
+    technical_label = f"{int(round(technical))}/100" if isinstance(technical, (int, float)) and not isinstance(technical, bool) else unscored
+    adjusted_label = f"{int(round(adjusted))}/100" if isinstance(adjusted, (int, float)) and not isinstance(adjusted, bool) else unscored
     return technical_label, adjusted_label
 
 
@@ -74,7 +75,7 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
 
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
-    technical, adjusted = _score_pair(assessment)
+    technical, adjusted = _score_pair(assessment, spanish=spanish)
     priorities = _priority_titles(canonical, spanish=spanish)
     width, height = letter
     buffer = io.BytesIO()
@@ -140,7 +141,8 @@ def _cover(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
         pdf.setFont("Helvetica-Bold", 6.2)
         pdf.drawString(x + 10, y + 39, label)
         pdf.setFillColor(white)
-        pdf.setFont("Helvetica-Bold", 15)
+        value_size = min(15, (card_w - 20) * 15 / stringWidth(value, "Helvetica-Bold", 15))
+        pdf.setFont("Helvetica-Bold", value_size)
         pdf.drawString(x + 10, y + 15, value)
 
     y_repo = height - 255

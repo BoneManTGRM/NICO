@@ -194,3 +194,164 @@ def test_compose_replaces_entire_legacy_detailed_register_before_budget() -> Non
     assert "Human Review and Acceptance Gate" in extracted
     assert "raw internal material" not in extracted
 
+
+_COVER_TARGET = "c33b5b0329973c2065868eb2e7f07fab4df31f11"
+_COVER_RUN = "owned-negative-report-control"
+_COVER_GENERATED = "2026-10-01T16:00:00Z"
+_COVER_TEXT = {
+    "en": ("Comprehensive Technical Assessment", "Immutable commit:", "Run ID:", "Generated:",
+           "Document page 3 of 22"),
+    "es-MX": ("Evaluación Técnica Integral", "Commit inmutable:", "ID de ejecución:", "Generado:",
+              "Página del documento 3 de 22"),
+}
+
+
+def _legacy_cover_lines(language: str, *, branded: bool) -> list[str]:
+    from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
+
+    title, commit, run, generated, footer = _COVER_TEXT[language]
+    boundary = EN_BOUNDARY if language == "en" else ES_BOUNDARY
+    return [
+        "NICO Comprehensive · owned-negative-report-control · " + boundary,
+        boundary,
+        *(["NICO"] if branded else []),
+        title,
+        "owned/in-memory-control",
+        f"{commit} {_COVER_TARGET}",
+        f"{run} {_COVER_RUN}",
+        f"{generated} {_COVER_GENERATED}",
+        footer,
+    ]
+
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+@pytest.mark.parametrize("branded", (False, True))
+def test_compose_removes_only_secondary_legacy_cover(language: str, branded: bool) -> None:
+    secondary = _legacy_cover_lines(language, branded=branded)
+    primary = ["NICO COMPREHENSIVE", "Primary cover retained."]
+    evidence = [
+        "Native execution evidence",
+        f"Source commit: {_COVER_TARGET}",
+        "Required 3; executed 3; passed 2; failed 1; skipped 0.",
+        "tests_passed=false; deliberate target return 7.",
+    ]
+    result = compose_compact_client_pdf(
+        _pdf(primary, secondary, evidence), _pdf(["Register retained."]), _pdf(["Gate retained."])
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+    text = "\n".join(page.extract_text() or "" for page in pages)
+
+    assert len(pages) == 4
+    assert "Primary cover retained." in pages[0].extract_text()
+    assert _COVER_TEXT[language][0] not in text
+    assert f"Source commit: {_COVER_TARGET}" in text
+    assert "Required 3; executed 3; passed 2; failed 1; skipped 0." in text
+    assert "tests_passed=false; deliberate target return 7." in text
+    assert "Register retained." in text
+    assert "Gate retained." in text
+
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+@pytest.mark.parametrize("branded", (False, True))
+@pytest.mark.parametrize("content", (
+    "native_failure", "unknown_body", "metadata_without_cover",
+    "incidental_title", "title_prefix",
+))
+def test_compose_preserves_substantive_or_unrecognized_cover_like_pages(
+    language: str, branded: bool, content: str,
+) -> None:
+    title = _COVER_TEXT[language][0]
+    if content == "native_failure":
+        page = _legacy_cover_lines(language, branded=branded) + [
+            "Required 3; executed 3; passed 2; failed 1; skipped 0.",
+            "tests_passed=false; deliberate target return 7.",
+        ]
+    elif content == "unknown_body":
+        page = _legacy_cover_lines(language, branded=branded) + ["Unknown evidence retained."]
+    elif content == "metadata_without_cover":
+        page = [title, "src/net.cpp"]
+    elif content == "incidental_title":
+        page = ["Native evidence retained.", title, "tests_passed=false."]
+    else:
+        page = [title + " — native evidence retained.", "tests_passed=false."]
+    if branded and content not in ("native_failure", "unknown_body"):
+        page.insert(0, "NICO")
+    result = compose_compact_client_pdf(
+        _pdf(["Primary cover retained."], page),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+    text = "\n".join(p.extract_text() or "" for p in pages)
+
+    assert len(pages) == 4
+    for line in page:
+        assert line in text
+    assert "Register retained." in text
+    assert "Gate retained." in text
+
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+def test_compose_preserves_first_cover_even_when_it_has_legacy_metadata(language: str) -> None:
+    primary = _legacy_cover_lines(language, branded=True)
+    result = compose_compact_client_pdf(
+        _pdf(primary, ["Native evidence retained."]),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+
+    assert len(pages) == 4
+    assert _COVER_TEXT[language][0] in pages[0].extract_text()
+    assert _COVER_TARGET in pages[0].extract_text()
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+@pytest.mark.parametrize("invalid", ("empty_fields", "evidence_in_generated", "evidence_in_run", "invalid_commit"))
+def test_compose_preserves_invalid_or_substantive_legacy_metadata(language: str, invalid: str) -> None:
+    page = _legacy_cover_lines(language, branded=True)
+    _, commit_label, run_label, generated_label, _ = _COVER_TEXT[language]
+    replacements = {
+        "empty_fields": {
+            f"{commit_label} {_COVER_TARGET}": commit_label,
+            f"{run_label} {_COVER_RUN}": run_label,
+            f"{generated_label} {_COVER_GENERATED}": generated_label,
+        },
+        "evidence_in_generated": {
+            f"{generated_label} {_COVER_GENERATED}":
+                generated_label + " tests_passed=false; required=3, failed=1; native evidence retained.",
+        },
+        "evidence_in_run": {
+            f"{run_label} {_COVER_RUN}": run_label + " Required 3; failed 1; evidence retained.",
+        },
+        "invalid_commit": {f"{commit_label} {_COVER_TARGET}": commit_label + " unknown-source"},
+    }[invalid]
+    page = [replacements.get(line, line) for line in page]
+    result = compose_compact_client_pdf(
+        _pdf(["Primary cover retained."], page),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+    text = "\n".join(p.extract_text() or "" for p in pages)
+
+    assert len(pages) == 4
+    for line in page:
+        assert line in text
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+@pytest.mark.parametrize("invalid", ("offset_minute_99", "offset_minute_60", "duplicate_commit"))
+def test_compose_preserves_invalid_offset_or_conflicting_cover_identity(language: str, invalid: str) -> None:
+    page = _legacy_cover_lines(language, branded=True)
+    _, commit_label, _, generated_label, _ = _COVER_TEXT[language]
+    if invalid == "duplicate_commit":
+        page.append(commit_label + " " + "a" * 40)
+    else:
+        timestamp = "2026-10-01T16:00:00+06:99" if invalid == "offset_minute_99" else "2026-10-01T16:00:00+00:60"
+        page = [generated_label + " " + timestamp if line.startswith(generated_label) else line for line in page]
+    result = compose_compact_client_pdf(
+        _pdf(["Primary cover retained."], page),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+    text = "\n".join(p.extract_text() or "" for p in pages)
+
+    assert len(pages) == 4
+    for line in page:
+        assert line in text
