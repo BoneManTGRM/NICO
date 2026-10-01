@@ -90,7 +90,10 @@ def summarize_probe(result, targets, artifacts):
     complete=bool(
         result.get("status")=="BASELINE_EXECUTED" and result.get("error") is None
         and result.get("compiled") is True and result.get("tests_executed") is True
-        and result.get("tests_passed") is True and result.get("generated_context_verified") is True
+        and tests_count > 0 and executed == tests and not skipped
+        and set(passed) <= set(executed)
+        and result.get("tests_passed") is (passed == tests)
+        and result.get("generated_context_verified") is True
         and compiler.get("complete") is True and static.get("complete") is True
         and stage.get("complete") is True and result.get("boundary_verified") is True
         and result.get("cleanup_verified") is True and _REQUIRED_ARTIFACTS <= set(refs)

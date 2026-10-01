@@ -432,7 +432,16 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                       'junit_truncated': junit_data is None}
             result['tests_passed'] = (native_success and log_ok and junit_data is not None
                                       and passed == names and not skipped)
-            if not result['tests_passed']:
+            # CTest's failed-test exit and a complete matching JUnit population
+            # are target evidence. Missing/truncated or contradictory evidence
+            # still stops the probe; a valid target failure must not prevent
+            # generated-source, compiler, static, or runtime collection.
+            from nico.assessment_cpp_runtime_execution import _completed_sanitizer_test_failure
+            target_failure = bool(log_ok and junit_data is not None
+                and _completed_sanitizer_test_failure(observed,
+                    {'required':names,'executed':executed,'passed':passed,'skipped':skipped},
+                    base64.b64decode(junit_data, validate=True)))
+            if not result['tests_passed'] and not target_failure:
                 raise ValueError('worker_configuration_probe_native_tests_failed')
             if capture_generated_context:
                 from nico.assessment_cpp_project_snapshot import (PROJECT_SNAPSHOT_PROGRAM,

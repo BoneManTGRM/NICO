@@ -41,6 +41,26 @@ def test_summary_never_claims_complete_without_every_required_artifact():
     result=summarize_probe(proof(),targets,artifacts)
     assert result["complete_execution"] is False
 
+
+def test_summary_distinguishes_executed_target_failure_from_missing_tests():
+    artifacts={k:ref(k) for k in ("project-compilation-database","project-generated-context",
+        "project-compiler-evidence","project-static-environment","project-static-evidence")}
+    failed=proof()
+    failed['tests_passed']=False
+    failed['tests_result']['passed']=['a']
+    result=summarize_probe(failed,{"main.cpp":"d"*64},artifacts)
+    assert result['complete_execution'] is True
+    assert result['tests_passed'] is False
+    assert result['tests_executed_count']==2 and result['tests_passed_count']==1
+    failed['tests_result']['executed']=['a']
+    assert summarize_probe(failed,{"main.cpp":"d"*64},artifacts)['complete_execution'] is False
+    failed['tests_result']['executed']=['a','b']
+    failed['tests_result']['skipped']=['b']
+    assert summarize_probe(failed,{"main.cpp":"d"*64},artifacts)['complete_execution'] is False
+    failed['tests_result']['skipped']=[]
+    failed['tests_result']['passed']=['a','b']
+    assert summarize_probe(failed,{"main.cpp":"d"*64},artifacts)['complete_execution'] is False
+
 def test_summary_rejects_artifact_identity_substitution():
     targets={"CMakeLists.txt":"d"*64}
     artifacts={k:ref(k) for k in ("project-generated-context","project-compiler-evidence",
@@ -98,6 +118,27 @@ def test_incomplete_configure_first_receipt_retains_available_artifacts_and_exac
     assert record['cpp_build_evidence']['configure_error']=='worker_configuration_probe_compiler_incomplete'
     assert record['cpp_build_evidence']['configure_status']=='UNPROVEN'
     assert record['reason']=='Configure-first execution is incomplete; retained native evidence requires repair.'
+
+
+def test_completed_target_failure_receipt_keeps_failed_test_counts():
+    identity,plan,receipt=incomplete_receipt()
+    failed=proof();failed['tests_passed']=False;failed['tests_result']['passed']=['a']
+    artifacts={k:ref(k) for k in ("project-compilation-database","project-generated-context",
+        "project-compiler-evidence","project-static-environment","project-static-evidence")}
+    native=summarize_probe(failed,receipt['target_hashes'],artifacts)
+    native.update(project_option_policy='explicit-v1',project_options={},project_options_sha256=_digest({}))
+    receipt.update(native=native,native_sha256=_digest(native))
+    _,record,_=validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+    assert record['execution_observed_for_this_report'] is True
+    assert record['cpp_build_evidence']['tests_passed'] is False
+    assert record['cpp_build_evidence']['tests_executed_count']==2
+    assert record['cpp_build_evidence']['tests_passed_count']==1
+    for field,replacement in [('tests_executed_count',1),('tests_skipped_count',1),
+            ('tests_passed_count',3),('tests_passed',True),('tests_executed_sha256','f'*64)]:
+        broken=deepcopy(receipt);broken['native'][field]=replacement
+        broken['native_sha256']=_digest(broken['native'])
+        with pytest.raises(ValueError,match='worker_configure_first_native_invalid'):
+            validate_receipt(identity,plan,'e'*32,'github:1:2:3',broken)
 
 
 def test_capacity_limit_is_reported_without_scanner_completion_credit():

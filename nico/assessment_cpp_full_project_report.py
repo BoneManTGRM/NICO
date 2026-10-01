@@ -66,6 +66,18 @@ def enrich_scanner_stage(canonical, stage):
             summaries.append('Ejecución del proyecto C/C++: compilación ' + ('completada.' if built else 'no verificada.'))
         else:
             summaries.append('C/C++ project execution: build ' + ('completed.' if built else 'not verified.'))
+        if profile == 'cpp-configure-first-v2' and build.get('tests_executed') is True:
+            required = build.get('tests_discovered_count')
+            executed = build.get('tests_executed_count')
+            passed = build.get('tests_passed_count')
+            if all(type(value) is int and value >= 0 for value in (required, executed, passed)):
+                line = (f'Pruebas nativas base: ejecutadas={executed}/{required}; aprobadas={passed}/{required}.' if es
+                    else f'Baseline native tests: executed={executed}/{required}; passed={passed}/{required}.')
+                if build.get('tests_passed') is False:
+                    line += (' Se conservó una falla de pruebas del repositorio evaluado.' if es
+                        else ' An assessed-target test failure was retained.')
+                summaries.append(line)
+                evidence.append(line)
         for row in rows:
             key = str(row.get('id') or '')
             # Preserve machine identity separately; do not translate source/test identifiers.

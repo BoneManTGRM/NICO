@@ -82,6 +82,30 @@ def test_configure_first_runtime_evidence_renders_in_both_languages():
                 else 'no representa cobertura exhaustiva de vulnerabilidades ni del código' in rendered)
 
 
+def test_baseline_target_failure_is_disclosed_in_both_report_languages():
+    from nico.assessment_cpp_full_project_report import enrich_scanner_stage
+    digest='a'*64
+    record={'commit_sha':'b'*40,'raw_artifact_retention_complete':True,
+        'raw_artifact_sha256':digest,'current_run':True,'exact_commit_match':True,
+        'execution_observed_for_this_report':True,
+        'worker_provenance':{'profile':'cpp-configure-first-v2','receipt_sha256':digest,
+            'identity':{'run_id':'run','revision':'b'*40}},
+        'cpp_build_evidence':{'profile':'cpp-configure-first-v2','compiled':True,
+            'tests_executed':True,'tests_passed':False,'tests_discovered_count':3,
+            'tests_executed_count':3,'tests_passed_count':2,'tests_skipped_count':0}}
+    for locale, expected in [('en','Baseline native tests: executed=3/3; passed=2/3.'),
+            ('es-MX','Pruebas nativas base: ejecutadas=3/3; aprobadas=2/3.')]:
+        canonical={'report_language':locale,'identity':{'run_id':'run','commit_sha':'b'*40},
+            'scanner_execution_records':[record]}
+        out=enrich_scanner_stage(canonical,{'summary':'','evidence':[],'unavailable':[]})
+        text=' '.join([out['summary'],*out['evidence']])
+        assert expected in text
+        assert ('assessed-target test failure' in text if locale=='en'
+            else 'falla de pruebas del repositorio evaluado' in text)
+        assert not any('not bound to a verified retained receipt' in gap
+            or 'no está vinculada a un comprobante' in gap for gap in out['unavailable'])
+
+
 def test_partial_runtime_evidence_is_projected_without_promoting_scanner():
     record = {'status': 'partial', 'completed': False, 'verified_complete': False,
               'finding_count': 0, 'findings': [], 'reason': 'incomplete execution',
