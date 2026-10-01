@@ -43,7 +43,8 @@ def test_projection_preserves_full_canonical_finding_population():
             "artifacts":{"project-static-evidence":{"artifact_id":"scanartifact_"+"3"*64}}}}
     reconstruction={"analysis":{"complete":True,"required_contexts":["e"*64],"analyzed_contexts":["e"*64],
         "findings":[finding],"limitations":[],"native_evidence_sha256":"4"*64},
-        "compiler":{"native_evidence_sha256":"5"*64}}
+        "compiler":{"native_evidence_sha256":"5"*64},
+        "baseline":{"collection_complete":True,"native_evidence_sha256":"6"*64}}
     out=project_configure_first_record(record,ident,{},receipt,reconstruction)
     assert out["completed"] and out["verified_complete"] and out["canonical_findings_projected"]
     assert out["finding_count"]==len(out["findings"])==1
@@ -325,11 +326,13 @@ def test_failed_projection_copies_findings_coverage_and_runtime_without_mutating
 
 def test_runtime_failure_does_not_change_static_observation_identity():
     ident,plan,receipt,_,record,reconstruction = _failed_runtime_complete_static_fixture()
+    reconstruction['baseline'] = {'collection_complete':True, 'native_evidence_sha256':'7'*64}
     failed = project_configure_first_record(record,ident,plan,receipt,reconstruction)
     completed_receipt = deepcopy(receipt)
     completed_reconstruction = deepcopy(reconstruction)
     completed_receipt['native']['complete_execution'] = True
     completed_reconstruction['runtime']['summary']['complete'] = True
+    completed_reconstruction['baseline'] = {'collection_complete':True, 'native_evidence_sha256':'7'*64}
     # The projection seam receives already-validated reconstruction. This paired
     # case compares observation identity only; it is not native execution proof.
     completed = project_configure_first_record(record,ident,plan,completed_receipt,completed_reconstruction)

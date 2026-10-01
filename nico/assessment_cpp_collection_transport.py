@@ -41,7 +41,7 @@ def _fallback_program_equal(actual, expected):
     return True
 
 
-def validate_transport(probe, operations, targets, *, snapshot=None, runtime_plan=None):
+def validate_transport(probe, operations, targets, *, snapshot=None, runtime_plan=None, baseline_only=False):
     """Exact membership/argv and returned source/config/artifact relationships.
 
     Runtime and baseline test operations have their own result validators.
@@ -68,7 +68,7 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
             '--user=1000:1000', '--cap-drop=ALL', '--security-opt=no-new-privileges',
             *docker_resource_args(profile, executable=not static), '--log-driver=none',
             '--env=HOME=/work', '--env=TMPDIR=/work', '--entrypoint=sleep', image,
-            str(STAGE_WALL_SECONDS + 5 if static else 1800 + runtime_plan['total_seconds'] + 15)],
+            str(STAGE_WALL_SECONDS + 5 if static else 1800 + (runtime_plan or {}).get('total_seconds', 0) + 15)],
         tag + 'start': ['docker', 'start', name],
         'static-private' if static else 'analyst-setup': private(ANALYSIS_SETUP_PROGRAM),
         tag + 'boundary-before': program(BOUNDARY_PROGRAM),
@@ -109,15 +109,19 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
             'post-build-database': [*program(READ_PROGRAM), '/work/build/compile_commands.json', str(4*1024*1024)],
             'project-generated-context': private(PROJECT_SNAPSHOT_PROGRAM, True),
             'project-compiler-evidence': private(COMPILER_PROGRAM, True)})
-        references = {'project-generated-context': probe['generated_context']['artifact'],
-                      'project-compiler-evidence': probe['project_compiler']['artifact']}
+        if baseline_only:
+            specs.pop('project-generated-context')
+            specs.pop('project-compiler-evidence')
+        else:
+            references = {'project-generated-context': probe['generated_context']['artifact'],
+                          'project-compiler-evidence': probe['project_compiler']['artifact']}
         if probe.get('unit_test_data') is not None:
             argv = operations['unit-test-data'][0]['invocation']
             require(isinstance(argv[-1], str) and argv[-1].isdigit() and 0 < int(argv[-1]) <= 128*1024*1024)
             specs['unit-test-data'] = ['docker', 'exec', '--user=0:0', '--interactive', name,
                 'python3', '-I', '-S', '-c', UNIT_TEST_DATA_PROGRAM, argv[-1]]
             require(_json(operations['unit-test-data'][1]) == probe['unit_test_data'])
-        asset = runtime_plan.get('unit_test_data')
+        asset = (runtime_plan or {}).get('unit_test_data')
         require(probe.get('unit_test_data') == ({asset['name']: asset['sha256']} if asset else None))
         require(operations['cmake-version'][1].splitlines()[0] == ('cmake version '+CMAKE_VERSION).encode()
                 and all(operations[key][1].strip() == COMPILER_VERSION.encode() for key in ('gcc-version', 'g++-version')))

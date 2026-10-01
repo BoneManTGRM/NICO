@@ -373,7 +373,7 @@ def _configure_first_record(identity, contract, receipt, encoded):
             raise ValueError('worker_configure_first_native_invalid')
     refs=native.get('artifacts')
     required_refs={'project-compilation-database','project-generated-context','project-compiler-evidence',
-        'project-static-environment','project-static-evidence'}
+        'project-static-environment','project-static-evidence','project-baseline-evidence'}
     if runtime_contract:
         required_refs.add('project-runtime-evidence')
     if (not isinstance(refs,dict) or 'project-compilation-database' not in refs

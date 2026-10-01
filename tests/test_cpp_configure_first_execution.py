@@ -27,7 +27,7 @@ def proof():
 def test_summary_is_hash_bound_and_keeps_canonical_projection_pending():
     targets={"CMakeLists.txt":"d"*64,"src/a.cpp":"e"*64}
     artifacts={k:ref(k) for k in ("project-compilation-database","project-generated-context",
-        "project-compiler-evidence","project-static-environment","project-static-evidence")}
+        "project-compiler-evidence","project-static-environment","project-static-evidence","project-baseline-evidence")}
     result=summarize_probe(proof(),targets,artifacts)
     assert result["complete_execution"] is True
     assert result["canonical_findings_projected"] is False
@@ -44,7 +44,7 @@ def test_summary_never_claims_complete_without_every_required_artifact():
 
 def test_summary_distinguishes_executed_target_failure_from_missing_tests():
     artifacts={k:ref(k) for k in ("project-compilation-database","project-generated-context",
-        "project-compiler-evidence","project-static-environment","project-static-evidence")}
+        "project-compiler-evidence","project-static-environment","project-static-evidence","project-baseline-evidence")}
     failed=proof()
     failed['tests_passed']=False
     failed['tests_result']['passed']=['a']
@@ -124,7 +124,7 @@ def test_completed_target_failure_receipt_keeps_failed_test_counts():
     identity,plan,receipt=incomplete_receipt()
     failed=proof();failed['tests_passed']=False;failed['tests_result']['passed']=['a']
     artifacts={k:ref(k) for k in ("project-compilation-database","project-generated-context",
-        "project-compiler-evidence","project-static-environment","project-static-evidence")}
+        "project-compiler-evidence","project-static-environment","project-static-evidence","project-baseline-evidence")}
     native=summarize_probe(failed,receipt['target_hashes'],artifacts)
     native.update(project_option_policy='explicit-v1',project_options={},project_options_sha256=_digest({}))
     receipt.update(native=native,native_sha256=_digest(native))

@@ -27,7 +27,7 @@ def execution_timeout_limit(contract):
 
 _REQUIRED_ARTIFACTS = {
     "project-compilation-database", "project-generated-context", "project-compiler-evidence",
-    "project-static-environment", "project-static-evidence",
+    "project-static-environment", "project-static-evidence", "project-baseline-evidence",
 }
 _OPTIONAL_ARTIFACTS = {"project-static-clang-fallback","project-runtime-evidence"}
 _SHA = re.compile(r"[0-9a-f]{64}")
@@ -195,6 +195,10 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
             raise ValueError(error)
         raise ValueError("worker_configure_first_database_missing")
     sink("project-compilation-database",database)
+    from nico.assessment_cpp_baseline_evidence import retained_baseline_bytes
+    baseline_raw = retained_baseline_bytes(result, targets, cfg, contract["image_digest"], runtime_plan=runtime_plan)
+    if baseline_raw is not None:
+        sink("project-baseline-evidence", baseline_raw)
     if runtime_plan is not None:
         from nico.assessment_cpp_runtime_scope import retained_runtime_bytes
         runtime_raw=retained_runtime_bytes(runtime_interfaces,runtime_plan,result.get("runtime_evidence"))

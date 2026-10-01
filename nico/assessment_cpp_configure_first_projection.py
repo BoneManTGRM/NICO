@@ -61,12 +61,16 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     from nico.assessment_cpp_clang_fallback import clang_fallback_request,validate_clang_fallback,merge_static_analysis
     native=receipt["native"]; refs=native["artifacts"]; targets=receipt["target_hashes"]
     required={"project-compilation-database","project-generated-context","project-compiler-evidence",
-              "project-static-environment","project-static-evidence"}
+              "project-static-environment","project-static-evidence","project-baseline-evidence"}
     runtime_contract=contract["configuration"].get("schema")=="nico.cpp-configure-first-contract.v3"
     if runtime_contract:
         required.add("project-runtime-evidence")
     if not required<=set(refs):
         raise ValueError("worker_configure_first_artifact_population_invalid")
+    from nico.assessment_cpp_baseline_evidence import validate_retained_baseline
+    baseline_raw = _read_artifact(store, identity, refs["project-baseline-evidence"], "project-baseline-evidence")
+    baseline = validate_retained_baseline(
+        baseline_raw, targets, contract["configuration"], contract["image_digest"], native)
     database=_read_artifact(store,identity,refs["project-compilation-database"],"project-compilation-database")
     if hashlib.sha256(database).hexdigest()!=native["compilation_database_sha256"]:
         raise ValueError("worker_configure_first_database_mismatch")
@@ -124,7 +128,7 @@ def reconstruct_configure_first(identity, contract, receipt, store):
                 or native.get("runtime_duration_ms")!=runtime["duration_ms"]):
             raise ValueError("worker_configure_first_summary_mismatch")
     return {"contexts":contexts,"snapshot":snapshot,"compiler":compiler,
-            "environment":environment,"analysis":analysis,"runtime":runtime}
+            "environment":environment,"analysis":analysis,"runtime":runtime,"baseline":baseline}
 
 
 def project_configure_first_record(record, identity, contract, receipt, reconstruction):
@@ -152,7 +156,9 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
     output=deepcopy(record)
     output.update(execution_observed_for_this_report=True,findings=findings,
         finding_count=len(findings),canonical_findings_projected=True)
-    if execution_complete:
+    if reconstruction.get("baseline") is not None:
+        output.setdefault("cpp_build_evidence", {})["baseline_native_evidence"] = deepcopy(reconstruction["baseline"])
+    if execution_complete and reconstruction.get("baseline", {}).get("collection_complete") is True:
         output.update(status="completed",completed=True,verified_complete=True,
             verified_for_this_report=True,returncode_valid=True,reason="")
     # Otherwise retain the producer's failure and incomplete/invalid-exit flags.
@@ -172,6 +178,8 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
         "compilation_database_sha256":native["compilation_database_sha256"],
         "compiler_native_sha256":reconstruction["compiler"]["native_evidence_sha256"],
         "static_native_sha256":analysis["native_evidence_sha256"],
+        **({"baseline_native_sha256":reconstruction["baseline"]["native_evidence_sha256"]}
+           if reconstruction.get("baseline") is not None else {}),
         **({"runtime_native_sha256":runtime["native_evidence_sha256"]} if runtime is not None else {}),
         "finding_population_sha256":hashlib.sha256(canonical_bytes(findings)).hexdigest(),
     }
