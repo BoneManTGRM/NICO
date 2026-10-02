@@ -114,8 +114,16 @@ def _secondary_legacy_cover(value: str) -> bool:
     lines = _meaningful_lines(value)
     if lines and lines[0] == "nico":
         lines = lines[1:]
-    if not lines or lines[0] not in _LEGACY_COVER_TITLES:
+    if not lines:
         return False
+    title = lines[0]
+    end = 1
+    while any(known.startswith(title + " ") for known in _LEGACY_COVER_TITLES) and end < len(lines):
+        title += " " + lines[end]
+        end += 1
+    if title not in _LEGACY_COVER_TITLES:
+        return False
+    lines = [title, *lines[end:]]
     if len(lines) == 1:
         return True
 

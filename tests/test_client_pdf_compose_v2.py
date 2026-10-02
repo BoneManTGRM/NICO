@@ -451,3 +451,32 @@ def test_compose_production_cover_identity_order_does_not_hide_evidence(language
         _pdf(["Register retained."]), _pdf(["Gate retained."]),
     )
     assert len(PdfReader(io.BytesIO(result)).pages) == 3
+
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+@pytest.mark.parametrize("fault", (None, "native_tail", "interleaved_title", "partial_title"))
+def test_compose_production_wrapped_title_requires_exact_identity_only_cover(
+    language: str, fault: str | None,
+) -> None:
+    page = _legacy_cover_lines(language, branded=True)
+    title = _COVER_TEXT[language][0]
+    parts = title.rsplit(" ", 1)
+    replacement = (
+        [parts[0]] if fault == "partial_title" else
+        [parts[0], "Native evidence retained.", parts[1]]
+        if fault == "interleaved_title" else parts
+    )
+    page = [part for line in page for part in
+            (replacement if line == title else [line])]
+    if fault == "native_tail":
+        page.append("tests_passed=false; native failure retained.")
+    result = compose_compact_client_pdf(
+        _pdf(["Primary cover retained."], page),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+    assert len(pages) == (3 if fault is None else 4)
+    if fault is not None:
+        text = "\n".join(p.extract_text() or "" for p in pages)
+        for line in page:
+            assert line in text
