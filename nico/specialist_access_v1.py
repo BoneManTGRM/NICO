@@ -18,7 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from nico.admin_security import require_comprehensive_operator
+from nico.admin_security import require_admin_write, require_comprehensive_operator
 from nico.github_actions_proof_auth_v1 import (
     proof_audience,
     verify_github_actions_oidc_token,
@@ -157,6 +157,24 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
     return payload
 
 
+# These legacy namespaces expose cross-customer operational records. Their
+# contract is site administration, not a tenant-scoped Comprehensive session.
+# Keep them behind the existing global administrator credential rather than
+# inventing a customer identity from request parameters or specialist claims.
+_ADMINISTRATIVE_RECORD_PREFIXES = frozenset({
+    "/customers", "/projects", "/evidence", "/scans", "/findings",
+    "/drift", "/repairs", "/verification", "/memory", "/audit-log",
+    "/approval", "/approvals",
+})
+
+
+def _administrative_record_request(path: str) -> bool:
+    return any(
+        path == prefix or path.startswith(prefix + "/")
+        for prefix in _ADMINISTRATIVE_RECORD_PREFIXES
+    )
+
+
 def _protected_request(path: str) -> bool:
     if path in {SESSION_ROUTE, GITHUB_ACTIONS_SESSION_ROUTE}:
         return False
@@ -250,14 +268,19 @@ def _rate_limit_response() -> JSONResponse:
     )
 
 
-def _authentication_response(status_code: int, code: str) -> JSONResponse:
+def _authentication_response(
+    status_code: int,
+    code: str,
+    *,
+    message: str = "Authenticated NICO specialist access is required.",
+) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={
             "status": "blocked",
             "detail": {
                 "code": code,
-                "message": "Authenticated NICO specialist access is required.",
+                "message": message,
                 "retryable": False,
             },
         },
@@ -269,13 +292,29 @@ async def _specialist_access_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
-    if request.method == "OPTIONS" or not _protected_request(request.url.path):
+    administrative_records = _administrative_record_request(request.url.path)
+    if request.method == "OPTIONS" or not (
+        administrative_records or _protected_request(request.url.path)
+    ):
         return await call_next(request)
 
     raw_token = request.headers.get(ADMIN_HEADER, "").strip()
     session_token = request.headers.get(SESSION_HEADER, "").strip()
     authority: dict[str, Any] | None = None
-    if raw_token:
+    if administrative_records:
+        # A signed specialist session remains below site-administration
+        # authority, including one originally exchanged using an admin token.
+        # Customer/project query parameters and proof credentials grant no
+        # permission to list or retrieve other tenants' operational records.
+        allowed, status = require_admin_write(raw_token)
+        if not allowed:
+            return _authentication_response(
+                403 if raw_token or session_token else 401,
+                "site_admin_authentication_required",
+                message="Authenticated NICO site-administrator access is required.",
+            )
+        authority = {**status, "authority": "nico_admin", "scope": "site_administration"}
+    elif raw_token:
         allowed, status = require_comprehensive_operator(raw_token)
         if not allowed:
             return _authentication_response(403, "specialist_operator_authentication_invalid")
