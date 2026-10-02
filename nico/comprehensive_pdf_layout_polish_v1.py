@@ -116,7 +116,9 @@ def _render_polished_toc_pdf(
                 font_name="Helvetica",
                 font_size=_TOC_FONT_SIZE,
             )
-            final_page_number = int(record["source_page_index"]) + toc_page_count + 1
+            final_page_number = semantic._final_page_index(
+                int(record["source_page_index"]), toc_page_count
+            ) + 1
             pdf.setFont("Helvetica", _TOC_FONT_SIZE)
             pdf.drawString(54, y, title)
             pdf.setFont("Helvetica-Bold", _TOC_FONT_SIZE)
