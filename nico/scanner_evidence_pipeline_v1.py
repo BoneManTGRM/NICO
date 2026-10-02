@@ -21,6 +21,7 @@ from nico.scanner_tool_runners import (
     _node_env,
     normalize_scanner_worker_artifact,
     prepare_project_commands,
+    project_commands_allowed,
     redact_payload,
     redact_text,
     resolve_node_project_dir,
@@ -697,6 +698,12 @@ def _eslint_config(workspace: WorkerWorkspace, web_dir: Path) -> tuple[Path | No
 
 
 def _run_eslint(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
+    if not project_commands_allowed():
+        return _unavailable(
+            spec,
+            f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
+            source="canonical_eslint",
+        )
     web_dir = preparation.web_dir if preparation is not None else workspace.repo_dir
     source_targets = _javascript_source_targets(web_dir)
     project_label = web_dir.relative_to(workspace.repo_dir).as_posix() or "."
@@ -742,6 +749,12 @@ def _typescript_findings(text: str) -> list[dict[str, Any]]:
 
 
 def _run_typescript(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
+    if not project_commands_allowed():
+        return _unavailable(
+            spec,
+            f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
+            source="canonical_typescript",
+        )
     web_dir = preparation.web_dir if preparation is not None else workspace.repo_dir
     project_label = web_dir.relative_to(workspace.repo_dir).as_posix() or "."
     tsconfig = web_dir / "tsconfig.json"
@@ -1038,7 +1051,15 @@ def run_canonical_scanner_tools(
         spec.name in SOURCE_REASONS for spec in selected
     ) else {}
     needs_node = any(spec.name in {"eslint", "typescript"} for spec in selected)
-    preparation = prepare_project_commands(workspace, runner=runner) if needs_node else None
+    preparation = None
+    if needs_node:
+        if project_commands_allowed():
+            preparation = prepare_project_commands(workspace, runner=runner)
+        else:
+            preparation = ProjectCommandPreparation(
+                "unavailable", resolve_node_project_dir(workspace.repo_dir), False,
+                "Project-tool preparation requires NICO_ALLOW_PROJECT_COMMANDS=true.",
+            )
     tool_results: list[dict[str, Any]] = []
     raw_blobs: dict[str, Any] = {}
     for spec in selected:

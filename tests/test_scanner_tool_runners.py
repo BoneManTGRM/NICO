@@ -145,6 +145,7 @@ def test_write_scanner_artifact_redacts_before_disk(tmp_path: Path):
 
 
 def test_prepare_project_commands_discovers_root_node_project(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "true")
     monkeypatch.setattr(
         "nico.scanner_tool_runners.shutil.which",
         lambda name: "/usr/bin/npm" if name == "npm" else None,
