@@ -35,6 +35,18 @@ _CANONICAL_PARITY_EXACT = {
     "Native target is outside the frozen population.": "El objetivo nativo está fuera de la población fijada.",
     "Workflow configuration exact-SHA match: not assessed.": "Coincidencia de SHA exacto de la configuración de flujos de trabajo: sin evaluar.",
     "Delivery capacity is not scored because immutable CI configuration was not assessed.": "La capacidad de entrega no se puntúa porque no se evaluó la configuración inmutable de CI.",
+    "Analyzer execution evidence is unavailable.": "La evidencia de ejecución del analizador no está disponible.",
+    "Execution credit is withheld; no client defect is inferred.": "No se otorga crédito de ejecución; no se infiere un defecto del cliente.",
+    "Resolve the unavailable execution prerequisite within the authorized worker boundary and retain complete exact-SHA evidence.": "Resuelva el requisito de ejecución no disponible dentro del entorno autorizado del trabajador y conserve evidencia completa vinculada al SHA exacto.",
+    "Analyzer execution is blocked by an unmet prerequisite.": "La ejecución del analizador está bloqueada por un requisito pendiente.",
+    "Resolve the documented prerequisite within the authorized worker boundary before execution.": "Resuelva el requisito documentado dentro del entorno autorizado del trabajador antes de la ejecución.",
+    "Analyzer execution was skipped.": "Se omitió la ejecución del analizador.",
+    "Disclose the skipped scope and collect complete exact-SHA evidence only within the authorized worker boundary.": "Declare el alcance omitido y recopile evidencia completa vinculada al SHA exacto únicamente dentro del entorno autorizado del trabajador.",
+    "The analyzer was not assessed.": "El analizador no se evaluó.",
+    "Disclose the unassessed scope and collect complete exact-SHA evidence only within the authorized worker boundary.": "Declare el alcance no evaluado y recopile evidencia completa vinculada al SHA exacto únicamente dentro del entorno autorizado del trabajador.",
+    "Analyzer execution evidence is incomplete.": "La evidencia de ejecución del analizador está incompleta.",
+    "Coverage remains incomplete; no client defect is inferred.": "La cobertura sigue incompleta; no se infiere un defecto del cliente.",
+    "Reconcile the missing execution evidence within the authorized worker boundary and retain complete exact-SHA artifacts.": "Concilie la evidencia de ejecución faltante dentro del entorno autorizado del trabajador y conserve artefactos completos vinculados al SHA exacto.",
     "Comprehensive": "Integral",
     "DRAFT": "BORRADOR AUTOMATIZADO",
     "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED": (
@@ -1819,7 +1831,7 @@ _ENGLISH_PRESENTATION_SIGNAL = re.compile(
     r"remain|remains|required|requires|require|reviewed|verified|analyzed|completed|"
     r"pending|only|against|into|should|must|cannot|could|would|has|have|does|did|not|"
     r"available|unavailable|missing|failed|blocked|retained|supplied|approved|authorized|"
-    r"disabled|verification|workflow|assessed|complexity|hotspot|reduce)\b",
+    r"disabled|verification|workflow|assessed|complexity|hotspot|reduce|proves|vulnerabilities|absent)\b",
     re.IGNORECASE,
 )
 

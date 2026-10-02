@@ -6,9 +6,9 @@ from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from nico.phase12_report_remediation_v1 import remediate_assessment
-from nico.phase14_analyzer_evidence_v1 import apply_analyzer_evidence
+from nico.phase14_analyzer_evidence_v1 import NON_SUCCESS_STATES, apply_analyzer_evidence, classify_status
 
-VERSION = "nico.phase15.production-integration.v2"
+VERSION = "nico.phase15.production-integration.v3"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 _FINDING_SURFACES = (
     "canonical_findings",
@@ -71,9 +71,15 @@ def _scanner_source_identity(item: Mapping[str, Any]) -> str:
 
 def _legacy_scanner_records(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
+    marker = payload.get("phase15_production_integration")
+    prior_projection = isinstance(marker, Mapping) and marker.get("analyzer_contract_applied") is True
     evidence = payload.get("evidence_health_summary")
     if isinstance(evidence, Mapping):
         for key in ("scanner_records", "records", "incomplete_scanner_records"):
+            # These two fields are derived by an earlier integration, not
+            # additional retained analyzer attempts. Original records stay raw.
+            if prior_projection and key in {"scanner_records", "incomplete_scanner_records"}:
+                continue
             values = evidence.get(key)
             if isinstance(values, list):
                 candidates.extend(deepcopy(dict(item)) for item in values if isinstance(item, Mapping))
@@ -107,10 +113,16 @@ def normalize_production_scanner_records(
         if not name:
             continue
         status = _text(item.get("status")).casefold().replace("-", "_").replace(" ", "_")
+        declared_non_success = NON_SUCCESS_STATES | {
+            "timed_out", "capture_truncated", "unsupported_target", "not_applicable"
+        }
+        canonical_status = classify_status({"status": status})
+        if canonical_status in declared_non_success:
+            status = canonical_status
         raw_exit = item.get("raw_exit_code", item.get("exit_code"))
         verified = item.get("verified_complete") is True or item.get("capture_complete") is True
         artifact = item.get("artifact_sha256") or item.get("output_sha256") or item.get("artifact_hash")
-        if name == "bandit" and raw_exit in (0, 1) and artifact and (
+        if name == "bandit" and status not in declared_non_success and raw_exit in (0, 1) and artifact and (
             verified or item.get("json_parseable") is True or item.get("exact_commit_match") is True
         ):
             status = "completed"
@@ -156,9 +168,16 @@ def integrate_production_truth(payload: Mapping[str, Any]) -> dict[str, Any]:
         result = remediate_assessment(result, commit_sha=commit_sha)
 
     raw_records = [] if already_integrated else _legacy_scanner_records(result)
-    if commit_sha and raw_records:
+    prior_projection = isinstance(previous_marker, Mapping) and previous_marker.get("analyzer_contract_applied") is True
+    missing_retained_records = bool(prior_projection and not already_integrated and not raw_records)
+    if commit_sha and (raw_records or missing_retained_records):
         records = normalize_production_scanner_records(raw_records, expected_sha=commit_sha)
         required = {"bandit", "eslint", "gitleaks"}
+        if prior_projection:
+            previous_evidence = result.get("evidence_health_summary")
+            previous_reconciliation = previous_evidence.get("phase14_analyzer_evidence") if isinstance(previous_evidence, Mapping) else None
+            if isinstance(previous_reconciliation, Mapping):
+                required.update(_text(name).casefold() for name in previous_reconciliation.get("required_scanners", []) if _text(name))
         required.update(
             _scanner_name(item)
             for item in records
@@ -187,7 +206,9 @@ def integrate_production_truth(payload: Mapping[str, Any]) -> dict[str, Any]:
         "version": VERSION,
         "canonical_population_applied": bool(canonical),
         "canonical_finding_count": len(canonical),
-        "analyzer_contract_applied": already_integrated or bool(commit_sha and raw_records),
+        "analyzer_contract_applied": already_integrated or bool(commit_sha and (raw_records or missing_retained_records)),
+        "regeneration_blocked": missing_retained_records or bool(already_integrated and previous_marker.get("regeneration_blocked")),
+        "regeneration_blocker": "retained_analyzer_records_missing" if (missing_retained_records or bool(already_integrated and previous_marker.get("regeneration_blocked"))) else None,
         "bandit_record_ingested": bool(
             (isinstance(previous_marker, Mapping) and previous_marker.get("bandit_record_ingested") is True)
             or any(_scanner_name(item) == "bandit" for item in raw_records)

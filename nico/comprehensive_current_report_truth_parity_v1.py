@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.13"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.14"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -17,6 +17,18 @@ _REVIEW_LOCALIZATION_MARKER = "__nico_current_report_truth_review_localization_v
 _DYNAMIC_LOCALIZER_MARKER = "__nico_current_report_truth_dynamic_localizer_v1__"
 
 _ES_EXACT = {
+    "Analyzer execution evidence is unavailable.": "La evidencia de ejecución del analizador no está disponible.",
+    "Execution credit is withheld; no client defect is inferred.": "No se otorga crédito de ejecución; no se infiere un defecto del cliente.",
+    "Resolve the unavailable execution prerequisite within the authorized worker boundary and retain complete exact-SHA evidence.": "Resuelva el requisito de ejecución no disponible dentro del entorno autorizado del trabajador y conserve evidencia completa vinculada al SHA exacto.",
+    "Analyzer execution is blocked by an unmet prerequisite.": "La ejecución del analizador está bloqueada por un requisito pendiente.",
+    "Resolve the documented prerequisite within the authorized worker boundary before execution.": "Resuelva el requisito documentado dentro del entorno autorizado del trabajador antes de la ejecución.",
+    "Analyzer execution was skipped.": "Se omitió la ejecución del analizador.",
+    "Disclose the skipped scope and collect complete exact-SHA evidence only within the authorized worker boundary.": "Declare el alcance omitido y recopile evidencia completa vinculada al SHA exacto únicamente dentro del entorno autorizado del trabajador.",
+    "The analyzer was not assessed.": "El analizador no se evaluó.",
+    "Disclose the unassessed scope and collect complete exact-SHA evidence only within the authorized worker boundary.": "Declare el alcance no evaluado y recopile evidencia completa vinculada al SHA exacto únicamente dentro del entorno autorizado del trabajador.",
+    "Analyzer execution evidence is incomplete.": "La evidencia de ejecución del analizador está incompleta.",
+    "Coverage remains incomplete; no client defect is inferred.": "La cobertura sigue incompleta; no se infiere un defecto del cliente.",
+    "Reconcile the missing execution evidence within the authorized worker boundary and retain complete exact-SHA artifacts.": "Concilie la evidencia de ejecución faltante dentro del entorno autorizado del trabajador y conserve artefactos completos vinculados al SHA exacto.",
     "Exceptional": "Excepcional",
     "Code audit": "Auditoría de código",
     "Code Audit": "Auditoría de código",
@@ -181,6 +193,9 @@ _ENGLISH_PRESENTATION_WORDS = frozenset(
         "or",
         "pending",
         "prose",
+        "proves",
+        "vulnerabilities",
+        "absent",
         "renderer",
         "report",
         "required",

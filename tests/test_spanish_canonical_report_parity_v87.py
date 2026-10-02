@@ -362,7 +362,7 @@ def test_spanish_scanner_limitations_localize_the_production_truth_contract() ->
         (
             "El volumen de candidatos y la carga de trabajo del revisor son métricas "
             "operativas de revisión y no tienen efecto numérico sobre la madurez "
-            "técnica ni sobre la puntuación de Ajuste por evidencia."
+            "técnica ni sobre la puntuación ajustada por evidencia."
         ),
         (
             "pip-audit: estado=no disponible; coincidencia_commit_exacto=sí; "

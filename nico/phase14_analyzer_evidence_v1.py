@@ -6,10 +6,11 @@ from collections.abc import Iterable, Mapping
 from nico.report_json_copy import deepcopy
 from typing import Any
 
-VERSION = "nico.phase14.analyzer-evidence.v3"
+VERSION = "nico.phase14.analyzer-evidence.v4"
 EXECUTION_SUCCESS = {"completed", "success"}
 TERMINAL_SUCCESS = EXECUTION_SUCCESS | {"not_applicable"}
 TERMINAL_FAILURE = {"failed", "timed_out", "capture_truncated", "unsupported_target"}
+NON_SUCCESS_STATES = {"unavailable", "blocked", "skipped", "not_assessed", "incomplete"}
 DEFAULT_REQUIRED_SCANNERS = ("bandit", "eslint", "gitleaks")
 _STATUS_ALIASES = {
     "passed": "success",
@@ -50,7 +51,7 @@ def _digest(value: Any, label: str) -> str:
 def classify_status(record: Mapping[str, Any]) -> str:
     status = _text(record.get("status")).casefold().replace("-", "_").replace(" ", "_")
     status = _STATUS_ALIASES.get(status, status)
-    if status in TERMINAL_SUCCESS | TERMINAL_FAILURE:
+    if status in TERMINAL_SUCCESS | TERMINAL_FAILURE | NON_SUCCESS_STATES:
         return status
     exit_reason = _text(record.get("exit_reason") or record.get("failure_cause")).casefold()
     if "timeout" in exit_reason:
@@ -129,6 +130,31 @@ def _trailing_successes(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _failure_explanation(status: str) -> tuple[str | None, str | None, str | None]:
     messages = {
+        "unavailable": (
+            "Analyzer execution evidence is unavailable.",
+            "Execution credit is withheld; no client defect is inferred.",
+            "Resolve the unavailable execution prerequisite within the authorized worker boundary and retain complete exact-SHA evidence.",
+        ),
+        "blocked": (
+            "Analyzer execution is blocked by an unmet prerequisite.",
+            "Execution credit is withheld; no client defect is inferred.",
+            "Resolve the documented prerequisite within the authorized worker boundary before execution.",
+        ),
+        "skipped": (
+            "Analyzer execution was skipped.",
+            "Execution credit is withheld; no client defect is inferred.",
+            "Disclose the skipped scope and collect complete exact-SHA evidence only within the authorized worker boundary.",
+        ),
+        "not_assessed": (
+            "The analyzer was not assessed.",
+            "Execution credit is withheld; no client defect is inferred.",
+            "Disclose the unassessed scope and collect complete exact-SHA evidence only within the authorized worker boundary.",
+        ),
+        "incomplete": (
+            "Analyzer execution evidence is incomplete.",
+            "Coverage remains incomplete; no client defect is inferred.",
+            "Reconcile the missing execution evidence within the authorized worker boundary and retain complete exact-SHA artifacts.",
+        ),
         "missing": (
             "Required analyzer evidence is missing.",
             "Assurance is constrained; no client defect is inferred.",
