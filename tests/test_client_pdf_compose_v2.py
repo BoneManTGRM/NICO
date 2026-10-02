@@ -355,3 +355,99 @@ def test_compose_preserves_invalid_offset_or_conflicting_cover_identity(language
     assert len(pages) == 4
     for line in page:
         assert line in text
+
+
+# REP-004: production PDFs retain a host-qualified repository identity and may
+# wrap the exact Spanish approval footer. These are identity-only covers; the
+# primary page and any substantive/native failure evidence must still survive.
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+@pytest.mark.parametrize("repository", (
+    "owned/in-memory-control",
+    "gitlab.com/gitlab-org/gitlab-test",
+    "github.com/BoneManTGRM/NICO",
+    "https://gitlab.com/gitlab-org/gitlab-test",
+))
+@pytest.mark.parametrize("wrapped", (False, True))
+def test_compose_production_host_identity_and_wrapped_boundary(
+    language: str, repository: str, wrapped: bool,
+) -> None:
+    from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
+
+    boundary = EN_BOUNDARY if language == "en" else ES_BOUNDARY
+    page = _legacy_cover_lines(language, branded=True)
+    page = [repository if line == "owned/in-memory-control" else line for line in page]
+    if wrapped:
+        page = [part for line in page for part in
+                (boundary.rsplit(" ", 1) if line == boundary else [line])]
+    evidence = [
+        "Native execution evidence",
+        f"Source commit: {_COVER_TARGET}",
+        "Required 3; executed 3; passed 2; failed 1; skipped 0.",
+        "tests_passed=false; deliberate target return 7.",
+    ]
+    result = compose_compact_client_pdf(
+        _pdf(["Primary cover retained."], page, evidence),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+    text = "\n".join(p.extract_text() or "" for p in pages)
+
+    assert len(pages) == 4
+    assert "Primary cover retained." in pages[0].extract_text()
+    assert _COVER_TEXT[language][0] not in text
+    for line in evidence:
+        assert line in text
+    assert "Register retained." in text
+    assert "Gate retained." in text
+
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+@pytest.mark.parametrize("fault", (
+    "native_failure", "unknown_path", "partial_boundary",
+    "interleaved_boundary", "duplicate_identity",
+))
+def test_compose_production_cover_preserves_controlled_faults(
+    language: str, fault: str,
+) -> None:
+    from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
+
+    boundary = EN_BOUNDARY if language == "en" else ES_BOUNDARY
+    page = _legacy_cover_lines(language, branded=True)
+    page = ["gitlab.com/gitlab-org/gitlab-test"
+            if line == "owned/in-memory-control" else line for line in page]
+    if fault == "native_failure":
+        page.append("tests_passed=false; required=3; failed=1; native evidence retained.")
+    elif fault == "unknown_path":
+        page.append("src/net.cpp/native-evidence")
+    elif fault in ("partial_boundary", "interleaved_boundary"):
+        parts = boundary.rsplit(" ", 1)
+        replacement = parts[:1] if fault == "partial_boundary" else [
+            parts[0], "Unknown evidence retained.", parts[1],
+        ]
+        page = [part for line in page for part in
+                (replacement if line == boundary else [line])]
+    else:
+        page.append(_COVER_TEXT[language][1] + " " + "a" * 40)
+    result = compose_compact_client_pdf(
+        _pdf(["Primary cover retained."], page),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    pages = PdfReader(io.BytesIO(result)).pages
+    text = "\n".join(p.extract_text() or "" for p in pages)
+
+    assert len(pages) == 4
+    for line in page:
+        assert line in text
+
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+def test_compose_production_cover_identity_order_does_not_hide_evidence(language: str) -> None:
+    page = _legacy_cover_lines(language, branded=True)
+    repository_index = page.index("owned/in-memory-control")
+    metadata = page[repository_index + 1:-1]
+    page[repository_index + 1:-1] = list(reversed(metadata))
+    result = compose_compact_client_pdf(
+        _pdf(["Primary cover retained."], page),
+        _pdf(["Register retained."]), _pdf(["Gate retained."]),
+    )
+    assert len(PdfReader(io.BytesIO(result)).pages) == 3

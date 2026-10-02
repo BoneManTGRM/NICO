@@ -71,19 +71,27 @@ _APPROVAL_BOUNDARY_LINES = frozenset(_normalized(value) for value in (EN_BOUNDAR
 
 def _meaningful_lines(value: str) -> list[str]:
     output: list[str] = []
-    for raw in str(value or "").splitlines():
-        line = _normalized(raw)
-        if not line:
-            continue
-        # The real renderer writes its exact approval footer before body text.
-        # Ignore it for classification only; retained PDF pages keep the footer.
-        if line in _APPROVAL_BOUNDARY_LINES:
-            continue
-        if line.startswith("nico comprehensive ·"):
-            continue
-        if re.fullmatch(r"(?:page|pagina) \d+", line):
-            continue
-        output.append(line)
+    lines = [_normalized(raw) for raw in str(value or "").splitlines() if _normalized(raw)]
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        # Treat only consecutive lines that reconstruct the entire known footer
+        # as approval chrome. Partial or interleaved text remains evidence.
+        for boundary in _APPROVAL_BOUNDARY_LINES:
+            joined = line
+            end = index + 1
+            while boundary.startswith(joined + " ") and end < len(lines):
+                joined += " " + lines[end]
+                end += 1
+            if joined == boundary:
+                index = end
+                break
+        else:
+            if not line.startswith("nico comprehensive ·") and not re.fullmatch(
+                r"(?:page|pagina) \d+", line
+            ):
+                output.append(line)
+            index += 1
     return output
 
 
@@ -115,7 +123,7 @@ def _secondary_legacy_cover(value: str) -> bool:
     for line in lines[1:]:
         if re.fullmatch(r"(?:document page|pagina del documento) \d+ (?:of|de) \d+", line):
             continue
-        if re.fullmatch(r"(?:https?://[^/\s]+/)?[\w.-]+/[\w.-]+/?", line):
+        if re.fullmatch(r"(?:(?:https?://[^/\s]+/)|(?:[\w-]+\.)+[\w-]+/)?[\w.-]+/[\w.-]+/?", line):
             continue
         for field, pattern in (
             ("commit", r"(?:immutable commit|commit inmutable): [0-9a-f]{40}"),
