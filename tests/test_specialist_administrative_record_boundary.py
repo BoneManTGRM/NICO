@@ -23,7 +23,7 @@ RECORD_PATHS = (
     "/projects/synthetic-b/evidence", "/evidence/synthetic-b",
     "/scans/latest", "/findings", "/findings/synthetic-b", "/drift",
     "/repairs", "/verification/latest", "/memory", "/audit-log",
-    "/approvals",
+    "/approvals", "/client-acceptance/synthetic-b",
 )
 
 
@@ -78,6 +78,8 @@ def record_app():
         app.add_api_route(path, record, methods=["GET"])
     app.add_api_route("/evidence/upload", record, methods=["POST"])
     app.add_api_route("/approval/create", record, methods=["POST"])
+    app.add_api_route("/client-acceptance/synthetic-b/approved", record, methods=["POST"])
+    app.add_api_route("/scan/local", record, methods=["POST"])
 
     @app.get("/health")
     def health():
@@ -130,7 +132,13 @@ def test_existing_global_administrator_retains_directory_access(credentials, pat
     assert response.headers["Cache-Control"] == "no-store, private, max-age=0"
 
 
-@pytest.mark.parametrize("path", ["/evidence/upload", "/approval/create"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/evidence/upload", "/approval/create",
+        "/client-acceptance/synthetic-b/approved", "/scan/local",
+    ],
+)
 def test_alternate_record_writes_share_the_administrator_boundary(credentials, path):
     app, reads = record_app()
     with TestClient(app) as client:
@@ -191,3 +199,44 @@ def test_final_production_app_blocks_alternate_report_retrieval_before_query(
     assert allowed.status_code == 200
     assert reads == ["synthetic-b"]
     assert allowed.json()["private_marker"] == "synthetic-tenant-b-report"
+
+@pytest.mark.parametrize(
+    "path,payload,handler",
+    [
+        ("/scan/local", {"path": "."}, "run_scan"),
+        (
+            "/client-acceptance/synthetic-b/approved",
+            {"actor": "synthetic-test-actor"},
+            "transition_client_acceptance",
+        ),
+    ],
+)
+def test_final_app_blocks_legacy_mutation_before_local_scan_or_acceptance(
+    credentials, monkeypatch, path, payload, handler,
+):
+    from nico.api.specialist_ship_ready_bootstrap import app
+    import nico.api.main as main
+
+    mutations = []
+
+    def synthetic_mutator(*args, **kwargs):
+        mutations.append((args, kwargs))
+        # No scan, approval, report or delivery record is changed by this spy.
+        return {"status": "guard_verified", "client_delivery_allowed": False}
+
+    monkeypatch.setattr(main, handler, synthetic_mutator)
+    with TestClient(app) as client:
+        for name in ["anonymous", "operator", "specialist_session", "production_proof"]:
+            response = client.post(path, headers=credentials[name], json=payload)
+            assert response.status_code in {401, 403}
+        assert mutations == []
+        allowed = client.post(path, headers=credentials["administrator"], json=payload)
+    assert allowed.status_code == 200
+    assert len(mutations) == 1
+    assert allowed.json()["client_delivery_allowed"] is False
+
+
+def test_local_host_guard_does_not_reclassify_demonstration_scan_paths():
+    assert access._administrative_record_request("/scan/local") is True
+    assert access._administrative_record_request("/scan/test-lab") is False
+    assert access._administrative_record_request("/scan/drift-demo") is False

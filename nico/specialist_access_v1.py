@@ -164,12 +164,13 @@ def validate_specialist_session(token: str | None, *, now: int | None = None) ->
 _ADMINISTRATIVE_RECORD_PREFIXES = frozenset({
     "/customers", "/projects", "/evidence", "/scans", "/findings",
     "/drift", "/repairs", "/verification", "/memory", "/audit-log",
-    "/approval", "/approvals",
+    "/approval", "/approvals", "/client-acceptance",
 })
+_ADMINISTRATIVE_EXACT_PATHS = frozenset({"/scan/local"})
 
 
 def _administrative_record_request(path: str) -> bool:
-    return any(
+    return path in _ADMINISTRATIVE_EXACT_PATHS or any(
         path == prefix or path.startswith(prefix + "/")
         for prefix in _ADMINISTRATIVE_RECORD_PREFIXES
     )
