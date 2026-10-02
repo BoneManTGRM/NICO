@@ -117,7 +117,7 @@ def test_candidate_volume_score_effect_sentence_is_fully_spanish() -> None:
         assert "technical-maturity" not in localized
         assert "score effect" not in localized
         assert "El volumen de candidatos y la carga de trabajo del revisor" in localized
-        assert "Ajuste por evidencia" in localized
+        assert "puntuación ajustada por evidencia" in localized
 
 
 def test_analyzer_completion_summary_is_structured_and_count_preserving() -> None:
