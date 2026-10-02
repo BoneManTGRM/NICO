@@ -193,6 +193,11 @@ def _occurrence_quality(
     return boundary_after + (2 if numbered else 0) + exact_without_status, int(numbered)
 
 
+def _final_page_index(source_index: int, toc_page_count: int) -> int:
+    # Generated contents are inserted after the retained primary cover.
+    return 0 if source_index == 0 else source_index + toc_page_count
+
+
 def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
     """Discover one canonical navigation target per semantic section.
 
@@ -204,6 +209,32 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
 
     spanish = _spanish_document(reader)
     occurrences: dict[str, list[dict[str, Any]]] = {}
+
+    # REP-005: the identified branded primary cover owns canonical assessment
+    # identity after compaction removes the redundant legacy title page.
+    if reader.pages:
+        cover_lines = [_text(line) for line in (reader.pages[0].extract_text() or "").splitlines()]
+        cover_heading = next(
+            (index for index, line in enumerate(cover_lines) if line == "NICO COMPREHENSIVE"),
+            None,
+        )
+        if (
+            cover_heading is not None
+            and any(line in {"ASSESSED REPOSITORY", "REPOSITORIO EVALUADO"} for line in cover_lines)
+            and any(re.fullmatch(r"[0-9a-f]{40}", line) for line in cover_lines)
+        ):
+            section = next(
+                item for item in _canonical_sections()
+                if item["section_id"] == "comprehensive_technical_assessment"
+            )
+            occurrences[section["section_id"]] = [{
+                "section_id": section["section_id"],
+                "title": _text(section["title_es"] if spanish else section["title_en"], 240),
+                "source_page_index": 0,
+                "source_line_index": cover_heading,
+                "quality": 6,
+                "numbered_score": 0,
+            }]
 
     for source_index, page in enumerate(reader.pages):
         if source_index == 0:
@@ -387,9 +418,9 @@ def _toc_pdf(
                 font_name="Helvetica",
                 font_size=7.7,
             )
-            final_page_number = (
-                int(record["source_page_index"]) + toc_page_count + 1
-            )
+            final_page_number = _final_page_index(
+                int(record["source_page_index"]), toc_page_count
+            ) + 1
             pdf.setFont("Helvetica", 7.7)
             pdf.drawString(54, y, title)
             pdf.setFont("Helvetica-Bold", 7.7)
@@ -562,7 +593,7 @@ def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
         try:
             writer.add_outline_item(
                 str(record["title"]),
-                int(record["source_page_index"]) + toc_page_count,
+                _final_page_index(int(record["source_page_index"]), toc_page_count),
             )
         except Exception:
             pass
