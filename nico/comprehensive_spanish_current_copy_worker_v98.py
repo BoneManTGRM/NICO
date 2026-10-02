@@ -4,7 +4,7 @@ import re
 from functools import wraps
 from typing import Any, Callable
 
-VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.7"
+VERSION = "nico.comprehensive-spanish-current-copy-worker.v98.8"
 _ONE_ARG_MARKER = "__nico_spanish_current_copy_worker_one_v98__"
 _TWO_ARG_MARKER = "__nico_spanish_current_copy_worker_two_v98__"
 
@@ -469,7 +469,7 @@ def _translate_structured_current_report_copy(text: str) -> str:
         output = _COMPLEXITY_ACCEPTANCE_RE.sub(complexity_acceptance, output)
     if "Candidate volume and reviewer workload are operational review metrics" in output:
         output = _CANDIDATE_VOLUME_RE.sub(
-            "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación de Ajuste por evidencia.",
+            "El volumen de candidatos y la carga de trabajo del revisor son métricas operativas de revisión y no tienen efecto numérico sobre la madurez técnica ni sobre la puntuación ajustada por evidencia.",
             output,
         )
     if _CANDIDATE_VOLUME_SECURITY_RE.search(output):
