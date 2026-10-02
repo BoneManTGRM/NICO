@@ -509,6 +509,11 @@ def prepare_project_commands(
     runner: Callable[..., WorkerCommandResult] = run_command,
 ) -> ProjectCommandPreparation:
     web_dir = _node_project_dir(workspace.repo_dir)
+    if not project_commands_allowed():
+        return ProjectCommandPreparation(
+            "unavailable", web_dir, False,
+            "Project-tool preparation requires NICO_ALLOW_PROJECT_COMMANDS=true.",
+        )
     project_label = _project_label(web_dir, workspace.repo_dir)
     package_json = web_dir / "package.json"
     lockfile = web_dir / "package-lock.json"

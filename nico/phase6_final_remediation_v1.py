@@ -623,6 +623,12 @@ def _patch_scanner_runners() -> None:
         return pipeline._tool_payload(spec, result, findings=findings, capture_complete=complete, reason=reason, raw_blob=blob, execution_source="canonical_bandit_csv_v2", workspace=workspace, valid_returncodes={0, 1}, extra={"compact_complete_result": True, "bandit_header_normalized": True})
 
     def eslint(spec: ScannerToolSpec, workspace: Any, runner: Callable[..., Any], preparation: Any) -> dict[str, Any]:
+        if not pipeline.project_commands_allowed():
+            return pipeline._unavailable(
+                spec,
+                f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
+                source="canonical_eslint_v2",
+            )
         project_dir = preparation.project_dir if preparation else pipeline.resolve_node_project_dir(workspace.repo_dir)
         if not pipeline._supported_web_files(project_dir):
             return pipeline._unavailable(spec, "No supported JavaScript or TypeScript source files were found in the resolved Node project.", source="canonical_eslint_v2")

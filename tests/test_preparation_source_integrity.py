@@ -12,6 +12,7 @@ from nico.worker_execution import WorkerWorkspace
 @pytest.mark.parametrize('path', ['snapshot', 'hosted'])
 @pytest.mark.parametrize('changed', [False, True])
 def test_preparation_cannot_credit_changed_assessed_inputs(tmp_path, monkeypatch, path, changed):
+    monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "true")
     workspace = WorkerWorkspace(tmp_path)
     workspace.repo_dir.mkdir()
     source = workspace.repo_dir / 'package.json'

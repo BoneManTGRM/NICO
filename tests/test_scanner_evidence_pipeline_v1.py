@@ -210,6 +210,7 @@ def test_eslint_profile_uses_explicit_module_root(monkeypatch, tmp_path: Path) -
 
 
 def test_root_node_project_routes_eslint_and_typescript_to_entire_project(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "true")
     workspace = _workspace(tmp_path)
     project = workspace.repo_dir
     (project / "src").mkdir()
