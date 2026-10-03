@@ -81,6 +81,21 @@ def _bounded_native_json(value: Any) -> bool:
 
 
 def _canonical_hash_chunks(value: Any, encoder: json.JSONEncoder, ancestors: set[int]):
+    kind = type(value)
+    # Plain scalar leaves need neither a subtree walk nor container encoder setup.
+    # JSONEncoder.encode uses the same standard string escaping as iterencode.
+    if kind is str:
+        yield encoder.encode(value)
+        return
+    if kind is int:
+        yield str(value)
+        return
+    if kind is bool:
+        yield "true" if value else "false"
+        return
+    if value is None:
+        yield "null"
+        return
     if _bounded_native_json(value):
         # The standard encoder still owns sorting, escaping, numeric and default
         # semantics; its native path cannot materialize a large report subtree.

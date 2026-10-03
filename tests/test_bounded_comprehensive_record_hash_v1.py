@@ -98,3 +98,19 @@ def test_large_container_does_not_materialize_another_full_json_document():
         tracemalloc.stop()
     assert actual == expected
     assert peak < 1024 * 1024
+
+
+def test_common_scalar_leaves_do_not_initialize_a_native_container_encoder(monkeypatch):
+    payload = {"retained": [f"literal-{index}" for index in range(1000)]}
+    expected = _reference(payload)
+    real_iterencode = records.json.JSONEncoder.iterencode
+    native_scalar_calls = []
+
+    def observe(self, value, _one_shot=False):
+        if _one_shot and type(value) in (str, int, bool, type(None)):
+            native_scalar_calls.append(True)
+        return real_iterencode(self, value, _one_shot=_one_shot)
+
+    monkeypatch.setattr(records.json.JSONEncoder, "iterencode", observe)
+    assert records._canonical_hash(payload) == expected
+    assert not native_scalar_calls
