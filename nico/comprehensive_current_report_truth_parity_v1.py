@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from pypdf import PdfReader
 
 
-VERSION = "nico.comprehensive-current-report-truth-parity.v1.14"
+VERSION = "nico.comprehensive-current-report-truth-parity.v1.15"
 _OUTLINE_MARKER = "__nico_current_report_truth_outline_v1__"
 _CI_MARKER = "__nico_current_report_truth_ci_v1__"
 _VALIDATION_MARKER = "__nico_current_report_truth_validation_v1__"
@@ -17,6 +17,8 @@ _REVIEW_LOCALIZATION_MARKER = "__nico_current_report_truth_review_localization_v
 _DYNAMIC_LOCALIZER_MARKER = "__nico_current_report_truth_dynamic_localizer_v1__"
 
 _ES_EXACT = {
+    "Documented not-applicable dispositions do not establish analyzer execution.": "Las determinaciones documentadas de no aplicabilidad no demuestran la ejecución del analizador.",
+    "Retain the required exact-SHA applicability dispositions.": "Conserve las determinaciones de aplicabilidad requeridas para el SHA exacto.",
     "Analyzer execution evidence is unavailable.": "La evidencia de ejecución del analizador no está disponible.",
     "Execution credit is withheld; no client defect is inferred.": "No se otorga crédito de ejecución; no se infiere un defecto del cliente.",
     "Resolve the unavailable execution prerequisite within the authorized worker boundary and retain complete exact-SHA evidence.": "Resuelva el requisito de ejecución no disponible dentro del entorno autorizado del trabajador y conserve evidencia completa vinculada al SHA exacto.",

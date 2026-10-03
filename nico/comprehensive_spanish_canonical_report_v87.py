@@ -22,6 +22,8 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "Documented not-applicable dispositions do not establish analyzer execution.": "Las determinaciones documentadas de no aplicabilidad no demuestran la ejecución del analizador.",
+    "Retain the required exact-SHA applicability dispositions.": "Conserve las determinaciones de aplicabilidad requeridas para el SHA exacto.",
     "Configure-first execution is incomplete; retained native evidence requires repair.": "La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
     "cppcheck: Configure-first execution is incomplete; retained native evidence requires repair.": "cppcheck: La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
     "The dedicated worker retained native scanner evidence. Individual tool records state completion and limitations.": "El trabajador dedicado conservó evidencia nativa de los analizadores. Cada registro indica el estado de ejecución y sus limitaciones.",

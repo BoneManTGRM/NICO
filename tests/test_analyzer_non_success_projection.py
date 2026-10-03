@@ -121,7 +121,7 @@ def test_old_integrated_payload_rebuilds_projection_from_retained_raw_records():
     analyzer = next(r for r in result["analyzer_evidence_report"]["analyzers"] if r["scanner"] == "eslint")
     assert row["status"] == analyzer["status"] == "unavailable"
     assert analyzer["run_count"] == 1
-    assert result["phase15_production_integration"]["version"] == "nico.phase15.production-integration.v3"
+    assert result["phase15_production_integration"]["version"] == "nico.phase15.production-integration.v4"
     assert result["scanner_execution_records"] == [raw]
     assert old["analyzer_evidence_ui"]["rows"][0]["status"] == "capture_truncated"
     assert integrate_production_truth(result)["analyzer_evidence_report"] == result["analyzer_evidence_report"]
