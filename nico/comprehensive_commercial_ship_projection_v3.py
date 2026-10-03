@@ -102,6 +102,8 @@ def project_canonical_for_client_presentation(
 
 
 def _contains_exact_presentation_literal(value: Any, literal: str) -> bool:
+    if type(value) is str:
+        return value == literal
     if isinstance(value, Mapping):
         return any(
             _contains_exact_presentation_literal(item, literal)

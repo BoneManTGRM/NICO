@@ -114,3 +114,24 @@ def test_common_scalar_leaves_do_not_initialize_a_native_container_encoder(monke
     monkeypatch.setattr(records.json.JSONEncoder, "iterencode", observe)
     assert records._canonical_hash(payload) == expected
     assert not native_scalar_calls
+
+
+
+def test_deep_evidence_does_not_resume_every_hash_chunk_at_each_parent():
+    import cProfile
+    import pstats
+
+    payload = [f"retained-{index}" for index in range(2000)]
+    for index in range(45):
+        payload = {"stage": index, "evidence": payload}
+    expected = _reference(payload)
+    profile = cProfile.Profile()
+    profile.enable()
+    try:
+        actual = records._canonical_hash(payload)
+    finally:
+        profile.disable()
+    assert actual == expected
+    calls = sum(data[1] for (file, line, function), data in pstats.Stats(profile).stats.items()
+                if function == "_canonical_hash_chunks")
+    assert calls < 20000

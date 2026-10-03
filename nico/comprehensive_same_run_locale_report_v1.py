@@ -1101,8 +1101,9 @@ def _frozen_source_pdf_response(
     if not canonical:
         return None
 
-    canonical_copy = deepcopy(dict(canonical))
-    identity_binding = _validate_status_canonical_identity(status, canonical_copy)
+    # Frozen delivery reads canonical truth; the rendering path owns its copy.
+    # Identity, byte integrity, and current lifecycle authority are still checked.
+    identity_binding = _validate_status_canonical_identity(status, canonical)
     source_language = _normalize_report_language(
         identity_binding["report_language"]
     )
@@ -1128,8 +1129,8 @@ def _frozen_source_pdf_response(
         raise ValueError("source_report_pdf_hash_mismatch")
 
     identity = (
-        canonical_copy.get("identity")
-        if isinstance(canonical_copy.get("identity"), Mapping)
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
         else {}
     )
     status_run_id = str(status.get("run_id") or "").strip()
@@ -1161,7 +1162,7 @@ def _frozen_source_pdf_response(
         raise ValueError("canonical_truth_hash_invalid")
     if not controller_module._final_report_package_integrity_bound(reports):
         if not controller_module._canonical_truth_hash_integrity_bound(
-            reports, canonical_copy
+            reports, canonical
         ):
             raise ValueError("canonical_truth_hash_mismatch")
         raise ValueError("source_report_artifact_integrity_invalid")
@@ -1169,7 +1170,7 @@ def _frozen_source_pdf_response(
     source_lifecycle = _source_lifecycle_projection(
         status,
         reports,
-        canonical_copy,
+        canonical,
     )
     accepted_binding = _accepted_source_binding(
         status,
@@ -1184,13 +1185,13 @@ def _frozen_source_pdf_response(
         filename = stored_filename
     elif accepted_binding:
         filename = _accepted_filename(
-            canonical=canonical_copy,
+            canonical=canonical,
             run_id=run_id,
             report_language=target_language,
         )
     else:
         filename = _localized_filename(
-            canonical=canonical_copy,
+            canonical=canonical,
             run_id=run_id,
             report_language=target_language,
         )
