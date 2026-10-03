@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase, report_delivery_timing
+
 import base64
 import hashlib
 import json
@@ -748,6 +750,7 @@ def _spanish_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+@report_delivery_phase("render_target")
 def _render_target(
     canonical: Mapping[str, Any], report_language: str
 ) -> dict[str, Any]:
@@ -1076,6 +1079,7 @@ def _accepted_source_binding(
     }
 
 
+@report_delivery_phase("frozen_pdf")
 def _frozen_source_pdf_response(
     status: Mapping[str, Any], report_language: str
 ) -> Response | None:
@@ -1493,6 +1497,7 @@ def build_same_run_locale_pdf_response(
     )
 
 
+@report_delivery_phase("controller_status")
 def _controller_status(target: FastAPI, run_id: str) -> Mapping[str, Any]:
     controller = getattr(target.state, "comprehensive_api_controller", None)
     artifact_reader = (
@@ -1562,8 +1567,9 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
 
         def localized_report_pdf(run_id: str, report_language: str) -> Response:
             try:
-                status = _controller_status(target, run_id)
-                return build_same_run_locale_pdf_response(status, report_language)
+                with report_delivery_timing(run_id, report_language):
+                    status = _controller_status(target, run_id)
+                    return build_same_run_locale_pdf_response(status, report_language)
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 

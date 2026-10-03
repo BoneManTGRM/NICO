@@ -299,3 +299,29 @@ def test_mobile_proof_checks_actual_blob_bytes_without_another_report_request(ta
             proof._verify_ui_blob_bytes(Page(), captured)
     else:
         proof._verify_ui_blob_bytes(Page(), captured)
+
+@pytest.mark.parametrize("fault", ["bytes", "truth"])
+def test_pdf_parity_failure_retains_bounded_diagnostics_without_private_body(fault):
+    source = {"pdf_bytes": b"%PDF-1.7\nPRIVATE_BODY", "canonical_truth_sha256": "a" * 64}
+    captured = dict(source)
+    if fault == "bytes":
+        captured["pdf_bytes"] += b" altered"
+    else:
+        captured["canonical_truth_sha256"] = "b" * 64
+    with pytest.raises(AssertionError) as caught:
+        proof._require_source_ui_pdf_parity(captured, source)
+    diagnostic = caught.value.args[0]
+    assert diagnostic["source_pdf_sha256"] == hashlib.sha256(source["pdf_bytes"]).hexdigest()
+    assert diagnostic["ui_pdf_sha256"] == hashlib.sha256(captured["pdf_bytes"]).hexdigest()
+    assert diagnostic["source_bytes"] == len(source["pdf_bytes"])
+    assert diagnostic["ui_bytes"] == len(captured["pdf_bytes"])
+    assert diagnostic["bytes_equal"] is (fault != "bytes")
+    assert diagnostic["truth_equal"] is (fault != "truth")
+    assert "PRIVATE_BODY" not in str(diagnostic)
+
+
+def test_pdf_parity_success_keeps_source_and_ui_inputs_unchanged():
+    source = {"pdf_bytes": b"%PDF-1.7\nfixture", "canonical_truth_sha256": "a" * 64}
+    captured = dict(source)
+    proof._require_source_ui_pdf_parity(captured, source)
+    assert captured == source

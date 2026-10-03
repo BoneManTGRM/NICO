@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import hashlib
 import json
 from collections.abc import Mapping
@@ -146,6 +148,7 @@ def _canonical_hash_chunks(value: Any, encoder: json.JSONEncoder, ancestors: set
             frames.append(("list_items", (iter(current), 0)))
 
 
+@report_delivery_phase("record_integrity_hash")
 def _canonical_hash(payload: Any) -> str:
     """Preserve canonical bytes with bounded native encoding and digest batching."""
 

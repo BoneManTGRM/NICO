@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 from nico.report_pdf_text import extract_pdf_page_texts, pdf_text_cache_scope
 
 import base64
@@ -540,6 +542,7 @@ def _finalize_artifact_navigation(
     return output
 
 
+@report_delivery_phase("source_pdf_projection_check")
 def _source_pdf_requires_integrity_reprojection(
     status: Mapping[str, Any],
     report_language: str,

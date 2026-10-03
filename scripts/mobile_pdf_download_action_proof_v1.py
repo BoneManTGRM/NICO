@@ -367,6 +367,21 @@ def _reuse_direct_verification(
     return direct, False
 
 
+def _require_source_ui_pdf_parity(captured: dict[str, Any], source_captured: dict[str, Any]) -> None:
+    """Preserve both exact comparisons and retain bounded failure evidence."""
+    diagnostic = {
+        "requirement": "ui_source_pdf_parity",
+        "source_pdf_sha256": hashlib.sha256(source_captured["pdf_bytes"]).hexdigest(),
+        "ui_pdf_sha256": hashlib.sha256(captured["pdf_bytes"]).hexdigest(),
+        "source_bytes": len(source_captured["pdf_bytes"]),
+        "ui_bytes": len(captured["pdf_bytes"]),
+        "bytes_equal": captured["pdf_bytes"] == source_captured["pdf_bytes"],
+        "truth_equal": captured["canonical_truth_sha256"] == source_captured["canonical_truth_sha256"],
+    }
+    assert captured["pdf_bytes"] == source_captured["pdf_bytes"], diagnostic
+    assert captured["canonical_truth_sha256"] == source_captured["canonical_truth_sha256"], diagnostic
+
+
 def install_ui_pdf_download_proof(
     recovery: Any,
     *,
@@ -617,8 +632,7 @@ def install_ui_pdf_download_proof(
                     report_language=action_report_language,
                     expected_commit_sha=str(actions.get_attribute("data-commit-sha") or ""),
                 )
-                assert captured["pdf_bytes"] == source_captured["pdf_bytes"]
-                assert captured["canonical_truth_sha256"] == source_captured["canonical_truth_sha256"]
+                _require_source_ui_pdf_parity(captured, source_captured)
                 _verify_ui_blob_bytes(page, captured)
                 captured["evidence_source"] = "observed-ui-response-and-verified-blob"
             else:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import hashlib
 import json
 import time
@@ -55,6 +57,7 @@ def _decode_json_object_payload(payload: Any) -> dict[str, Any]:
     return payload
 
 
+@report_delivery_phase("record_decompress_decode")
 def _decode_run_payload(payload: Any) -> dict[str, Any]:
     return decode_run_storage(_decode_json_object_payload(payload))
 
