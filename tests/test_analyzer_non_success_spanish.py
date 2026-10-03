@@ -11,6 +11,8 @@ from pypdf import PdfReader
 import pytest
 
 PAIRS = {
+    "Documented not-applicable dispositions do not establish analyzer execution.": "Las determinaciones documentadas de no aplicabilidad no demuestran la ejecución del analizador.",
+    "Retain the required exact-SHA applicability dispositions.": "Conserve las determinaciones de aplicabilidad requeridas para el SHA exacto.",
     "Analyzer execution evidence is unavailable.": "La evidencia de ejecución del analizador no está disponible.",
     "Execution credit is withheld; no client defect is inferred.": "No se otorga crédito de ejecución; no se infiere un defecto del cliente.",
     "Resolve the unavailable execution prerequisite within the authorized worker boundary and retain complete exact-SHA evidence.": "Resuelva el requisito de ejecución no disponible dentro del entorno autorizado del trabajador y conserve evidencia completa vinculada al SHA exacto.",

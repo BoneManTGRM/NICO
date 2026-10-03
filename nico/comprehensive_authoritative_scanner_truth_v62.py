@@ -9,7 +9,7 @@ from nico import comprehensive_client_readiness_v59 as v59
 from nico.phase14_analyzer_evidence_v1 import apply_analyzer_evidence
 from nico.scanner_applicability_v1 import normalize_scanner_applicability_canonical
 
-VERSION = "nico.comprehensive_authoritative_scanner_truth.v62"
+VERSION = "nico.comprehensive_authoritative_scanner_truth.v62.1"
 _REQUIRED_TOOLS = (
     "pip-audit",
     "npm-audit",
@@ -592,6 +592,7 @@ def reconcile_authoritative_scanner_truth(
             for item in phase14.get("analyzers") or []
             if isinstance(item, Mapping)
         ]
+        evidence_health["scanner_records"] = deepcopy(analyzer_summaries)
         execution_incomplete = [
             item
             for item in analyzer_summaries

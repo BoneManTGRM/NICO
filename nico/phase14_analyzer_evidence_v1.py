@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping
 from nico.report_json_copy import deepcopy
 from typing import Any
 
-VERSION = "nico.phase14.analyzer-evidence.v4"
+VERSION = "nico.phase14.analyzer-evidence.v5"
 EXECUTION_SUCCESS = {"completed", "success"}
 TERMINAL_SUCCESS = EXECUTION_SUCCESS | {"not_applicable"}
 TERMINAL_FAILURE = {"failed", "timed_out", "capture_truncated", "unsupported_target"}
@@ -118,10 +118,12 @@ def _ordered_unique(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(selected.values(), key=lambda item: (item.get("run_sequence", 0), _record_identity(item)))
 
 
-def _trailing_successes(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _trailing_successes(
+    records: list[dict[str, Any]], statuses: set[str] = TERMINAL_SUCCESS,
+) -> list[dict[str, Any]]:
     trailing: list[dict[str, Any]] = []
     for item in reversed(records):
-        if item["status"] not in TERMINAL_SUCCESS:
+        if item["status"] not in statuses:
             break
         trailing.append(item)
     trailing.reverse()
@@ -216,14 +218,18 @@ def reconcile_analyzers(
         ordered = _ordered_unique(by_scanner.get(scanner, []))
         trailing = _trailing_successes(ordered)
         latest = ordered[-1] if ordered else {"status": "missing", "coverage": {}}
-        complete = scanner not in required or len(trailing) >= consecutive_passes_required
+        # Applicability dispositions may satisfy disposition acceptance, but
+        # they cannot supply a required completed execution or its repeatability.
+        execution_trailing = _trailing_successes(ordered, EXECUTION_SUCCESS)
+        acceptance_trailing = execution_trailing if latest.get("status") in EXECUTION_SUCCESS else trailing
+        complete = scanner not in required or len(acceptance_trailing) >= consecutive_passes_required
         if scanner in required and not complete:
             ready = False
         cause, impact, remediation = _failure_explanation(latest.get("status", "missing"))
         if scanner in required and latest.get("status") in TERMINAL_SUCCESS and not complete:
-            remaining = consecutive_passes_required - len(trailing)
+            remaining = consecutive_passes_required - len(acceptance_trailing)
             cause = (
-                f"Only {len(trailing)} of {consecutive_passes_required} required consecutive "
+                f"Only {len(acceptance_trailing)} of {consecutive_passes_required} required consecutive "
                 "exact-SHA evidence passes are retained."
             )
             impact = (
@@ -234,16 +240,20 @@ def reconcile_analyzers(
                 f"Retain {remaining} additional complete exact-SHA analyzer "
                 f"{'pass' if remaining == 1 else 'passes'}."
             )
+        if scanner in required and latest.get("status") == "not_applicable" and not complete:
+            cause = "Documented not-applicable dispositions do not establish analyzer execution."
+            impact = "Execution credit is withheld; no client defect is inferred."
+            remediation = "Retain the required exact-SHA applicability dispositions."
         summaries.append(
             {
                 "scanner": scanner,
                 "required": scanner in required,
                 "status": latest.get("status", "missing"),
-                "successful_passes": sum(item["status"] in TERMINAL_SUCCESS for item in ordered),
-                "consecutive_successful_passes": len(trailing),
+                "successful_passes": sum(item["status"] in EXECUTION_SUCCESS for item in ordered),
+                "consecutive_successful_passes": len(execution_trailing),
                 "consecutive_passes_required": consecutive_passes_required,
                 "acceptance_ready": complete,
-                "artifact_sha256": [item.get("artifact_sha256") for item in trailing if item.get("artifact_sha256")],
+                "artifact_sha256": [item.get("artifact_sha256") for item in execution_trailing if item.get("artifact_sha256")],
                 "coverage": deepcopy(latest.get("coverage") or {}),
                 "client_defect_allowed": latest.get("status") in EXECUTION_SUCCESS and complete,
                 "failure_cause": cause,

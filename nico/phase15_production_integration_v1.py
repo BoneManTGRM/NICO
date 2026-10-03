@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from nico.phase12_report_remediation_v1 import remediate_assessment
 from nico.phase14_analyzer_evidence_v1 import NON_SUCCESS_STATES, apply_analyzer_evidence, classify_status
 
-VERSION = "nico.phase15.production-integration.v3"
+VERSION = "nico.phase15.production-integration.v4"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 _FINDING_SURFACES = (
     "canonical_findings",
