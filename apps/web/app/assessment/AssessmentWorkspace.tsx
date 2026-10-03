@@ -683,6 +683,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       data-assessment-report-ready={reportReady ? "true" : "false"}
       data-run-id={String(result?.run_id || "")}
       data-commit-sha={immutableCommit}
+      data-canonical-truth-sha256={String(report?.canonical_truth_sha256 || "")}
       data-requested-report-language={requestedReportLanguage}
     >
       <button

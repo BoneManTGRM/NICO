@@ -285,6 +285,7 @@ async function proxyNico(
   const intakeFailure = policy.readClass === "single-attempt-intake";
   const mutationFailure = policy.readClass === "single-attempt-mutation";
   const timeoutFailure = lastFailure === "timeout";
+  const artifactFailure = policy.readClass === "exact-run-artifact";
   return jsonError(
     timeoutFailure ? 504 : 502,
     continuationFailure && timeoutFailure
@@ -297,14 +298,18 @@ async function proxyNico(
           ? timeoutFailure
             ? "assessment_mutation_timeout"
             : "assessment_mutation_outcome_unknown"
-          : "assessment_backend_unreachable",
+          : artifactFailure && timeoutFailure
+            ? "assessment_artifact_timeout"
+            : "assessment_backend_unreachable",
     continuationFailure
       ? "The Comprehensive continuation request did not complete within its bounded single-attempt transport window. Recover the exact run status before attempting any further stage advancement."
       : intakeFailure
         ? "The Comprehensive intake request did not complete within its single-dispatch transport window. It was not replayed because the outcome may be ambiguous."
         : mutationFailure
           ? "The protected mutation did not complete within its single-dispatch transport window. It was not replayed because human and artifact state must not be duplicated."
-      : "The canonical assessment backend could not be reached after bounded cold-start retries.",
+      : artifactFailure
+        ? "The exact-run artifact request did not complete within its single-attempt download window. Retry this download; the assessment was not rerun."
+        : "The canonical assessment backend could not be reached after bounded cold-start retries.",
     {
       request_id: requestId,
       attempts: policy.retryDelaysMs.length,
