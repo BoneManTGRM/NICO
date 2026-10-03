@@ -640,19 +640,10 @@ def _source_pdf_requires_integrity_reprojection(
     scanner_applicability_mismatch = False
     if canonical:
         from nico.comprehensive_authoritative_scanner_truth_v62 import (
-            reconcile_authoritative_scanner_truth,
+            authoritative_scanner_execution_coverage,
         )
 
-        reconciled = reconcile_authoritative_scanner_truth(canonical)
-        contract = reconciled.get("client_readiness_contract")
-        contract = contract if isinstance(contract, Mapping) else {}
-        try:
-            expected = (
-                int(contract["coverage_numerator"]),
-                int(contract["coverage_denominator"]),
-            )
-        except (KeyError, TypeError, ValueError):
-            expected = None
+        expected = authoritative_scanner_execution_coverage(canonical)
         if expected is not None:
             visible_surfaces = "\n".join(
                 (
