@@ -64,7 +64,7 @@ Environment controls:
 
 - `NICO_ENABLE_HOSTED_SCANNER_AUTORUN=false` disables automatic scanner-worker execution for hosted Express.
 - `NICO_ENABLE_FULL_HISTORY_SECRET_SCAN=false` disables full-history checkout for secret scans.
-- `NICO_ALLOW_PROJECT_COMMANDS=true` is required before project-local command tools run, including ESLint, TypeScript, and coverage. Without this flag, those tools remain disclosed as unavailable.
+- `NICO_ALLOW_PROJECT_COMMANDS=true` is required before project-local command tools run, including project-aware ESLint, TypeScript, and coverage. Without this flag, those project-command paths remain unavailable. The separate image-owned static ESLint mode can parse source data after verifying fixed global tools and complete native input evidence; it does not load repository configuration or execute project commands.
 
 This keeps the one-click Express flow useful while avoiding hidden execution of project-local commands in weaker isolation environments.
 
