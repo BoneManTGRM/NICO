@@ -892,14 +892,17 @@ def test_review_pdf_and_markdown_bridges_never_silently_noop() -> None:
     )
     layout = Path("apps/web/app/layout.tsx").read_text(encoding="utf-8")
 
-    # One user gesture must produce one browser-native PDF navigation attempt. The old
-    # window.open + fallback-anchor sequence could dispatch twice when noopener caused
-    # window.open to return null after navigation had already started.
+    # One explicit action retrieves and validates bytes before one browser download.
+    # Progress remains on the assessment page; duplicate clicks cannot overlap it.
     assert "const opened = window.open" not in pdf_source
     assert pdf_source.count("link.click();") == 1
     assert "visibleRunId" in pdf_source
     assert "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf" in pdf_source
-    assert "PDF requested. Check the new tab or your downloads." in pdf_source
+    assert "Downloading and verifying the PDF… You can keep using this page." in pdf_source
+    assert "PDF verified and sent to your downloads." in pdf_source
+    assert "Retry this download; do not start another assessment." in pdf_source
+    assert 'credentials: "same-origin"' in pdf_source
+    assert 'if (active.has(key)) return;' in pdf_source
     assert "data-nico-review-pdf-action-status" in pdf_source
 
     assert "loadMarkdown" in markdown_source

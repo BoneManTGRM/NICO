@@ -130,6 +130,9 @@ async function proxyAssessment(
     ? undefined
     : await request.arrayBuffer();
   const upstream = new URL(`${path}${request.nextUrl.search}`, backend);
+  const timeoutMs = timeoutFor(request.method, path);
+  const artifactRead = request.method === "GET" && (ARTIFACT_PATH.test(path) || LOCALIZED_EDITION_PATH.test(path));
+  const startedAt = Date.now();
 
   try {
     const response = await fetch(upstream, {
@@ -138,7 +141,7 @@ async function proxyAssessment(
       body,
       cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(timeoutFor(request.method, path)),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const responseHeaders = new Headers({
       "Cache-Control": "no-store, private, max-age=0",
@@ -159,9 +162,11 @@ async function proxyAssessment(
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
     return errorResponse(
       timedOut ? 504 : 502,
-      timedOut ? "assessment_backend_timeout" : "assessment_backend_unreachable",
-      "The authenticated assessment request did not complete. Recover the exact run status before repeating any mutation.",
-      {request_id: requestId, retryable: request.method === "GET"},
+      timedOut && artifactRead ? "assessment_artifact_timeout" : timedOut ? "assessment_backend_timeout" : "assessment_backend_unreachable",
+      artifactRead
+        ? "The exact-run artifact request did not complete within its single-attempt download window. Retry this download; the assessment was not rerun."
+        : "The authenticated assessment request did not complete. Recover the exact run status before repeating any mutation.",
+      {request_id: requestId, attempts: 1, request_class: artifactRead ? "exact-run-artifact" : "authenticated-assessment", timeout_ms: timeoutMs, elapsed_ms: Date.now() - startedAt, retryable: request.method === "GET"},
     );
   }
 }

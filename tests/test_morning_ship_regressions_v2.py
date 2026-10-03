@@ -285,7 +285,10 @@ def test_pdf_bridge_uses_one_user_gesture_dispatch_and_visible_status() -> None:
     proof = Path("scripts/mobile_pdf_download_action_proof_v1.py").read_text(encoding="utf-8")
     assert "const opened = window.open" not in source
     assert source.count("link.click();") == 1
-    assert "PDF requested. Check the new tab or your downloads." in source
+    assert "Downloading and verifying the PDF… You can keep using this page." in source
+    assert "PDF verified and sent to your downloads." in source
+    assert "Retry this download; do not start another assessment." in source
+    assert 'status.remove()' not in source
     assert "data-nico-review-pdf-action-status" in source
     assert "assert anchor_click_count == 1" in proof
     assert 'browser_context.on("request", observe_gesture_request)' not in proof

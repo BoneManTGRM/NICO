@@ -191,6 +191,22 @@ def _fetch_captured_pdf(
         headers={"Accept": "application/pdf", "Cache-Control": "no-store"},
         timeout=120_000,
     )
+    return _validate_captured_pdf_response(
+        response,
+        run_id,
+        action_kind=action_kind,
+        report_language=report_language,
+    )
+
+
+def _validate_captured_pdf_response(
+    response: Any,
+    run_id: str,
+    *,
+    action_kind: str,
+    report_language: str,
+    expected_commit_sha: str = "",
+) -> dict[str, Any]:
     pdf_bytes = response.body()
     assert response.ok, f"Captured exact-run localized PDF returned HTTP {response.status}"
     assert pdf_bytes.startswith(b"%PDF"), "Captured exact-run localized report was not a PDF"
@@ -225,6 +241,13 @@ def _fetch_captured_pdf(
         response.headers.get("x-nico-assessment-rerun") or ""
     ).strip().lower()
     if action_kind == DRAFT_PDF_KIND:
+        assert response.headers.get("x-nico-approval-status") == "pending_human_approval"
+        assert response.headers.get("x-nico-delivery-status") == "blocked_pending_human_approval"
+        assert response.headers.get("x-nico-client-delivery-allowed") == "false"
+        assert str(response.headers.get("x-nico-pdf-sha256") or "").lower() == observed_sha
+        if expected_commit_sha:
+            assert re.fullmatch(r"[0-9a-f]{40}", expected_commit_sha)
+            assert response.headers.get("x-nico-commit-sha") == expected_commit_sha
         assert response_report_language == report_language, {
             "expected_report_language": report_language,
             "response_report_language": response_report_language,
@@ -257,6 +280,20 @@ def _fetch_captured_pdf(
         "assessment_rerun": assessment_rerun,
         "localized_draft_identity_verified": action_kind == DRAFT_PDF_KIND,
     }
+
+
+def _verify_ui_blob_bytes(
+    page: Any,
+    captured: dict[str, Any],
+) -> None:
+    # Read the actual browser-owned bytes passively, without another report request.
+    blob_bytes = bytes(
+        page.evaluate(
+            "() => window.__nicoReviewPdfBlobBytes"
+        )
+    )
+    assert blob_bytes == captured["pdf_bytes"], "UI blob differed from the observed artifact response"
+    assert hashlib.sha256(blob_bytes).hexdigest() == captured["pdf_sha256"]
 
 
 def _load_source_bound_pdf(
@@ -393,9 +430,22 @@ def install_ui_pdf_download_proof(
         assert pdf_button.is_enabled(), "Selected PDF action was not enabled"
         expected_origin = urlparse(frontend_origin)
 
-        # Capture both UI implementations without changing their dispatch semantics:
-        # the pending-review compatibility bridge creates an exact-route anchor, while
-        # the accepted-edition React action validates bytes first and creates a blob URL.
+        # Passively observe the real UI response; never intercept or mock a request.
+        # Keep the legacy navigation proof for the frozen release while verifying the
+        # repaired draft's actual response and browser-owned blob bytes.
+        report_responses: list[Any] = []
+
+        def observe_report_response(response: Any) -> None:
+            parsed = urlparse(response.url)
+            if (
+                response.request.method == "GET"
+                and parsed.scheme == expected_origin.scheme
+                and parsed.netloc == expected_origin.netloc
+                and unquote(parsed.path) == artifact_url_suffix
+            ):
+                report_responses.append(response)
+
+        page.on("response", observe_report_response)
         page.evaluate(
             """() => {
               window.__nicoReviewPdfDownloadAttribute = '';
@@ -403,6 +453,8 @@ def install_ui_pdf_download_proof(
               window.__nicoReviewPdfDownloadRel = '';
               window.__nicoReviewPdfDownloadTarget = '';
               window.__nicoReviewPdfAnchorClickCount = 0;
+              window.__nicoReviewPdfBlobBytes = null;
+              window.__nicoReviewPdfBlobHref = '';
               window.__nicoAcceptancePdfAnchor = null;
               window.__nicoReviewPdfObserver?.disconnect?.();
               if (window.__nicoAcceptancePdfClickCapture) {
@@ -425,6 +477,12 @@ def install_ui_pdf_download_proof(
                 window.__nicoReviewPdfDownloadHref = value.href;
                 window.__nicoReviewPdfDownloadRel = value.rel;
                 window.__nicoReviewPdfDownloadTarget = value.target;
+                if (value.href.startsWith('blob:') && window.__nicoReviewPdfBlobHref !== value.href) {
+                  window.__nicoReviewPdfBlobHref = value.href;
+                  window.__nicoReviewPdfBlobBytes = fetch(value.href)
+                    .then(response => response.arrayBuffer())
+                    .then(buffer => Array.from(new Uint8Array(buffer)));
+                }
               };
               const captureAnchorClick = event => {
                 const target = event.target instanceof Element ? event.target : null;
@@ -469,6 +527,7 @@ def install_ui_pdf_download_proof(
             # second anchor activation cannot escape the exact-count assertion.
             page.wait_for_timeout(750)
         finally:
+            page.remove_listener("response", observe_report_response)
             page.evaluate(
                 """() => {
                   window.__nicoReviewPdfObserver?.disconnect?.();
@@ -481,10 +540,8 @@ def install_ui_pdf_download_proof(
                 }"""
             )
 
-        # Browser-managed downloads are not exposed consistently as Playwright
-        # request events (Chromium can complete the same-origin request without one).
-        # Count the exact marked anchor activation instead, without replacing native
-        # browser behavior. The captured endpoint is fetched and validated below.
+        # Count the one marked anchor activation without replacing browser behavior.
+        # Blob downloads must also match the bytes of the actual observed UI response.
         anchor_click_count = int(
             page.evaluate("() => Number(window.__nicoReviewPdfAnchorClickCount || 0)")
         )
@@ -513,7 +570,13 @@ def install_ui_pdf_download_proof(
         parsed_requested = urlparse(requested_url)
         assert parsed_requested.scheme == expected_origin.scheme, requested_url
         assert parsed_requested.netloc == expected_origin.netloc, requested_url
-        if action_kind == DRAFT_PDF_KIND:
+        uses_blob = requested_href.startswith("blob:")
+        if uses_blob:
+            assert requested_href.startswith(
+                f"blob:{expected_origin.scheme}://{expected_origin.netloc}/"
+            ), requested_href
+            assert requested_target in {"", "_self"}, requested_target
+        if action_kind == DRAFT_PDF_KIND and not uses_blob:
             parsed_anchor = urlparse(urljoin(frontend_origin.rstrip("/") + "/", requested_href))
             assert unquote(parsed_anchor.path) == artifact_url_suffix, (
                 f"UI review PDF action did not target the exact localized run artifact: {requested_href}"
@@ -527,18 +590,39 @@ def install_ui_pdf_download_proof(
             assert requested_target == "_blank", requested_target
             assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename, requested_filename
         else:
-            assert requested_href.startswith("blob:"), requested_href
+            assert uses_blob, requested_href
             assert requested_filename.lower().endswith(".pdf"), requested_filename
             assert run_id in requested_filename, requested_filename
+            if action_kind == DRAFT_PDF_KIND:
+                assert requested_filename == expected_filename
+                assert "AUTOMATED-DRAFT-PENDING-APPROVAL" in requested_filename
         assert "FINAL-PENDING-APPROVAL" not in requested_filename, requested_filename
 
         if action_kind == DRAFT_PDF_KIND:
             assert source_proof_path is not None, "Exact-SHA source proof is required"
-            captured = _load_source_bound_pdf(
+            source_captured = _load_source_bound_pdf(
                 source_proof_path,
                 run_id,
                 action_report_language,
             )
+            if uses_blob:
+                assert len(report_responses) == 1, {
+                    "expected_ui_artifact_response_count": 1,
+                    "observed_ui_artifact_response_count": len(report_responses),
+                }
+                captured = _validate_captured_pdf_response(
+                    report_responses[0],
+                    run_id,
+                    action_kind=action_kind,
+                    report_language=action_report_language,
+                    expected_commit_sha=str(actions.get_attribute("data-commit-sha") or ""),
+                )
+                assert captured["pdf_bytes"] == source_captured["pdf_bytes"]
+                assert captured["canonical_truth_sha256"] == source_captured["canonical_truth_sha256"]
+                _verify_ui_blob_bytes(page, captured)
+                captured["evidence_source"] = "observed-ui-response-and-verified-blob"
+            else:
+                captured = source_captured
         else:
             captured = _fetch_captured_pdf(
                 page,
@@ -575,6 +659,7 @@ def install_ui_pdf_download_proof(
         assert direct.get("pdf_signature_verified") is True, direct
         if action_kind == ACCEPTED_PDF_KIND:
             assert captured["accepted_pdf_sha256"] == direct_sha
+            _verify_ui_blob_bytes(page, captured)
         page.wait_for_timeout(250)
         page.bring_to_front()
         page.wait_for_function(
@@ -636,11 +721,13 @@ def install_ui_pdf_download_proof(
             ],
             "ui_review_pdf_target_contract": (
                 "blank-noopener-noreferrer"
-                if action_kind == DRAFT_PDF_KIND
+                if action_kind == DRAFT_PDF_KIND and not uses_blob
                 else "same-page-validated-blob-download"
             ),
-            "ui_review_pdf_target_blank_verified": action_kind == DRAFT_PDF_KIND,
-            "ui_review_pdf_noopener_noreferrer_verified": action_kind == DRAFT_PDF_KIND,
+            "ui_review_pdf_target_blank_verified": action_kind == DRAFT_PDF_KIND and not uses_blob,
+            "ui_review_pdf_noopener_noreferrer_verified": action_kind == DRAFT_PDF_KIND and not uses_blob,
+            "ui_review_pdf_actual_blob_bytes_verified": uses_blob,
+            "ui_review_pdf_actual_response_count": len(report_responses),
             "ui_review_pdf_original_assessment_page_preserved": True,
             "ui_review_pdf_original_page_visible_after_action": True,
             "ui_review_pdf_proof_version": VERSION,

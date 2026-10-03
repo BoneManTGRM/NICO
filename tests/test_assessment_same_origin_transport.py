@@ -145,7 +145,7 @@ def test_server_proxy_allows_only_comprehensive_lifecycle_artifacts_and_bounded_
     assert '"/assessment/full-run"' not in source
 
 
-def test_review_pdf_download_preserves_the_original_mobile_user_gesture() -> None:
+def test_review_pdf_download_tracks_the_original_mobile_user_action() -> None:
     source = PDF_DOWNLOAD.read_text(encoding="utf-8")
     layout = LAYOUT.read_text(encoding="utf-8")
 
@@ -153,12 +153,19 @@ def test_review_pdf_download_preserves_the_original_mobile_user_gesture() -> Non
     assert 'event.stopImmediatePropagation()' in source
     assert 'runId.startsWith("comprun_")' in source
     assert '/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}/pdf' in source
-    assert 'startExactRunDownload(runId, activeReportLanguage());' in source
+    assert 'startExactRunDownload(runId, reportLanguage, {' in source
+    assert '? requestedLanguage : activeReportLanguage()' in source
     assert 'link.download = `nico-comprehensive-${runId}-${reportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`' in source
     assert 'FINAL-PENDING-APPROVAL.pdf' not in source
     assert 'link.click();' in source
-    assert 'fetch(' not in source
-    assert 'arrayBuffer' not in source
+    assert 'fetch(exactRunPdfHref(runId, reportLanguage), {' in source
+    assert 'credentials: "same-origin"' in source
+    assert 'new Uint8Array(await response.arrayBuffer())' in source
+    assert 'crypto.subtle.digest("SHA-256", bytes)' in source
+    assert source.index('if (observedSha !== declaredSha) throw integrityError();') < source.index('link.click();')
+    assert 'link.target = "_blank"' not in source
+    assert 'if (active.has(key)) return;' in source
+    assert 'window.setTimeout(() => button.removeAttribute("data-nico-review-pdf-clicked")' not in source
     assert 'Preparing file' not in source
     assert 'import AssessmentReviewPdfDownload from "./AssessmentReviewPdfDownload"' in layout
     assert layout.index('<AssessmentReviewPdfDownload />') < layout.index('<AssessmentHomeRedirect />')
