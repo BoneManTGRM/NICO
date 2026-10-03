@@ -485,6 +485,52 @@ def _synchronize_evidence_score_aliases(
     return output
 
 
+
+def authoritative_scanner_execution_coverage(
+    canonical: Mapping[str, Any],
+) -> tuple[int, int]:
+    """Compute current execution coverage without rebuilding report presentation.
+
+    Use the same raw records, live overrides, complete-input inventories, and
+    applicability rules as the full projection. The shallow view changes only
+    scanner aliases; all repository signal evidence remains visible and unchanged.
+    This function neither caches authority nor grants approval or delivery.
+    """
+
+    from nico import scanner_applicability_v1 as applicability
+
+    raw_truth, requested_tools = _authoritative_truth(canonical)
+    raw_records = _canonical_records(canonical, raw_truth, requested_tools)
+    view = dict(canonical)
+    assessment = dict(_mapping(canonical.get("assessment")))
+    view["requested_scanner_records"] = raw_records
+    view["scanner_execution_records"] = raw_records
+    assessment["requested_scanner_records"] = raw_records
+    assessment["scanner_execution_records"] = raw_records
+    view["assessment"] = assessment
+
+    signals = applicability._repository_signals(view)
+    records = [
+        applicability._normalize_record(record, signals)
+        for record in applicability._record_list(view)
+    ]
+    required_tools = [
+        name for record in records
+        if record.get("applicable") is not False and (name := v59._tool(record))
+    ]
+    states: dict[str, dict[str, Any]] = {}
+    for record in records:
+        state = v59._scanner_state(record)
+        if state is not None:
+            states[state["scanner_name"]] = state
+    required_set = set(required_tools)
+    completed = {
+        name for name, state in states.items()
+        if state.get("completed") is True and name in required_set
+    }
+    return len(completed), len(required_tools)
+
+
 def reconcile_authoritative_scanner_truth(
     canonical: Mapping[str, Any],
 ) -> dict[str, Any]:

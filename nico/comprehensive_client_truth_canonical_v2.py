@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import html
-import io
 import re
 from nico.report_json_copy import deepcopy
 from functools import wraps
 from typing import Any, Mapping
-
-from pypdf import PdfReader
 
 VERSION = "nico.comprehensive-client-truth-canonical.v2.2"
 _NORMALIZE_MARKER = "__nico_comprehensive_client_truth_canonical_v2__"
@@ -45,7 +44,7 @@ def _visible_html(value: str) -> str:
 def _pdf_text(package: Mapping[str, Any]) -> str:
     try:
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
-        return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+        return "\n".join(extract_pdf_page_texts(pdf))
     except Exception as exc:
         raise ValueError("Comprehensive client package has no valid PDF") from exc
 

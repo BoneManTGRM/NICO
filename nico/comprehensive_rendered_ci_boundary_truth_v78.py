@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import html
-import io
 import re
 from collections.abc import Mapping, MutableMapping
 from copy import deepcopy
 from functools import wraps
 from typing import Any, Callable
-
-from pypdf import PdfReader
 
 from nico import comprehensive_client_truth_final_v1 as final_truth
 from nico import comprehensive_report_language_truth_v77 as language_v77
@@ -134,7 +133,7 @@ def _extract_pdf_text(result: Mapping[str, Any]) -> str:
         pdf = base64.b64decode(str(encoded), validate=True)
         return _normalize_text(
             "\n".join(
-                page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+                extract_pdf_page_texts(pdf)
             )
         )
     except Exception:

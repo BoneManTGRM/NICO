@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import base64
 import hashlib
 import json
@@ -435,6 +437,7 @@ def _final_report_identity_and_language_bound(
     return True
 
 
+@report_delivery_phase("package_integrity")
 def _final_report_package_integrity_bound(report: Mapping[str, Any]) -> bool:
     """Require immutable JSON/PDF digests before treating a final stage as authority."""
 
@@ -497,6 +500,7 @@ def _manifest_family_claimed(report: Mapping[str, Any]) -> bool:
     return top_level_claimed or nested_manifest_claimed
 
 
+@report_delivery_phase("canonical_integrity")
 def _canonical_truth_hash_integrity_bound(
     report: Mapping[str, Any],
     canonical: Mapping[str, Any] | None = None,
@@ -849,6 +853,7 @@ def _rejected_review_integrity_bound(record: Mapping[str, Any]) -> bool:
     return _review_decision_integrity_bound(record)
 
 
+@report_delivery_phase("report_authority")
 def _canonical_final_report_outputs(
     record: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
