@@ -244,7 +244,7 @@ def _tool_payload(
         "command_intent_scope": "abbreviated_redacted_preview; use scanner_execution_receipt for full argv",
         "scanner_execution_receipt": result.scanner_execution_receipt,
         "coverage_evidence": native_coverage_observation(spec.name, raw_blob),
-        "scanner_tool_version": _scanner_version(spec.name, str(result.args[0]), workspace.repo_dir),
+        "scanner_tool_version": (extra["scanner_tool_version"] if extra and extra.get("scanner_tool_version") else _scanner_version(spec.name, str(result.args[0]), workspace.repo_dir)),
         "findings": findings,
         "findings_count": len(findings),
         "stderr": redact_text(result.stderr or "")[:4000],
@@ -699,11 +699,8 @@ def _eslint_config(workspace: WorkerWorkspace, web_dir: Path) -> tuple[Path | No
 
 def _run_eslint(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
     if not project_commands_allowed():
-        return _unavailable(
-            spec,
-            f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
-            source="canonical_eslint",
-        )
+        from nico.trusted_global_eslint_v1 import run_global_static_eslint
+        return run_global_static_eslint(spec, workspace, runner)
     web_dir = preparation.web_dir if preparation is not None else workspace.repo_dir
     source_targets = _javascript_source_targets(web_dir)
     project_label = web_dir.relative_to(workspace.repo_dir).as_posix() or "."
