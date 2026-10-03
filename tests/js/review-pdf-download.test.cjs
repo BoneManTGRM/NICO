@@ -180,6 +180,7 @@ test('interrupted body clears the operation and leaves safe retry available',asy
     return r;
   });
   s.click();await s.settled();assert.equal(s.anchors.length,0);
+  assert.match(s.statuses.at(-1).textContent,/The download was interrupted\. Retry this download\./);
   assert.equal(s.button.disabled,false);
   s.click();await s.settled();assert.equal(s.anchors.length,1);
 });
@@ -226,4 +227,31 @@ test('Spanish UI progress keeps an independently selected English report languag
   assert.ok(s.calls[0].url.endsWith('/localized-report/en/pdf'));
   assert.match(s.statuses.at(-1).textContent,/PDF verificado/);
   assert.ok(s.anchors[0].filename.includes('-en-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf'));
+});
+
+for(const language of ['en','es-MX'])test(language+' network interruption gives safe retry guidance',async()=>{
+  let attempt=0;
+  const s=setup(async()=>{
+    if(++attempt===1)throw new TypeError('Failed to fetch');
+    return response(language);
+  },language);
+  s.click();await s.settled();
+  assert.equal(s.anchors.length,0);
+  assert.equal(s.statuses.at(-1).attrs.role,'alert');
+  assert.match(s.statuses.at(-1).textContent,language==='en'?/Retry this download/:/Vuelve a intentarlo/);
+  assert.equal(s.button.disabled,false);
+  s.click();await s.settled();
+  assert.equal(s.calls.length,2);
+  assert.equal(s.anchors.length,1);
+});
+test('the response deadline aborts the request and leaves explicit retry available',async()=>{
+  const s=setup((url,init)=>new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true})));
+  s.click();
+  s.timers.find(t=>t.ms===255000).fn();
+  await s.settled();
+  assert.equal(s.calls.length,1);
+  assert.equal(s.calls[0].init.signal.aborted,true);
+  assert.equal(s.anchors.length,0);
+  assert.equal(s.button.disabled,false);
+  assert.match(s.statuses.at(-1).textContent,/timed out\. Retry this download/);
 });

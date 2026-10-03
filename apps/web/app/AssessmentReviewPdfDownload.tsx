@@ -89,27 +89,29 @@ function showStatus(container: Element | null, message: string, failure = false)
   status.textContent = message;
 }
 
+class PdfDownloadFailure extends Error {}
+
 function downloadError(response: Response): Error {
   if (response.status === 401 || response.status === 403) {
-    return new Error(spanishUi()
+    return new PdfDownloadFailure(spanishUi()
       ? "Inicia sesión en NICO y vuelve a descargar este PDF."
       : "Sign in to NICO, then retry this PDF download.");
   }
   if (response.status === 504 || response.status === 408) {
-    return new Error(spanishUi()
+    return new PdfDownloadFailure(spanishUi()
       ? "La descarga del PDF excedió el tiempo límite. Vuelve a intentarlo; no inicies otra evaluación."
       : "The PDF download timed out. Retry this download; do not start another assessment.");
   }
   const requestId = String(response.headers.get("x-request-id") || "");
   const reference = /^[a-zA-Z0-9_-]{1,80}$/.test(requestId)
     ? ` (${requestId})` : "";
-  return new Error((spanishUi()
+  return new PdfDownloadFailure((spanishUi()
     ? "No se pudo descargar el PDF. Vuelve a intentarlo."
     : "The PDF could not be downloaded. Retry this download.") + reference);
 }
 
 function integrityError(): Error {
-  return new Error(spanishUi()
+  return new PdfDownloadFailure(spanishUi()
     ? "El PDF no coincide con esta evaluación y su idioma. Recupera el estado de esta evaluación antes de volver a intentarlo."
     : "The PDF does not match this assessment and language. Recover this assessment's status before retrying.");
 }
@@ -234,7 +236,7 @@ export default function AssessmentReviewPdfDownload() {
           ? (spanishUi()
             ? "La descarga del PDF excedió el tiempo límite. Vuelve a intentarlo; no inicies otra evaluación."
             : "The PDF download timed out. Retry this download; do not start another assessment.")
-          : error instanceof Error ? error.message
+          : error instanceof PdfDownloadFailure ? error.message
             : (spanishUi() ? "La descarga se interrumpió. Vuelve a intentarlo." : "The download was interrupted. Retry this download."),
         true);
       }).finally(() => {
