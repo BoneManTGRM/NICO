@@ -135,3 +135,54 @@ def test_deep_evidence_does_not_resume_every_hash_chunk_at_each_parent():
     calls = sum(data[1] for (file, line, function), data in pstats.Stats(profile).stats.items()
                 if function == "_canonical_hash_chunks")
     assert calls < 20000
+
+@pytest.mark.parametrize("depth", [40, 70, 400, 700, 1000, 1500])
+def test_deep_record_keeps_standard_stream_digest_or_error(depth):
+    payload = {"leaf": "retained"}
+    for _ in range(depth):
+        payload = {"evidence": payload}
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    expected_digest = hashlib.sha256()
+    try:
+        for chunk in encoder.iterencode(payload):
+            expected_digest.update(chunk.encode("utf-8"))
+    except (ValueError, TypeError, RecursionError, UnicodeEncodeError) as exc:
+        with pytest.raises(type(exc)):
+            records._canonical_hash(payload)
+    else:
+        assert records._canonical_hash(payload) == expected_digest.hexdigest()
+
+
+def test_plain_evidence_group_uses_bounded_native_container_encoding(monkeypatch):
+    payload = {"evidence": [
+        {"scanner": f"scanner-{index}", "command": "tool --check", "verified": True}
+        for index in range(400)
+    ]}
+    expected = _reference(payload)
+    calls = []
+    original = records.json.JSONEncoder.iterencode
+
+    def observed(self, value, _one_shot=False):
+        if _one_shot and type(value) in (dict, list, tuple):
+            calls.append(True)
+        return original(self, value, _one_shot=_one_shot)
+
+    monkeypatch.setattr(records.json.JSONEncoder, "iterencode", observed)
+    assert records._canonical_hash(payload) == expected
+    assert len(calls) < 10
+
+@pytest.mark.parametrize("depth", [900, 950, 970, 980, 990])
+def test_near_recursion_limit_keeps_standard_stream_failure(depth):
+    payload = {"leaf": "retained"}
+    for _ in range(depth):
+        payload = {"evidence": payload}
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    expected = hashlib.sha256()
+    try:
+        for chunk in encoder.iterencode(payload):
+            expected.update(chunk.encode("utf-8"))
+    except RecursionError:
+        with pytest.raises(RecursionError):
+            records._canonical_hash(payload)
+    else:
+        assert records._canonical_hash(payload) == expected.hexdigest()

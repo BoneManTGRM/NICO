@@ -37,7 +37,8 @@ def _required(value: Any, field: str) -> str:
 
 
 _HASH_BATCH_BYTES = 64 * 1024
-_HASH_NATIVE_NODE_LIMIT = 512
+_HASH_NATIVE_NODE_LIMIT = 8192
+_HASH_NATIVE_BYTES_LIMIT = 1024 * 1024
 
 
 def _bounded_native_json(value: Any) -> bool:
@@ -45,7 +46,7 @@ def _bounded_native_json(value: Any) -> bool:
 
     pending = [value]
     nodes_left = _HASH_NATIVE_NODE_LIMIT
-    bytes_left = _HASH_BATCH_BYTES
+    bytes_left = _HASH_NATIVE_BYTES_LIMIT
     while pending:
         item = pending.pop()
         nodes_left -= 1
