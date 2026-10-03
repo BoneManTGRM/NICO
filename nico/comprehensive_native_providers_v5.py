@@ -230,7 +230,10 @@ def _disposition(category: str, finding: Mapping[str, Any], path: str, severity:
     if category == "secret":
         return "verified_material" if bool(finding.get("Verified") or finding.get("verified")) else "review_required"
     scope = _text(finding.get("scope"), 120).casefold()
-    if _test_or_example(path) or scope in {"test", "tests", "testing", "development", "dev", "non_production"}:
+    external_native = _text(finding.get("origin"), 120).casefold() in {
+        "toolchain", "compiler_predefines",
+    }
+    if (not external_native and _test_or_example(path)) or scope in {"test", "tests", "testing", "development", "dev", "non_production"}:
         return "excluded_test_only"
     if category == "static" and severity in {"critical", "high"}:
         return "verified_material"
@@ -248,6 +251,7 @@ def _fingerprint(
     message: str,
     disposition: str,
     source_commit_sha: str = "",
+    native_provenance: Mapping[str, Any] | None = None,
 ) -> str:
     canonical = {
         "commit_sha": commit_sha.casefold(),
@@ -261,6 +265,8 @@ def _fingerprint(
     }
     if source_commit_sha:
         canonical["source_commit_sha"] = source_commit_sha
+    if native_provenance:
+        canonical["native_source_provenance"] = deepcopy(dict(native_provenance))
     return hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -298,6 +304,22 @@ def _native_secret_metadata(scanner: str, finding: Mapping[str, Any]) -> dict[st
     return item
 
 
+def _native_provenance(finding: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain typed native file origin separately from assessment identity.
+
+    No inferred provenance is added to legacy scanner records. Upstream native
+    receipt validators establish the hashes; this adapter preserves their data.
+    """
+    output = {}
+    for key in ("origin", "source_sha256"):
+        if finding.get(key):
+            output[key] = _text(finding[key], 120)
+    locations = finding.get("locations")
+    if isinstance(locations, list) and locations:
+        output["locations"] = deepcopy(locations)
+    return output
+
+
 def _normalized_record(
     *,
     commit_sha: str,
@@ -308,6 +330,7 @@ def _normalized_record(
     if category == "secret":
         finding = _native_secret_metadata(scanner, finding)
     source_commit = str(finding.get("source_commit_sha") or "")
+    provenance = _native_provenance(finding)
     path = _path(finding)
     line = _line(finding)
     column = _column(finding)
@@ -326,9 +349,14 @@ def _normalized_record(
         message=message,
         disposition=disposition,
         source_commit_sha=source_commit,
+        native_provenance=provenance,
     )
     evidence_quality = "exact_source" if path and line else "source_path" if path else "payload_without_source"
+    if provenance.get("origin", "").casefold() in {"toolchain", "compiler_predefines"}:
+        # Exact native coordinates do not identify a file in the assessed tree.
+        evidence_quality = "source_path" if path else "payload_without_source"
     return {
+        **provenance,
         "finding_id": f"NICO-SCAN-{fingerprint[:16].upper()}",
         "raw_fingerprint": fingerprint,
         "scanner": scanner,
