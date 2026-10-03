@@ -36,8 +36,89 @@ def _required(value: Any, field: str) -> str:
     return normalized
 
 
+_HASH_BATCH_BYTES = 64 * 1024
+_HASH_NATIVE_NODE_LIMIT = 512
+
+
+def _bounded_native_json(value: Any) -> bool:
+    """Limit native encoding to small plain-JSON subtrees, including escaped bytes."""
+
+    pending = [value]
+    nodes_left = _HASH_NATIVE_NODE_LIMIT
+    bytes_left = _HASH_BATCH_BYTES
+    while pending:
+        item = pending.pop()
+        nodes_left -= 1
+        if nodes_left < 0:
+            return False
+        kind = type(item)
+        if kind is dict:
+            if len(pending) + 2 * len(item) > nodes_left:
+                return False
+            if any(type(key) is not str for key in item):
+                return False
+            bytes_left -= 2 + 2 * len(item)
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif kind in (list, tuple):
+            if len(pending) + len(item) > nodes_left:
+                return False
+            bytes_left -= 2 + len(item)
+            pending.extend(item)
+        elif kind is str:
+            bytes_left -= 2 + 6 * len(item)
+        elif kind is int:
+            bytes_left -= 3 + item.bit_length() // 3
+        elif kind is float:
+            bytes_left -= 32
+        elif kind is bool or item is None:
+            bytes_left -= 5
+        else:
+            return False
+        if bytes_left < 0:
+            return False
+    return True
+
+
+def _canonical_hash_chunks(value: Any, encoder: json.JSONEncoder, ancestors: set[int]):
+    if _bounded_native_json(value):
+        # The standard encoder still owns sorting, escaping, numeric and default
+        # semantics; its native path cannot materialize a large report subtree.
+        yield from encoder.iterencode(value, _one_shot=True)
+        return
+    kind = type(value)
+    if kind not in (dict, list, tuple) or (
+        kind is dict and any(type(key) is not str for key in value)
+    ):
+        yield from encoder.iterencode(value)
+        return
+    identity = id(value)
+    if identity in ancestors:
+        raise ValueError("Circular reference detected")
+    ancestors.add(identity)
+    try:
+        if kind is dict:
+            yield "{"
+            for index, (key, item) in enumerate(sorted(value.items())):
+                if index:
+                    yield ","
+                yield encoder.encode(key)
+                yield ":"
+                yield from _canonical_hash_chunks(item, encoder, ancestors)
+            yield "}"
+        else:
+            yield "["
+            for index, item in enumerate(value):
+                if index:
+                    yield ","
+                yield from _canonical_hash_chunks(item, encoder, ancestors)
+            yield "]"
+    finally:
+        ancestors.remove(identity)
+
+
 def _canonical_hash(payload: Any) -> str:
-    """Hash canonical JSON without materializing a second full JSON string."""
+    """Preserve canonical bytes with bounded native encoding and digest batching."""
 
     encoder = json.JSONEncoder(
         sort_keys=True,
@@ -46,8 +127,21 @@ def _canonical_hash(payload: Any) -> str:
         default=str,
     )
     digest = hashlib.sha256()
-    for chunk in encoder.iterencode(payload):
-        digest.update(chunk.encode("utf-8"))
+    pending = bytearray()
+    for chunk in _canonical_hash_chunks(payload, encoder, set()):
+        encoded = chunk.encode("utf-8")
+        if len(encoded) >= _HASH_BATCH_BYTES:
+            if pending:
+                digest.update(pending)
+                pending.clear()
+            digest.update(encoded)
+        else:
+            if len(pending) + len(encoded) > _HASH_BATCH_BYTES:
+                digest.update(pending)
+                pending.clear()
+            pending.extend(encoded)
+    if pending:
+        digest.update(pending)
     return digest.hexdigest()
 
 
