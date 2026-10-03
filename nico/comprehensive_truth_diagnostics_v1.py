@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import html
-import io
 import re
 from functools import wraps
 from typing import Any, Mapping
-
-from pypdf import PdfReader
 
 VERSION = "nico.comprehensive-truth-diagnostics.v1.1"
 _MARKER = "__nico_comprehensive_truth_diagnostics_v1__"
@@ -54,7 +53,7 @@ def _pdf_text(package: Mapping[str, Any]) -> str:
     try:
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
         return " ".join(
-            "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages).split()
+            "\n".join(extract_pdf_page_texts(pdf)).split()
         )
     except Exception:
         return ""

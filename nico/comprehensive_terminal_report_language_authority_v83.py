@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import html
-import io
 import re
 from functools import wraps
 from typing import Any, Callable, Mapping
-
-from pypdf import PdfReader
 
 VERSION = "nico.comprehensive-terminal-report-language-authority.v83"
 _EXPLICIT_MARKER = "_nico_terminal_language_explicit_v83"
@@ -36,7 +35,7 @@ def _pdf_text(result: Mapping[str, Any]) -> str:
         pdf = base64.b64decode(encoded, validate=True)
         return _normalize(
             "\n".join(
-                page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+                extract_pdf_page_texts(pdf)
             )
         )
     except Exception as exc:

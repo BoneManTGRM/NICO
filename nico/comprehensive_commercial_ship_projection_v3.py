@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts, pdf_text_cache_scope
+
 import base64
 import hashlib
 import html
@@ -579,8 +581,7 @@ def _source_pdf_requires_integrity_reprojection(
         pdf_bytes = base64.b64decode(str(reports.get("pdf_base64") or ""), validate=True)
         if not pdf_bytes.startswith(b"%PDF"):
             return False
-        pages = PdfReader(io.BytesIO(pdf_bytes)).pages
-        page_texts = [str(page.extract_text() or "") for page in pages]
+        page_texts = extract_pdf_page_texts(pdf_bytes)
         visible_text = "".join(
             "".join(text.split())
             for text in page_texts
@@ -903,6 +904,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
     if not getattr(current_response, _RESPONSE_MARKER, False):
 
         @wraps(current_response)
+        @pdf_text_cache_scope()
         def pdf_response(status: Mapping[str, Any], report_language: str) -> Any:
             response = current_response(status, report_language)
             repository = str(status.get("repository") or "").strip()

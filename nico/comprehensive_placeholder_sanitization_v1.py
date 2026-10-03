@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import html
-import io
 import re
 from nico.report_json_copy import deepcopy
 from functools import wraps
@@ -169,10 +170,9 @@ def _assert_text_surfaces(
     rendered_html: str,
     pdf: bytes,
 ) -> None:
-    from pypdf import PdfReader
 
     extracted = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+        extract_pdf_page_texts(pdf)
     )
     assert_parser_placeholders_absent(markdown, surface="client Markdown")
     assert_parser_placeholders_absent(rendered_html, surface="client HTML")

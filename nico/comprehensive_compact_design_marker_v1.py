@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import io
 import re
@@ -122,7 +124,7 @@ def _combined_client_text(package: Mapping[str, Any]) -> str:
     if not pdf.startswith(b"%PDF"):
         raise ValueError("client report did not retain a valid final PDF")
     extracted = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+        extract_pdf_page_texts(pdf)
     )
     return "\n".join((markdown, rendered_html, extracted))
 
