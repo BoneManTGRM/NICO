@@ -624,11 +624,8 @@ def _patch_scanner_runners() -> None:
 
     def eslint(spec: ScannerToolSpec, workspace: Any, runner: Callable[..., Any], preparation: Any) -> dict[str, Any]:
         if not pipeline.project_commands_allowed():
-            return pipeline._unavailable(
-                spec,
-                f"{spec.name} requires NICO_ALLOW_PROJECT_COMMANDS=true because it may execute project-local commands.",
-                source="canonical_eslint_v2",
-            )
+            from nico.trusted_global_eslint_v1 import run_global_static_eslint
+            return run_global_static_eslint(spec, workspace, runner)
         project_dir = preparation.project_dir if preparation else pipeline.resolve_node_project_dir(workspace.repo_dir)
         if not pipeline._supported_web_files(project_dir):
             return pipeline._unavailable(spec, "No supported JavaScript or TypeScript source files were found in the resolved Node project.", source="canonical_eslint_v2")
