@@ -113,6 +113,8 @@ def _rule_family(record: Mapping[str, Any]) -> str:
 
 
 def _production_classification(record: Mapping[str, Any]) -> str:
+    if _text(record.get("origin"), 120).casefold() in {"toolchain", "compiler_predefines"}:
+        return "external_toolchain"
     disposition = _token(record.get("disposition"))
     path = _text(record.get("source_path"), 1200).casefold()
     if disposition == "excluded-test-only":
@@ -123,7 +125,10 @@ def _production_classification(record: Mapping[str, Any]) -> str:
 
 
 def _enrich_candidate(record: Mapping[str, Any]) -> dict[str, Any]:
+    from nico.comprehensive_native_providers_v5 import _native_provenance
+
     item = deepcopy(dict(record))
+    provenance = _native_provenance(item)
     evidence_digest = _digest(
         {
             "scanner": item.get("scanner"),
@@ -132,6 +137,7 @@ def _enrich_candidate(record: Mapping[str, Any]) -> dict[str, Any]:
             "line": item.get("line"),
             "evidence": item.get("evidence"),
             **({"source_commit_sha": item["source_commit_sha"]} if item.get("source_commit_sha") else {}),
+            **({"native_source_provenance": provenance} if provenance else {}),
         }
     )
     family = _rule_family(item)

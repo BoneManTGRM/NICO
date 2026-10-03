@@ -151,7 +151,18 @@ def expand_candidate_identities(register: Mapping[str, Any]) -> dict[str, Any]:
                     f"Candidate {index} of {count} shares the retained normalized "
                     "source evidence for this duplicate group."
                 )
-            item["evidence_digest_sha256"] = _digest(item["evidence"])
+            from nico.comprehensive_native_providers_v5 import _native_provenance
+
+            if _native_provenance(item):
+                # Expanding retained native duplicates must keep their source-bound
+                # support digest; message-only hashes discard origin/content identity.
+                from nico.comprehensive_truth_reconciliation_v7 import _enrich_candidate
+
+                item["evidence_digest_sha256"] = _enrich_candidate(item)[
+                    "evidence_digest_sha256"
+                ]
+            else:
+                item["evidence_digest_sha256"] = _digest(item["evidence"])
             item["supporting_evidence_digest_sha256"] = item[
                 "evidence_digest_sha256"
             ]
