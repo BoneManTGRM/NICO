@@ -32,7 +32,7 @@ function response(language='en', overrides={}) {
 }
 function setup(fetchImpl, language='en') {
   const calls=[], anchors=[], timers=[], effects=[], listeners=new Map(), statuses=[];
-  let cleanUp;
+  let cleanUp, operationState;
   class Element {
     constructor(tag='span') {this.tagName=tag;this.attrs={};this.style={};this.isConnected=true;this.textContent='';}
     getAttribute(key) {return this.attrs[key]??null;}
@@ -70,7 +70,7 @@ function setup(fetchImpl, language='en') {
     Uint8Array,crypto:webcrypto,Element,HTMLButtonElement,
     fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);},
     require(name){
-      if(name==='react')return{useEffect:fn=>effects.push(fn),useRef:value=>({current:value})};
+      if(name==='react')return{useEffect:fn=>effects.push(fn),useRef:value=>{operationState=value;return{current:value};}};
       if(name==='./assessment/assessmentLocale')return{reportLanguageForRequest:value=>value};
       throw Error('Unexpected import '+name);
     },
@@ -82,7 +82,12 @@ function setup(fetchImpl, language='en') {
     listeners.get('click')({target:button,preventDefault(){intercepted=true;},stopPropagation(){},stopImmediatePropagation(){}});
     return intercepted;
   };
-  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp};
+  const settled=async()=>{
+    const deadline=Date.now()+5000;
+    while(operationState.size && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(operationState.size,0,'Download operation did not settle within the regression deadline');
+  };
+  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp,settled};
 }
 test('slow retained PDF stays tracked and repeat clicks cannot launch another request',async()=>{
   let release;
@@ -97,7 +102,7 @@ test('slow retained PDF stays tracked and repeat clicks cannot launch another re
   assert.equal(s.calls.length,1);
   assert.equal(s.anchors.length,0);
   release(response());
-  await flush();
+  await s.settled();
   assert.equal(s.anchors.length,1);
   assert.match(s.anchors[0].href,/^blob:/);
   assert.notEqual(s.anchors[0].target,'_blank');
@@ -117,13 +122,13 @@ test('the guard includes a slow response body, not only response headers',async(
   assert.equal(s.calls.length,1);
   assert.equal(s.anchors.length,0);
   release(pdf.buffer.slice(pdf.byteOffset,pdf.byteOffset+pdf.byteLength));
-  await flush();
+  await s.settled();
   assert.equal(s.anchors.length,1);
 });
 for(const language of ['en','es-MX']) {
   test(language+' draft download preserves bytes, identity and language',async()=>{
     const s=setup(async()=>response(language),language);
-    s.click();await flush();
+    s.click();await s.settled();
     assert.equal(s.anchors.length,1);
     assert.ok(s.anchors[0].filename.includes('-'+language+'-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf'));
     assert.ok(s.calls[0].url.endsWith('/localized-report/'+language+'/pdf'));
@@ -132,20 +137,20 @@ for(const language of ['en','es-MX']) {
   test(language+' timeout is persistent, actionable and permits an explicit retry',async()=>{
     let attempt=0;
     const s=setup(async()=>++attempt===1?Response.json({detail:{code:'assessment_artifact_timeout'}},{status:504}):response(language),language);
-    s.click();await flush();
+    s.click();await s.settled();
     assert.equal(s.anchors.length,0);
     assert.equal(s.button.disabled,false);
     assert.equal(s.statuses.at(-1).attrs.role,'alert');
     assert.match(s.statuses.at(-1).textContent,language==='en'?/Retry this download/:/Vuelve a intentarlo/);
     assert.equal(s.calls.length,1);
-    s.click();await flush();
+    s.click();await s.settled();
     assert.equal(s.calls.length,2);
     assert.equal(s.anchors.length,1);
   });
 }
 for(const status of [401,403])test('HTTP '+status+' requires authentication without presenting a PDF',async()=>{
   const s=setup(async()=>new Response('{}',{status}));
-  s.click();await flush();
+  s.click();await s.settled();
   assert.equal(s.anchors.length,0);
   assert.match(s.statuses.at(-1).textContent,/Sign in to NICO/);
   assert.equal(s.calls.length,1);
@@ -162,7 +167,7 @@ for(const [description,headers]of[
   ['assessment replay',{'x-nico-assessment-rerun':'true'}],
 ])test(description+' fails closed',async()=>{
   const s=setup(async()=>response('en',headers));
-  s.click();await flush();
+  s.click();await s.settled();
   assert.equal(s.anchors.length,0);
   assert.equal(s.statuses.at(-1).attrs.role,'alert');
   assert.equal(s.button.disabled,false);
@@ -174,9 +179,9 @@ test('interrupted body clears the operation and leaves safe retry available',asy
     if(++attempt===1)r.arrayBuffer=async()=>{throw Error('Synthetic interrupted download');};
     return r;
   });
-  s.click();await flush();assert.equal(s.anchors.length,0);
+  s.click();await s.settled();assert.equal(s.anchors.length,0);
   assert.equal(s.button.disabled,false);
-  s.click();await flush();assert.equal(s.anchors.length,1);
+  s.click();await s.settled();assert.equal(s.anchors.length,1);
 });
 test('overlapping identical helper requests share one operation only while it is active',async()=>{
   let release;
@@ -211,4 +216,14 @@ for(const boundary of ['accepted','not-ready','missing-source'])test(boundary+' 
   if(boundary==='missing-source')delete s.actions.attrs['data-commit-sha'];
   assert.equal(s.click(),false);
   assert.equal(s.calls.length,0);
+});
+
+test('Spanish UI progress keeps an independently selected English report language',async()=>{
+  const s=setup(async()=>response('en'),'es-MX');
+  s.button.attrs['data-report-language']='en';
+  s.click();await s.settled();
+  assert.equal(s.calls.length,1);
+  assert.ok(s.calls[0].url.endsWith('/localized-report/en/pdf'));
+  assert.match(s.statuses.at(-1).textContent,/PDF verificado/);
+  assert.ok(s.anchors[0].filename.includes('-en-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf'));
 });

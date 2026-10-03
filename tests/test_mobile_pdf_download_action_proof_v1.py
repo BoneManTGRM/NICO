@@ -223,3 +223,79 @@ def test_mobile_pdf_download_proof_uses_real_anchor_contract_not_download_events
     assert proof.DEPRECATED_PLAYWRIGHT_DOWNLOAD_API_MARKER == (
         "page.expect_download(timeout=240_000)"
     )
+
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [None, "body", "run", "source", "language", "truth", "hash", "approval", "delivery", "rerun"],
+)
+def test_ui_pdf_response_validation_preserves_integrity_and_authority(fault: str | None) -> None:
+    pdf = b"%PDF-1.7\n" + b"SYNTHETIC retained report bytes\n" * 100
+    sha = hashlib.sha256(pdf).hexdigest()
+    headers = {
+        "x-nico-artifact-sha256": sha,
+        "x-nico-pdf-sha256": sha,
+        "x-nico-run-id": "comprun_synthetic",
+        "x-nico-commit-sha": "c" * 40,
+        "x-nico-canonical-truth-sha256": "b" * 64,
+        "x-nico-report-language": "en",
+        "x-nico-assessment-rerun": "false",
+        "x-nico-approval-status": "pending_human_approval",
+        "x-nico-delivery-status": "blocked_pending_human_approval",
+        "x-nico-client-delivery-allowed": "false",
+    }
+    faults = {
+        "run": ("x-nico-run-id", "comprun_other"),
+        "source": ("x-nico-commit-sha", "d" * 40),
+        "language": ("x-nico-report-language", "es-MX"),
+        "truth": ("x-nico-canonical-truth-sha256", "missing"),
+        "hash": ("x-nico-artifact-sha256", "0" * 64),
+        "approval": ("x-nico-approval-status", "approved_final"),
+        "delivery": ("x-nico-client-delivery-allowed", "true"),
+        "rerun": ("x-nico-assessment-rerun", "true"),
+    }
+    if fault in faults:
+        key, value = faults[fault]
+        headers[key] = value
+
+    class Response:
+        ok = True
+        status = 200
+
+        def body(self) -> bytes:
+            return pdf + (b"tampered" if fault == "body" else b"")
+
+    response = Response()
+    response.headers = headers
+    if fault is not None:
+        with pytest.raises(AssertionError):
+            proof._validate_captured_pdf_response(
+                response, "comprun_synthetic", action_kind=proof.DRAFT_PDF_KIND,
+                report_language="en", expected_commit_sha="c" * 40,
+            )
+    else:
+        captured = proof._validate_captured_pdf_response(
+            response, "comprun_synthetic", action_kind=proof.DRAFT_PDF_KIND,
+            report_language="en", expected_commit_sha="c" * 40,
+        )
+        assert captured["pdf_bytes"] == pdf
+        assert captured["pdf_sha256"] == sha
+        assert captured["accepted_edition_digest_verified"] is False
+
+
+@pytest.mark.parametrize("tampered", [False, True])
+def test_mobile_proof_checks_actual_blob_bytes_without_another_report_request(tampered: bool) -> None:
+    pdf = b"%PDF-1.7\nSYNTHETIC"
+
+    class Page:
+        def evaluate(self, expression: str) -> list[int]:
+            assert expression == "() => window.__nicoReviewPdfBlobBytes"
+            return list(pdf + (b"tampered" if tampered else b""))
+
+    captured = {"pdf_bytes": pdf, "pdf_sha256": hashlib.sha256(pdf).hexdigest()}
+    if tampered:
+        with pytest.raises(AssertionError):
+            proof._verify_ui_blob_bytes(Page(), captured)
+    else:
+        proof._verify_ui_blob_bytes(Page(), captured)

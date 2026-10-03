@@ -62,7 +62,7 @@ def test_pdf_bridge_prefers_canonical_run_binding_and_cannot_swallow_early_click
 
     ready = 'actions.getAttribute("data-assessment-report-ready") !== "true"'
     exact = "const runId = visibleRunId(actions);"
-    bound = 'if (!runId.startsWith("comprun_")) return;'
+    bound = 'if (!runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(commitSha)) return;'
     cancel = "event.preventDefault();"
     assert ready in handler
     assert exact in handler

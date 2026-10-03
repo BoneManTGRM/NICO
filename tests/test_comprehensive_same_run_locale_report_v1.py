@@ -1732,7 +1732,10 @@ def test_review_download_bridge_uses_same_run_localized_pdf_route():
     assert 'pathname.startsWith("/es-mx/")' in bridge
     assert "reportLanguageForRequest(uiLocale)" in bridge
     assert 'searchParams.get("report_language")' not in bridge
-    assert "startExactRunDownload(runId, activeReportLanguage())" in bridge
+    assert "startExactRunDownload(runId, reportLanguage, {" in bridge
+    assert 'button.getAttribute("data-report-language")' in bridge
+    assert "? requestedLanguage : activeReportLanguage()" in bridge
+    assert 'header("x-nico-report-language") !== reportLanguage' in bridge
 
 
 def test_production_docker_entrypoint_mounts_same_run_locale_wrapper():

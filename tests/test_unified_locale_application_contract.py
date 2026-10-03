@@ -68,8 +68,10 @@ def test_ui_and_report_locale_preferences_have_separate_authorities() -> None:
 
     bridge = source("apps/web/app/AssessmentReviewPdfDownload.tsx")
     assert "function spanishUi(): boolean" in bridge
-    assert "startExactRunDownload(runId, activeReportLanguage())" in bridge
-    status_call = bridge.split("showStatus(\n        actions,", 1)[1].split(
+    assert "startExactRunDownload(runId, reportLanguage, {" in bridge
+    assert 'button.getAttribute("data-report-language")' in bridge
+    assert "? requestedLanguage : activeReportLanguage()" in bridge
+    status_call = bridge.split("showStatus(actions,", 1)[1].split(
         ");", 1
     )[0]
     assert "spanishUi()" in status_call
