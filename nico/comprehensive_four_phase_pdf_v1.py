@@ -4,6 +4,7 @@ import io
 from typing import Any, Mapping
 
 from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
 
 from nico.comprehensive_four_phase_model_v1 import (
     _EN,
@@ -309,6 +310,7 @@ def assert_four_phase_pdf(
     }
 
 
+@report_delivery_phase("four_phase_pdf")
 def apply_four_phase_pdf(
     pdf: bytes,
     canonical: Mapping[str, Any],
