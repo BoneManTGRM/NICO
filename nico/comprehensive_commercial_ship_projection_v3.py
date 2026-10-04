@@ -408,6 +408,7 @@ def _render_repository_delivery_supplement(
     return rendered
 
 
+@report_delivery_phase("repository_delivery_section")
 def _ensure_repository_delivery_section(
     pdf_bytes: bytes,
     canonical: Mapping[str, Any],
@@ -424,8 +425,11 @@ def _ensure_repository_delivery_section(
     for page in source_pages:
         source_writer.add_page(page)
     source_writer.write(source_buffer)
-    source_reader = PdfReader(io.BytesIO(source_buffer.getvalue()))
-    records, spanish = semantic.semantic_entry_records(source_reader)
+    source_pdf = source_buffer.getvalue()
+    source_reader = PdfReader(io.BytesIO(source_pdf))
+    records, spanish = semantic.semantic_entry_records(
+        source_reader, page_texts=extract_pdf_page_texts(source_pdf),
+    )
     if any(
         str(record.get("section_id") or "") == "repository_delivery_evidence"
         for record in records
@@ -475,7 +479,8 @@ def _ensure_repository_delivery_section(
     writer.write(output)
     recovered = output.getvalue()
     recovered_records, _ = semantic.semantic_entry_records(
-        PdfReader(io.BytesIO(recovered))
+        PdfReader(io.BytesIO(recovered)),
+        page_texts=extract_pdf_page_texts(recovered),
     )
     if not any(
         str(record.get("section_id") or "") == "repository_delivery_evidence"
@@ -485,6 +490,7 @@ def _ensure_repository_delivery_section(
     return recovered, True
 
 
+@report_delivery_phase("final_navigation")
 def _finalize_artifact_navigation(
     artifacts: Mapping[str, Any],
     canonical: Mapping[str, Any],

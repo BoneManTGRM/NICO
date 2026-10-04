@@ -17,6 +17,8 @@ from typing import Iterator
 
 from pypdf import PdfReader
 
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 
 _MAX_ENTRIES = 4
 _MAX_RETAINED_BYTES = 16 * 1024 * 1024
@@ -101,6 +103,13 @@ def pdf_text_cache_scope() -> Iterator[None]:
         cache.clear()
 
 
+@report_delivery_phase("pdf_text_parse")
+def _parse_pdf_page_texts(pdf: bytes) -> tuple[str, ...]:
+    reader = PdfReader(io.BytesIO(pdf))
+    return tuple(page.extract_text() or "" for page in reader.pages)
+
+
+@report_delivery_phase("pdf_text_lookup")
 def extract_pdf_page_texts(pdf: bytes) -> tuple[str, ...]:
     """Return complete, unnormalized default extraction, including blank pages.
 
@@ -118,8 +127,7 @@ def extract_pdf_page_texts(pdf: bytes) -> tuple[str, ...]:
         cached = cache.get(pdf)
         if cached is not None:
             return cached
-    reader = PdfReader(io.BytesIO(pdf))
-    pages = tuple(page.extract_text() or "" for page in reader.pages)
+    pages = _parse_pdf_page_texts(pdf)
     if eligible:
         cache.put(pdf, pages)
     return pages

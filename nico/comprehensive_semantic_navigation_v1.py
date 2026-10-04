@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
 from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
 
 VERSION = "nico.comprehensive_semantic_navigation.v1.6"
 # The first generated TOC page later receives the four-phase assessment matrix at
@@ -545,6 +546,7 @@ def _remove_existing_toc(reader: Any) -> list[Any]:
     return pages
 
 
+@report_delivery_phase("semantic_navigation")
 def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
     """Rebuild final TOC, bookmarks and physical page labels from semantic sections."""
 
