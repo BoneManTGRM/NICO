@@ -372,8 +372,18 @@ def _reuse_direct_verification(
     return direct, False
 
 
-def _require_source_ui_pdf_parity(captured: dict[str, Any], source_captured: dict[str, Any]) -> None:
-    """Preserve both exact comparisons and retain bounded failure evidence."""
+def _require_source_ui_pdf_parity(
+    captured: dict[str, Any],
+    source_captured: dict[str, Any],
+    *,
+    diagnostic_dir: Path | None = None,
+) -> None:
+    """Keep strict comparisons and retain an already-validated failure pair.
+
+    The caller validates the live response's run, source, locale, artifact digest
+    and draft lifecycle before this boundary. Files stay in the existing private
+    workflow artifact; response bodies and authentication data never enter logs.
+    """
     diagnostic = {
         "requirement": "ui_source_pdf_parity",
         "source_pdf_sha256": hashlib.sha256(source_captured["pdf_bytes"]).hexdigest(),
@@ -383,6 +393,34 @@ def _require_source_ui_pdf_parity(captured: dict[str, Any], source_captured: dic
         "bytes_equal": captured["pdf_bytes"] == source_captured["pdf_bytes"],
         "truth_equal": captured["canonical_truth_sha256"] == source_captured["canonical_truth_sha256"],
     }
+    if diagnostic_dir is not None and not (
+        diagnostic["bytes_equal"] and diagnostic["truth_equal"]
+    ):
+        manifest = {
+            **diagnostic,
+            "artifact_schema": "nico.ui_source_pdf_parity_failure.v1",
+            "source_canonical_truth_sha256": source_captured["canonical_truth_sha256"],
+            "ui_canonical_truth_sha256": captured["canonical_truth_sha256"],
+            "source_run_id": str(source_captured.get("response_run_id") or ""),
+            "ui_run_id": str(captured.get("response_run_id") or ""),
+            "source_report_language": str(source_captured.get("response_report_language") or ""),
+            "ui_report_language": str(captured.get("response_report_language") or ""),
+            "source_pdf_path": "source.pdf",
+            "ui_pdf_path": "ui.pdf",
+        }
+        try:
+            diagnostic_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            (diagnostic_dir / "source.pdf").write_bytes(source_captured["pdf_bytes"])
+            (diagnostic_dir / "ui.pdf").write_bytes(captured["pdf_bytes"])
+            (diagnostic_dir / "parity.json").write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            diagnostic["parity_evidence_retained"] = False
+            diagnostic["parity_evidence_error_type"] = type(exc).__name__
+        else:
+            diagnostic["parity_evidence_retained"] = True
     assert captured["pdf_bytes"] == source_captured["pdf_bytes"], diagnostic
     assert captured["canonical_truth_sha256"] == source_captured["canonical_truth_sha256"], diagnostic
 
@@ -637,7 +675,11 @@ def install_ui_pdf_download_proof(
                     report_language=action_report_language,
                     expected_commit_sha=str(actions.get_attribute("data-commit-sha") or ""),
                 )
-                _require_source_ui_pdf_parity(captured, source_captured)
+                _require_source_ui_pdf_parity(
+                    captured,
+                    source_captured,
+                    diagnostic_dir=source_proof_path.parent / "mobile-pdf-parity",
+                )
                 _verify_ui_blob_bytes(page, captured)
                 captured["evidence_source"] = "observed-ui-response-and-verified-blob"
             else:
