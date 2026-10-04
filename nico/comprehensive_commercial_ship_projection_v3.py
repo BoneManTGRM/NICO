@@ -119,6 +119,7 @@ def _contains_exact_presentation_literal(value: Any, literal: str) -> bool:
     return value == literal
 
 
+@report_delivery_phase("combined_compaction")
 def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]:
     """Run both bounded sparse-page compactors before final navigation is rebuilt."""
 
@@ -815,6 +816,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
     if not getattr(current_render_target, _RENDER_TARGET_MARKER, False):
 
         @wraps(current_render_target)
+        @report_delivery_phase("installed_render_target")
         def localized_render_target(
             canonical: Mapping[str, Any],
             report_language: str,

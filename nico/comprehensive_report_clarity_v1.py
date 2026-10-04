@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import html
 import io
 import re
@@ -387,6 +390,7 @@ def _score_snapshot(canonical: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+@report_delivery_phase("report_clarity_text")
 def _combined_text(
     canonical: Mapping[str, Any],
     markdown: str,
@@ -395,9 +399,11 @@ def _combined_text(
 ) -> str:
     from pypdf import PdfReader
 
-    extracted = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
-    )
+    reader = PdfReader(io.BytesIO(pdf))
+    page_texts = extract_pdf_page_texts(pdf)
+    if len(page_texts) != len(reader.pages):
+        raise ValueError("report clarity text population mismatch")
+    extracted = "\n".join(page_texts)
     canonical_text = _text(canonical, 250000)
     return "\n".join((canonical_text, markdown, html.unescape(rendered_html), extracted))
 

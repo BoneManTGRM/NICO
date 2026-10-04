@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import base64
 import io
 import re
@@ -201,6 +204,7 @@ def _coverage_values(text: str) -> set[int]:
     return values
 
 
+@report_delivery_phase("report_accuracy")
 def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, Any]:
     """Use the existing generated PDF as the final accuracy acceptance artifact."""
 
@@ -213,9 +217,11 @@ def validate_existing_report_accuracy(package: Mapping[str, Any]) -> dict[str, A
     if not pdf.startswith(b"%PDF"):
         raise ValueError("client report did not retain a valid final PDF")
 
-    extracted = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
-    )
+    reader = PdfReader(io.BytesIO(pdf))
+    page_texts = extract_pdf_page_texts(pdf)
+    if len(page_texts) != len(reader.pages):
+        raise ValueError("report accuracy text population mismatch")
+    extracted = "\n".join(page_texts)
     combined = "\n".join((markdown, rendered_html, extracted))
     coverage, incomplete, maturity, denominator = _expected_truth(package)
     scanner_backed_report = denominator >= 9

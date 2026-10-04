@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import base64
 import csv
 import hashlib
@@ -827,6 +830,7 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     return output
 
 
+@report_delivery_phase("manifest_refresh")
 def _refresh_visible_manifest(pdf: bytes, canonical: Mapping[str, Any], entries: list[dict[str, Any]]) -> bytes:
     """Replace the owned manifest page before binding a changed pending draft.
 
@@ -838,7 +842,9 @@ def _refresh_visible_manifest(pdf: bytes, canonical: Mapping[str, Any], entries:
     from nico.comprehensive_manifest_navigation_v1 import _page_overlay
 
     reader = PdfReader(io.BytesIO(pdf))
-    texts = [page.extract_text() or "" for page in reader.pages]
+    texts = list(extract_pdf_page_texts(pdf))
+    if len(texts) != len(reader.pages):
+        raise ValueError("manifest PDF text population mismatch")
     manifest_titles = ("Client Artifact Manifest", "Manifiesto de artefactos del cliente")
     table_titles = ("Retained structured artifacts", "Artefactos estructurados preservados",
                     "Artefactos estructurados conservados")
