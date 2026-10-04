@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import io
 import re
@@ -616,7 +618,7 @@ def _validate_surfaces(result: Mapping[str, Any]) -> None:
     rendered_html = str(result.get("html") or "")
     try:
         pdf = base64.b64decode(str(result.get("pdf_base64") or ""), validate=True)
-        extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+        extracted = "\n".join(extract_pdf_page_texts(pdf))
     except Exception as exc:
         raise ValueError("Comprehensive client package has no valid PDF") from exc
     combined = "\n".join((markdown, rendered_html, extracted))

@@ -302,6 +302,7 @@ jobs:
             audit-results/mobile-restart-frontend-release.json
             audit-results/mobile-restart-live-proof.json
             audit-results/mobile-restart-live-proof.png
+            source-proof/mobile-pdf-parity/
           if-no-files-found: warn
           retention-days: 90
 

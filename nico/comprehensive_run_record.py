@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import hashlib
 import json
 from collections.abc import Mapping
@@ -36,8 +38,119 @@ def _required(value: Any, field: str) -> str:
     return normalized
 
 
+_HASH_BATCH_BYTES = 64 * 1024
+_HASH_NATIVE_NODE_LIMIT = 8192
+_HASH_NATIVE_BYTES_LIMIT = 1024 * 1024
+
+
+def _bounded_native_json(value: Any) -> bool:
+    """Limit native encoding to small plain-JSON subtrees, including escaped bytes."""
+
+    pending = [value]
+    nodes_left = _HASH_NATIVE_NODE_LIMIT
+    bytes_left = _HASH_NATIVE_BYTES_LIMIT
+    while pending:
+        item = pending.pop()
+        nodes_left -= 1
+        if nodes_left < 0:
+            return False
+        kind = type(item)
+        if kind is dict:
+            if len(pending) + 2 * len(item) > nodes_left:
+                return False
+            if any(type(key) is not str for key in item):
+                return False
+            bytes_left -= 2 + 2 * len(item)
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif kind in (list, tuple):
+            if len(pending) + len(item) > nodes_left:
+                return False
+            bytes_left -= 2 + len(item)
+            pending.extend(item)
+        elif kind is str:
+            bytes_left -= 2 + 6 * len(item)
+        elif kind is int:
+            bytes_left -= 3 + item.bit_length() // 3
+        elif kind is float:
+            bytes_left -= 32
+        elif kind is bool or item is None:
+            bytes_left -= 5
+        else:
+            return False
+        if bytes_left < 0:
+            return False
+    return True
+
+
+class _LegacyHashEncodingRequired(Exception):
+    pass
+
+
+def _canonical_hash_chunks(value: Any, encoder: json.JSONEncoder, ancestors: set[int]):
+    # Iterator frames keep container depth off the per-token execution path.
+    # Rare deep/custom inputs return to the unchanged standard encoder as a whole.
+    frames = [("value", value)]
+    while frames:
+        event, current = frames.pop()
+        if event == "close":
+            closing, identity = current
+            ancestors.remove(identity)
+            yield closing
+            continue
+        if event in ("dict_items", "list_items"):
+            iterator, index = current
+            try:
+                item = next(iterator)
+            except StopIteration:
+                continue
+            frames.append((event, (iterator, index + 1)))
+            if index:
+                yield ","
+            if event == "dict_items":
+                key, item = item
+                yield encoder.encode(key)
+                yield ":"
+            frames.append(("value", item))
+            continue
+
+        kind = type(current)
+        if kind is str:
+            yield encoder.encode(current)
+            continue
+        if kind is int:
+            yield str(current)
+            continue
+        if kind is bool:
+            yield "true" if current else "false"
+            continue
+        if current is None:
+            yield "null"
+            continue
+        if kind not in (float, dict, list, tuple) or (
+            kind is dict and any(type(key) is not str for key in current)
+        ) or len(ancestors) >= 64:
+            raise _LegacyHashEncodingRequired
+        if _bounded_native_json(current):
+            yield from encoder.iterencode(current, _one_shot=True)
+            continue
+        identity = id(current)
+        if identity in ancestors:
+            raise ValueError("Circular reference detected")
+        ancestors.add(identity)
+        if kind is dict:
+            yield "{"
+            frames.append(("close", ("}", identity)))
+            frames.append(("dict_items", (iter(sorted(current.items())), 0)))
+        else:
+            yield "["
+            frames.append(("close", ("]", identity)))
+            frames.append(("list_items", (iter(current), 0)))
+
+
+@report_delivery_phase("record_integrity_hash")
 def _canonical_hash(payload: Any) -> str:
-    """Hash canonical JSON without materializing a second full JSON string."""
+    """Preserve canonical bytes with bounded native encoding and digest batching."""
 
     encoder = json.JSONEncoder(
         sort_keys=True,
@@ -46,8 +159,27 @@ def _canonical_hash(payload: Any) -> str:
         default=str,
     )
     digest = hashlib.sha256()
-    for chunk in encoder.iterencode(payload):
-        digest.update(chunk.encode("utf-8"))
+    pending = bytearray()
+    try:
+        for chunk in _canonical_hash_chunks(payload, encoder, set()):
+            encoded = chunk.encode("utf-8")
+            if len(encoded) >= _HASH_BATCH_BYTES:
+                if pending:
+                    digest.update(pending)
+                    pending.clear()
+                digest.update(encoded)
+            else:
+                if len(pending) + len(encoded) > _HASH_BATCH_BYTES:
+                    digest.update(pending)
+                    pending.clear()
+                pending.extend(encoded)
+    except _LegacyHashEncodingRequired:
+        digest = hashlib.sha256()
+        for chunk in encoder.iterencode(payload):
+            digest.update(chunk.encode("utf-8"))
+        return digest.hexdigest()
+    if pending:
+        digest.update(pending)
     return digest.hexdigest()
 
 

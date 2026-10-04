@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import hashlib
 import io
@@ -223,7 +225,7 @@ def _pdf_coverage_alias_present(pdf: bytes) -> bool:
     if not pdf.startswith(b"%PDF"):
         return False
     extracted = "\n".join(
-        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+        extract_pdf_page_texts(pdf)
     )
     return _coverage_alias_present(extracted)
 

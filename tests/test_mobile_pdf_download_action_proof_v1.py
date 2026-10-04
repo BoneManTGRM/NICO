@@ -299,3 +299,121 @@ def test_mobile_proof_checks_actual_blob_bytes_without_another_report_request(ta
             proof._verify_ui_blob_bytes(Page(), captured)
     else:
         proof._verify_ui_blob_bytes(Page(), captured)
+
+@pytest.mark.parametrize("fault", ["bytes", "truth"])
+def test_pdf_parity_failure_retains_bounded_diagnostics_without_private_body(fault):
+    source = {"pdf_bytes": b"%PDF-1.7\nPRIVATE_BODY", "canonical_truth_sha256": "a" * 64}
+    captured = dict(source)
+    if fault == "bytes":
+        captured["pdf_bytes"] += b" altered"
+    else:
+        captured["canonical_truth_sha256"] = "b" * 64
+    with pytest.raises(AssertionError) as caught:
+        proof._require_source_ui_pdf_parity(captured, source)
+    diagnostic = caught.value.args[0]
+    assert diagnostic["source_pdf_sha256"] == hashlib.sha256(source["pdf_bytes"]).hexdigest()
+    assert diagnostic["ui_pdf_sha256"] == hashlib.sha256(captured["pdf_bytes"]).hexdigest()
+    assert diagnostic["source_bytes"] == len(source["pdf_bytes"])
+    assert diagnostic["ui_bytes"] == len(captured["pdf_bytes"])
+    assert diagnostic["bytes_equal"] is (fault != "bytes")
+    assert diagnostic["truth_equal"] is (fault != "truth")
+    assert "PRIVATE_BODY" not in str(diagnostic)
+
+
+def test_pdf_parity_success_keeps_source_and_ui_inputs_unchanged():
+    source = {"pdf_bytes": b"%PDF-1.7\nfixture", "canonical_truth_sha256": "a" * 64}
+    captured = dict(source)
+    proof._require_source_ui_pdf_parity(captured, source)
+    assert captured == source
+
+
+def test_mobile_pdf_filename_accepts_retained_spanish_source_contract():
+    run_id = "comprun_31da067415f8574209a638b88ff82b65"
+    filename = (
+        "nico-evaluacion-tecnica-integral-gitlab.com-gitlab-org-gitlab-test-"
+        f"{run_id}-es-MX-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    )
+    assert proof._validate_response_filename(
+        f'attachment; filename="{filename}"', run_id, "es-MX"
+    ) == filename
+
+
+@pytest.mark.parametrize("fault", ["english_locale", "wrong_run", "wrong_suffix", "unknown_prefix"])
+def test_mobile_pdf_retained_spanish_filename_preserves_identity_guards(fault):
+    run_id = "comprun_31da067415f8574209a638b88ff82b65"
+    filename = (
+        "nico-evaluacion-tecnica-integral-gitlab.com-gitlab-org-gitlab-test-"
+        f"{run_id}-es-MX-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    )
+    language = "es-MX"
+    if fault == "english_locale":
+        filename = filename.replace("-es-MX-", "-en-")
+        language = "en"
+    elif fault == "wrong_run":
+        filename = filename.replace(run_id, "comprun_" + "f" * 32)
+    elif fault == "wrong_suffix":
+        filename = filename.replace("AUTOMATED-DRAFT-PENDING-APPROVAL", "APPROVED")
+    else:
+        filename = filename.replace("nico-evaluacion-tecnica-integral-", "nico-unknown-document-")
+    with pytest.raises(AssertionError):
+        proof._validate_response_filename(
+            f'attachment; filename="{filename}"', run_id, language
+        )
+
+
+@pytest.mark.parametrize("fault", ["bytes", "truth"])
+def test_pdf_parity_failure_retains_original_pair_in_existing_private_artifact(
+    tmp_path: Path, fault: str,
+) -> None:
+    source = {"pdf_bytes": b"%PDF-1.7\nSYNTHETIC_SOURCE",
+              "canonical_truth_sha256": "a" * 64}
+    captured = dict(source)
+    if fault == "bytes":
+        captured["pdf_bytes"] += b" altered"
+    else:
+        captured["canonical_truth_sha256"] = "b" * 64
+    directory = tmp_path / "mobile-pdf-parity"
+    with pytest.raises(AssertionError) as caught:
+        proof._require_source_ui_pdf_parity(
+            captured, source, diagnostic_dir=directory,
+        )
+    assert (directory / "source.pdf").read_bytes() == source["pdf_bytes"]
+    assert (directory / "ui.pdf").read_bytes() == captured["pdf_bytes"]
+    manifest = json.loads((directory / "parity.json").read_text(encoding="utf-8"))
+    assert manifest["source_pdf_sha256"] == hashlib.sha256(source["pdf_bytes"]).hexdigest()
+    assert manifest["ui_pdf_sha256"] == hashlib.sha256(captured["pdf_bytes"]).hexdigest()
+    assert manifest["bytes_equal"] is (fault != "bytes")
+    assert manifest["truth_equal"] is (fault != "truth")
+    assert manifest["source_canonical_truth_sha256"] == source["canonical_truth_sha256"]
+    assert manifest["ui_canonical_truth_sha256"] == captured["canonical_truth_sha256"]
+    assert caught.value.args[0]["parity_evidence_retained"] is True
+    assert "SYNTHETIC_SOURCE" not in str(caught.value.args[0])
+
+
+def test_pdf_parity_success_does_not_create_diagnostic_files(tmp_path: Path) -> None:
+    source = {"pdf_bytes": b"%PDF-1.7\nSYNTHETIC",
+              "canonical_truth_sha256": "a" * 64}
+    directory = tmp_path / "mobile-pdf-parity"
+    proof._require_source_ui_pdf_parity(
+        dict(source), source, diagnostic_dir=directory,
+    )
+    assert not directory.exists()
+
+
+def test_pdf_parity_evidence_write_failure_still_fails_original_requirement(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "not-a-directory"
+    directory.write_text("fixture", encoding="utf-8")
+    source = {"pdf_bytes": b"%PDF-1.7\nSYNTHETIC",
+              "canonical_truth_sha256": "a" * 64}
+    captured = {**source, "pdf_bytes": source["pdf_bytes"] + b" changed"}
+    with pytest.raises(AssertionError) as caught:
+        proof._require_source_ui_pdf_parity(
+            captured, source, diagnostic_dir=directory,
+        )
+    diagnostic = caught.value.args[0]
+    assert diagnostic["bytes_equal"] is False
+    assert diagnostic["parity_evidence_retained"] is False
+    assert diagnostic["parity_evidence_error_type"] == "FileExistsError"
+    assert str(directory) not in str(diagnostic)

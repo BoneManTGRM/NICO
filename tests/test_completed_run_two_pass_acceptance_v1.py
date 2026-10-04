@@ -132,3 +132,161 @@ def test_unified_retains_exact_source_bound_english_pdf_for_phase1_binder(
     assert retained["size_bytes"] == len(pdf_bytes)
     assert retained["human_review_required"] is True
     assert retained["client_delivery_allowed"] is False
+
+
+# Actual Unified consumer regression for run37170339577/job111341989611.
+# Isolated fixtures execute the complete _observe_terminal function; no live
+# session, network, assessment creation or report approval is involved.
+import types
+from copy import deepcopy
+from typing import Any
+
+import pytest
+
+
+_UI_BOOLEAN_FIELDS = (
+    "ui_review_pdf_anchor_click_observation_verified",
+    "ui_review_pdf_source_artifact_reused",
+    "ui_review_pdf_signature_verified",
+    "ui_review_pdf_exact_run_response_verified",
+    "ui_review_pdf_artifact_hash_header_verified",
+    "ui_review_pdf_canonical_truth_digest_verified",
+    "ui_review_pdf_original_page_visible_after_action",
+    "ui_review_pdf_lifecycle_contract_verified",
+    "ui_review_pdf_actual_blob_bytes_verified",
+    "ui_review_pdf_response_sha256_verified",
+    "ui_review_pdf_single_dispatch_verified",
+    "ui_review_pdf_exact_run_filename_verified",
+    "ui_review_pdf_exact_run_href_verified",
+    "ui_review_pdf_original_assessment_page_preserved",
+)
+
+
+def _observed_ui_fixture() -> dict:
+    # Current collector's production contract; values are isolated fixtures.
+    return {
+        **{field: True for field in _UI_BOOLEAN_FIELDS},
+        "ui_review_pdf_user_gesture_anchor_click_count": 1,
+        "ui_review_pdf_artifact_evidence_source": "observed-ui-response-and-verified-blob",
+        "ui_review_pdf_actual_response_count": 1,
+        "ui_review_pdf_target_contract": "same-page-validated-blob-download",
+        "ui_review_pdf_download_sha256": "a" * 64,
+        "ui_review_pdf_canonical_truth_sha256": "b" * 64,
+        "ui_review_pdf_report_language": "es-MX",
+        "ui_review_pdf_requested_report_language": "es-MX",
+        "ui_review_pdf_action_kind": "localized-draft-pending-approval",
+        "ui_review_pdf_network_path": "/api/nico/assessment/comprehensive-run/comprun_fixture/localized-report/es-MX/pdf",
+        # A direct Spanish PDF and an English UI download may legitimately differ.
+        "ui_review_pdf_matches_preverified_artifact": False,
+    }
+
+
+def _execute_actual_unified_observation(first: dict, second: dict | None = None) -> dict:
+    source_path = Path("scripts/completed_run_two_pass_acceptance_v1.py")
+    parsed = ast.parse(source_path.read_text(encoding="utf-8"))
+    function = next(
+        node for node in parsed.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_observe_terminal"
+    )
+    clock = iter((0.0, 91.0))
+    downloads = iter((deepcopy(first), deepcopy(second if second is not None else first)))
+    namespace = {
+        "Page": Any,
+        "Any": Any,
+        "time": types.SimpleNamespace(monotonic=lambda: next(clock)),
+        "recovery": types.SimpleNamespace(
+            _observe_terminal_stability=lambda *args, **kwargs: {
+                "markdown_report_language": "es-MX",
+                "legacy_markdown_get_count": 0,
+                "markdown_action_success_count": 2,
+            },
+            _verify_manifest_and_pdf=lambda *args: next(downloads),
+        ),
+        "_settle_review_pdf_reentry_guard": lambda page: None,
+    }
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source_path), "exec"), namespace)
+    return namespace["_observe_terminal"](
+        object(), run_id="comprun_fixture", expected_sha="c" * 40,
+        expected_canonical_digest="b" * 64, seconds=90.0,
+        requests=[], frontend_origin="https://isolated.invalid",
+    )
+
+
+def test_unified_accepts_real_response_and_blob_contract():
+    result = _execute_actual_unified_observation(_observed_ui_fixture())
+    assert result["visible_pdf_action_count"] == 2
+    assert result["pdf_ui_action_anchor_click_count"] == 2
+    assert result["pdf_ui_action_digests_stable"] is True
+    assert result["unexpected_request_count_including_pdf_actions"] == 0
+
+
+@pytest.mark.parametrize("field", _UI_BOOLEAN_FIELDS)
+def test_unified_rejects_unverified_ui_observation(field):
+    fixture = _observed_ui_fixture()
+    fixture[field] = False
+    with pytest.raises(AssertionError):
+        _execute_actual_unified_observation(fixture)
+
+
+@pytest.mark.parametrize(
+    "field,invalid",
+    (
+        ("ui_review_pdf_artifact_evidence_source", "exact-sha-spanish-source-proof"),
+        ("ui_review_pdf_artifact_evidence_source", "live-exact-artifact-response"),
+        ("ui_review_pdf_actual_response_count", 0),
+        ("ui_review_pdf_actual_response_count", 2),
+        ("ui_review_pdf_actual_response_count", True),
+        ("ui_review_pdf_actual_response_count", "1"),
+        ("ui_review_pdf_target_contract", "blank-noopener-noreferrer"),
+        ("ui_review_pdf_canonical_truth_sha256", "d" * 64),
+        ("ui_review_pdf_report_language", "en"),
+        ("ui_review_pdf_requested_report_language", "en"),
+        ("ui_review_pdf_user_gesture_anchor_click_count", 2),
+        ("ui_review_pdf_network_path", ""),
+        ("ui_review_pdf_network_path", "/api/nico/assessment/comprehensive-run/comprun_other/localized-report/es-MX/pdf"),
+        ("ui_review_pdf_network_path", "/api/nico/assessment/comprehensive-run/comprun_fixture/localized-report/en/pdf"),
+        ("ui_review_pdf_action_kind", "approved-pdf"),
+    ),
+)
+def test_unified_rejects_source_only_duplicate_or_wrong_identity(field, invalid):
+    fixture = _observed_ui_fixture()
+    fixture[field] = invalid
+    with pytest.raises(AssertionError):
+        _execute_actual_unified_observation(fixture)
+
+
+@pytest.mark.parametrize(
+    "field",
+    _UI_BOOLEAN_FIELDS + (
+        "ui_review_pdf_artifact_evidence_source",
+        "ui_review_pdf_actual_response_count",
+        "ui_review_pdf_target_contract",
+        "ui_review_pdf_canonical_truth_sha256",
+        "ui_review_pdf_report_language",
+        "ui_review_pdf_requested_report_language",
+        "ui_review_pdf_action_kind",
+        "ui_review_pdf_network_path",
+    ),
+)
+def test_unified_rejects_missing_ui_evidence(field):
+    fixture = _observed_ui_fixture()
+    del fixture[field]
+    with pytest.raises(KeyError):
+        _execute_actual_unified_observation(fixture)
+
+
+@pytest.mark.parametrize(
+    "field,invalid",
+    (
+        ("ui_review_pdf_download_sha256", "d" * 64),
+        ("ui_review_pdf_canonical_truth_sha256", "d" * 64),
+        ("ui_review_pdf_action_kind", "other-action"),
+        ("ui_review_pdf_network_path", "/api/nico/assessment/comprehensive-run/comprun_fixture/report/pdf"),
+    ),
+)
+def test_unified_rejects_changed_repeat_observation(field, invalid):
+    first = _observed_ui_fixture()
+    second = deepcopy(first)
+    second[field] = invalid
+    with pytest.raises(AssertionError):
+        _execute_actual_unified_observation(first, second)

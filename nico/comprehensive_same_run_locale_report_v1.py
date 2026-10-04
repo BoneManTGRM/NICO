@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase, report_delivery_timing
+
 import base64
 import hashlib
 import json
@@ -748,6 +750,7 @@ def _spanish_artifacts(canonical: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+@report_delivery_phase("render_target")
 def _render_target(
     canonical: Mapping[str, Any], report_language: str
 ) -> dict[str, Any]:
@@ -1076,6 +1079,7 @@ def _accepted_source_binding(
     }
 
 
+@report_delivery_phase("frozen_pdf")
 def _frozen_source_pdf_response(
     status: Mapping[str, Any], report_language: str
 ) -> Response | None:
@@ -1101,8 +1105,9 @@ def _frozen_source_pdf_response(
     if not canonical:
         return None
 
-    canonical_copy = deepcopy(dict(canonical))
-    identity_binding = _validate_status_canonical_identity(status, canonical_copy)
+    # Frozen delivery reads canonical truth; the rendering path owns its copy.
+    # Identity, byte integrity, and current lifecycle authority are still checked.
+    identity_binding = _validate_status_canonical_identity(status, canonical)
     source_language = _normalize_report_language(
         identity_binding["report_language"]
     )
@@ -1128,8 +1133,8 @@ def _frozen_source_pdf_response(
         raise ValueError("source_report_pdf_hash_mismatch")
 
     identity = (
-        canonical_copy.get("identity")
-        if isinstance(canonical_copy.get("identity"), Mapping)
+        canonical.get("identity")
+        if isinstance(canonical.get("identity"), Mapping)
         else {}
     )
     status_run_id = str(status.get("run_id") or "").strip()
@@ -1161,7 +1166,7 @@ def _frozen_source_pdf_response(
         raise ValueError("canonical_truth_hash_invalid")
     if not controller_module._final_report_package_integrity_bound(reports):
         if not controller_module._canonical_truth_hash_integrity_bound(
-            reports, canonical_copy
+            reports, canonical
         ):
             raise ValueError("canonical_truth_hash_mismatch")
         raise ValueError("source_report_artifact_integrity_invalid")
@@ -1169,7 +1174,7 @@ def _frozen_source_pdf_response(
     source_lifecycle = _source_lifecycle_projection(
         status,
         reports,
-        canonical_copy,
+        canonical,
     )
     accepted_binding = _accepted_source_binding(
         status,
@@ -1184,13 +1189,13 @@ def _frozen_source_pdf_response(
         filename = stored_filename
     elif accepted_binding:
         filename = _accepted_filename(
-            canonical=canonical_copy,
+            canonical=canonical,
             run_id=run_id,
             report_language=target_language,
         )
     else:
         filename = _localized_filename(
-            canonical=canonical_copy,
+            canonical=canonical,
             run_id=run_id,
             report_language=target_language,
         )
@@ -1492,6 +1497,7 @@ def build_same_run_locale_pdf_response(
     )
 
 
+@report_delivery_phase("controller_status")
 def _controller_status(target: FastAPI, run_id: str) -> Mapping[str, Any]:
     controller = getattr(target.state, "comprehensive_api_controller", None)
     artifact_reader = (
@@ -1561,8 +1567,9 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
 
         def localized_report_pdf(run_id: str, report_language: str) -> Response:
             try:
-                status = _controller_status(target, run_id)
-                return build_same_run_locale_pdf_response(status, report_language)
+                with report_delivery_timing(run_id, report_language):
+                    status = _controller_status(target, run_id)
+                    return build_same_run_locale_pdf_response(status, report_language)
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 
