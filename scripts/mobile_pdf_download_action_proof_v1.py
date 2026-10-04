@@ -167,9 +167,14 @@ def _validate_response_filename(
         f"-{run_id}-{report_language}-"
         "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
     )
-    assert filename.startswith("nico-comprehensive-assessment-"), {
+    # Cross-language projections use the established English stem; a frozen
+    # Spanish source preserves its canonical Spanish filename without renaming.
+    expected_prefixes = ("nico-comprehensive-assessment-",)
+    if report_language == "es-MX":
+        expected_prefixes += ("nico-evaluacion-tecnica-integral-",)
+    assert filename.startswith(expected_prefixes), {
         "response_filename": filename,
-        "expected_prefix": "nico-comprehensive-assessment-",
+        "expected_prefixes": expected_prefixes,
     }
     assert filename.endswith(expected_suffix), {
         "response_filename": filename,
