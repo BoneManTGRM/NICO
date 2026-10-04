@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import io
 import unicodedata
 from typing import Any
@@ -147,14 +150,18 @@ def _dedupe_boundary(value: Any, seen: set[str]) -> tuple[Any, bool]:
     return replaced, changed
 
 
+@report_delivery_phase("client_pdf_status_sanitizer")
 def sanitize_client_pdf_status(pdf: bytes, *, spanish: bool | None = None) -> bytes:
     if not pdf.startswith(b"%PDF"):
         raise ValueError("client PDF status sanitizer requires a valid PDF")
     reader = PdfReader(io.BytesIO(pdf))
+    page_texts = extract_pdf_page_texts(pdf)
+    if len(page_texts) != len(reader.pages):
+        raise ValueError("client PDF status text population mismatch")
     writer = PdfWriter()
     from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
-    for source_page in reader.pages:
-        page_text = source_page.extract_text() or ""
+    for index, source_page in enumerate(reader.pages):
+        page_text = page_texts[index]
         if is_literal_evidence_page(source_page):
             # This dedicated appendix is a literal source record. A supplier may
             # quote internal field names or lifecycle phrases without making the

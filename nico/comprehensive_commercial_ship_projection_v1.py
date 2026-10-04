@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import base64
 import hashlib
 import html
@@ -361,6 +364,7 @@ def _group_preserves_text(original_texts: list[str], replacement_pdf: bytes) -> 
     return True
 
 
+@report_delivery_phase("limitation_compaction")
 def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]:
     """Compact only consecutive sparse Roadmap/Staffing limitation pages, fail closed."""
 
@@ -370,7 +374,14 @@ def compact_sparse_limitation_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, 
         raise ValueError("commercial ship projection requires a valid PDF")
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
-    texts = [_page_text(page) for page in reader.pages]
+    try:
+        texts = [str(text or "") for text in extract_pdf_page_texts(pdf_bytes)]
+        if len(texts) != len(reader.pages):
+            raise ValueError("compaction PDF text population mismatch")
+    except Exception:
+        # Preserve the legacy per-page fallback; failed or partial extraction
+        # never becomes a reusable complete snapshot.
+        texts = [_page_text(page) for page in reader.pages]
     candidates = [_sparse_target_page(text) for text in texts]
     groups: list[tuple[int, int]] = []
     start: int | None = None

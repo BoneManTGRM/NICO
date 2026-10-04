@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
+
 import html
 import io
 import re
@@ -252,6 +255,7 @@ def _preserves_text(original_texts: list[str], replacement_pdf: bytes) -> bool:
     return True
 
 
+@report_delivery_phase("stage_reflow")
 def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]:
     """Reflow only sparse ordinary report pages, preserving all meaningful text.
 
@@ -267,7 +271,14 @@ def compact_sparse_stage_pages(pdf_bytes: bytes) -> tuple[bytes, dict[str, Any]]
         raise ValueError("Comprehensive PDF reflow requires valid PDF bytes")
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
-    texts = [_page_text(page) for page in reader.pages]
+    try:
+        texts = [str(text or "") for text in extract_pdf_page_texts(pdf_bytes)]
+        if len(texts) != len(reader.pages):
+            raise ValueError("compaction PDF text population mismatch")
+    except Exception:
+        # Preserve the legacy per-page fallback; failed or partial extraction
+        # never becomes a reusable complete snapshot.
+        texts = [_page_text(page) for page in reader.pages]
     footer_only_pages = {
         index
         for index, text in enumerate(texts)
