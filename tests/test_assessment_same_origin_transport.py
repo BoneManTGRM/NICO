@@ -164,7 +164,8 @@ def test_review_pdf_download_tracks_the_original_mobile_user_action() -> None:
     assert 'crypto.subtle.digest("SHA-256", bytes)' in source
     assert source.index('if (observedSha !== declaredSha) throw integrityError();') < source.index('link.click();')
     assert 'link.target = "_blank"' not in source
-    assert 'if (active.has(key)) return;' in source
+    assert "if (existing?.isCurrent()) return existing.operation;" in source
+    assert "existing?.controller.abort();" in source
     assert 'window.setTimeout(() => button.removeAttribute("data-nico-review-pdf-clicked")' not in source
     assert 'Preparing file' not in source
     assert 'import AssessmentReviewPdfDownload from "./AssessmentReviewPdfDownload"' in layout

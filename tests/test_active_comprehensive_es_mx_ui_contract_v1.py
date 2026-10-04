@@ -214,18 +214,21 @@ def test_accepted_source_and_cross_locale_draft_actions_remain_distinct() -> Non
     assert "!exactApprovedPdfAvailable || approvedLocaleMismatch" in workspace
     assert "copy.newApprovalRequired" in workspace
     assert "const markdownLabel = approvedLocaleMismatch" in workspace
-    assert "/localized-report/${encodeURIComponent(requestedReportLanguage)}/pdf" in workspace
+    assert "await downloadPendingReviewPdf(button, approvedLocaleMismatch);" in workspace
+    assert "/localized-report/${encodeURIComponent(reportLanguage)}/pdf" in bridge
     assert "/report/pdf" in workspace
-    assert 'response.headers.get("x-nico-approval-status")' in workspace
-    assert 'response.headers.get("x-nico-delivery-status")' in workspace
-    assert 'response.headers.get("x-nico-client-delivery-allowed")' in workspace
-    assert 'response.headers.get("x-nico-localized-artifact-requires-new-approval")' in workspace
-    assert 'acceptedPdfHeader !== ""' in workspace
-    assert 'approvalStatus !== "pending_human_approval"' in workspace
-    assert 'deliveryStatus !== "blocked_pending_human_approval"' in workspace
-    assert 'clientDeliveryAllowed !== "false"' in workspace
-    assert 'approvedLocaleMismatch && requiresNewApproval !== "true"' in workspace
-    assert "immutableCommit && responseCommit !== immutableCommit" in workspace
+    assert 'header("x-nico-approval-status")' in bridge
+    assert 'header("x-nico-delivery-status")' in bridge
+    assert 'header("x-nico-client-delivery-allowed")' in bridge
+    assert 'binding.requiresNewApproval && header("x-nico-localized-artifact-requires-new-approval") !== "true"' in bridge
+    assert 'header("x-nico-accepted-pdf-sha256") !== ""' in bridge
+    assert 'header("x-nico-approval-status") !== "pending_human_approval"' in bridge
+    assert 'header("x-nico-delivery-status") !== "blocked_pending_human_approval"' in bridge
+    assert 'header("x-nico-client-delivery-allowed") !== "false"' in bridge
+    assert 'header("x-nico-commit-sha") !== binding.commitSha' in bridge
+    assert 'truthSha !== binding.canonicalTruthSha256.toLowerCase()' in bridge
+    assert 'header("x-nico-artifact-sha256").toLowerCase() !== declaredSha' in bridge
+    assert 'header("content-type").split(";", 1)[0].trim().toLowerCase() !== "application/pdf"' in bridge
     assert "responseLanguage !== acceptedPdfIdentity?.reportLanguage" in workspace
     assert "REPORT_LOCALE_CHANGE_EVENT" in workspace
     assert 'data-report-language={acceptedPdfIdentity?.reportLanguage}' in workspace

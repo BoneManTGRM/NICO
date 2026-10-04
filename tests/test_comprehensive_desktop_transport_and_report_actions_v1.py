@@ -62,13 +62,15 @@ def test_pdf_bridge_prefers_canonical_run_binding_and_cannot_swallow_early_click
 
     ready = 'actions.getAttribute("data-assessment-report-ready") !== "true"'
     exact = "const runId = visibleRunId(actions);"
-    bound = 'if (!runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(commitSha)) return;'
+    bound = '!runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(commitSha)'
+    truth = '!/^[0-9a-f]{64}$/i.test(truthSha)'
     cancel = "event.preventDefault();"
     assert ready in handler
     assert exact in handler
     assert bound in handler
+    assert truth in handler
     assert cancel in handler
-    assert handler.index(ready) < handler.index(exact) < handler.index(bound) < handler.index(cancel)
+    assert handler.index(ready) < handler.index(exact) < handler.index(bound) < handler.index(truth) < handler.index(cancel)
 
 
 def test_approved_pdf_bypasses_localization_and_verifies_exact_accepted_bytes() -> None:
@@ -88,12 +90,11 @@ def test_approved_pdf_bypasses_localization_and_verifies_exact_accepted_bytes() 
     assert 'response.headers.get("x-nico-accepted-pdf-sha256")' in workspace
     assert "APPROVED-ACCEPTED-EDITION.pdf" in workspace
 
-    kind_guard = (
-        'if (button.getAttribute("data-assessment-pdf-kind") !== '
-        "REVIEW_PDF_KIND) return;"
-    )
+    kind_guard = 'button.getAttribute("data-assessment-pdf-kind") !== REVIEW_PDF_KIND'
     cancel = "event.preventDefault();"
     assert kind_guard in handler
+    before_identity = handler[:handler.index("const runId = visibleRunId(actions);")]
+    assert kind_guard in before_identity and ') return;' in before_identity
     assert handler.index(kind_guard) < handler.index(cancel)
     assert "approved" not in bridge.split("const REVIEW_PDF_LABEL =", 1)[1].split(
         ";", 1

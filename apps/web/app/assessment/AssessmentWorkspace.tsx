@@ -1,6 +1,8 @@
 "use client";
 
 import {useEffect, useMemo, useRef, useState} from "react";
+import type {MouseEvent as ReactMouseEvent} from "react";
+import {downloadPendingReviewPdf} from "../AssessmentReviewPdfDownload";
 import styles from "./assessment.module.css";
 import workspaceStyles from "./engagementWorkspace.module.css";
 import mobileStyles from "./compactMobileAssessment.module.css";
@@ -555,49 +557,15 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     }
   }
 
-  async function downloadPdf(): Promise<void> {
+  async function downloadPdf(event: ReactMouseEvent<HTMLButtonElement>): Promise<void> {
     if (!pdfAvailable || artifactAction) return;
+    const button = event.currentTarget;
     const scrollTop = window.scrollY;
     (document.activeElement as HTMLElement | null)?.blur();
     setArtifactAction("pdf");
     setError("");
     try {
-      const runId = String(result?.run_id || "").trim();
-      if (!runId) throw new Error(copy.runIdMissing);
-      const fallback = `nico-comprehensive-${runId}-${requestedReportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`;
-      const response = await fetch(
-        apiUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(requestedReportLanguage)}/pdf`),
-        {method: "GET", cache: "no-store", headers: {Accept: "application/pdf"}},
-      );
-      if (!response.ok) throw await localizedArtifactError(response, copy.pdfMissing, locale);
-      const responseRunId = String(response.headers.get("x-nico-run-id") || "").trim();
-      const responseLanguage = String(response.headers.get("x-nico-report-language") || "").trim();
-      const assessmentRerun = String(response.headers.get("x-nico-assessment-rerun") || "").trim().toLowerCase();
-      const responseCommit = String(response.headers.get("x-nico-commit-sha") || "").trim();
-      const approvalStatus = String(response.headers.get("x-nico-approval-status") || "").trim().toLowerCase();
-      const deliveryStatus = String(response.headers.get("x-nico-delivery-status") || "").trim().toLowerCase();
-      const clientDeliveryAllowed = String(response.headers.get("x-nico-client-delivery-allowed") || "").trim().toLowerCase();
-      const requiresNewApproval = String(response.headers.get("x-nico-localized-artifact-requires-new-approval") || "").trim().toLowerCase();
-      const acceptedPdfHeader = String(response.headers.get("x-nico-accepted-pdf-sha256") || "").trim();
-      if (
-        responseRunId !== runId
-        || responseLanguage !== requestedReportLanguage
-        || assessmentRerun !== "false"
-        || (immutableCommit && responseCommit !== immutableCommit)
-        || approvalStatus !== "pending_human_approval"
-        || deliveryStatus !== "blocked_pending_human_approval"
-        || clientDeliveryAllowed !== "false"
-        || acceptedPdfHeader !== ""
-        || (approvedLocaleMismatch && requiresNewApproval !== "true")
-      ) throw new Error(copy.pdfMissing);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.length < 4 || String.fromCharCode(...bytes.slice(0, 4)) !== "%PDF") {
-        throw new Error(locale === "es-MX" ? "El PDF final no superó la validación de integridad." : "The final PDF failed integrity validation.");
-      }
-      downloadBlob(
-        new Blob([bytes], {type: "application/pdf"}),
-        filenameFromResponse(response, fallback),
-      );
+      await downloadPendingReviewPdf(button, approvedLocaleMismatch);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(copy.pdfMissing));
     } finally {
@@ -681,6 +649,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       className={`report-actions ${workspaceStyles.reportActionBar}`}
       data-assessment-report-actions="true"
       data-assessment-report-ready={reportReady ? "true" : "false"}
+      data-assessment-pdf-available={pdfAvailable ? "true" : "false"}
+      data-assessment-locale-reapproval-required={approvedLocaleMismatch ? "true" : "false"}
       data-run-id={String(result?.run_id || "")}
       data-commit-sha={immutableCommit}
       data-canonical-truth-sha256={String(report?.canonical_truth_sha256 || "")}
@@ -697,6 +667,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         type="button"
         data-assessment-pdf-kind="accepted-edition"
         data-report-language={acceptedPdfIdentity?.reportLanguage}
+        data-assessment-action-disabled={!pdfAvailable || artifactAction !== null ? "true" : "false"}
         disabled={!pdfAvailable || artifactAction !== null}
         onClick={downloadApprovedPdf}
       >{copy.downloadApprovedPdf} · {acceptedLanguageLabel}</button> : null}
@@ -704,6 +675,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         type="button"
         data-assessment-pdf-kind="localized-draft-pending-approval"
         data-report-language={requestedReportLanguage}
+        data-assessment-action-disabled={!pdfAvailable || artifactAction !== null ? "true" : "false"}
         disabled={!pdfAvailable || artifactAction !== null}
         onClick={downloadPdf}
       >{draftPdfLabel}</button> : null}

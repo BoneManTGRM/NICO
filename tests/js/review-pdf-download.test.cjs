@@ -30,7 +30,7 @@ function response(language='en', overrides={}) {
     ...overrides,
   }});
 }
-function setup(fetchImpl, language='en') {
+function setup(fetchImpl, language='en', digestImpl) {
   const calls=[], anchors=[], timers=[], effects=[], listeners=new Map(), statuses=[];
   let cleanUp, operationState;
   class Element {
@@ -39,7 +39,7 @@ function setup(fetchImpl, language='en') {
     setAttribute(key,value) {this.attrs[key]=String(value);}
     removeAttribute(key) {delete this.attrs[key];}
     appendChild(node) {statuses.push(node);}
-    querySelector() {return statuses[statuses.length-1]||null;}
+    querySelector() {return statuses.filter(node=>node.isConnected).at(-1)||null;}
     closest(selector) {return selector==='button'?button:actions;}
     remove() {this.isConnected=false;}
     click() {anchors.push({href:this.href,target:this.target,filename:this.download});}
@@ -67,7 +67,7 @@ function setup(fetchImpl, language='en') {
   const module={exports:{}};
   vm.runInNewContext(compiled,{module,exports:module.exports,document,window,
     URL:FixtureURL,Blob,Headers,Response,AbortSignal,AbortController,DOMException,Error,
-    Uint8Array,crypto:webcrypto,Element,HTMLButtonElement,
+    Uint8Array,crypto:digestImpl?{subtle:{digest:digestImpl}}:webcrypto,Element,HTMLButtonElement,
     fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);},
     require(name){
       if(name==='react')return{useEffect:fn=>effects.push(fn),useRef:value=>{operationState=value;return{current:value};}};
@@ -254,4 +254,140 @@ test('the response deadline aborts the request and leaves explicit retry availab
   assert.equal(s.anchors.length,0);
   assert.equal(s.button.disabled,false);
   assert.match(s.statuses.at(-1).textContent,/timed out\. Retry this download/);
+});
+
+
+for (const changed of ['run', 'commit', 'truth', 'language', 'detached-button', 'detached-actions', 'not-ready', 'accepted']) {
+  test('stale ' + changed + ' selection cannot receive an old completed download', async () => {
+    let release;
+    const s = setup(() => new Promise(resolve => { release = resolve; }));
+    assert.equal(s.click(), true);
+    if (changed === 'run') s.actions.attrs['data-run-id'] = 'comprun_other_selection';
+    if (changed === 'commit') s.actions.attrs['data-commit-sha'] = 'c'.repeat(40);
+    if (changed === 'truth') s.actions.attrs['data-canonical-truth-sha256'] = 'c'.repeat(64);
+    if (changed === 'language') s.button.attrs['data-report-language'] = 'es-MX';
+    if (changed === 'detached-button') s.button.isConnected = false;
+    if (changed === 'detached-actions') s.actions.isConnected = false;
+    if (changed === 'not-ready') s.actions.attrs['data-assessment-report-ready'] = 'false';
+    if (changed === 'accepted') s.button.attrs['data-assessment-pdf-kind'] = 'accepted-edition';
+    release(response());
+    await s.settled();
+    assert.equal(s.calls.length, 1);
+    assert.equal(s.anchors.length, 0, 'A stale completion must not hand off bytes to the current selection');
+    assert.doesNotMatch(s.statuses.at(-1)?.textContent || '', /verified and sent/);
+  });
+}
+
+test('a retained PDF with the wrong response MIME fails closed', async () => {
+  const s = setup(async () => response('en', {'content-type': 'text/html'}));
+  s.click();
+  await s.settled();
+  assert.equal(s.calls.length, 1);
+  assert.equal(s.anchors.length, 0);
+  assert.match(s.statuses.at(-1)?.textContent || '', /does not match/);
+});
+
+for(const desired of ['true','false'])test('stale reused accepted control preserves current React disabled='+desired,async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  s.click();s.button.attrs['data-assessment-pdf-kind']='accepted-edition';
+  s.button.attrs['data-assessment-action-disabled']=desired;
+  release(response());await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.button.disabled,desired==='true');
+  assert.equal(s.button.getAttribute('aria-busy'),null);
+});
+test('old completion cannot clear a newer download owner on the same button',async()=>{
+  const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
+  s.click();s.actions.attrs['data-canonical-truth-sha256']='c'.repeat(64);s.button.disabled=false;
+  s.button.attrs['data-assessment-action-disabled']='false';
+  s.click();assert.equal(s.calls.length,2);
+  releases[0](response());await flush();
+  assert.equal(s.anchors.length,0);assert.equal(s.button.disabled,true);
+  assert.equal(s.button.getAttribute('aria-busy'),'true');
+  releases[1](response('en',{'x-nico-canonical-truth-sha256':'c'.repeat(64)}));await s.settled();
+  assert.equal(s.anchors.length,1);assert.equal(s.button.disabled,false);
+});
+test('a context changed during hashing cannot receive verified old bytes',async()=>{
+  let release;const s=setup(async()=>response(),'en',()=>new Promise(resolve=>{release=resolve;}));
+  s.click();while(!release)await flush();
+  s.actions.attrs['data-run-id']='comprun_changed_during_digest';
+  release(Buffer.from(digest,'hex'));await s.settled();
+  assert.equal(s.anchors.length,0);assert.doesNotMatch(s.statuses.at(-1).textContent,/verified and sent/);
+});
+test('application/pdf MIME parameters are valid without relaxing media-type rejection',async()=>{
+  const s=setup(async()=>response('en',{'content-type':'Application/PDF; charset=binary'}));
+  s.click();await s.settled();assert.equal(s.anchors.length,1);
+});
+test('missing canonical truth declines capture so the Workspace can reject before GET',()=>{
+  const s=setup(async()=>response());delete s.actions.attrs['data-canonical-truth-sha256'];
+  assert.equal(s.click(),false);assert.equal(s.calls.length,0);
+});
+test('unavailable PDF remains disabled after a stale pending completion',async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  s.click();s.actions.attrs['data-assessment-pdf-available']='false';
+  s.button.attrs['data-assessment-action-disabled']='true';
+  release(response());await s.settled();assert.equal(s.anchors.length,0);assert.equal(s.button.disabled,true);
+});
+
+test('overlap replacement button for the same artifact cannot inherit a stale owner',async()=>{
+  const releases=[];const s=setup((url,init)=>new Promise(resolve=>releases.push({resolve,init})));
+  s.click();s.button.isConnected=false;
+  const replacement=new s.button.constructor();
+  replacement.attrs={...s.button.attrs,'data-assessment-action-disabled':'false'};
+  replacement.textContent=s.button.textContent;
+  const operation=s.api.downloadPendingReviewPdf(replacement);
+  assert.equal(s.calls.length,2,'A new explicit current owner must not silently join a stale owner');
+  assert.equal(releases[0].init.signal.aborted,true);
+  releases[0].resolve(response());await flush();assert.equal(s.anchors.length,0);
+  releases[1].resolve(response());await operation;await s.settled();
+  assert.equal(s.anchors.length,1);assert.match(s.statuses.at(-1).textContent,/verified and sent/);
+});
+test('overlap stricter locale reapproval never inherits a weaker pending promise',async()=>{
+  const releases=[];const s=setup((url,init)=>new Promise(resolve=>releases.push({resolve,init})));
+  s.click();s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.button.disabled=false;s.click();
+  assert.equal(s.calls.length,2);
+  releases[0].resolve(response());await flush();assert.equal(s.anchors.length,0);
+  releases[1].resolve(response());await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.statuses.at(-1).attrs.role,'alert');
+  assert.match(s.statuses.at(-1).textContent,/does not match/);
+});
+test('overlap low-level stricter caller validates its own reapproval requirement',async()=>{
+  const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
+  const weak=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth});
+  const strict=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,requiresNewApproval:true});
+  const rejected=assert.rejects(strict,/does not match/);
+  assert.equal(s.calls.length,2);releases[0](response());releases[1](response());
+  await weak;await rejected;assert.equal(s.anchors.length,1);
+});
+test('overlap low-level stale caller is rejected before sharing active work',async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  const first=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth});
+  const stale=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,isCurrent:()=>false});
+  const rejected=assert.rejects(stale,/does not match/);
+  release(response());await first;await rejected;assert.equal(s.calls.length,1);
+});
+
+for(const rejected of ['stale-header-context','wrong-MIME'])test('rejected '+rejected+' disposes only its owned retained fetch',async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  s.click();if(rejected==='stale-header-context')s.actions.attrs['data-run-id']='comprun_other';
+  release(response('en',rejected==='wrong-MIME'?{'content-type':'text/html'}:{}));await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.calls[0].init.signal.aborted,true);
+});
+
+test('stale completion clears its old progress from a reused assessment container',async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  s.click();s.actions.attrs['data-run-id']='comprun_current_after_reload';
+  release(response());await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.actions.querySelector(),null);
+});
+test('old stale completion cannot remove progress owned by a new control and truth',async()=>{
+  const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
+  s.click();s.button.isConnected=false;s.actions.attrs['data-canonical-truth-sha256']='c'.repeat(64);
+  const replacement=new s.button.constructor();replacement.attrs={...s.button.attrs,'data-assessment-action-disabled':'false'};
+  replacement.textContent=s.button.textContent;
+  const current=s.api.downloadPendingReviewPdf(replacement);
+  releases[0](response());await flush();
+  assert.ok(s.actions.querySelector()?.isConnected);assert.match(s.actions.querySelector().textContent,/Downloading and verifying/);
+  releases[1](response('en',{'x-nico-canonical-truth-sha256':'c'.repeat(64)}));await current;await s.settled();
+  assert.equal(s.anchors.length,1);assert.match(s.actions.querySelector().textContent,/verified and sent/);
 });
