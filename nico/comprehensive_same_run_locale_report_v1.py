@@ -477,6 +477,7 @@ def _localize_provider_access_evidence(
                 ]
 
 
+@report_delivery_phase("locale_localized_draft_view")
 def _localized_draft_view(
     canonical: Mapping[str, Any],
     report_language: str,
@@ -574,6 +575,7 @@ def _truth_records(canonical: Mapping[str, Any], identity_field: str) -> tuple[A
     return tuple(sorted(output))
 
 
+@report_delivery_phase("locale_truth_projection")
 def _assessment_truth_projection(canonical: Mapping[str, Any]) -> dict[str, Any]:
     identity = (
         canonical.get("identity")

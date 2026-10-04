@@ -5,6 +5,7 @@ import hashlib
 import io
 from nico.report_json_copy import deepcopy
 from nico.report_pdf_text import pdf_text_cache_scope
+from nico.report_delivery_timing_v1 import report_delivery_call
 from collections.abc import Mapping
 from typing import Any
 
@@ -614,27 +615,40 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        source_tables = capture_source_table_evidence(package.get("json") or {})
-        prepared = _prepare_client_artifact_package(package)
-        rendered = rebuild_single_pass_premium_artifacts(prepared)
+        source_tables = report_delivery_call(
+            "phase17_source_tables", capture_source_table_evidence, package.get("json") or {}
+        )
+        prepared = report_delivery_call(
+            "phase17_prepare", _prepare_client_artifact_package, package
+        )
+        rendered = report_delivery_call(
+            "phase17_single_pass", rebuild_single_pass_premium_artifacts, prepared
+        )
 
         canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
-        repaired = (
-            repair_localized_rendered_report(rendered)
-            if _is_spanish(canonical)
-            else repair_rendered_report(rendered)
+        repaired = report_delivery_call(
+            "phase17_quality_repair",
+            repair_localized_rendered_report if _is_spanish(canonical) else repair_rendered_report,
+            rendered,
         )
         # Reconcile once more after report-quality repair, then sanitize every
         # mutable rendered surface before the exact-artifact finalizer computes the
         # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No
         # renderer or sanitizer may change retained bytes after that binding point.
-        repaired = _phase2_review_truth_node(_reconcile(repaired))
-        sanitized = _sanitize_published_artifacts(repaired)
+        repaired = report_delivery_call(
+            "phase17_phase2_truth", _phase2_review_truth_node,
+            report_delivery_call("phase17_reconcile", _reconcile, repaired),
+        )
+        sanitized = report_delivery_call(
+            "phase17_sanitize", _sanitize_published_artifacts, repaired
+        )
         # Some compatibility extensions legitimately rebind global report helpers during
         # preparation/rendering. Reassert the terminal language producer and validator at
         # the exact last mutable boundary, immediately before client-report finalization.
-        _reassert_terminal_report_language_authority()
-        finalized = completion.finalize_client_report_package(sanitized)
+        report_delivery_call("phase17_language_authority", _reassert_terminal_report_language_authority)
+        finalized = report_delivery_call(
+            "phase17_finalize", completion.finalize_client_report_package, sanitized
+        )
         final_canonical = (
             finalized.get("json")
             if isinstance(finalized.get("json"), Mapping)
@@ -644,10 +658,12 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             # Finalization legitimately appends deterministic manifest/navigation
             # metadata. Bind the persisted truth hash only after that last mutation so
             # publication and read authority describe the same canonical object.
-            finalized["canonical_truth_sha256"] = canonical_sha256(
-                final_canonical
+            finalized["canonical_truth_sha256"] = report_delivery_call(
+                "phase17_final_truth_hash", canonical_sha256, final_canonical
             )
-        validate_source_table_evidence(source_tables, finalized)
+        report_delivery_call(
+            "phase17_source_validation", validate_source_table_evidence, source_tables, finalized
+        )
         return finalized
     finally:
         # Render-input cache entries retain the entire canonical tree and its localized

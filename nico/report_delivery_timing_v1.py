@@ -62,3 +62,9 @@ def report_delivery_phase(name: str):
                 phase["thread_cpu_ms"] = round(phase["thread_cpu_ms"] + (time.thread_time() - cpu) * 1000, 3)
         return observed
     return decorate
+
+def report_delivery_call(name: str, function, *args, **kwargs):
+    """Time the currently bound callable without retaining arguments or results."""
+    if _ACTIVE.get() is None:
+        return function(*args, **kwargs)
+    return report_delivery_phase(name)(function)(*args, **kwargs)
