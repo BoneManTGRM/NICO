@@ -902,7 +902,8 @@ def test_review_pdf_and_markdown_bridges_never_silently_noop() -> None:
     assert "PDF verified and sent to your downloads." in pdf_source
     assert "Retry this download; do not start another assessment." in pdf_source
     assert 'credentials: "same-origin"' in pdf_source
-    assert 'if (active.has(key)) return;' in pdf_source
+    assert "if (existing?.isCurrent()) return existing.operation;" in pdf_source
+    assert "existing?.controller.abort();" in pdf_source
     assert "data-nico-review-pdf-action-status" in pdf_source
 
     assert "loadMarkdown" in markdown_source
