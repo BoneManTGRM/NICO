@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 from typing import Any, Mapping
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 from nico.comprehensive_four_phase_model_v1 import (
     _EN,
     _ES,
@@ -151,21 +153,26 @@ def _overlay(
     return buffer.getvalue()
 
 
-def _page_lines(page: Any) -> list[str]:
+def _page_lines(page: Any, *, text: str | None = None) -> list[str]:
     return [
         _text(line, 240)
-        for line in str(page.extract_text() or "").splitlines()
+        for line in (str(page.extract_text() or "") if text is None else text).splitlines()
         if _text(line, 240)
     ]
 
 
-def four_phase_target_page_index(reader: Any, *, spanish: bool) -> int:
+def four_phase_target_page_index(
+    reader: Any,
+    *,
+    spanish: bool,
+    page_texts: tuple[str, ...] | None = None,
+) -> int:
     """Use the final TOC for new sources; retain an already frozen matrix location."""
 
     exact_titles = {"Índice", "Tabla de contenido"} if spanish else {"Table of Contents"}
     targets = []
     for index, page in enumerate(reader.pages):
-        lines = _page_lines(page)
+        lines = _page_lines(page, text=page_texts[index] if page_texts is not None else None)
         if any(line in exact_titles for line in lines[:1]):
             # Approved historical sources already contain their matrix. Do not
             # append another during presentation-only retrieval/finalization.
@@ -254,9 +261,14 @@ def assert_four_phase_pdf(
     if not reader.pages:
         raise ValueError("NICO Comprehensive four-phase publication requires a PDF page")
 
-    target_index = four_phase_target_page_index(reader, spanish=spanish)
+    # Cache only unchanged default extraction inside the existing bounded attempt.
+    # Matrix, target, multiplicity and bookmark checks still execute on every call.
+    page_texts = extract_pdf_page_texts(pdf)
+    if len(page_texts) != len(reader.pages):
+        raise ValueError("four-phase PDF cached text page population does not match parsed PDF")
+    target_index = four_phase_target_page_index(reader, spanish=spanish, page_texts=page_texts)
     marker = _ES if spanish else _EN
-    target_text = _text(reader.pages[target_index].extract_text(), 200_000)
+    target_text = _text(page_texts[target_index], 200_000)
     program = _program(canonical)
     phase_titles = [
         _text(phase.get("title_es" if spanish else "title_en"))
@@ -273,7 +285,7 @@ def assert_four_phase_pdf(
             + ", ".join(missing_on_target)
         )
 
-    all_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    all_text = "\n".join(page_texts)
     if all_text.casefold().count(marker.casefold()) != 1:
         raise ValueError("four-phase PDF matrix must appear exactly once")
 
@@ -312,14 +324,19 @@ def apply_four_phase_pdf(
     if not reader.pages:
         raise ValueError("NICO Comprehensive four-phase publication requires a PDF page")
 
-    target_index = four_phase_target_page_index(reader, spanish=spanish)
+    page_texts = extract_pdf_page_texts(pdf)
+    if len(page_texts) != len(reader.pages):
+        raise ValueError("four-phase cached text page population mismatch")
+    target_index = four_phase_target_page_index(
+        reader, spanish=spanish, page_texts=page_texts,
+    )
     marker = _ES if spanish else _EN
     program = _program(canonical)
     phase_titles = [
         _text(phase.get("title_es" if spanish else "title_en"))
         for phase in program.get("phases") or []
     ]
-    target_text = _text(reader.pages[target_index].extract_text(), 200_000)
+    target_text = _text(page_texts[target_index], 200_000)
     matrix_present = marker.casefold() in target_text.casefold()
     existing_outline = _outline_titles(reader.outline)
     existing_keys = {title.casefold() for title in existing_outline}
@@ -349,7 +366,8 @@ def apply_four_phase_pdf(
 
         def searchable_text(index: int, page: Any) -> str | None:
             if index not in search_pages:
-                raw = page.extract_text() or ""
+                # The overlay modifies only target_index, excluded by the search.
+                raw = page_texts[index]
                 lines = [_text(line, 240) for line in str(raw).splitlines()
                          if _text(line, 240)]
                 search_pages[index] = (

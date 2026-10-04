@@ -6,6 +6,7 @@ import re
 from typing import Any, Mapping
 
 from nico.comprehensive_report_semantic_manifest_v1 import CANONICAL_TOC_SECTIONS
+from nico.report_pdf_text import extract_pdf_page_texts
 
 VERSION = "nico.comprehensive_semantic_navigation.v1.6"
 # The first generated TOC page later receives the four-phase assessment matrix at
@@ -73,9 +74,9 @@ def _text(value: Any, limit: int = 1000) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
-def _spanish_document(reader: Any) -> bool:
+def _spanish_document(reader: Any, page_texts: tuple[str, ...] | None = None) -> bool:
     sample = "\n".join(
-        (reader.pages[index].extract_text() or "")
+        (reader.pages[index].extract_text() or "") if page_texts is None else page_texts[index]
         for index in range(min(10, len(reader.pages)))
     ).upper()
     return any(marker in sample for marker in _SPANISH_MARKERS)
@@ -112,14 +113,42 @@ def _visible_heading_match(candidate: str, marker: str) -> bool:
     return any(folded.startswith(target + suffix.casefold()) for suffix in _SUFFIXES)
 
 
-def _section_for_line(raw_line: str) -> tuple[Mapping[str, Any], bool] | None:
+_HeadingAliasIndex = tuple[
+    tuple[Mapping[str, Any], tuple[tuple[str, tuple[str, ...]], ...]], ...
+]
+
+
+def _heading_alias_index() -> _HeadingAliasIndex:
+    # Snapshot pure recognition aliases once per navigation call. Preserve
+    # canonical order, normalization limits and first-match precedence.
+    suffixes = tuple(suffix.casefold() for suffix in _SUFFIXES)
+    return tuple(
+        (
+            section,
+            tuple(
+                (target, tuple(target + suffix for suffix in suffixes))
+                for alias in _section_aliases(section)
+                for target in (_text(alias, 300).casefold(),)
+            ),
+        )
+        for section in _canonical_sections()
+    )
+
+
+def _section_for_line(
+    raw_line: str,
+    *,
+    alias_index: _HeadingAliasIndex | None = None,
+) -> tuple[Mapping[str, Any], bool] | None:
     candidate, numbered = _heading_candidate(raw_line)
     if not candidate:
         return None
-    for section in _canonical_sections():
+    folded = candidate.casefold()
+    aliases = _heading_alias_index() if alias_index is None else alias_index
+    for section, targets in aliases:
         if any(
-            _visible_heading_match(candidate, alias)
-            for alias in _section_aliases(section)
+            target and (folded == target or folded.startswith(prefixes))
+            for target, prefixes in targets
         ):
             return section, numbered
     return None
@@ -128,10 +157,12 @@ def _section_for_line(raw_line: str) -> tuple[Mapping[str, Any], bool] | None:
 def _section_for_visible_heading(
     lines: list[str],
     line_index: int,
+    *,
+    alias_index: _HeadingAliasIndex | None = None,
 ) -> tuple[Mapping[str, Any], bool, int] | None:
     """Recognize one heading, including a bounded adjacent-line visual wrap."""
 
-    direct = _section_for_line(lines[line_index])
+    direct = _section_for_line(lines[line_index], alias_index=alias_index)
     if direct is not None:
         section, numbered = direct
         return section, numbered, line_index
@@ -144,7 +175,7 @@ def _section_for_visible_heading(
         if not following:
             break
         joined = f"{joined} {following}"
-        wrapped = _section_for_line(joined)
+        wrapped = _section_for_line(joined, alias_index=alias_index)
         if wrapped is not None:
             section, numbered = wrapped
             return section, numbered, cursor
@@ -198,7 +229,9 @@ def _final_page_index(source_index: int, toc_page_count: int) -> int:
     return 0 if source_index == 0 else source_index + toc_page_count
 
 
-def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
+def semantic_entry_records(
+    reader: Any, *, page_texts: tuple[str, ...] | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
     """Discover one canonical navigation target per semantic section.
 
     All recognition is governed by ``CANONICAL_TOC_SECTIONS``. Several semantic
@@ -207,13 +240,17 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
     over an earlier summary occurrence; ties resolve to the earliest source location.
     """
 
-    spanish = _spanish_document(reader)
+    if page_texts is not None and len(page_texts) != len(reader.pages):
+        raise ValueError("semantic navigation cached text page population mismatch")
+    alias_index = _heading_alias_index()
+    spanish = _spanish_document(reader, page_texts)
     occurrences: dict[str, list[dict[str, Any]]] = {}
 
     # REP-005: the identified branded primary cover owns canonical assessment
     # identity after compaction removes the redundant legacy title page.
     if reader.pages:
-        cover_lines = [_text(line) for line in (reader.pages[0].extract_text() or "").splitlines()]
+        cover_text = (reader.pages[0].extract_text() or "") if page_texts is None else page_texts[0]
+        cover_lines = [_text(line) for line in cover_text.splitlines()]
         cover_heading = next(
             (index for index, line in enumerate(cover_lines) if line == "NICO COMPREHENSIVE"),
             None,
@@ -239,11 +276,11 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
     for source_index, page in enumerate(reader.pages):
         if source_index == 0:
             continue
-        page_text = page.extract_text() or ""
+        page_text = (page.extract_text() or "") if page_texts is None else page_texts[source_index]
         lines = [line for line in page_text.splitlines()]
         page_folded = page_text.casefold()
         for line_index, raw_line in enumerate(lines):
-            match = _section_for_visible_heading(lines, line_index)
+            match = _section_for_visible_heading(lines, line_index, alias_index=alias_index)
             if match is None:
                 continue
             section, numbered, heading_end_index = match
@@ -518,6 +555,7 @@ def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
     if not initial_reader.pages:
         raise ValueError("final Comprehensive PDF contains no pages")
 
+    source_pdf = pdf_bytes
     source_pages = _remove_existing_toc(initial_reader)
     if len(source_pages) != len(initial_reader.pages):
         source_buffer = io.BytesIO()
@@ -525,11 +563,14 @@ def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
         for page in source_pages:
             source_writer.add_page(page)
         source_writer.write(source_buffer)
-        reader = PdfReader(io.BytesIO(source_buffer.getvalue()))
+        source_pdf = source_buffer.getvalue()
+        reader = PdfReader(io.BytesIO(source_pdf))
     else:
         reader = initial_reader
 
-    records, spanish = semantic_entry_records(reader)
+    records, spanish = semantic_entry_records(
+        reader, page_texts=extract_pdf_page_texts(source_pdf),
+    )
     if not records:
         raise ValueError(
             "final Comprehensive PDF contains no canonical semantic navigation sections"

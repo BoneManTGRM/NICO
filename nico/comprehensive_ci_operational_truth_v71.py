@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import html
 import io
@@ -405,7 +407,7 @@ def _pdf_text(encoded: Any) -> str:
         raise ValueError("client report did not retain a decodable PDF") from exc
     if not pdf.startswith(b"%PDF"):
         raise ValueError("client report did not retain a valid final PDF")
-    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    extracted = "\n".join(extract_pdf_page_texts(pdf))
     return _surface_text(extracted)
 
 

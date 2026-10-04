@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import base64
 import hashlib
 import io
@@ -179,9 +181,12 @@ def _validate_final_surfaces(
         )
 
     reader = PdfReader(io.BytesIO(pdf))
-    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+    page_texts = extract_pdf_page_texts(pdf)
+    if len(page_texts) != len(reader.pages):
+        raise ValueError("final client report cached text page population does not match parsed PDF")
+    extracted = "\n".join(page_texts)
     from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
-    presentation_extracted = "\n".join(page.extract_text() or "" for page in reader.pages
+    presentation_extracted = "\n".join(text for page, text in zip(reader.pages, page_texts)
                                         if not is_literal_evidence_page(page))
     # Supplied quotations have no lifecycle authority. Validate report-owned
     # prose while retaining literal evidence and its exact export bytes.
