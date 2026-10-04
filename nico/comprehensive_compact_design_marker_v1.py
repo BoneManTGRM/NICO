@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from nico.report_pdf_text import extract_pdf_page_texts
+from nico.report_delivery_timing_v1 import report_delivery_phase
 
 import base64
 import io
@@ -91,6 +92,7 @@ def _page_starts_retired_appendix(value: str) -> bool:
     return bool(lines and lines[0] in _RETIRED_APPENDIX_HEADINGS)
 
 
+@report_delivery_phase("retired_appendix_validation")
 def _retired_appendix_section_present(package: Mapping[str, Any]) -> bool:
     """Reject an actual raw appendix section, not a bounded explanatory mention."""
 
@@ -108,10 +110,19 @@ def _retired_appendix_section_present(package: Mapping[str, Any]) -> bool:
         raise ValueError("client report did not retain a decodable PDF") from exc
     if not pdf.startswith(b"%PDF"):
         raise ValueError("client report did not retain a valid final PDF")
-    for page in PdfReader(io.BytesIO(pdf)).pages:
-        if _page_starts_retired_appendix(page.extract_text() or ""):
-            return True
-    return False
+    reader = PdfReader(io.BytesIO(pdf))
+    try:
+        texts = extract_pdf_page_texts(pdf)
+        if len(texts) != len(reader.pages):
+            raise ValueError("retired appendix text snapshot page count differs")
+    except Exception:
+        # Keep the original early-return and extraction-failure behavior.
+        # An incomplete snapshot never substitutes for independently read pages.
+        for page in reader.pages:
+            if _page_starts_retired_appendix(page.extract_text() or ""):
+                return True
+        return False
+    return any(_page_starts_retired_appendix(text) for text in texts)
 
 
 def _combined_client_text(package: Mapping[str, Any]) -> str:
@@ -183,6 +194,7 @@ def _legacy_delegate_package(
     return result
 
 
+@report_delivery_phase("compact_design_validation")
 def validate_compact_design_markers(package: Mapping[str, Any]) -> dict[str, Any]:
     """Require the bounded report's real decision sections, not a removed appendix."""
 
