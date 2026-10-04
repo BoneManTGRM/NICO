@@ -1,24 +1,44 @@
 from __future__ import annotations
 
-from pathlib import Path
+import base64
 
 from nico import comprehensive_spanish_final_report_runtime_cache_v94 as cache
 from nico import phase17_canonical_artifact_rebuild_v1 as phase17
 from nico import v2_premium_report_renderer as premium
 
 
-def test_phase17_executes_only_one_expensive_premium_render() -> None:
-    source = Path("nico/phase17_canonical_artifact_rebuild_v1.py").read_text(encoding="utf-8")
-    function_source = source.split("def rebuild_client_artifacts", 1)[1]
-    preparation_source = source.split("def _prepare_client_artifact_package", 1)[
-        1
-    ].split("def build_localized_markdown_projection", 1)[0]
+def test_phase17_executes_only_one_expensive_premium_render(monkeypatch) -> None:
+    from tests.test_v2_premium_report_renderer import _package
 
-    assert function_source.count("rebuild_single_pass_premium_artifacts(") == 1
-    assert "_populate_premium_stage_summaries(prepared)" in preparation_source
-    assert "prepared = _prepare_client_artifact_package(package)" in function_source
-    assert "release_comprehensive_spanish_render_input_cache_v94()" in function_source
-    assert "finally:" in function_source
+    steps = []
+    functions = {
+        "prepare": (phase17, "_prepare_client_artifact_package"),
+        "populate": (phase17, "_populate_premium_stage_summaries"),
+        "render": (phase17, "rebuild_single_pass_premium_artifacts"),
+        "release": (cache, "release_comprehensive_spanish_render_input_cache_v94"),
+    }
+    for label, (module, name) in functions.items():
+        original = getattr(module, name)
+
+        def observed(*args, _label=label, _original=original, **kwargs):
+            steps.append(_label)
+            result = _original(*args, **kwargs)
+            steps.append(_label + ":done")
+            return result
+
+        monkeypatch.setattr(module, name, observed)
+
+    result = phase17.rebuild_client_artifacts(_package("es-MX"))
+
+    assert result["json"]
+    assert base64.b64decode(result["pdf_base64"], validate=True).startswith(b"%PDF-")
+    assert steps.count("prepare") == 1
+    assert steps.count("populate") == 1
+    assert steps.count("render") == 1
+    assert steps.count("release") == 1
+    assert steps.index("prepare") < steps.index("populate")
+    assert steps.index("populate:done") < steps.index("prepare:done") < steps.index("render")
+    assert steps[-1] == "release:done"
 
 
 def test_stage_population_uses_runtime_bound_builder(monkeypatch) -> None:
