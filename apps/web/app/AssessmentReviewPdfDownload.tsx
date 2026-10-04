@@ -73,10 +73,10 @@ type DownloadBinding = {
   isCurrent?: () => boolean;
 };
 
-const inFlight = new Map<string, Promise<void>>();
+const inFlight = new Map<string, {operation: Promise<void>; binding: DownloadBinding}>();
 const DOWNLOAD_TIMEOUT_MS = 255_000;
 const pendingReviewOperations = new Map<string, AbortController>();
-const pendingReviewPromises = new Map<string, Promise<void>>();
+const pendingReviewPromises = new Map<string, {operation: Promise<void>; isCurrent: () => boolean; controller: AbortController}>();
 const buttonOwners = new WeakMap<HTMLButtonElement, AbortController>();
 
 function showStatus(container: Element | null, message: string, failure = false): void {
@@ -191,14 +191,25 @@ function startExactRunDownload(
   reportLanguage: ReportLanguage,
   binding: DownloadBinding,
 ): Promise<void> {
-  const key = JSON.stringify([runId, reportLanguage, binding.commitSha, binding.canonicalTruthSha256 || ""]);
+  const frozenBinding = {...binding};
+  try {
+    if (!runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(frozenBinding.commitSha)
+      || !/^[0-9a-f]{64}$/i.test(frozenBinding.canonicalTruthSha256)
+      || (frozenBinding.isCurrent && !frozenBinding.isCurrent())) throw integrityError();
+    if (frozenBinding.signal?.aborted) throw frozenBinding.signal.reason;
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  const key = JSON.stringify([runId, reportLanguage, frozenBinding.commitSha,
+    frozenBinding.canonicalTruthSha256, Boolean(frozenBinding.requiresNewApproval)]);
   const existing = inFlight.get(key);
-  if (existing) return existing;
-  const operation = retrieveExactRunPdf(runId, reportLanguage, binding)
+  if (existing && existing.binding.signal === frozenBinding.signal
+    && existing.binding.isCurrent === frozenBinding.isCurrent) return existing.operation;
+  const operation = retrieveExactRunPdf(runId, reportLanguage, frozenBinding)
     .finally(() => {
-      if (inFlight.get(key) === operation) inFlight.delete(key);
+      if (inFlight.get(key)?.operation === operation) inFlight.delete(key);
     });
-  inFlight.set(key, operation);
+  inFlight.set(key, {operation, binding: frozenBinding});
   return operation;
 }
 
@@ -242,9 +253,13 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     || !pendingReviewBindingMatches(button, actions, runId, reportLanguage, binding)) {
     return Promise.reject(integrityError());
   }
-  const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256]);
+  const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256,
+    Boolean(binding.requiresNewApproval)]);
   const existing = pendingReviewPromises.get(key);
-  if (existing) return existing;
+  if (existing?.isCurrent()) return existing.operation;
+  // An explicit click on a replacement binding cancels the stale retained read.
+  existing?.controller.abort();
+  buttonOwners.get(button)?.abort();
   const controller = new AbortController();
   pendingReviewOperations.set(key, controller);
   buttonOwners.set(button, controller);
@@ -277,9 +292,11 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     true);
     throw error;
   }).finally(() => {
+    // Dispose this fetch even when validation stopped before body consumption.
+    controller.abort();
     window.clearTimeout(timeout);
     if (pendingReviewOperations.get(key) === controller) pendingReviewOperations.delete(key);
-    if (pendingReviewPromises.get(key) === operation) pendingReviewPromises.delete(key);
+    if (pendingReviewPromises.get(key)?.operation === operation) pendingReviewPromises.delete(key);
     if (buttonOwners.get(button) === controller) {
       buttonOwners.delete(button);
       // React can reuse this element for a different run or an accepted edition.
@@ -290,7 +307,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
       button.removeAttribute("aria-busy");
     }
   });
-  pendingReviewPromises.set(key, operation);
+  pendingReviewPromises.set(key, {operation, isCurrent, controller});
   return operation;
 }
 

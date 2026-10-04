@@ -327,3 +327,49 @@ test('unavailable PDF remains disabled after a stale pending completion',async()
   s.button.attrs['data-assessment-action-disabled']='true';
   release(response());await s.settled();assert.equal(s.anchors.length,0);assert.equal(s.button.disabled,true);
 });
+
+test('overlap replacement button for the same artifact cannot inherit a stale owner',async()=>{
+  const releases=[];const s=setup((url,init)=>new Promise(resolve=>releases.push({resolve,init})));
+  s.click();s.button.isConnected=false;
+  const replacement=new s.button.constructor();
+  replacement.attrs={...s.button.attrs,'data-assessment-action-disabled':'false'};
+  replacement.textContent=s.button.textContent;
+  const operation=s.api.downloadPendingReviewPdf(replacement);
+  assert.equal(s.calls.length,2,'A new explicit current owner must not silently join a stale owner');
+  assert.equal(releases[0].init.signal.aborted,true);
+  releases[0].resolve(response());await flush();assert.equal(s.anchors.length,0);
+  releases[1].resolve(response());await operation;await s.settled();
+  assert.equal(s.anchors.length,1);assert.match(s.statuses.at(-1).textContent,/verified and sent/);
+});
+test('overlap stricter locale reapproval never inherits a weaker pending promise',async()=>{
+  const releases=[];const s=setup((url,init)=>new Promise(resolve=>releases.push({resolve,init})));
+  s.click();s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.button.disabled=false;s.click();
+  assert.equal(s.calls.length,2);
+  releases[0].resolve(response());await flush();assert.equal(s.anchors.length,0);
+  releases[1].resolve(response());await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.statuses.at(-1).attrs.role,'alert');
+  assert.match(s.statuses.at(-1).textContent,/does not match/);
+});
+test('overlap low-level stricter caller validates its own reapproval requirement',async()=>{
+  const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
+  const weak=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth});
+  const strict=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,requiresNewApproval:true});
+  const rejected=assert.rejects(strict,/does not match/);
+  assert.equal(s.calls.length,2);releases[0](response());releases[1](response());
+  await weak;await rejected;assert.equal(s.anchors.length,1);
+});
+test('overlap low-level stale caller is rejected before sharing active work',async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  const first=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth});
+  const stale=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,isCurrent:()=>false});
+  const rejected=assert.rejects(stale,/does not match/);
+  release(response());await first;await rejected;assert.equal(s.calls.length,1);
+});
+
+for(const rejected of ['stale-header-context','wrong-MIME'])test('rejected '+rejected+' disposes only its owned retained fetch',async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  s.click();if(rejected==='stale-header-context')s.actions.attrs['data-run-id']='comprun_other';
+  release(response('en',rejected==='wrong-MIME'?{'content-type':'text/html'}:{}));await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.calls[0].init.signal.aborted,true);
+});
