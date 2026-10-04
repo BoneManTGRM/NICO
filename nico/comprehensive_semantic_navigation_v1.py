@@ -112,14 +112,38 @@ def _visible_heading_match(candidate: str, marker: str) -> bool:
     return any(folded.startswith(target + suffix.casefold()) for suffix in _SUFFIXES)
 
 
-def _section_for_line(raw_line: str) -> tuple[Mapping[str, Any], bool] | None:
+_HeadingAliasIndex = tuple[tuple[Mapping[str, Any], tuple[str, ...]], ...]
+
+
+def _heading_alias_index() -> _HeadingAliasIndex:
+    # Snapshot pure recognition aliases once per navigation call. Preserve
+    # canonical order, normalization limits and first-match precedence.
+    return tuple(
+        (
+            section,
+            tuple(_text(alias, 300).casefold() for alias in _section_aliases(section)),
+        )
+        for section in _canonical_sections()
+    )
+
+
+def _section_for_line(
+    raw_line: str,
+    *,
+    alias_index: _HeadingAliasIndex | None = None,
+) -> tuple[Mapping[str, Any], bool] | None:
     candidate, numbered = _heading_candidate(raw_line)
     if not candidate:
         return None
-    for section in _canonical_sections():
+    folded = candidate.casefold()
+    aliases = _heading_alias_index() if alias_index is None else alias_index
+    for section, targets in aliases:
         if any(
-            _visible_heading_match(candidate, alias)
-            for alias in _section_aliases(section)
+            target and (
+                folded == target
+                or any(folded.startswith(target + suffix.casefold()) for suffix in _SUFFIXES)
+            )
+            for target in targets
         ):
             return section, numbered
     return None
@@ -128,10 +152,12 @@ def _section_for_line(raw_line: str) -> tuple[Mapping[str, Any], bool] | None:
 def _section_for_visible_heading(
     lines: list[str],
     line_index: int,
+    *,
+    alias_index: _HeadingAliasIndex | None = None,
 ) -> tuple[Mapping[str, Any], bool, int] | None:
     """Recognize one heading, including a bounded adjacent-line visual wrap."""
 
-    direct = _section_for_line(lines[line_index])
+    direct = _section_for_line(lines[line_index], alias_index=alias_index)
     if direct is not None:
         section, numbered = direct
         return section, numbered, line_index
@@ -144,7 +170,7 @@ def _section_for_visible_heading(
         if not following:
             break
         joined = f"{joined} {following}"
-        wrapped = _section_for_line(joined)
+        wrapped = _section_for_line(joined, alias_index=alias_index)
         if wrapped is not None:
             section, numbered = wrapped
             return section, numbered, cursor
@@ -207,6 +233,7 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
     over an earlier summary occurrence; ties resolve to the earliest source location.
     """
 
+    alias_index = _heading_alias_index()
     spanish = _spanish_document(reader)
     occurrences: dict[str, list[dict[str, Any]]] = {}
 
@@ -243,7 +270,7 @@ def semantic_entry_records(reader: Any) -> tuple[list[dict[str, Any]], bool]:
         lines = [line for line in page_text.splitlines()]
         page_folded = page_text.casefold()
         for line_index, raw_line in enumerate(lines):
-            match = _section_for_visible_heading(lines, line_index)
+            match = _section_for_visible_heading(lines, line_index, alias_index=alias_index)
             if match is None:
                 continue
             section, numbered, heading_end_index = match
