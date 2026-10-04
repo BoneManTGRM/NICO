@@ -636,6 +636,10 @@ _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
         "Archivo de código fuente propio del SHA exacto cuando está disponible; se excluyen las rutas de pruebas, código generado, distribución, dependencias, proveedores y archivos minificados.",
     ),
     (
+        "Exact-SHA first-party source archive when available; tests, generated, distribution, dependency, vendor, minified paths, and recognized supported Qt XML in UTF-8 text are excluded.",
+        "Archivo de código fuente propio del SHA exacto cuando está disponible; se excluyen las rutas de pruebas, código generado, distribución, dependencias, proveedores, archivos minificados y XML de Qt reconocido como compatible en texto UTF-8.",
+    ),
+    (
         "Ownership or explicit authorization and the defensive read-only scope were confirmed for this exact Comprehensive run.",
         "Se confirmaron la propiedad o la autorización explícita y el alcance defensivo de solo lectura para esta ejecución integral exacta.",
     ),
@@ -2824,6 +2828,16 @@ def _translate_presentation(value: Any) -> str:
         return text.replace(stripped, _STAKEHOLDER_METADATA_SUMMARY[1], 1)
     if stripped in COPY_ES:
         return text.replace(stripped, COPY_ES[stripped], 1)
+    ast_diagnostics = re.fullmatch(
+        r"TypeScript AST parsed (.+) with (unreported|[1-9][0-9]*) diagnostics; numeric observations are partial\.",
+        stripped,
+    )
+    if ast_diagnostics:
+        count = "cantidad no informada de" if ast_diagnostics[2] == "unreported" else ast_diagnostics[2]
+        return (
+            f"El AST de TypeScript analizó {ast_diagnostics[1]} con {count} diagnósticos; "
+            "las observaciones numéricas son parciales."
+        )
     footprint = re.fullmatch(r"Architecture footprint source files: (\d+)\.", stripped)
     if footprint:
         return f"Archivos del conjunto de arquitectura: {footprint[1]}."
