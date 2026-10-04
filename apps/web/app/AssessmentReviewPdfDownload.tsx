@@ -67,12 +67,17 @@ function exactRunPdfHref(runId: string, reportLanguage: ReportLanguage = "en"): 
 
 type DownloadBinding = {
   commitSha: string;
-  canonicalTruthSha256?: string;
+  canonicalTruthSha256: string;
   signal?: AbortSignal;
+  requiresNewApproval?: boolean;
+  isCurrent?: () => boolean;
 };
 
 const inFlight = new Map<string, Promise<void>>();
 const DOWNLOAD_TIMEOUT_MS = 255_000;
+const pendingReviewOperations = new Map<string, AbortController>();
+const pendingReviewPromises = new Map<string, Promise<void>>();
+const buttonOwners = new WeakMap<HTMLButtonElement, AbortController>();
 
 function showStatus(container: Element | null, message: string, failure = false): void {
   if (!container) return;
@@ -121,17 +126,22 @@ async function retrieveExactRunPdf(
   reportLanguage: ReportLanguage,
   binding: DownloadBinding,
 ): Promise<void> {
+  if (!runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(binding.commitSha)
+    || !/^[0-9a-f]{64}$/i.test(binding.canonicalTruthSha256)
+    || (binding.isCurrent && !binding.isCurrent())) throw integrityError();
   const signal = binding.signal || AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
   const response = await fetch(exactRunPdfHref(runId, reportLanguage), {
     method: "GET", cache: "no-store", credentials: "same-origin",
     headers: {Accept: "application/pdf"}, signal,
   });
+  if (signal.aborted) throw signal.reason;
+  if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
   if (!response.ok) throw downloadError(response);
   const header = (name: string) => String(response.headers.get(name) || "").trim();
   const declaredSha = header("x-nico-pdf-sha256").toLowerCase();
   const truthSha = header("x-nico-canonical-truth-sha256").toLowerCase();
   if (
-    !/^[0-9a-f]{40}$/.test(binding.commitSha)
+    header("content-type").split(";", 1)[0].trim().toLowerCase() !== "application/pdf"
     || header("x-nico-run-id") !== runId
     || header("x-nico-commit-sha") !== binding.commitSha
     || header("x-nico-report-language") !== reportLanguage
@@ -143,11 +153,13 @@ async function retrieveExactRunPdf(
     || !/^[0-9a-f]{64}$/.test(declaredSha)
     || header("x-nico-artifact-sha256").toLowerCase() !== declaredSha
     || !/^[0-9a-f]{64}$/.test(truthSha)
-    || (binding.canonicalTruthSha256 && truthSha !== binding.canonicalTruthSha256.toLowerCase())
+    || truthSha !== binding.canonicalTruthSha256.toLowerCase()
+    || (binding.requiresNewApproval && header("x-nico-localized-artifact-requires-new-approval") !== "true")
   ) throw integrityError();
 
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (signal.aborted) throw signal.reason;
+  if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
   if (bytes.length < 5 || String.fromCharCode(...bytes.slice(0, 5)) !== "%PDF-") {
     throw integrityError();
   }
@@ -156,6 +168,7 @@ async function retrieveExactRunPdf(
   if (observedSha !== declaredSha) throw integrityError();
   if (signal.aborted) throw signal.reason;
 
+  if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
   const url = URL.createObjectURL(new Blob([bytes], {type: "application/pdf"}));
   const link = document.createElement("a");
   link.href = url;
@@ -165,6 +178,9 @@ async function retrieveExactRunPdf(
   link.setAttribute("data-nico-review-pdf-download", "true");
   document.body.appendChild(link);
   // Only verified bytes reach the browser download. The assessment page stays open.
+  if (binding.isCurrent && !binding.isCurrent()) {
+    link.remove(); URL.revokeObjectURL(url); throw integrityError();
+  }
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
@@ -186,10 +202,101 @@ function startExactRunDownload(
   return operation;
 }
 
+function pendingReviewBindingMatches(
+  button: HTMLButtonElement,
+  actions: Element,
+  runId: string,
+  reportLanguage: ReportLanguage,
+  binding: DownloadBinding,
+): boolean {
+  return button.isConnected && actions.isConnected
+    && button.closest(REPORT_ACTIONS_SELECTOR) === actions
+    && button.getAttribute("data-assessment-pdf-kind") === REVIEW_PDF_KIND
+    && actions.getAttribute("data-assessment-report-ready") === "true"
+    && actions.getAttribute("data-assessment-pdf-available") !== "false"
+    && visibleRunId(actions) === runId
+    && String(actions.getAttribute("data-commit-sha") || "").trim() === binding.commitSha
+    && String(actions.getAttribute("data-canonical-truth-sha256") || "").trim().toLowerCase() === binding.canonicalTruthSha256
+    && button.getAttribute("data-report-language") === reportLanguage
+    && (actions.getAttribute("data-requested-report-language") === null
+      || actions.getAttribute("data-requested-report-language") === reportLanguage)
+    && (actions.getAttribute("data-assessment-locale-reapproval-required") === "true") === Boolean(binding.requiresNewApproval);
+}
+
+/** The guard and Workspace fallback share one bounded, exact pending-review path. */
+function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval = false): Promise<void> {
+  const actions = button.closest(REPORT_ACTIONS_SELECTOR);
+  const runId = visibleRunId(actions);
+  const commitSha = String(actions?.getAttribute("data-commit-sha") || "").trim();
+  const canonicalTruthSha256 = String(actions?.getAttribute("data-canonical-truth-sha256") || "").trim().toLowerCase();
+  const requestedLanguage = button.getAttribute("data-report-language");
+  const reportLanguage = requestedLanguage === "en" || requestedLanguage === "es-MX"
+    ? requestedLanguage : activeReportLanguage();
+  const binding: DownloadBinding = {
+    commitSha, canonicalTruthSha256,
+    requiresNewApproval: requiresNewApproval
+      || actions?.getAttribute("data-assessment-locale-reapproval-required") === "true",
+  };
+  if (!actions || !runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(commitSha)
+    || !/^[0-9a-f]{64}$/.test(canonicalTruthSha256)
+    || !pendingReviewBindingMatches(button, actions, runId, reportLanguage, binding)) {
+    return Promise.reject(integrityError());
+  }
+  const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256]);
+  const existing = pendingReviewPromises.get(key);
+  if (existing) return existing;
+  const controller = new AbortController();
+  pendingReviewOperations.set(key, controller);
+  buttonOwners.set(button, controller);
+  const isCurrent = () => pendingReviewOperations.get(key) === controller
+    && buttonOwners.get(button) === controller
+    && pendingReviewBindingMatches(button, actions, runId, reportLanguage, binding);
+  const timeout = window.setTimeout(() => controller.abort(
+    new DOMException("PDF download deadline exceeded", "TimeoutError")), DOWNLOAD_TIMEOUT_MS);
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  showStatus(actions, spanishUi()
+    ? "Descargando y verificando el PDF… Puedes seguir usando esta página."
+    : "Downloading and verifying the PDF… You can keep using this page.");
+  const operation = startExactRunDownload(runId, reportLanguage, {
+    ...binding, signal: controller.signal, isCurrent,
+  }).then(() => {
+    if (isCurrent() && !controller.signal.aborted) showStatus(actions, spanishUi()
+      ? "PDF verificado y enviado a tus descargas."
+      : "PDF verified and sent to your downloads.");
+  }).catch((error: unknown) => {
+    // A stale completion belongs to its original page, including its status.
+    if (!isCurrent()) return;
+    const timedOut = error instanceof DOMException && error.name === "TimeoutError";
+    showStatus(actions, timedOut
+      ? (spanishUi()
+        ? "La descarga del PDF excedió el tiempo límite. Vuelve a intentarlo; no inicies otra evaluación."
+        : "The PDF download timed out. Retry this download; do not start another assessment.")
+      : error instanceof PdfDownloadFailure ? error.message
+        : (spanishUi() ? "La descarga se interrumpió. Vuelve a intentarlo." : "The download was interrupted. Retry this download."),
+    true);
+    throw error;
+  }).finally(() => {
+    window.clearTimeout(timeout);
+    if (pendingReviewOperations.get(key) === controller) pendingReviewOperations.delete(key);
+    if (pendingReviewPromises.get(key) === operation) pendingReviewPromises.delete(key);
+    if (buttonOwners.get(button) === controller) {
+      buttonOwners.delete(button);
+      // React can reuse this element for a different run or an accepted edition.
+      const desiredDisabled = button.getAttribute("data-assessment-action-disabled");
+      button.disabled = desiredDisabled === null
+        ? !pendingReviewBindingMatches(button, actions, runId, reportLanguage, binding)
+        : desiredDisabled === "true";
+      button.removeAttribute("aria-busy");
+    }
+  });
+  pendingReviewPromises.set(key, operation);
+  return operation;
+}
+
 /** Track pending-review downloads through response validation and byte delivery. */
 export default function AssessmentReviewPdfDownload() {
-  const pending = useRef(new Map<string, AbortController>());
-
+  const pending = useRef(pendingReviewOperations);
   useEffect(() => {
     const active = pending.current;
     function handleReviewPdfClick(event: MouseEvent): void {
@@ -197,56 +304,21 @@ export default function AssessmentReviewPdfDownload() {
       const button = target?.closest("button");
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
       const actions = button.closest(REPORT_ACTIONS_SELECTOR);
-      if (!actions) return;
-      // Accepted editions retain AssessmentWorkspace's exact approval verification.
-      if (button.getAttribute("data-assessment-pdf-kind") !== REVIEW_PDF_KIND) return;
-      if (!REVIEW_PDF_LABEL.test(String(button.textContent || "").trim())) return;
-      if (actions.getAttribute("data-assessment-report-ready") !== "true") return;
+      if (!actions || button.getAttribute("data-assessment-pdf-kind") !== REVIEW_PDF_KIND
+        || !REVIEW_PDF_LABEL.test(String(button.textContent || "").trim())
+        || actions.getAttribute("data-assessment-report-ready") !== "true") return;
       const runId = visibleRunId(actions);
       const commitSha = String(actions.getAttribute("data-commit-sha") || "").trim();
-      if (!runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(commitSha)) return;
-      const requestedLanguage = button.getAttribute("data-report-language");
-      const reportLanguage = requestedLanguage === "en" || requestedLanguage === "es-MX"
-        ? requestedLanguage : activeReportLanguage();
-      const key = JSON.stringify([runId, reportLanguage, commitSha]);
+      const truthSha = String(actions.getAttribute("data-canonical-truth-sha256") || "").trim();
+      if (!runId.startsWith("comprun_") || !/^[0-9a-f]{40}$/.test(commitSha)
+        || !/^[0-9a-f]{64}$/i.test(truthSha)) return;
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      if (active.has(key)) return;
-      const controller = new AbortController();
-      active.set(key, controller);
-      const timeout = window.setTimeout(() => controller.abort(new DOMException("PDF download deadline exceeded", "TimeoutError")), DOWNLOAD_TIMEOUT_MS);
-      button.disabled = true;
-      button.setAttribute("aria-busy", "true");
-      showStatus(actions, spanishUi()
-        ? "Descargando y verificando el PDF… Puedes seguir usando esta página."
-        : "Downloading and verifying the PDF… You can keep using this page.");
-      void startExactRunDownload(runId, reportLanguage, {
-        commitSha,
-        canonicalTruthSha256: String(actions.getAttribute("data-canonical-truth-sha256") || "").trim(),
-        signal: controller.signal,
-      }).then(() => {
-        if (!controller.signal.aborted) showStatus(actions, spanishUi()
-          ? "PDF verificado y enviado a tus descargas."
-          : "PDF verified and sent to your downloads.");
-      }).catch((error: unknown) => {
-        if (!actions.isConnected) return;
-        const timedOut = error instanceof DOMException && error.name === "TimeoutError";
-        showStatus(actions, timedOut
-          ? (spanishUi()
-            ? "La descarga del PDF excedió el tiempo límite. Vuelve a intentarlo; no inicies otra evaluación."
-            : "The PDF download timed out. Retry this download; do not start another assessment.")
-          : error instanceof PdfDownloadFailure ? error.message
-            : (spanishUi() ? "La descarga se interrumpió. Vuelve a intentarlo." : "The download was interrupted. Retry this download."),
-        true);
-      }).finally(() => {
-        window.clearTimeout(timeout);
-        active.delete(key);
-        button.disabled = false;
-        button.removeAttribute("aria-busy");
+      void downloadPendingReviewPdf(button).catch(() => {
+        // The shared owner has already shown the current operation's error.
       });
     }
-
     document.addEventListener("click", handleReviewPdfClick, true);
     return () => {
       document.removeEventListener("click", handleReviewPdfClick, true);
@@ -254,8 +326,7 @@ export default function AssessmentReviewPdfDownload() {
       active.clear();
     };
   }, []);
-
   return null;
 }
 
-export {activeReportLanguage, exactRunPdfHref, spanishUi, startExactRunDownload, visibleRunId};
+export {activeReportLanguage, downloadPendingReviewPdf, exactRunPdfHref, spanishUi, startExactRunDownload, visibleRunId};
