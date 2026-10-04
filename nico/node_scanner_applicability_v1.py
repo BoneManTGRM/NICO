@@ -127,6 +127,37 @@ class _QtTreeBuilder(ET.TreeBuilder):
         raise ValueError('unsupported_qt_processing_instruction')
 
 
+def is_supported_qt_translation_bytes(raw: bytes) -> bool:
+    """Recognize the existing bounded Qt schema without reconstructing identity."""
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_QT_TRANSLATION_BYTES:
+        return False
+    try:
+        # Decode without parsing or expanding entities. BOM-less UTF-16 and
+        # UTF-32 are unsupported and cannot establish TypeScript absence.
+        utf16 = raw.startswith((b'\xff\xfe', b'\xfe\xff'))
+        if raw.startswith((b'\xff\xfe\x00\x00', b'\x00\x00\xfe\xff')):
+            return False
+        text = raw.decode('utf-16' if utf16 else 'utf-8-sig')
+        if '\x00' in text or '<!ENTITY' in text.upper():
+            return False
+        declaration = re.match(r'<\?xml\s+[^?]*\?>', text)
+        encoding = re.search(r'\bencoding\s*=\s*["\']([^"\']+)["\']',
+                             declaration.group() if declaration else '', re.IGNORECASE)
+        if encoding:
+            supported = {'utf-16', 'utf-16le' if raw.startswith(b'\xff\xfe') else 'utf-16be'} if utf16 else {'utf-8', 'utf8'}
+            if encoding.group(1).lower() not in supported:
+                return False
+        if any(re.fullmatch(r'<!DOCTYPE\s+TS\s*>', item) is None
+               for item in re.findall(r'<!DOCTYPE[^>]*>', text, re.IGNORECASE)):
+            return False
+        root = ET.fromstring(raw, parser=ET.XMLParser(target=_QtTreeBuilder()))
+        if not _qt_structure(root):
+            return False
+        return True
+    except (ET.ParseError, ValueError, UnicodeError):
+        return False
+
+
 def _qt_translation(path: Path, relative: str) -> dict[str, Any] | None:
     """Recognize bounded supported Qt XML only after encoding-aware rejection."""
     try:
@@ -134,32 +165,11 @@ def _qt_translation(path: Path, relative: str) -> dict[str, Any] | None:
             return None
         with path.open('rb') as source:
             raw = source.read(MAX_QT_TRANSLATION_BYTES + 1)
-        if len(raw) > MAX_QT_TRANSLATION_BYTES:
-            return None
-        # Decode without parsing or expanding entities. BOM-less UTF-16 and
-        # UTF-32 are unsupported and cannot establish TypeScript absence.
-        utf16 = raw.startswith((b'\xff\xfe', b'\xfe\xff'))
-        if raw.startswith((b'\xff\xfe\x00\x00', b'\x00\x00\xfe\xff')):
-            return None
-        text = raw.decode('utf-16' if utf16 else 'utf-8-sig')
-        if '\x00' in text or '<!ENTITY' in text.upper():
-            return None
-        declaration = re.match(r'<\?xml\s+[^?]*\?>', text)
-        encoding = re.search(r'\bencoding\s*=\s*["\']([^"\']+)["\']',
-                             declaration.group() if declaration else '', re.IGNORECASE)
-        if encoding:
-            supported = {'utf-16', 'utf-16le' if raw.startswith(b'\xff\xfe') else 'utf-16be'} if utf16 else {'utf-8', 'utf8'}
-            if encoding.group(1).lower() not in supported:
-                return None
-        if any(re.fullmatch(r'<!DOCTYPE\s+TS\s*>', item) is None
-               for item in re.findall(r'<!DOCTYPE[^>]*>', text, re.IGNORECASE)):
-            return None
-        root = ET.fromstring(raw, parser=ET.XMLParser(target=_QtTreeBuilder()))
-        if not _qt_structure(root):
+        if not is_supported_qt_translation_bytes(raw):
             return None
         return {'path': relative, 'format': 'qt-ts-xml-v1',
                 'sha256': hashlib.sha256(raw).hexdigest(), 'size_bytes': len(raw)}
-    except (OSError, ET.ParseError, ValueError, UnicodeError):
+    except OSError:
         return None
 
 REASONS = {

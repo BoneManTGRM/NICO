@@ -8,6 +8,11 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Callable
 
+from nico.node_scanner_applicability_v1 import (
+    MAX_QT_TRANSLATION_BYTES,
+    is_supported_qt_translation_bytes,
+)
+
 VERSION = "nico.typescript_ast_complexity.v1"
 _PATCH_MARKER = "_nico_typescript_ast_complexity_v1"
 AST_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "typescript_ast_metrics.cjs"
@@ -64,11 +69,25 @@ def _run_typescript_ast(files: dict[str, str]) -> dict[str, Any]:
     return result
 
 
+def _supported_qt_source_text(path: str, text: str) -> bool:
+    # Acquisition retains original bytes and hashes separately. This filter
+    # establishes format only for bounded UTF-8 text, never original identity.
+    # U+FFFD may represent lossy decoding and cannot establish TypeScript absence.
+    if not path.casefold().endswith(".ts") or "\ufffd" in text or len(text) > MAX_QT_TRANSLATION_BYTES:
+        return False
+    try:
+        raw = text.encode("utf-8")
+    except UnicodeError:
+        return False
+    return is_supported_qt_translation_bytes(raw)
+
+
 def _partition_source_files(
     files: dict[str, str],
     base: Any,
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    source_files = {path: text for path, text in files.items() if base._is_source_path(path)}
+    source_files = {path: text for path, text in files.items()
+                    if base._is_source_path(path) and not _supported_qt_source_text(path, text)}
     python_files = {path: text for path, text in source_files.items() if path.casefold().endswith(".py")}
     javascript_files = {path: text for path, text in source_files.items() if path.casefold().endswith(('.js', '.jsx', '.ts', '.tsx'))}
     return source_files, python_files, javascript_files
@@ -98,6 +117,14 @@ def _collect_javascript_analyses(
     parse_notes: list[str] = []
     if ast_result.get("status") == "complete":
         ast_paths = {str(item.get("path") or "") for item in ast_analyses}
+        for item in ast_analyses:
+            diagnostics = item.get("parser_diagnostic_count")
+            if item.get("status") == "analyzed_with_diagnostics" or (
+                    type(diagnostics) is int and diagnostics > 0):
+                count = diagnostics if type(diagnostics) is int and diagnostics > 0 else "unreported"
+                parse_notes.append(
+                    f"TypeScript AST parsed {item.get('path') or '<unknown>'} with {count} diagnostics; numeric observations are partial."
+                )
         for path in sorted(set(javascript_files) - ast_paths):
             parse_notes.append(f"TypeScript AST output omitted {path}; no lexical substitute was used for that file.")
         return ast_analyses, parse_notes, ast_result
@@ -246,7 +273,11 @@ def _complexity_summary_payload(context: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "attached" if analyses else "unavailable",
         "analyzer_version": VERSION,
-        "scope": "Exact-SHA first-party source archive when available; tests, generated, distribution, dependency, vendor, and minified paths are excluded.",
+        "scope": "Exact-SHA first-party source archive when available; tests, generated, distribution, dependency, vendor, minified paths, and recognized supported Qt XML in UTF-8 text are excluded.",
+        "source_candidates_before_format_filter": eligible_count + len(context["qt_translation_paths"]),
+        "qt_translation_files_excluded": len(context["qt_translation_paths"]),
+        "qt_translation_paths_excluded": context["qt_translation_paths"],
+        "format_filter_scope": "supported_qt_xml_in_utf8_text",
         "files_considered": eligible_count,
         "eligible_source_files": eligible_count,
         "files_analyzed": analyzed_count,
@@ -345,6 +376,8 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         **metrics,
         "base": base,
         "source_files": source_files,
+        "qt_translation_paths": sorted(path for path in files
+                                       if base._is_source_path(path) and path not in source_files),
         "javascript_files": javascript_files,
         "analyses": analyses,
         "parse_notes": parse_notes,
