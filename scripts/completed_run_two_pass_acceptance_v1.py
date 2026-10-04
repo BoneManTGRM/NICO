@@ -151,15 +151,33 @@ def _observe_terminal(
         assert item["ui_review_pdf_anchor_click_observation_verified"] is True, item
         assert item["ui_review_pdf_source_artifact_reused"] is True, item
         assert item["ui_review_pdf_artifact_evidence_source"] == (
-            "exact-sha-spanish-source-proof"
+            "observed-ui-response-and-verified-blob"
         ), item
+        assert item["ui_review_pdf_actual_blob_bytes_verified"] is True, item
+        assert type(item["ui_review_pdf_actual_response_count"]) is int, item
+        assert item["ui_review_pdf_actual_response_count"] == 1, item
+        assert item["ui_review_pdf_target_contract"] == (
+            "same-page-validated-blob-download"
+        ), item
+        assert item["ui_review_pdf_response_sha256_verified"] is True, item
+        assert item["ui_review_pdf_single_dispatch_verified"] is True, item
+        assert item["ui_review_pdf_exact_run_filename_verified"] is True, item
+        assert item["ui_review_pdf_exact_run_href_verified"] is True, item
+        assert item["ui_review_pdf_original_assessment_page_preserved"] is True, item
+        assert item["ui_review_pdf_canonical_truth_sha256"] == expected_canonical_digest, item
+        assert item["ui_review_pdf_report_language"] == proof["markdown_report_language"], item
+        assert item["ui_review_pdf_requested_report_language"] == proof["markdown_report_language"], item
         assert item["ui_review_pdf_signature_verified"] is True, item
         assert item["ui_review_pdf_exact_run_response_verified"] is True, item
         assert item["ui_review_pdf_artifact_hash_header_verified"] is True, item
         assert item["ui_review_pdf_canonical_truth_digest_verified"] is True, item
         assert item["ui_review_pdf_original_page_visible_after_action"] is True, item
         assert item["ui_review_pdf_lifecycle_contract_verified"] is True, item
-        assert item["ui_review_pdf_network_path"], item
+        assert item["ui_review_pdf_action_kind"] == "localized-draft-pending-approval", item
+        assert item["ui_review_pdf_network_path"] == (
+            f"/api/nico/assessment/comprehensive-run/{run_id}"
+            f"/localized-report/{proof['markdown_report_language']}/pdf"
+        ), item
     assert (
         first_pdf["ui_review_pdf_download_sha256"]
         == second_pdf["ui_review_pdf_download_sha256"]
