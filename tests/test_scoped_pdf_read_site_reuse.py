@@ -67,7 +67,7 @@ def test_cached_text_is_reused_without_changing_consumer_output(kind, monkeypatc
     original = PageObject.extract_text
 
     def extract(page, *args, **kwargs):
-        calls.append(page)
+        calls.append(1)
         return original(page, *args, **kwargs)
 
     with text_cache.pdf_text_cache_scope():
@@ -155,6 +155,14 @@ def test_partial_extraction_failure_keeps_original_per_page_fallback(kind, modul
                ("Owned deliberately unreadable second page",))
     original = PageObject.extract_text
     calls = []
+    parser_attempts = []
+    original_parse = text_cache._parse_pdf_page_texts
+
+    def parse(data):
+        parser_attempts.append(1)
+        return original_parse(data)
+
+    monkeypatch.setattr(text_cache, "_parse_pdf_page_texts", parse)
 
     def extract(page, *args, **kwargs):
         if str(page.get("/V11Unreadable") or "") == "yes":
@@ -180,15 +188,18 @@ def test_partial_extraction_failure_keeps_original_per_page_fallback(kind, modul
             assert observed["status"] == "unchanged"
             assert observed["truth_preserved"] is True
     assert len(calls) >= 2, "A failed extraction must be retried, never retained as complete text"
+    assert parser_attempts == [1, 1], "Both requests must retry the real failed parser"
 
 
+@pytest.mark.parametrize("snapshot_count", (1, 3))
 @pytest.mark.parametrize("kind,module", (("limitations", limitations), ("reflow", reflow)))
-def test_incomplete_snapshot_falls_back_to_fresh_page_population(kind, module, monkeypatch):
+def test_incomplete_snapshot_falls_back_to_fresh_page_population(kind, module, snapshot_count, monkeypatch):
     pdf = _pdf(("Executive Decision Brief", "Independent source first"),
                ("Human Review and Acceptance Gate", "Independent source second"))
     seen = []
     original = module._page_text
-    monkeypatch.setattr(module, "extract_pdf_page_texts", lambda data: ("wrong short snapshot",))
+    monkeypatch.setattr(module, "extract_pdf_page_texts",
+                        lambda data: ("wrong snapshot",) * snapshot_count)
 
     def page_text(page):
         value = original(page)
@@ -202,3 +213,43 @@ def test_incomplete_snapshot_falls_back_to_fresh_page_population(kind, module, m
     assert observed["status"] == "unchanged"
     assert len(seen) == 2
     assert "Independent source second" in seen[1]
+
+
+@pytest.mark.parametrize("snapshot_count", (1, 3))
+@pytest.mark.parametrize("kind,module", (("sanitizer", sanitizer), ("clarity", clarity),
+                                        ("accuracy", accuracy), ("manifest", manifest)))
+def test_validator_rejects_short_or_long_snapshot(kind, module, snapshot_count, monkeypatch):
+    pdf = _manifest_pdf() if kind == "manifest" else _pdf(
+        ("Executive Decision Brief",), ("Human Review and Acceptance Gate",),
+    )
+    monkeypatch.setattr(module, "extract_pdf_page_texts",
+                        lambda data: ("wrong snapshot",) * snapshot_count)
+    with pytest.raises(ValueError, match="text population mismatch"):
+        _consume(kind, pdf)
+
+
+def test_warm_text_preserves_literal_evidence_and_rechecks_page_marker():
+    from pypdf import PdfWriter
+    from pypdf.generic import BooleanObject, NameObject
+    raw = _pdf(("report_contract_reason: quoted supplier evidence",
+                "FINAL REPORT PENDING HUMAN APPROVAL"),
+               ("Human Review and Acceptance Gate",))
+    reader = PdfReader(io.BytesIO(raw))
+    reader.pages[0][NameObject("/NICOSuppliedEvidence")] = BooleanObject(True)
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    literal = buffer.getvalue()
+    with text_cache.pdf_text_cache_scope():
+        text_cache.extract_pdf_page_texts(literal)
+        preserved = sanitizer.sanitize_client_pdf_status(literal)
+        unmarked = sanitizer.sanitize_client_pdf_status(raw)
+    kept = PdfReader(io.BytesIO(preserved))
+    assert len(kept.pages) == 2
+    assert bool(kept.pages[0].get("/NICOSuppliedEvidence"))
+    quoted = kept.pages[0].extract_text() or ""
+    assert "report_contract_reason: quoted supplier evidence" in quoted
+    assert "FINAL REPORT PENDING HUMAN APPROVAL" in quoted
+    assert len(PdfReader(io.BytesIO(unmarked)).pages) == 1
