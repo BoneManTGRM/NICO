@@ -7,6 +7,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf._page import PageObject
 
 from nico.comprehensive_four_phase_pdf_v1 import assert_four_phase_pdf
+from nico import comprehensive_four_phase_pdf_v1 as four_phase
 from nico.comprehensive_four_phase_report_v1 import apply_four_phase_pdf, apply_four_phase_program
 from nico.report_pdf_text import extract_pdf_page_texts, pdf_text_cache_scope
 from tests.test_comprehensive_four_phase_report_v1 import _canonical, _pdf
@@ -98,3 +99,39 @@ def test_warm_exact_bytes_do_not_reuse_a_canonical_validation_verdict(changed):
             action = lambda: assert_four_phase_pdf(valid, requirements, spanish=True)
         with pytest.raises(ValueError, match="table-of-contents publication omitted"):
             action()
+
+@pytest.mark.parametrize("language", ("en", "es-MX"))
+def test_warm_four_phase_apply_is_exactly_idempotent_without_extraction(language, monkeypatch):
+    canonical = apply_four_phase_program(_canonical(language=language))
+    body = four_phase.apply_four_phase_pdf(_pdf(), canonical)
+    with pdf_text_cache_scope():
+        extract_pdf_page_texts(body)
+        monkeypatch.setattr(PageObject, "extract_text",
+                            lambda *args, **kwargs: pytest.fail("warm unchanged PDF reparsed"))
+        assert four_phase.apply_four_phase_pdf(body, canonical) == body
+
+@pytest.mark.parametrize("length", (1, 7))
+def test_four_phase_apply_rejects_cached_page_population_before_target_search(length, monkeypatch):
+    canonical = apply_four_phase_program(_canonical())
+    monkeypatch.setattr(four_phase, "extract_pdf_page_texts", lambda _: ("Table of Contents",) * length)
+    monkeypatch.setattr(four_phase, "four_phase_target_page_index",
+                        lambda *args, **kwargs: pytest.fail("selection before population guard"))
+    with pytest.raises(ValueError, match="page population"):
+        four_phase.apply_four_phase_pdf(_pdf(), canonical)
+
+def test_four_phase_bookmark_destinations_follow_body_not_tempting_target():
+    canonical = apply_four_phase_program(_canonical())
+    body = four_phase.apply_four_phase_pdf(_pdf(), canonical)
+    reader = PdfReader(io.BytesIO(body))
+    destinations = {}
+    def visit(items):
+        for item in items:
+            if isinstance(item, list):
+                visit(item)
+            else:
+                destinations[str(item.title)] = reader.get_destination_page_number(item)
+    visit(reader.outline)
+    phases = canonical["four_phase_program"]["phases"]
+    # Independent expectations from the six-page fixture's body order:
+    # candidate register2, functionalQA3, humanreview5; TOC1 excluded.
+    assert [destinations[phase["title_en"]] for phase in phases] == [2, 2, 3, 5]

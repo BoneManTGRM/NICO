@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 from nico.scanner_applicability_v1 import scanner_execution_summary
 
 import base64
@@ -728,8 +730,7 @@ def render_manifest_approval_supplement(
 
 
 def _pdf_text(pdf: bytes) -> tuple[list[str], str]:
-    reader = PdfReader(io.BytesIO(pdf))
-    pages = [page.extract_text() or "" for page in reader.pages]
+    pages = list(extract_pdf_page_texts(pdf))
     return pages, "\n".join(pages)
 
 

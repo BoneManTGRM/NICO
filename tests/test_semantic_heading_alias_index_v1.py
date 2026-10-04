@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import io
+from pypdf import PdfReader
+from reportlab.pdfgen import canvas
 
 import pytest
 
@@ -119,3 +122,82 @@ def test_four_line_heading_wrap_is_not_accepted():
 @pytest.mark.parametrize("line", ("Code Auditor", "prefix Code Audit", "Code Audit / status", "Code Audit—status"))
 def test_unrecognized_heading_boundaries_have_independent_negative_expectations(line):
     assert navigation._section_for_line(line) is None
+
+def test_explicit_page_text_snapshot_preserves_live_navigation_and_rejects_population():
+    from nico.report_pdf_text import extract_pdf_page_texts
+    from tests.test_comprehensive_four_phase_report_v1 import _pdf
+    body = _pdf()
+    reader = PdfReader(io.BytesIO(body))
+    live = navigation.semantic_entry_records(reader)
+    assert navigation.semantic_entry_records(
+        PdfReader(io.BytesIO(body)), page_texts=extract_pdf_page_texts(body),
+    ) == live
+    for length in (1, 7):
+        with pytest.raises(ValueError, match="page population"):
+            navigation.semantic_entry_records(reader, page_texts=("",) * length)
+
+def test_same_page_count_changed_bytes_change_semantic_identity():
+    from nico.report_pdf_text import extract_pdf_page_texts, pdf_text_cache_scope
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer, invariant=1)
+    document.drawString(40, 720, "NICO Comprehensive")
+    document.showPage()
+    document.drawString(40, 720, "Functional QA")
+    document.showPage()
+    document.save()
+    first = buffer.getvalue()
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer, invariant=1)
+    document.drawString(40, 720, "NICO Comprehensive")
+    document.showPage()
+    document.drawString(40, 720, "Platform Parity")
+    document.showPage()
+    document.save()
+    second = buffer.getvalue()
+    with pdf_text_cache_scope():
+        one, _ = navigation.semantic_entry_records(
+            PdfReader(io.BytesIO(first)), page_texts=extract_pdf_page_texts(first))
+        two, _ = navigation.semantic_entry_records(
+            PdfReader(io.BytesIO(second)), page_texts=extract_pdf_page_texts(second))
+    assert len(PdfReader(io.BytesIO(first)).pages) == len(PdfReader(io.BytesIO(second)).pages) == 2
+    assert [record["section_id"] for record in one] == ["functional_qa"]
+    assert [record["section_id"] for record in two] == ["platform_parity"]
+
+def test_navigation_uses_rewritten_snapshot_after_existing_toc_removal(monkeypatch):
+    from tests.test_comprehensive_four_phase_report_v1 import _pdf
+    from nico.report_pdf_text import extract_pdf_page_texts
+    snapshots = []
+    def capture(body):
+        reader = PdfReader(io.BytesIO(body))
+        snapshots.append(tuple(page.extract_text() or "" for page in reader.pages))
+        return extract_pdf_page_texts(body)
+    monkeypatch.setattr(navigation, "extract_pdf_page_texts", capture)
+    rendered = navigation.semantic_renumber_and_outline(_pdf())
+    assert len(snapshots) == 1 and len(snapshots[0]) == 5
+    assert "Review-Required Candidate Register" in snapshots[0][1]
+    assert "Table of Contents" not in "\n".join(snapshots[0])
+    final = PdfReader(io.BytesIO(rendered))
+    assert len(final.pages) == 6
+    assert "Table of Contents" in final.pages[1].extract_text()
+    assert "Review-Required Candidate Register" in final.pages[2].extract_text()
+
+@pytest.mark.parametrize("cover,title,spanish", (
+    ("AUTOMATED DRAFT", "Functional QA", False),
+    ("BORRADOR AUTOMATIZADO", "QA funcional", True),
+))
+def test_bilingual_snapshots_keep_independent_heading_and_locale_expectations(cover, title, spanish):
+    from nico.report_pdf_text import extract_pdf_page_texts
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer, invariant=1)
+    document.drawString(40, 720, cover)
+    document.showPage()
+    document.drawString(40, 720, title)
+    document.showPage()
+    document.save()
+    body = buffer.getvalue()
+    reader = PdfReader(io.BytesIO(body))
+    live = navigation.semantic_entry_records(reader)
+    cached = navigation.semantic_entry_records(reader, page_texts=extract_pdf_page_texts(body))
+    assert cached == live and cached[1] is spanish
+    assert [record["section_id"] for record in cached[0]] == ["functional_qa"]
+    assert cached[0][0]["source_page_index"] == 1

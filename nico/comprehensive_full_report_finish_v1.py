@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_pdf_text import extract_pdf_page_texts
+
 import ast
 import base64
 import html
@@ -306,7 +308,7 @@ def install_reportlab_dark_header_contrast() -> bool:
 
 
 def _pdf_text(pdf: bytes) -> str:
-    return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    return "\n".join(extract_pdf_page_texts(pdf))
 
 
 def _html_text(rendered_html: str) -> str:
