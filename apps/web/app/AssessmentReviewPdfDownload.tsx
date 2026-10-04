@@ -78,6 +78,7 @@ const DOWNLOAD_TIMEOUT_MS = 255_000;
 const pendingReviewOperations = new Map<string, AbortController>();
 const pendingReviewPromises = new Map<string, {operation: Promise<void>; isCurrent: () => boolean; controller: AbortController}>();
 const buttonOwners = new WeakMap<HTMLButtonElement, AbortController>();
+const statusOwners = new WeakMap<Element, AbortController>();
 
 function showStatus(container: Element | null, message: string, failure = false): void {
   if (!container) return;
@@ -270,6 +271,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     new DOMException("PDF download deadline exceeded", "TimeoutError")), DOWNLOAD_TIMEOUT_MS);
   button.disabled = true;
   button.setAttribute("aria-busy", "true");
+  statusOwners.set(actions, controller);
   showStatus(actions, spanishUi()
     ? "Descargando y verificando el PDF… Puedes seguir usando esta página."
     : "Downloading and verifying the PDF… You can keep using this page.");
@@ -292,6 +294,10 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     true);
     throw error;
   }).finally(() => {
+    if (!isCurrent() && statusOwners.get(actions) === controller) {
+      actions.querySelector(`[${STATUS_ATTR}]`)?.remove();
+    }
+    if (statusOwners.get(actions) === controller) statusOwners.delete(actions);
     // Dispose this fetch even when validation stopped before body consumption.
     controller.abort();
     window.clearTimeout(timeout);

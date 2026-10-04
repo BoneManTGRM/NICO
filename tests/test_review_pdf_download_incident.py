@@ -25,7 +25,7 @@ def test_retained_pdf_download_progress_integrity_and_recovery():
     assert result.returncode == 0, output
     test_count = re.search(r"(?m)^# tests (\d+)$", result.stdout)
     passed = re.search(r"(?m)^# pass (\d+)$", result.stdout)
-    assert test_count and int(test_count.group(1)) >= 77, output
+    assert test_count and int(test_count.group(1)) >= 79, output
     assert passed and int(passed.group(1)) == int(test_count.group(1)), output
     assert "# skipped 0" in result.stdout, output
     assert "# fail 0" in result.stdout, output
