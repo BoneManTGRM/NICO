@@ -39,7 +39,7 @@ function setup(fetchImpl, language='en', digestImpl) {
     setAttribute(key,value) {this.attrs[key]=String(value);}
     removeAttribute(key) {delete this.attrs[key];}
     appendChild(node) {statuses.push(node);}
-    querySelector() {return statuses[statuses.length-1]||null;}
+    querySelector() {return statuses.filter(node=>node.isConnected).at(-1)||null;}
     closest(selector) {return selector==='button'?button:actions;}
     remove() {this.isConnected=false;}
     click() {anchors.push({href:this.href,target:this.target,filename:this.download});}
@@ -372,4 +372,22 @@ for(const rejected of ['stale-header-context','wrong-MIME'])test('rejected '+rej
   s.click();if(rejected==='stale-header-context')s.actions.attrs['data-run-id']='comprun_other';
   release(response('en',rejected==='wrong-MIME'?{'content-type':'text/html'}:{}));await s.settled();
   assert.equal(s.anchors.length,0);assert.equal(s.calls[0].init.signal.aborted,true);
+});
+
+test('stale completion clears its old progress from a reused assessment container',async()=>{
+  let release;const s=setup(()=>new Promise(resolve=>{release=resolve;}));
+  s.click();s.actions.attrs['data-run-id']='comprun_current_after_reload';
+  release(response());await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.actions.querySelector(),null);
+});
+test('old stale completion cannot remove progress owned by a new control and truth',async()=>{
+  const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
+  s.click();s.button.isConnected=false;s.actions.attrs['data-canonical-truth-sha256']='c'.repeat(64);
+  const replacement=new s.button.constructor();replacement.attrs={...s.button.attrs,'data-assessment-action-disabled':'false'};
+  replacement.textContent=s.button.textContent;
+  const current=s.api.downloadPendingReviewPdf(replacement);
+  releases[0](response());await flush();
+  assert.ok(s.actions.querySelector()?.isConnected);assert.match(s.actions.querySelector().textContent,/Downloading and verifying/);
+  releases[1](response('en',{'x-nico-canonical-truth-sha256':'c'.repeat(64)}));await current;await s.settled();
+  assert.equal(s.anchors.length,1);assert.match(s.actions.querySelector().textContent,/verified and sent/);
 });
