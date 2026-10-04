@@ -12,11 +12,12 @@ from nico import comprehensive_semantic_navigation_v1 as semantic
 from nico.report_pdf_text import pdf_text_cache_scope
 
 
-def _pdf(spanish=False):
+def _pdf(spanish=False, repository=False):
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, invariant=1, pageCompression=0)
     for heading in ["BORRADOR AUTOMATIZADO" if spanish else "Cover", "Tabla de contenido" if spanish else "Table of Contents",
-                    "Auditoría de código" if spanish else "Code Audit", "Source evidence"]:
+                    "Auditoría de código" if spanish else "Code Audit",
+                    "Repository and Delivery Evidence" if repository else "Source evidence"]:
         pdf.drawString(40, 720, heading)
         pdf.showPage()
     pdf.save()
@@ -91,12 +92,21 @@ def test_recovered_section_uses_new_bytes_and_independent_navigation_identity(mo
     ]
 
 
-def test_changed_bytes_with_same_page_count_do_not_reuse_old_text():
+def test_changed_bytes_with_same_page_count_do_not_reuse_old_text(monkeypatch):
+    monkeypatch.setattr(commercial, "_repository_delivery_stage",
+                        lambda canonical: {"stage_id": "repository_delivery_evidence"}
+                        if canonical.get("requires_repository_stage") else None)
+    def unexpected_supplement(*args, **kwargs):
+        raise AssertionError("A genuine existing repository section must not be recovered from stale text")
+    monkeypatch.setattr(commercial, "_render_repository_delivery_supplement", unexpected_supplement)
     with pdf_text_cache_scope():
-        first = commercial._ensure_repository_delivery_section(_one_page("Cover"), {})
-        second_pdf = _one_page("Repository and Delivery Evidence")
-        second = commercial._ensure_repository_delivery_section(second_pdf, {})
+        first = commercial._ensure_repository_delivery_section(_pdf(), {})
+        second_pdf = _pdf(repository=True)
+        second = commercial._ensure_repository_delivery_section(
+            second_pdf, {"requires_repository_stage": True},
+        )
     assert first[0] != second[0]
+    assert len(PdfReader(io.BytesIO(first[0])).pages) == len(PdfReader(io.BytesIO(second_pdf)).pages) == 4
     assert second == (second_pdf, False)
 
 
