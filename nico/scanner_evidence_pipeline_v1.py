@@ -733,16 +733,48 @@ def _run_eslint(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Calla
     return _tool_payload(spec, result, findings=findings, capture_complete=capture_complete, reason=reason, raw_blob=blob, execution_source="nico_standard_eslint_profile", workspace=workspace, valid_returncodes={0, 1}, extra={"project_preparation": {"status": preparation.status, "node_modules_ready": preparation.node_modules_ready} if preparation else {}, "generated_config_sha256": _sha256(config.read_bytes())})
 
 
-def _typescript_findings(text: str) -> list[dict[str, Any]]:
+def _typescript_diagnostics(text: str) -> tuple[list[dict[str, Any]], bool]:
     import re
 
-    pattern = re.compile(r"^(?P<file>.+?)\((?P<line>\d+),(?P<column>\d+)\):\s+error\s+(?P<code>TS\d+):\s+(?P<message>.+)$")
+    located = re.compile(r"^(?P<file>.+?)\((?P<line>\d+),(?P<column>\d+)\):\s+error\s+(?P<code>TS\d+):\s+(?P<message>.+)$")
+    project = re.compile(r"^error\s+(?P<code>TS\d+):\s+(?P<message>.+)$")
     findings: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    complete = True
     for line in text.splitlines():
-        match = pattern.match(line.strip())
+        if not line.strip():
+            continue
+        match = located.match(line.strip())
         if match:
-            findings.append({"file_path": match.group("file"), "line": int(match.group("line")), "column": int(match.group("column")), "code": match.group("code"), "message": match.group("message"), "severity": "high"})
-    return findings
+            current = {"file_path": match.group("file"), "line": int(match.group("line")), "column": int(match.group("column")), "code": match.group("code"), "message": match.group("message"), "severity": "high"}
+        else:
+            match = project.match(line.strip())
+            if match:
+                # Native project/configuration errors need not have a location.
+                current = {"code": match.group("code"), "message": match.group("message"), "severity": "high", "diagnostic_scope": "project"}
+            elif current is not None and line[:1].isspace() and not re.search(r"(?:^|:\s*)error\s+TS", line.strip()):
+                # tsc emits indented explanations directly after a diagnostic.
+                # Oversized or unknown text remains retained but unverified.
+                if len(current["message"]) + len(line) + 1 <= 65_536:
+                    current["message"] += "\n" + line.rstrip()
+                else:
+                    current = None
+                    complete = False
+                continue
+            else:
+                current = None
+                complete = False
+                continue
+        if len(current["message"]) > 65_536:
+            current = None
+            complete = False
+            continue
+        findings.append(current)
+    return findings, complete
+
+
+def _typescript_findings(text: str) -> list[dict[str, Any]]:
+    return _typescript_diagnostics(text)[0]
 
 
 def _run_typescript(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
@@ -765,10 +797,28 @@ def _run_typescript(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: C
     env["NODE_OPTIONS"] = os.getenv("NICO_NODE_OPTIONS", "--max-old-space-size=2048")
     command = (str(binary), "--noEmit", "--pretty", "false", "--incremental", "false", "-p", str(tsconfig))
     result = _run(runner, command, cwd=web_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 8_000_000)), stdout_path=raw, extra_env=env)
-    text = _read_text(raw)
-    findings = _typescript_findings(text)
-    capture_complete = result.returncode == 0 or bool(findings)
-    reason = "" if capture_complete else redact_text(result.stderr or text or f"TypeScript returned {result.returncode} without parseable diagnostics")[:4000]
+    parse_reason = ""
+    if not raw.exists():
+        text, findings, parsed_complete = "", [], False
+        parse_reason = "TypeScript native stdout artifact is missing."
+    elif raw.stat().st_size > MAX_PARSE_BYTES:
+        text, findings, parsed_complete = "", [], False
+        parse_reason = f"TypeScript output exceeded the bounded parse limit of {MAX_PARSE_BYTES} bytes."
+    else:
+        try:
+            text = raw.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            text, findings, parsed_complete = "", [], False
+            parse_reason = "TypeScript native stdout artifact could not be decoded completely as UTF-8."
+        else:
+            findings, parsed_complete = _typescript_diagnostics(text)
+            if not parsed_complete:
+                parse_reason = "TypeScript output contains unrecognized or over-limit diagnostic text; complete evidence is unverified."
+    consistent = (result.returncode == 0 and not findings) or (result.returncode in {1, 2} and bool(findings))
+    if not consistent and not parse_reason:
+        parse_reason = "TypeScript exit code and parsed diagnostics disagree; complete evidence is unverified."
+    capture_complete = parsed_complete and consistent and not bool(result.stderr.strip())
+    reason = "" if capture_complete else parse_reason or redact_text(result.stderr or text or f"TypeScript returned {result.returncode} without parseable diagnostics")[:4000]
     blob = _raw_blob(spec.name, raw, "txt")
     return _tool_payload(spec, result, findings=findings, capture_complete=capture_complete, reason=reason, raw_blob=blob, execution_source="canonical_typescript_project", workspace=workspace, valid_returncodes={0, 1, 2}, extra={"project_preparation": {"status": preparation.status, "node_modules_ready": preparation.node_modules_ready}})
 
