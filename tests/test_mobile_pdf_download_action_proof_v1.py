@@ -325,3 +325,37 @@ def test_pdf_parity_success_keeps_source_and_ui_inputs_unchanged():
     captured = dict(source)
     proof._require_source_ui_pdf_parity(captured, source)
     assert captured == source
+
+
+def test_mobile_pdf_filename_accepts_retained_spanish_source_contract():
+    run_id = "comprun_31da067415f8574209a638b88ff82b65"
+    filename = (
+        "nico-evaluacion-tecnica-integral-gitlab.com-gitlab-org-gitlab-test-"
+        f"{run_id}-es-MX-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    )
+    assert proof._validate_response_filename(
+        f'attachment; filename="{filename}"', run_id, "es-MX"
+    ) == filename
+
+
+@pytest.mark.parametrize("fault", ["english_locale", "wrong_run", "wrong_suffix", "unknown_prefix"])
+def test_mobile_pdf_retained_spanish_filename_preserves_identity_guards(fault):
+    run_id = "comprun_31da067415f8574209a638b88ff82b65"
+    filename = (
+        "nico-evaluacion-tecnica-integral-gitlab.com-gitlab-org-gitlab-test-"
+        f"{run_id}-es-MX-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf"
+    )
+    language = "es-MX"
+    if fault == "english_locale":
+        filename = filename.replace("-es-MX-", "-en-")
+        language = "en"
+    elif fault == "wrong_run":
+        filename = filename.replace(run_id, "comprun_" + "f" * 32)
+    elif fault == "wrong_suffix":
+        filename = filename.replace("AUTOMATED-DRAFT-PENDING-APPROVAL", "APPROVED")
+    else:
+        filename = filename.replace("nico-evaluacion-tecnica-integral-", "nico-unknown-document-")
+    with pytest.raises(AssertionError):
+        proof._validate_response_filename(
+            f'attachment; filename="{filename}"', run_id, language
+        )
