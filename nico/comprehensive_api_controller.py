@@ -1187,7 +1187,23 @@ class ComprehensiveApiController:
             # before any controller projection or installed PDF builder runs.
             def build() -> Any:
                 current = record if record is not None else self._service.load_read_only(normalized)
-                return builder(self._status_artifact_from_record(current), report_language)
+                validated = self._status_artifact_from_record(current)
+                response = builder(validated, report_language)
+                try:
+                    from nico.current_retained_metadata_observer_v13 import observe_validated_retained_pdf
+                    observe_validated_retained_pdf(current, validated.get("reports"), report_language, response)
+                except Exception:
+                    # Optional diagnostics start only after the original builder
+                    # succeeds. They cannot change its response or its failures.
+                    try:
+                        import logging
+                        logging.getLogger("uvicorn.error").info(
+                            'NICO_CURRENT_RETAINED_METADATA={"schema":"nico.current-retained-metadata.v13",'
+                            '"outcome":"observation_unavailable","reason_code":"optional_observer_unavailable"}'
+                        )
+                    except Exception:
+                        pass
+                return response
 
             return finish_retained_pdf(prepared, build)
         return builder(self.status_artifact_read_only(normalized), report_language)

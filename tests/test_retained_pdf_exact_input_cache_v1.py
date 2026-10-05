@@ -93,6 +93,20 @@ def test_repeat_exact_retained_pdf_reuses_completed_validation_without_mutable_r
     assert hashlib.sha256(database.read_bytes()).hexdigest() == before
 
 
+def test_optional_numeric_observer_failure_preserves_original_validated_pdf(retained,monkeypatch):
+    from nico import current_retained_metadata_observer_v13 as observer
+    def unavailable(*args,**kwargs):
+        raise RuntimeError('owned optional observer fault')
+    monkeypatch.setattr(observer,'observe_validated_retained_pdf',unavailable)
+    database,run_id,endpoint,expected,calls,_=retained
+    before=hashlib.sha256(database.read_bytes()).hexdigest()
+    response=endpoint(run_id,'en')
+    assert response.status_code==200 and response.body==expected
+    assert response.headers['x-nico-client-delivery-allowed']=='false'
+    assert len(calls)==1
+    assert hashlib.sha256(database.read_bytes()).hexdigest()==before
+
+
 def test_changed_unrelated_stage_cannot_reuse_old_pdf_proof(retained):
     database, run_id, endpoint, _, calls, _ = retained
     endpoint(run_id, 'en')

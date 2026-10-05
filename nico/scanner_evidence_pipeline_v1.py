@@ -282,7 +282,8 @@ def _unavailable(spec: ScannerToolSpec, reason: str, *, source: str) -> dict[str
         "findings": [],
         "findings_count": 0,
         "execution_source": source,
-        "execution_observed_for_this_report": True,
+        # This path supplies no retained analyzer command result or receipt.
+        "execution_observed_for_this_report": False,
         "current_run": True,
         "verified_for_this_report": False,
         "raw_artifact_capture_complete": False,

@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger("uvicorn.error")
 @contextmanager
 def report_delivery_timing(run_id: str, report_language: str):
     """Observe one authenticated route; never retain input bodies or credentials."""
-    state: dict[str, Any] = {"phases": {}}
+    state: dict[str, Any] = {"phases": {}, "run_id": run_id, "report_language": report_language}
     token = _ACTIVE.set(state)
     started = time.perf_counter()
     outcome, error_type = "completed", ""
