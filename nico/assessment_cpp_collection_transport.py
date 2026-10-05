@@ -1,5 +1,6 @@
 """Bind collection claims to the complete retained controller transport."""
 import ast
+from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
 import base64
 import hashlib
 
@@ -128,7 +129,8 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
                 source_root='/work/source',build_root='/work/build',client=client,
                 cache_sha256=probe['configuration_cache_sha256'],
                 compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_capture' in probe))
             require(membership['execution_authorized'] is False and membership['context_argv_binding_verified'] is False)
             if probe.get('native_command_capture') is not None:
                 from nico.assessment_cpp_native_commands import (CAPTURE_PROGRAM as NATIVE_CAPTURE_PROGRAM,
@@ -156,13 +158,15 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
                     source_root='/work/source',build_root='/work/build',client=client,
                     cache_sha256=probe['configuration_cache_sha256'],
                     compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_capture' in probe))
                 require(probe.get('native_command_freeze')==freeze)
                 plan=configured_native_commands(operations['project-native-commands'][1],operations['project-enabled-targets'][1],db,targets,
                     source_root='/work/source',build_root='/work/build',client=client,
                     cache_sha256=probe['configuration_cache_sha256'],
                     compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_capture' in probe))
                 require(probe['analysis_compilation_database_sha256']==plan['analysis_database_sha256']
                     and probe['analysis_invocations']==plan['context_count'])
         if probe.get('unit_test_data') is not None:

@@ -202,7 +202,7 @@ def _summary_tool(root: Path, summary_name: str) -> dict[str, Any]:
 
 
 def _known_public_signing_fingerprint(finding: dict[str, Any]) -> bool:
-    """Disposition one reviewed immutable observation, never a class of keys.
+    """Disposition reviewed immutable observations, never a class of keys.
 
     Native artifact 10731003280 identifies this exact line in commit 684e5af5.
     That line contains LLVM's PUBLIC signing-key fingerprint, independently
@@ -210,21 +210,24 @@ def _known_public_signing_fingerprint(finding: dict[str, Any]) -> bool:
     The scanner redacts its value, so require the immutable source locator and
     complete matching context. New commits/paths/rules/values still block.
     """
-    commits = {
-        '684e5af5074c6e1c0cf4b67fa263b0d79b8beabf',
+    locations = {
+        ('684e5af5074c6e1c0cf4b67fa263b0d79b8beabf', 'docker/assessment-llvm17.lock.json'),
         # PR #1641 merge commit. Git blob 67382f0bc1cc596affc6ce191ff1308fc804b67d
         # is byte-identical to the independently reviewed source commit above.
-        '0f14a8dba3c0fa6d11d982e007492a7f543ccfb7',
+        ('0f14a8dba3c0fa6d11d982e007492a7f543ccfb7', 'docker/assessment-llvm17.lock.json'),
+        # Audit artifact 11372481459: SDK lock bytes SHA256 76385517f23a58851167a04ef5ba1697
+        # 830fe62e569acdf804eec708e063260b contain the same apt.llvm.org public fingerprint.
+        ('3de83e0c61d53b3f0fbfe284c764701cbb08d506', 'docker/assessment-clang-header-sdk.lock.json'),
     }
     commit = str(finding.get('Commit') or '')
-    path = 'docker/assessment-llvm17.lock.json'
+    path = str(finding.get('File') or '')
     expected = {
         'File': path, 'RuleID': 'generic-api-key',
         'Secret': 'REDACTED', 'Match': 'llvm_signing_key_fingerprint": "REDACTED"',
         'Fingerprint': commit + ':' + path + ':generic-api-key:5',
         'StartLine': 5, 'EndLine': 5, 'StartColumn': 5, 'EndColumn': 77,
     }
-    return (commit in commits
+    return ((commit, path) in locations
             and all(type(finding.get(key)) is type(value) and finding[key] == value
                     for key, value in expected.items())
             and finding.get('Verified', False) is False)

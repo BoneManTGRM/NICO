@@ -5,6 +5,8 @@ the immutable PostgreSQL artifact store and passed through the same controller
 validators that qualified the worker output.
 """
 from __future__ import annotations
+
+from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
 from copy import deepcopy
 import base64
 import gzip
@@ -105,7 +107,8 @@ def reconstruct_configure_first(identity, contract, receipt, store):
             source_root='/work/source',build_root='/work/build',client=capsule['client'],
             cache_sha256=hashlib.sha256(cache).hexdigest(),
             compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(native_command_contract))
         if (native['enabled_target_capture_sha256']!=hashlib.sha256(capsule_raw).hexdigest()
                 or native['enabled_target_membership_verified'] is not True
                 or native['enabled_target_contexts_count']!=membership['configured_context_count']
@@ -122,12 +125,14 @@ def reconstruct_configure_first(identity, contract, receipt, store):
             source_root='/work/source',build_root='/work/build',client=capsule['client'],
             cache_sha256=hashlib.sha256(cache).hexdigest(),
             compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(native_command_contract))
         freeze=validate_native_plan_freeze(native_raw,native_post_raw,membership_raw,database,targets,
             source_root='/work/source',build_root='/work/build',client=capsule['client'],
             cache_sha256=hashlib.sha256(cache).hexdigest(),
             compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(native_command_contract))
         if (native['native_command_capture_sha256']!=hashlib.sha256(native_raw).hexdigest()
             or native['native_command_post_capture_sha256']!=hashlib.sha256(native_post_raw).hexdigest()
             or native['native_command_freeze_sha256']!=hashlib.sha256(canonical_bytes(freeze)).hexdigest()

@@ -326,6 +326,16 @@ def qualify_configuration_checkout(args):
                 from nico.assessment_cpp_runtime_scope import retained_runtime_bytes, validate_retained_runtime
                 runtime_raw=retained_runtime_bytes(runtime_interfaces,runtime_plan,result.get('runtime_evidence'))
                 reference=persist_project_artifact(args.output,'project-runtime-evidence',runtime_raw)
+                if result.get('runtime_evidence') is None:
+                    # Missing evidence does not prove no operations ran. Preserve
+                    # the earlier probe failure without inferring runtime success.
+                    evidence['runtime']={'complete':False, 'state':'unavailable',
+                        'artifact':reference, 'native_evidence_sha256':hashlib.sha256(runtime_raw).hexdigest(),
+                        'duration_ms':None}
+                    evidence['stage']='execution_unproven'
+                    if result['status']=='UNPROVEN' and result.get('error') is not None:
+                        raise ValueError('qualification_probe_unproven_without_runtime_evidence')
+                    raise ValueError('qualification_runtime_evidence_missing')
                 reconstructed=validate_retained_runtime(runtime_raw,evidence['source']['targets'],
                     manifest['project_options'],runtime_scope)
                 evidence['runtime']={'complete':reconstructed['summary']['complete'],

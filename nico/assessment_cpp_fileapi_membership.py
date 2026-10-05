@@ -21,6 +21,16 @@ MEMBERSHIP_SCHEMA = 'nico.cpp-fileapi-membership.v1'
 QUERY_NAMES = ('codemodel-v2', 'toolchains-v1')
 EMPTY_SHA = hashlib.sha256(b'').hexdigest()
 
+# Existing read-only full-project image PATH selects this pinned CMake wheel.
+# Legacy v8 retained contracts keep their original wrapper-path expectation.
+RUNTIME_CMAKE_PATH = '/opt/cmake-wheel/cmake/data/bin/cmake'
+
+
+def runtime_cmake_path(native_commands):
+    if type(native_commands) is not bool:
+        raise ValueError('worker_configuration_probe_fileapi_invalid')
+    return RUNTIME_CMAKE_PATH if native_commands else '/usr/local/bin/cmake'
+
 # These two programs run only in the existing disposable worker boundary.
 # They never import or execute assessed Python and never change its options.
 QUERY_PROGRAM = r'''
@@ -244,15 +254,32 @@ def _configured_target_membership(raw, database, targets, *, source_root, build_
     _require(model['kind'] == 'codemodel' and model['version'] == expected_versions['codemodel']
              and model['paths'] == {'source': source_root, 'build': build_root}
              and tools['kind'] == 'toolchains' and tools['version'] == expected_versions['toolchains'])
-    tool_bindings = {}
+    tool_bindings, languages = {}, set()
+    _require(isinstance(tools['toolchains'], list) and 0 < len(tools['toolchains']) <= 3)
     for tool in tools['toolchains']:
+        _require(isinstance(tool, dict))
         language = tool['language']
-        _require(language in compiler_versions and language not in tool_bindings
-                 and tool['compiler']['id'] == 'GNU'
-                 and tool['compiler']['version'] == compiler_versions[language])
+        _require(isinstance(language, str) and language not in languages)
+        languages.add(language)
+        if language == 'NONE':
+            # project(... LANGUAGES NONE) enables no native compiler. A NONE
+            # compile group still fails below; no C/CXX context is discarded.
+            _require(tool == {'language': 'NONE', 'compiler': {'implicit': {}}})
+            continue
+        compiler = tool['compiler']
+        _require(language in compiler_versions and isinstance(compiler, dict))
+        # CMake 3.31.6 documents these as optional. Preserve observed bytes;
+        # never invent missing ID/version fields. Real probe/consumer callers
+        # independently verify pinned gcc/g++ version operations and image paths.
+        missing_identity = 'id' not in compiler or 'version' not in compiler
+        _require(('id' not in compiler or compiler['id'] == 'GNU')
+                 and ('version' not in compiler or compiler['version'] == compiler_versions[language]))
         if compiler_paths is not None:
-            _require(isinstance(compiler_paths,dict) and tool['compiler']['path']==compiler_paths[language])
-        tool_bindings[language] = dict(tool['compiler'])
+            _require(isinstance(compiler_paths, dict)
+                     and compiler.get('path') == compiler_paths[language])
+        else:
+            _require(not missing_identity)
+        tool_bindings[language] = dict(compiler)
     _require(tool_bindings and set(tool_bindings) <= set(compiler_versions))
     configs = model['configurations']
     _require(isinstance(configs, list) and len(configs) == 1 and configs[0]['name'] == configuration)
@@ -314,7 +341,9 @@ def _configured_target_membership(raw, database, targets, *, source_root, build_
             _require(si in linked and type(source.get('isGenerated', False)) is bool)
             path = source['path']
             path = path if path.startswith('/') else source_root + '/' + path
-            if source.get('isGenerated', False):
+            # isGenerated records CMake's GENERATED property, not physical
+            # origin: file(WRITE) can create a build-tree source without it.
+            if path.startswith(build_root + '/'):
                 _relative(path, build_root)
                 origin, source_hash = 'generated', None
             else:
@@ -327,6 +356,8 @@ def _configured_target_membership(raw, database, targets, *, source_root, build_
                 'language': group['language'], 'origin': origin, 'file': path,
                 'source_sha256': source_hash, 'target_model_sha256': _digest(decoded[ref['jsonFile']]),
                 'compile_group_sha256': _digest(_canonical(group))})
+            if source.get('isGenerated', False) is not (origin == 'generated'):
+                contexts[-1]['fileapi_generated_property'] = source.get('isGenerated')
             _require(len(contexts) <= 20000)
     # Reconstruct every FileAPI reference, including directory objects, not just hidden.c.
     known = set(seen)

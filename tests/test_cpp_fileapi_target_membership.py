@@ -138,7 +138,10 @@ def test_partial_stale_corrupt_or_misbound_reply_is_rejected(mutation):
     elif mutation == 'escaped_reference': rewrite(capsule, model, lambda x: x['configurations'][0]['targets'][0].update(jsonFile='../secret.json'))
     elif mutation == 'duplicate_target': rewrite(capsule, model, lambda x: x['configurations'][0]['targets'].append(copy.deepcopy(x['configurations'][0]['targets'][0])))
     elif mutation == 'wrong_source_hash': targets['hidden.c'] = '0' * 64
-    elif mutation == 'wrong_generated_origin': rewrite(capsule, hidden, lambda x: x['sources'][0].update(isGenerated=True))
+    elif mutation == 'wrong_generated_origin':
+        # GENERATED is a CMake property, not an origin assertion. An unbound
+        # physical source still fails, with or without that property.
+        rewrite(capsule, hidden, lambda x: x['sources'][0].update(isGenerated=True, path='/foreign/hidden.c'))
     elif mutation == 'wrong_compile_group': rewrite(capsule, hidden, lambda x: x['compileGroups'][0].update(sourceIndexes=[1]))
     elif mutation == 'wrong_compiler': rewrite(capsule, tools, lambda x: x['toolchains'][0]['compiler'].update(version='foreign'))
     elif mutation == 'changed_database': database += b' '
@@ -233,3 +236,98 @@ def test_installed_query_rejects_stale_replies_and_symlink_boundary(tmp_path):
     escaped = invoke_program(QUERY_PROGRAM, (linked, 'client-nico-linked-control'))
     assert escaped.returncode != 0 and b'fileapi_query_path' in escaped.stderr
     assert not (outside / '.cmake').exists()
+
+
+def test_optional_fileapi_compiler_fields_keep_all_required_c_contexts():
+    capsule, database, targets, kwargs = owned()
+    tools = next(name for name in capsule['files'] if name.startswith('toolchains-'))
+    def optional_fields(model):
+        compiler = model['toolchains'][0]['compiler']
+        del compiler['id']
+        del compiler['version']
+    rewrite(capsule, tools, optional_fields)
+    proof = inventory(capsule, database, targets, kwargs)
+    assert proof['configured_context_count'] == 2
+    assert {row['language'] for row in proof['contexts']} == {'C'}
+    assert proof['compiler_bindings']['C']['path'] == kwargs['compiler_paths']['C']
+    assert 'id' not in proof['compiler_bindings']['C']
+    assert 'version' not in proof['compiler_bindings']['C']
+    assert proof['context_argv_binding_verified'] is False
+    assert proof['analysis_executed'] is False
+
+
+def test_fileapi_none_is_not_a_native_compiler_or_a_dropped_c_context():
+    capsule, database, targets, kwargs = owned()
+    tools = next(name for name in capsule['files'] if name.startswith('toolchains-'))
+    rewrite(capsule, tools, lambda model: model['toolchains'].append(
+        {'language': 'NONE', 'compiler': {'implicit': {}}}))
+    proof = inventory(capsule, database, targets, kwargs)
+    assert proof['configured_context_count'] == 2
+    assert set(proof['compiler_bindings']) == {'C'}
+    assert {row['language'] for row in proof['contexts']} == {'C'}
+
+
+def test_configuration_written_build_source_does_not_require_generated_property():
+    capsule, database, targets, kwargs = owned()
+    hidden = next(name for name in capsule['files'] if name.startswith('target-hidden-'))
+    def build_source(model):
+        model['sources'][0]['path'] = kwargs['build_root'] + '/dummy_cxx_source.c'
+        model['sources'][0].pop('isGenerated', None)
+    rewrite(capsule, hidden, build_source)
+    proof = inventory(capsule, database, targets, kwargs)
+    assert proof['configured_context_count'] == 2
+    assert proof['configured_original_units'] == ['main.c']
+    assert proof['configured_generated_units'] == ['dummy_cxx_source.c']
+    context = next(row for row in proof['contexts'] if row['origin'] == 'generated')
+    assert context['source_sha256'] is None
+    assert context['fileapi_generated_property'] is None
+    assert [row['file'] for row in proof['missing_database_contexts']] == [context['file']]
+    assert proof['analysis_executed'] is False
+    assert proof['analyzer_header_coverage_verified'] is False
+
+
+@pytest.mark.parametrize('mutation', (
+    'missing_independent_paths', 'wrong_path', 'wrong_id', 'wrong_version',
+    'null_id', 'duplicate_none', 'none_compiler', 'none_compile_group',
+    'foreign_language', 'outside_build_root',
+))
+def test_optional_fileapi_metadata_keeps_identity_and_population_guards(mutation):
+    capsule, database, targets, kwargs = owned()
+    tools = next(name for name in capsule['files'] if name.startswith('toolchains-'))
+    hidden = next(name for name in capsule['files'] if name.startswith('target-hidden-'))
+    def change(model):
+        compiler = model['toolchains'][0]['compiler']
+        compiler.pop('id'); compiler.pop('version')
+        if mutation == 'wrong_path': compiler['path'] = '/foreign/bin/gcc'
+        elif mutation == 'wrong_id': compiler['id'] = 'foreign'
+        elif mutation == 'wrong_version': compiler['version'] = 'foreign'
+        elif mutation == 'null_id': compiler['id'] = None
+        elif mutation in ('duplicate_none', 'none_compiler', 'none_compile_group'):
+            none = {'language': 'NONE', 'compiler': {'implicit': {}}}
+            if mutation == 'none_compiler': none['compiler']['path'] = '/foreign/bin/compiler'
+            model['toolchains'].append(none)
+            if mutation == 'duplicate_none': model['toolchains'].append(copy.deepcopy(none))
+        elif mutation == 'foreign_language': model['toolchains'].append({'language': 'ASM', 'compiler': {}})
+    rewrite(capsule, tools, change)
+    if mutation == 'missing_independent_paths': kwargs.pop('compiler_paths')
+    if mutation == 'none_compile_group':
+        rewrite(capsule, hidden, lambda model: model['compileGroups'][0].update(language='NONE'))
+    if mutation == 'outside_build_root':
+        rewrite(capsule, hidden, lambda model: model['sources'][0].update(path='/foreign/dummy.c'))
+    with pytest.raises(ValueError, match='worker_configuration_probe_fileapi_invalid'):
+        inventory(capsule, database, targets, kwargs)
+
+
+def test_generated_property_on_existing_source_keeps_immutable_original_bytes():
+    capsule, database, targets, kwargs = owned()
+    hidden = next(name for name in capsule['files'] if name.startswith('target-hidden-'))
+    rewrite(capsule, hidden, lambda model: model['sources'][0].update(isGenerated=True))
+    proof = inventory(capsule, database, targets, kwargs)
+    context = next(row for row in proof['contexts'] if row['file'].endswith('/hidden.c'))
+    assert context['origin'] == 'original'
+    assert context['source_sha256'] == targets['hidden.c']
+    assert context['fileapi_generated_property'] is True
+    assert proof['configured_original_units'] == ['hidden.c', 'main.c']
+    assert proof['configured_context_count'] == 2
+    assert proof['configured_generated_units'] == []
+    assert proof['analysis_executed'] is False

@@ -6,6 +6,8 @@ baseline contract uses a separate measured-at-runtime qualification envelope.
 """
 from __future__ import annotations
 
+from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
+
 import base64
 import hashlib
 import json
@@ -367,7 +369,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 source_root='/work/source', build_root='/work/build', client=result['fileapi_client'],
                 cache_sha256=result['configuration_cache_sha256'],
                 compiler_versions={'C': COMPILER_VERSION, 'CXX': COMPILER_VERSION},
-                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(capture_native_commands))
             result['enabled_target_membership'] = {**membership,
                 'artifact': result['enabled_target_capture']}
             save()
@@ -388,7 +391,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                         source_root='/work/source', build_root='/work/build', client=result['fileapi_client'],
                         cache_sha256=result['configuration_cache_sha256'],
                         compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(capture_native_commands))
                 except ValueError as exc:
                     raise ValueError('worker_configuration_probe_native_plan_invalid') from exc
                 analysis_raw = base64.b64decode(plan['analysis_database'], validate=True)
@@ -461,7 +465,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                         source_root='/work/source',build_root='/work/build',client=result['fileapi_client'],
                         cache_sha256=result['configuration_cache_sha256'],
                         compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(capture_native_commands))
                 except ValueError as exc:
                     raise ValueError('worker_configuration_probe_frozen_native_plan_mismatch') from exc
                 save()

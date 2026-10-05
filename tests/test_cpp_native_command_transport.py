@@ -31,7 +31,7 @@ def adapted(client, cache):
     kwargs = data['membership_kwargs']
     def rebase(raw):
         return raw.decode().replace(kwargs['source_root'],'/work/source').replace(kwargs['build_root'],'/work/build').replace(
-            kwargs['compiler_paths']['C'],'/usr/local/bin/gcc').replace(kwargs['cmake_path'],'/usr/local/bin/cmake').encode()
+            kwargs['compiler_paths']['C'],'/usr/local/bin/gcc').replace(kwargs['cmake_path'],'/opt/cmake-wheel/cmake/data/bin/cmake').encode()
     database = rebase(database)
     fileapi = json.loads(fileapi_raw)
     for name, row in fileapi['files'].items():

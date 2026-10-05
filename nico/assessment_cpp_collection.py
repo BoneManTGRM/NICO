@@ -6,6 +6,8 @@ It reconstructs native evidence; it never changes the original probe result.
 """
 from __future__ import annotations
 
+from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
+
 import base64
 import hashlib
 import re
@@ -223,7 +225,8 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
             source_root='/work/source',build_root='/work/build',client=probe['fileapi_client'],
             cache_sha256=probe['configuration_cache_sha256'],
             compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_plan' in probe))
         projected=probe['enabled_target_membership']
         _require(projected['capture_sha256']==membership['capture_sha256']
                  and projected['configured_context_count']==membership['configured_context_count'])
@@ -244,7 +247,8 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
             source_root='/work/source',build_root='/work/build',client=probe['fileapi_client'],
             cache_sha256=probe['configuration_cache_sha256'],
             compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
-            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_plan' in probe))
         projected=probe['native_command_plan']
         if projected.get('receipt_projection')=='hash-bound-summary-v1':
             _require(projected['contexts_count']==len(plan['contexts']) and projected['contexts_sha256']==_digest(plan['contexts']))
