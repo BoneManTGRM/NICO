@@ -392,7 +392,13 @@ def validate_project_static(raw, request):
             limitations.append({'context_id': context['context_id'],
                 'rule_id': row['error'] or 'native_execution_incomplete'})
             continue
-        if not xml or b'<!DOCTYPE' in xml.upper() or b'<!ENTITY' in xml.upper():
+        try:
+            xml_text = xml.decode('utf-8', 'strict')
+        except UnicodeError as error:
+            raise ValueError('worker_project_static_xml_invalid') from error
+        # Match the pinned producer's UTF-8 output before the parser can
+        # auto-detect another encoding and process prohibited declarations.
+        if not xml or '\x00' in xml_text or '<!DOCTYPE' in xml_text.upper() or '<!ENTITY' in xml_text.upper():
             raise ValueError('worker_project_static_xml_invalid')
         locations = {'/work/source/' + p: ('original', p, sha)
                      for p, sha in context['source_dependencies'].items()}
@@ -432,7 +438,7 @@ def validate_project_static(raw, request):
             for loc in document.findall('errors/error/location'):
                 if loc.get('file') not in locations:
                     raise ValueError('worker_project_static_location_unbound')
-            native_findings, limits, observed = parse_native(xml.decode('utf-8'), progress.decode('utf-8'),
+            native_findings, limits, observed = parse_native(xml_text, progress.decode('utf-8'),
                 sorted(locations), version=TOOL_VERSION, document=document)
         except (ET.ParseError, UnicodeError) as exc:
             raise ValueError('worker_project_static_xml_invalid') from exc

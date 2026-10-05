@@ -291,7 +291,8 @@ def _shell_arguments(command):
     return result
 
 
-def _make_environment(raw, files, support, source, build, cmake_path, *, compiled=True):
+def _make_environment(raw, files, support, source, build, cmake_path, *, compiled=True,
+                      top_level_makefile=False):
     """Reject overrides and executable Make syntax before any recipe expansion.
 
     All included Make inputs are captured, not just flags.make. CMake's native
@@ -312,11 +313,20 @@ def _make_environment(raw, files, support, source, build, cmake_path, *, compile
     # Nonrecipe continuations are Make's whitespace folding. A continued
     # recipe is outside this parser's narrow literal supported grammar.
     logical = re.sub(r'\\\n[ \t]*', ' ', text)
+    rule = None
     for line in logical.splitlines():
         if not line.strip() or line.startswith('#'):
             continue
         if line.startswith('\t'):
             references = re.findall(r'\$\(([^)]*)\)', line)
+            if 'ARGS' in references:
+                # CMake's top-level test helper is not a compiler object rule.
+                # Its optional arguments are neither expanded nor executed here.
+                ctest = cmake_path.rsplit('/', 1)[0] + '/ctest'
+                _require(top_level_makefile and support is None and rule in {
+                    'test: all', 'test: cmake_check_build_system'}
+                    and line == '\t' + ctest + ' --force-new-ctest-process $(ARGS)')
+                references = [name for name in references if name != 'ARGS']
             _require(all(name in {'CMAKE_COMMAND','CMAKE_SOURCE_DIR','CMAKE_BINARY_DIR','MAKE',
                 'COLOR','VERBOSE','EQUALS','MAKESILENT'}
                 or re.fullmatch(r'CMAKE_PROGRESS_[0-9]+|(?:C|CXX)_(?:DEFINES|INCLUDES|FLAGS)', name)
@@ -345,13 +355,19 @@ def _make_environment(raw, files, support, source, build, cmake_path, *, compile
                 # The generated object lists are inert literal data; only the
                 # target's own names are admitted, not arbitrary Make variables.
                 target = relative.rsplit('/',1)[1][:-4] if relative else None
-                _require(target is not None and name in {target + '_OBJECTS', target + '_EXTERNAL_OBJECTS'}
+                # CMake3.31.6 CreateMakeVariable encodes these punctuation
+                # characters in noncolliding target identifiers. Unexpected
+                # collision suffixes remain outside this supported grammar.
+                variable = (target.replace('.', '_').replace('-', '__').replace('+', '___')
+                            if target is not None else None)
+                _require(variable is not None and name in {variable + '_OBJECTS', variable + '_EXTERNAL_OBJECTS'}
                     and '$' not in value and not any(c in value for c in ';#`'))
             continue
         if line.startswith('.'):
             _require(line.split(':',1)[0].strip() in {'.PHONY','.SUFFIXES','.DELETE_ON_ERROR','.NOTPARALLEL'})
         _require(':' in line and '$' not in line.replace('$(VERBOSE).SILENT:', '')
                  and not any(c in line for c in '=;`') and not line.startswith((' ', 'override ', 'export ')))
+        rule = line
     _require(seen == set(assignments) and includes == (
         {relative + '/' + n for n in native_files if n != 'build.make'} if relative else set()))
     if relative is None:
@@ -446,7 +462,7 @@ def _configured_native_commands(raw, fileapi_raw, database, targets, **kwargs):
     contexts, matched, outputs = [], set(), set()
     for name in PARENT_MAKE_FILES:
         _make_environment(files[name], files, None, membership['source_root'], build,
-            kwargs.get('cmake_path','/usr/local/bin/cmake'))
+            kwargs.get('cmake_path','/usr/local/bin/cmake'), top_level_makefile=name == 'Makefile')
     for target_id, directory in directories.items():
         _make_environment(files[directory['relative'] + '/build.make'], files, directory['support'],
             membership['source_root'], build, kwargs.get('cmake_path','/usr/local/bin/cmake'), compiled=directory['compiled'])

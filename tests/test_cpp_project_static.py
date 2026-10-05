@@ -4,6 +4,7 @@ from copy import deepcopy
 import importlib.util
 import json
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 
@@ -118,6 +119,24 @@ def test_tampered_static_evidence_is_rejected(tmp_path,fault):
     if fault=='unexpected-claim': data['complete']=True
     if fault=='duration': row['execution']['duration_ms']=99000
     with pytest.raises(ValueError): api().validate_project_static(_canonical(data),req)
+
+
+@pytest.mark.parametrize('encoding', ['utf-16', 'utf-16-le', 'invalid-utf8'])
+def test_non_utf8_xml_is_rejected_before_the_xml_parser(tmp_path, monkeypatch, encoding):
+    req = request(tmp_path)
+    data = native(req)
+    row = data['records'][0]
+    text = base64.b64decode(row['xml']).decode('utf-8')
+    supplied = (b'\xff' + text.encode('utf-8') if encoding == 'invalid-utf8' else
+                ('<!DOCTYPE results [<!ENTITY x "owned">]>' + text).encode(encoding))
+    row.update(xml=base64.b64encode(supplied).decode(), xml_sha256=digest(supplied))
+
+    def unexpected_parser(*args, **kwargs):
+        pytest.fail('Non-UTF-8 untrusted XML reached the parser before validation')
+
+    monkeypatch.setattr(ET, 'fromstring', unexpected_parser)
+    with pytest.raises(ValueError, match='worker_project_static_xml_invalid'):
+        api().validate_project_static(_canonical(data), req)
 
 
 @pytest.mark.parametrize('fault',['exit','timeout','truncated','no-progress','missing-include','syntax','unattempted'])

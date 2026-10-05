@@ -76,6 +76,72 @@ def pack(raw):
     return {'data': base64.b64encode(raw).decode(), 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
 
 
+def ctest_recipe_fixture(change=None):
+    data, raw, fileapi, database = owned()
+    native = json.loads(raw)
+    cmake = data['membership_kwargs'].get('cmake_path', '/usr/local/bin/cmake')
+    ctest = cmake.rsplit('/', 1)[0] + '/ctest'
+    name = 'CMakeFiles/Makefile2' if change == 'other_parent' else 'Makefile'
+    rule = 'test: all'
+    recipe = '\t' + ctest + ' --force-new-ctest-process $(ARGS)'
+    if change == 'foreign_ctest': recipe = recipe.replace(ctest, '/foreign/ctest')
+    elif change == 'extra_operand': recipe += ' --extra'
+    elif change == 'shell_suffix': recipe += '; true'
+    elif change == 'dynamic_args': recipe = recipe.replace('$(ARGS)', '$(shell true)')
+    elif change == 'other_target': rule = 'other: all'
+    elif change == 'other_prerequisite': rule = 'test: unbound'
+    elif change == 'compiler_args': recipe = '\t' + data['membership_kwargs']['compiler_paths']['C'] + ' $(ARGS)'
+    content = base64.b64decode(native['files'][name]['data'])
+    assert b'\ntest:' not in content
+    content += ('\n' + rule + '\n' + recipe + '\n.PHONY : test\n').encode()
+    if change == 'args_assignment': content += b'ARGS = --unbound\n'
+    native['files'][name] = pack(content)
+    return data, json.dumps(native, sort_keys=True, separators=(',', ':')).encode(), fileapi, database
+
+
+def test_generated_top_level_ctest_recipe_does_not_change_compiler_contexts():
+    before = reconstruct(*owned())
+    after = reconstruct(*ctest_recipe_fixture())
+    assert after['contexts'] == before['contexts']
+    assert after['analysis_database'] == before['analysis_database']
+    assert after['execution_authorized'] is False and after['analysis_executed'] is False
+
+
+@pytest.mark.parametrize('change', ['foreign_ctest', 'extra_operand', 'shell_suffix',
+    'dynamic_args', 'other_target', 'other_prerequisite', 'compiler_args',
+    'args_assignment', 'other_parent'])
+def test_ctest_args_exception_cannot_modify_commands_or_another_rule(change):
+    with pytest.raises(ValueError, match='worker_native_command_plan_invalid'):
+        reconstruct(*ctest_recipe_fixture(change))
+
+
+@pytest.mark.parametrize('target', ['hidden-target', 'hidden.target', 'hidden+target'])
+def test_generated_object_variable_uses_the_target_make_identifier(target):
+    from nico.assessment_cpp_native_commands import _make_environment
+    data, raw, unused_fileapi, unused_database = owned()
+    native = json.loads(raw)
+    files = {name: base64.b64decode(row['data']) for name, row in native['files'].items()}
+    original = 'CMakeFiles/hidden.dir'
+    renamed = 'CMakeFiles/' + target + '.dir'
+    variable = target.replace('.', '_').replace('-', '__').replace('+', '___')
+    captured = {}
+    for name, content in files.items():
+        name = name.replace(original, renamed)
+        content = content.replace(original.encode(), renamed.encode())
+        content = content.replace(b'hidden_OBJECTS', (variable + '_OBJECTS').encode())
+        content = content.replace(b'hidden_EXTERNAL_OBJECTS', (variable + '_EXTERNAL_OBJECTS').encode())
+        captured[name] = content
+    kwargs = data['membership_kwargs']
+    _make_environment(captured[renamed + '/build.make'], captured,
+        kwargs['build_root'] + '/' + renamed, kwargs['source_root'], kwargs['build_root'],
+        kwargs.get('cmake_path', '/usr/local/bin/cmake'))
+    wrong = captured[renamed + '/build.make'].replace(
+        (variable + '_OBJECTS').encode(), b'foreign_OBJECTS')
+    with pytest.raises(ValueError, match='worker_native_command_plan_invalid'):
+        _make_environment(wrong, captured, kwargs['build_root'] + '/' + renamed,
+            kwargs['source_root'], kwargs['build_root'], kwargs.get('cmake_path', '/usr/local/bin/cmake'))
+
+
 def test_inert_dependency_evolution_preserves_commands_but_overrides_are_rejected():
     from nico.assessment_cpp_native_commands import validate_native_plan_freeze
     data, before, fileapi, database = owned()

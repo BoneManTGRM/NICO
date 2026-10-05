@@ -100,3 +100,12 @@ def test_real_producer_error_dispositions_remain_truthfully_incomplete(dispositi
     proof=validate_header_trace(ET.tostring(doc),**args)
     assert proof['normal_pass_completed'] is False
     assert proof['normal_pass_token_files'] == []
+
+
+@pytest.mark.parametrize('encoding', ['utf-16', 'utf-16-le', 'utf-16-be'])
+def test_non_utf8_dtd_cannot_credit_an_actual_header_trace(encoding):
+    raw, args = sample()
+    text = ET.tostring(ET.fromstring(raw), encoding='unicode')
+    supplied = ('<!DOCTYPE nico_native [<!ENTITY x "owned">]>' + text).encode(encoding)
+    with pytest.raises(ValueError, match='worker_project_header_evidence_invalid'):
+        validate_header_trace(supplied, **args)

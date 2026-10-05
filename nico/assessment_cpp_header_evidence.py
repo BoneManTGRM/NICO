@@ -75,8 +75,15 @@ def header_summary(analysis):
 def validate_header_trace(raw, *, source, locations, standard, configuration_defines=None,
                           effective_inputs=None):
     """Bind raw native bytes to one configured source and immutable inputs."""
-    _require(isinstance(raw, bytes) and 0 < len(raw) <= HEADER_LIMIT
-        and b'<!DOCTYPE' not in raw.upper() and b'<!ENTITY' not in raw.upper())
+    _require(isinstance(raw, bytes) and 0 < len(raw) <= HEADER_LIMIT)
+    try:
+        text = raw.decode('utf-8', 'strict')
+    except UnicodeError as error:
+        raise ValueError('worker_project_header_evidence_invalid') from error
+    # The pinned producer emits UTF-8. Reject NUL-bearing alternative XML
+    # encodings before ElementTree can auto-detect and parse declarations.
+    _require('\x00' not in text and '<!DOCTYPE' not in text.upper()
+        and '<!ENTITY' not in text.upper())
     _require(isinstance(source, str) and source in locations and isinstance(locations, dict)
         and isinstance(standard, str) and standard in {'c89', 'c99', 'c11', 'c17', 'c23',
             'c++03', 'c++11', 'c++14', 'c++17', 'c++20', 'c++23', 'c++26'})
