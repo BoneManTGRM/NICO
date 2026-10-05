@@ -32,6 +32,27 @@ def test_configure_first_v2_accepts_only_release_owned_cmake_policy():
     with pytest.raises(ValueError): validate_contract(broken)
 
 
+@pytest.mark.parametrize('native_commands', [False, True])
+def test_native_command_contract_cannot_downgrade_its_declared_capability(native_commands):
+    value = contract()
+    cfg = value['configuration']
+    cfg.pop('project_options')
+    cfg.update(schema='nico.cpp-configure-first-contract.v6' if native_commands else
+        'nico.cpp-configure-first-contract.v4', project_option_policy='conservative-cmake-v1')
+    cfg['capabilities']['capture_enabled_targets'] = True
+    if native_commands:
+        cfg['capabilities']['capture_native_commands'] = True
+    assert validate_contract(value) == value
+    broken = deepcopy(value)
+    broken['configuration']['capabilities']['capture_native_commands'] = not native_commands
+    with pytest.raises(ValueError, match='capabilities_invalid'):
+        validate_contract(broken)
+    if native_commands:
+        broken['configuration']['capabilities'].pop('capture_native_commands')
+        with pytest.raises(ValueError, match='capabilities_invalid'):
+            validate_contract(broken)
+
+
 def test_configure_first_v3_freezes_required_runtime_scope_before_execution():
     value=contract()
     value['configuration'].pop('project_options')

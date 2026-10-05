@@ -63,22 +63,33 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     native=receipt["native"]; refs=native["artifacts"]; targets=receipt["target_hashes"]
     required={"project-compilation-database","project-generated-context","project-compiler-evidence",
               "project-static-environment","project-static-evidence","project-baseline-evidence"}
-    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required
+    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required
     runtime_contract=runtime_required(contract['configuration'])
     membership_contract=membership_required(contract['configuration'])
+    native_command_contract=native_commands_required(contract['configuration'])
     if runtime_contract:
         required.add("project-runtime-evidence")
     if membership_contract:
         required.add('project-enabled-targets')
+    if native_command_contract:
+        required |= {'project-native-commands','project-native-commands-post-build','project-enabled-targets-post-build'}
     if not required<=set(refs):
         raise ValueError("worker_configure_first_artifact_population_invalid")
     from nico.assessment_cpp_baseline_evidence import validate_retained_baseline
     baseline_raw = _read_artifact(store, identity, refs["project-baseline-evidence"], "project-baseline-evidence")
     membership_raw=(_read_artifact(store,identity,refs['project-enabled-targets'],'project-enabled-targets')
                     if membership_contract else None)
+    native_raw=(_read_artifact(store,identity,refs['project-native-commands'],'project-native-commands')
+                    if native_command_contract else None)
+    native_post_raw=(_read_artifact(store,identity,refs['project-native-commands-post-build'],'project-native-commands-post-build')
+                    if native_command_contract else None)
+    if native_command_contract:
+        for key,expected in [('project-enabled-targets-post-build',membership_raw)]:
+            if _read_artifact(store,identity,refs[key],key)!=expected:
+                raise ValueError('worker_configure_first_native_plan_changed')
     baseline = validate_retained_baseline(
         baseline_raw, targets, contract["configuration"], contract["image_digest"], native,
-        membership_raw=membership_raw)
+        membership_raw=membership_raw,native_raw=native_raw,native_post_raw=native_post_raw)
     database=_read_artifact(store,identity,refs["project-compilation-database"],"project-compilation-database")
     if hashlib.sha256(database).hexdigest()!=native["compilation_database_sha256"]:
         raise ValueError("worker_configure_first_database_mismatch")
@@ -102,8 +113,33 @@ def reconstruct_configure_first(identity, contract, receipt, store):
                 or native['missing_database_contexts_count']!=len(membership['missing_database_contexts'])
                 or native['missing_database_contexts_sha256']!=_population(membership['missing_database_contexts'])[1]
                 or native['database_source_membership_complete'] is not membership['database_membership_complete']
-                or native['context_argv_binding_verified'] is not membership['context_argv_binding_verified']):
+                or not native_command_contract and native['context_argv_binding_verified'] is not membership['context_argv_binding_verified']):
             raise ValueError('worker_configure_first_summary_mismatch')
+    plan=None
+    if native_command_contract:
+        from nico.assessment_cpp_native_commands import configured_native_commands, validate_native_plan_freeze
+        plan=configured_native_commands(native_raw,membership_raw,database,targets,
+            source_root='/work/source',build_root='/work/build',client=capsule['client'],
+            cache_sha256=hashlib.sha256(cache).hexdigest(),
+            compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+        freeze=validate_native_plan_freeze(native_raw,native_post_raw,membership_raw,database,targets,
+            source_root='/work/source',build_root='/work/build',client=capsule['client'],
+            cache_sha256=hashlib.sha256(cache).hexdigest(),
+            compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+        if (native['native_command_capture_sha256']!=hashlib.sha256(native_raw).hexdigest()
+            or native['native_command_post_capture_sha256']!=hashlib.sha256(native_post_raw).hexdigest()
+            or native['native_command_freeze_sha256']!=hashlib.sha256(canonical_bytes(freeze)).hexdigest()
+            or native['native_command_plan_sha256']!=hashlib.sha256(canonical_bytes(plan)).hexdigest()
+            or native['native_contexts_count']!=len(plan['contexts'])
+            or native['native_contexts_sha256']!=_population(plan['contexts'])[1]
+            or native['analysis_compilation_database_sha256']!=plan['analysis_database_sha256']
+            or native['analysis_invocations']!=plan['context_count']
+            or native['context_argv_binding_verified'] is not True):
+            raise ValueError('worker_configure_first_native_plan_mismatch')
+        database=base64.b64decode(plan['analysis_database'],validate=True)
+        contexts=_database(database,None,'/work/build',nested=True,source_targets=targets)
     snapshot_raw=_read_artifact(store,identity,refs["project-generated-context"],"project-generated-context")
     snapshot=validate_project_snapshot(_json(snapshot_raw),contexts)
     compiler_raw=_read_artifact(store,identity,refs["project-compiler-evidence"],"project-compiler-evidence")
@@ -114,8 +150,12 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     environment=validate_environment(env_raw,env_request)
     static_raw=_read_artifact(store,identity,refs["project-static-evidence"],"project-static-evidence")
     static_request=project_static_request(database,targets,snapshot,compiler_raw,
-        extended_compiler_budget=True,environment=environment)
+        extended_compiler_budget=True,environment=environment,header_provenance=native_command_contract)
     primary=validate_project_static(static_raw,static_request)
+    if native_command_contract:
+        from nico.assessment_cpp_header_evidence import header_summary
+        if any(native[key]!=value for key,value in header_summary(primary).items()):
+            raise ValueError('worker_configure_first_header_summary_mismatch')
     analysis=primary
     if "project-static-clang-fallback" in refs:
         fallback_raw=_read_artifact(store,identity,refs["project-static-clang-fallback"],"project-static-clang-fallback")
@@ -142,7 +182,7 @@ def reconstruct_configure_first(identity, contract, receipt, store):
         count,digest=_population(values)
         if native[prefix+"_count"]!=count or native[prefix+"_sha256"]!=digest:
             raise ValueError("worker_configure_first_summary_mismatch")
-    if (native["configured_invocations"]!=contexts["context_count"]
+    if (native['analysis_invocations' if native_command_contract else "configured_invocations"]!=contexts["context_count"]
             or native["project_compiler_complete"] is not compiler["complete"]
             or native["project_static_complete"] is not analysis["complete"]):
         raise ValueError("worker_configure_first_summary_mismatch")
@@ -158,6 +198,7 @@ def reconstruct_configure_first(identity, contract, receipt, store):
             raise ValueError("worker_configure_first_summary_mismatch")
     return {"contexts":contexts,"snapshot":snapshot,"compiler":compiler,
             "environment":environment,"analysis":analysis,"runtime":runtime,"baseline":baseline,
+            **({'native_command_plan':plan} if native_command_contract else {}),
             **({'enabled_target_membership':membership} if membership_contract else {})}
 
 
@@ -168,12 +209,23 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
     if runtime is not None:
         record=deepcopy(record)
         record.setdefault("cpp_build_evidence", {})["runtime_scope"]=deepcopy(runtime["summary"])
+    membership=reconstruction.get('enabled_target_membership')
+    plan=reconstruction.get('native_command_plan')
+    if plan is not None:
+        record=deepcopy(record)
+        record.setdefault('cpp_build_evidence',{})['header_evidence'] = {
+            'contexts':deepcopy(analysis.get('header_context_evidence',[])),
+            'population':deepcopy(analysis.get('header_population',{})),
+            'unvisited_files':deepcopy(analysis.get('header_unvisited_files',[])),
+            'context_evidence_complete':analysis.get('header_context_evidence_complete') is True,
+            'population_complete':analysis.get('header_population_complete') is True,
+            'tool_manifest_sha256':analysis.get('header_tool_manifest_sha256'),
+            'line_or_branch_coverage_verified':False,'full_project_qualified':False}
     if analysis["complete"] is not True:
         return record
-    membership=reconstruction.get('enabled_target_membership')
     execution_complete = (native["complete_execution"] is True
         and (runtime is None or runtime["summary"]["complete"] is True)
-        and (membership is None or membership['context_argv_binding_verified'] is True))
+        and (membership is None or plan is not None and plan['context_argv_binding_verified'] is True))
     findings=[]
     primary_ref=native["artifacts"]["project-static-evidence"]["artifact_id"]
     fallback_ref=(native["artifacts"].get("project-static-clang-fallback") or {}).get("artifact_id")
@@ -186,6 +238,20 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
             ("rule_id","path","line","column","context_id","source_sha256","commit_sha","configuration_sha256")})
         findings.append(finding)
     output=deepcopy(record)
+    if plan is not None:
+        output.setdefault('cpp_build_evidence',{})['native_command_plan'] = {
+            'schema':plan['schema'],'binding_scope':plan['binding_scope'],
+            'native_capture_sha256':plan['native_capture_sha256'],
+            'original_database_sha256':plan['original_database_sha256'],
+            'analysis_database_sha256':plan['analysis_database_sha256'],
+            'context_count':plan['context_count'],
+            'original_database_context_count':plan['original_database_context_count'],
+            'omitted_database_context_count':plan['omitted_database_context_count'],
+            'context_membership_sha256':plan['context_membership_sha256'],
+            'context_argv_binding_verified':True,
+            'compiler_execution_verified':reconstruction['compiler']['complete'] is True,
+            'analyzer_header_coverage_verified':analysis['analyzer_header_coverage_verified'],
+            'full_project_qualified':False}
     output.update(execution_observed_for_this_report=True,findings=findings,
         finding_count=len(findings),canonical_findings_projected=True)
     if reconstruction.get("baseline") is not None:
@@ -202,7 +268,8 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
         analyzed_context_count=len(analysis["analyzed_contexts"]),
         limitations=deepcopy(analysis["limitations"]),
         limitations_count=len(analysis["limitations"]),
-        all_repository_configurations_analyzed=analysis["complete"] and (membership is None or membership['context_argv_binding_verified'] is True),
+        all_repository_configurations_analyzed=analysis["complete"] and (membership is None
+            or plan is not None and plan['context_argv_binding_verified'] is True),
         analyzer_header_coverage_verified=analysis.get("analyzer_header_coverage_verified") is True)
     if runtime is not None:
         output["cpp_build_evidence"]["runtime_scope"]=deepcopy(runtime["summary"])

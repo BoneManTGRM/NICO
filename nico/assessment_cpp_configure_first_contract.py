@@ -14,14 +14,20 @@ SCHEMA_V2 = "nico.cpp-configure-first-contract.v2"
 SCHEMA_V3 = "nico.cpp-configure-first-contract.v3"
 SCHEMA_V4 = "nico.cpp-configure-first-contract.v4"
 SCHEMA_V5 = "nico.cpp-configure-first-contract.v5"
-RUNTIME_SCHEMAS = frozenset({SCHEMA_V3, SCHEMA_V5})
-MEMBERSHIP_SCHEMAS = frozenset({SCHEMA_V4, SCHEMA_V5})
+SCHEMA_V6 = "nico.cpp-configure-first-contract.v6"
+SCHEMA_V7 = "nico.cpp-configure-first-contract.v7"
+RUNTIME_SCHEMAS = frozenset({SCHEMA_V3, SCHEMA_V5, SCHEMA_V7})
+MEMBERSHIP_SCHEMAS = frozenset({SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7})
+NATIVE_COMMAND_SCHEMAS = frozenset({SCHEMA_V6, SCHEMA_V7})
 
 def runtime_required(value):
     return isinstance(value, dict) and value.get('schema') in RUNTIME_SCHEMAS
 
 def membership_required(value):
     return isinstance(value, dict) and value.get('schema') in MEMBERSHIP_SCHEMAS
+
+def native_commands_required(value):
+    return isinstance(value, dict) and value.get('schema') in NATIVE_COMMAND_SCHEMAS
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
 def validate_configuration(value):
@@ -31,7 +37,7 @@ def validate_configuration(value):
     fields |= ({"project_options"} if schema == SCHEMA else {"project_option_policy"})
     if schema in RUNTIME_SCHEMAS:
         fields.add("runtime_scope")
-    if (not isinstance(value, dict) or set(value) != fields or schema not in {SCHEMA, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5}
+    if (not isinstance(value, dict) or set(value) != fields or schema not in {SCHEMA, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7}
             or value.get("platform") != "linux/amd64"
             or not isinstance(value.get("expected_tree_sha"), str)
             or re.fullmatch(r"[0-9a-f]{40}", value["expected_tree_sha"]) is None
@@ -84,6 +90,8 @@ def validate_configuration(value):
                    "compiler_environment":True}
     if schema in MEMBERSHIP_SCHEMAS:
         expected_caps['capture_enabled_targets'] = True
+    if schema in NATIVE_COMMAND_SCHEMAS:
+        expected_caps['capture_native_commands'] = True
     if capabilities != expected_caps:
         raise ValueError("worker_configure_first_capabilities_invalid")
     return deepcopy(value)

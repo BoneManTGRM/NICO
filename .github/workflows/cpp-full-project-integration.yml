@@ -114,12 +114,15 @@ jobs:
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
           python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
           cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
+          cp -R scripts/cppcheck-header-evidence toolchain/full-project/
           cp scripts/verify_cpp_runtime_toolchain.py toolchain/full-project/
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
           toolchain_container="$(docker create --network=none --read-only --entrypoint=/bin/true "$(cat full-project-image-id.txt)")"
           trap 'docker rm --force "$toolchain_container" >/dev/null' EXIT
           docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
       - name: Retain the exact analyzer for bounded owned diagnostic reproduction
         run: |
           set -euo pipefail
@@ -175,6 +178,7 @@ jobs:
             full-project-image-id.txt
             full-project-image.json
             cpp-runtime-toolchain.json
+            cppcheck-header-observer.json
             toolchain/full-project/llvm/receipt.json
             toolchain/full-project/project-dependencies/receipt.json
             toolchain/full-project/project-dependencies/lock.json
@@ -223,12 +227,15 @@ jobs:
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
           python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
           cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
+          cp -R scripts/cppcheck-header-evidence toolchain/full-project/
           cp scripts/verify_cpp_runtime_toolchain.py toolchain/full-project/
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
           toolchain_container="$(docker create --network=none --read-only --entrypoint=/bin/true "$(cat full-project-image-id.txt)")"
           trap 'docker rm --force "$toolchain_container" >/dev/null' EXIT
           docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
       - name: Acquire pinned public qualification source without execution
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -257,7 +264,7 @@ jobs:
           --runtime-scope-contract tests/fixtures/cpp/bitcoin-runtime-scope.json
           --unit-test-data qualification-unit-test-data
           --accept-completed-collection --producer-source-sha "$NICO_PRODUCER_SOURCE_SHA"
-          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment --capture-enabled-targets
+          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment --capture-enabled-targets --capture-native-commands
           --output cpp-baseline-qualification
           --image "$(cat full-project-image-id.txt)"
       - name: Retain native success and failure evidence
@@ -270,6 +277,7 @@ jobs:
             full-project-image-id.txt
             full-project-image.json
             cpp-runtime-toolchain.json
+            cppcheck-header-observer.json
             toolchain/full-project/llvm/receipt.json
             toolchain/full-project/project-dependencies/receipt.json
             toolchain/full-project/project-dependencies/lock.json

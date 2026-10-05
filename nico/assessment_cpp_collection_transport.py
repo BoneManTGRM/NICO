@@ -130,6 +130,41 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
                 compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
                 compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
             require(membership['execution_authorized'] is False and membership['context_argv_binding_verified'] is False)
+            if probe.get('native_command_capture') is not None:
+                from nico.assessment_cpp_native_commands import (CAPTURE_PROGRAM as NATIVE_CAPTURE_PROGRAM,
+                    configured_native_commands, native_capture_request)
+                native_argv=['docker','exec','--interactive',name,'python3','-I','-S','-c',NATIVE_CAPTURE_PROGRAM]
+                specs['project-native-commands']=native_argv
+                specs['project-native-commands-post-build']=native_argv
+                specs['project-enabled-targets-post-build']=specs['project-enabled-targets']
+                references['project-native-commands']=probe['native_command_capture']
+                for key in ('project-native-commands-post-build','project-enabled-targets-post-build'):
+                    references[key]=operations[key][0]['output_artifact']
+                request=native_capture_request(operations['project-enabled-targets'][1],membership)
+                expected_input=hashlib.sha256(canonical_bytes(request)).hexdigest()
+                for key in ('project-native-commands','project-native-commands-post-build'):
+                    require(operations[key][0].get('input_sha256')==expected_input)
+                fileapi_request={'source_root':'/work/source','build_root':'/work/build','client':client,
+                    'source_targets':targets,'database_sha256':hashlib.sha256(db).hexdigest(),
+                    'cache_sha256':probe['configuration_cache_sha256']}
+                require(operations['project-enabled-targets-post-build'][0].get('input_sha256')
+                    ==hashlib.sha256(canonical_bytes(fileapi_request)).hexdigest())
+                require(operations['project-enabled-targets-post-build'][1]==operations['project-enabled-targets'][1])
+                from nico.assessment_cpp_native_commands import validate_native_plan_freeze
+                freeze=validate_native_plan_freeze(operations['project-native-commands'][1],
+                    operations['project-native-commands-post-build'][1],operations['project-enabled-targets'][1],db,targets,
+                    source_root='/work/source',build_root='/work/build',client=client,
+                    cache_sha256=probe['configuration_cache_sha256'],
+                    compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                require(probe.get('native_command_freeze')==freeze)
+                plan=configured_native_commands(operations['project-native-commands'][1],operations['project-enabled-targets'][1],db,targets,
+                    source_root='/work/source',build_root='/work/build',client=client,
+                    cache_sha256=probe['configuration_cache_sha256'],
+                    compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                require(probe['analysis_compilation_database_sha256']==plan['analysis_database_sha256']
+                    and probe['analysis_invocations']==plan['context_count'])
         if probe.get('unit_test_data') is not None:
             argv = operations['unit-test-data'][0]['invocation']
             require(isinstance(argv[-1], str) and argv[-1].isdigit() and 0 < int(argv[-1]) <= 128*1024*1024)

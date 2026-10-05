@@ -231,6 +231,29 @@ def _predefines(raw, argv):
     return text
 
 
+def _predefined_standard(raw, argv):
+    """Use the executed compiler query, including its default dialect."""
+    text = _predefines(raw, argv)
+    if any(re.match(r'-[DU](?:__cplusplus|__STDC_VERSION__|__STDC__|__STRICT_ANSI__)(?:=|$)', arg) for arg in argv):
+        return None
+    language = argv[-2]
+    if language == 'c++':
+        match = re.search(r'^#define __cplusplus ([0-9]+)L?$', text, re.MULTILINE)
+        return {'199711':'c++03', '201103':'c++11', '201402':'c++14',
+                '201703':'c++17', '202002':'c++20', '202100':'c++23',
+                '202302':'c++23', '202400':'c++26'}.get(match[1]) if match else None
+    if language == 'c':
+        match = re.search(r'^#define __STDC_VERSION__ ([0-9]+)L?$', text, re.MULTILINE)
+        if match:
+            return {'199409':'c89', '199901':'c99', '201112':'c11',
+                    '201710':'c17', '202000':'c23', '202311':'c23'}.get(match[1])
+        explicit = [arg for arg in argv if arg.startswith('-std=')]
+        if explicit and explicit[-1] in {'-std=c89','-std=c90','-std=gnu89','-std=gnu90'}:
+            return 'c89'
+        # C89 has no __STDC_VERSION__. Absence alone cannot prove that dialect.
+    return None
+
+
 def _search_roots(raw):
     try:
         text = raw.decode('utf-8')
@@ -309,7 +332,8 @@ def validate_environment(raw, request):
         roots.update(search)
         proof_queries[key] = {'invocation': argv, 'roots': search,
             'predefines_sha256': _digest(macro_raw), 'predefines_bytes': len(macro_raw),
-            'predefines_path': ROOT + '/predefines/' + key + '.h'}
+            'predefines_path': ROOT + '/predefines/' + key + '.h',
+            'language_standard': _predefined_standard(macro_raw, argv)}
     total, headers = 0, {}
     for path, member in native['headers'].items():
         if (not isinstance(member, dict) or set(member) != {'resolved_path', 'sha256', 'bytes', 'base64'}
@@ -482,6 +506,9 @@ def verify_environment_inputs(environment):
         if len(raw) != query['predefines_bytes'] or _digest(raw) != query['predefines_sha256']:
             raise ValueError('worker_project_static_predefines_changed')
         _predefines(raw, query['invocation'])
+        if ('language_standard' in query and
+                query['language_standard'] != _predefined_standard(raw, query['invocation'])):
+            raise ValueError('worker_project_static_standard_binding')
     for path, member in environment['headers'].items():
         if not _usr_path(path): raise ValueError('worker_project_static_dependency_path')
         if member['projection'] is not None:
@@ -546,7 +573,7 @@ ENV_PROGRAM = ('import base64, hashlib, json, os, posixpath, re, stat, subproces
     + '\n' + '\n'.join(inspect.getsource(f) for f in (
         _canonical, _digest, _source_path, _project_option, _extra_option, _regular_bytes, _run,
         _env_json, _usr_path, _input_path, predefine_arguments, search_arguments, _validate_request,
-        _observation, _predefines, _search_roots, header_model, _model_header,
+        _observation, _predefines, _predefined_standard, _search_roots, header_model, _model_header,
         validate_environment, _write_input, collect_environment, run_environment))
     + '\nrun_environment()\n')
 
@@ -555,7 +582,7 @@ STATIC_ENV_SUPPORT = ('import posixpath\n' + '\n'.join(name+'='+repr(value) for 
     'ROOT': ROOT, 'MODEL_ROOT': MODEL_ROOT, 'MODEL_HASHES': MODEL_HASHES, 'ENV_LIMITS': ENV_LIMITS,
     'STD_HEADERS': tuple(sorted(STD_HEADERS)), 'POSIX_HEADERS': tuple(sorted(POSIX_HEADERS))}.items())
     + '\n' + '\n'.join(inspect.getsource(f) for f in (_usr_path, _input_path, predefine_arguments,
-        _predefines, analyzer_environment_arguments, verify_environment_inputs, context_dependencies)))
+        _predefines, _predefined_standard, analyzer_environment_arguments, verify_environment_inputs, context_dependencies)))
 
 
 def bind_environment(proof, compiler_request, compiler_raw):

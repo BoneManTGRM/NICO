@@ -28,6 +28,8 @@ from nico.assessment_cpp_project_compiler import (
 from nico.assessment_cpp_static_environment import (analyzer_environment_arguments,
     STATIC_ENV_SUPPORT, verify_environment_inputs, context_dependencies,
     modeled_missing_include, bind_environment)
+from nico.assessment_cpp_header_evidence import (HEADER_SCHEMA, HEADER_TOOL_MANIFEST_SHA256,
+    HEADER_APPLIER_SHA256, _require, validate_header_trace, validate_header_tool_receipt)
 
 TOOL_VERSION = '2.17.1'
 CHECKS = 'warning,style,performance,portability,information,missingInclude'
@@ -87,7 +89,7 @@ def _decode_xml(value, digest, encoding='identity'):
     return raw
 
 
-def _static_plan(context, environment=None):
+def _static_plan(context, environment=None, *, header_provenance=False):
     """Preserve supported imported arguments, never execute a database command.
 
     Pinned ImportProject supports -D/-U/-I/-isystem/-std and selected scalar
@@ -102,12 +104,19 @@ def _static_plan(context, environment=None):
     for arg in args:
         if arg.startswith(('-D', '-U')):
             name = arg[2:].split('=', 1)[0]
-            if name in defines:
+            if name in defines and not header_provenance:
                 raise ValueError('worker_project_static_macro_model_ambiguous')
             defines.add(name)
     environment_flags = []
     if environment is not None:
         args, environment_flags = analyzer_environment_arguments(context, environment)
+    if header_provenance:
+        environment_flags = ['--std=' + _header_standard(context, environment), *environment_flags]
+        # ImportProject stores -U in a set and cannot model interleaved D/U.
+        # The original argv and executed GCC macro query remain bound above.
+        # For this new analyzer contract retain each macro's final operation,
+        # in its original relative order; never change the compiler database.
+        args=_analyzer_macro_arguments(args)
     stem = '/work/analysis/static-baseline/u' + str(context['index'])
     database = _canonical([{'directory': '/work/analysis',
         'file': context['analysis_file'], 'arguments': list(args)}]).decode()
@@ -117,7 +126,48 @@ def _static_plan(context, environment=None):
     return database, argv
 
 
-def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None, environment=None):
+def _analyzer_macro_arguments(args):
+    last={arg[2:].split('=',1)[0]:i for i,arg in enumerate(args) if arg.startswith(('-D','-U'))}
+    # ImportProject synthesizes PIC/PIE macros with its own scalar values.
+    # For v3 use the bound actual compiler predefines for those codegen flags.
+    return [arg for i,arg in enumerate(args) if arg not in {'-fPIC','-fpic','-fPIE','-fpie'}
+        and (not arg.startswith(('-D','-U')) or last[arg[2:].split('=',1)[0]]==i)]
+
+
+def _header_standard(context, environment):
+    if not isinstance(environment,dict):
+        raise ValueError('worker_project_static_header_environment_missing')
+    member = environment['contexts'][context['context_id']]
+    standard = environment['queries'][member['query']].get('language_standard')
+    if standard not in {'c89','c99','c11','c17','c23','c++03','c++11','c++14','c++17','c++20','c++23','c++26'}:
+        raise ValueError('worker_project_static_header_standard_unproven')
+    return standard
+
+
+def _header_effective_inputs(context):
+    """Pinned ImportProject/fsSetIncludePaths + createDUI input semantics."""
+    imported=json.loads(context['analyzer_database'])[0]['arguments']
+    paths,undefined=[],set();index=1
+    while index<len(imported):
+        arg=imported[index];index+=1
+        if arg=='-I':
+            if index>=len(imported):raise ValueError('worker_project_static_include_invalid')
+            path=imported[index];index+=1
+        elif arg.startswith('-I'):path=arg[2:]
+        elif arg.startswith('-U'):
+            undefined.add(arg[2:]);continue
+        else:continue
+        if not path.startswith('/'):raise ValueError('worker_project_static_include_invalid')
+        if path not in paths:paths.append(path)
+    forced=[arg[len('--include='):] for arg in context['analyzer_invocation'] if arg.startswith('--include=')]
+    if len(forced)!=1:raise ValueError('worker_project_static_header_predefines_invalid')
+    return {'undef':sorted(undefined),'include_path':[path if path.endswith('/') else path+'/' for path in paths],
+        'forced_input':forced}
+
+
+def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None, environment=None, header_provenance=False):
+    if type(header_provenance) is not bool:
+        raise ValueError('worker_project_static_header_flag_invalid')
     """Reconstruct every binding; require completed native compiler evidence."""
     from nico.assessment_cpp_full_project import _json
     # Retained-evidence callers may reconstruct either version. Live callers
@@ -135,7 +185,7 @@ def project_static_request(database, targets, snapshot, compiler_raw, *, extende
         bind_environment(environment, compiler_request, compiler_raw)
     contexts = []
     for context, record in zip(compiler_request['contexts'], records):
-        data, argv = _static_plan(context, environment)
+        data, argv = _static_plan(context, environment, header_provenance=header_provenance)
         contexts.append({**context, 'analyzer_database': data,
             'analyzer_database_sha256': _digest(data.encode()), 'analyzer_invocation': argv,
             'source_dependencies': record['source_dependencies'],
@@ -149,6 +199,9 @@ def project_static_request(database, targets, snapshot, compiler_raw, *, extende
         'contexts': contexts, 'limits': dict(LIMITS)}
     if environment is not None:
         request.update(schema='nico.cpp-project-static-request.v2', compiler_environment=environment)
+    if header_provenance:
+        request.update(schema='nico.cpp-project-static-request.v3',
+            header_trace_schema=HEADER_SCHEMA, header_tool_manifest_sha256=HEADER_TOOL_MANIFEST_SHA256)
     if len(_canonical(request)) > REQUEST_LIMIT:
         raise ValueError('worker_project_static_request_limit')
     return request
@@ -159,15 +212,23 @@ def collect_project_static(request):
     import resource
     if os.getuid() != 1001 or os.getgid() != 1001:
         raise ValueError('worker_project_static_identity')
-    if (not isinstance(request, dict) or request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2'}
+    if (not isinstance(request, dict) or request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2', 'nico.cpp-project-static-request.v3'}
             or request.get('tool_version') != TOOL_VERSION or request.get('limits') != LIMITS
             or not isinstance(request.get('contexts'), list) or not 1 <= len(request['contexts']) <= 20000):
         raise ValueError('worker_project_static_request_invalid')
     environment_model = request.get('compiler_environment')
-    if (request['schema'].endswith('.v2')) != (environment_model is not None):
+    header_provenance = request['schema'].endswith('.v3')
+    if (request['schema'].endswith(('.v2','.v3'))) != (environment_model is not None):
         raise ValueError('worker_project_static_environment_missing')
     if environment_model is not None:
         verify_environment_inputs(environment_model)
+    header_tool_raw = None
+    if header_provenance:
+        if (request.get('header_trace_schema')!=HEADER_SCHEMA
+                or request.get('header_tool_manifest_sha256')!=HEADER_TOOL_MANIFEST_SHA256):
+            raise ValueError('worker_project_static_header_contract_invalid')
+        header_tool_raw = _regular_bytes('/opt/nico-cppcheck-header-observer.json',65536)
+        validate_header_tool_receipt(header_tool_raw)
     parent = Path('/work/analysis')
     info = parent.lstat()
     if (parent.resolve(strict=True) != parent or info.st_uid != 1001
@@ -177,7 +238,7 @@ def collect_project_static(request):
     directory.mkdir(mode=0o700)
     for index, context in enumerate(request['contexts']):
         args, source = _syntax_argv(context, request['generated_files'])
-        data, argv = _static_plan(context, environment_model)
+        data, argv = _static_plan(context, environment_model, header_provenance=header_provenance)
         if (context['index'] != index or args != context['invocation'] or source != context['analysis_file']
                 or data != context['analyzer_database'] or _digest(data.encode()) != context['analyzer_database_sha256']
                 or argv != context['analyzer_invocation']):
@@ -198,6 +259,8 @@ def collect_project_static(request):
             'xml': '', 'xml_sha256': None, 'error': None}
         if environment_model is not None:
             record['xml_encoding'] = 'zlib'
+        if header_provenance:
+            record.update(header_trace='',header_trace_sha256=None,header_trace_encoding='zlib')
         try:
             if not tool_ok:
                 raise ValueError('worker_project_static_tool_version')
@@ -213,14 +276,24 @@ def collect_project_static(request):
             with path.open('xb') as handle:
                 handle.write(context['analyzer_database'].encode())
             path.chmod(0o444)
+            native_environment = dict(environment)
+            if header_provenance:
+                trace_path = Path(stem+'.trace.xml')
+                descriptor=os.open(trace_path,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
+                os.close(descriptor)
+                native_environment['CPPCHECK_NICO_NATIVE_PROVENANCE']=str(trace_path)
             record['execution'] = _run(context['analyzer_invocation'], stem,
-                min(deadline, time.monotonic() + LIMITS['case_seconds']), environment)
+                min(deadline, time.monotonic() + LIMITS['case_seconds']), native_environment)
             # Retain even failing native XML; the controller decides completeness.
             xml = _regular_bytes(stem + '.xml', XML_LIMIT)
             encoded, digest, encoding = _encode_xml(xml, compact=environment_model is not None)
             record.update(xml=encoded, xml_sha256=digest)
             if environment_model is not None:
                 record['xml_encoding'] = encoding
+            if header_provenance:
+                traced=_regular_bytes(str(trace_path),XML_LIMIT)
+                encoded,digest,encoding=_encode_xml(traced,compact=True)
+                record.update(header_trace=encoded,header_trace_sha256=digest,header_trace_encoding=encoding)
             if _regular_bytes(stem + '.json', REQUEST_LIMIT) != context['analyzer_database'].encode():
                 raise ValueError('worker_project_static_database_changed')
         except (ValueError, OSError, KeyError, TypeError) as exc:
@@ -235,6 +308,9 @@ def collect_project_static(request):
     result = {'schema': request['schema'].replace('-request.', '-evidence.'), 'request_sha256': _digest(_canonical(request)),
         'analyst_uid': os.getuid(), 'version': version, 'records': records,
         'duration_ms': int((time.monotonic() - start) * 1000)}
+    if header_provenance:
+        result.update(header_tool_receipt=base64.b64encode(header_tool_raw).decode(),
+            header_tool_receipt_sha256=_digest(header_tool_raw))
     if len(_canonical(result)) > STREAM_LIMIT:
         raise ValueError('worker_project_static_output_limit')
     return result
@@ -265,6 +341,9 @@ def validate_project_static(raw, request):
     evidence = _json(raw)
     native_evidence_sha256 = _digest(raw)
     fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms'}
+    header_provenance = request['schema'].endswith('.v3')
+    if header_provenance:
+        fields |= {'header_tool_receipt','header_tool_receipt_sha256'}
     if (not isinstance(evidence, dict) or set(evidence) != fields
             or evidence['schema'] != request['schema'].replace('-request.', '-evidence.')
             or evidence['request_sha256'] != _digest(_canonical(request))
@@ -272,16 +351,26 @@ def validate_project_static(raw, request):
             or type(evidence['duration_ms']) is not int or not 0 <= evidence['duration_ms'] <= 543000
             or not isinstance(evidence['records'], list) or len(evidence['records']) != len(request['contexts'])):
         raise ValueError('worker_project_static_evidence_invalid')
+    if header_provenance:
+        try:
+            receipt=base64.b64decode(evidence['header_tool_receipt'],validate=True)
+        except (TypeError,ValueError) as error:
+            raise ValueError('worker_project_static_header_tool_invalid') from error
+        if _digest(receipt)!=evidence['header_tool_receipt_sha256']:
+            raise ValueError('worker_project_static_header_tool_invalid')
+        validate_header_tool_receipt(receipt)
     version_ok, version = _execution(evidence['version'], 8000)
     if not version_ok or version.strip() != ('Cppcheck ' + TOOL_VERSION).encode():
         raise ValueError('worker_project_static_tool_version')
-    attempted, analyzed, findings, limitations, modeled_inputs = [], [], [], [], []
+    attempted, analyzed, findings, limitations, modeled_inputs, header_contexts = [], [], [], [], [], []
     environment_model = request.get('compiler_environment')
     duration = evidence['version']['duration_ms']
     legacy_fields = {'context_id', 'invocation', 'database_sha256', 'execution', 'xml', 'xml_sha256', 'error'}
     compact_fields = legacy_fields | {'xml_encoding'}
     for context, row in zip(request['contexts'], evidence['records']):
         expected_fields = compact_fields if 'xml_encoding' in row else legacy_fields
+        if header_provenance:
+            expected_fields |= {'header_trace','header_trace_sha256','header_trace_encoding'}
         if (not isinstance(row, dict) or set(row) != expected_fields or row['context_id'] != context['context_id']
                 or row['invocation'] != context['analyzer_invocation']
                 or row['database_sha256'] != context['analyzer_database_sha256']
@@ -289,8 +378,10 @@ def validate_project_static(raw, request):
                     or re.fullmatch(r'worker_project_static_[a-z_]+', row['error']) is None)):
             raise ValueError('worker_project_static_record_invalid')
         xml = _decode_xml(row['xml'], row['xml_sha256'], row.get('xml_encoding', 'identity'))
+        header_trace = (_decode_xml(row['header_trace'],row['header_trace_sha256'],row['header_trace_encoding'])
+            if header_provenance else None)
         if row['execution'] is None:
-            if row['error'] is None or xml:
+            if row['error'] is None or xml or header_trace:
                 raise ValueError('worker_project_static_missing_execution')
             limitations.append({'context_id': context['context_id'], 'rule_id': row['error']})
             continue
@@ -313,6 +404,26 @@ def validate_project_static(raw, request):
                               for path, row in dependencies.items() if row['projection']})
             query = environment_model['queries'][environment_model['contexts'][context['context_id']]['query']]
             locations[query['predefines_path']] = ('compiler_predefines', query['predefines_path'], query['predefines_sha256'])
+        if header_provenance:
+            if not header_trace:
+                raise ValueError('worker_project_static_header_trace_missing')
+            # Inventory remains complete even when a file was not a compiler
+            # dependency. This does not credit that file as included or parsed.
+            header_locations = dict(locations)
+            header_locations.update({'/work/source/'+p:('original',p,sha) for p,sha in request['targets'].items()})
+            header_locations.update({'/work/analysis/generated-baseline/'+p:('generated',p,value['sha256'])
+                for p,value in request['generated_files'].items()})
+            definitions={}
+            for arg in context['invocation']:
+                if arg.startswith('-D'):
+                    name,separator,value=arg[2:].partition('=');definitions[name]=value if separator else '1'
+                elif arg.startswith('-U'):
+                    definitions.pop(arg[2:],None)
+            header=validate_header_trace(header_trace,source=context['analysis_file'],locations=header_locations,
+                standard=_header_standard(context,environment_model),configuration_defines=definitions,
+                effective_inputs=_header_effective_inputs(context))
+            header_contexts.append({'context_id':context['context_id'],
+                **{key:value for key,value in header.items() if key!='inventoried_files'}})
         try:
             document = ET.fromstring(xml)
             # Unknown diagnostic locations are retained raw but cannot become
@@ -361,12 +472,31 @@ def validate_project_static(raw, request):
     if duration > evidence['duration_ms'] * LIMITS['parallel'] + 1000:
         raise ValueError('worker_project_static_duration_invalid')
     required = [c['context_id'] for c in request['contexts']]
+    headers = {}
+    if header_provenance:
+        inventory=['/work/source/'+p for p in request['targets']]
+        inventory += ['/work/analysis/generated-baseline/'+p for p in request['generated_files']]
+        headers={p:{'included_contexts':[],'parsed_contexts':[],'analyzed_contexts':[]} for p in sorted(inventory)
+            if p.lower().endswith(('.h','.hh','.hpp','.hxx','.inc','.ipp','.tpp'))}
+        for proof in header_contexts:
+            for field,members in [('included_contexts','include_observed_files'),('parsed_contexts','parsed_token_files'),('analyzed_contexts','normal_pass_token_files')]:
+                for path in proof[members]:
+                    if path in headers:
+                        state=headers[path]
+                        state[field].append(proof['context_id'])
+        context_complete=(len(header_contexts)==len(required) and all(
+            p['normal_pass_completed'] and p['physical_token_origin_verified'] for p in header_contexts))
+        population_complete=context_complete and all(row['analyzed_contexts'] for row in headers.values())
     return {'required_contexts': required, 'attempted_contexts': attempted, 'analyzed_contexts': analyzed,
         'complete': analyzed == required, 'findings': findings, 'limitations': limitations,
         **({'modeled_inputs': modeled_inputs, 'compiler_environment_sha256': environment_model['native_evidence_sha256']}
            if environment_model is not None else {}),
         'native_evidence_sha256': native_evidence_sha256, 'compiler_evidence_sha256': request['compiler_evidence_sha256'],
         'static_analysis_executed': bool(attempted), 'analyzer_header_coverage_verified': False,
+        **({'header_context_evidence':header_contexts,'header_context_evidence_complete':context_complete,
+            'header_population':headers,'header_population_complete':population_complete,
+            'header_unvisited_files':sorted(p for p,row in headers.items() if not row['included_contexts']),
+            'header_tool_manifest_sha256':HEADER_TOOL_MANIFEST_SHA256} if header_provenance else {}),
         'model_limits': (['Observed GCC predefines and compiler-resolved dependency bytes bind each context.',
                           'Named public C/C++ and POSIX headers use hash-verified upstream library models, not implementation-header analysis.',
                           'Compiler header visitation does not establish analyzer header coverage.']
@@ -397,23 +527,27 @@ PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time,
     + f'TOOL_VERSION={TOOL_VERSION!r}\nCHECKS={CHECKS!r}\nLIMITS={LIMITS!r}\n'
     + f'STREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\nXML_LIMIT={XML_LIMIT}\nXML_COMPRESSED_LIMIT={XML_COMPRESSED_LIMIT}\n'
     + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
+    + f'HEADER_SCHEMA={HEADER_SCHEMA!r}\nHEADER_TOOL_MANIFEST_SHA256={HEADER_TOOL_MANIFEST_SHA256!r}\nHEADER_APPLIER_SHA256={HEADER_APPLIER_SHA256!r}\n'
     + STATIC_ENV_SUPPORT + '\n'
     + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _source_path, safe_compile_argv,
         _regular_bytes, _run, _project_option, _stable_bytes, _extra_option, _syntax_argv,
-        _verify_input, _encode_xml, _static_plan, collect_project_static, run_project_static))
+        _verify_input, _encode_xml, _require, validate_header_tool_receipt, _header_standard, _analyzer_macro_arguments,
+        _static_plan, collect_project_static, run_project_static))
     + '\nrun_project_static()\n')
 
 
 def run_project_static_stage(source, targets, image, database, snapshot, compiler_raw, *,
                              retain=lambda result: None, retain_artifact, checkpoint=lambda: None,
-                             command=None, extended_compiler_budget=None, compiler_environment=False):
+                             command=None, extended_compiler_budget=None, compiler_environment=False,
+                             header_provenance=False):
     """Analyze verified inputs in a fresh bounded, no-network/noexec sandbox.
 
     Reuses the existing controller input and isolation boundary. The preceding
     1,800-second build/compiler executor is never extended or left running.
     A stage receipt is evidence, not worker authority or production selection.
     """
-    if type(compiler_environment) is not bool:
+    if (type(compiler_environment) is not bool or type(header_provenance) is not bool
+            or header_provenance and not compiler_environment):
         raise ValueError('worker_project_static_stage_environment_flag_invalid')
     from uuid import uuid4
     from nico.assessment_cpp_full_project import MAX_SOURCE_BYTES, _json
@@ -566,8 +700,10 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                 'header_population_sha256': model['header_population_sha256'],
                 'models': model['models'], 'model_policy': model['model_policy']}
             request = project_static_request(database, targets, snapshot, compiler_raw,
-                extended_compiler_budget=extended_compiler_budget, environment=model)
-            result.update(schema='nico.cpp-project-static-stage.v2', request_sha256=_digest(_canonical(request)))
+                extended_compiler_budget=extended_compiler_budget, environment=model,
+                header_provenance=header_provenance)
+            result.update(schema=('nico.cpp-project-static-stage.v3' if header_provenance
+                                  else 'nico.cpp-project-static-stage.v2'), request_sha256=_digest(_canonical(request)))
             save(); guarded_checkpoint()
         result['phase'] = 'analysis'; save()
         observed = observe('project-static-evidence', ['docker', 'exec', '--user='+ANALYSIS_USER,
@@ -604,6 +740,8 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                 save(); guarded_checkpoint()
         if not result['analysis']['complete']:
             raise ValueError('worker_project_static_stage_analysis_incomplete')
+        if header_provenance and not result['analysis'].get('header_context_evidence_complete'):
+            raise ValueError('worker_project_static_stage_header_evidence_incomplete')
     except (Exception, KeyboardInterrupt) as exc:
         code = str(exc) if isinstance(exc, ValueError) else ''
         result['error'] = (code if re.fullmatch(r'worker_project_static_stage_[a-z_]+', code)

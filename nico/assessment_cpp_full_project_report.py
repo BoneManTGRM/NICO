@@ -78,6 +78,22 @@ def enrich_scanner_stage(canonical, stage):
                         else ' An assessed-target test failure was retained.')
                 summaries.append(line)
                 evidence.append(line)
+        header=build.get('header_evidence')
+        if isinstance(header,Mapping) and isinstance(header.get('population'),Mapping):
+            population=header['population']; required=len(population)
+            counts={name:sum(isinstance(value,Mapping) and bool(value.get(name)) for value in population.values())
+                for name in ('included_contexts','parsed_contexts','analyzed_contexts')}
+            unvisited=sum(isinstance(value,Mapping) and not value.get('included_contexts') for value in population.values())
+            line=(f'Encabezados originales y generados: inventariados={required}; incluidos={counts["included_contexts"]}/{required}; '
+                  f'con tokens analizados={counts["parsed_contexts"]}/{required}; en pases normales completados={counts["analyzed_contexts"]}/{required}; no visitados={unvisited}.' if es
+                else f'Original and generated headers: inventoried={required}; included={counts["included_contexts"]}/{required}; '
+                  f'parsed token files={counts["parsed_contexts"]}/{required}; completed normal-pass files={counts["analyzed_contexts"]}/{required}; unvisited={unvisited}.')
+            summaries.append(line);evidence.append(line)
+            evidence.append('La visita de archivos no demuestra cobertura de líneas o ramas, ni ejecución de cada verificador.' if es
+                else 'File visitation does not establish line or branch coverage or execution of every checker.')
+            if header.get('population_complete') is not True:
+                gaps.append('La población completa de encabezados aún no tiene evidencia de análisis verificada.' if es
+                    else 'The complete header population does not yet have verified analyzer evidence.')
         for row in rows:
             key = str(row.get('id') or '')
             # Preserve machine identity separately; do not translate source/test identifiers.

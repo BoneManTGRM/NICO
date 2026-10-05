@@ -12,7 +12,8 @@ import re
 import time
 
 from nico.assessment_worker_receipts import canonical_bytes
-from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required
+from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required
+from nico.assessment_cpp_header_evidence import header_summary
 
 PROFILE = "cpp-configure-first-v2"
 
@@ -30,7 +31,8 @@ _REQUIRED_ARTIFACTS = {
     "project-compilation-database", "project-generated-context", "project-compiler-evidence",
     "project-static-environment", "project-static-evidence", "project-baseline-evidence",
 }
-_OPTIONAL_ARTIFACTS = {"project-static-clang-fallback","project-runtime-evidence","project-enabled-targets"}
+_OPTIONAL_ARTIFACTS = {"project-static-clang-fallback","project-runtime-evidence","project-enabled-targets",
+    "project-native-commands","project-native-commands-post-build","project-enabled-targets-post-build"}
 _SHA = re.compile(r"[0-9a-f]{64}")
 
 
@@ -103,7 +105,12 @@ def summarize_probe(result, targets, artifacts):
     membership = result.get('enabled_target_membership')
     if 'enabled_target_membership' in result:
         # FileAPI source presence cannot establish complete target/config argv.
-        complete = False
+        plan = result.get('native_command_plan') or {}
+        complete = bool(complete and plan.get('context_argv_binding_verified') is True
+            and plan.get('analysis_executed') is False and plan.get('execution_authorized') is False
+            and plan.get('context_count') == cr_count == sr_count
+            and {'project-native-commands','project-native-commands-post-build',
+                'project-enabled-targets-post-build'} <= set(refs))
     summary = {
         "schema":"nico.cpp-configure-first-native.v1","status":result.get("status"),
         "complete_execution":complete,"error":result.get("error"),
@@ -147,6 +154,23 @@ def summarize_probe(result, targets, artifacts):
             missing_database_contexts_sha256=_population((membership or {}).get('missing_database_contexts',[]))[1],
             database_source_membership_complete=(membership or {}).get('database_membership_complete') is True,
             context_argv_binding_verified=False)
+    if 'native_command_plan' in result:
+        plan=result.get('native_command_plan') or {}
+        summary['complete_execution'] = bool(summary['complete_execution']
+            and static.get('header_context_evidence_complete') is True)
+        summary.update(schema='nico.cpp-configure-first-native.v5',
+            native_command_capture_sha256=(refs.get('project-native-commands') or {}).get('sha256'),
+            native_command_post_capture_sha256=(refs.get('project-native-commands-post-build') or {}).get('sha256'),
+            native_command_freeze_sha256=(hashlib.sha256(canonical_bytes(result['native_command_freeze'])).hexdigest()
+                if result.get('native_command_freeze') is not None else None),
+            native_command_plan_sha256=(hashlib.sha256(canonical_bytes({k:v for k,v in plan.items() if k!='artifact'})).hexdigest()
+                if plan else None),
+            native_contexts_count=len(plan.get('contexts',[])),
+            native_contexts_sha256=_population(plan.get('contexts',[]))[1],
+            analysis_compilation_database_sha256=result.get('analysis_compilation_database_sha256'),
+            analysis_invocations=result.get('analysis_invocations',0),
+            context_argv_binding_verified=plan.get('context_argv_binding_verified') is True)
+        summary.update(header_summary(static))
     return summary
 
 
@@ -203,7 +227,7 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         project_static_analysis=caps["project_static_analysis"],
         extended_compiler_budget=caps["extended_compiler_budget"],
         compiler_environment=caps["compiler_environment"],
-        capture_enabled_targets=membership_required(cfg))
+        capture_enabled_targets=membership_required(cfg), capture_native_commands=native_commands_required(cfg))
     import base64
     database=base64.b64decode(result.get("compilation_database") or "",validate=True)
     if not database or hashlib.sha256(database).hexdigest()!=result.get("compilation_database_sha256"):
@@ -223,7 +247,8 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
     native=summarize_probe(result,targets,retained)
     if runtime_plan is not None:
         runtime_summary=result.get("runtime_summary") or {}
-        native["schema"]=("nico.cpp-configure-first-native.v4" if membership_required(cfg)
+        native["schema"]=("nico.cpp-configure-first-native.v6" if native_commands_required(cfg) else
+            "nico.cpp-configure-first-native.v4" if membership_required(cfg)
                           else "nico.cpp-configure-first-native.v2")
         native["runtime_complete"]=(runtime_summary.get("complete") is True and "project-runtime-evidence" in retained)
         native["runtime_plan_sha256"]=hashlib.sha256(canonical_bytes(runtime_plan)).hexdigest()

@@ -66,7 +66,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 unit_test_data=None, capture_generated_context=False,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
                                 extended_compiler_budget=False, compiler_environment=False, runtime_plan=None,
-                                external_checkpoint=None, capture_enabled_targets=False):
+                                external_checkpoint=None, capture_enabled_targets=False,
+                                capture_native_commands=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -105,6 +106,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if (type(capture_enabled_targets) is not bool
             or (capture_enabled_targets and not callable(retain_artifact))):
         raise ValueError('worker_configuration_probe_capture_contract_invalid')
+    if (type(capture_native_commands) is not bool
+            or capture_native_commands and not (capture_enabled_targets and project_compiler_evidence)):
+        raise ValueError('worker_configuration_probe_native_plan_invalid')
     if type(project_compiler_evidence) is not bool or (project_compiler_evidence and not capture_generated_context):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     if type(project_static_analysis) is not bool or (project_static_analysis and not project_compiler_evidence):
@@ -188,6 +192,11 @@ def probe_project_configuration(source, targets, image, *, project_options,
         result.update(schema='nico.cpp-project-configuration-probe.v8',
             fileapi_client='client-nico-membership-' + uuid4().hex,
             enabled_target_capture=None, enabled_target_membership=None)
+    if capture_native_commands:
+        result.update(schema='nico.cpp-project-configuration-probe.v9',
+            native_command_capture=None, native_command_plan=None,
+            analysis_compilation_database=None, analysis_compilation_database_sha256=None,
+            analysis_invocations=0)
 
     def save():
         result['duration_ms'] = int((time.monotonic() - start) * 1000)
@@ -214,6 +223,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
             'output_sha256': hashlib.sha256(raw).hexdigest()}
         if external:
             entry['output_artifact'] = None
+        if key in {'project-native-commands','project-native-commands-post-build',
+                   'project-enabled-targets-post-build'}:
+            entry['input_sha256'] = hashlib.sha256(data).hexdigest()
         result['operations'].append(entry)
         save()  # Preserve the returned native outcome, even if artifact storage fails.
         if external:
@@ -359,6 +371,35 @@ def probe_project_configuration(source, targets, image, *, project_options,
             result['enabled_target_membership'] = {**membership,
                 'artifact': result['enabled_target_capture']}
             save()
+            if capture_native_commands:
+                from nico.assessment_cpp_native_commands import (
+                    CAPTURE_PROGRAM as NATIVE_CAPTURE_PROGRAM,
+                    configured_native_commands, native_capture_request, validate_native_plan_freeze)
+                native_request = canonical_bytes(native_capture_request(capture['output'], membership))
+                native_capture = observe('project-native-commands',
+                    ['docker', 'exec', '--interactive', name, 'python3', '-I', '-S', '-c', NATIVE_CAPTURE_PROGRAM],
+                    data=native_request, limit=FILEAPI_STREAM_LIMIT, external=True)
+                result['native_command_capture'] = result['operations'][-1]['output_artifact']
+                save()
+                if native_capture['exit_code'] != 0 or native_capture['timed_out'] or native_capture['output_truncated']:
+                    raise ValueError('worker_configuration_probe_native_plan_failed')
+                try:
+                    plan = configured_native_commands(native_capture['output'], capture['output'], raw, targets,
+                        source_root='/work/source', build_root='/work/build', client=result['fileapi_client'],
+                        cache_sha256=result['configuration_cache_sha256'],
+                        compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                except ValueError as exc:
+                    raise ValueError('worker_configuration_probe_native_plan_invalid') from exc
+                analysis_raw = base64.b64decode(plan['analysis_database'], validate=True)
+                # The original DB/freeze identity remains immutable. Complete
+                # native contexts have a distinct analysis database identity.
+                contexts = _database(analysis_raw, None, '/work/build', nested=True, source_targets=targets)
+                result.update(native_command_plan={**plan,'artifact':result['native_command_capture']},
+                    analysis_compilation_database=plan['analysis_database'],
+                    analysis_compilation_database_sha256=plan['analysis_database_sha256'],
+                    analysis_invocations=contexts['context_count'])
+                save()
         result['status'] = 'CONFIGURATION_CAPTURED'
         if baseline_execution is not None:
             if baseline_execution['schema'] == 'nico.cpp-baseline-execution.v1':
@@ -400,6 +441,30 @@ def probe_project_configuration(source, targets, image, *, project_options,
                     or hashlib.sha256(base64.b64decode(after['data'], validate=True)).hexdigest()
                        != result['compilation_database_sha256']):
                 raise ValueError('worker_configuration_probe_frozen_database_mismatch')
+            if capture_native_commands:
+                current_fileapi = observe('project-enabled-targets-post-build',
+                    ['docker','exec','--interactive',name,'python3','-I','-S','-c',CAPTURE_PROGRAM],
+                    data=canonical_bytes({'source_root':'/work/source','build_root':'/work/build',
+                        'client':result['fileapi_client'],'source_targets':targets,
+                        'database_sha256':result['compilation_database_sha256'],
+                        'cache_sha256':result['configuration_cache_sha256']}), limit=FILEAPI_STREAM_LIMIT, external=True)
+                current_native = observe('project-native-commands-post-build',
+                    ['docker','exec','--interactive',name,'python3','-I','-S','-c',NATIVE_CAPTURE_PROGRAM],
+                    data=native_request, limit=FILEAPI_STREAM_LIMIT, external=True)
+                if (any(row['exit_code'] != 0 or row['timed_out'] or row['output_truncated']
+                        for row in (current_fileapi,current_native))
+                    or hashlib.sha256(current_fileapi['output']).hexdigest() != membership['capture_sha256']):
+                    raise ValueError('worker_configuration_probe_frozen_native_plan_mismatch')
+                try:
+                    result['native_command_freeze'] = validate_native_plan_freeze(
+                        native_capture['output'],current_native['output'],capture['output'],raw,targets,
+                        source_root='/work/source',build_root='/work/build',client=result['fileapi_client'],
+                        cache_sha256=result['configuration_cache_sha256'],
+                        compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+                except ValueError as exc:
+                    raise ValueError('worker_configuration_probe_frozen_native_plan_mismatch') from exc
+                save()
             # Generated CTest includes (secp256k1 discover_tests) only expand
             # after the test binaries exist. Freeze that runnable population
             # before testing. A leftover DISCOVERY_FAILURE is not a test.
@@ -512,7 +577,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 from nico.assessment_cpp_project_compiler import (PROGRAM, STREAM_LIMIT,
                     project_compiler_request, validate_project_compiler)
                 try:
-                    request = project_compiler_request(raw, targets, snapshot, extended_budget=extended_compiler_budget)
+                    request = project_compiler_request(analysis_raw if capture_native_commands else raw,
+                        targets, snapshot, extended_budget=extended_compiler_budget)
                 except (ValueError, TypeError, KeyError) as exc:
                     raise ValueError('worker_configuration_probe_compiler_plan_invalid') from exc
                 compiler_observed = observe('project-compiler-evidence',
@@ -579,9 +645,11 @@ def probe_project_configuration(source, targets, image, *, project_options,
             retain(result)
         try:
             static = run_project_static_stage(source, targets, image,
-                base64.b64decode(result['compilation_database'], validate=True),
+                base64.b64decode(result['analysis_compilation_database'] if capture_native_commands
+                    else result['compilation_database'], validate=True),
                 snapshot, compiler_observed['output'], retain=retain_static,
                 extended_compiler_budget=extended_compiler_budget, compiler_environment=compiler_environment,
+                header_provenance=capture_native_commands,
                 retain_artifact=retain_artifact, command=command, checkpoint=owner_checkpoint)
             result['status'] = 'BASELINE_EXECUTED' if static['complete'] else 'UNPROVEN'
             if not static['complete']:

@@ -100,7 +100,7 @@ def select_configure_first_contract(repo_step, *, environ=None, release_revision
     qualification=_settings(environ,release_revision)
     if qualification is None:
         return None
-    configuration={'schema':('nico.cpp-configure-first-contract.v5' if runtime_capable else 'nico.cpp-configure-first-contract.v4'),
+    configuration={'schema':('nico.cpp-configure-first-contract.v7' if runtime_capable else 'nico.cpp-configure-first-contract.v6'),
         'platform':'linux/amd64','expected_tree_sha':snapshot['tree_sha'],
         'project_option_policy':'conservative-cmake-v1','source_byte_limit':64*1024*1024,
         'baseline_execution':{'schema':'nico.cpp-baseline-execution.v2',
@@ -109,7 +109,7 @@ def select_configure_first_contract(repo_step, *, environ=None, release_revision
             'build_seconds':1200,'test_seconds':720,'test_case_seconds':180,'parallel':4},
         'capabilities':{'capture_generated_context':True,'project_compiler_evidence':True,
             'project_static_analysis':True,'extended_compiler_budget':True,'compiler_environment':True,
-            'capture_enabled_targets':True}}
+            'capture_enabled_targets':True,'capture_native_commands':True}}
     if runtime_capable:
         configuration['runtime_scope']={'schema':'nico.cpp-runtime-scope.v1','total_seconds':6000,
             'functional_policy':'source-declared-functional-v1','functional_seconds':900,

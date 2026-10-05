@@ -63,7 +63,11 @@ def test_artifact_body_has_separate_measured_twelve_mib_ceiling(worker_client):
     assert response.status_code == 413
 
 
-@pytest.mark.parametrize("key", ["project-runtime-evidence", "project-static-evidence", "project-enabled-targets"])
+@pytest.mark.parametrize("key", ["project-compilation-database", "project-generated-context",
+    "project-baseline-evidence", "project-compiler-evidence",
+    "project-static-environment", "project-static-evidence", "project-static-clang-fallback",
+    "project-runtime-evidence", "project-enabled-targets", "project-native-commands",
+    "project-enabled-targets-post-build", "project-native-commands-post-build"])
 def test_runtime_and_static_artifacts_reach_the_same_verified_transport(monkeypatch, key):
     import base64, gzip, hashlib
     from nico.assessment_worker_consumer import WorkerTransport

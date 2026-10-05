@@ -90,14 +90,18 @@ def test_source_membership_never_promotes_whole_execution_or_argv_boolean():
 
 
 @pytest.mark.parametrize('runtime',[False,True])
-def test_new_membership_contract_keeps_runtime_budget_and_rejects_old_native_schema(runtime):
+@pytest.mark.parametrize('native_commands',[False,True])
+def test_new_membership_contract_keeps_runtime_budget_and_rejects_old_native_schema(runtime,native_commands):
     from nico.assessment_cpp_configure_first_execution import execution_timeout_limit
     identity,plan,receipt=incomplete_receipt(runtime=runtime)
     cfg=plan['configuration']
     if not runtime:
         cfg.pop('project_options');cfg['project_option_policy']='conservative-cmake-v1'
-    cfg['schema']='nico.cpp-configure-first-contract.v5' if runtime else 'nico.cpp-configure-first-contract.v4'
+    version = (7 if runtime else 6) if native_commands else (5 if runtime else 4)
+    cfg['schema']='nico.cpp-configure-first-contract.v'+str(version)
     cfg['capabilities']['capture_enabled_targets']=True
+    if native_commands:
+        cfg['capabilities']['capture_native_commands']=True
     plan['limits']['wall_seconds']=9000 if runtime else 2420
     identity=JobIdentity(identity.customer_id,identity.project_id,identity.run_id,identity.scan_id,
         identity.repository_id,identity.revision,_digest(plan),identity.release_revision)
@@ -142,6 +146,36 @@ def incomplete_receipt(*, runtime=False):
         'configuration_sha256':_digest(plan['configuration']),'target_hashes':targets,'native':native,
         'native_sha256':_digest(native)}
     return identity,plan,receipt
+
+
+@pytest.mark.parametrize('runtime',[False,True])
+def test_current_native_receipt_keeps_incomplete_header_proof_and_rejects_false_credit(runtime):
+    identity,plan,receipt=incomplete_receipt(runtime=runtime)
+    cfg=plan['configuration']
+    if not runtime:
+        cfg.pop('project_options');cfg['project_option_policy']='conservative-cmake-v1'
+    cfg['schema']='nico.cpp-configure-first-contract.v'+('7' if runtime else '6')
+    cfg['capabilities'].update(capture_enabled_targets=True,capture_native_commands=True)
+    failed=proof();failed.update(status='UNPROVEN',error='worker_configuration_probe_compiler_incomplete',
+        enabled_target_membership=None,native_command_plan={})
+    failed['project_compiler'].update(checked_contexts=['c1'],complete=False)
+    failed['project_static']={};failed['project_static_stage']={}
+    artifacts={key:ref(key) for key in ('project-compilation-database','project-generated-context','project-compiler-evidence')}
+    native=summarize_probe(failed,receipt['target_hashes'],artifacts)
+    native.update(project_option_policy='conservative-cmake-v1',project_options={},project_options_sha256=_digest({}))
+    if runtime:
+        native.update(schema='nico.cpp-configure-first-native.v6',runtime_complete=False,
+            runtime_plan_sha256='f'*64,runtime_summary_sha256=_digest({}),runtime_duration_ms=0)
+    identity=JobIdentity(identity.customer_id,identity.project_id,identity.run_id,identity.scan_id,
+        identity.repository_id,identity.revision,_digest(plan),identity.release_revision)
+    receipt.update(identity=asdict(identity),configuration_sha256=_digest(cfg),native=native,native_sha256=_digest(native))
+    _,record,_=validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+    assert record['status']=='failed' and record['completed'] is False
+    assert record['cppcheck_source_coverage']['header_context_verified'] is False
+    broken=deepcopy(receipt);broken['native']['header_context_evidence_complete']=True
+    broken['native_sha256']=_digest(broken['native'])
+    with pytest.raises(ValueError,match='worker_configure_first_native_invalid'):
+        validate_receipt(identity,plan,'e'*32,'github:1:2:3',broken)
 
 
 @pytest.mark.parametrize('runtime',[False,True])
