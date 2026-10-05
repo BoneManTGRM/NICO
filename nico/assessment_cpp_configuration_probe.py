@@ -66,7 +66,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 unit_test_data=None, capture_generated_context=False,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
                                 extended_compiler_budget=False, compiler_environment=False, runtime_plan=None,
-                                external_checkpoint=None):
+                                external_checkpoint=None, capture_enabled_targets=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -101,6 +101,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raise ValueError('worker_configuration_probe_options_invalid')
     if (type(capture_generated_context) is not bool
             or (capture_generated_context and (baseline_execution is None or not callable(retain_artifact)))):
+        raise ValueError('worker_configuration_probe_capture_contract_invalid')
+    if (type(capture_enabled_targets) is not bool
+            or (capture_enabled_targets and not callable(retain_artifact))):
         raise ValueError('worker_configuration_probe_capture_contract_invalid')
     if type(project_compiler_evidence) is not bool or (project_compiler_evidence and not capture_generated_context):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
@@ -181,6 +184,10 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if extended_compiler_budget:
         result.update(schema='nico.cpp-project-configuration-probe.v7',
                       project_compiler_budget_version='v2')
+    if capture_enabled_targets:
+        result.update(schema='nico.cpp-project-configuration-probe.v8',
+            fileapi_client='client-nico-membership-' + uuid4().hex,
+            enabled_target_capture=None, enabled_target_membership=None)
 
     def save():
         result['duration_ms'] = int((time.monotonic() - start) * 1000)
@@ -280,6 +287,12 @@ def probe_project_configuration(source, targets, image, *, project_options,
             if invoke(compiler+'-version', [*prefix, compiler, '-dumpfullversion']).strip() != COMPILER_VERSION.encode():
                 raise ValueError('worker_configuration_probe_tool_mismatch')
         options = ['-D'+key+'='+value for key, value in sorted(project_options.items())]
+        if capture_enabled_targets:
+            from nico.assessment_cpp_fileapi_membership import QUERY_PROGRAM, EMPTY_SHA, QUERY_NAMES
+            query = _json(invoke('fileapi-query', [*prefix, 'python3', '-I', '-S', '-c', QUERY_PROGRAM,
+                '/work/build', result['fileapi_client']]))
+            if query != {'client': result['fileapi_client'], 'query': {q: EMPTY_SHA for q in QUERY_NAMES}}:
+                raise ValueError('worker_configuration_probe_fileapi_invalid')
         invoke('configure', [*prefix, 'cmake', '-S', '/work/source', '-B', '/work/build',
             '-G', 'Unix Makefiles', '-DCMAKE_BUILD_TYPE=Debug', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
             '-DCMAKE_C_COMPILER=/usr/local/bin/gcc', '-DCMAKE_CXX_COMPILER=/usr/local/bin/g++',
@@ -324,6 +337,28 @@ def probe_project_configuration(source, targets, image, *, project_options,
         result.update(compilation_database=artifact['data'], compilation_database_sha256=contexts['database_sha256'],
             configured_translation_units=contexts['original_units'], configured_generated_units=contexts['generated_units'],
             configured_invocations=contexts['context_count'], compilation_contexts=contexts)
+        if capture_enabled_targets:
+            from nico.assessment_cpp_fileapi_membership import (
+                CAPTURE_PROGRAM, STREAM_LIMIT as FILEAPI_STREAM_LIMIT, configured_target_membership)
+            capture = observe('project-enabled-targets', ['docker', 'exec', '--interactive', name,
+                'python3', '-I', '-S', '-c', CAPTURE_PROGRAM],
+                data=canonical_bytes({'source_root': '/work/source', 'build_root': '/work/build',
+                    'client': result['fileapi_client'], 'source_targets': targets,
+                    'database_sha256': result['compilation_database_sha256'],
+                    'cache_sha256': result['configuration_cache_sha256']}),
+                limit=FILEAPI_STREAM_LIMIT, external=True)
+            result['enabled_target_capture'] = result['operations'][-1]['output_artifact']
+            save()
+            if capture['exit_code'] != 0 or capture['timed_out'] or capture['output_truncated']:
+                raise ValueError('worker_configuration_probe_fileapi_failed')
+            membership = configured_target_membership(capture['output'], raw, targets,
+                source_root='/work/source', build_root='/work/build', client=result['fileapi_client'],
+                cache_sha256=result['configuration_cache_sha256'],
+                compiler_versions={'C': COMPILER_VERSION, 'CXX': COMPILER_VERSION},
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+            result['enabled_target_membership'] = {**membership,
+                'artifact': result['enabled_target_capture']}
+            save()
         result['status'] = 'CONFIGURATION_CAPTURED'
         if baseline_execution is not None:
             if baseline_execution['schema'] == 'nico.cpp-baseline-execution.v1':

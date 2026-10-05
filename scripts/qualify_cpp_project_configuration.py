@@ -132,7 +132,7 @@ def persist_project_artifact(output, key, raw):
     symlinks and arbitrary names cannot replace an earlier artifact.
     """
     from nico.assessment_cpp_project_snapshot import PROJECT_GENERATED_STREAM_LIMIT, _stable_bytes
-    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback', 'project-runtime-evidence'} or not isinstance(raw, bytes)
+    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback', 'project-runtime-evidence', 'project-enabled-targets'} or not isinstance(raw, bytes)
             or len(raw) > PROJECT_GENERATED_STREAM_LIMIT):
         raise ValueError('qualification_artifact_invalid')
     output = Path(output).absolute()
@@ -174,6 +174,15 @@ def qualification_probe_receipt(value):
     if not isinstance(value, dict):
         raise ValueError('qualification_probe_invalid')
     projected = dict(value)
+    membership=value.get('enabled_target_membership')
+    if isinstance(membership,dict):
+        summary=dict(membership)
+        for key in ('contexts','missing_database_contexts','source_represented_contexts'):
+            population=summary.pop(key)
+            summary[key+'_count']=len(population)
+            summary[key+'_sha256']=hashlib.sha256(canonical_bytes(population)).hexdigest()
+        summary['receipt_projection']='hash-bound-summary-v1'
+        projected['enabled_target_membership']=summary
     runtime = value.get('runtime_evidence')
     if isinstance(runtime, dict):
         projected['runtime_evidence']={
@@ -292,6 +301,7 @@ def qualify_configuration_checkout(args):
                 project_static_analysis=getattr(args, 'project_static_analysis', False),
                 extended_compiler_budget=getattr(args, 'extended_compiler_budget', False),
                 compiler_environment=getattr(args, 'compiler_environment', False),
+                capture_enabled_targets=getattr(args,'capture_enabled_targets',False),
                 retain_artifact=lambda key, raw: persist_project_artifact(args.output, key, raw))
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
@@ -324,7 +334,8 @@ def qualify_configuration_checkout(args):
         decision = validate_project_collection(evidence,
             lambda ref: _stable_bytes(artifact_root, ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
             manifest_raw=raw, baseline_raw=raw_execution, scope_raw=raw_runtime,
-            producer_source_sha=producer, image=args.image)
+            producer_source_sha=producer, image=args.image,
+            enabled_targets_required=getattr(args,'capture_enabled_targets',False))
         # The original receipt/status and failed native results remain untouched.
         # This additive decision is not an image-promotion or production credential.
         path = args.output / 'collection-acceptance.json'
@@ -350,6 +361,7 @@ def main():
     parser.add_argument('--project-static-analysis', action='store_true')
     parser.add_argument('--extended-compiler-budget', action='store_true')
     parser.add_argument('--compiler-environment', action='store_true')
+    parser.add_argument('--capture-enabled-targets', action='store_true')
     parser.add_argument('--accept-completed-collection', action='store_true',
         help='Use the explicit collection policy while retaining failed target qualification.')
     parser.add_argument('--producer-source-sha', help='NICO revision producing this collection receipt.')

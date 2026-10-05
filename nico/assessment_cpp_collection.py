@@ -143,7 +143,7 @@ def validate_baseline_collection(probe, contract, artifact, *, allow_target_fail
 
 
 def validate_project_collection(receipt, read_artifact, *, manifest_raw, baseline_raw,
-                                scope_raw, producer_source_sha, image):
+                                scope_raw, producer_source_sha, image, enabled_targets_required=False):
     """Accept only full source-bound collection; retain all original failures.
 
     ``read_artifact`` reads a bounded local file by its validated artifact reference.
@@ -174,6 +174,10 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
     # qualification job. Freeze-at-config contracts require a separate binding.
     _require(baseline.get('schema') == 'nico.cpp-baseline-execution.v1')
     source, probe = receipt['source'], receipt['probe']
+    _require(type(enabled_targets_required) is bool)
+    if enabled_targets_required:
+        _require(probe.get('schema')=='nico.cpp-project-configuration-probe.v8'
+                 and isinstance(probe.get('enabled_target_membership'),dict))
     targets = source['targets']
     _require(source['inventory_complete'] is True
              and all(source[key] == manifest[key] for key in ('repository', 'commit_sha', 'tree_sha'))
@@ -205,6 +209,27 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
     validate_transport(probe, _operations(probe['operations'], artifact), targets,
                        runtime_plan=retained_runtime['plan'])
     rawdb = base64.b64decode(probe['compilation_database'], validate=True)
+    membership=None
+    if 'enabled_target_membership' in probe:
+        from nico.assessment_cpp_fileapi_membership import configured_target_membership
+        from nico.assessment_cpp_configuration import COMPILER_VERSION
+        capture=artifact(probe['enabled_target_capture'])
+        membership=configured_target_membership(capture,rawdb,targets,
+            source_root='/work/source',build_root='/work/build',client=probe['fileapi_client'],
+            cache_sha256=probe['configuration_cache_sha256'],
+            compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+        projected=probe['enabled_target_membership']
+        _require(projected['capture_sha256']==membership['capture_sha256']
+                 and projected['configured_context_count']==membership['configured_context_count'])
+        for key in ('contexts','missing_database_contexts','source_represented_contexts'):
+            if projected.get('receipt_projection')=='hash-bound-summary-v1':
+                _require(projected[key+'_count']==len(membership[key]) and projected[key+'_sha256']==_digest(membership[key]))
+            else:
+                _require(projected[key]==membership[key])
+        # A complete source-model capture still leaves authoritative argv mapping
+        # unproven. Never promote it by trusting a producer Boolean.
+        _require(membership['context_argv_binding_verified'] is True)
     _require(hashlib.sha256(rawdb).hexdigest() == baseline['compilation_database_sha256']
              == probe['compilation_database_sha256'])
     contexts = _database(rawdb, None, '/work/build', nested=True, source_targets=targets)

@@ -27,9 +27,9 @@ def retained(tmp_path, kind='undefined'):
 def test_native_collection_revalidated_and_target_failures_preserved(tmp_path, kind):
     root, kwargs, decision = retained(tmp_path, kind)
     copy = tmp_path / 'copy'
-    digest = handoff.validate_collection(root, source_sha=kwargs['producer_source_sha'], image=kwargs['image'], retain=copy)
+    digest = handoff.validate_collection(root, source_sha=kwargs['producer_source_sha'], image=kwargs['image'], retain=copy, enabled_targets_required=False)
     assert digest == hashlib.sha256(handoff._canonical(decision)).hexdigest()
-    assert handoff.validate_collection(copy, source_sha=kwargs['producer_source_sha'], image=kwargs['image']) == digest
+    assert handoff.validate_collection(copy, source_sha=kwargs['producer_source_sha'], image=kwargs['image'], enabled_targets_required=False) == digest
     assert json.loads((copy / 'collection-acceptance.json').read_text())['target_tests_passed'] is (kind is None)
 
 
@@ -46,7 +46,14 @@ def test_collection_tampering_rejected(tmp_path, fault):
         target = root / 'receipt.json'; moved = tmp_path / 'moved.json'
         target.rename(moved); target.symlink_to(moved)
     with pytest.raises((ValueError, OSError)):
-        handoff.validate_collection(root, source_sha=source, image=image)
+        handoff.validate_collection(root, source_sha=source, image=image, enabled_targets_required=False)
+
+
+def test_current_handoff_cannot_downgrade_to_legacy_complete_collection(tmp_path):
+    root, kwargs, decision = retained(tmp_path, kind=None)
+    assert decision['collection_complete'] is True
+    with pytest.raises(ValueError, match='qualification_collection_invalid'):
+        handoff.validate_collection(root, source_sha=kwargs['producer_source_sha'], image=kwargs['image'])
 
 
 @pytest.fixture

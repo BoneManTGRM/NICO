@@ -88,7 +88,8 @@ def validate_contract(contract: dict) -> dict:
     if configure_first:
         from nico.assessment_cpp_configure_first_contract import validate_configuration
         validate_configuration(contract['configuration'])
-        runtime = contract['configuration'].get('schema') == 'nico.cpp-configure-first-contract.v3'
+        from nico.assessment_cpp_configure_first_contract import runtime_required
+        runtime = runtime_required(contract['configuration'])
         maximum_wall = 9000 if runtime else 2420
         if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int
                 or not 1 <= contract['limits']['wall_seconds'] <= maximum_wall
@@ -301,7 +302,9 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
 
 def _configure_first_record(identity, contract, receipt, encoded):
     native=receipt['native']; config=contract['configuration']
-    runtime_contract=config.get('schema')=='nico.cpp-configure-first-contract.v3'
+    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required
+    runtime_contract=runtime_required(config)
+    membership_contract=membership_required(config)
     required={'schema','status','complete_execution','error','source_population_sha256',
         'source_count','compilation_database_sha256','configured_invocations','baseline_execution_frozen','compiled',
         'tests_executed','tests_passed','tests_discovered_count','tests_discovered_sha256','tests_executed_count',
@@ -318,7 +321,12 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'canonical_findings_projected','project_option_policy','project_options','project_options_sha256'}
     if runtime_contract:
         required |= {'runtime_complete','runtime_plan_sha256','runtime_summary_sha256','runtime_duration_ms'}
-    expected_schema='nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'
+    if membership_contract:
+        required |= {'enabled_target_capture_sha256','enabled_target_membership_verified',
+            'enabled_target_contexts_count','enabled_target_contexts_sha256',
+            'missing_database_contexts_count','missing_database_contexts_sha256',
+            'database_source_membership_complete','context_argv_binding_verified'}
+    expected_schema=('nico.cpp-configure-first-native.v4' if runtime_contract else 'nico.cpp-configure-first-native.v3') if membership_contract else ('nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1')
     if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!=expected_schema
             or native.get('status') not in {'UNPROVEN','BASELINE_EXECUTED'}
             or (native.get('error') is not None
@@ -354,6 +362,22 @@ def _configure_first_record(identity, contract, receipt, encoded):
                 or type(native.get('runtime_duration_ms')) is not int or native['runtime_duration_ms']<0
                 or any(not isinstance(native.get(key),str) or re.fullmatch(r'[0-9a-f]{64}',native[key]) is None
                     for key in ('runtime_plan_sha256','runtime_summary_sha256'))):
+            raise ValueError('worker_configure_first_native_invalid')
+    if membership_contract:
+        if (any(type(native.get(k)) is not bool for k in ('enabled_target_membership_verified',
+                'database_source_membership_complete','context_argv_binding_verified'))
+                or native.get('context_argv_binding_verified') is not False
+                or native.get('complete_execution') is not False
+                or any(type(native.get(k)) is not int or native[k] < 0
+                       for k in ('enabled_target_contexts_count','missing_database_contexts_count'))
+                or any(not isinstance(native.get(k),str) or re.fullmatch(r'[0-9a-f]{64}',native[k]) is None
+                       for k in ('enabled_target_contexts_sha256','missing_database_contexts_sha256'))):
+            raise ValueError('worker_configure_first_native_invalid')
+        capture_sha=native.get('enabled_target_capture_sha256')
+        ref=(native.get('artifacts') or {}).get('project-enabled-targets') or {}
+        if (capture_sha != ref.get('sha256')
+                or (capture_sha is not None and (not isinstance(capture_sha,str) or re.fullmatch(r'[0-9a-f]{64}',capture_sha) is None))
+                or (native['enabled_target_membership_verified'] and capture_sha is None)):
             raise ValueError('worker_configure_first_native_invalid')
     for key in ('source_count','configured_invocations','tests_discovered_count','tests_executed_count','tests_passed_count',
                 'tests_skipped_count','project_compiler_required_count','project_compiler_checked_count',
@@ -399,6 +423,9 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'applicable':True,'evidence_required':True,
         'reason':('Configure-first execution completed; canonical findings projection from retained native artifacts is pending.'
                   if execution_complete else
+                  'Enabled target inventory was collected; exact source-target compiler command mapping remains unproven. '
+                  'Source membership cannot receive whole-project execution or header coverage credit.'
+                  if membership_contract and native['enabled_target_membership_verified'] else
                   'Generated-file capture exceeded its bounded capacity. The retained build/test fields describe earlier execution; '
                   'compiler, static and later runtime analysis are incomplete and receive no completion credit.'
                   if native['error']=='worker_configuration_probe_snapshot_capacity_exceeded' else
@@ -416,7 +443,7 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'limitations_sha256':native['project_static_limitations_sha256'],
             'population_sha256':native['source_population_sha256'],'configuration_aware':True,
             'header_context_verified':True,'repository_build_executed':native['compiled'],
-            'all_repository_configurations_analyzed':native['project_static_complete']},
+            'all_repository_configurations_analyzed':native['project_static_complete'] and not membership_contract},
         'cpp_build_evidence':{'profile':contract['profile'],'compiled':native['compiled'],'tests_executed':native['tests_executed'],
             'tests_passed':native['tests_passed'],'configured_invocations':native['configured_invocations'],
             'tests_discovered_count':native['tests_discovered_count'],
@@ -489,8 +516,11 @@ def publish_receipt(jobs: WorkerJobs, identity: JobIdentity, lease: str, worker:
         native=receipt["native"]
         required={"project-compilation-database","project-generated-context","project-compiler-evidence",
                   "project-static-environment","project-static-evidence"}
-        if job["contract"]["configuration"].get("schema") == "nico.cpp-configure-first-contract.v3":
+        from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required
+        if runtime_required(job['contract']['configuration']):
             required.add("project-runtime-evidence")
+        if membership_required(job['contract']['configuration']):
+            required.add('project-enabled-targets')
         # Complete retained populations are reconstructed before publication.
         # A bounded incomplete producer result may legitimately stop before a
         # later artifact exists; retain that truthful failure record without

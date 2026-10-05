@@ -71,6 +71,42 @@ def test_summary_rejects_artifact_identity_substitution():
         summarize_probe(proof(),targets,artifacts)
 
 
+def test_source_membership_never_promotes_whole_execution_or_argv_boolean():
+    from tests.test_cpp_fileapi_target_membership import owned, inventory
+    capsule,database,targets,kwargs=owned()
+    membership=inventory(capsule,database,targets,kwargs)
+    artifacts={k:ref(k) for k in ("project-compilation-database","project-generated-context",
+        "project-compiler-evidence","project-static-environment","project-static-evidence","project-baseline-evidence")}
+    artifacts['project-enabled-targets']=ref('project-enabled-targets',canonical_bytes(capsule))
+    value=proof();value['enabled_target_membership']=membership
+    result=summarize_probe(value,targets,artifacts)
+    assert result['schema']=='nico.cpp-configure-first-native.v3'
+    assert result['enabled_target_contexts_count']==2
+    assert result['missing_database_contexts_count']==1
+    assert result['database_source_membership_complete'] is False
+    assert result['complete_execution'] is False
+    membership['context_argv_binding_verified']=True
+    assert summarize_probe(value,targets,artifacts)['complete_execution'] is False
+
+
+@pytest.mark.parametrize('runtime',[False,True])
+def test_new_membership_contract_keeps_runtime_budget_and_rejects_old_native_schema(runtime):
+    from nico.assessment_cpp_configure_first_execution import execution_timeout_limit
+    identity,plan,receipt=incomplete_receipt(runtime=runtime)
+    cfg=plan['configuration']
+    if not runtime:
+        cfg.pop('project_options');cfg['project_option_policy']='conservative-cmake-v1'
+    cfg['schema']='nico.cpp-configure-first-contract.v5' if runtime else 'nico.cpp-configure-first-contract.v4'
+    cfg['capabilities']['capture_enabled_targets']=True
+    plan['limits']['wall_seconds']=9000 if runtime else 2420
+    identity=JobIdentity(identity.customer_id,identity.project_id,identity.run_id,identity.scan_id,
+        identity.repository_id,identity.revision,_digest(plan),identity.release_revision)
+    receipt.update(identity=asdict(identity),configuration_sha256=_digest(cfg))
+    assert execution_timeout_limit(plan)==(8980 if runtime else 2400)
+    with pytest.raises(ValueError,match='native_invalid'):
+        validate_receipt(identity,plan,'e'*32,'github:1:2:3',receipt)
+
+
 def incomplete_receipt(*, runtime=False):
     from tests.test_cpp_configure_first_contract import contract
 

@@ -115,7 +115,7 @@ jobs:
           --runtime-scope-contract tests/fixtures/cpp/bitcoin-runtime-scope.json
           --unit-test-data qualification-unit-test-data
           --accept-completed-collection --producer-source-sha "$NICO_PRODUCER_SOURCE_SHA"
-          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment
+          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment --capture-enabled-targets
           --output cpp-baseline-qualification
           --image "$(cat full-project-image-id.txt)"
       - name: Retain native success and failure evidence

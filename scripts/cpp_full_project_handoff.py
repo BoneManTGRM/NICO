@@ -14,7 +14,12 @@ CONTRACTS = ('bitcoin-configuration-benchmark.json', 'bitcoin-baseline-execution
              'bitcoin-runtime-scope.json')
 
 
-def validate_collection(directory, *, source_sha, image, retain=None):
+def validate_collection(directory, *, source_sha, image, retain=None, enabled_targets_required=True):
+    """Require current-policy evidence; False permits historical reads only.
+
+    Export and promotion always use the strict default. A legacy receipt from
+    the same producer/image must not satisfy the new release's required scope.
+    """
     root = Path(directory).absolute()
     def read(name, limit):
         raw = _stable_bytes(root, name, limit)
@@ -33,7 +38,8 @@ def validate_collection(directory, *, source_sha, image, retain=None):
     decision = validate_project_collection(receipt,
         lambda ref: read(ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
         manifest_raw=contracts[0], baseline_raw=contracts[1], scope_raw=contracts[2],
-        producer_source_sha=source_sha, image=image)
+        producer_source_sha=source_sha, image=image,
+        enabled_targets_required=enabled_targets_required)
     if json.loads(read('collection-acceptance.json', 16 * 1024 * 1024)) != decision:
         raise ValueError('image_collection_decision_mismatch')
     return hashlib.sha256(_canonical(decision)).hexdigest()

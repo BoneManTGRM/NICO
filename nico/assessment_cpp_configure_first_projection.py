@@ -6,6 +6,7 @@ validators that qualified the worker output.
 """
 from __future__ import annotations
 from copy import deepcopy
+import base64
 import gzip
 import hashlib
 import io
@@ -62,19 +63,47 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     native=receipt["native"]; refs=native["artifacts"]; targets=receipt["target_hashes"]
     required={"project-compilation-database","project-generated-context","project-compiler-evidence",
               "project-static-environment","project-static-evidence","project-baseline-evidence"}
-    runtime_contract=contract["configuration"].get("schema")=="nico.cpp-configure-first-contract.v3"
+    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required
+    runtime_contract=runtime_required(contract['configuration'])
+    membership_contract=membership_required(contract['configuration'])
     if runtime_contract:
         required.add("project-runtime-evidence")
+    if membership_contract:
+        required.add('project-enabled-targets')
     if not required<=set(refs):
         raise ValueError("worker_configure_first_artifact_population_invalid")
     from nico.assessment_cpp_baseline_evidence import validate_retained_baseline
     baseline_raw = _read_artifact(store, identity, refs["project-baseline-evidence"], "project-baseline-evidence")
+    membership_raw=(_read_artifact(store,identity,refs['project-enabled-targets'],'project-enabled-targets')
+                    if membership_contract else None)
     baseline = validate_retained_baseline(
-        baseline_raw, targets, contract["configuration"], contract["image_digest"], native)
+        baseline_raw, targets, contract["configuration"], contract["image_digest"], native,
+        membership_raw=membership_raw)
     database=_read_artifact(store,identity,refs["project-compilation-database"],"project-compilation-database")
     if hashlib.sha256(database).hexdigest()!=native["compilation_database_sha256"]:
         raise ValueError("worker_configure_first_database_mismatch")
     contexts=_database(database,None,"/work/build",nested=True,source_targets=targets)
+    membership=None
+    if membership_contract:
+        from nico.assessment_cpp_fileapi_membership import configured_target_membership
+        from nico.assessment_cpp_configuration import COMPILER_VERSION
+        capsule_raw=membership_raw
+        capsule=_json(capsule_raw)
+        cache=base64.b64decode(_json(baseline_raw)['probe']['configuration_cache'],validate=True)
+        membership=configured_target_membership(capsule_raw,database,targets,
+            source_root='/work/source',build_root='/work/build',client=capsule['client'],
+            cache_sha256=hashlib.sha256(cache).hexdigest(),
+            compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+        if (native['enabled_target_capture_sha256']!=hashlib.sha256(capsule_raw).hexdigest()
+                or native['enabled_target_membership_verified'] is not True
+                or native['enabled_target_contexts_count']!=membership['configured_context_count']
+                or native['enabled_target_contexts_sha256']!=_population(membership['contexts'])[1]
+                or native['missing_database_contexts_count']!=len(membership['missing_database_contexts'])
+                or native['missing_database_contexts_sha256']!=_population(membership['missing_database_contexts'])[1]
+                or native['database_source_membership_complete'] is not membership['database_membership_complete']
+                or native['context_argv_binding_verified'] is not membership['context_argv_binding_verified']):
+            raise ValueError('worker_configure_first_summary_mismatch')
     snapshot_raw=_read_artifact(store,identity,refs["project-generated-context"],"project-generated-context")
     snapshot=validate_project_snapshot(_json(snapshot_raw),contexts)
     compiler_raw=_read_artifact(store,identity,refs["project-compiler-evidence"],"project-compiler-evidence")
@@ -128,7 +157,8 @@ def reconstruct_configure_first(identity, contract, receipt, store):
                 or native.get("runtime_duration_ms")!=runtime["duration_ms"]):
             raise ValueError("worker_configure_first_summary_mismatch")
     return {"contexts":contexts,"snapshot":snapshot,"compiler":compiler,
-            "environment":environment,"analysis":analysis,"runtime":runtime,"baseline":baseline}
+            "environment":environment,"analysis":analysis,"runtime":runtime,"baseline":baseline,
+            **({'enabled_target_membership':membership} if membership_contract else {})}
 
 
 def project_configure_first_record(record, identity, contract, receipt, reconstruction):
@@ -140,8 +170,10 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
         record.setdefault("cpp_build_evidence", {})["runtime_scope"]=deepcopy(runtime["summary"])
     if analysis["complete"] is not True:
         return record
+    membership=reconstruction.get('enabled_target_membership')
     execution_complete = (native["complete_execution"] is True
-        and (runtime is None or runtime["summary"]["complete"] is True))
+        and (runtime is None or runtime["summary"]["complete"] is True)
+        and (membership is None or membership['context_argv_binding_verified'] is True))
     findings=[]
     primary_ref=native["artifacts"]["project-static-evidence"]["artifact_id"]
     fallback_ref=(native["artifacts"].get("project-static-clang-fallback") or {}).get("artifact_id")
@@ -170,10 +202,21 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
         analyzed_context_count=len(analysis["analyzed_contexts"]),
         limitations=deepcopy(analysis["limitations"]),
         limitations_count=len(analysis["limitations"]),
-        all_repository_configurations_analyzed=analysis["complete"],
+        all_repository_configurations_analyzed=analysis["complete"] and (membership is None or membership['context_argv_binding_verified'] is True),
         analyzer_header_coverage_verified=analysis.get("analyzer_header_coverage_verified") is True)
     if runtime is not None:
         output["cpp_build_evidence"]["runtime_scope"]=deepcopy(runtime["summary"])
+    if membership is not None:
+        output.setdefault('cpp_build_evidence',{})['enabled_target_membership'] = {
+            'schema':membership['schema'],'comparison_scope':membership['comparison_scope'],
+            'configured_context_count':membership['configured_context_count'],
+            'configured_contexts_sha256':_population(membership['contexts'])[1],
+            'missing_database_context_count':len(membership['missing_database_contexts']),
+            'missing_database_contexts_sha256':_population(membership['missing_database_contexts'])[1],
+            'database_source_membership_complete':membership['database_membership_complete'],
+            'context_argv_binding_verified':False,'analyzer_header_coverage_verified':False,
+            'capture_sha256':membership['capture_sha256'],
+            'evidence_reference':'worker_artifact:'+native['artifacts']['project-enabled-targets']['artifact_id']}
     output["worker_provenance"]["canonical_projection"]={
         "compilation_database_sha256":native["compilation_database_sha256"],
         "compiler_native_sha256":reconstruction["compiler"]["native_evidence_sha256"],

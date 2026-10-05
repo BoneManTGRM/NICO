@@ -115,6 +115,21 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
         else:
             references = {'project-generated-context': probe['generated_context']['artifact'],
                           'project-compiler-evidence': probe['project_compiler']['artifact']}
+        if 'fileapi_client' in probe:
+            from nico.assessment_cpp_fileapi_membership import QUERY_PROGRAM, CAPTURE_PROGRAM, EMPTY_SHA, QUERY_NAMES, configured_target_membership
+            from nico.assessment_worker_receipts import canonical_bytes
+            client=probe['fileapi_client']
+            specs['fileapi-query']=[*program(QUERY_PROGRAM),'/work/build',client]
+            specs['project-enabled-targets']=['docker','exec','--interactive',name,'python3','-I','-S','-c',CAPTURE_PROGRAM]
+            references['project-enabled-targets']=probe['enabled_target_capture']
+            require(_json(operations['fileapi-query'][1])=={'client':client,'query':{q:EMPTY_SHA for q in QUERY_NAMES}})
+            db=base64.b64decode(probe['compilation_database'],validate=True)
+            membership=configured_target_membership(operations['project-enabled-targets'][1],db,targets,
+                source_root='/work/source',build_root='/work/build',client=client,
+                cache_sha256=probe['configuration_cache_sha256'],
+                compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'})
+            require(membership['execution_authorized'] is False and membership['context_argv_binding_verified'] is False)
         if probe.get('unit_test_data') is not None:
             argv = operations['unit-test-data'][0]['invocation']
             require(isinstance(argv[-1], str) and argv[-1].isdigit() and 0 < int(argv[-1]) <= 128*1024*1024)
