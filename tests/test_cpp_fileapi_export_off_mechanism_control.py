@@ -21,7 +21,7 @@ import time
 
 import pytest
 
-RUNNER_SHA = '66aa2459c0c5eb337dc3cf85d458f8d8b3e1b8ef7a8adacf9cd63dd4ef7bbfc5'
+RUNNER_SHA = '3963e39fa783f169c94781ea6ba96023b331246ff49f6f6456da81e201e15c21'
 SOURCE_SHAS = {
     'CMakeLists.txt': '833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761',
     'config.h.in': '58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3',

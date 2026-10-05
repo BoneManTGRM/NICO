@@ -191,7 +191,7 @@ def validate_hidden(target, index_target, source, build):
     require(group['sourceIndexes'] == [i] and group['language'] == 'C', 'hidden_compile_group')
     require(group.get('languageStandard', {}).get('standard') == '11', 'hidden_language_standard')
     defines = [value['define'] for value in group.get('defines', [])]
-    require(defines == ['SOURCE_SENTINEL=19', 'TARGET_SENTINEL=17'], 'hidden_defines')
+    require(len(defines) == 2 and set(defines) == {'SOURCE_SENTINEL=19', 'TARGET_SENTINEL=17'}, 'hidden_defines')
     includes = [value['path'] for value in group.get('includes', [])]
     require(includes == [str(source / 'include'), str(build / 'generated')], 'hidden_include_order')
     require(all(not value.get('isSystem', False) for value in group['includes']), 'hidden_include_kind')
@@ -200,6 +200,22 @@ def validate_hidden(target, index_target, source, build):
     # deliberately does not certify general command-fragment reconstruction.
     require(len(flags) == 3 and set(flags) == {'-g', '-Wextra', '-std=gnu11'}, 'hidden_control_flags')
     return {'source': str(source / 'hidden.c'), 'defines': defines, 'includes': includes, 'flags': flags, 'target_id': target['id'], 'source_index': i, 'compile_group_index': member['compileGroupIndex']}
+
+
+def validate_native_command(native, settings, compiler):
+    obj = 'CMakeFiles/hidden.dir/hidden.c.o'
+    # Only these two distinct owned macros commute. FileAPI ordering does not
+    # promise native command ordering. Keep both actual orders, and still bind
+    # compiler, exact two definitions, ordered includes and the entire rule tail.
+    require(len(settings['defines']) == 2 and set(settings['defines']) == {'SOURCE_SENTINEL=19', 'TARGET_SENTINEL=17'}, 'hidden_defines')
+    native_defines = native[1:3]
+    require(len(native_defines) == 2 and set(native_defines) == {'-DSOURCE_SENTINEL=19', '-DTARGET_SENTINEL=17'}, 'owned_native_defines')
+    prefix = [compiler, *native_defines, *['-I' + value for value in settings['includes']]]
+    native_flags = native[len(prefix):native.index('-MD')]
+    require(len(native_flags) == 3 and set(native_flags) == set(settings['flags']), 'owned_native_flag_population')
+    expected = [*prefix, *native_flags, '-MD', '-MT', obj, '-MF', obj + '.d', '-o', obj, '-c', settings['source']]
+    require(native == expected, 'owned_native_settings_or_rule_tail_mismatch')
+    return native_flags
 
 
 def negative_control(name, function):
@@ -283,12 +299,7 @@ def execute(source, out):
         require(len(commands) == 2, 'native_compile_command_population')
         require({tokens[tokens.index('-c') + 1] for tokens in commands} == {str(source / 'hidden.c'), str(source / 'main.c')}, 'native_source_population')
         native = next(tokens for tokens in commands if tokens[tokens.index('-c') + 1] == settings['source'])
-        obj = 'CMakeFiles/hidden.dir/hidden.c.o'
-        prefix = [tools['gcc'], *['-D' + value for value in settings['defines']], *['-I' + value for value in settings['includes']]]
-        native_flags = native[len(prefix):native.index('-MD')]
-        require(len(native_flags) == 3 and set(native_flags) == set(settings['flags']), 'owned_native_flag_population')
-        expected = [*prefix, *native_flags, '-MD', '-MT', obj, '-MF', obj + '.d', '-o', obj, '-c', settings['source']]
-        require(native == expected, 'owned_native_settings_or_rule_tail_mismatch')
+        native_flags = validate_native_command(native, settings, tools['gcc'])
         after_db = stable(build, 'compile_commands.json')
         require(after_db == before_db, 'original_DB_changed')
         (out / 'compile-commands-after.json').write_bytes(after_db)
