@@ -152,20 +152,21 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     static_request=project_static_request(database,targets,snapshot,compiler_raw,
         extended_compiler_budget=True,environment=environment,header_provenance=native_command_contract)
     primary=validate_project_static(static_raw,static_request)
-    if native_command_contract:
-        from nico.assessment_cpp_header_evidence import header_summary
-        if any(native[key]!=value for key,value in header_summary(primary).items()):
-            raise ValueError('worker_configure_first_header_summary_mismatch')
     analysis=primary
     if "project-static-clang-fallback" in refs:
         fallback_raw=_read_artifact(store,identity,refs["project-static-clang-fallback"],"project-static-clang-fallback")
         fallback_schema=_json(fallback_raw).get('schema')
         fallback_request=clang_fallback_request(static_request,primary,
-            extended_budget=fallback_schema in ('nico.cpp-clang-fallback-evidence.v2',
-                                               'nico.cpp-clang-fallback-evidence.v4'),
-            contention_aware=fallback_schema=='nico.cpp-clang-fallback-evidence.v4')
+            extended_budget=native_command_contract or fallback_schema in ('nico.cpp-clang-fallback-evidence.v2',
+                                               'nico.cpp-clang-fallback-evidence.v4','nico.cpp-clang-fallback-evidence.v6'),
+            contention_aware=native_command_contract or fallback_schema in ('nico.cpp-clang-fallback-evidence.v4','nico.cpp-clang-fallback-evidence.v6'),
+            multi_file_diagnostics=fallback_schema in ('nico.cpp-clang-fallback-evidence.v5','nico.cpp-clang-fallback-evidence.v6'))
         fallback=validate_clang_fallback(fallback_raw,fallback_request,static_request)
         analysis=merge_static_analysis(primary,fallback)
+    if native_command_contract:
+        from nico.assessment_cpp_header_evidence import header_summary
+        if any(native[key]!=value for key,value in header_summary(analysis).items()):
+            raise ValueError('worker_configure_first_header_summary_mismatch')
     checks=[
         ("project_compiler_required",compiler["required_contexts"]),
         ("project_compiler_checked",compiler["checked_contexts"]),

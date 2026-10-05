@@ -277,8 +277,11 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
     static = probe['project_static']
     primary = validate_project_static(artifact(static['artifact']), sreq)
     if static.get('fallback_artifact') is not None:
-        freq = clang_fallback_request(sreq, primary, extended_budget=True, contention_aware=True)
-        analysis = merge_static_analysis(primary, validate_clang_fallback(artifact(static['fallback_artifact']), freq, sreq))
+        fallback_raw=artifact(static['fallback_artifact'])
+        fallback_schema=json.loads(fallback_raw).get('schema')
+        freq = clang_fallback_request(sreq, primary, extended_budget=True, contention_aware=True,
+            multi_file_diagnostics=fallback_schema in ('nico.cpp-clang-fallback-evidence.v5','nico.cpp-clang-fallback-evidence.v6'))
+        analysis = merge_static_analysis(primary, validate_clang_fallback(fallback_raw, freq, sreq))
     else:
         analysis = primary
     _require(analysis['complete'] is True and static['complete'] is True and stage['analysis'] == static)

@@ -84,13 +84,21 @@ def enrich_scanner_stage(canonical, stage):
             counts={name:sum(isinstance(value,Mapping) and bool(value.get(name)) for value in population.values())
                 for name in ('included_contexts','parsed_contexts','analyzed_contexts')}
             unvisited=sum(isinstance(value,Mapping) and not value.get('included_contexts') for value in population.values())
+            clang=[row for row in header.get('contexts',[]) if isinstance(row,Mapping)
+                and row.get('analysis_method')=='clang_static_analyzer_tu_ast_observer']
+            parsed_label=('archivos procesados' if clang else 'con tokens analizados') if es else ('parsed files' if clang else 'parsed token files')
             line=(f'Encabezados originales y generados: inventariados={required}; incluidos={counts["included_contexts"]}/{required}; '
-                  f'con tokens analizados={counts["parsed_contexts"]}/{required}; en pases normales completados={counts["analyzed_contexts"]}/{required}; no visitados={unvisited}.' if es
+                  f'{parsed_label}={counts["parsed_contexts"]}/{required}; en pases normales completados={counts["analyzed_contexts"]}/{required}; no visitados={unvisited}.' if es
                 else f'Original and generated headers: inventoried={required}; included={counts["included_contexts"]}/{required}; '
-                  f'parsed token files={counts["parsed_contexts"]}/{required}; completed normal-pass files={counts["analyzed_contexts"]}/{required}; unvisited={unvisited}.')
+                  f'{parsed_label}={counts["parsed_contexts"]}/{required}; completed normal-pass files={counts["analyzed_contexts"]}/{required}; unvisited={unvisited}.')
             summaries.append(line);evidence.append(line)
             evidence.append('La visita de archivos no demuestra cobertura de líneas o ramas, ni ejecución de cada verificador.' if es
                 else 'File visitation does not establish line or branch coverage or execution of every checker.')
+            if clang:
+                parsed={path for row in clang for path in row.get('parsed_ast_files',[]) if path in population}
+                bodies={path for row in clang for path in row.get('syntax_body_callback_files',[]) if path in population}
+                evidence.append((f'Clang: encabezados en el AST procesado={len(parsed)}; con eventos de revisión de cuerpos={len(bodies)}.' if es
+                    else f'Clang: parsed AST header files={len(parsed)}; header files with body-check callbacks={len(bodies)}.'))
             if header.get('population_complete') is not True:
                 gaps.append('La población completa de encabezados aún no tiene evidencia de análisis verificada.' if es
                     else 'The complete header population does not yet have verified analyzer evidence.')

@@ -1,0 +1,10 @@
+{
+  "schema": "nico.clang-header-observer-manifest.v1",
+  "trace_schema": "nico.clang-header-observer.v1",
+  "clang_version": "17.0.6",
+  "source_sha256": "76ad9e51e0500a6d93fc81038ca7df6cb42c14d8d580b42f92b1281efa7124a1",
+  "sdk_lock_sha256": "76385517f23a58851167a04ef5ba1697830fe62e569acdf804eec708e063260b",
+  "runtime_lock_sha256": "57c8fa1fb9dabce9c7e3f546ccb7d6fb549abece632742448272e10fabb66abb",
+  "checker": "nico.HeaderEvidence",
+  "scope": "Physical entered files, parsed AST membership and actual syntax body callback locations in existing analyzer pass; no individual-checker/path/line/branch coverage."
+}

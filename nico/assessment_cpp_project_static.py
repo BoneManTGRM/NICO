@@ -721,7 +721,7 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                 STREAM_LIMIT as CLANG_FALLBACK_STREAM_LIMIT, clang_fallback_request,
                 validate_clang_fallback, merge_static_analysis)
             fallback_request = clang_fallback_request(request, primary_analysis,
-                extended_budget=True, contention_aware=True)
+                extended_budget=True, contention_aware=True, multi_file_diagnostics=True)
             if fallback_request['contexts']:
                 result['phase'] = 'analysis_fallback'; save()
                 fallback_observed = observe('project-static-clang-fallback',
