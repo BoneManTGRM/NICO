@@ -107,7 +107,10 @@ def test_real_static_orchestrator_reduces_parallelism_but_not_coverage_or_case_l
     assert len(requests) == 1
     request = requests[0]
     assert request['limits'] == {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 2}
-    assert request['schema'] == 'nico.cpp-clang-fallback-request.v4'
+    # Live v6 preserves the scheduling contract and retains cross-header
+    # diagnostics. Historical v4 remains covered by its request controls below.
+    assert request['schema'] == 'nico.cpp-clang-fallback-request.v6'
+    assert all('-analyzer-output=plist-multi-file' in row['invocation'] for row in request['contexts'])
     assert result['execution_budget_seconds'] == 1020 and result['wall_budget_seconds'] == 1030
     assert len(result['analysis']['analyzed_contexts']) == len(result['analysis']['required_contexts'])
     assert any(f.get('analyzer') == 'clang-static-analyzer' for f in result['analysis']['findings'])
