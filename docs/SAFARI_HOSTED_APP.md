@@ -24,8 +24,10 @@ Never expose GitHub credentials through the frontend.
 
 ## Backend start command
 
-Use this command on the backend host:
+Use the authenticated production entrypoint selected by the canonical Docker command:
 
 ```bash
-uvicorn nico.api.main:app --host 0.0.0.0 --port $PORT
+uvicorn nico.api.specialist_ship_ready_bootstrap:app --host 0.0.0.0 --port $PORT
 ```
+
+This bootstrap installs and checks the specialist access boundary for the established assessment and report routes.
