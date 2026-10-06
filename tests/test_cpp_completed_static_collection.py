@@ -24,9 +24,11 @@ def digest(value):
     return hashlib.sha256(value).hexdigest()
 
 
-def fixture(tmp_path, failing=True, include_inputs=False):
+def fixture(tmp_path, failing=True, include_inputs=False, directive=None):
+    if directive is None:
+        directive = b'#error owned rejection' if failing else b'int value(){return VALUE;}'
     compiler, creq, snapshot = owned(tmp_path, failing=failing,
-        directive=b'#error owned rejection' if failing else b'int value(){return VALUE;}')
+        directive=directive)
     craw = _canonical(compiler)
     database = _canonical([{k:c[k] for k in ('directory','file','arguments')} for c in creq['contexts']])
     # Rebuilt database has the same literal canonical bytes as the owned input.
@@ -51,6 +53,7 @@ def fixture(tmp_path, failing=True, include_inputs=False):
     for key in ('header_tool_receipt','header_tool_receipt_sha256'):
         output[key] = shape[key]
     failed = set(cproof['failed_contexts'])
+    failures = {row['context_id']: row for row in cproof['failures']}
     for context, row in zip(request['contexts'], output['records']):
         doc = ET.fromstring(sample()[0]); doc.set('file',context['analysis_file'])
         cfg = doc.find('configuration')
@@ -74,10 +77,12 @@ def fixture(tmp_path, failing=True, include_inputs=False):
             if not is_failed: ET.SubElement(tokens,'token_file',file=context['analysis_file'])
         packed, sha, encoding = static._encode_xml(ET.tostring(doc),compact=True)
         if is_failed:
+            # Pinned simplecpp emits its separator even when the body is empty.
+            message = '#error ' + failures[context['context_id']]['directive'].partition('error')[2].strip()
             errors = ET.Element('results',version='2'); ET.SubElement(errors,'cppcheck',version='2.17.1')
             children = ET.SubElement(errors,'errors')
             error = ET.SubElement(children,'error',id='preprocessorErrorDirective',severity='error',
-                msg='#error owned rejection',verbose='#error owned rejection',file0=context['analysis_file'])
+                msg=message,verbose=message,file0=context['analysis_file'])
             ET.SubElement(error,'location',file=context['analysis_file'],line='2',column='2')
             ET.SubElement(children,'error',id='checkersReport',severity='information',
                 msg='Active checkers: There was critical errors (use --checkers-report=<filename> to see details)')
@@ -109,7 +114,9 @@ def fixture(tmp_path, failing=True, include_inputs=False):
             'files':[{'path':source,'entered':1,'ast_decl_nodes':0,'ast_stmt_nodes':0,'ast_body_callbacks':0,
                 'initially_system':False,'system_header_pragma_observed':False}]}
         packed, sha = clang._encode_plist(_canonical(trace))
-        execution = observed((source+':2:2: error: owned rejection\n    2 | #error owned rejection\n'
+        directive_text = failures[cid]['directive']
+        body = directive_text.partition('error')[2].strip()
+        execution = observed((source+':2:2: error: '+body+'\n    2 | '+directive_text+'\n'
                               +'      |  ^\n1 error generated.\n').encode())
         execution['exit_code'] = 1
         fdata['records'].append({'context_id':cid,'invocation':c['invocation'],
@@ -148,6 +155,34 @@ def test_current_all_success_collection_preserves_legacy_completion(tmp_path):
     proof = validate(req,cproof,raw,fraw)
     assert proof['collection_complete'] is True and proof['analysis']['complete'] is True
     assert proof['failed_contexts'] == proof['unparsed_contexts'] == []
+
+
+def test_bare_error_native_separator_is_collected_without_analysis_success(tmp_path):
+    req, compiler, raw, fallback = fixture(tmp_path, directive=b'#error')
+    proof = validate(req, compiler, raw, fallback)
+    assert proof['collection_complete'] is True
+    assert proof['failed_contexts'] == proof['unparsed_contexts'] == compiler['failed_contexts']
+    assert len(proof['failed_contexts']) == 2
+    assert proof['analysis']['complete'] is False
+    assert proof['analysis']['header_context_evidence_complete'] is False
+    assert proof['analysis']['analyzer_header_coverage_verified'] is False
+
+
+@pytest.mark.parametrize('field, message', [
+    ('msg', '#error'), ('msg', '#error  '), ('msg', '#error\t'),
+    ('msg', '#error unexpected'), ('verbose', '#error'),
+])
+def test_bare_error_rejects_any_unbound_message_instead_of_stripping_it(tmp_path, field, message):
+    req, compiler, raw, fallback = fixture(tmp_path, directive=b'#error')
+    assert validate(req, compiler, raw, fallback)['collection_complete'] is True
+    document = json.loads(raw)
+    row = next(row for row in document['records'] if row['context_id'] in compiler['failed_contexts'])
+    xml = ET.fromstring(base64.b64decode(row['xml']))
+    xml.find("errors/error[@id='preprocessorErrorDirective']").set(field, message)
+    changed = ET.tostring(xml)
+    row.update(xml=base64.b64encode(changed).decode(), xml_sha256=digest(changed))
+    with pytest.raises(ValueError):
+        validate(req, compiler, _canonical(document), fallback)
 
 
 @pytest.mark.parametrize('fault',['missing-fallback','missing-record','missing-trace','false-plist',

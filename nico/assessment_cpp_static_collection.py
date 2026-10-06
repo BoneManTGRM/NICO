@@ -38,7 +38,7 @@ def _primary_failure(row, failure):
         and checker.get('msg')=='Active checkers: There was critical errors (use --checkers-report=<filename> to see details)'
         and not checker.findall('location'))
     body = re.fullmatch(r'[ \t]*#[ \t]*error(?:[ \t]+(.*))?',failure['directive'])[1] or ''
-    message = '#error' + (' '+body.strip() if body.strip() else '')
+    message = '#error ' + body.strip()
     locations = error.findall('location')
     _require(error.get('severity')=='error' and error.get('msg')==message
         and error.get('verbose',message)==message and error.get('file0')==failure['analysis_file']
