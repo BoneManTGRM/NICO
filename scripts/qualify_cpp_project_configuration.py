@@ -174,6 +174,14 @@ def qualification_probe_receipt(value):
     if not isinstance(value, dict):
         raise ValueError('qualification_probe_invalid')
     projected = dict(value)
+    from nico.assessment_cpp_compiler_collection import collection_summary
+    if isinstance(value.get('project_compiler_collection'),dict):
+        projected['project_compiler_collection']=collection_summary(value['project_compiler_collection'])
+    if isinstance(value.get('project_static_stage'),dict):
+        stage=dict(value['project_static_stage'])
+        for key in ('compiler_collection','static_collection'):
+            if isinstance(stage.get(key),dict):stage[key]=collection_summary(stage[key])
+        projected['project_static_stage']=stage
     generation=value.get('generated_input_materialization')
     if isinstance(generation,dict):
         projected['generated_input_materialization']={
@@ -230,7 +238,7 @@ def qualification_probe_receipt(value):
             summary.pop(key)
         summary.update(compact)
     projected['project_static'] = summary
-    stage = value.get('project_static_stage')
+    stage = projected.get('project_static_stage')
     if isinstance(stage, dict):
         stage = dict(stage)
         if isinstance(stage.get('analysis'), dict):
@@ -249,6 +257,13 @@ def qualify_configuration_checkout(args):
         'production_dispatch_exercised':False,'production_qualified':False,
         'compiled':False,'tests_executed':False}
     collection_policy = getattr(args, 'accept_completed_collection', False)
+    compiler_collection_policy = getattr(args,'collect_completed_compiler_failures',False)
+    if (type(compiler_collection_policy) is not bool or compiler_collection_policy and (
+            not collection_policy or not all(getattr(args,key,False) is True for key in
+                ('capture_generated_context','project_compiler_evidence','project_static_analysis',
+                 'extended_compiler_budget','compiler_environment','capture_enabled_targets',
+                 'capture_native_commands','materialize_generated_inputs')))):
+        raise ValueError('qualification_compiler_collection_contract_invalid')
     if collection_policy:
         import re
         producer = getattr(args, 'producer_source_sha', None)
@@ -327,6 +342,7 @@ def qualify_configuration_checkout(args):
                 capture_enabled_targets=getattr(args,'capture_enabled_targets',False),
                 capture_native_commands=getattr(args,'capture_native_commands',False),
                 materialize_generated_inputs=getattr(args,'materialize_generated_inputs',False),
+                collect_completed_compiler_failures=compiler_collection_policy,
                 retain_artifact=lambda key, raw: persist_project_artifact(args.output, key, raw))
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
@@ -372,7 +388,8 @@ def qualify_configuration_checkout(args):
             producer_source_sha=producer, image=args.image,
             enabled_targets_required=getattr(args,'capture_enabled_targets',False),
             native_commands_required=getattr(args,'capture_native_commands',False),
-            generated_inputs_required=getattr(args,'materialize_generated_inputs',False))
+            generated_inputs_required=getattr(args,'materialize_generated_inputs',False),
+            collect_completed_compiler_failures=compiler_collection_policy)
         # The original receipt/status and failed native results remain untouched.
         # This additive decision is not an image-promotion or production credential.
         path = args.output / 'collection-acceptance.json'
@@ -401,6 +418,8 @@ def main():
     parser.add_argument('--capture-enabled-targets', action='store_true')
     parser.add_argument('--capture-native-commands', action='store_true')
     parser.add_argument('--materialize-generated-inputs', action='store_true')
+    parser.add_argument('--collect-completed-compiler-failures',action='store_true',
+        help='Collect source-bound generated directive failures without granting compiler/header success.')
     parser.add_argument('--accept-completed-collection', action='store_true',
         help='Use the explicit collection policy while retaining failed target qualification.')
     parser.add_argument('--producer-source-sha', help='NICO revision producing this collection receipt.')

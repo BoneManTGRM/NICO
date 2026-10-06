@@ -98,6 +98,9 @@ def test_current_generation_contract_rejects_legacy_capability_downgrade(runtime
         paths += ['test/functional/test_runner.py','test/fuzz/test_runner.py',
                   'src/test/fuzz/CMakeLists.txt','src/test/fuzz/connect_block.cpp']
     value=select_configure_first_contract(repo_step(paths),environ=env(),release_revision=RELEASE)
+    # Retain the original generation-only contract as historical evidence.
+    value['configuration']['schema']='nico.cpp-configure-first-contract.v'+('9' if runtime else '8')
+    value['configuration']['capabilities'].pop('collect_completed_compiler_failures', None)
     assert validate_contract(value)==value
     assert value['configuration']['schema']=='nico.cpp-configure-first-contract.v'+('9' if runtime else '8')
     for replacement in (False,None):
@@ -110,3 +113,100 @@ def test_current_generation_contract_rejects_legacy_capability_downgrade(runtime
     historical['configuration']['schema']='nico.cpp-configure-first-contract.v'+('7' if runtime else '6')
     historical['configuration']['capabilities'].pop('materialize_generated_inputs')
     assert validate_contract(historical)==historical
+
+
+def collection_contract(runtime):
+    from nico.assessment_cpp_production_selection import select_configure_first_contract
+    from tests.test_cpp_production_selection import repo_step, env, RELEASE
+    paths=['CMakeLists.txt', 'src/a.cpp']
+    if runtime:
+        paths += ['test/functional/test_runner.py', 'test/fuzz/test_runner.py',
+                  'src/test/fuzz/CMakeLists.txt', 'src/test/fuzz/connect_block.cpp']
+    value=select_configure_first_contract(repo_step(paths), environ=env(), release_revision=RELEASE)
+    value['configuration']['schema']='nico.cpp-configure-first-contract.v'+('10' if runtime else '11')
+    value['configuration']['capabilities']['collect_completed_compiler_failures']=True
+    return value
+
+
+@pytest.mark.parametrize('runtime', [False, True])
+def test_current_compiler_collection_contract_preserves_its_full_declared_scope(runtime):
+    from nico import assessment_cpp_configure_first_contract as policy
+    value=collection_contract(runtime)
+    assert validate_contract(value)==value
+    cfg=value['configuration']
+    assert policy.compiler_collection_required(cfg) is True
+    assert policy.runtime_required(cfg) is runtime
+    assert policy.generation_required(cfg) is True
+    assert policy.membership_required(cfg) is True
+    assert policy.native_commands_required(cfg) is True
+    assert ('runtime_scope' in cfg) is runtime
+    assert value['limits']=={'max_attempts':1, 'wall_seconds':9000 if runtime else 2420, 'lease_seconds':300}
+    assert value['targets']=={}
+
+
+@pytest.mark.parametrize('runtime', [False, True])
+@pytest.mark.parametrize('replacement', [None, False, 1, 1.0, 'true'])
+def test_current_collection_capability_cannot_be_missing_disabled_or_truthy(runtime, replacement):
+    value=collection_contract(runtime)
+    caps=value['configuration']['capabilities']
+    if replacement is None:
+        caps.pop('collect_completed_compiler_failures')
+    else:
+        caps['collect_completed_compiler_failures']=replacement
+    with pytest.raises(ValueError, match='capabilities_invalid'):
+        validate_contract(value)
+
+
+@pytest.mark.parametrize('key',['capture_generated_context','project_compiler_evidence','compiler_environment',
+    'capture_native_commands','materialize_generated_inputs'])
+def test_current_collection_scope_rejects_truthy_non_boolean_capabilities(key):
+    value=collection_contract(False)
+    value['configuration']['capabilities'][key]=1
+    with pytest.raises(ValueError,match='capabilities_invalid'):
+        validate_contract(value)
+
+
+@pytest.mark.parametrize('runtime', [False, True])
+def test_current_collection_policy_cannot_be_smuggled_into_legacy_schema(runtime):
+    value=collection_contract(runtime)
+    value['configuration']['schema']='nico.cpp-configure-first-contract.v'+('9' if runtime else '8')
+    with pytest.raises(ValueError, match='capabilities_invalid'):
+        validate_contract(value)
+    value['configuration']['capabilities'].pop('collect_completed_compiler_failures')
+    assert validate_contract(value)==value
+    from nico.assessment_cpp_configure_first_contract import compiler_collection_required
+    assert compiler_collection_required(value['configuration']) is False
+
+
+@pytest.mark.parametrize('runtime', [False, True])
+def test_current_collection_schema_cannot_change_runtime_applicability_or_wall_limit(runtime):
+    value=collection_contract(runtime)
+    broken=deepcopy(value)
+    broken['configuration']['schema']='nico.cpp-configure-first-contract.v'+('11' if runtime else '10')
+    with pytest.raises(ValueError, match='configuration_invalid'):
+        validate_contract(broken)
+    broken=deepcopy(value)
+    broken['limits']['wall_seconds']=(9001 if runtime else 2421)
+    with pytest.raises(ValueError, match='budget_invalid'):
+        validate_contract(broken)
+
+
+@pytest.mark.parametrize('version', range(1, 10))
+def test_all_original_schema_shapes_remain_valid_without_collection_policy(version):
+    from nico.assessment_cpp_configure_first_contract import compiler_collection_required
+    runtime=version in {3, 5, 7, 9}
+    value=collection_contract(runtime)
+    cfg=value['configuration']
+    cfg['schema']='nico.cpp-configure-first-contract.v'+str(version)
+    cfg['capabilities'].pop('collect_completed_compiler_failures')
+    if version < 8:
+        cfg['capabilities'].pop('materialize_generated_inputs')
+    if version < 6:
+        cfg['capabilities'].pop('capture_native_commands')
+    if version < 4:
+        cfg['capabilities'].pop('capture_enabled_targets')
+    if version==1:
+        cfg.pop('project_option_policy')
+        cfg['project_options']={}
+    assert validate_contract(value)==value
+    assert compiler_collection_required(cfg) is False

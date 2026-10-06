@@ -69,7 +69,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
                                 extended_compiler_budget=False, compiler_environment=False, runtime_plan=None,
                                 external_checkpoint=None, capture_enabled_targets=False,
-                                capture_native_commands=False, materialize_generated_inputs=False):
+                                capture_native_commands=False, materialize_generated_inputs=False,
+                                collect_completed_compiler_failures=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -116,6 +117,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
         raise ValueError('worker_configuration_probe_generation_contract_invalid')
     if type(project_compiler_evidence) is not bool or (project_compiler_evidence and not capture_generated_context):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
+    if (type(collect_completed_compiler_failures) is not bool
+            or collect_completed_compiler_failures and not project_compiler_evidence):
+        raise ValueError('worker_configuration_probe_compiler_collection_invalid')
     if type(project_static_analysis) is not bool or (project_static_analysis and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_static_contract_invalid')
     if type(compiler_environment) is not bool or (compiler_environment and not project_static_analysis):
@@ -204,6 +208,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
             analysis_invocations=0)
     if materialize_generated_inputs:
         result.update(schema='nico.cpp-project-configuration-probe.v10', generated_input_materialization=None)
+    if collect_completed_compiler_failures:
+        result.update(schema='nico.cpp-project-configuration-probe.v11',
+            project_compiler_collection=None, independent_collection_error=None)
 
     def save():
         result['duration_ms'] = int((time.monotonic() - start) * 1000)
@@ -653,8 +660,21 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 result['project_compiler'] = {**proof, 'artifact': result['operations'][-1]['output_artifact']}
                 save()
                 checkpoint()  # Validation and proof retention belong to this phase.
+                if collect_completed_compiler_failures:
+                    from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection
+                    try:
+                        result['project_compiler_collection'] = validate_project_compiler_collection(
+                            compiler_observed['output'], request, snapshot)
+                    except (ValueError, TypeError, KeyError) as exc:
+                        raise ValueError('worker_configuration_probe_compiler_collection_invalid') from exc
+                    save()
                 if not proof['complete']:
-                    raise ValueError('worker_configuration_probe_compiler_incomplete')
+                    if not (result.get('project_compiler_collection') or {}).get('collection_complete'):
+                        raise ValueError('worker_configuration_probe_compiler_incomplete')
+                    # Preserve failed compilation and its original first error.
+                    # Only a separately reconstructed, fully captured target
+                    # directive failure permits independently ready collection.
+                    result['error'] = 'worker_configuration_probe_compiler_incomplete'
             if runtime_plan is not None:
                 from nico.assessment_cpp_runtime_execution import execute_runtime_plan, validate_runtime_evidence
                 runtime=execute_runtime_plan(observe,name,runtime_plan,project_options)
@@ -666,9 +686,13 @@ def probe_project_configuration(source, targets, image, *, project_options,
     except (Exception, KeyboardInterrupt) as exc:
         # No arbitrary exception/tool text enters an unsanitized controller error.
         allowed = str(exc) if isinstance(exc, ValueError) else ''
-        result['error'] = (allowed if re.fullmatch(r'worker_configuration_probe_[a-z_]+', allowed)
+        captured_error = (allowed if re.fullmatch(r'worker_configuration_probe_[a-z_]+', allowed)
                            else 'worker_configuration_probe_interrupted' if isinstance(exc, KeyboardInterrupt)
                            else 'worker_configuration_probe_failed')
+        if collect_completed_compiler_failures and result.get('error'):
+            result['independent_collection_error'] = captured_error
+        else:
+            result['error'] = captured_error
     finally:
         if created:
             try:
@@ -689,7 +713,12 @@ def probe_project_configuration(source, targets, image, *, project_options,
         if not result['cleanup_verified'] or result['error']:
             result['status'] = 'UNPROVEN'
         save()
-    if project_static_analysis and result['status'] == 'BASELINE_EXECUTED':
+    completed_target_failure = bool(collect_completed_compiler_failures
+        and (result.get('project_compiler_collection') or {}).get('collection_complete') is True
+        and (result.get('project_compiler') or {}).get('complete') is False
+        and all(result.get(key) is True for key in
+            ('compiled', 'generated_context_verified', 'boundary_verified', 'cleanup_verified')))
+    if project_static_analysis and (result['status'] == 'BASELINE_EXECUTED' or completed_target_failure):
         # The build sandbox is already destroyed. Its original deadline and
         # duration remain unchanged; static analysis owns a separately bounded
         # noexec sandbox and a distinct receipt. No build code is replayed.
@@ -707,12 +736,21 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 snapshot, compiler_observed['output'], retain=retain_static,
                 extended_compiler_budget=extended_compiler_budget, compiler_environment=compiler_environment,
                 header_provenance=capture_native_commands,
+                collect_completed_compiler_failures=collect_completed_compiler_failures,
                 retain_artifact=retain_artifact, command=command, checkpoint=owner_checkpoint)
-            result['status'] = 'BASELINE_EXECUTED' if static['complete'] else 'UNPROVEN'
+            result['status'] = ('BASELINE_EXECUTED' if static['complete'] and not completed_target_failure
+                                else 'UNPROVEN')
             if not static['complete']:
-                result['error'] = 'worker_configuration_probe_static_incomplete'
+                if not completed_target_failure:
+                    result['error'] = 'worker_configuration_probe_static_incomplete'
+                elif not static.get('collection_complete'):
+                    result['independent_collection_error'] = 'worker_configuration_probe_static_incomplete'
         except (Exception, KeyboardInterrupt):
-            result.update(status='UNPROVEN', error='worker_configuration_probe_static_failed')
+            result['status'] = 'UNPROVEN'
+            if completed_target_failure:
+                result['independent_collection_error'] = 'worker_configuration_probe_static_failed'
+            else:
+                result['error'] = 'worker_configuration_probe_static_failed'
         result['aggregate_duration_ms'] = int((time.monotonic()-start)*1000)
         retain(result)
     if runtime_plan is not None and not (result.get('runtime_summary') or {}).get('complete'):

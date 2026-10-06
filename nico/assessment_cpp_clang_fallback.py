@@ -114,7 +114,8 @@ def clang_fallback_request(primary_request, primary_proof, *, extended_budget=Fa
         raise ValueError('worker_clang_fallback_request_invalid')
     if (not isinstance(primary_request, dict)
             or primary_request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2',
-                                                    'nico.cpp-project-static-request.v3'}
+                                                    'nico.cpp-project-static-request.v3',
+                                                    'nico.cpp-project-static-request.v4'}
             or not isinstance(primary_proof, dict)
             or primary_proof.get('native_evidence_sha256') is None):
         raise ValueError('worker_clang_fallback_primary_invalid')
@@ -124,7 +125,7 @@ def clang_fallback_request(primary_request, primary_proof, *, extended_budget=Fa
     attempted = set(primary_proof.get('attempted_contexts') or [])
     analyzed = set(primary_proof.get('analyzed_contexts') or [])
     missing = [cid for cid in required if cid in attempted and cid not in analyzed]
-    header_provenance=primary_request['schema']=='nico.cpp-project-static-request.v3'
+    header_provenance=primary_request['schema'] in {'nico.cpp-project-static-request.v3','nico.cpp-project-static-request.v4'}
     if header_provenance and not contention_aware:
         raise ValueError('worker_clang_fallback_header_policy_invalid')
     by_id = {row['context_id']: row for row in primary_request['contexts']}

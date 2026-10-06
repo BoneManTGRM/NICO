@@ -66,6 +66,32 @@ def enrich_scanner_stage(canonical, stage):
             summaries.append('Ejecución del proyecto C/C++: compilación ' + ('completada.' if built else 'no verificada.'))
         else:
             summaries.append('C/C++ project execution: build ' + ('completed.' if built else 'not verified.'))
+        if build.get('collection_complete') is True:
+            for kind in ('compiler','static'):
+                collection=build.get('project_'+kind+'_collection')
+                if not isinstance(collection,Mapping) or collection.get('schema')!='nico.cpp-project-'+kind+'-collection.v1':
+                    continue
+                counts=[collection.get(k+'_count') for k in ('required_contexts','attempted_contexts',
+                    'completed_contexts','failed_contexts','unparsed_contexts')]
+                if (collection.get('collection_complete') is not True
+                        or not all(type(n) is int and n>=0 for n in counts)
+                        or counts[0]!=counts[1] or counts[0]!=counts[2]+counts[3] or counts[3]!=counts[4]):
+                    continue
+                required,attempted,completed,failed,unparsed=counts
+                if kind=='compiler':
+                    line=(f'Contextos del compilador: intentados={attempted}/{required}; sintaxis verificada={completed}/{required}; '
+                        f'fallidos={failed}; sin analizar={unparsed}.' if es else
+                        f'Compiler contexts: attempted={attempted}/{required}; verified syntax={completed}/{required}; '
+                        f'failed={failed}; unparsed={unparsed}.')
+                else:
+                    line=(f'Contextos del analizador: intentados={attempted}/{required}; pase normal completado={completed}/{required}; '
+                        f'fallidos={failed}; sin analizar={unparsed}.' if es else
+                        f'Analyzer contexts: attempted={attempted}/{required}; normal pass completed={completed}/{required}; '
+                        f'failed={failed}; unparsed={unparsed}.')
+                summaries.append(line);evidence.append(line)
+                if failed:
+                    gaps.append('Se conservaron fallas de preprocesamiento en archivos generados vinculados al código; esos contextos permanecen sin analizar.' if es else
+                        'Source-bound generated preprocessing failures were retained; those contexts remain unparsed.')
         if profile == 'cpp-configure-first-v2' and build.get('tests_executed') is True:
             required = build.get('tests_discovered_count')
             executed = build.get('tests_executed_count')

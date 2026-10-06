@@ -165,8 +165,8 @@ def _header_effective_inputs(context):
         'forced_input':forced}
 
 
-def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None, environment=None, header_provenance=False):
-    if type(header_provenance) is not bool:
+def project_static_request(database, targets, snapshot, compiler_raw, *, extended_compiler_budget=None, environment=None, header_provenance=False, collect_completed_compiler_failures=False):
+    if type(header_provenance) is not bool or type(collect_completed_compiler_failures) is not bool:
         raise ValueError('worker_project_static_header_flag_invalid')
     """Reconstruct every binding; require completed native compiler evidence."""
     from nico.assessment_cpp_full_project import _json
@@ -178,11 +178,16 @@ def project_static_request(database, targets, snapshot, compiler_raw, *, extende
     compiler_request = project_compiler_request(database, targets, snapshot,
         extended_budget=extended_compiler_budget)
     proof = validate_project_compiler(compiler_raw, compiler_request)
-    if not proof['complete']:
+    collection = None
+    if collect_completed_compiler_failures:
+        from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection
+        collection = validate_project_compiler_collection(compiler_raw, compiler_request, snapshot)
+    elif not proof['complete']:
         raise ValueError('worker_project_static_compiler_incomplete')
     records = _json(compiler_raw)['records']
     if environment is not None:
-        bind_environment(environment, compiler_request, compiler_raw)
+        bind_environment(environment, compiler_request, compiler_raw,
+            collect_completed_compiler_failures=collect_completed_compiler_failures, snapshot=snapshot)
     contexts = []
     for context, record in zip(compiler_request['contexts'], records):
         data, argv = _static_plan(context, environment, header_provenance=header_provenance)
@@ -202,6 +207,12 @@ def project_static_request(database, targets, snapshot, compiler_raw, *, extende
     if header_provenance:
         request.update(schema='nico.cpp-project-static-request.v3',
             header_trace_schema=HEADER_SCHEMA, header_tool_manifest_sha256=HEADER_TOOL_MANIFEST_SHA256)
+    if collection is not None:
+        if not (header_provenance and environment is not None):
+            raise ValueError('worker_project_static_compiler_collection_policy_invalid')
+        from nico.assessment_cpp_compiler_collection import collection_summary
+        request.update(schema='nico.cpp-project-static-request.v4',
+                       compiler_collection=collection_summary(collection))
     if len(_canonical(request)) > REQUEST_LIMIT:
         raise ValueError('worker_project_static_request_limit')
     return request
@@ -212,13 +223,13 @@ def collect_project_static(request):
     import resource
     if os.getuid() != 1001 or os.getgid() != 1001:
         raise ValueError('worker_project_static_identity')
-    if (not isinstance(request, dict) or request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2', 'nico.cpp-project-static-request.v3'}
+    if (not isinstance(request, dict) or request.get('schema') not in {'nico.cpp-project-static-request.v1', 'nico.cpp-project-static-request.v2', 'nico.cpp-project-static-request.v3', 'nico.cpp-project-static-request.v4'}
             or request.get('tool_version') != TOOL_VERSION or request.get('limits') != LIMITS
             or not isinstance(request.get('contexts'), list) or not 1 <= len(request['contexts']) <= 20000):
         raise ValueError('worker_project_static_request_invalid')
     environment_model = request.get('compiler_environment')
-    header_provenance = request['schema'].endswith('.v3')
-    if (request['schema'].endswith(('.v2','.v3'))) != (environment_model is not None):
+    header_provenance = request['schema'].endswith(('.v3','.v4'))
+    if (request['schema'].endswith(('.v2','.v3','.v4'))) != (environment_model is not None):
         raise ValueError('worker_project_static_environment_missing')
     if environment_model is not None:
         verify_environment_inputs(environment_model)
@@ -266,6 +277,16 @@ def collect_project_static(request):
                 raise ValueError('worker_project_static_tool_version')
             if time.monotonic() >= deadline:
                 raise ValueError('worker_project_static_deadline')
+            # A captured failed compiler context has no dependency credit.
+            # Independently verify its declared main input before the analyzer
+            # reads it; this grants no compiler/header inclusion coverage.
+            if request['schema'].endswith('.v4'):
+                if context['origin'] == 'original':
+                    _verify_input('/work/source', context['path'], request['targets'][context['path']])
+                else:
+                    item = request['generated_files'][context['path']]
+                    _verify_input('/work/analysis/generated-baseline', context['path'],
+                        item['sha256'], item['bytes'], True)
             for path, sha in context['source_dependencies'].items():
                 _verify_input('/work/source', path, sha)
             for path, sha in context['generated_dependencies'].items():
@@ -341,7 +362,7 @@ def validate_project_static(raw, request):
     evidence = _json(raw)
     native_evidence_sha256 = _digest(raw)
     fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms'}
-    header_provenance = request['schema'].endswith('.v3')
+    header_provenance = request['schema'].endswith(('.v3','.v4'))
     if header_provenance:
         fields |= {'header_tool_receipt','header_tool_receipt_sha256'}
     if (not isinstance(evidence, dict) or set(evidence) != fields
@@ -404,6 +425,11 @@ def validate_project_static(raw, request):
                      for p, sha in context['source_dependencies'].items()}
         locations.update({'/work/analysis/generated-baseline/' + p: ('generated', p, sha)
                           for p, sha in context['generated_dependencies'].items()})
+        if request['schema'].endswith('.v4'):
+            origin, path = context['origin'], context['path']
+            source_sha = (request['targets'][path] if origin == 'original'
+                          else request['generated_files'][path]['sha256'])
+            locations[context['analysis_file']] = (origin, path, source_sha)
         if environment_model is not None:
             dependencies = context_dependencies(environment_model, context['context_id'])
             locations.update({row['projection']: ('toolchain', path, row['sha256'])
@@ -545,7 +571,7 @@ PROGRAM = ('import base64, hashlib, json, os, re, shlex, stat, subprocess, time,
 def run_project_static_stage(source, targets, image, database, snapshot, compiler_raw, *,
                              retain=lambda result: None, retain_artifact, checkpoint=lambda: None,
                              command=None, extended_compiler_budget=None, compiler_environment=False,
-                             header_provenance=False):
+                             header_provenance=False, collect_completed_compiler_failures=False):
     """Analyze verified inputs in a fresh bounded, no-network/noexec sandbox.
 
     Reuses the existing controller input and isolation boundary. The preceding
@@ -553,10 +579,13 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
     A stage receipt is evidence, not worker authority or production selection.
     """
     if (type(compiler_environment) is not bool or type(header_provenance) is not bool
+            or type(collect_completed_compiler_failures) is not bool
             or header_provenance and not compiler_environment):
         raise ValueError('worker_project_static_stage_environment_flag_invalid')
     from uuid import uuid4
     from nico.assessment_cpp_full_project import MAX_SOURCE_BYTES, _json
+    if collect_completed_compiler_failures and not (compiler_environment and header_provenance):
+        raise ValueError('worker_project_static_stage_compiler_collection_policy_invalid')
     from nico.assessment_cpp_full_project_execution import (_command, _inputs, ANALYSIS_USER,
         ANALYSIS_SETUP_PROGRAM, BOUNDARY_PROGRAM, INPUT_PROGRAM, boundary_valid)
     from nico.assessment_cpp_configuration_probe import SCRATCH_PROGRAM
@@ -630,11 +659,24 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
     save()
     try:
         guarded_checkpoint()
-        request = project_static_request(database, targets, snapshot, compiler_raw,
-            extended_compiler_budget=extended_compiler_budget)
-        result.update(request_sha256=_digest(_canonical(request)),
-            snapshot_population_sha256=request['snapshot_population_sha256'],
-            compiler_evidence_sha256=request['compiler_evidence_sha256'])
+        if collect_completed_compiler_failures:
+            from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection
+            selected = extended_compiler_budget
+            if selected is None:
+                selected = _json(compiler_raw)['schema'] == 'nico.cpp-project-compiler-evidence.v2'
+            initial_compiler_request = project_compiler_request(database, targets, snapshot, extended_budget=selected)
+            collection = validate_project_compiler_collection(compiler_raw, initial_compiler_request, snapshot)
+            result.update(schema='nico.cpp-project-static-stage.v4', collection_complete=False,
+                compiler_collection=collection, static_collection=None,
+                snapshot_population_sha256=collection['snapshot_population_sha256'],
+                compiler_evidence_sha256=collection['native_evidence_sha256'])
+            request = None  # The actual request is bound after native environment capture.
+        else:
+            request = project_static_request(database, targets, snapshot, compiler_raw,
+                extended_compiler_budget=extended_compiler_budget)
+            result.update(request_sha256=_digest(_canonical(request)),
+                snapshot_population_sha256=request['snapshot_population_sha256'],
+                compiler_evidence_sha256=request['compiler_evidence_sha256'])
         files = _inputs({'targets': targets, 'configuration': {'source_byte_limit': MAX_SOURCE_BYTES}},
                         Path(source), guarded_checkpoint)
         result['phase'] = 'sandbox'; save()
@@ -679,7 +721,11 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
         restored = _json(require('static-restore', ['docker', 'exec', '--user='+ANALYSIS_USER,
             '--interactive', name, 'python3', '-I', '-S', '-c', PROJECT_RESTORE_PROGRAM],
             data=_canonical(restore), limit=4*1024*1024, seconds=30))
-        if restored != {'files': request['generated_files'], 'file_population_sha256': request['snapshot_population_sha256']}:
+        expected_files = (initial_compiler_request['generated_files']
+                          if collect_completed_compiler_failures else request['generated_files'])
+        expected_population = (initial_compiler_request['snapshot_population_sha256']
+                               if collect_completed_compiler_failures else request['snapshot_population_sha256'])
+        if restored != {'files': expected_files, 'file_population_sha256': expected_population}:
             raise ValueError('worker_project_static_stage_restore_mismatch')
         if compiler_environment:
             from nico.assessment_cpp_static_environment import (environment_request, validate_environment,
@@ -689,7 +735,8 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
             if selected is None:
                 selected = _json(compiler_raw)['schema'] == 'nico.cpp-project-compiler-evidence.v2'
             compiler_request = project_compiler_request(database, targets, snapshot, extended_budget=selected)
-            env_request = environment_request(compiler_request, compiler_raw, image)
+            env_request = environment_request(compiler_request, compiler_raw, image,
+                collect_completed_compiler_failures=collect_completed_compiler_failures, snapshot=snapshot)
             env_observed = observe('project-static-environment', ['docker', 'exec', '--user='+ANALYSIS_USER,
                 '--interactive', name, 'python3', '-I', '-S', '-c', ENV_PROGRAM],
                 data=_canonical(env_request), limit=ENV_STREAM_LIMIT, seconds=40, external=True)
@@ -707,8 +754,10 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                 'models': model['models'], 'model_policy': model['model_policy']}
             request = project_static_request(database, targets, snapshot, compiler_raw,
                 extended_compiler_budget=extended_compiler_budget, environment=model,
-                header_provenance=header_provenance)
-            result.update(schema=('nico.cpp-project-static-stage.v3' if header_provenance
+                header_provenance=header_provenance,
+                collect_completed_compiler_failures=collect_completed_compiler_failures)
+            result.update(schema=('nico.cpp-project-static-stage.v4' if collect_completed_compiler_failures
+                                  else 'nico.cpp-project-static-stage.v3' if header_provenance
                                   else 'nico.cpp-project-static-stage.v2'), request_sha256=_digest(_canonical(request)))
             save(); guarded_checkpoint()
         result['phase'] = 'analysis'; save()
@@ -719,6 +768,8 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
             raise ValueError('worker_project_static_stage_analysis_failed')
         primary_artifact = result['operations'][-1]['output_artifact']
         primary_analysis = validate_project_static(observed['output'], request)
+        primary_raw = observed['output']
+        fallback_raw = None
         result['analysis'] = {**primary_analysis, 'artifact': primary_artifact}
         save()
         guarded_checkpoint()  # Parsing and proof retention belong to this phase.
@@ -739,15 +790,27 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                         or fallback_observed['output_truncated']):
                     raise ValueError('worker_project_static_stage_fallback_failed')
                 fallback = validate_clang_fallback(fallback_observed['output'], fallback_request, request)
+                fallback_raw = fallback_observed['output']
                 merged = merge_static_analysis(primary_analysis, fallback)
                 result['analysis'] = {**merged, 'artifact': primary_artifact,
                     'fallback_artifact': result['operations'][-1]['output_artifact']}
                 result['clang_fallback'] = merged['clang_fallback']
                 save(); guarded_checkpoint()
-        if not result['analysis']['complete']:
-            raise ValueError('worker_project_static_stage_analysis_incomplete')
-        if header_provenance and not result['analysis'].get('header_context_evidence_complete'):
-            raise ValueError('worker_project_static_stage_header_evidence_incomplete')
+        if collect_completed_compiler_failures:
+            from nico.assessment_cpp_static_collection import validate_project_static_collection
+            result['static_collection'] = validate_project_static_collection(
+                primary_raw, request, collection, fallback_raw=fallback_raw)
+            if result['static_collection']['analysis'] != {
+                    k:v for k,v in result['analysis'].items()
+                    if k not in {'artifact','fallback_artifact'}}:
+                raise ValueError('worker_project_static_stage_collection_mismatch')
+            if result['static_collection']['failed_contexts']:
+                result['error'] = 'worker_project_static_stage_target_failure'
+        else:
+            if not result['analysis']['complete']:
+                raise ValueError('worker_project_static_stage_analysis_incomplete')
+            if header_provenance and not result['analysis'].get('header_context_evidence_complete'):
+                raise ValueError('worker_project_static_stage_header_evidence_incomplete')
     except (Exception, KeyboardInterrupt) as exc:
         code = str(exc) if isinstance(exc, ValueError) else ''
         result['error'] = (code if re.fullmatch(r'worker_project_static_stage_[a-z_]+', code)
@@ -775,6 +838,13 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
             result['error'] = result['error'] or 'worker_project_static_stage_cleanup_failed'
         result['complete'] = bool(not result['error'] and result['analysis'] and result['analysis']['complete']
                                   and result['boundary_verified'] and result['cleanup_verified'])
+        if collect_completed_compiler_failures:
+            result['collection_complete'] = bool(
+                (result.get('static_collection') or {}).get('collection_complete') is True
+                and result['error'] in {None,'worker_project_static_stage_target_failure'}
+                and result['boundary_verified'] and result['cleanup_verified'])
+            if result['collection_complete'] and not result['complete']:
+                result['phase'] = 'collection_completed_target_failure'
         if result['complete']:
             result.update(status='STATIC_ANALYSIS_EXECUTED', phase='completed')
         save()

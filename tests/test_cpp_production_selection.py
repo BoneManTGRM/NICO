@@ -28,10 +28,11 @@ def test_release_owned_selector_builds_generic_configure_first_contract():
     assert result['profile']=='cpp-configure-first-v2'
     assert result['image_digest']==IMAGE
     assert result['configuration']['expected_tree_sha']==TREE
-    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v8'
+    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v11'
     assert result['configuration']['capabilities']['capture_enabled_targets'] is True
     assert result['configuration']['capabilities']['capture_native_commands'] is True
     assert result['configuration']['capabilities']['materialize_generated_inputs'] is True
+    assert result['configuration']['capabilities']['collect_completed_compiler_failures'] is True
     assert result['configuration']['project_option_policy']=='conservative-cmake-v1'
     assert 'project_options' not in result['configuration'] and 'runtime_scope' not in result['configuration']
     assert result['configuration']['baseline_execution']['test_seconds']==720
@@ -44,8 +45,9 @@ def test_runtime_scope_is_selected_from_declared_source_interfaces_without_repo_
     paths=['CMakeLists.txt','src/a.cpp','test/functional/test_runner.py','test/fuzz/test_runner.py',
         'src/test/fuzz/CMakeLists.txt','src/test/fuzz/connect_block.cpp']
     result=select_configure_first_contract(repo_step(paths),environ=env(),release_revision=RELEASE)
-    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v9'
+    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v10'
     assert result['configuration']['capabilities']['capture_enabled_targets'] is True
+    assert result['configuration']['capabilities']['collect_completed_compiler_failures'] is True
     assert result['configuration']['runtime_scope']['total_seconds']==6000
     assert result['configuration']['runtime_scope']['sanitizers']==['address','undefined']
     assert result['limits']=={'max_attempts':1,'wall_seconds':9000,'lease_seconds':300}
@@ -103,3 +105,31 @@ def test_runtime_selector_uses_measured_sanitizer_budget_without_expanding_outer
     assert validate_configuration(result['configuration']) == result['configuration']
     fixture=json.loads((Path(__file__).parent/'fixtures/cpp/bitcoin-runtime-scope.json').read_text())
     assert fixture==runtime
+
+
+def test_partial_runtime_interface_inventory_keeps_no_runtime_current_policy():
+    from nico.assessment_worker_receipts import validate_contract
+    from nico.assessment_cpp_configure_first_contract import runtime_required, compiler_collection_required
+    interfaces=['test/functional/test_runner.py', 'test/fuzz/test_runner.py',
+                'src/test/fuzz/CMakeLists.txt', 'src/test/fuzz/connect_block.cpp']
+    for missing in interfaces:
+        paths=['CMakeLists.txt', 'src/a.cpp', *(p for p in interfaces if p!=missing)]
+        result=select_configure_first_contract(repo_step(paths), environ=env(), release_revision=RELEASE)
+        assert validate_contract(result)==result
+        assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v11'
+        assert compiler_collection_required(result['configuration']) is True
+        assert runtime_required(result['configuration']) is False
+        assert 'runtime_scope' not in result['configuration']
+        assert result['limits']['wall_seconds']==2420
+
+
+def test_public_metadata_cannot_disable_release_owned_collection_policy():
+    from nico.assessment_worker_receipts import validate_contract
+    step=repo_step()
+    step['collect_completed_compiler_failures']=False
+    step['repository_evidence']['execution_input_manifest']['capabilities']={
+        'collect_completed_compiler_failures':False}
+    result=select_configure_first_contract(step, environ=env(), release_revision=RELEASE)
+    assert validate_contract(result)==result
+    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v11'
+    assert result['configuration']['capabilities']['collect_completed_compiler_failures'] is True

@@ -300,13 +300,116 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     return encoded, record, binding
 
 
+def _validate_configure_first_collection_summary(value, native, kind):
+    """Validate a bounded projection; raw proof reconstruction remains required."""
+    if value is None:
+        return
+    fields={'schema','collection_complete','proof_sha256','native_evidence_sha256',
+            'secondary_native_evidence_sha256'}
+    populations=('required_contexts','attempted_contexts','completed_contexts',
+                 'failed_contexts','unparsed_contexts')
+    fields |= {name+suffix for name in populations for suffix in ('_count','_sha256')}
+    error='worker_configure_first_native_invalid'
+    if (not isinstance(value,dict) or set(value)!=fields
+            or value['schema']!='nico.cpp-project-'+kind+'-collection.v1'
+            or type(value['collection_complete']) is not bool
+            or any(type(value[name+'_count']) is not int or not 0<=value[name+'_count']<=20000
+                   for name in populations)
+            or any(not isinstance(value[name],str) or re.fullmatch(r'[0-9a-f]{64}',value[name]) is None
+                   for name in ('proof_sha256','native_evidence_sha256',
+                                *(p+'_sha256' for p in populations)))):
+        raise ValueError(error)
+    refs=native.get('artifacts') or {}
+    primary=refs.get('project-'+kind+'-evidence') or {}
+    secondary=refs.get('project-static-clang-fallback') or {}
+    expected_secondary=secondary.get('sha256') if kind=='static' else None
+    if (value['native_evidence_sha256']!=primary.get('sha256')
+            or value['secondary_native_evidence_sha256']!=expected_secondary
+            or expected_secondary is not None and (not isinstance(expected_secondary,str)
+                or re.fullmatch(r'[0-9a-f]{64}',expected_secondary) is None)):
+        raise ValueError(error)
+    required=value['required_contexts_count']
+    completed=value['completed_contexts_count']
+    failed=value['failed_contexts_count']
+    prefix='project_'+kind
+    completed_prefix=prefix+('_checked' if kind=='compiler' else '_analyzed')
+    if (required<1 or required!=value['attempted_contexts_count'] or required!=completed+failed
+            or value['required_contexts_sha256']!=value['attempted_contexts_sha256']
+            or failed!=value['unparsed_contexts_count']
+            or value['failed_contexts_sha256']!=value['unparsed_contexts_sha256']
+            or required!=native[prefix+'_required_count']
+            or value['required_contexts_sha256']!=native[prefix+'_required_sha256']
+            or completed!=native[completed_prefix+'_count']
+            or value['completed_contexts_sha256']!=native[completed_prefix+'_sha256']
+            or native[prefix+'_complete'] is not (failed==0)
+            or not failed and value['completed_contexts_sha256']!=value['required_contexts_sha256']
+            or any(value[p+'_count']==0 and value[p+'_sha256']!=_digest([]) for p in populations)):
+        raise ValueError(error)
+
+
+def _validate_configure_first_collection(native, *, runtime_contract=False):
+    """Current envelope checks cannot themselves grant canonical completion."""
+    error='worker_configure_first_native_invalid'
+    if (type(native.get('collection_complete')) is not bool
+            or native.get('independent_collection_error') is not None and (
+                not isinstance(native['independent_collection_error'],str)
+                or re.fullmatch(r'worker_configuration_probe_[a-z_]{1,80}',
+                                native['independent_collection_error']) is None)):
+        raise ValueError(error)
+    compiler=native['project_compiler_collection']
+    static=native['project_static_collection']
+    _validate_configure_first_collection_summary(compiler,native,'compiler')
+    _validate_configure_first_collection_summary(static,native,'static')
+    if compiler is not None and static is not None:
+        for population in ('required_contexts','failed_contexts','unparsed_contexts'):
+            if any(compiler[population+suffix]!=static[population+suffix] for suffix in ('_count','_sha256')):
+                raise ValueError(error)
+    if compiler is not None and compiler['failed_contexts_count'] and (
+            native['complete_execution'] is not False or native['header_context_evidence_complete'] is not False
+            or native['header_population_complete'] is not False
+            or native['status']!='UNPROVEN'
+            or native['error']!='worker_configuration_probe_compiler_incomplete'):
+        raise ValueError(error)
+    if not native['collection_complete']:
+        return
+    required={'project-compilation-database','project-generated-context','project-compiler-evidence',
+        'project-static-environment','project-static-evidence','project-baseline-evidence',
+        'project-enabled-targets','project-native-commands','project-native-commands-post-build',
+        'project-enabled-targets-post-build','project-generation-evidence'}
+    if runtime_contract:
+        required.add('project-runtime-evidence')
+    if static is not None and static['failed_contexts_count']:
+        required.add('project-static-clang-fallback')
+    discovered=native['tests_discovered_count']
+    passed=native['tests_passed_count']
+    if (compiler is None or static is None
+            or compiler['collection_complete'] is not True or static['collection_complete'] is not True
+            or native['independent_collection_error'] is not None
+            or native['error'] not in (None,'worker_configuration_probe_compiler_incomplete',
+                                      'worker_configuration_probe_runtime_incomplete')
+            or not required<=set(native['artifacts'])
+            or any(native.get(k) is not True for k in ('compiled','tests_executed','generated_context_verified',
+                'boundary_verified','cleanup_verified','scratch_capacity_verified',
+                'enabled_target_membership_verified','context_argv_binding_verified','generated_input_materialization_complete'))
+            or any(native.get(k) is None for k in ('native_command_capture_sha256','native_command_post_capture_sha256',
+                'native_command_freeze_sha256','native_command_plan_sha256','analysis_compilation_database_sha256'))
+            or native['analysis_invocations']!=compiler['required_contexts_count']
+            or discovered<1 or native['tests_executed_count']!=discovered
+            or native['tests_executed_sha256']!=native['tests_discovered_sha256']
+            or native['tests_skipped_count']!=0 or native['tests_skipped_sha256']!=_digest([])
+            or passed>discovered or native['tests_passed'] is not (passed==discovered)
+            or passed==discovered and native['tests_passed_sha256']!=native['tests_discovered_sha256']):
+        raise ValueError(error)
+
+
 def _configure_first_record(identity, contract, receipt, encoded):
     native=receipt['native']; config=contract['configuration']
-    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
+    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required, compiler_collection_required
     runtime_contract=runtime_required(config)
     membership_contract=membership_required(config)
     native_command_contract=native_commands_required(config)
     generation_contract=generation_required(config)
+    collection_contract=compiler_collection_required(config)
     required={'schema','status','complete_execution','error','source_population_sha256',
         'source_count','compilation_database_sha256','configured_invocations','baseline_execution_frozen','compiled',
         'tests_executed','tests_passed','tests_discovered_count','tests_discovered_sha256','tests_executed_count',
@@ -337,10 +440,14 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'header_context_evidence_complete','header_population_complete','header_tool_manifest_sha256'}
     if generation_contract:
         required |= {'generated_input_materialization_complete','generation_evidence_sha256','generation_selected_targets_count'}
+    if collection_contract:
+        required |= {'project_compiler_collection','project_static_collection','collection_complete','independent_collection_error'}
     expected_schema=(('nico.cpp-configure-first-native.v8' if runtime_contract else 'nico.cpp-configure-first-native.v7')
         if generation_contract else ('nico.cpp-configure-first-native.v6' if runtime_contract else 'nico.cpp-configure-first-native.v5')
         if native_command_contract else ('nico.cpp-configure-first-native.v4' if runtime_contract else 'nico.cpp-configure-first-native.v3')
         if membership_contract else ('nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'))
+    if collection_contract:
+        expected_schema='nico.cpp-configure-first-native.v10' if runtime_contract else 'nico.cpp-configure-first-native.v9'
     if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!=expected_schema
             or native.get('status') not in {'UNPROVEN','BASELINE_EXECUTED'}
             or (native.get('error') is not None
@@ -477,6 +584,8 @@ def _configure_first_record(identity, contract, receipt, encoded):
                 or not isinstance(value.get('artifact_id'),str) or not value['artifact_id'].startswith('scanartifact_')
                 or not isinstance(value.get('sha256'),str) or re.fullmatch(r'[0-9a-f]{64}',value['sha256']) is None):
             raise ValueError('worker_configure_first_native_invalid')
+    if collection_contract:
+        _validate_configure_first_collection(native,runtime_contract=runtime_contract)
     receipt_sha=hashlib.sha256(encoded).hexdigest()
     binding={'run_id':identity.run_id,'scan_id':identity.scan_id,'customer_id':identity.customer_id,
         'project_id':identity.project_id,'repository':identity.repository_id,'commit_sha':identity.revision,
@@ -525,6 +634,12 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'project_option_policy':native['project_option_policy'],
             'project_options':deepcopy(native['project_options']),
             'project_options_sha256':native['project_options_sha256'],
+            **({'collection_complete':False,
+                'collection_claimed_complete':native['collection_complete'],
+                'project_compiler_collection':deepcopy(native['project_compiler_collection']),
+                'project_static_collection':deepcopy(native['project_static_collection']),
+                'independent_collection_error':native['independent_collection_error']}
+               if collection_contract else {}),
             **({'runtime_complete':native['runtime_complete'],
                 'runtime_plan_sha256':native['runtime_plan_sha256'],
                 'runtime_summary_sha256':native['runtime_summary_sha256'],

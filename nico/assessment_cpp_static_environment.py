@@ -143,11 +143,18 @@ def search_arguments(predefines):
     return [*predefines[:-5], '-E', '-v', '-x', predefines[-2], '/dev/null']
 
 
-def environment_request(compiler_request, compiler_raw, image):
+def environment_request(compiler_request, compiler_raw, image, *,
+                        collect_completed_compiler_failures=False, snapshot=None):
     from nico.assessment_cpp_project_compiler import validate_project_compiler
     if not isinstance(image, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', image) is None:
         raise ValueError('worker_static_environment_image_invalid')
-    if not validate_project_compiler(compiler_raw, compiler_request)['complete']:
+    if type(collect_completed_compiler_failures) is not bool:
+        raise ValueError('worker_static_environment_compiler_collection_invalid')
+    collection = None
+    if collect_completed_compiler_failures:
+        from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection
+        collection = validate_project_compiler_collection(compiler_raw, compiler_request, snapshot)
+    elif not validate_project_compiler(compiler_raw, compiler_request)['complete']:
         raise ValueError('worker_static_environment_compiler_incomplete')
     records = _env_json(compiler_raw)['records']
     contexts = []
@@ -158,14 +165,21 @@ def environment_request(compiler_request, compiler_raw, image):
     result = {'schema': 'nico.cpp-static-environment-request.v1', 'contexts': contexts,
         'compiler_evidence_sha256': _digest(compiler_raw), 'image_config_digest': image,
         'models': dict(MODEL_HASHES), 'limits': dict(ENV_LIMITS)}
+    if collection is not None:
+        result.update(schema='nico.cpp-static-environment-request.v2',
+            compiler_collection_sha256=_digest(_canonical(collection)))
     _validate_request(result)
     return result
 
 
 def _validate_request(request):
-    if (not isinstance(request, dict) or set(request) != {'schema', 'contexts', 'compiler_evidence_sha256',
-            'image_config_digest', 'models', 'limits'}
-            or request['schema'] != 'nico.cpp-static-environment-request.v1'
+    fields = {'schema', 'contexts', 'compiler_evidence_sha256', 'image_config_digest', 'models', 'limits'}
+    current = isinstance(request, dict) and request.get('schema') == 'nico.cpp-static-environment-request.v2'
+    if current:
+        fields.add('compiler_collection_sha256')
+    if (not isinstance(request, dict) or set(request) != fields
+            or request['schema'] not in {'nico.cpp-static-environment-request.v1','nico.cpp-static-environment-request.v2'}
+            or current and re.fullmatch(r'[0-9a-f]{64}', str(request.get('compiler_collection_sha256'))) is None
             or request['limits'] != ENV_LIMITS
             or any(type(v) is not int for v in request['limits'].values())
             or request['models'] != MODEL_HASHES
@@ -305,7 +319,8 @@ def validate_environment(raw, request):
     native = _env_json(raw)
     if (not isinstance(native, dict) or set(native) != {'schema', 'request_sha256', 'image_config_digest',
             'analyst_uid', 'compiler_versions', 'queries', 'headers', 'models', 'duration_ms'}
-            or native['schema'] != 'nico.cpp-static-environment.v1'
+            or native['schema'] != ('nico.cpp-static-environment.v2'
+                if request['schema'].endswith('.v2') else 'nico.cpp-static-environment.v1')
             or native['request_sha256'] != _digest(_canonical(request))
             or native['image_config_digest'] != request['image_config_digest']
             or type(native['analyst_uid']) is not int or native['analyst_uid'] != 1001
@@ -358,7 +373,10 @@ def validate_environment(raw, request):
         key = _digest(_canonical(predefine_arguments(row['invocation'], row['source'])))
         contexts[row['context_id']] = {'query': key,
             'header_indices': [header_index[path] for path in row['toolchain_dependencies']]}
-    return {'schema': 'nico.cpp-static-environment-model.v1',
+    return {'schema': ('nico.cpp-static-environment-model.v2' if request['schema'].endswith('.v2')
+                       else 'nico.cpp-static-environment-model.v1'),
+        **({'compiler_collection_sha256':request['compiler_collection_sha256']}
+           if request['schema'].endswith('.v2') else {}),
         'request_sha256': native['request_sha256'], 'native_evidence_sha256': _digest(raw),
         'image_config_digest': native['image_config_digest'],
         'compiler_evidence_sha256': request['compiler_evidence_sha256'],
@@ -387,7 +405,8 @@ def collect_environment(request, retain=lambda value: None):
     start = time.monotonic(); deadline = start + ENV_LIMITS['wall_seconds']
     env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8',
            'HOME': ROOT, 'TMPDIR': ROOT, 'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
-    result = {'schema': 'nico.cpp-static-environment.v1', 'request_sha256': _digest(_canonical(request)),
+    result = {'schema': ('nico.cpp-static-environment.v2' if request['schema'].endswith('.v2')
+                         else 'nico.cpp-static-environment.v1'), 'request_sha256': _digest(_canonical(request)),
         'image_config_digest': request['image_config_digest'], 'analyst_uid': os.getuid(),
         'compiler_versions': {}, 'queries': {}, 'headers': {}, 'models': {}, 'duration_ms': 0}
     retain(result)
@@ -455,9 +474,20 @@ def run_environment():
 
 
 
+def _environment_model_schema(environment):
+    """A v2 model always retains its completed compiler collection binding."""
+    if not isinstance(environment, dict):
+        return False
+    if environment.get('schema') == 'nico.cpp-static-environment-model.v1':
+        return True
+    return (environment.get('schema') == 'nico.cpp-static-environment-model.v2'
+            and isinstance(environment.get('compiler_collection_sha256'), str)
+            and re.fullmatch(r'[0-9a-f]{64}', environment['compiler_collection_sha256']) is not None)
+
+
 def analyzer_environment_arguments(context, environment):
     """Project verified inputs without exposing broad host/system include trees."""
-    if (not isinstance(environment, dict) or environment.get('schema') != 'nico.cpp-static-environment-model.v1'
+    if (not _environment_model_schema(environment)
             or environment.get('models') != MODEL_HASHES):
         raise ValueError('worker_project_static_environment_invalid')
     member = environment['contexts'].get(context['context_id'])
@@ -491,7 +521,7 @@ def analyzer_environment_arguments(context, environment):
 
 def verify_environment_inputs(environment):
     """Recheck the observed immutable input bytes inside the analyzer boundary."""
-    if (environment.get('schema') != 'nico.cpp-static-environment-model.v1'
+    if (not _environment_model_schema(environment)
             or environment.get('models') != MODEL_HASHES
             or _digest(_canonical(environment['headers'])) != environment['header_population_sha256']):
         raise ValueError('worker_project_static_environment_invalid')
@@ -582,16 +612,21 @@ STATIC_ENV_SUPPORT = ('import posixpath\n' + '\n'.join(name+'='+repr(value) for 
     'ROOT': ROOT, 'MODEL_ROOT': MODEL_ROOT, 'MODEL_HASHES': MODEL_HASHES, 'ENV_LIMITS': ENV_LIMITS,
     'STD_HEADERS': tuple(sorted(STD_HEADERS)), 'POSIX_HEADERS': tuple(sorted(POSIX_HEADERS))}.items())
     + '\n' + '\n'.join(inspect.getsource(f) for f in (_usr_path, _input_path, predefine_arguments,
-        _predefines, _predefined_standard, analyzer_environment_arguments, verify_environment_inputs, context_dependencies)))
+        _predefines, _predefined_standard, _environment_model_schema,
+        analyzer_environment_arguments, verify_environment_inputs, context_dependencies)))
 
 
-def bind_environment(proof, compiler_request, compiler_raw):
+def bind_environment(proof, compiler_request, compiler_raw, *,
+                     collect_completed_compiler_failures=False, snapshot=None):
     """Check controller-derived model bindings against the full compiler plan."""
     if not isinstance(proof, dict) or proof.get('models') != MODEL_HASHES:
         raise ValueError('worker_project_static_environment_invalid')
-    requested = environment_request(compiler_request, compiler_raw, proof.get('image_config_digest'))
+    requested = environment_request(compiler_request, compiler_raw, proof.get('image_config_digest'),
+        collect_completed_compiler_failures=collect_completed_compiler_failures, snapshot=snapshot)
     queries, paths = _validate_request(requested)
-    if (proof.get('schema') != 'nico.cpp-static-environment-model.v1'
+    if (proof.get('schema') != ('nico.cpp-static-environment-model.v2'
+            if requested['schema'].endswith('.v2') else 'nico.cpp-static-environment-model.v1')
+            or requested['schema'].endswith('.v2') and proof.get('compiler_collection_sha256') != requested['compiler_collection_sha256']
             or proof.get('compiler_evidence_sha256') != _digest(compiler_raw)
             or proof.get('request_sha256') != _digest(_canonical(requested))
             or proof.get('header_population_sha256') != _digest(_canonical(proof.get('headers')))

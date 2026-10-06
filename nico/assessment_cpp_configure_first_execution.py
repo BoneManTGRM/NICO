@@ -12,7 +12,7 @@ import re
 import time
 
 from nico.assessment_worker_receipts import canonical_bytes
-from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
+from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required, compiler_collection_required
 from nico.assessment_cpp_header_evidence import header_summary
 
 PROFILE = "cpp-configure-first-v2"
@@ -55,8 +55,9 @@ def _artifact_reference(value, key):
     return deepcopy(value)
 
 
-def summarize_probe(result, targets, artifacts):
-    if (not isinstance(result,dict) or not isinstance(targets,dict) or not targets
+def summarize_probe(result, targets, artifacts, *, collect_completed_compiler_failures=False):
+    if (type(collect_completed_compiler_failures) is not bool
+            or not isinstance(result,dict) or not isinstance(targets,dict) or not targets
             or not isinstance(artifacts,dict)
             or any(not isinstance(k,str) or not isinstance(v,str) or _SHA.fullmatch(v) is None for k,v in targets.items())):
         raise ValueError("worker_configure_first_projection_invalid")
@@ -179,6 +180,39 @@ def summarize_probe(result, targets, artifacts):
             generation_selected_targets_count=len((generation.get('plan') or {}).get('selected_targets',[])))
         summary['complete_execution'] = bool(summary['complete_execution']
             and generation.get('complete') is True and 'project-generation-evidence' in refs)
+    if collect_completed_compiler_failures:
+        from nico.assessment_cpp_compiler_collection import collection_summary
+        from nico.assessment_worker_receipts import _validate_configure_first_collection
+        compiler_proof=result.get('project_compiler_collection')
+        static_proof=stage.get('static_collection')
+        compiler_projection=(collection_summary(compiler_proof)
+            if compiler_proof is not None and 'project-compiler-evidence' in refs else None)
+        static_projection=(collection_summary(static_proof)
+            if static_proof is not None and 'project-static-evidence' in refs else None)
+        required=_REQUIRED_ARTIFACTS|{'project-enabled-targets','project-native-commands',
+            'project-native-commands-post-build','project-enabled-targets-post-build','project-generation-evidence'}
+        plan=result.get('native_command_plan') or {}
+        collection_complete=bool(result.get('schema')=='nico.cpp-project-configuration-probe.v11'
+            and compiler_projection and static_projection
+            and compiler_projection['collection_complete'] is True and static_projection['collection_complete'] is True
+            and stage.get('collection_complete') is True and stage.get('boundary_verified') is True
+            and stage.get('cleanup_verified') is True and result.get('independent_collection_error') is None
+            and result.get('error') in (None,'worker_configuration_probe_compiler_incomplete',
+                                       'worker_configuration_probe_runtime_incomplete')
+            and all(result.get(k) is True for k in ('compiled','tests_executed','generated_context_verified',
+                'boundary_verified','cleanup_verified','scratch_capacity_verified'))
+            and isinstance(membership,dict) and plan.get('context_argv_binding_verified') is True
+            and plan.get('analysis_executed') is False and plan.get('execution_authorized') is False
+            and plan.get('context_count')==cr_count==sr_count
+            and result.get('native_command_freeze') is not None
+            and (result.get('generated_input_materialization') or {}).get('complete') is True
+            and required<=set(refs) and tests_count>0 and executed==tests and not skipped
+            and set(passed)<=set(executed) and result.get('tests_passed') is (passed==tests))
+        summary.update(schema='nico.cpp-configure-first-native.v9',
+            project_compiler_collection=compiler_projection, project_static_collection=static_projection,
+            collection_complete=collection_complete,
+            independent_collection_error=result.get('independent_collection_error'))
+        _validate_configure_first_collection(summary)
     return summary
 
 
@@ -236,7 +270,8 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         extended_compiler_budget=caps["extended_compiler_budget"],
         compiler_environment=caps["compiler_environment"],
         capture_enabled_targets=membership_required(cfg), capture_native_commands=native_commands_required(cfg),
-        materialize_generated_inputs=generation_required(cfg))
+        materialize_generated_inputs=generation_required(cfg),
+        **({'collect_completed_compiler_failures':True} if compiler_collection_required(cfg) else {}))
     import base64
     database=base64.b64decode(result.get("compilation_database") or "",validate=True)
     if not database or hashlib.sha256(database).hexdigest()!=result.get("compilation_database_sha256"):
@@ -253,10 +288,13 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         from nico.assessment_cpp_runtime_scope import retained_runtime_bytes
         runtime_raw=retained_runtime_bytes(runtime_interfaces,runtime_plan,result.get("runtime_evidence"))
         sink("project-runtime-evidence",runtime_raw)
-    native=summarize_probe(result,targets,retained)
+    collection_contract=compiler_collection_required(cfg)
+    native=summarize_probe(result,targets,retained,
+        collect_completed_compiler_failures=collection_contract)
     if runtime_plan is not None:
         runtime_summary=result.get("runtime_summary") or {}
-        native["schema"]=("nico.cpp-configure-first-native.v8" if generation_required(cfg) else
+        native["schema"]=("nico.cpp-configure-first-native.v10" if collection_contract else
+            "nico.cpp-configure-first-native.v8" if generation_required(cfg) else
             "nico.cpp-configure-first-native.v6" if native_commands_required(cfg) else
             "nico.cpp-configure-first-native.v4" if membership_required(cfg)
                           else "nico.cpp-configure-first-native.v2")
@@ -266,6 +304,17 @@ def run_configure_first(contract, source, acquisition, *, checkpoint, timeout_se
         duration=(result.get("runtime_evidence") or {}).get("duration_ms")
         native["runtime_duration_ms"]=duration if type(duration) is int and duration>=0 else 0
         native["complete_execution"]=native["complete_execution"] and native["runtime_complete"]
+        if collection_contract:
+            from nico.assessment_cpp_runtime_collection import validate_runtime_collection
+            try:
+                runtime_collection=validate_runtime_collection(runtime_raw,targets,project_options,cfg['runtime_scope'])
+                native['collection_complete']=bool(native['collection_complete']
+                    and runtime_collection['collection_complete'] is True
+                    and 'project-runtime-evidence' in retained)
+            except ValueError:
+                native['collection_complete']=False
+                native['independent_collection_error']=(native['independent_collection_error']
+                    or 'worker_configuration_probe_runtime_incomplete')
     native["project_option_policy"]=project_option_policy
     native["project_options"]=dict(sorted(project_options.items()))
     native["project_options_sha256"]=hashlib.sha256(canonical_bytes(native["project_options"])).hexdigest()

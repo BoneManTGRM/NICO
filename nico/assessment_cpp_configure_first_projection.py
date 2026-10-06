@@ -65,11 +65,16 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     native=receipt["native"]; refs=native["artifacts"]; targets=receipt["target_hashes"]
     required={"project-compilation-database","project-generated-context","project-compiler-evidence",
               "project-static-environment","project-static-evidence","project-baseline-evidence"}
-    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
+    from nico.assessment_cpp_configure_first_contract import (runtime_required, membership_required,
+        native_commands_required, generation_required, compiler_collection_required)
     runtime_contract=runtime_required(contract['configuration'])
     membership_contract=membership_required(contract['configuration'])
     native_command_contract=native_commands_required(contract['configuration'])
     generation_contract=generation_required(contract['configuration'])
+    collection_contract=compiler_collection_required(contract['configuration'])
+    if collection_contract and native.get('schema') != (
+            'nico.cpp-configure-first-native.v10' if runtime_contract else 'nico.cpp-configure-first-native.v9'):
+        raise ValueError('worker_configure_first_collection_schema_invalid')
     if runtime_contract:
         required.add("project-runtime-evidence")
     if membership_contract:
@@ -155,14 +160,23 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     compiler_raw=_read_artifact(store,identity,refs["project-compiler-evidence"],"project-compiler-evidence")
     compiler_request=project_compiler_request(database,targets,snapshot,extended_budget=True)
     compiler=validate_project_compiler(compiler_raw,compiler_request)
+    compiler_collection = None
+    if collection_contract:
+        from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection, collection_summary
+        compiler_collection = validate_project_compiler_collection(compiler_raw,compiler_request,snapshot)
+        if native.get('project_compiler_collection') != collection_summary(compiler_collection):
+            raise ValueError('worker_configure_first_compiler_collection_mismatch')
     env_raw=_read_artifact(store,identity,refs["project-static-environment"],"project-static-environment")
-    env_request=environment_request(compiler_request,compiler_raw,contract["image_digest"])
+    env_request=environment_request(compiler_request,compiler_raw,contract["image_digest"],
+        collect_completed_compiler_failures=collection_contract,snapshot=snapshot)
     environment=validate_environment(env_raw,env_request)
     static_raw=_read_artifact(store,identity,refs["project-static-evidence"],"project-static-evidence")
     static_request=project_static_request(database,targets,snapshot,compiler_raw,
-        extended_compiler_budget=True,environment=environment,header_provenance=native_command_contract)
+        extended_compiler_budget=True,environment=environment,header_provenance=native_command_contract,
+        collect_completed_compiler_failures=collection_contract)
     primary=validate_project_static(static_raw,static_request)
     analysis=primary
+    fallback_raw = None
     if "project-static-clang-fallback" in refs:
         fallback_raw=_read_artifact(store,identity,refs["project-static-clang-fallback"],"project-static-clang-fallback")
         fallback_schema=_json(fallback_raw).get('schema')
@@ -170,9 +184,17 @@ def reconstruct_configure_first(identity, contract, receipt, store):
             extended_budget=native_command_contract or fallback_schema in ('nico.cpp-clang-fallback-evidence.v2',
                                                'nico.cpp-clang-fallback-evidence.v4','nico.cpp-clang-fallback-evidence.v6'),
             contention_aware=native_command_contract or fallback_schema in ('nico.cpp-clang-fallback-evidence.v4','nico.cpp-clang-fallback-evidence.v6'),
-            multi_file_diagnostics=fallback_schema in ('nico.cpp-clang-fallback-evidence.v5','nico.cpp-clang-fallback-evidence.v6'))
+            multi_file_diagnostics=collection_contract or fallback_schema in ('nico.cpp-clang-fallback-evidence.v5','nico.cpp-clang-fallback-evidence.v6'))
         fallback=validate_clang_fallback(fallback_raw,fallback_request,static_request)
         analysis=merge_static_analysis(primary,fallback)
+    static_collection = None
+    if collection_contract:
+        from nico.assessment_cpp_static_collection import validate_project_static_collection
+        static_collection = validate_project_static_collection(static_raw,static_request,
+            compiler_collection,fallback_raw=fallback_raw)
+        if (static_collection['analysis'] != analysis
+                or native.get('project_static_collection') != collection_summary(static_collection)):
+            raise ValueError('worker_configure_first_static_collection_mismatch')
     if native_command_contract:
         from nico.assessment_cpp_header_evidence import header_summary
         if any(native[key]!=value for key,value in header_summary(analysis).items()):
@@ -198,6 +220,7 @@ def reconstruct_configure_first(identity, contract, receipt, store):
             or native["project_static_complete"] is not analysis["complete"]):
         raise ValueError("worker_configure_first_summary_mismatch")
     runtime=None
+    runtime_collection = None
     if runtime_contract:
         from nico.assessment_cpp_runtime_scope import validate_retained_runtime
         runtime_raw=_read_artifact(store,identity,refs["project-runtime-evidence"],"project-runtime-evidence")
@@ -207,8 +230,22 @@ def reconstruct_configure_first(identity, contract, receipt, store):
                 or native.get("runtime_summary_sha256")!=hashlib.sha256(canonical_bytes(runtime["summary"])).hexdigest()
                 or native.get("runtime_duration_ms")!=runtime["duration_ms"]):
             raise ValueError("worker_configure_first_summary_mismatch")
+        if collection_contract:
+            from nico.assessment_cpp_runtime_collection import validate_runtime_collection
+            runtime_collection = validate_runtime_collection(runtime_raw,targets,native['project_options'],
+                contract['configuration']['runtime_scope'])
+    if collection_contract:
+        collection_complete = bool(compiler_collection['collection_complete']
+            and static_collection['collection_complete'] and baseline['collection_complete']
+            and (not runtime_contract or runtime_collection['collection_complete'])
+            and native.get('independent_collection_error') is None)
+        if native.get('collection_complete') is not collection_complete:
+            raise ValueError('worker_configure_first_collection_summary_mismatch')
     return {"contexts":contexts,"snapshot":snapshot,"compiler":compiler,
             "environment":environment,"analysis":analysis,"runtime":runtime,"baseline":baseline,
+            **({'compiler_collection':compiler_collection,'static_collection':static_collection,
+                'runtime_collection':runtime_collection,'collection_complete':collection_complete}
+                if collection_contract else {}),
             **({'native_command_plan':plan} if native_command_contract else {}),
             **({'generated_input_materialization':_json(baseline_raw)['probe']['generated_input_materialization']}
                 if generation_contract else {}),
@@ -244,7 +281,18 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
             'population_complete':analysis.get('header_population_complete') is True,
             'tool_manifest_sha256':analysis.get('header_tool_manifest_sha256'),
             'line_or_branch_coverage_verified':False,'full_project_qualified':False}
-    if analysis["complete"] is not True:
+    if reconstruction.get('compiler_collection') is not None:
+        from nico.assessment_cpp_compiler_collection import collection_summary
+        record=deepcopy(record)
+        record.setdefault('cpp_build_evidence',{})['project_compiler_collection'] = collection_summary(
+            reconstruction['compiler_collection'])
+        record['cpp_build_evidence']['project_static_collection'] = collection_summary(reconstruction['static_collection'])
+        record['cpp_build_evidence']['collection_complete'] = reconstruction['collection_complete']
+        record['cpp_build_evidence']['target_compiler_complete'] = reconstruction['compiler']['complete']
+        record['cpp_build_evidence']['target_static_complete'] = analysis['complete']
+        record['cpp_build_evidence']['compiler_failures'] = deepcopy(reconstruction['compiler_collection']['failures'])
+        record['cpp_build_evidence']['static_target_outcomes'] = deepcopy(reconstruction['static_collection']['target_outcomes'])
+    if analysis["complete"] is not True and reconstruction.get('collection_complete') is not True:
         return record
     execution_complete = (native["complete_execution"] is True
         and (runtime is None or runtime["summary"]["complete"] is True)
