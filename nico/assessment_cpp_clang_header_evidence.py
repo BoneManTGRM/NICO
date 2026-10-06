@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import posixpath
 import re
 
 CLANG_HEADER_SCHEMA = 'nico.clang-header-observer.v1'
@@ -76,7 +77,16 @@ def validate_clang_header_trace(raw, *, source, context_id, locations, standard)
             'ast_stmt_nodes', 'ast_body_callbacks', 'initially_system', 'system_header_pragma_observed'})
         path = row['path']
         _clang_require(isinstance(path, str) and path.startswith('/') and len(path) <= 4096
-            and '\x00' not in path and path not in seen and '..' not in path.split('/'))
+            and not path.startswith('//') and '\x00' not in path and path not in seen)
+        normalized = posixpath.normpath(path)
+        roots = ('/work/source', '/work/analysis/generated-baseline')
+        owned = any(spelling == root or spelling.startswith(root + '/')
+            for spelling in (path, normalized) for root in roots)
+        # FileEntry preserves ordinary GCC include spellings containing '..'.
+        # Keep those raw external observations without granting input coverage.
+        # Either spelling entering an owned tree requires an exact binding.
+        _clang_require(normalized != '/' and (not owned or (
+            path == normalized and path in locations)))
         seen.add(path); path_bytes += len(path.encode('utf-8'))
         _clang_require(path_bytes <= 512 * 1024)
         for key in ('entered', 'ast_decl_nodes', 'ast_stmt_nodes', 'ast_body_callbacks'):
