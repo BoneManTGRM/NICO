@@ -247,6 +247,7 @@ def test_installed_static_stage_preserves_failed_outcome_after_full_bounded_coll
             if clang.PROGRAM in argv:
                 self.calls.append((argv,kwargs));value=json.loads(fraw)
                 assert digest(kwargs['input_bytes'])==value['request_sha256']
+                value['wall_budget_ms']=int(argv[-1])
                 if fault=='missing-fallback-trace':value['records'][0].update(header_trace='',header_trace_sha256=None)
                 return dict(exit_code=0,timed_out=False,output_truncated=False,output=_canonical(value))
             return super().__call__(argv,**kwargs)
@@ -266,7 +267,9 @@ def test_installed_static_stage_preserves_failed_outcome_after_full_bounded_coll
     else:
         assert result['collection_complete'] is True,result['error']
         assert result['error']=='worker_project_static_stage_target_failure'
-        assert result['static_collection']==validate(req,cp,raw,fraw)
+        retained_fallback=artifacts['project-static-clang-fallback']
+        assert json.loads(retained_fallback)['records']==json.loads(fraw)['records']
+        assert result['static_collection']==validate(req,cp,raw,retained_fallback)
         assert result['analysis']['complete'] is False and not result['analysis']['header_context_evidence_complete']
         assert set(artifacts)=={'project-static-environment','project-static-evidence','project-static-clang-fallback'}
         assert len(result['static_collection']['attempted_contexts'])==4

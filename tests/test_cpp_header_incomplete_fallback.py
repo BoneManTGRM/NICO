@@ -120,7 +120,8 @@ def test_installed_stage_dispatches_header_only_gap_before_collection_validation
             elif static.PROGRAM in argv:
                 assert json.loads(kwargs['input_bytes']) == req; output = raw
             elif clang.PROGRAM in argv:
-                assert hashlib.sha256(kwargs['input_bytes']).hexdigest() == value['request_sha256']; output = _canonical(value)
+                assert hashlib.sha256(kwargs['input_bytes']).hexdigest() == value['request_sha256']
+                value['wall_budget_ms'] = int(argv[-1]); output = _canonical(value)
             else: return super().__call__(argv, **kwargs)
             self.calls.append((argv, kwargs)); return dict(exit_code=0, timed_out=False, output_truncated=False, output=output)
     source = tmp_path / 'source'; source.mkdir(); (source / 'unit.cpp').write_bytes(b'int value(){return VALUE;}\n')

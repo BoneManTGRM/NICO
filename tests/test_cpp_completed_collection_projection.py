@@ -189,7 +189,9 @@ class CompletedDocker(GenerationDocker):
             raw = static_response(self.static_request, self.header_shape, self.failing)
         elif clang.PROGRAM in args:
             self.fallback_request = json.loads(kwargs['input_bytes'])
-            raw = fallback_response(self.fallback_request, self.clang_shape)
+            value = json.loads(fallback_response(self.fallback_request, self.clang_shape))
+            value['wall_budget_ms'] = int(args[-1])
+            raw = canonical_bytes(value)
         elif probe_api.READ_PROGRAM in args and '/work/build/nico-baseline-ctest.log' in args:
             raw = canonical_bytes({'data': packed(b'owned_suite passed\n'), 'truncated': False})
         if raw is not None:

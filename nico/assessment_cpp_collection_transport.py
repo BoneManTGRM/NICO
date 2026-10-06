@@ -15,7 +15,7 @@ from nico.assessment_cpp_project_snapshot import PROJECT_SNAPSHOT_PROGRAM, PROJE
 from nico.assessment_cpp_project_compiler import PROGRAM as COMPILER_PROGRAM
 from nico.assessment_cpp_static_environment import ENV_PROGRAM
 from nico.assessment_cpp_project_static import PROGRAM as STATIC_PROGRAM, STAGE_WALL_SECONDS
-from nico.assessment_cpp_clang_fallback import PROGRAM as FALLBACK_PROGRAM, _DROP_EXACT
+from nico.assessment_cpp_clang_fallback import PROGRAM as FALLBACK_PROGRAM, _DROP_EXACT, LOW_CONTENTION_LIMITS
 from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, docker_resource_args, resources_for
 
 
@@ -91,6 +91,12 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
                       'project-static-evidence': probe['analysis']['artifact']}
         if probe['analysis'].get('fallback_artifact') is not None:
             specs['project-static-clang-fallback'] = private(FALLBACK_PROGRAM, True)
+            fallback_native = _json(operations['project-static-clang-fallback'][1])
+            if 'wall_budget_ms' in fallback_native:
+                allocated = fallback_native['wall_budget_ms']
+                require(type(allocated) is int
+                    and 0 < allocated <= LOW_CONTENTION_LIMITS['wall_seconds'] * 1000)
+                specs['project-static-clang-fallback'].append(str(allocated))
             references['project-static-clang-fallback'] = probe['analysis']['fallback_artifact']
         require(_json(operations['static-restore'][1]) == {
             'file_population_sha256': snapshot['file_population_sha256'],
@@ -213,8 +219,12 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
     require(set(operations) == population)
     for key, expected in specs.items():
         actual = operations[key][0]['invocation']
+        program_index = actual.index('-c') + 1 if key == 'project-static-clang-fallback' and '-c' in actual else -1
         require(actual == expected or (key == 'project-static-clang-fallback'
-            and actual[:-1] == expected[:-1] and _fallback_program_equal(actual[-1], expected[-1])))
+            and len(actual) == len(expected) and program_index == expected.index('-c') + 1
+            and actual[:program_index] == expected[:program_index]
+            and actual[program_index + 1:] == expected[program_index + 1:]
+            and _fallback_program_equal(actual[program_index], expected[program_index])))
     for key, reference in references.items():
         require(operations[key][0].get('output_artifact') == reference)
     require(_json(operations[source_key][1]) == targets)

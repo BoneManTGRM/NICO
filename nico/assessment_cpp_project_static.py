@@ -624,7 +624,11 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
     def observe(key, argv, *, data=None, limit=65536, seconds=15, external=False):
         guarded_checkpoint()
         before = time.monotonic()
-        observed = command(argv, checkpoint=guarded_checkpoint, input_bytes=data,
+        # The command owns the already-clipped timeout. Raising the shared
+        # deadline from its checkpoint discards bytes it has read. Keep lease
+        # and cancellation checks live, then retain the timeout outcome before
+        # the post-return shared-deadline check rejects it.
+        observed = command(argv, checkpoint=checkpoint, input_bytes=data,
                            timeout=min(seconds, deadline-before), limit=limit, native_exit=True)
         raw = observed['output']
         operation = {'id': key, 'invocation': argv, 'exit_code': observed['exit_code'],
@@ -783,15 +787,25 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
                 extended_budget=True, contention_aware=True, multi_file_diagnostics=True)
             if fallback_request['contexts']:
                 result['phase'] = 'analysis_fallback'; save()
+                guarded_checkpoint()
+                # Allocate only the remaining shared envelope, reserving the
+                # existing ten-second return/cleanup margin inside that cap.
+                # The request's 480/120/parallel-2 maxima remain unchanged.
+                return_margin_ms = (STAGE_WALL_SECONDS - STAGE_EXECUTION_SECONDS) * 1000
+                budget_ms = min(fallback_request['limits']['wall_seconds'] * 1000,
+                    int((deadline - time.monotonic()) * 1000) - return_margin_ms)
+                if budget_ms <= 0:
+                    raise ValueError('worker_project_static_stage_deadline')
                 fallback_observed = observe('project-static-clang-fallback',
                     ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive', name,
-                     'python3', '-I', '-S', '-c', CLANG_FALLBACK_PROGRAM],
+                     'python3', '-I', '-S', '-c', CLANG_FALLBACK_PROGRAM, str(budget_ms)],
                     data=_canonical(fallback_request), limit=CLANG_FALLBACK_STREAM_LIMIT,
                     seconds=fallback_request['limits']['wall_seconds']+10, external=True)
                 if (fallback_observed['exit_code'] != 0 or fallback_observed['timed_out']
                         or fallback_observed['output_truncated']):
                     raise ValueError('worker_project_static_stage_fallback_failed')
-                fallback = validate_clang_fallback(fallback_observed['output'], fallback_request, request)
+                fallback = validate_clang_fallback(fallback_observed['output'], fallback_request, request,
+                    wall_budget_ms=budget_ms)
                 fallback_raw = fallback_observed['output']
                 merged = merge_static_analysis(primary_analysis, fallback)
                 result['analysis'] = {**merged, 'artifact': primary_artifact,

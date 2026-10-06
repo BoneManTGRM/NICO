@@ -167,7 +167,8 @@ def test_real_static_stage_runs_fallback_only_after_primary_incomplete(tmp_path)
                 return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}
             if api().PROGRAM in argv:
                 self.calls.append((argv,kwargs)); request=json.loads(kwargs['input_bytes'])
-                return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(fallback_native(request,finding=True))}
+                value=fallback_native(request,finding=True);value['wall_budget_ms']=int(argv[-1])
+                return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}
             return super().__call__(argv,**kwargs)
     root,targets,database,snapshot,compiler=stage_inputs(tmp_path); docker=FallbackDocker(targets); artifacts={}
     def sink(key,raw):
@@ -201,6 +202,7 @@ def test_static_stage_retains_substantive_fallback_beyond_old_per_case_limit(tmp
             if api().PROGRAM in argv:
                 self.calls.append((argv,kwargs)); req=json.loads(kwargs['input_bytes'])
                 value=fallback_native(req,finding=True)
+                value['wall_budget_ms']=int(argv[-1])
                 value['records'][0]['execution']['duration_ms']=90000
                 value['duration_ms']=90010
                 return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}

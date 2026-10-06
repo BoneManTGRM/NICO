@@ -89,8 +89,10 @@ class FallbackDocker(EnvironmentDocker):
             return {'exit_code': 0, 'timed_out': False, 'output_truncated': False, 'output': _canonical(value)}
         if fallback.PROGRAM in argv:
             self.calls.append((argv, kwargs)); request = json.loads(kwargs['input_bytes'])
+            value = fallback_native(request, finding=True)
+            value['wall_budget_ms'] = int(argv[-1])
             return {'exit_code': 0, 'timed_out': False, 'output_truncated': False,
-                    'output': _canonical(fallback_native(request, finding=True))}
+                    'output': _canonical(value)}
         return super().__call__(argv, **kwargs)
 
 

@@ -186,9 +186,12 @@ def _decode_plist(value, digest):
     return raw
 
 
-def collect_clang_fallback(request):
+def collect_clang_fallback(request, *, wall_budget_ms=None):
     import resource
     limits = _request_limits(request)
+    if wall_budget_ms is not None and (type(wall_budget_ms) is not int
+            or not 0 < wall_budget_ms <= limits['wall_seconds'] * 1000):
+        raise ValueError('worker_clang_fallback_request_invalid')
     if os.getuid() != 1001 or os.getgid() != 1001:
         raise ValueError('worker_clang_fallback_identity')
     fields = {'schema','tool_version','primary_request_sha256','cppcheck_evidence_sha256',
@@ -209,7 +212,11 @@ def collect_clang_fallback(request):
     resource.setrlimit(resource.RLIMIT_FSIZE, (PLIST_LIMIT, PLIST_LIMIT))
     environment = {'PATH':'/usr/lib/llvm-17/bin:/usr/local/bin:/usr/bin:/bin','LANG':'C.UTF-8',
         'HOME':str(directory),'TMPDIR':str(directory),'LD_LIBRARY_PATH':'/usr/local/lib64:/usr/local/lib'}
-    start=time.monotonic(); deadline=start+limits['wall_seconds']
+    # A parent may allocate less than the maximum because all phases share
+    # one envelope. Finish and serialize every record, including unstarted or
+    # timed-out contexts, before that parent's timeout discards the response.
+    start=time.monotonic(); deadline=start+(limits['wall_seconds'] if wall_budget_ms is None
+        else wall_budget_ms / 1000)
     header_tool_raw=None
     if header_provenance:
         if request['header_tool_manifest_sha256']!=CLANG_HEADER_MANIFEST_SHA256:
@@ -256,6 +263,8 @@ def collect_clang_fallback(request):
         records=list(pool.map(one,request['contexts']))
     result={'schema':request['schema'].replace('-request.', '-evidence.'),'request_sha256':_digest(_canonical(request)),
             'analyst_uid':os.getuid(),'version':version,'records':records,'duration_ms':int((time.monotonic()-start)*1000)}
+    if wall_budget_ms is not None:
+        result['wall_budget_ms'] = wall_budget_ms
     if header_provenance:
         result.update(header_tool_receipt=base64.b64encode(header_tool_raw).decode(),
             header_tool_receipt_sha256=_digest(header_tool_raw))
@@ -288,22 +297,32 @@ def _clang_standard(context):
     return aliases.get(standard,standard)
 
 
-def validate_clang_fallback(raw, request, primary_request):
+def validate_clang_fallback(raw, request, primary_request, *, wall_budget_ms=None):
     from nico.assessment_cpp_full_project import _json
     limits = _request_limits(request)
     if not isinstance(raw,bytes) or not 0<len(raw)<=STREAM_LIMIT: raise ValueError('worker_clang_fallback_output_limit')
     evidence=_json(raw)
+    if wall_budget_ms is not None and (type(wall_budget_ms) is not int
+            or not 0 < wall_budget_ms <= limits['wall_seconds'] * 1000
+            or evidence.get('wall_budget_ms') != wall_budget_ms):
+        raise ValueError('worker_clang_fallback_evidence_invalid')
     header_provenance=request['schema'] in {'nico.cpp-clang-fallback-request.v5','nico.cpp-clang-fallback-request.v7'}
     if (primary_request.get('schema')=='nico.cpp-project-static-request.v4') != (
             request['schema']=='nico.cpp-clang-fallback-request.v7'):
         raise ValueError('worker_clang_fallback_header_policy_invalid')
     fields={'schema','request_sha256','analyst_uid','version','records','duration_ms'}
+    allocated_ms = limits['wall_seconds'] * 1000
+    if 'wall_budget_ms' in evidence:
+        fields.add('wall_budget_ms')
+        allocated_ms = evidence['wall_budget_ms']
+        if type(allocated_ms) is not int or not 0 < allocated_ms <= limits['wall_seconds'] * 1000:
+            raise ValueError('worker_clang_fallback_evidence_invalid')
     if header_provenance:fields|={'header_tool_receipt','header_tool_receipt_sha256'}
     if (not isinstance(evidence,dict) or set(evidence)!=fields
             or evidence['schema']!=request['schema'].replace('-request.', '-evidence.')
             or evidence['request_sha256']!=_digest(_canonical(request))
             or evidence['analyst_uid']!=1001 or type(evidence['analyst_uid']) is not int
-            or type(evidence['duration_ms']) is not int or not 0<=evidence['duration_ms']<=(limits['wall_seconds']+3)*1000
+            or type(evidence['duration_ms']) is not int or not 0<=evidence['duration_ms']<=allocated_ms+3000
             or not isinstance(evidence['records'],list) or len(evidence['records'])!=len(request['contexts'])):
         raise ValueError('worker_clang_fallback_evidence_invalid')
     okay,version=_execution(evidence['version'],8000)
@@ -445,7 +464,12 @@ def run_clang_fallback():
     try:
         raw=sys.stdin.buffer.read(REQUEST_LIMIT+1)
         if len(raw)>REQUEST_LIMIT: raise ValueError('worker_clang_fallback_request_limit')
-        result=collect_clang_fallback(json.loads(raw))
+        if len(sys.argv) > 2 or len(sys.argv) == 2 and (
+                not sys.argv[1].isascii() or not sys.argv[1].isdigit()
+                or len(sys.argv[1]) > 6 or str(int(sys.argv[1])) != sys.argv[1]):
+            raise ValueError('worker_clang_fallback_request_invalid')
+        result=collect_clang_fallback(json.loads(raw),
+            wall_budget_ms=int(sys.argv[1]) if len(sys.argv) == 2 else None)
     except Exception as exc:
         code=str(exc)
         if re.fullmatch(r'worker_clang_fallback_[a-z_]+',code) is None: code='worker_clang_fallback_unavailable'
