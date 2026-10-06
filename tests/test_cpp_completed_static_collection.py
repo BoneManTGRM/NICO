@@ -102,7 +102,7 @@ def fixture(tmp_path, failing=True, include_inputs=False, directive=None):
         return result+(inputs,) if include_inputs else result
     fscratch = tmp_path/'clang-tool-shapes'; fscratch.mkdir()
     _,_,_, fshape = clang_fixture(fscratch)
-    fdata = {'schema': 'nico.cpp-clang-fallback-evidence.v5',
+    fdata = {'schema': freq['schema'].replace('-request.', '-evidence.'),
         'request_sha256':digest(_canonical(freq)),'analyst_uid':1001,'version':observed(b'17.0.6\n'),
         'duration_ms':5,'records':[],
         **{k:fshape[k] for k in ('header_tool_receipt','header_tool_receipt_sha256')}}

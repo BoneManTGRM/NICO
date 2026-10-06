@@ -79,7 +79,7 @@ def _fallback_plan(context, *, header_provenance=False, multi_file_diagnostics=F
                            '-fno-exceptions', '-fno-rtti', '-fno-omit-frame-pointer',
                            '-fno-strict-aliasing', '-fwrapv', '-ftrapv',
                            '-fstack-protector-all', '-fstack-clash-protection',
-                           '-fcf-protection=full'}):
+                           '-fcf-protection=full', '-fvisibility=hidden', '-pedantic'}):
             kept.append(arg); continue
         raise ValueError('worker_clang_fallback_option_unsupported')
     stem = '/work/analysis/clang-fallback/u' + str(context['index'])
@@ -98,6 +98,7 @@ def _request_limits(request):
                 'nico.cpp-clang-fallback-request.v4': LOW_CONTENTION_LIMITS}
     versions['nico.cpp-clang-fallback-request.v5']=LOW_CONTENTION_LIMITS
     versions['nico.cpp-clang-fallback-request.v6']=LOW_CONTENTION_LIMITS
+    versions['nico.cpp-clang-fallback-request.v7']=LOW_CONTENTION_LIMITS
     expected = versions.get(request.get('schema'))
     limits = request.get('limits')
     if (expected is None or not isinstance(limits, dict) or limits != expected
@@ -124,8 +125,13 @@ def clang_fallback_request(primary_request, primary_proof, *, extended_budget=Fa
         raise ValueError('worker_clang_fallback_population_invalid')
     attempted = set(primary_proof.get('attempted_contexts') or [])
     analyzed = set(primary_proof.get('analyzed_contexts') or [])
-    missing = [cid for cid in required if cid in attempted and cid not in analyzed]
     header_provenance=primary_request['schema'] in {'nico.cpp-project-static-request.v3','nico.cpp-project-static-request.v4'}
+    current_headers=primary_request['schema']=='nico.cpp-project-static-request.v4'
+    headers={row['context_id']:row for row in primary_proof.get('header_context_evidence',[])}
+    missing = [cid for cid in required if cid in attempted and (
+        cid not in analyzed or current_headers and not (
+            headers.get(cid,{}).get('normal_pass_completed') is True
+            and headers.get(cid,{}).get('physical_token_origin_verified') is True))]
     if header_provenance and not contention_aware:
         raise ValueError('worker_clang_fallback_header_policy_invalid')
     by_id = {row['context_id']: row for row in primary_request['contexts']}
@@ -136,7 +142,7 @@ def clang_fallback_request(primary_request, primary_proof, *, extended_budget=Fa
             'invocation': argv, 'dropped_arguments': dropped,
             'source_dependencies': dict(row['source_dependencies']),
             'generated_dependencies': dict(row['generated_dependencies'])})
-    result = {'schema': ('nico.cpp-clang-fallback-request.v5' if header_provenance else 'nico.cpp-clang-fallback-request.v6' if multi_file_diagnostics else 'nico.cpp-clang-fallback-request.v4' if contention_aware
+    result = {'schema': ('nico.cpp-clang-fallback-request.v7' if current_headers else 'nico.cpp-clang-fallback-request.v5' if header_provenance else 'nico.cpp-clang-fallback-request.v6' if multi_file_diagnostics else 'nico.cpp-clang-fallback-request.v4' if contention_aware
                          else 'nico.cpp-clang-fallback-request.v2' if extended_budget
                          else 'nico.cpp-clang-fallback-request.v1'), 'tool_version': VERSION,
         'primary_request_sha256': _digest(_canonical(primary_request)),
@@ -189,7 +195,7 @@ def collect_clang_fallback(request):
               'compiler_evidence_sha256','required_contexts','primary_analyzed_contexts','contexts','limits'}
     if 'compiler_environment_sha256' in request:
         fields.add('compiler_environment_sha256')
-    header_provenance=request.get('schema')=='nico.cpp-clang-fallback-request.v5'
+    header_provenance=request.get('schema') in {'nico.cpp-clang-fallback-request.v5','nico.cpp-clang-fallback-request.v7'}
     if header_provenance:
         fields|={'header_tool_manifest_sha256','header_source_targets','header_generated_files'}
     if (not isinstance(request, dict) or set(request) != fields
@@ -287,7 +293,10 @@ def validate_clang_fallback(raw, request, primary_request):
     limits = _request_limits(request)
     if not isinstance(raw,bytes) or not 0<len(raw)<=STREAM_LIMIT: raise ValueError('worker_clang_fallback_output_limit')
     evidence=_json(raw)
-    header_provenance=request['schema']=='nico.cpp-clang-fallback-request.v5'
+    header_provenance=request['schema'] in {'nico.cpp-clang-fallback-request.v5','nico.cpp-clang-fallback-request.v7'}
+    if (primary_request.get('schema')=='nico.cpp-project-static-request.v4') != (
+            request['schema']=='nico.cpp-clang-fallback-request.v7'):
+        raise ValueError('worker_clang_fallback_header_policy_invalid')
     fields={'schema','request_sha256','analyst_uid','version','records','duration_ms'}
     if header_provenance:fields|={'header_tool_receipt','header_tool_receipt_sha256'}
     if (not isinstance(evidence,dict) or set(evidence)!=fields
@@ -374,13 +383,22 @@ def validate_clang_fallback(raw, request, primary_request):
     return {'required_contexts':[c['context_id'] for c in request['contexts']],'attempted_contexts':attempted,
         'analyzed_contexts':analyzed,'complete':len(analyzed)==len(request['contexts']),'findings':findings,
         'limitations':limitations,'native_evidence_sha256':native_sha,'static_analysis_executed':bool(attempted),'tool_version':VERSION,
-        **({'header_context_evidence':headers,'header_tool_manifest_sha256':CLANG_HEADER_MANIFEST_SHA256} if header_provenance else {})}
+        **({'header_context_evidence':headers,'header_tool_manifest_sha256':CLANG_HEADER_MANIFEST_SHA256} if header_provenance else {}),
+        **({'header_completion_policy':'unit-and-header-completion-v1'} if request['schema']=='nico.cpp-clang-fallback-request.v7' else {})}
 
 
 def merge_static_analysis(primary, fallback):
     if not isinstance(primary,dict) or not isinstance(fallback,dict): raise ValueError('worker_clang_fallback_merge_invalid')
     required=primary['required_contexts']; primary_set=set(primary['analyzed_contexts']); fallback_set=set(fallback['analyzed_contexts'])
-    if not fallback_set <= (set(required)-primary_set): raise ValueError('worker_clang_fallback_merge_invalid')
+    allowed=set(required)-primary_set
+    if fallback.get('header_completion_policy')=='unit-and-header-completion-v1':
+        headers={row['context_id']:row for row in primary.get('header_context_evidence',[])}
+        allowed |= {cid for cid in primary_set if not (
+            headers.get(cid,{}).get('normal_pass_completed') is True
+            and headers.get(cid,{}).get('physical_token_origin_verified') is True)}
+        expected=[cid for cid in required if cid in set(primary['attempted_contexts']) and cid in allowed]
+        if fallback['required_contexts']!=expected:raise ValueError('worker_clang_fallback_merge_invalid')
+    if not fallback_set <= allowed: raise ValueError('worker_clang_fallback_merge_invalid')
     merged=dict(primary); merged['analyzed_contexts']=[cid for cid in required if cid in primary_set or cid in fallback_set]
     merged['complete']=merged['analyzed_contexts']==required
     merged['findings']=[*primary['findings'],*fallback['findings']]; merged['limitations']=[*primary['limitations'],*fallback['limitations']]
@@ -394,7 +412,9 @@ def merge_static_analysis(primary, fallback):
         selected=[];population=deepcopy(primary['header_population'])
         for cid in required:
             previous=original.get(cid)
-            if cid in primary_set:
+            if (cid in primary_set and previous is not None
+                    and previous.get('normal_pass_completed') is True
+                    and previous.get('physical_token_origin_verified') is True):
                 if previous is not None:selected.append(deepcopy(previous))
                 continue
             row=observed.get(cid)

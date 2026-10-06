@@ -119,7 +119,7 @@ def static_response(request, shape, failing):
 
 
 def fallback_response(request, shape):
-    value = {'schema': 'nico.cpp-clang-fallback-evidence.v5',
+    value = {'schema': request['schema'].replace('-request.', '-evidence.'),
         'request_sha256': sha(canonical_bytes(request)), 'analyst_uid': 1001,
         'version': observed(b'17.0.6\n'), 'duration_ms': 5, 'records': [],
         **{k: shape[k] for k in ('header_tool_receipt', 'header_tool_receipt_sha256')}}
@@ -303,7 +303,7 @@ def test_installed_owned_collection_reconstructs_then_projects_truthfully(tmp_pa
         assert any(v['rule_id'] == 'preprocessorErrorDirective' for v in reconstruction['analysis']['limitations'])
         assert not projected['completed'] and not projected['verified_complete'] and projected['status'] == 'failed'
         assert docker.fallback_request is not None
-        assert json.loads(store.raw['project-static-clang-fallback'])['schema'] == 'nico.cpp-clang-fallback-evidence.v5'
+        assert json.loads(store.raw['project-static-clang-fallback'])['schema'] == 'nico.cpp-clang-fallback-evidence.v7'
         legacy = summarize_probe(probe, receipt['target_hashes'], store.refs)
         assert legacy['complete_execution'] is False
     else:

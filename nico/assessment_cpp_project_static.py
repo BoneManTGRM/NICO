@@ -773,7 +773,9 @@ def run_project_static_stage(source, targets, image, database, snapshot, compile
         result['analysis'] = {**primary_analysis, 'artifact': primary_artifact}
         save()
         guarded_checkpoint()  # Parsing and proof retention belong to this phase.
-        if not result['analysis']['complete'] and compiler_environment:
+        if compiler_environment and (not result['analysis']['complete'] or (
+                collect_completed_compiler_failures
+                and not result['analysis'].get('header_context_evidence_complete'))):
             from nico.assessment_cpp_clang_fallback import (PROGRAM as CLANG_FALLBACK_PROGRAM,
                 STREAM_LIMIT as CLANG_FALLBACK_STREAM_LIMIT, clang_fallback_request,
                 validate_clang_fallback, merge_static_analysis)
