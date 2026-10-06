@@ -177,12 +177,13 @@ def project_static_request(database, targets, snapshot, compiler_raw, *, extende
         extended_compiler_budget = compiler_schema == 'nico.cpp-project-compiler-evidence.v2'
     compiler_request = project_compiler_request(database, targets, snapshot,
         extended_budget=extended_compiler_budget)
-    proof = validate_project_compiler(compiler_raw, compiler_request)
     collection = None
     if collect_completed_compiler_failures:
         from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection
+        # Collection already runs the full compiler validator and binds the
+        # snapshot. Avoid a second parse whose result is unused in this path.
         collection = validate_project_compiler_collection(compiler_raw, compiler_request, snapshot)
-    elif not proof['complete']:
+    elif not validate_project_compiler(compiler_raw, compiler_request)['complete']:
         raise ValueError('worker_project_static_compiler_incomplete')
     records = _json(compiler_raw)['records']
     if environment is not None:
