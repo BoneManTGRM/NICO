@@ -11,7 +11,7 @@ from nico.assessment_cpp_collection_transport import validate_transport
 from nico.assessment_cpp_full_project_execution import boundary_valid
 from nico.assessment_worker_jobs import MAX_CPP_ARTIFACT_RAW_BYTES
 from nico.assessment_cpp_full_project import _json
-from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required
+from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
 
 MAX_BASELINE_BYTES = MAX_CPP_ARTIFACT_RAW_BYTES
 _ORDER = (
@@ -38,6 +38,15 @@ _ORDER_V3 = tuple(k for key in _ORDER_V2 for k in (
 _FIELDS_V3 = _FIELDS_V2 + ('native_command_capture','native_command_freeze','analysis_compilation_database_sha256','analysis_invocations')
 
 
+def _generation_order(probe):
+    generation = probe.get('generated_input_materialization') or {}
+    selected = (generation.get('plan') or {}).get('selected_targets')
+    _require(isinstance(selected,list) and len(selected)<=128)
+    additions = ('generation-inputs-before', *('generation-target-'+str(i).zfill(3) for i in range(len(selected))),
+                 'generation-inputs-after')
+    return tuple(k for key in _ORDER_V3 for k in ((key,*additions) if key=='baseline-build' else (key,)))
+
+
 def _require(condition):
     if not condition:
         raise ValueError("worker_baseline_evidence_invalid")
@@ -48,8 +57,11 @@ def retained_baseline_bytes(probe, targets, configuration, image, *, runtime_pla
     rows = probe.get("operations") or []
     membership=membership_required(configuration)
     native_commands=native_commands_required(configuration)
-    order=_ORDER_V3 if native_commands else _ORDER_V2 if membership else _ORDER
-    fields=_FIELDS_V3 if native_commands else _FIELDS_V2 if membership else _FIELDS
+    generation=generation_required(configuration)
+    if generation and probe.get('generated_input_materialization') is None:
+        return None
+    order=_generation_order(probe) if generation else _ORDER_V3 if native_commands else _ORDER_V2 if membership else _ORDER
+    fields=_FIELDS_V3+('generated_input_materialization',) if generation else _FIELDS_V3 if native_commands else _FIELDS_V2 if membership else _FIELDS
     population=frozenset(order)
     selected = [row for row in rows if row.get("id") in population]
     expected = population if probe.get("unit_test_data") is not None else population - {"unit-test-data"}
@@ -57,7 +69,7 @@ def retained_baseline_bytes(probe, targets, configuration, image, *, runtime_pla
             or not isinstance((probe.get("tests_result") or {}).get("junit"), str)):
         return None
     value = {
-        "schema": "nico.cpp-baseline-evidence.v3" if native_commands else "nico.cpp-baseline-evidence.v2" if membership else "nico.cpp-baseline-evidence.v1",
+        "schema": "nico.cpp-baseline-evidence.v4" if generation else "nico.cpp-baseline-evidence.v3" if native_commands else "nico.cpp-baseline-evidence.v2" if membership else "nico.cpp-baseline-evidence.v1",
         "source_population_sha256": hashlib.sha256(canonical_bytes(targets)).hexdigest(),
         "configuration_sha256": hashlib.sha256(canonical_bytes(configuration)).hexdigest(),
         "image_config_digest": image,
@@ -69,20 +81,21 @@ def retained_baseline_bytes(probe, targets, configuration, image, *, runtime_pla
     return raw
 
 
-def validate_retained_baseline(raw, targets, configuration, image, native, *, membership_raw=None, native_raw=None, native_post_raw=None):
+def validate_retained_baseline(raw, targets, configuration, image, native, *, membership_raw=None, native_raw=None, native_post_raw=None, generation_raw=None):
     """Reconstruct populations from native discovery/JUnit before accepting summaries."""
     _require(isinstance(raw, bytes) and 0 < len(raw) <= MAX_BASELINE_BYTES)
     try:
         membership=membership_required(configuration)
         native_commands=native_commands_required(configuration)
-        fields=_FIELDS_V3 if native_commands else _FIELDS_V2 if membership else _FIELDS
-        order=_ORDER_V3 if native_commands else _ORDER_V2 if membership else _ORDER
+        generation=generation_required(configuration)
+        fields=_FIELDS_V3+('generated_input_materialization',) if generation else _FIELDS_V3 if native_commands else _FIELDS_V2 if membership else _FIELDS
         value = _json(raw)
+        order=_generation_order(value.get('probe') or {}) if generation else _ORDER_V3 if native_commands else _ORDER_V2 if membership else _ORDER
         _require(isinstance(value, dict) and set(value) == {
             "schema", "source_population_sha256", "configuration_sha256",
             "image_config_digest", "runtime_plan", "probe",
         })
-        _require(value["schema"] == ("nico.cpp-baseline-evidence.v3" if native_commands else "nico.cpp-baseline-evidence.v2" if membership else "nico.cpp-baseline-evidence.v1")
+        _require(value["schema"] == ("nico.cpp-baseline-evidence.v4" if generation else "nico.cpp-baseline-evidence.v3" if native_commands else "nico.cpp-baseline-evidence.v2" if membership else "nico.cpp-baseline-evidence.v1")
                  and value["source_population_sha256"] == hashlib.sha256(canonical_bytes(targets)).hexdigest()
                  and value["configuration_sha256"] == hashlib.sha256(canonical_bytes(configuration)).hexdigest()
                  and value["image_config_digest"] == image)
@@ -107,6 +120,16 @@ def validate_retained_baseline(raw, targets, configuration, image, native, *, me
                      and hashlib.sha256(canonical_bytes(runtime_plan)).hexdigest() == native["runtime_plan_sha256"])
         else:
             _require(runtime_plan is None)
+        if generation:
+            materialization=probe['generated_input_materialization']
+            reference=materialization['artifact']
+            _require(isinstance(generation_raw,bytes)
+                and generation_raw==canonical_bytes({k:v for k,v in materialization.items() if k!='artifact'})
+                and reference=={'path':'artifacts/project-generation-evidence-'+hashlib.sha256(generation_raw).hexdigest()+'.json',
+                    'sha256':hashlib.sha256(generation_raw).hexdigest(),'bytes':len(generation_raw)}
+                and native['generated_input_materialization_complete'] is True
+                and native['generation_evidence_sha256']==reference['sha256']
+                and native['generation_selected_targets_count']==len(materialization['plan']['selected_targets']))
         def no_external_output(reference):
             if membership:
                 key=reference['path'].removeprefix('artifacts/').rsplit('-',1)[0]

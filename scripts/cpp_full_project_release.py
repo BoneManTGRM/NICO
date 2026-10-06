@@ -66,7 +66,7 @@ def publish(directory, recipe, output, *, command=_command):
     revision, anchor = identity('publish')
     manifest = json.loads(_read(Path(directory) / 'handoff.json', 65536))
     if (not isinstance(manifest, dict) or manifest.get('source_sha') != revision
-            or manifest.get('schema') != 'nico.qualified-image-handoff.v3'):
+            or manifest.get('schema') != 'nico.qualified-image-handoff.v4'):
         raise ValueError('image_release_source_mismatch')
     from scripts.cpp_full_project_handoff import CONTRACTS
     for name in CONTRACTS:

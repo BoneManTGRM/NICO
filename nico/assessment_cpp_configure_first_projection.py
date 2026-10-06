@@ -65,16 +65,19 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     native=receipt["native"]; refs=native["artifacts"]; targets=receipt["target_hashes"]
     required={"project-compilation-database","project-generated-context","project-compiler-evidence",
               "project-static-environment","project-static-evidence","project-baseline-evidence"}
-    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required
+    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
     runtime_contract=runtime_required(contract['configuration'])
     membership_contract=membership_required(contract['configuration'])
     native_command_contract=native_commands_required(contract['configuration'])
+    generation_contract=generation_required(contract['configuration'])
     if runtime_contract:
         required.add("project-runtime-evidence")
     if membership_contract:
         required.add('project-enabled-targets')
     if native_command_contract:
         required |= {'project-native-commands','project-native-commands-post-build','project-enabled-targets-post-build'}
+    if generation_contract:
+        required.add('project-generation-evidence')
     if not required<=set(refs):
         raise ValueError("worker_configure_first_artifact_population_invalid")
     from nico.assessment_cpp_baseline_evidence import validate_retained_baseline
@@ -91,7 +94,9 @@ def reconstruct_configure_first(identity, contract, receipt, store):
                 raise ValueError('worker_configure_first_native_plan_changed')
     baseline = validate_retained_baseline(
         baseline_raw, targets, contract["configuration"], contract["image_digest"], native,
-        membership_raw=membership_raw,native_raw=native_raw,native_post_raw=native_post_raw)
+        membership_raw=membership_raw,native_raw=native_raw,native_post_raw=native_post_raw,
+        generation_raw=(_read_artifact(store,identity,refs['project-generation-evidence'],'project-generation-evidence')
+            if generation_contract else None))
     database=_read_artifact(store,identity,refs["project-compilation-database"],"project-compilation-database")
     if hashlib.sha256(database).hexdigest()!=native["compilation_database_sha256"]:
         raise ValueError("worker_configure_first_database_mismatch")
@@ -205,6 +210,8 @@ def reconstruct_configure_first(identity, contract, receipt, store):
     return {"contexts":contexts,"snapshot":snapshot,"compiler":compiler,
             "environment":environment,"analysis":analysis,"runtime":runtime,"baseline":baseline,
             **({'native_command_plan':plan} if native_command_contract else {}),
+            **({'generated_input_materialization':_json(baseline_raw)['probe']['generated_input_materialization']}
+                if generation_contract else {}),
             **({'enabled_target_membership':membership} if membership_contract else {})}
 
 
@@ -217,6 +224,16 @@ def project_configure_first_record(record, identity, contract, receipt, reconstr
         record.setdefault("cpp_build_evidence", {})["runtime_scope"]=deepcopy(runtime["summary"])
     membership=reconstruction.get('enabled_target_membership')
     plan=reconstruction.get('native_command_plan')
+    generation=reconstruction.get('generated_input_materialization')
+    if generation is not None:
+        record=deepcopy(record)
+        record.setdefault('cpp_build_evidence',{})['generated_input_materialization']={
+            'schema':generation['schema'],'required_units_count':len(generation['plan']['required_units']),
+            'missing_before_count':len(generation['plan']['missing_units']),
+            'selected_targets_count':len(generation['plan']['selected_targets']),
+            'complete':generation['complete'],'artifact_sha256':generation['artifact']['sha256'],
+            'build_elapsed_ms':generation['build_elapsed_ms'],'compiler_execution_inferred':False,
+            'analyzer_header_coverage_inferred':False}
     if plan is not None:
         record=deepcopy(record)
         record.setdefault('cpp_build_evidence',{})['header_evidence'] = {

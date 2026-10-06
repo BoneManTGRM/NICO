@@ -169,6 +169,22 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
                 cmake_path=runtime_cmake_path('native_command_capture' in probe))
                 require(probe['analysis_compilation_database_sha256']==plan['analysis_database_sha256']
                     and probe['analysis_invocations']==plan['context_count'])
+                if 'generated_input_materialization' in probe:
+                    from nico.assessment_cpp_generated_inputs import OBSERVE_PROGRAM, validate_generation_evidence
+                    from nico.assessment_cpp_project_snapshot import project_snapshot_request
+                    from nico.assessment_cpp_full_project import _database
+                    contexts=_database(base64.b64decode(plan['analysis_database'],validate=True),None,
+                        '/work/build',nested=True,source_targets=targets)
+                    materialization=probe['generated_input_materialization']
+                    require(isinstance(materialization,dict))
+                    generation=validate_generation_evidence(canonical_bytes({k:v for k,v in materialization.items() if k!='artifact'}),
+                        operations['project-native-commands'][1],operations['project-enabled-targets'][1],membership,
+                        plan,project_snapshot_request(contexts),operations,image,probe['baseline_execution'])
+                    specs['generation-inputs-before']=private(OBSERVE_PROGRAM,True)
+                    specs['generation-inputs-after']=private(OBSERVE_PROGRAM,True)
+                    for i,target in enumerate(generation['plan']['selected_targets']):
+                        specs['generation-target-'+str(i).zfill(3)]=[*prefix,'cmake','--build','/work/build',
+                            '--target',target['target_name'],'--parallel',str(probe['baseline_execution']['parallel'])]
         if probe.get('unit_test_data') is not None:
             argv = operations['unit-test-data'][0]['invocation']
             require(isinstance(argv[-1], str) and argv[-1].isdigit() and 0 < int(argv[-1]) <= 128*1024*1024)

@@ -69,7 +69,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
                                 extended_compiler_budget=False, compiler_environment=False, runtime_plan=None,
                                 external_checkpoint=None, capture_enabled_targets=False,
-                                capture_native_commands=False):
+                                capture_native_commands=False, materialize_generated_inputs=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -111,6 +111,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if (type(capture_native_commands) is not bool
             or capture_native_commands and not (capture_enabled_targets and project_compiler_evidence)):
         raise ValueError('worker_configuration_probe_native_plan_invalid')
+    if (type(materialize_generated_inputs) is not bool
+            or materialize_generated_inputs and not (capture_native_commands and capture_generated_context)):
+        raise ValueError('worker_configuration_probe_generation_contract_invalid')
     if type(project_compiler_evidence) is not bool or (project_compiler_evidence and not capture_generated_context):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
     if type(project_static_analysis) is not bool or (project_static_analysis and not project_compiler_evidence):
@@ -199,6 +202,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
             native_command_capture=None, native_command_plan=None,
             analysis_compilation_database=None, analysis_compilation_database_sha256=None,
             analysis_invocations=0)
+    if materialize_generated_inputs:
+        result.update(schema='nico.cpp-project-configuration-probe.v10', generated_input_materialization=None)
 
     def save():
         result['duration_ms'] = int((time.monotonic() - start) * 1000)
@@ -226,7 +231,7 @@ def probe_project_configuration(source, targets, image, *, project_options,
         if external:
             entry['output_artifact'] = None
         if key in {'project-native-commands','project-native-commands-post-build',
-                   'project-enabled-targets-post-build'}:
+                   'project-enabled-targets-post-build', 'generation-inputs-before', 'generation-inputs-after'}:
             entry['input_sha256'] = hashlib.sha256(data).hexdigest()
         result['operations'].append(entry)
         save()  # Preserve the returned native outcome, even if artifact storage fails.
@@ -432,11 +437,58 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 result['unit_test_data'] = expected
                 save()
                 del payload
+            build_started = time.monotonic()
             invoke('baseline-build', [*prefix, 'cmake', '--build', '/work/build', '--parallel',
                 str(baseline_execution['parallel'])], seconds=baseline_execution['build_seconds'],
                 limit=1024*1024)
             result['compiled'] = True
             save()
+            if materialize_generated_inputs:
+                from nico.assessment_cpp_generated_inputs import (
+                    OBSERVE_PROGRAM, generated_input_plan, validate_observation,
+                )
+                from nico.assessment_cpp_project_snapshot import project_snapshot_request
+                generation_request = project_snapshot_request(contexts)
+                generation_bytes = canonical_bytes(generation_request)
+                generation_argv = ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive',
+                    name, 'python3', '-I', '-S', '-c', OBSERVE_PROGRAM]
+                def remaining_build_seconds():
+                    remaining = baseline_execution['build_seconds'] - (time.monotonic()-build_started)
+                    if remaining <= 0:
+                        raise ValueError('worker_configuration_probe_generation_budget_exhausted')
+                    return remaining
+                before_inputs = _json(invoke('generation-inputs-before', generation_argv,
+                    data=generation_bytes, limit=4*1024*1024, seconds=min(15,remaining_build_seconds())))
+                try:
+                    generation_plan = generated_input_plan(native_capture['output'], capture['output'],
+                        membership, plan, generation_request, before_inputs)
+                except ValueError as exc:
+                    raise ValueError('worker_configuration_probe_generation_plan_invalid') from exc
+                for index, target in enumerate(generation_plan['selected_targets']):
+                    # All and utility targets consume ONE original build budget.
+                    # Metadata work also consumes this elapsed envelope.
+                    invoke('generation-target-'+str(index).zfill(3), [*prefix, 'cmake', '--build',
+                        '/work/build', '--target', target['target_name'], '--parallel',
+                        str(baseline_execution['parallel'])], seconds=remaining_build_seconds(), limit=1024*1024)
+                after_inputs = _json(invoke('generation-inputs-after', generation_argv,
+                    data=generation_bytes, limit=4*1024*1024, seconds=min(15,remaining_build_seconds())))
+                validate_observation(after_inputs, generation_request)
+                remaining_build_seconds()
+                materialization = {'schema':'nico.cpp-generated-input-evidence.v1',
+                    'image_config_digest':image, 'request':generation_request, 'plan':generation_plan,
+                    'before':before_inputs, 'after':after_inputs,
+                    'build_elapsed_ms':int((time.monotonic()-build_started)*1000),
+                    'complete':all(row['state']=='readable' for row in after_inputs['files'].values())}
+                generation_raw = canonical_bytes(materialization)
+                digest = hashlib.sha256(generation_raw).hexdigest()
+                reference = retain_artifact('project-generation-evidence', generation_raw)
+                if reference != {'path':'artifacts/project-generation-evidence-'+digest+'.json',
+                                 'sha256':digest, 'bytes':len(generation_raw)}:
+                    raise ValueError('worker_configuration_probe_artifact_reference_invalid')
+                result['generated_input_materialization'] = {**materialization, 'artifact':reference}
+                save()
+                if not materialization['complete']:
+                    raise ValueError('worker_configuration_probe_generation_incomplete')
             # CMake may regenerate as part of the build. It must not change the
             # frozen command population, including generated and repeated units.
             after = _json(invoke('post-build-database', [*prefix, 'python3', '-I', '-S', '-c',

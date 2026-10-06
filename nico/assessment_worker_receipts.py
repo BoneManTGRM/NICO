@@ -302,10 +302,11 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
 
 def _configure_first_record(identity, contract, receipt, encoded):
     native=receipt['native']; config=contract['configuration']
-    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required
+    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
     runtime_contract=runtime_required(config)
     membership_contract=membership_required(config)
     native_command_contract=native_commands_required(config)
+    generation_contract=generation_required(config)
     required={'schema','status','complete_execution','error','source_population_sha256',
         'source_count','compilation_database_sha256','configured_invocations','baseline_execution_frozen','compiled',
         'tests_executed','tests_passed','tests_discovered_count','tests_discovered_sha256','tests_executed_count',
@@ -334,7 +335,10 @@ def _configure_first_record(identity, contract, receipt, encoded):
         required |= {'header_context_evidence_count','header_context_evidence_sha256','header_population_count',
             'header_population_sha256','header_unvisited_files_count','header_unvisited_files_sha256',
             'header_context_evidence_complete','header_population_complete','header_tool_manifest_sha256'}
-    expected_schema=(('nico.cpp-configure-first-native.v6' if runtime_contract else 'nico.cpp-configure-first-native.v5')
+    if generation_contract:
+        required |= {'generated_input_materialization_complete','generation_evidence_sha256','generation_selected_targets_count'}
+    expected_schema=(('nico.cpp-configure-first-native.v8' if runtime_contract else 'nico.cpp-configure-first-native.v7')
+        if generation_contract else ('nico.cpp-configure-first-native.v6' if runtime_contract else 'nico.cpp-configure-first-native.v5')
         if native_command_contract else ('nico.cpp-configure-first-native.v4' if runtime_contract else 'nico.cpp-configure-first-native.v3')
         if membership_contract else ('nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'))
     if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!=expected_schema
@@ -455,6 +459,16 @@ def _configure_first_record(identity, contract, receipt, encoded):
         required_refs.add('project-runtime-evidence')
     if native_command_contract:
         required_refs |= {'project-native-commands','project-native-commands-post-build','project-enabled-targets-post-build'}
+    if generation_contract:
+        required_refs.add('project-generation-evidence')
+        ref=(native.get('artifacts') or {}).get('project-generation-evidence')
+        if (type(native['generated_input_materialization_complete']) is not bool
+                or type(native['generation_selected_targets_count']) is not int
+                or not 0<=native['generation_selected_targets_count']<=128
+                or (ref is None and native['generation_evidence_sha256'] is not None)
+                or (ref is not None and native['generation_evidence_sha256']!=ref.get('sha256'))
+                or native['complete_execution'] is True and native['generated_input_materialization_complete'] is not True):
+            raise ValueError('worker_configure_first_native_invalid')
     if (not isinstance(refs,dict) or 'project-compilation-database' not in refs
             or (native.get('complete_execution') is True and not required_refs <= set(refs))):
         raise ValueError('worker_configure_first_native_invalid')
@@ -572,13 +586,15 @@ def publish_receipt(jobs: WorkerJobs, identity: JobIdentity, lease: str, worker:
         native=receipt["native"]
         required={"project-compilation-database","project-generated-context","project-compiler-evidence",
                   "project-static-environment","project-static-evidence"}
-        from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required
+        from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
         if runtime_required(job['contract']['configuration']):
             required.add("project-runtime-evidence")
         if membership_required(job['contract']['configuration']):
             required.add('project-enabled-targets')
         if native_commands_required(job['contract']['configuration']):
             required |= {'project-native-commands','project-native-commands-post-build','project-enabled-targets-post-build'}
+        if generation_required(job['contract']['configuration']):
+            required.add('project-generation-evidence')
         # Complete retained populations are reconstructed before publication.
         # A bounded incomplete producer result may legitimately stop before a
         # later artifact exists; retain that truthful failure record without

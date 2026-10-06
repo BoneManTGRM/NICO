@@ -146,7 +146,7 @@ def validate_baseline_collection(probe, contract, artifact, *, allow_target_fail
 
 def validate_project_collection(receipt, read_artifact, *, manifest_raw, baseline_raw,
                                 scope_raw, producer_source_sha, image, enabled_targets_required=False,
-                                native_commands_required=False):
+                                native_commands_required=False, generated_inputs_required=False):
     """Accept only full source-bound collection; retain all original failures.
 
     ``read_artifact`` reads a bounded local file by its validated artifact reference.
@@ -177,14 +177,33 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
     # qualification job. Freeze-at-config contracts require a separate binding.
     _require(baseline.get('schema') == 'nico.cpp-baseline-execution.v1')
     source, probe = receipt['source'], receipt['probe']
+    if generated_inputs_required and isinstance(probe.get('generated_input_materialization'),dict):
+        projected_generation=probe['generated_input_materialization']
+        if projected_generation.get('receipt_projection')=='hash-bound-summary-v1':
+            reference=projected_generation['artifact']
+            generation_raw=read_artifact(reference)
+            _require(isinstance(generation_raw,bytes) and 0<len(generation_raw)<=PROJECT_GENERATED_STREAM_LIMIT
+                and set(reference)=={'path','sha256','bytes'}
+                and reference['path']=='artifacts/project-generation-evidence-'+hashlib.sha256(generation_raw).hexdigest()+'.json'
+                and reference['sha256']==hashlib.sha256(generation_raw).hexdigest()==projected_generation['native_evidence_sha256']
+                and reference['bytes']==len(generation_raw))
+            full_generation=_json(generation_raw)
+            _require(projected_generation=={'schema':full_generation['schema'],'complete':full_generation['complete'],
+                'artifact':reference,'native_evidence_sha256':reference['sha256'],'receipt_projection':'hash-bound-summary-v1'})
+            probe={**probe,'generated_input_materialization':{**full_generation,'artifact':reference}}
     _require(type(enabled_targets_required) is bool and type(native_commands_required) is bool
-        and (not native_commands_required or enabled_targets_required))
+        and type(generated_inputs_required) is bool
+        and (not native_commands_required or enabled_targets_required)
+        and (not generated_inputs_required or native_commands_required))
     if enabled_targets_required:
-        _require(probe.get('schema') in {'nico.cpp-project-configuration-probe.v8','nico.cpp-project-configuration-probe.v9'}
+        _require(probe.get('schema') in {'nico.cpp-project-configuration-probe.v8','nico.cpp-project-configuration-probe.v9','nico.cpp-project-configuration-probe.v10'}
                  and isinstance(probe.get('enabled_target_membership'),dict))
     if native_commands_required:
-        _require(probe.get('schema')=='nico.cpp-project-configuration-probe.v9'
+        _require(probe.get('schema') in {'nico.cpp-project-configuration-probe.v9','nico.cpp-project-configuration-probe.v10'}
             and isinstance(probe.get('native_command_plan'),dict))
+    if generated_inputs_required:
+        _require(probe.get('schema')=='nico.cpp-project-configuration-probe.v10'
+            and isinstance(probe.get('generated_input_materialization'),dict))
     targets = source['targets']
     _require(source['inventory_complete'] is True
              and all(source[key] == manifest[key] for key in ('repository', 'commit_sha', 'tree_sha'))
@@ -213,7 +232,8 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
     runtime_raw = artifact(receipt['runtime']['artifact'])
     runtime = validate_runtime_collection(runtime_raw, targets, manifest['project_options'], scope)
     retained_runtime = _json(runtime_raw)
-    validate_transport(probe, _operations(probe['operations'], artifact), targets,
+    ops=_operations(probe['operations'], artifact)
+    validate_transport(probe, ops, targets,
                        runtime_plan=retained_runtime['plan'])
     rawdb = base64.b64decode(probe['compilation_database'], validate=True)
     membership=None
@@ -258,6 +278,15 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
             ==probe['analysis_compilation_database_sha256'] and probe['analysis_invocations']==plan['context_count'])
         analysisdb=base64.b64decode(plan['analysis_database'],validate=True)
     contexts = _database(analysisdb, None, '/work/build', nested=True, source_targets=targets)
+    generation=None
+    if generated_inputs_required:
+        from nico.assessment_cpp_generated_inputs import validate_generation_evidence
+        from nico.assessment_cpp_project_snapshot import project_snapshot_request
+        materialization=probe['generated_input_materialization']
+        generation_raw=artifact(materialization['artifact'])
+        _require(generation_raw==canonical_bytes({k:v for k,v in materialization.items() if k!='artifact'}))
+        generation=validate_generation_evidence(generation_raw,artifact(probe['native_command_capture']),
+            capture,membership,plan,project_snapshot_request(contexts),ops,image,baseline)
     snapshot = validate_project_snapshot(_json(artifact(probe['generated_context']['artifact'])), contexts)
     creq = project_compiler_request(analysisdb, targets, snapshot, extended_budget=True)
     craw = artifact(probe['project_compiler']['artifact'])
@@ -306,7 +335,7 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
              and receipt['runtime']['complete'] is runtime['target_tests_passed']
              and receipt['runtime']['native_evidence_sha256'] == hashlib.sha256(runtime_raw).hexdigest())
     _require((receipt['status'] == 'BASELINE_EXECUTED') is runtime['target_tests_passed'])
-    return {'schema': 'nico.cpp-assessment-collection.v1', 'collection_complete': True,
+    return {'schema': 'nico.cpp-assessment-collection.v2' if generated_inputs_required else 'nico.cpp-assessment-collection.v1', 'collection_complete': True,
         'target_tests_passed': runtime['target_tests_passed'], 'producer_source_sha': producer_source_sha,
         'image_config_digest': image, 'qualification_receipt_sha256': _digest(receipt),
         'target_commit_sha': source['commit_sha'], 'target_tree_sha': source['tree_sha'],
@@ -314,4 +343,8 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
         'baseline': baseline_result, 'compiler_contexts': len(compiler['checked_contexts']),
         'static_contexts': len(analysis['analyzed_contexts']), 'static_observations': len(analysis['findings']),
         'analyzer_header_coverage_verified': analysis['analyzer_header_coverage_verified'],
+        **({'generated_input_materialization':{
+            'artifact_sha256':_digest(generation),'required_units_count':len(generation['plan']['required_units']),
+            'generated_target_count':len(generation['plan']['selected_targets']),'complete':True,
+            'compiler_execution_inferred':False,'header_coverage_inferred':False}} if generation else {}),
         'full_project_qualified': False, 'production_qualified': False}

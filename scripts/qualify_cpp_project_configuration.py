@@ -132,7 +132,7 @@ def persist_project_artifact(output, key, raw):
     symlinks and arbitrary names cannot replace an earlier artifact.
     """
     from nico.assessment_cpp_project_snapshot import PROJECT_GENERATED_STREAM_LIMIT, _stable_bytes
-    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback', 'project-runtime-evidence', 'project-enabled-targets', 'project-native-commands', 'project-native-commands-post-build', 'project-enabled-targets-post-build'} or not isinstance(raw, bytes)
+    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback', 'project-runtime-evidence', 'project-enabled-targets', 'project-native-commands', 'project-native-commands-post-build', 'project-generation-evidence', 'project-enabled-targets-post-build'} or not isinstance(raw, bytes)
             or len(raw) > PROJECT_GENERATED_STREAM_LIMIT):
         raise ValueError('qualification_artifact_invalid')
     output = Path(output).absolute()
@@ -174,6 +174,13 @@ def qualification_probe_receipt(value):
     if not isinstance(value, dict):
         raise ValueError('qualification_probe_invalid')
     projected = dict(value)
+    generation=value.get('generated_input_materialization')
+    if isinstance(generation,dict):
+        projected['generated_input_materialization']={
+            'schema':generation['schema'],'complete':generation['complete'],
+            'artifact':generation['artifact'],
+            'native_evidence_sha256':hashlib.sha256(canonical_bytes({k:v for k,v in generation.items() if k!='artifact'})).hexdigest(),
+            'receipt_projection':'hash-bound-summary-v1'}
     membership=value.get('enabled_target_membership')
     if isinstance(membership,dict):
         summary=dict(membership)
@@ -319,6 +326,7 @@ def qualify_configuration_checkout(args):
                 compiler_environment=getattr(args, 'compiler_environment', False),
                 capture_enabled_targets=getattr(args,'capture_enabled_targets',False),
                 capture_native_commands=getattr(args,'capture_native_commands',False),
+                materialize_generated_inputs=getattr(args,'materialize_generated_inputs',False),
                 retain_artifact=lambda key, raw: persist_project_artifact(args.output, key, raw))
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
@@ -363,7 +371,8 @@ def qualify_configuration_checkout(args):
             manifest_raw=raw, baseline_raw=raw_execution, scope_raw=raw_runtime,
             producer_source_sha=producer, image=args.image,
             enabled_targets_required=getattr(args,'capture_enabled_targets',False),
-            native_commands_required=getattr(args,'capture_native_commands',False))
+            native_commands_required=getattr(args,'capture_native_commands',False),
+            generated_inputs_required=getattr(args,'materialize_generated_inputs',False))
         # The original receipt/status and failed native results remain untouched.
         # This additive decision is not an image-promotion or production credential.
         path = args.output / 'collection-acceptance.json'
@@ -391,6 +400,7 @@ def main():
     parser.add_argument('--compiler-environment', action='store_true')
     parser.add_argument('--capture-enabled-targets', action='store_true')
     parser.add_argument('--capture-native-commands', action='store_true')
+    parser.add_argument('--materialize-generated-inputs', action='store_true')
     parser.add_argument('--accept-completed-collection', action='store_true',
         help='Use the explicit collection policy while retaining failed target qualification.')
     parser.add_argument('--producer-source-sha', help='NICO revision producing this collection receipt.')

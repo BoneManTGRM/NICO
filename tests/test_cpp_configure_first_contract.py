@@ -87,3 +87,26 @@ def test_configure_first_v3_freezes_required_runtime_scope_before_execution():
         broken['configuration']['runtime_scope'][field]=replacement
         with pytest.raises(ValueError):
             validate_contract(broken)
+
+
+@pytest.mark.parametrize('runtime',[False,True])
+def test_current_generation_contract_rejects_legacy_capability_downgrade(runtime):
+    from nico.assessment_cpp_production_selection import select_configure_first_contract
+    from tests.test_cpp_production_selection import repo_step,env,RELEASE
+    paths=['CMakeLists.txt','src/a.cpp']
+    if runtime:
+        paths += ['test/functional/test_runner.py','test/fuzz/test_runner.py',
+                  'src/test/fuzz/CMakeLists.txt','src/test/fuzz/connect_block.cpp']
+    value=select_configure_first_contract(repo_step(paths),environ=env(),release_revision=RELEASE)
+    assert validate_contract(value)==value
+    assert value['configuration']['schema']=='nico.cpp-configure-first-contract.v'+('9' if runtime else '8')
+    for replacement in (False,None):
+        broken=deepcopy(value)
+        if replacement is None:broken['configuration']['capabilities'].pop('materialize_generated_inputs')
+        else:broken['configuration']['capabilities']['materialize_generated_inputs']=replacement
+        with pytest.raises(ValueError,match='capabilities_invalid'):validate_contract(broken)
+    # Historical contract identities remain readable with their actual scope.
+    historical=deepcopy(value)
+    historical['configuration']['schema']='nico.cpp-configure-first-contract.v'+('7' if runtime else '6')
+    historical['configuration']['capabilities'].pop('materialize_generated_inputs')
+    assert validate_contract(historical)==historical

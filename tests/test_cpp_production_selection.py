@@ -28,9 +28,10 @@ def test_release_owned_selector_builds_generic_configure_first_contract():
     assert result['profile']=='cpp-configure-first-v2'
     assert result['image_digest']==IMAGE
     assert result['configuration']['expected_tree_sha']==TREE
-    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v6'
+    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v8'
     assert result['configuration']['capabilities']['capture_enabled_targets'] is True
     assert result['configuration']['capabilities']['capture_native_commands'] is True
+    assert result['configuration']['capabilities']['materialize_generated_inputs'] is True
     assert result['configuration']['project_option_policy']=='conservative-cmake-v1'
     assert 'project_options' not in result['configuration'] and 'runtime_scope' not in result['configuration']
     assert result['configuration']['baseline_execution']['test_seconds']==720
@@ -43,7 +44,7 @@ def test_runtime_scope_is_selected_from_declared_source_interfaces_without_repo_
     paths=['CMakeLists.txt','src/a.cpp','test/functional/test_runner.py','test/fuzz/test_runner.py',
         'src/test/fuzz/CMakeLists.txt','src/test/fuzz/connect_block.cpp']
     result=select_configure_first_contract(repo_step(paths),environ=env(),release_revision=RELEASE)
-    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v7'
+    assert result['configuration']['schema']=='nico.cpp-configure-first-contract.v9'
     assert result['configuration']['capabilities']['capture_enabled_targets'] is True
     assert result['configuration']['runtime_scope']['total_seconds']==6000
     assert result['configuration']['runtime_scope']['sanitizers']==['address','undefined']

@@ -39,7 +39,9 @@ def validate_collection(directory, *, source_sha, image, retain=None, enabled_ta
         lambda ref: read(ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
         manifest_raw=contracts[0], baseline_raw=contracts[1], scope_raw=contracts[2],
         producer_source_sha=source_sha, image=image,
-        enabled_targets_required=enabled_targets_required)
+        enabled_targets_required=enabled_targets_required,
+        native_commands_required=enabled_targets_required,
+        generated_inputs_required=enabled_targets_required)
     if json.loads(read('collection-acceptance.json', 16 * 1024 * 1024)) != decision:
         raise ValueError('image_collection_decision_mismatch')
     return hashlib.sha256(_canonical(decision)).hexdigest()
@@ -55,7 +57,7 @@ def export(directory, proof, metadata, recipe, output, *, source_sha, **kwargs):
                                              retain=Path(output) / 'collection')
         if retained_hash != collection_hash:
             raise ValueError('image_collection_changed')
-        result.update(schema='nico.qualified-image-handoff.v3',
+        result.update(schema='nico.qualified-image-handoff.v4',
             full_project_collection_sha256=collection_hash,
             scope='same-image owned controls and complete full-project collection; target findings retained; activation separate')
         (Path(output) / 'handoff.json').write_bytes(_canonical(result) + b'\n')
