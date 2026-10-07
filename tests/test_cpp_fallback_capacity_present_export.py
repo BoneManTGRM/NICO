@@ -72,7 +72,7 @@ class PresentSampleExportControls(unittest.TestCase):
         self.receipt_path = self.private / 'sample-caller-receipt.json'
         self.output = self.root / 'export'
         self.assertEqual(sha(CALLER_PATH.read_bytes()),
-            '1fc90d58f8da1ccfeedceda3195e31c799c238d84b32c37cd8c80ad968ded9e7')
+            '60cb95c66f6141f6eedbe16cbe57630c4f577e9be56117e3d0ac8cb324edb6ae')
         self.assertEqual(sha(SAMPLE_PATH.read_bytes()),
             '6502680b08f124cfa417019647e7c42f873e7efa9017faa54efd52738cedfe1a')
         self.expected = {

@@ -4,6 +4,7 @@ import ast
 import base64
 import hashlib
 import importlib.util
+import importlib.machinery
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,31 @@ CANDIDATE = HERE/'source/nico/assessment_cpp_project_compiler.py'
 CANDIDATE_SHA = '89b2cf72c00bdbde55fcdb42efeeaaeb11ad28ddae4e16cd99c59f6d3e5316e8'
 PARENT = 'f0919654edd719059ea03319981b13f46ba70a88'
 PARENT_TREE = 'b9e200f62b9b2db9c6488326826ad8ae393418d0'
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
@@ -51,8 +77,10 @@ def embedded(module):
         and isinstance(last.value.func,ast.Name) and last.value.func.id=='run_project_compiler',
         'worker_entrypoint_shape_changed')
     scope={'__name__':'owned_embedded_compiler_definitions'}
-    exec(compile(tree,'owned_hash_bound_compiler_PROGRAM','exec'),scope)
-    return scope['_dependency_populations']
+    definitions=ast.unparse(tree).encode('utf-8')
+    loaded=_import_verified_buffer('owned_hash_bound_compiler_PROGRAM',definitions,
+        'owned_embedded_compiler_definitions',scope)
+    return loaded._dependency_populations
 
 def fixtures():
     digest='1'*64
@@ -113,7 +141,9 @@ def equivalence(runner,prepared):
     candidate.__file__=str(CANDIDATE)
     sys.modules[candidate.__name__]=candidate
     # VerifiedLoader also binds inspect.getsource during PROGRAM construction.
-    runner.VerifiedLoader(CANDIDATE,CANDIDATE_SHA).exec_module(candidate)
+    loader=runner.VerifiedLoader(CANDIDATE,CANDIDATE_SHA)
+    loader.name=candidate.__name__
+    loader.exec_module(candidate)
     pairs=[('module',base._dependency_populations,candidate._dependency_populations),
            ('PROGRAM',embedded(base),embedded(candidate))]
     request=base.project_compiler_request(prepared['database'],prepared['targets'],prepared['snapshot'],extended_budget=True)
@@ -261,8 +291,8 @@ def main():
     sys.addaudithook(audit)
     raw=bound(RUNNER,RUNNER_SHA);bound(BASE_SOURCE,BASE_SHA);bound(CANDIDATE,CANDIDATE_SHA)
     require(importlib.util.find_spec('requests') is not None,'verified_decoder_dependency_missing')
-    runner=types.ModuleType('owned_bound_static_runner');runner.__file__=str(RUNNER);sys.modules[runner.__name__]=runner
-    exec(compile(raw,str(RUNNER),'exec'),runner.__dict__)
+    runner=_import_verified_buffer(RUNNER,raw,'owned_bound_static_runner')
+    sys.modules[runner.__name__]=runner
     prepared=runner.prepare(runner.parser().parse_args(['--mode','plan','--library-revision','f091']))
     require(prepared['library']['selected_library_head']==PARENT and prepared['library']['selected_library_tree']==PARENT_TREE,
             'expected_f091_parent_changed')

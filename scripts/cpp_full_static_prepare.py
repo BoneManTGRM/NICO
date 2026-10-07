@@ -6,6 +6,8 @@ No CLI, provider transport, image load or native execution path is implemented.
 """
 from __future__ import annotations
 
+import importlib.machinery, importlib.util
+
 import argparse
 
 import base64
@@ -58,6 +60,32 @@ MAX_FILE = 64 * 1024 * 1024
 
 MAX_META = 8 * 1024 * 1024
 
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
+
 class PreparationRejected(ValueError):
     pass
 
@@ -103,13 +131,10 @@ def regular(path, maximum=MAX_FILE, digest=None, size=None):
 
 def module_from_verified_buffer(path, digest, label):
     raw = regular(path, digest=digest)
-    module = types.ModuleType(label)
-    module.__file__ = str(Path(path).absolute())
+    filename = str(Path(path).absolute())
     source = raw.decode('utf-8')
-    linecache.cache[module.__file__] = (len(raw), None, source.splitlines(True), module.__file__)
-    # Exactly the checked buffer is executed; main guards remain inactive.
-    exec(compile(raw, module.__file__, 'exec'), module.__dict__)
-    return module
+    linecache.cache[filename] = (len(raw), None, source.splitlines(True), filename)
+    return _import_verified_buffer(filename, raw, label)
 
 def assert_current_transport(records, pins, *, expected_operation, expected_preparer):
     hexadecimal(expected_operation, 40, 'expected_operation')

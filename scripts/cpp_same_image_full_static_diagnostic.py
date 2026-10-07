@@ -7,6 +7,8 @@ Every stage call is an unchanged selected-scope invoke in a fresh CP311 process.
 """
 from __future__ import annotations
 
+import importlib.machinery, importlib.util
+
 import argparse
 import hashlib
 import json
@@ -59,6 +61,32 @@ CREDENTIAL_NAMES = (
     'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_URL',
 )
 
+
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
 
 class CallerRejected(ValueError):
     """Only safe fixed codes are printed; private receipts retain other details."""
@@ -133,12 +161,9 @@ def write_private(path, value):
 
 def module_buffer(path, raw, label):
     """Execute precisely one checked public source buffer; no cached imports."""
-    module = types.ModuleType(label)
-    module.__file__ = str(path)
     source = raw.decode('utf-8')
     linecache.cache[str(path)] = (len(raw), None, source.splitlines(True), str(path))
-    exec(compile(raw, str(path), 'exec'), module.__dict__)
-    return module
+    return _import_verified_buffer(path, raw, label)
 
 
 def span(rows, name, function):
@@ -167,15 +192,20 @@ def source_bindings(args, helper):
                     'operation_git_entry')
             blobs[name.decode()] = (mode, blob)
     selected_paths = dict(SOURCE_PATHS)
-    sample_mode = getattr(args, 'fallback_capacity_sample', None) is True
+    sample_mode = (getattr(args, 'fallback_capacity_sample', None) is True
+                   or getattr(args, 'fallback_parallel_pair', None) is True)
     if sample_mode:
         selected_paths['sample'] = 'scripts/cpp_fallback_capacity_sample.py'
+    if getattr(args, 'fallback_parallel_pair', None) is True:
+        selected_paths['parallel_pair'] = 'scripts/cpp_fallback_parallel_pair.py'
     expected = {'caller': args.expected_caller_sha256, 'scope': args.expected_scope_sha256,
                 'prepare': args.expected_prepare_sha256, 'preparer': args.expected_preparer_sha256,
                 'exporter': args.expected_exporter_sha256, 'verifier': VERIFIER_SHA,
                 'wheel_manifest': WHEEL_MANIFEST_SHA, 'image_helper': HELPER_SHA}
     if sample_mode:
         expected['sample'] = args.expected_sample_sha256
+    if getattr(args, 'fallback_parallel_pair', None) is True:
+        expected['parallel_pair'] = args.expected_pair_sha256
     rows, buffers = {}, {}
     for key, name in selected_paths.items():
         digest = hexadecimal(expected[key], 64, 'expected_source_sha')
@@ -432,6 +462,9 @@ def entry_arguments():
     parser.add_argument('--expected-proof-bytes', type=int)
     parser.add_argument('--fallback-capacity-sample', action='store_const', const=True, default=None)
     parser.add_argument('--expected-sample-sha256')
+    parser.add_argument('--fallback-parallel-pair', action='store_const', const=True, default=None)
+    parser.add_argument('--expected-pair-sha256')
+    parser.add_argument('--pair-outer-deadline-monotonic', type=float)
     return parser.parse_args()
 
 
@@ -443,7 +476,17 @@ def normalize(args):
     for name in ('expected_caller_sha256', 'expected_scope_sha256', 'expected_prepare_sha256',
                  'expected_preparer_sha256', 'expected_exporter_sha256', 'expected_proof_sha256'):
         hexadecimal(getattr(args, name, None), 64, 'expected_digest_argument')
-    if getattr(args, 'fallback_capacity_sample', None) is True:
+    pair_mode = getattr(args, 'fallback_parallel_pair', None) is True
+    require(not (pair_mode and getattr(args, 'fallback_capacity_sample', None) is True), 'exclusive_diagnostic_modes')
+    if pair_mode:
+        hexadecimal(getattr(args, 'expected_pair_sha256', None), 64, 'expected_pair_source_digest')
+        deadline = getattr(args, 'pair_outer_deadline_monotonic', None)
+        require(type(deadline) is float and 0 < deadline - time.monotonic() <= 155 * 60,
+                'pair_authoritative_outer_deadline')
+    else:
+        require(getattr(args, 'expected_pair_sha256', None) is None
+            and getattr(args, 'pair_outer_deadline_monotonic', None) is None, 'pair_source_without_pair_mode')
+    if getattr(args, 'fallback_capacity_sample', None) is True or pair_mode:
         hexadecimal(getattr(args, 'expected_sample_sha256', None), 64, 'expected_sample_source_digest')
     else:
         require(getattr(args, 'expected_sample_sha256', None) is None, 'sample_source_without_sample_mode')
@@ -695,7 +738,7 @@ def sample_inputs(args):
     return inputs, refs
 
 
-def reconstruct_sample_request(prepared, inputs, sample):
+def reconstruct_sample_request(prepared, inputs, sample, *, full_only=False):
     """Use the actual verified f091+89 constructors before any native dispatch."""
     from nico.assessment_cpp_project_compiler import project_compiler_request
     from nico.assessment_cpp_static_environment import environment_request, validate_environment
@@ -717,6 +760,15 @@ def reconstruct_sample_request(prepared, inputs, sample):
             and len(primary_request['generated_files']) == 143
             and full_request['limits'] == {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 2},
             'sample_full_request_population_and_limits')
+    if full_only:
+        return primary_request, full_request, {
+            'compiler_request_sha256': sha(canonical(compiler_request)),
+            'environment_request_sha256': sha(canonical(env_request)),
+            'primary_request_sha256': sha(canonical(primary_request)),
+            'full_fallback_request_sha256': sha(canonical(full_request)),
+            'full_required_fallback_contexts': 576, 'full_request_bound_before_selection': True,
+            'no_primary_native_execution': True, 'full_header_source_population': len(full_request['header_source_targets']),
+            'full_header_generated_population': len(full_request['header_generated_files'])}
     selected_request, binding = sample.select_sample(full_request, inputs['fallback'],
         expected_fallback_sha256=SAMPLE_INPUTS['fallback']['sha256'], prepared_summary=prepared['summary'])
     require(selected_request['contexts'] == [full_request['contexts'][index] for index in SAMPLE_INDICES]
@@ -747,10 +799,10 @@ def sample_source_buffers(args):
     return buffers
 
 
-def retain_sample_envelope(output, request, binding):
+def retain_sample_envelope(output, request, binding, *, pair_envelope=None):
     require(output.absolute() == output.resolve(strict=True) and output.is_dir()
             and output.stat().st_mode & 0o077 == 0, 'private_sample_envelope_directory')
-    raw = canonical({'request': request, 'binding': binding})
+    raw = canonical({'request': request, 'binding': binding} if pair_envelope is None else pair_envelope)
     require(0 < len(raw) <= MAX_META, 'sample_envelope_retention_bound')
     path = output / 'sample-envelope.json'
     with path.open('xb') as stream:
@@ -762,7 +814,7 @@ def retain_sample_envelope(output, request, binding):
     return raw, reference
 
 
-def invoke_capacity_sample(args, prepared, target, output, sample):
+def invoke_capacity_sample(args, prepared, target, output, sample, *, pair_arm=None):
     """Same private static boundary, only the four-context collector is dispatched."""
     import base64
     from uuid import uuid4
@@ -789,7 +841,8 @@ def invoke_capacity_sample(args, prepared, target, output, sample):
         'input_operation': dict(SAMPLE_INPUT_RUN), 'request_binding': None, 'program_binding': None,
         'sample_binding': None, 'sample_envelope': None, 'fallback_evidence': None, 'telemetry': None, 'sample_analysis': None,
         'resource_profile': profile, 'limits': {'stage_execution_seconds': 1020, 'stage_wall_seconds': 1030,
-            'fallback_wall_seconds': 480, 'fallback_case_seconds': 120, 'fallback_parallel': 2,
+            'fallback_wall_seconds': 480, 'fallback_case_seconds': 120,
+            'fallback_parallel': 2 if pair_arm is None else pair_arm['envelope']['diagnostic_parallel'],
             'cpus': '4', 'memory_bytes': 12884901888, 'pids': '256', 'tmpfs_bytes': 9663676416},
         'declared_api_wall_seconds': 1030, 'independent1030_hardwall_supervisor_present': False,
         'primary_native_execution': False, 'compiled': False, 'tests_executed': False,
@@ -843,15 +896,31 @@ def invoke_capacity_sample(args, prepared, target, output, sample):
         checkpoint()
         inputs, refs = span(intervals, 'exact_retained_a583_sample_inputs', lambda: sample_inputs(args))
         result['input_artifacts'] = refs
-        primary_request, request, binding, request_binding = span(intervals, 'reconstruct_full576_before_selection',
-            lambda: reconstruct_sample_request(prepared, inputs, sample))
+        if pair_arm is None:
+            primary_request, request, binding, request_binding = span(intervals, 'reconstruct_full576_before_selection',
+                lambda: reconstruct_sample_request(prepared, inputs, sample))
+        else:
+            require(getattr(args, 'fallback_parallel_pair', None) is True
+                and pair_arm['input_artifacts'] == refs, 'pair_arm_retained_inputs')
+            request, binding = sample.check_pair_envelope(pair_arm['envelope'])
+            primary_request, request_binding = pair_arm['primary_request'], pair_arm['request_binding']
+            require(args.pair_outer_deadline_monotonic - time.monotonic() >= STAGE_EXECUTION_SECONDS + 10,
+                    'pair_arm_outer_stage_fit')
+            deadline = min(deadline, args.pair_outer_deadline_monotonic - 10)
+            result['diagnostic_parallel_pair'] = True
+            result['pair_preflight_sha256'] = pair_arm['preflight_sha256']
         envelope_raw, envelope_reference = span(intervals, 'private_sample_envelope_retention',
-            lambda: retain_sample_envelope(output, request, binding))
+            lambda: retain_sample_envelope(output, request, binding,
+                pair_envelope=None if pair_arm is None else pair_arm['envelope']))
         result.update(request_binding=request_binding, sample_binding=binding, sample_envelope=envelope_reference)
         save()
-        program, program_binding = span(intervals, 'fixed_whole_source_PROGRAM_telemetry_binding',
-            lambda: sample.build_worker_program(PROGRAM, sample_source_buffers(args),
-                expected_sample_sha256=args.expected_sample_sha256))
+        if pair_arm is None:
+            program, program_binding = span(intervals, 'fixed_whole_source_PROGRAM_telemetry_binding',
+                lambda: sample.build_worker_program(PROGRAM, sample_source_buffers(args),
+                    expected_sample_sha256=args.expected_sample_sha256))
+        else:
+            program, program_binding = pair_arm['program'], pair_arm['program_binding']
+            require(sha(program.encode()) == program_binding['pair_program_sha256'], 'pair_same_program_bytes')
         result['program_binding'] = program_binding
         files = span(intervals, 'original_static_API_inputs', lambda: _inputs(
             {'targets': prepared['targets'], 'configuration': {'source_byte_limit': MAX_SOURCE_BYTES}}, target, checkpoint))
@@ -903,6 +972,8 @@ def invoke_capacity_sample(args, prepared, target, output, sample):
         allocation_ms = min(request['limits']['wall_seconds'] * 1000,
             int((deadline - time.monotonic()) * 1000) - (STAGE_WALL_SECONDS - STAGE_EXECUTION_SECONDS) * 1000)
         require(allocation_ms > 0, 'sample_shared_stage_deadline')
+        if pair_arm is not None:
+            require(allocation_ms == 480000, 'pair_exact_fallback_allocation')
         result['fallback_allocation_ms'] = allocation_ms
         save()
         observed = observe('fallback-capacity-sample', ['docker', 'exec', '--user=' + ANALYSIS_USER,
@@ -920,14 +991,19 @@ def invoke_capacity_sample(args, prepared, target, output, sample):
             'with os.fdopen(fd,"rb") as f: b=f.read(8388609)\n'
             'assert len(b)==s.st_size<=8388608\n'
             'sys.stdout.buffer.write(b)\n')
+        if pair_arm is not None:
+            require(sidecar_program.count('/work/analysis/capacity-sample-telemetry.json') == 1, 'pair_sidecar_program')
+            sidecar_program = sidecar_program.replace('/work/analysis/capacity-sample-telemetry.json', sample.SIDECAR)
         telemetry = observe('fallback-capacity-telemetry', ['docker', 'exec', '--user=' + ANALYSIS_USER,
             name, 'python3', '-I', '-S', '-c', sidecar_program], maximum=MAX_META, seconds=10,
             artifact=True, must_succeed=False)
         result['telemetry'] = result['operations'][-1]['output_artifact']
         require(observed['exit_code'] == 0 and not observed['timed_out'] and not observed['output_truncated'],
                 'sample_collector_native_output_incomplete')
-        proof = span(intervals, 'original_sample_native_validator', lambda: validate_clang_fallback(
-            observed['output'], request, primary_request, wall_budget_ms=allocation_ms))
+        proof = span(intervals, 'original_sample_native_validator', lambda:
+            validate_clang_fallback(observed['output'], request, primary_request, wall_budget_ms=allocation_ms)
+            if pair_arm is None else sample.validate_pair_native(observed['output'], pair_arm['envelope'],
+                primary_request, wall_budget_ms=allocation_ms))
         result['sample_analysis'] = {'required_contexts': proof['required_contexts'],
             'attempted_contexts': proof['attempted_contexts'], 'analyzed_contexts': proof['analyzed_contexts'],
             'complete_for_four_context_sample': proof['complete'], 'findings': len(proof['findings']),
@@ -935,9 +1011,11 @@ def invoke_capacity_sample(args, prepared, target, output, sample):
             'whole576_acceptance_credit': False}
         require(telemetry['exit_code'] == 0 and not telemetry['timed_out'] and not telemetry['output_truncated'],
                 'sample_telemetry_sidecar_unavailable')
-        telemetry_proof = span(intervals, 'closed_sample_telemetry_validator', lambda: sample.validate_sample_telemetry(
-            telemetry['output'], {'request': request, 'binding': binding}, observed['output'],
-            actual_wall_budget_ms=allocation_ms))
+        telemetry_proof = span(intervals, 'closed_sample_telemetry_validator', lambda:
+            sample.validate_sample_telemetry(telemetry['output'], {'request': request, 'binding': binding},
+                observed['output'], actual_wall_budget_ms=allocation_ms) if pair_arm is None
+            else sample.validate_pair_telemetry(telemetry['output'], pair_arm['envelope'], observed['output'],
+                actual_wall_budget_ms=allocation_ms))
         require(isinstance(telemetry_proof, dict), 'sample_telemetry_validation_shape')
         result['telemetry_validation'] = telemetry_proof
         result['status'] = 'FOUR_CONTEXT_DIAGNOSTIC_CAPTURED'
@@ -970,11 +1048,131 @@ def invoke_capacity_sample(args, prepared, target, output, sample):
     return result
 
 
+
+def invoke_capacity_pair(args, prepared, target, output, parallel_pair):
+    """Preflight one complete immutable pair, then dispatch fresh containers in order."""
+    from nico.assessment_cpp_clang_fallback import PROGRAM
+    from nico.assessment_cpp_project_static import STAGE_EXECUTION_SECONDS, STAGE_WALL_SECONDS
+    from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for
+    require(getattr(args, 'fallback_parallel_pair', None) is True and not output.exists()
+        and output.is_relative_to(args.output / 'context/runs'), 'pair_new_private_output')
+    output.mkdir(mode=0o700, parents=True)
+    result = {'schema': 'nico.private.fallback_capacity_sample_diagnostic.v1', 'status': 'UNPROVEN',
+        'diagnostic_parallel_pair': True, 'phase': 'pair_preflight', 'arms': [], 'comparison': None,
+        'primary_native_execution': False, 'compiled': False, 'tests_executed': False,
+        'full_native_qualified': False, 'production_qualified': False, 'assessment_completed': False,
+        'static_collection_complete': False, 'full_required_fallback_contexts': 576,
+        'selected_context_indices': list(parallel_pair.SELECTED_INDICES), 'cache_state': 'UNKNOWN',
+        'stage_seconds_per_arm': 1020, 'fallback_seconds_per_arm': 480, 'case_seconds': 120,
+        'job_outer_budget_minutes': 155, 'pair_outer_deadline_monotonic': args.pair_outer_deadline_monotonic,
+        'outer_deadline_scope': 'RUNNER_FIRST_SHELL_MONOTONIC_GUARD_PLUS_EXISTING_GHA_JOB_TIMEOUT',
+        'single_pair_only': True, 'error': None}
+    path = output / 'sample-diagnostic-result.json'
+    write_private(path, result)
+    try:
+        inputs, refs = sample_inputs(args)
+        primary_request, full_request, request_binding = reconstruct_sample_request(
+            prepared, inputs, parallel_pair.SAMPLE, full_only=True)
+        retained = decode(inputs['fallback'])
+        require(retained.get('request_sha256') == sha(canonical(full_request))
+            and len(retained.get('records', [])) == 576, 'pair_independent_retained_request')
+        by_index = {row['index']: row for row in full_request['contexts']}
+        expected = []
+        witnesses = []
+        for index in parallel_pair.SELECTED_INDICES:
+            # The hash-pinned historical record independently supplies ID and
+            # exact invocation; the reconstructed request supplies original
+            # index and immutable dependency obligations. Neither index alone
+            # nor a new request independently establishes context identity.
+            record, context = retained['records'][index], by_index[index]
+            require(type(context['index']) is int and context['index'] == index
+                and record['context_id'] == context['context_id']
+                and record['invocation'] == context['invocation']
+                and record['dropped_arguments'] == context['dropped_arguments'],
+                'pair_independent_heavy_context_binding')
+            require(type(context.get('analysis_file')) is str
+                and (context['analysis_file'].startswith('/work/analysis/generated-baseline/') if index == 114
+                     else context['analysis_file'].startswith('/work/source/')), 'pair_heavy_origin_binding')
+            identity = parallel_pair.selected_identity(context)
+            identity.update(context_id=record['context_id'], invocation_sha256=sha(canonical(record['invocation'])))
+            expected.append(identity)
+            witnesses.append({'original_index': index, 'context_id': record['context_id'],
+                'invocation_sha256': identity['invocation_sha256'], 'analysis_file': context['analysis_file'],
+                'retained_record_sha256': sha(canonical(record)),
+                'reconstructed_context_sha256': sha(canonical(context))})
+        profile = BASELINE_QUALIFICATION_PROFILE
+        resources = resources_for(profile)
+        execution_identity = dict(parallel_pair.EXECUTION_IDENTITY)
+        require(execution_identity['image_digest'] == FIXED_IMAGE
+            and execution_identity['isolation'] == profile
+            and execution_identity['cpu'] == int(resources['cpus'])
+            and execution_identity['memory_bytes'] == resources['memory_bytes']
+            and STAGE_EXECUTION_SECONDS == 1020 and STAGE_WALL_SECONDS == 1030,
+                'pair_fixed_actual_resource_profile')
+        envelopes, binding = parallel_pair.preflight_pair(full_request, inputs['fallback'],
+            expected_fallback_sha256=SAMPLE_INPUTS['fallback']['sha256'],
+            prepared_summary=prepared['summary'], expected_selected=expected,
+            execution_identity=execution_identity)
+        program, program_binding = parallel_pair.build_worker_program(PROGRAM, sample_source_buffers(args),
+            expected_sample_sha256=args.expected_sample_sha256, expected_pair_sha256=args.expected_pair_sha256)
+        require(len(envelopes) == 2 and envelopes[0]['request'] == envelopes[1]['request']
+            and envelopes[0]['binding'] == envelopes[1]['binding'], 'pair_complete_preflight_equivalence')
+        # Each arm owns its unchanged 1020-second stage. Do not reinterpret
+        # that limit as the complete pair allocation or restart outer time.
+        cleanup_reserve_seconds = 20
+        require(args.pair_outer_deadline_monotonic - time.monotonic() >=
+            2 * STAGE_EXECUTION_SECONDS + cleanup_reserve_seconds, 'pair_complete_outer_fit')
+        preflight = {'schema': 'nico.private.parallel_pair_complete_preflight.v1',
+            'input_artifacts': refs, 'request_binding': request_binding, 'selection': binding,
+            'identity_witnesses': witnesses, 'envelopes': envelopes, 'program_binding': program_binding,
+            'same_worker_program_sha256': sha(program.encode()), 'stage_seconds_per_arm': 1020,
+            'pair_stage_seconds': 2040, 'cleanup_reserve_seconds': cleanup_reserve_seconds,
+            'outer_seconds_remaining_at_preflight': args.pair_outer_deadline_monotonic - time.monotonic(),
+            'analyzer_allocation_ms_each_arm': 480000, 'full_native_qualified': False,
+            'production_qualified': False}
+        preflight_ref = write_private(output / 'pair-complete-preflight.json', preflight)
+        result.update(phase='pair_arms', preflight=preflight_ref,
+            program_binding=program_binding, sample_binding=binding, request_binding=request_binding)
+        write_private(path, result)
+        for envelope in envelopes:
+            parallel = envelope['diagnostic_parallel']
+            remaining_arms = 2 - len(result['arms'])
+            require(args.pair_outer_deadline_monotonic - time.monotonic() >=
+                remaining_arms * STAGE_EXECUTION_SECONDS + cleanup_reserve_seconds,
+                'pair_remaining_outer_fit')
+            arm_output = output / ('parallel-' + str(parallel))
+            arm = {'primary_request': primary_request, 'request_binding': request_binding,
+                'envelope': envelope, 'program': program, 'program_binding': program_binding,
+                'input_artifacts': refs, 'preflight_sha256': preflight_ref['sha256']}
+            diagnostic = invoke_capacity_sample(args, prepared, target, arm_output, parallel_pair, pair_arm=arm)
+            result['arms'].append({'diagnostic_parallel': parallel,
+                'directory': arm_output.relative_to(output).as_posix(),
+                'result': diagnostic})
+            write_private(path, result)
+            require(diagnostic['status'] == 'FOUR_CONTEXT_DIAGNOSTIC_CAPTURED'
+                and diagnostic['cleanup_verified'] is True
+                and diagnostic['fallback_allocation_ms'] == 480000, 'pair_arm_capture_or_cleanup_failed')
+        raw_outputs = []
+        for arm in result['arms']:
+            ref = arm['result']['fallback_evidence']
+            raw_outputs.append(regular(output / arm['directory'] / ref['path'], 32 * 1024 * 1024,
+                ref['sha256'], ref['bytes']))
+        result['comparison'] = parallel_pair.compare_pair_outputs(*raw_outputs, envelopes)
+        result.update(status='PARALLEL_PAIR_DIAGNOSTIC_CAPTURED', phase='pair_returned')
+    except (Exception, KeyboardInterrupt) as error:
+        result['error'] = {'type': type(error).__name__, 'message': str(error)}
+        result['status'] = 'UNPROVEN'
+    finally:
+        write_private(path, result)
+    return result
+
+
 def sample_worker(settings_path, settings_raw, settings):
     require(settings.get('variant') == 'candidate' and settings.get('parent_pid') == os.getppid(),
             'connected_sample_worker')
     args = normalize(argparse.Namespace(**settings['arguments']))
-    require(args.fallback_capacity_sample is True, 'sample_worker_mode')
+    require(args.fallback_capacity_sample is True or getattr(args, 'fallback_parallel_pair', None) is True,
+            'sample_worker_mode')
     args.variant = 'candidate'
     context = args.output / 'context'
     require(context.is_dir() and context.stat().st_mode & 0o077 == 0
@@ -1013,8 +1211,14 @@ def sample_worker(settings_path, settings_raw, settings):
             lambda: dependencies(args, verifier))
         process_receipt['sample_invocation_attempted'] = True
         write_private(early, process_receipt)
-        diagnostic = span(intervals, 'actual_four_context_sample_and_retention', lambda:
-            invoke_capacity_sample(args, prepared, target, output, sample))
+        if getattr(args, 'fallback_parallel_pair', None) is True:
+            parallel_pair = module_buffer(args.operation_source / 'scripts/cpp_fallback_parallel_pair.py',
+                buffers['parallel_pair'], 'exact_parallel_pair')
+            diagnostic = span(intervals, 'actual_preflighted_parallel_pair_and_retention', lambda:
+                invoke_capacity_pair(args, prepared, target, output, parallel_pair))
+        else:
+            diagnostic = span(intervals, 'actual_four_context_sample_and_retention', lambda:
+                invoke_capacity_sample(args, prepared, target, output, sample))
         process_receipt['dependency_after_sample'] = span(intervals, 'dependency_after_sample_invocation',
             lambda: dependencies(args, verifier))
         process_receipt['target_verification_after_sample'] = span(intervals, 'full3031_target_after_sample', lambda:
@@ -1034,7 +1238,8 @@ def sample_worker(settings_path, settings_raw, settings):
 
 def sample_parent(args):
     args = normalize(args)
-    require(args.fallback_capacity_sample is True and not args.output.exists(), 'new_sample_parent_output')
+    pair_mode = getattr(args, 'fallback_parallel_pair', None) is True
+    require((args.fallback_capacity_sample is True or pair_mode) and not args.output.exists(), 'new_sample_parent_output')
     args.output.mkdir(mode=0o700)
     intervals = []
     receipt = {'schema': 'nico.private.fallback_capacity_sample_caller.v1', 'status': 'UNPROVEN',
@@ -1046,6 +1251,10 @@ def sample_parent(args):
         'parent_cpu_is_analyzer_cpu': False, 'overlapping_intervals_additive': False,
         'full_native_qualified': False, 'production_qualified': False, 'assessment_completed': False,
         'static_collection_complete': False, 'historical_image_recovered': False, 'error': None}
+    if pair_mode:
+        receipt.update(diagnostic_parallel_pair=True, selected_context_indices=[58, 114, 153, 154],
+            single_sample_only=False, pair_analyzer_parallelism=[2, 4], stage_execution_seconds_per_arm=1020,
+            pair_outer_deadline_monotonic=args.pair_outer_deadline_monotonic)
     write_private(args.output / 'sample-caller-receipt.json', receipt)
     try:
         helper_path = args.operation_source / SOURCE_PATHS['image_helper']
@@ -1060,6 +1269,8 @@ def sample_parent(args):
             'scope_sha256': rows['scope']['sha256'], 'sample_sha256': rows['sample']['sha256'],
             'prepare_sha256': rows['prepare']['sha256'], 'preparer_sha256': rows['preparer']['sha256'],
             'exporter_sha256': rows['exporter']['sha256'], 'all_selected_files_actual_git_blob_bound': True}
+        if pair_mode:
+            receipt['source_binding']['parallel_pair_sha256'] = rows['parallel_pair']['sha256']
         context = args.output / 'context'
         context.mkdir(mode=0o700)
         for key, name in (('caller', 'cpp_same_image_full_static_diagnostic.py'), ('scope', 'cpp_static_runner_scope.py')):
@@ -1078,6 +1289,8 @@ def sample_parent(args):
         # not suggest that two new variants ran or that cache equivalence holds.
         receipt['image_binding'].pop('same_selected_image_for_both_variants', None)
         receipt['image_binding']['single_verified_selected_image_for_sample'] = True
+        if pair_mode:
+            receipt['image_binding']['same_selected_image_for_both_diagnostic_arms'] = True
         receipt['target_binding'] = span(intervals, 'full3031_git_checkout_verification_and_data_only_copy', lambda:
             copy_target(args, helper, scope))
         receipt['dependency_before_process'] = span(intervals, 'dependency_before_fresh_sample_process', lambda: dependencies(args, verifier))
@@ -1090,8 +1303,12 @@ def sample_parent(args):
         write_private(args.output / 'sample-caller-receipt.json', receipt)
         argv = [sys.executable, '-I', '-B', str(context / 'cpp_same_image_full_static_diagnostic.py'),
                 '--worker-settings', str(settings_path)]
+        child_timeout = None
+        if pair_mode:
+            child_timeout = args.pair_outer_deadline_monotonic - time.monotonic() - 60
+            require(child_timeout > 0, 'pair_parent_remaining_outer_budget')
         process = span(intervals, 'fresh_candidate_sample_process', lambda:
-            subprocess.run(argv, capture_output=True, check=False, env=child_environment()))
+            subprocess.run(argv, capture_output=True, check=False, env=child_environment(), timeout=child_timeout))
         directory = context / 'runs/capacity-sample'
         row = {'id': 'capacity-sample', 'directory': str(directory), 'process_exit_code': process.returncode,
             'settings': settings, 'diagnostic_result': None, 'process_receipt': None,
@@ -1129,7 +1346,7 @@ def sample_parent(args):
     finally:
         write_private(args.output / 'sample-caller-receipt.json', receipt)
     print(json.dumps({'status': receipt['status'], 'sample_status': receipt['sample_status'],
-        'selected_context_indices': list(SAMPLE_INDICES), 'full_native_qualified': False, 'production_qualified': False}))
+        'selected_context_indices': receipt['selected_context_indices'], 'full_native_qualified': False, 'production_qualified': False}))
 
 
 def main():
@@ -1141,7 +1358,7 @@ def main():
         require(all(value is None for key, value in vars(args).items() if key != 'worker_settings'),
                 'worker_cli_is_exclusive')
         worker(path_value(args.worker_settings))
-    elif args.fallback_capacity_sample is True:
+    elif args.fallback_capacity_sample is True or args.fallback_parallel_pair is True:
         sample_parent(args)
     else:
         pair(args)

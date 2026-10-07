@@ -9,16 +9,44 @@ import base64
 import hashlib
 import json
 import os
+
+import importlib.machinery, importlib.util
 from pathlib import Path
 import sys
 import time
 import types
 
 sys.dont_write_bytecode = True
-ORIGINAL_SHA = '179b2ad78612d1560978e734dfb3b3f59e049344b42b0e3d45373a6d99e5b1c0'
+ORIGINAL_SHA = 'daad27799550a82955bdc69a3b067ce0722fb8669e25527d40298173b0bac417'
 MAX_MEMBER = 64 * 1024 * 1024
 MAX_RECEIPT = 8 * 1024 * 1024
 
+
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
 
 def require(ok, code):
     if not ok:
@@ -28,12 +56,9 @@ def require(ok, code):
 def original_module():
     path = Path(__file__).resolve().with_name('cpp_same_image_dependency_diagnostic.py')
     raw = path.read_bytes()
-    require(len(raw) == 17807 and hashlib.sha256(raw).hexdigest() == ORIGINAL_SHA,
+    require(len(raw) == 18904 and hashlib.sha256(raw).hexdigest() == ORIGINAL_SHA,
             'unchanged_complete_diagnostic_source')
-    result = types.ModuleType('unchanged_reviewed_ast_diagnostic')
-    result.__file__ = str(path)
-    exec(compile(raw, str(path), 'exec'), result.__dict__)
-    return result
+    return _import_verified_buffer(path, raw, 'unchanged_reviewed_ast_diagnostic')
 
 
 def retained_inputs(subject, root, pins):

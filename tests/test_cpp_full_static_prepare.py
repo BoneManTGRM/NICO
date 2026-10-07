@@ -14,7 +14,7 @@ import linecache
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE = REPO_ROOT / 'scripts/cpp_full_static_prepare.py'
-EXPECTED_PREPARE_SHA = '130d5515b35cb04d745c2c2e45d05f8c0594fd0b621e4e091200d762dcd7c494'
+EXPECTED_PREPARE_SHA = '7eeb8887310b40811798f227e9d2529a77ebc9fec02013fdc5f8d45b3e7aa581'
 SOURCE_RAW = SOURCE.read_bytes()
 if hashlib.sha256(SOURCE_RAW).hexdigest() != EXPECTED_PREPARE_SHA:
     raise AssertionError('reviewed_prepare_source_digest')
@@ -23,7 +23,7 @@ SUBJECT.__file__ = str(SOURCE)
 linecache.cache[str(SOURCE)] = (len(SOURCE_RAW), None, SOURCE_RAW.decode().splitlines(True), str(SOURCE))
 exec(compile(SOURCE_RAW, str(SOURCE), 'exec'), SUBJECT.__dict__)
 RUNNER_PATH = REPO_ROOT / 'scripts/cpp_static_runner_scope.py'
-EXPECTED_SELECTED_SCOPE_SHA = '4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0'
+EXPECTED_SELECTED_SCOPE_SHA = '4929fc0909a336006633dca732b729fb9bda0669eff2f3e09c13fe2093d161c9'
 RUNNER = SUBJECT.module_from_verified_buffer(RUNNER_PATH, EXPECTED_SELECTED_SCOPE_SHA,
                                              'owned_selected_14_definition_context')
 HEAD, PREPARER = 'a' * 40, 'b' * 64

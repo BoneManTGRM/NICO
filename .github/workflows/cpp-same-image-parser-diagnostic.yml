@@ -68,7 +68,7 @@ jobs:
             --outer "$RUNNER_TEMP/nico-parser-private-output/outer-receipt.json" \
             --worker "$RUNNER_TEMP/nico-parser-private-output/container-diagnostic.json" \
             --expected-source "${{ github.sha }}" \
-            --expected-driver-sha256 9435bb16672c2bca55a8c5c21451a8f20ba9baef1a674934affbe1974473132e \
+            --expected-driver-sha256 200ec0d2ebfe957c6e61e19d068dbb7ea9d926a54664dad3e50143ba92d3629c \
             --output parser-diagnostic-public/receipt.json
       - name: Retain only the new bounded diagnostic receipt
         if: always()

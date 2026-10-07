@@ -34,7 +34,7 @@ CALLER = load('owned_target_boundary_caller', ROOT / 'scripts/cpp_same_image_ful
 HELPER = load('owned_original_image_helper', ROOT / 'scripts/cpp_diagnostic_image_rebuild.py',
               '079e02d0d71bef281e760067a25e614b70be37bbf479705ee6e84ebf45dc8344')
 SCOPE = load('owned_selected_target_scope', ROOT / 'scripts/cpp_static_runner_scope.py',
-             '4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0')
+             '4929fc0909a336006633dca732b729fb9bda0669eff2f3e09c13fe2093d161c9')
 
 
 class TargetCheckoutBoundary(unittest.TestCase):

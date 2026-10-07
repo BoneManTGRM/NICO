@@ -5,6 +5,8 @@ import base64
 import hashlib
 import json
 import os
+
+import importlib.machinery, importlib.util
 from pathlib import Path, PurePosixPath
 import posixpath
 import re
@@ -20,6 +22,32 @@ HERE = Path(__file__).resolve().parent
 PACKAGE = HERE / 'cpp-parser-diagnostic-inputs'
 EVENTS = []
 
+
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
 
 def require(ok, code):
     if not ok:
@@ -115,13 +143,15 @@ def scopes(pins):
         tree = ast.fix_missing_locations(ast.Module(body=[path_node, parser], type_ignores=[]))
         scope = {'__builtins__': __builtins__, 're': re, 'posixpath': posixpath, 'shlex': shlex,
                  '__name__': 'owned_hash_bound_ast_' + name}
-        exec(compile(tree, 'actual_hash_bound_AST_' + name, 'exec'), scope)
-        pairs.append(scope['_dependency_populations'])
+        module = _import_verified_buffer('actual_hash_bound_AST_' + name,
+            ast.unparse(tree).encode('utf-8'), 'owned_hash_bound_ast_' + name, scope)
+        pairs.append(module._dependency_populations)
     node = function(sources['fixtures'], 'fixtures', pins['functions']['fixtures'])
     scope = {'__builtins__': __builtins__}
-    exec(compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])),
-                 'actual_hash_bound_owned_fixture_AST', 'exec'), scope)
-    return pairs, scope['fixtures']()
+    definitions = ast.unparse(ast.Module(body=[node], type_ignores=[])).encode('utf-8')
+    module = _import_verified_buffer('actual_hash_bound_owned_fixture_AST', definitions,
+        'owned_fixture_definitions', scope)
+    return pairs, module.fixtures()
 
 
 def inputs(root, pins):

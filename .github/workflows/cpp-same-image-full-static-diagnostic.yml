@@ -1,4 +1,4 @@
-name: Same Retrieved Image Four-Context Fallback Diagnostic
+name: Same Retrieved Image Bounded Parallelism Pair
 
 on:
   push:
@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/cpp-same-image-full-static-diagnostic.yml
       - scripts/cpp_same_image_full_static_diagnostic.py
+      - scripts/cpp_fallback_parallel_pair.py
+      - scripts/cpp_seal_diagnostic.mjs
       - scripts/cpp_fallback_capacity_sample.py
       - scripts/cpp_full_static_prepare.py
       - scripts/cpp_static_runner_scope.py
@@ -41,13 +43,17 @@ jobs:
       github.repository == 'BoneManTGRM/NICO' &&
       github.ref == 'refs/heads/diagnostic/v17-pinned-image-20261007' &&
       github.run_attempt == 1 &&
-      contains(github.event.head_commit.message, '[diagnostic-fallback-sample-v17]')
+      contains(github.event.head_commit.message, '[diagnostic-parallel-pair-v17]')
     runs-on: ubuntu-24.04
     # Existing authorized native-job cap. Stage/child limits stay in the API.
     timeout-minutes: 155
     env:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
+      - name: Start a bounded private retention context
+        run: |
+          umask 077
+          python -I -S -c 'import time;print(time.monotonic()+155*60)' > "$RUNNER_TEMP/nico-pair-outer-deadline"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
@@ -69,6 +75,9 @@ jobs:
           python-version: '3.11'
       - name: Run the diagnostic controls in the actual host interpreter
         run: |
+          python -I -B operation-source/tests/test_cpp_fallback_parallel_pair.py
+          python -I -B operation-source/tests/test_cpp_verified_buffer_loader.py
+          node operation-source/tests/test_cpp_seal_diagnostic.mjs
           python -I -B operation-source/tests/test_cpp_full_static_prepare.py
           python -I -B operation-source/tests/test_cpp_supported_diagnostic_route.py
           python -I -B operation-source/tests/test_verify_cpp_host_dependencies.py
@@ -114,13 +123,15 @@ jobs:
           --scratch "$RUNNER_TEMP/nico-static-private"
           --load-store-reserve-bytes 4294967296
           --fallback-capacity-sample
-      - name: Measure four original fallback contexts with the same image and limits
+      - name: Execute the single preflighted two-versus-four diagnostic pair
         run: |
           proof_sha="$(sha256sum "$RUNNER_TEMP/nico-static-dependency-proof.json" | cut -d ' ' -f 1)"
           proof_bytes="$(wc -c < "$RUNNER_TEMP/nico-static-dependency-proof.json")"
           "$RUNNER_TEMP/nico-static-venv/bin/python" -I -B \
             operation-source/scripts/cpp_same_image_full_static_diagnostic.py \
-            --fallback-capacity-sample \
+            --fallback-parallel-pair \
+            --expected-pair-sha256 b556ff5ce6bd5779d1cc50dcb63c64da082431677fbc490b2a331666886cb2a9 \
+            --pair-outer-deadline-monotonic "$(cat "$RUNNER_TEMP/nico-pair-outer-deadline")" \
             --expected-sample-sha256 6502680b08f124cfa417019647e7c42f873e7efa9017faa54efd52738cedfe1a \
             --operation-source operation-source --recipe-source recipe-source \
             --target-checkout frozen-target-checkout \
@@ -128,44 +139,43 @@ jobs:
             --dependency-proof "$RUNNER_TEMP/nico-static-dependency-proof.json" \
             --expected-proof-sha256 "$proof_sha" \
             --expected-proof-bytes "$proof_bytes" \
-            --expected-caller-sha256 1fc90d58f8da1ccfeedceda3195e31c799c238d84b32c37cd8c80ad968ded9e7 \
-            --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
-            --expected-prepare-sha256 130d5515b35cb04d745c2c2e45d05f8c0594fd0b621e4e091200d762dcd7c494 \
-            --expected-preparer-sha256 1fd194b24cbaa083d4f072e657470840020bc38862d5facdeee780c26148fff4 \
-            --expected-exporter-sha256 a20d4648eff93351d409ccdfbd4a7817f025b1d8c6e9bb311a6847b0d8b00466 \
+            --expected-caller-sha256 60cb95c66f6141f6eedbe16cbe57630c4f577e9be56117e3d0ac8cb324edb6ae \
+            --expected-scope-sha256 4929fc0909a336006633dca732b729fb9bda0669eff2f3e09c13fe2093d161c9 \
+            --expected-prepare-sha256 7eeb8887310b40811798f227e9d2529a77ebc9fec02013fdc5f8d45b3e7aa581 \
+            --expected-preparer-sha256 1a01cafdbb853d4adfcada53c992486a328bdf9929ffca7e74d56bf5e2795a4b \
+            --expected-exporter-sha256 cec7efee7ef688643a5b6d52396a7d4abde5a8ee98e38253de6e500da8df4cca \
             --expected-operation "${{ github.sha }}" \
-            --output "$RUNNER_TEMP/nico-static-private-output"
-      - name: Construct bounded evidence for this four-context sample only
+            --output "$RUNNER_TEMP/nico-static-private-output" \
+            > "$RUNNER_TEMP/nico-pair-command.log" 2>&1
+      - name: Retain only authenticated ciphertext
         if: always()
         run: |
-          receipt_path="$RUNNER_TEMP/nico-static-private-output/sample-caller-receipt.json"
-          receipt_arguments=(--missing-caller-receipt)
-          if [ -f "$receipt_path" ] && [ ! -L "$receipt_path" ]; then
-            receipt_sha="$(sha256sum "$receipt_path" | cut -d ' ' -f 1)"
-            receipt_arguments=(--expected-caller-receipt-sha256 "$receipt_sha")
+          umask 077
+          mkdir -p "$RUNNER_TEMP/nico-static-private-output" sealed-diagnostic
+          if [ -f "$RUNNER_TEMP/nico-pair-command.log" ]; then
+            cp "$RUNNER_TEMP/nico-pair-command.log" "$RUNNER_TEMP/nico-static-private-output/command.log"
           fi
-          python -I -B operation-source/scripts/cpp_full_static_diagnostic_export.py \
-            --sample-mode \
-            --caller-source operation-source/scripts/cpp_same_image_full_static_diagnostic.py \
-            --sample-source operation-source/scripts/cpp_fallback_capacity_sample.py \
-            --expected-sample-sha256 6502680b08f124cfa417019647e7c42f873e7efa9017faa54efd52738cedfe1a \
-            --caller-receipt "$receipt_path" \
-            "${receipt_arguments[@]}" \
-            --expected-current-git-head "${{ github.sha }}" \
-            --expected-effective-fallback-baseline f0919654edd719059ea03319981b13f46ba70a88 \
-            --expected-compiler-overlay-path nico/assessment_cpp_project_compiler.py \
-            --expected-compiler-overlay-sha256 89b2cf72c00bdbde55fcdb42efeeaaeb11ad28ddae4e16cd99c59f6d3e5316e8 \
-            --expected-exporter-sha256 a20d4648eff93351d409ccdfbd4a7817f025b1d8c6e9bb311a6847b0d8b00466 \
-            --expected-caller-sha256 1fc90d58f8da1ccfeedceda3195e31c799c238d84b32c37cd8c80ad968ded9e7 \
-            --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
-            --expected-image-config-digest sha256:2de94c121db7ae46df5415a40b33cd2d057fcc3b7bf9aa9d51756ecb4412447e \
-            --output fallback-capacity-diagnostic-public
-      - name: Retain the fresh bounded four-context evidence
+          tar -czf "$RUNNER_TEMP/nico-pair-private.tar.gz" -C "$RUNNER_TEMP/nico-static-private-output" .
+          cat > "$RUNNER_TEMP/nico-pair-recipient.pem" <<'PUBLIC_KEY'
+          -----BEGIN PUBLIC KEY-----
+          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAuhPiFLSnOSzlBaIAZETc
+          Iwzz8Po9WktWrIMFSMb4/Hcx2b/KH/Q6U31QmBIn7x4bQFN0xa3hIXOb20tkeI+P
+          0D8GMJ7zMKWBZV2ByBGAYXufmBK287vX4NlnzVqxQ9pcr5e5h13nnV8pMD+7iw4w
+          M2MAYSb8s7YEXzD+nmv6IFDq9IbXJRzW9Ax/NQV36fOAeiQTiL77ptZngpPfQaES
+          nXv33oF35+w+27tesX+nezQrQJ9R0MQouoG5Z3lDM4qXcDwNpx79RRnuDKH2pVde
+          9ichHKbhoyeY/U1NU0BvG49QiN8tBLMwfq/3aTau6o/uN5rCexOY5hg8a1LlqKad
+          DC117BZcrrYOA97A7OaOYblPDTKgnxOgxYYnBEweBW8a/b0pe/qjMs4JSE4kXFty
+          Lz/2Pz8dEsOPwe0ypVxk4/RtQxpREdA/mcF8iYRXxgWVsHAyavt62S9CwO2VUeTZ
+          2/LuiV54TRUP2X9iUgXSYzJbZbx2Vu1hXWXfKIEsKqa5AgMBAAE=
+          -----END PUBLIC KEY-----
+          PUBLIC_KEY
+          node operation-source/scripts/cpp_seal_diagnostic.mjs "$RUNNER_TEMP/nico-pair-private.tar.gz" sealed-diagnostic/evidence.sealed "$RUNNER_TEMP/nico-pair-recipient.pem"
+      - name: Retain the private pair ciphertext
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: cpp-fallback-capacity-sample-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: fallback-capacity-diagnostic-public/
-          compression-level: 6
+          name: cpp-parallel-pair-sealed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: sealed-diagnostic/evidence.sealed
+          compression-level: 0
           retention-days: 30
           if-no-files-found: error

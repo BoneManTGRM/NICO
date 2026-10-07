@@ -3,6 +3,8 @@
 This helper never imports NICO, executes target code, invokes Docker, downloads
 anything, or copies an opaque caller receipt. Root must review and execute it.
 """
+
+import importlib.machinery, importlib.util
 from pathlib import Path, PurePosixPath
 import argparse
 import base64
@@ -113,6 +115,32 @@ SAFE_PARENT_EXCEPTION_TYPES = frozenset({
     'TimeoutExpired',
 })
 
+
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
 
 class Rejected(ValueError):
     pass
@@ -832,7 +860,9 @@ def sample_source_validation(caller_source, sample_source, expected):
     selected = ast.Module(body=[nodes[name] for name in names], type_ignores=[])
     # Verified source bytes supply definitions only: no imports, module body,
     # PROGRAM builder, native entry, resource snapshots or filesystem calls.
-    exec(compile(selected, str(sample_source), 'exec'), namespace)
+    definitions = ast.unparse(selected).encode('utf-8')
+    namespace = _import_verified_buffer(sample_source, definitions,
+        'verified_sample_projection_definitions', namespace).__dict__
     return namespace, frozenset(codes), {'caller_source_sha256': digest(caller_raw),
         'sample_source_sha256': digest(sample_raw), 'caller_fixed_literal_catalog_sha256': digest(canonical(sorted(codes))),
         'checked_source_buffers_only': True, 'native_or_target_execution_by_exporter': False,

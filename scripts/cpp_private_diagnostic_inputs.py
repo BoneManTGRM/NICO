@@ -7,6 +7,8 @@ This program does not load an image, create a container, or execute an analyzer.
 """
 from __future__ import annotations
 
+import importlib.machinery, importlib.util
+
 import argparse
 import ast
 import datetime as dt
@@ -43,9 +45,9 @@ MAX_REDIRECTS = 2
 REQUEST_SECONDS = 30
 SOURCE_PINS = {
     'scripts/cpp_private_parser_worker.py':
-        'e0ec54f0396dfb4a3180c716f212c3fe344529e8890932a51c68ee87ba55d0bd',
+        '9a12d14dd5ab388bc1f007b54acb343f755870c2ffc338ca2f617a0d8422e3b8',
     'scripts/cpp_same_image_dependency_diagnostic.py':
-        '179b2ad78612d1560978e734dfb3b3f59e049344b42b0e3d45373a6d99e5b1c0',
+        'daad27799550a82955bdc69a3b067ce0722fb8669e25527d40298173b0bac417',
     'scripts/cpp_diagnostic_image_rebuild.py':
         '079e02d0d71bef281e760067a25e614b70be37bbf479705ee6e84ebf45dc8344',
     'scripts/cpp_diagnostic_image_inputs.json':
@@ -58,7 +60,7 @@ SOURCE_PINS = {
     'scripts/cpp-parser-diagnostic-inputs/source_path_evidence.py':
         'bc26c3bb86c0673793c118f969234ece3bc4939325af3703b2da69259eb4a242',
     'scripts/cpp-parser-diagnostic-inputs/owned_fixture_harness.py':
-        '80e849d97fc2f804371683cf8ec4a33958fdc3c32a49da2e78fefc8c509adffd',
+        '33a24638af025747aec04bac3b7bb5738a64e7eaa8cfa0ff04ef7f5d2192b1cb',
 }
 FUNCTION_PINS = {
     'baseline': 'ac98c8befe38d88c3bfcdfa42ae3a431629eb6cda736f4630702eab5b03bfc89',
@@ -71,6 +73,32 @@ DECODER_FUNCTION_PINS = {
     'regular': '45bf871234eb23665c031c2780f460fe1fbb3e5b2eab33c3f49c2153a12068ae',
 }
 
+
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
 
 class PreparationError(ValueError):
     """Only fixed safe codes, never provider errors, URLs or credentials."""
@@ -438,9 +466,8 @@ def supported_operation_identity(environment, head):
 
 def checked_sources(operation, recipe):
     bodies = verified_source_bodies(operation)
-    helper = types.ModuleType('hash_bound_image_archive_helper')
-    helper.__file__ = str(operation / 'scripts/cpp_diagnostic_image_rebuild.py')
-    exec(compile(bodies['scripts/cpp_diagnostic_image_rebuild.py'], helper.__file__, 'exec'), helper.__dict__)
+    helper = _import_verified_buffer(operation / 'scripts/cpp_diagnostic_image_rebuild.py',
+        bodies['scripts/cpp_diagnostic_image_rebuild.py'], 'hash_bound_image_archive_helper')
     inputs = decode(bodies['scripts/cpp_diagnostic_image_inputs.json'])
     checked = helper.checked_git_source(recipe, inputs['recipe_source_sha'], inputs['recipe_source_tree'], 3305)
     head = os.environ.get('GITHUB_SHA', '')
@@ -468,9 +495,7 @@ def checked_sources(operation, recipe):
     program_raw = bodies['scripts/cpp_same_image_dependency_diagnostic.py']
     for name, expected in DECODER_FUNCTION_PINS.items():
         require(ast_digest(program_raw, name) == expected, 'unchanged_retained_decoder_ast')
-    worker = types.ModuleType('actual_reviewed_retained_input_decoder')
-    worker.__file__ = str(program)
-    exec(compile(program_raw, str(program), 'exec'), worker.__dict__)
+    worker = _import_verified_buffer(program, program_raw, 'actual_reviewed_retained_input_decoder')
     return helper, worker, inputs, checked, operation_proof, sources, program_raw
 
 

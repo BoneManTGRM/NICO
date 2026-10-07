@@ -91,20 +91,22 @@ def strict_json(data):
     return json.loads(data, object_pairs_hook=pairs)
 
 
-class VerifiedLoader(importlib.abc.Loader):
-    """Compile only pinned local library source; never consume cached bytecode."""
-    def __init__(self, path, digest):
-        self.path, self.digest = path, digest
-    def create_module(self, spec):
+class VerifiedLoader(importlib.machinery.SourceFileLoader):
+    """Import pinned local source with cached bytecode explicitly unavailable."""
+    def __init__(self, path, digest, fullname='verified_local_library'):
+        super().__init__(fullname, str(path))
+        self.digest = digest
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        raw = regular(Path(self.path), digest=self.digest)
+        source = raw.decode('utf-8')
+        linecache.cache[self.path] = (len(raw), None, source.splitlines(True), self.path)
+        return raw
+
+    def set_data(self, path, data, **kwargs):
         return None
-    def get_source(self, name):
-        return regular(self.path, digest=self.digest).decode('utf-8')
-    def exec_module(self, module):
-        module.__file__ = str(self.path)
-        source = self.get_source(module.__name__)
-        # Embedded worker PROGRAM construction via inspect also sees pinned text.
-        linecache.cache[str(self.path)] = (len(source.encode()), None, source.splitlines(True), str(self.path))
-        exec(compile(source, str(self.path), 'exec'), module.__dict__)
 
 
 class VerifiedFinder(importlib.abc.MetaPathFinder):
@@ -119,7 +121,8 @@ class VerifiedFinder(importlib.abc.MetaPathFinder):
         name = package if package in self.sources else module
         require(name in self.sources, 'unbound_library_module:' + fullname)
         filename, digest = self.sources[name]
-        return importlib.util.spec_from_loader(fullname, VerifiedLoader(filename, digest), is_package=name == package)
+        loader = VerifiedLoader(filename, digest, fullname)
+        return importlib.util.spec_from_loader(fullname, loader, is_package=name == package)
 
 
 def verify_target_source(path, targets, inventory, expected_tree):

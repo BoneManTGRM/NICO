@@ -3,6 +3,8 @@ import argparse
 import hashlib
 import json
 import os
+
+import importlib.machinery, importlib.util
 from pathlib import Path
 import re
 import shutil
@@ -13,12 +15,38 @@ import types
 
 MAX_RECEIPT = 8 * 1024 * 1024
 BUILDER_SHA = '079e02d0d71bef281e760067a25e614b70be37bbf479705ee6e84ebf45dc8344'
-WORKER_SHA = 'e0ec54f0396dfb4a3180c716f212c3fe344529e8890932a51c68ee87ba55d0bd'
+WORKER_SHA = '9a12d14dd5ab388bc1f007b54acb343f755870c2ffc338ca2f617a0d8422e3b8'
 REPO = 'BoneManTGRM/NICO'
 BRANCH = 'refs/heads/diagnostic/v17-pinned-image-20261007'
 WORKFLOW = '.github/workflows/cpp-same-image-parser-diagnostic.yml'
 OPERATIONS = []
 
+
+
+class _VerifiedBufferLoader(importlib.machinery.SourceFileLoader):
+    """Import one already verified source buffer, never cached bytecode."""
+    def __init__(self, name, path, raw):
+        super().__init__(name, str(path))
+        self.verified_raw = raw
+
+    def get_data(self, path):
+        if path != self.path:
+            raise OSError('verified_source_bytecode_unavailable')
+        return self.verified_raw
+
+    def set_data(self, path, data, **kwargs):
+        # No bytecode cache or source mutation is part of this diagnostic.
+        return None
+
+
+def _import_verified_buffer(path, raw, label, namespace=None):
+    loader = _VerifiedBufferLoader(label, path, raw)
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    if namespace is not None:
+        module.__dict__.update(namespace)
+    loader.exec_module(module)
+    return module
 
 def require(ok, code):
     if not ok:
@@ -93,9 +121,7 @@ def main():
         helper_path = args.operation_source / 'scripts/cpp_diagnostic_image_rebuild.py'
         helper_raw = helper_path.read_bytes()
         require(len(helper_raw) == 30882 and sha(helper_raw) == BUILDER_SHA, 'exact_image_helper_hash')
-        helper = types.ModuleType('hash_bound_original_image_helper')
-        helper.__file__ = str(helper_path)
-        exec(compile(helper_raw, str(helper_path), 'exec'), helper.__dict__)
+        helper = _import_verified_buffer(helper_path, helper_raw, 'hash_bound_original_image_helper')
         head = os.environ.get('GITHUB_SHA', '')
         require(os.environ.get('GITHUB_REPOSITORY') == REPO
                 and os.environ.get('GITHUB_REPOSITORY_ID') == '1282576027'
