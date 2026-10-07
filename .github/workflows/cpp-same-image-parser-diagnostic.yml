@@ -1,0 +1,81 @@
+name: Same Retrieved Image Dependency Parser Diagnostic
+
+on:
+  push:
+    branches: [diagnostic/v17-pinned-image-20261007]
+    paths:
+      - .github/workflows/cpp-same-image-parser-diagnostic.yml
+      - scripts/cpp_same_image_dependency_diagnostic.py
+      - scripts/cpp_same_image_parser_driver.py
+      - scripts/cpp_private_diagnostic_inputs.py
+      - scripts/cpp_private_parser_worker.py
+      - scripts/cpp_compact_diagnostic_export.py
+      - scripts/cpp-parser-diagnostic-inputs/**
+      - nico/assessment_cpp_project_compiler.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cpp-same-image-parser-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  same-image-parser-diagnostic:
+    if: >-
+      github.repository == 'BoneManTGRM/NICO' &&
+      github.ref == 'refs/heads/diagnostic/v17-pinned-image-20261007' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, '[diagnostic-parser-v17]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: operation-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f0919654edd719059ea03319981b13f46ba70a88
+          path: recipe-source
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Verify and privately prepare retained inputs through supported Actions transport
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python -I -B operation-source/scripts/cpp_private_diagnostic_inputs.py
+          --operation-source operation-source --recipe-source recipe-source
+          --scratch "$RUNNER_TEMP/nico-parser-private"
+          --load-store-reserve-bytes 4294967296
+      - name: Compare actual parser helpers in the completely verified diagnostic image
+        run: >-
+          python -I -B operation-source/scripts/cpp_same_image_parser_driver.py
+          --operation-source operation-source --recipe-source recipe-source
+          --prepared-inputs "$RUNNER_TEMP/nico-parser-private"
+          --output "$RUNNER_TEMP/nico-parser-private-output"
+      - name: Construct an allowlisted receipt for this new diagnostic only
+        if: always()
+        run: |
+          mkdir -m 700 parser-diagnostic-public
+          python -I -B operation-source/scripts/cpp_compact_diagnostic_export.py \
+            --outer "$RUNNER_TEMP/nico-parser-private-output/outer-receipt.json" \
+            --worker "$RUNNER_TEMP/nico-parser-private-output/container-diagnostic.json" \
+            --expected-source "${{ github.sha }}" \
+            --expected-driver-sha256 9435bb16672c2bca55a8c5c21451a8f20ba9baef1a674934affbe1974473132e \
+            --output parser-diagnostic-public/receipt.json
+      - name: Retain only the new bounded diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-parser-diagnostic-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: parser-diagnostic-public/receipt.json
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
