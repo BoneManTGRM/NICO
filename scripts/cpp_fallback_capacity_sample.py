@@ -238,7 +238,7 @@ def parse_cgroup(name, raw):
         require(re.fullmatch(r'[0-9]{1,20}', text) is not None, 'sample_cgroup_integer')
         return {'bytes': int(text)}
     if name in {'cpu.stat', 'memory.events'}:
-        allowed = ({'usage_usec', 'user_usec', 'system_usec', 'nr_periods', 'nr_throttled', 'throttled_usec',
+        allowed = ({'usage_usec', 'user_usec', 'system_usec', 'nice_usec', 'nr_periods', 'nr_throttled', 'throttled_usec',
             'nr_bursts', 'burst_usec'} if name == 'cpu.stat' else {'low', 'high', 'max', 'oom', 'oom_kill', 'oom_group_kill'})
         required = {'usage_usec', 'user_usec', 'system_usec'} if name == 'cpu.stat' else {'low', 'high', 'max', 'oom', 'oom_kill'}
         result = {}

@@ -121,7 +121,7 @@ jobs:
           "$RUNNER_TEMP/nico-static-venv/bin/python" -I -B \
             operation-source/scripts/cpp_same_image_full_static_diagnostic.py \
             --fallback-capacity-sample \
-            --expected-sample-sha256 261a1ac33ba22625aa07218d8e5071d7fe55436b51191aae504f68bac7bd7ad0 \
+            --expected-sample-sha256 6502680b08f124cfa417019647e7c42f873e7efa9017faa54efd52738cedfe1a \
             --operation-source operation-source --recipe-source recipe-source \
             --target-checkout frozen-target-checkout \
             --prepared-inputs "$RUNNER_TEMP/nico-static-private" \
@@ -148,7 +148,7 @@ jobs:
             --sample-mode \
             --caller-source operation-source/scripts/cpp_same_image_full_static_diagnostic.py \
             --sample-source operation-source/scripts/cpp_fallback_capacity_sample.py \
-            --expected-sample-sha256 261a1ac33ba22625aa07218d8e5071d7fe55436b51191aae504f68bac7bd7ad0 \
+            --expected-sample-sha256 6502680b08f124cfa417019647e7c42f873e7efa9017faa54efd52738cedfe1a \
             --caller-receipt "$receipt_path" \
             "${receipt_arguments[@]}" \
             --expected-current-git-head "${{ github.sha }}" \

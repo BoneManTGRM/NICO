@@ -222,6 +222,23 @@ class Controls(unittest.TestCase):
         self.assertEqual(SAMPLE.parse_cgroup('memory.peak', b'12884901888\n')['bytes'],12*1024**3)
         self.assertEqual(SAMPLE.parse_cgroup('memory.pressure', b'some avg10=1.00 avg60=2.00 avg300=3.00 total=123\n')['some']['total'],123)
 
+    def test_cpu_nice_extension_preserves_core_and_nice_counters(self):
+        raw = b'usage_usec 11\nuser_usec 8\nsystem_usec 3\nnice_usec 5\n'
+        self.assertEqual(SAMPLE.parse_cgroup('cpu.stat', raw),
+                         {'usage_usec': 11, 'user_usec': 8, 'system_usec': 3, 'nice_usec': 5})
+
+    def test_unknown_cpu_counter_extension_remains_rejected(self):
+        raw = b'usage_usec 11\nuser_usec 8\nsystem_usec 3\nnice_usec 5\nunknown_counter 1\n'
+        with self.assertRaises(ValueError):
+            SAMPLE.parse_cgroup('cpu.stat', raw)
+
+    def test_cpu_nice_duplicate_invalid_or_missing_core_counter_rejected(self):
+        prefix = b'usage_usec 11\nuser_usec 8\nsystem_usec 3\n'
+        for raw in [prefix + b'nice_usec 5\nnice_usec 5\n', prefix + b'nice_usec -1\n',
+                    prefix + b'nice_usec 1.5\n', b'user_usec 8\nsystem_usec 3\nnice_usec 5\n']:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                SAMPLE.parse_cgroup('cpu.stat', raw)
+
     def test_malformed_duplicate_missing_nonfinite_and_oversized_cgroup_reject(self):
         for name, raw in [('cpu.stat', b'usage_usec 1\nusage_usec 2\n'), ('memory.events', b'oom 1\n'),
                 ('cpu.stat', b'usage_usec -1\nuser_usec 0\nsystem_usec 0\n'),
