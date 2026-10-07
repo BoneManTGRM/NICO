@@ -202,7 +202,7 @@ def _summary_tool(root: Path, summary_name: str) -> dict[str, Any]:
 
 
 def _known_public_signing_fingerprint(finding: dict[str, Any]) -> bool:
-    """Disposition one reviewed immutable observation, never a class of keys.
+    """Disposition reviewed immutable observations, never a class of keys.
 
     Native artifact 10731003280 identifies this exact line in commit 684e5af5.
     That line contains LLVM's PUBLIC signing-key fingerprint, independently
@@ -210,21 +210,24 @@ def _known_public_signing_fingerprint(finding: dict[str, Any]) -> bool:
     The scanner redacts its value, so require the immutable source locator and
     complete matching context. New commits/paths/rules/values still block.
     """
-    commits = {
-        '684e5af5074c6e1c0cf4b67fa263b0d79b8beabf',
+    locations = {
+        ('684e5af5074c6e1c0cf4b67fa263b0d79b8beabf', 'docker/assessment-llvm17.lock.json'),
         # PR #1641 merge commit. Git blob 67382f0bc1cc596affc6ce191ff1308fc804b67d
         # is byte-identical to the independently reviewed source commit above.
-        '0f14a8dba3c0fa6d11d982e007492a7f543ccfb7',
+        ('0f14a8dba3c0fa6d11d982e007492a7f543ccfb7', 'docker/assessment-llvm17.lock.json'),
+        # Audit artifact 11372481459: SDK lock bytes SHA256 76385517f23a58851167a04ef5ba1697
+        # 830fe62e569acdf804eec708e063260b contain the same apt.llvm.org public fingerprint.
+        ('3de83e0c61d53b3f0fbfe284c764701cbb08d506', 'docker/assessment-clang-header-sdk.lock.json'),
     }
     commit = str(finding.get('Commit') or '')
-    path = 'docker/assessment-llvm17.lock.json'
+    path = str(finding.get('File') or '')
     expected = {
         'File': path, 'RuleID': 'generic-api-key',
         'Secret': 'REDACTED', 'Match': 'llvm_signing_key_fingerprint": "REDACTED"',
         'Fingerprint': commit + ':' + path + ':generic-api-key:5',
         'StartLine': 5, 'EndLine': 5, 'StartColumn': 5, 'EndColumn': 77,
     }
-    return (commit in commits
+    return ((commit, path) in locations
             and all(type(finding.get(key)) is type(value) and finding[key] == value
                     for key, value in expected.items())
             and finding.get('Verified', False) is False)
@@ -353,9 +356,74 @@ def _trufflehog_source_path(finding: dict[str, Any]) -> str:
     return str(git.get("file") or "") if isinstance(git, dict) else ""
 
 
-def _trufflehog(root: Path) -> dict[str, Any]:
+def _trufflehog_raw_digest(finding: dict[str, Any]) -> str | None:
+    # Legacy raw artifacts keep their original exact-byte dispositions.
+    if "Raw" in finding:
+        return hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+    if finding.get("SanitizationSchema") == "nico.security-audit.trufflehog.finding.v1":
+        digest = finding.get("RawSHA256")
+        if isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest):
+            return digest
+    return None
+
+
+def _trufflehog(root: Path, *, require_sanitized: bool = False) -> dict[str, Any]:
     findings, error = _read_json_lines(root, "trufflehog.json")
     summary, summary_error = _read_json(root, "trufflehog-summary.json")
+    sanitized = isinstance(summary, dict) and summary.get("schema") == "nico.security-audit.trufflehog.capture.v1"
+    sanitized_rows = isinstance(findings, list) and any("SanitizationSchema" in finding for finding in findings)
+    capture_claimed = isinstance(summary, dict) and "schema" in summary
+    if require_sanitized or capture_claimed or sanitized_rows:
+        allowed = {"SanitizationSchema", "DetectorName", "DetectorType", "Verified", "RawSHA256", "SourceMetadata"}
+        summary_allowed = {
+            "schema", "scanner", "status", "finding_count", "artifact_present", "history_depth",
+            "exit_code", "invalid_json_lines", "live_credential_verification", "raw_capture_sha256",
+            "sanitized_artifact_sha256", "raw_candidate_bodies_retained",
+        }
+        valid = (
+            sanitized and isinstance(findings, list)
+            and set(summary) == summary_allowed and summary.get("scanner") == "trufflehog"
+            and summary.get("sanitized_artifact_sha256") == _digest(root, "trufflehog.json")
+            and type(summary.get("finding_count")) is int
+            and summary["finding_count"] == len(findings)
+            and summary.get("live_credential_verification") is False
+            and summary.get("raw_candidate_bodies_retained") is False
+            and summary.get("history_depth") == "full"
+            and type(summary.get("invalid_json_lines")) is int
+            and summary["invalid_json_lines"] >= 0
+            and type(summary.get("exit_code")) is int
+        )
+        if valid:
+            for finding in findings:
+                metadata = finding.get("SourceMetadata")
+                data = metadata.get("Data") if isinstance(metadata, dict) else None
+                git = data.get("Git") if isinstance(data, dict) else None
+                if not (
+                    set(finding) <= allowed
+                    and finding.get("SanitizationSchema") == "nico.security-audit.trufflehog.finding.v1"
+                    and isinstance(finding.get("DetectorName"), str)
+                    and isinstance(finding.get("Verified"), bool)
+                    and ("DetectorType" not in finding or type(finding["DetectorType"]) is int)
+                    and _trufflehog_raw_digest(finding) is not None
+                    and isinstance(metadata, dict) and set(metadata) == {"Data"}
+                    and isinstance(data, dict) and set(data) == {"Git"}
+                    and isinstance(git, dict) and set(git) <= {"file", "commit", "line"}
+                    and all(isinstance(git[key], str) for key in ("file", "commit") if key in git)
+                    and ("line" not in git or type(git["line"]) is int)
+                ):
+                    valid = False
+                    break
+        if valid and summary.get("status") == "completed":
+            raw_digest = summary.get("raw_capture_sha256")
+            valid = (
+                summary["invalid_json_lines"] == 0 and summary["exit_code"] in {0, 183}
+                and summary.get("artifact_present") is True
+                and isinstance(raw_digest, str) and len(raw_digest) == 64
+                and all(c in "0123456789abcdef" for c in raw_digest)
+            )
+        if not valid:
+            return _record(root, "trufflehog.json", "unavailable", len(findings or []),
+                           reason="invalid_sanitized_capture", capture_complete=False)
     if (
         error
         or findings is None
@@ -367,8 +435,9 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             root,
             "trufflehog.json",
             "unavailable",
-            0,
+            len(findings or []),
             reason=error or summary_error or "unexpected_json_shape",
+            capture_complete=False,
         )
 
     blocking = 0
@@ -386,7 +455,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
         elif (
             path == "docs/operator-report-approval.md"
             and finding.get("DetectorName") == "RailwayApp"
-            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            and _trufflehog_raw_digest(finding)
             in {
                 "baad0101f41fbbf2c15da26fee7ec21b0b5a069aa0763ffd267a155607a77b16",
                 "583d7cd14d26cb9df88cbd31b72a31873c25f050af9988d8190617889d46f9cb",
@@ -402,7 +471,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
         elif (
             path == "docs/human-report-repair-acceptance.md"
             and finding.get("DetectorName") == "RailwayApp"
-            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            and _trufflehog_raw_digest(finding)
             == "c0bf88741ce6e66e63e896c5ceb8e4e882ed2049facd3a88cc1d6826cd6dd2e9"
         ):
             # PR #1593: owner authorized this exact disposition after fresh
@@ -414,7 +483,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             path == "NICO-Ship-Checkpoint.md"
             and finding.get("Verified") is False
             and finding.get("DetectorName") == "RailwayApp"
-            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            and _trufflehog_raw_digest(finding)
             == "74578dc40d97154cfd69c5767cb023643eba010802aba8dc329306074433c3c8"
         ):
             # PR #1618: authenticated Railway deployment metadata and the exact
@@ -427,7 +496,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             path == "NICO-Ship-Checkpoint.md"
             and finding.get("Verified") is False
             and finding.get("DetectorName") == "RailwayApp"
-            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            and _trufflehog_raw_digest(finding)
             == "0ca2174e3995d9ab44fc39f79cace1ebe0ee83e6a2d55ed1ece16ebcee500a21"
         ):
             # PR #1620: authenticated Railway project metadata and retained
@@ -439,7 +508,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             path == "NICO-Ship-Checkpoint.md"
             and finding.get("Verified") is False
             and finding.get("DetectorName") == "RailwayApp"
-            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            and _trufflehog_raw_digest(finding)
             == "ab15a06f193e60201aa9e3bf61638905457c681a70fcce1083d13c6c2e9a49d9"
         ):
             # PR #1620: connector response identifies this exact value as its
@@ -451,7 +520,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             path == "NICO-Ship-Checkpoint.md"
             and finding.get("Verified") is False
             and finding.get("DetectorName") == "RailwayApp"
-            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            and _trufflehog_raw_digest(finding)
             in {
                 "c8c06a22b8d59fc397706d825d2a827cfed0aa2a96b77375bfac5fc2e9aeebdc",
                 "20ac6fd29475931e12bf0ed0699f2bb90b015473b06b0ee851d7ea66c22d9106",
@@ -499,7 +568,7 @@ def _trufflehog(root: Path) -> dict[str, Any]:
             path == "NICO-Ship-Checkpoint.md"
             and finding.get("Verified") is False
             and finding.get("DetectorName") == "RailwayApp"
-            and hashlib.sha256(str(finding.get("Raw") or "").encode()).hexdigest()
+            and _trufflehog_raw_digest(finding)
             == "55a16aefae99e52dade482f9cecc291d6b5b5a97a92910132fcaa43f9ec8e6c5"
         ):
             # Artifact10593284621 and authenticated Railway service metadata
@@ -619,7 +688,8 @@ def evaluate_review_required(tools: dict[str, dict[str, Any]]) -> list[str]:
     return review
 
 
-def build_manifest(root: Path, *, repository: str = "", run_id: str = "") -> dict[str, Any]:
+def build_manifest(root: Path, *, repository: str = "", run_id: str = "",
+                   require_sanitized_trufflehog: bool = False) -> dict[str, Any]:
     tools = {
         "pip-audit": _pip_audit(root),
         "npm-audit": _npm_audit(root),
@@ -627,7 +697,7 @@ def build_manifest(root: Path, *, repository: str = "", run_id: str = "") -> dic
         "semgrep": _semgrep(root),
         "osv-scanner": _osv(root),
         "gitleaks": _gitleaks(root),
-        "trufflehog": _trufflehog(root),
+        "trufflehog": _trufflehog(root, require_sanitized=require_sanitized_trufflehog),
         "typescript": _summary_tool(root, "typescript-summary.json"),
         "eslint": _eslint(root),
         "credential-scan": _credential_scan(root),
@@ -645,6 +715,7 @@ def build_manifest(root: Path, *, repository: str = "", run_id: str = "") -> dic
         "worker_execution_state": "failed" if blockers else "completed",
         "repository": repository,
         "run_id": run_id,
+        "trufflehog_capture_contract": "sanitized_v1" if require_sanitized_trufflehog else "legacy_offline_compatible",
         "generated_at": generated_at,
         "tools": tools,
         "security_gate": {
@@ -667,6 +738,7 @@ def main() -> int:
     parser.add_argument("--output", default="scanner-worker-artifact.json")
     parser.add_argument("--gate-output", default="security-gate.json")
     parser.add_argument("--enforce", action="store_true")
+    parser.add_argument("--require-sanitized-trufflehog", action="store_true")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -674,6 +746,7 @@ def main() -> int:
         root,
         repository=os.getenv("GITHUB_REPOSITORY", ""),
         run_id=os.getenv("GITHUB_RUN_ID", ""),
+        require_sanitized_trufflehog=args.require_sanitized_trufflehog,
     )
     (root / args.output).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",

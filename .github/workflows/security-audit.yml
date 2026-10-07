@@ -179,41 +179,16 @@ jobs:
 
       - name: Collect trufflehog git-history evidence
         run: |
+          umask 077
+          capture_dir="$(mktemp -d "$RUNNER_TEMP/nico-trufflehog.XXXXXX")"
+          trap 'rm -f -- "$capture_dir/trufflehog.jsonl" "$capture_dir/stderr.txt"; rmdir -- "$capture_dir"' EXIT
           set +e
-          trufflehog git "file://$PWD" --json --no-update > trufflehog.json 2>trufflehog.stderr.txt
+          trufflehog git "file://$PWD" --json --no-update --no-verification > "$capture_dir/trufflehog.jsonl" 2> "$capture_dir/stderr.txt"
           status=$?
           set -e
-          python - "$status" <<'PY'
-          from pathlib import Path
-          import json, sys
-          status = int(sys.argv[1])
-          path = Path('trufflehog.json')
-          raw = path.read_text(encoding='utf-8', errors='replace') if path.exists() else ''
-          findings = []
-          invalid_lines = 0
-          for line in raw.splitlines():
-              if not line.strip():
-                  continue
-              try:
-                  value = json.loads(line)
-              except json.JSONDecodeError:
-                  invalid_lines += 1
-                  continue
-              if isinstance(value, dict):
-                  findings.append(value)
-              else:
-                  invalid_lines += 1
-          completed = invalid_lines == 0 and (status == 0 or bool(findings))
-          Path('trufflehog-summary.json').write_text(json.dumps({
-              'scanner': 'trufflehog',
-              'status': 'completed' if completed else 'unavailable',
-              'finding_count': len(findings),
-              'artifact_present': path.exists(),
-              'history_depth': 'full',
-              'exit_code': status,
-              'invalid_json_lines': invalid_lines,
-          }, indent=2), encoding='utf-8')
-          PY
+          python scripts/sanitize_security_audit_trufflehog.py \
+            --input "$capture_dir/trufflehog.jsonl" --stderr "$capture_dir/stderr.txt" \
+            --exit-code "$status" --output-dir .
 
       - name: Collect built-in high-confidence credential evidence
         run: |
@@ -399,7 +374,7 @@ jobs:
 
       - name: Build fail-closed scanner manifest
         if: always()
-        run: python scripts/security_audit_gate.py
+        run: python scripts/security_audit_gate.py --require-sanitized-trufflehog
 
       - name: Upload audit evidence before enforcement
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -433,4 +408,4 @@ jobs:
 
       - name: Require complete clean security evidence
         if: always()
-        run: python scripts/security_audit_gate.py --enforce
+        run: python scripts/security_audit_gate.py --enforce --require-sanitized-trufflehog

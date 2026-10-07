@@ -469,3 +469,57 @@ def test_gitleaks_pr1641_merge_disposition_still_rejects_unknown_commits(
     assert manifest["security_gate"]["status"] == "blocked"
     assert manifest["tools"]["gitleaks"]["blocking"] == 1
 
+
+
+def _clang_header_sdk_signing_fingerprint_finding() -> dict[str, object]:
+    commit = "3de83e0c61d53b3f0fbfe284c764701cbb08d506"
+    path = "docker/assessment-clang-header-sdk.lock.json"
+    return {
+        "File": path, "Commit": commit, "RuleID": "generic-api-key",
+        "Secret": "REDACTED",
+        "Match": 'llvm_signing_key_fingerprint": "REDACTED"',
+        "Fingerprint": commit + ":" + path + ":generic-api-key:5",
+        "StartLine": 5, "EndLine": 5, "StartColumn": 5, "EndColumn": 77,
+    }
+
+
+def test_gitleaks_retains_exact_public_clang_sdk_signing_fingerprint(tmp_path: Path) -> None:
+    # Actual redacted observation in audit run 37376720147, artifact 11372481459.
+    # The immutable source contains LLVM's publicly documented signing fingerprint.
+    _clean_evidence(tmp_path)
+    _write(tmp_path, "gitleaks.json", [_clang_header_sdk_signing_fingerprint_finding()])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+    manifest = build_manifest(tmp_path)
+    assert manifest["security_gate"]["status"] == "passed"
+    evidence = manifest["tools"]["gitleaks"]
+    assert evidence["finding_count"] == 1
+    assert evidence["blocking"] == 0
+    assert evidence["approved_public_signing_fingerprints"] == 1
+    assert evidence["triage"][0]["disposition"] == "approved_public_signing_fingerprint"
+    assert manifest["human_review_required"] is True
+    assert manifest["client_delivery_allowed"] is False
+
+
+@pytest.mark.parametrize("changed", (
+    {"Commit": "f" * 40},
+    {"File": "docker/assessment-llvm17.lock.json"},
+    {"RuleID": "private-key"},
+    {"Secret": "unreviewed-value"},
+    {"Match": 'other_fingerprint": "REDACTED"'},
+    {"Fingerprint": "different-observation"},
+    {"StartLine": 6}, {"EndLine": 6},
+    {"StartColumn": 6}, {"EndColumn": 78},
+    {"StartLine": "5"}, {"Verified": True},
+    {"Commit": "0f14a8dba3c0fa6d11d982e007492a7f543ccfb7"},
+))
+def test_gitleaks_clang_sdk_fingerprint_disposition_rejects_lookalikes(
+    tmp_path: Path, changed: dict[str, object],
+) -> None:
+    _clean_evidence(tmp_path)
+    finding = {**_clang_header_sdk_signing_fingerprint_finding(), **changed}
+    _write(tmp_path, "gitleaks.json", [finding])
+    _write(tmp_path, "gitleaks-summary.json", {"status": "completed", "finding_count": 1})
+    manifest = build_manifest(tmp_path)
+    assert manifest["security_gate"]["status"] == "blocked"
+    assert manifest["tools"]["gitleaks"]["finding_count"] == 1
+    assert manifest["tools"]["gitleaks"]["blocking"] == 1
