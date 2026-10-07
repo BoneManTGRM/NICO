@@ -248,7 +248,11 @@ def collect_clang_fallback(request, *, wall_budget_ms=None):
             if header_provenance:
                 native_environment.update(NICO_CLANG_HEADER_OUTPUT=stem+'.header.json',
                     NICO_CLANG_HEADER_CONTEXT=context['context_id'])
-            record['execution']=_run(context['invocation'],stem,min(deadline,time.monotonic()+limits['case_seconds']),native_environment)
+            # Input verification can consume the remaining shared allocation.
+            # Preserve an unstarted record instead of spawning expired work.
+            dispatch_start = time.monotonic()
+            if dispatch_start >= deadline: raise ValueError('worker_clang_fallback_deadline')
+            record['execution']=_run(context['invocation'],stem,min(deadline,dispatch_start+limits['case_seconds']),native_environment)
             plist_path=Path(stem+'.plist')
             if plist_path.exists():
                 raw=_regular_bytes(plist_path,PLIST_LIMIT)
