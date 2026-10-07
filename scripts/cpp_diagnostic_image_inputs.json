@@ -1,0 +1,175 @@
+{
+  "base_image": "gcc:14.2.0-bookworm@sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c3271ed802b81584a82",
+  "cmake_sha256": "1c8b05df0602365da91ee6a3336fe57525b137706c4ab5675498f662ae1dbcec",
+  "cppcheck_checkout_eol_paths": [
+    "cli/cli.vcxproj",
+    "cli/cli.vcxproj.filters",
+    "cppcheck.sln",
+    "lib/cppcheck.vcxproj",
+    "lib/cppcheck.vcxproj.filters",
+    "test/cli/helloworld/helloworld.sln",
+    "test/cli/helloworld/helloworld.vcxproj",
+    "test/cli/proj2/proj2.sln",
+    "test/cli/proj2/proj2.vcxproj",
+    "test/cli/shared-items-project/Main/Main.vcxproj",
+    "test/cli/shared-items-project/Solution.sln",
+    "test/testrunner.vcxproj",
+    "test/testrunner.vcxproj.filters",
+    "win_installer/config.wxi",
+    "win_installer/cppcheck.sln",
+    "win_installer/cppcheck.wixproj",
+    "win_installer/cppcheck.wxs",
+    "win_installer/productInfo.wxi"
+  ],
+  "cppcheck_commit": "ac9db3069b9f90e81e126a090b99ad456e122cf8",
+  "cppcheck_tree": "07f2ddcda84d870bf618589064cd007e71b70076",
+  "lock_families": {
+    "capnp-source": "assessment-capnp-source.lock.json",
+    "clang-header-sdk": "assessment-clang-header-sdk.lock.json",
+    "llvm": "assessment-llvm17.lock.json",
+    "project-dependencies": "assessment-project-dependencies.lock.json",
+    "runtime-dependencies": "assessment-runtime-dependencies.lock.json"
+  },
+  "pycapnp_sha256": "d682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec",
+  "recipe_original_producer": "38a07b0c9900af353290fe578686a46c2917b99e",
+  "recipe_parent_sha": "001f13d3089cc8793d58b8ba8fb4388893066a63",
+  "recipe_source_sha": "f0919654edd719059ea03319981b13f46ba70a88",
+  "recipe_source_tree": "b9e200f62b9b2db9c6488326826ad8ae393418d0",
+  "schema": "nico.private.diagnostic_image_input_pins.v1",
+  "source_layer_scope": "Trusted tools/dependencies only; no assessed project, target/compiler evidence or authentication credentials copied.",
+  "trusted_recipe_files": [
+    {
+      "bytes": 22337,
+      "git_blob": "5f936fa23599e9d2980cda349dae7488bdca1732",
+      "git_mode": "100644",
+      "path": ".github/workflows/cpp-full-project-integration.yml",
+      "sha256": "0668e1f5a5063ab8423a6cd250eb0708c52a6bd6b6a72e819b68dd16fa40a36e"
+    },
+    {
+      "bytes": 345,
+      "git_blob": "68c695de8fc9dacc7becf9abf179e900e76af83e",
+      "git_mode": "100644",
+      "path": "docker/assessment-capnp-source.lock.json",
+      "sha256": "234208ddffb52d2b75147308ed6829b7d000758ade7c7523b3090aa5a22d605d"
+    },
+    {
+      "bytes": 1895,
+      "git_blob": "e684d0b55656842dcf7368fab4b52c3591c7503f",
+      "git_mode": "100644",
+      "path": "docker/assessment-clang-header-sdk.lock.json",
+      "sha256": "76385517f23a58851167a04ef5ba1697830fe62e569acdf804eec708e063260b"
+    },
+    {
+      "bytes": 7122,
+      "git_blob": "3b5a9065c00376821d7431024f195253c627014d",
+      "git_mode": "100644",
+      "path": "docker/assessment-full-project-fuzz.Dockerfile",
+      "sha256": "c879a8ea20e4c9bd4091f1b21080f35de6d125b49a07e56abef8a674f15bf98c"
+    },
+    {
+      "bytes": 5611,
+      "git_blob": "67382f0bc1cc596affc6ce191ff1308fc804b67d",
+      "git_mode": "100644",
+      "path": "docker/assessment-llvm17.lock.json",
+      "sha256": "57c8fa1fb9dabce9c7e3f546ccb7d6fb549abece632742448272e10fabb66abb"
+    },
+    {
+      "bytes": 4483,
+      "git_blob": "5b7be4688726ee7fba4c1601e455fe4ae4d4e7a9",
+      "git_mode": "100644",
+      "path": "docker/assessment-project-dependencies.lock.json",
+      "sha256": "0f1c79b682a748d1b8b00472fc81358a07d3205843b9c75a22626a4d0e7e226d"
+    },
+    {
+      "bytes": 665,
+      "git_blob": "90f927cdaffe9eff8848747c214e048a0ce92ec3",
+      "git_mode": "100644",
+      "path": "docker/assessment-runtime-dependencies.lock.json",
+      "sha256": "7f9ba2d688817b78ed250be6de875b07dcaebbceb847acd09f221b68243bbce6"
+    },
+    {
+      "bytes": 1099,
+      "git_blob": "c6203c0f76d2b49f73b273413b464cac6e1c71c5",
+      "git_mode": "100644",
+      "path": "docker/licenses/bitcoin-0.14.3.txt",
+      "sha256": "93d633183b4715ff1d799dc26b30a6edae096a13fb35b062d0d69463f453644e"
+    },
+    {
+      "bytes": 291,
+      "git_blob": "bb1e6a57ebe48b868dee566ebc069a932c3fc3ed",
+      "git_mode": "100644",
+      "path": "requirements.txt",
+      "sha256": "40730cd45f508f7eda7247567e8c66ef2c7b54237b610b5e9e2f1a1c404c5809"
+    },
+    {
+      "bytes": 5627,
+      "git_blob": "1a143082179746258d7baa643d5ce5503df08951",
+      "git_mode": "100644",
+      "path": "scripts/build_cpp_clang_header_observer.py",
+      "sha256": "3960c2d820671a67d835bd4d028f519ebc993cebc60fe38742adf1249393df70"
+    },
+    {
+      "bytes": 7595,
+      "git_blob": "dbdef7079af68f0de1b31581cca4234c3945cc22",
+      "git_mode": "100644",
+      "path": "scripts/clang-header-evidence/HeaderObserver.cpp",
+      "sha256": "76ad9e51e0500a6d93fc81038ca7df6cb42c14d8d580b42f92b1281efa7124a1"
+    },
+    {
+      "bytes": 620,
+      "git_blob": "6520e38c30355c807edd61d0fcfffd9b53ba0407",
+      "git_mode": "100644",
+      "path": "scripts/clang-header-evidence/manifest.json",
+      "sha256": "b867ac83a8bd89180cb03f6eb74dd9ef3fd4c36fad6ffa9cc292d995721219e8"
+    },
+    {
+      "bytes": 25613,
+      "git_blob": "6bf7995dc0d2fc1ec84585c4ed5d68b35fde0962",
+      "git_mode": "100644",
+      "path": "scripts/cppcheck-header-evidence/header-token-pass-v2.patch",
+      "sha256": "d817eae3b4de2bf08046005218b6d225647a0f6c393dbb93e1de1a426b2d114e"
+    },
+    {
+      "bytes": 1805,
+      "git_blob": "0f6d027aa251f6972c37979fe623151a7581892e",
+      "git_mode": "100644",
+      "path": "scripts/cppcheck-header-evidence/manifest.json",
+      "sha256": "cbe13e1183c4e44e398943bcbbe2c68e2cebd984f1bbe694d245a3b7a765f5f4"
+    },
+    {
+      "bytes": 6661,
+      "git_blob": "c83934d47f5ea0e593e9c718c2993b2cdd92c19c",
+      "git_mode": "100644",
+      "path": "scripts/patch_cppcheck_header_evidence.py",
+      "sha256": "9f3261e77b3c75154f67ed23eac5001d988ff46363ffd0cecd763e77e6d34fdc"
+    },
+    {
+      "bytes": 11610,
+      "git_blob": "d35cc66faab5f7a6b35e75b305be126b15ff2b05",
+      "git_mode": "100644",
+      "path": "scripts/provision_cpp_fuzz_tools.py",
+      "sha256": "420991e6d46e711fefb9f6e6485c76c4a4be7827139b3e032fcb0a691dfb9de1"
+    },
+    {
+      "bytes": 9046,
+      "git_blob": "336e258babde82a96491bf8ff26878c9e93f4ea6",
+      "git_mode": "100644",
+      "path": "scripts/provision_cpp_runtime_dependencies.py",
+      "sha256": "a06c6deb22aaecb736c573a6cf19417a1540855a0ac81338e0b1df10f629f50d"
+    },
+    {
+      "bytes": 3800,
+      "git_blob": "849fa3d099845974cad15badd2ba524ed4503a2e",
+      "git_mode": "100644",
+      "path": "scripts/repair_cppcheck_placement_ast.py",
+      "sha256": "b7766109bc264cdaf5a2be254c71a98595929637235fc490cb44ea633d771c2f"
+    },
+    {
+      "bytes": 4156,
+      "git_blob": "8bf67c2aec140065b1f9e548e53b4326720bb1d7",
+      "git_mode": "100644",
+      "path": "scripts/verify_cpp_runtime_toolchain.py",
+      "sha256": "bb486ba3dfe58b397a4b3d96a640090a886d998b54fe2bac302e48c020c9d229"
+    }
+  ]
+}

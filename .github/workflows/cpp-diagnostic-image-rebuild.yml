@@ -1,0 +1,107 @@
+name: Isolated Pinned Diagnostic Image Rebuild
+
+on:
+  push:
+    branches: [diagnostic/v17-pinned-image-20261007]
+    paths:
+      - .github/workflows/cpp-diagnostic-image-rebuild.yml
+      - scripts/cpp_diagnostic_image_rebuild.py
+      - scripts/cpp_diagnostic_image_inputs.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-diagnostic-image-rebuild-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-diagnostic-image:
+    if: >-
+      github.repository == 'BoneManTGRM/NICO' &&
+      github.ref == 'refs/heads/diagnostic/v17-pinned-image-20261007' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, '[diagnostic-image-build-v17]')
+    runs-on: ubuntu-24.04
+    # Preserve the existing baseline job ceiling. The actual Docker build
+    # remains210s; this job neither starts the assessed target nor qualifies it.
+    timeout-minutes: 155
+    outputs:
+      receipt_sha256: ${{ steps.build.outputs.receipt_sha256 }}
+      image_config_id: ${{ steps.build.outputs.image_config_id }}
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: operation-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f0919654edd719059ea03319981b13f46ba70a88
+          path: recipe-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cppcheck-opensource/cppcheck
+          ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
+          path: recipe-source/toolchain/full-project/cppcheck
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Build and retain a separate unqualified diagnostic image
+        id: build
+        run: >-
+          python -I operation-source/scripts/cpp_diagnostic_image_rebuild.py build
+          --recipe-source recipe-source --operation-source operation-source
+          --output diagnostic-image
+      - name: Retain complete image bytes and bounded diagnostic receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: diagnostic-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: diagnostic-image/
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
+
+  verify-retained-diagnostic-image:
+    needs: [build-diagnostic-image]
+    runs-on: ubuntu-24.04
+    # Existing supported image-retrieval job ceiling; load remains90s.
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: operation-source
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Retrieve the actual artifact from this run on a separate hosted runner
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: diagnostic-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: retrieved-diagnostic-image
+      - name: Verify every retained layer before loading and checking image identity
+        env:
+          NICO_DIAGNOSTIC_RECEIPT_SHA256: ${{ needs.build-diagnostic-image.outputs.receipt_sha256 }}
+          NICO_DIAGNOSTIC_IMAGE_CONFIG_ID: ${{ needs.build-diagnostic-image.outputs.image_config_id }}
+        run: >-
+          python -I operation-source/scripts/cpp_diagnostic_image_rebuild.py retrieve
+          --operation-source operation-source --input retrieved-diagnostic-image
+          --output diagnostic-image-retrieval
+      - name: Retain compact retrieval success or actual failure separately
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: diagnostic-image-retrieval-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: diagnostic-image-retrieval/
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
