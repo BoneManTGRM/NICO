@@ -418,6 +418,23 @@ def verified_source_bodies(operation):
     return bodies
 
 
+def supported_operation_identity(environment, head):
+    # Closed route pairs. A new diagnostic route never impersonates the old job.
+    routes = {
+        'same-image-parser-diagnostic': '.github/workflows/cpp-same-image-parser-diagnostic.yml',
+        'same-image-full-static-diagnostic': '.github/workflows/cpp-same-image-full-static-diagnostic.yml',
+    }
+    workflow = routes.get(environment.get('GITHUB_JOB'))
+    return bool(workflow is not None and environment.get('GITHUB_REPOSITORY') == REPOSITORY
+        and environment.get('GITHUB_REF') == 'refs/heads/' + IMAGE_BRANCH
+        and environment.get('GITHUB_EVENT_NAME') == 'push'
+        and environment.get('GITHUB_RUN_ATTEMPT') == '1'
+        and environment.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+        and environment.get('GITHUB_WORKFLOW_SHA') == head
+        and environment.get('GITHUB_WORKFLOW_REF') == REPOSITORY + '/' + workflow + '@refs/heads/' + IMAGE_BRANCH
+        and re.fullmatch(r'[0-9a-f]{40}', head or '') is not None)
+
+
 def checked_sources(operation, recipe):
     bodies = verified_source_bodies(operation)
     helper = types.ModuleType('hash_bound_image_archive_helper')
@@ -426,15 +443,7 @@ def checked_sources(operation, recipe):
     inputs = decode(bodies['scripts/cpp_diagnostic_image_inputs.json'])
     checked = helper.checked_git_source(recipe, inputs['recipe_source_sha'], inputs['recipe_source_tree'], 3305)
     head = os.environ.get('GITHUB_SHA', '')
-    require(os.environ.get('GITHUB_REPOSITORY') == REPOSITORY and
-            os.environ.get('GITHUB_REF') == 'refs/heads/' + IMAGE_BRANCH and
-            os.environ.get('GITHUB_EVENT_NAME') == 'push' and os.environ.get('GITHUB_RUN_ATTEMPT') == '1'
-            and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
-            and os.environ.get('GITHUB_JOB') == 'same-image-parser-diagnostic'
-            and os.environ.get('GITHUB_WORKFLOW_SHA') == head
-            and os.environ.get('GITHUB_WORKFLOW_REF') == REPOSITORY +
-                '/.github/workflows/cpp-same-image-parser-diagnostic.yml@refs/heads/' + IMAGE_BRANCH
-            and re.fullmatch(r'[0-9a-f]{40}', head) is not None, 'operation_authority_identity')
+    require(supported_operation_identity(os.environ, head), 'operation_authority_identity')
     operation_proof = helper.checked_git_source(operation, head)
     sources = {}
     mapping = {'baseline': ('scripts/cpp-parser-diagnostic-inputs/baseline_compiler.py',

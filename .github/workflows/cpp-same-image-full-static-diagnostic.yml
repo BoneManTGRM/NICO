@@ -1,0 +1,166 @@
+name: Same Retrieved Image Full Static Diagnostic
+
+on:
+  push:
+    branches: [diagnostic/v17-pinned-image-20261007]
+    paths:
+      - .github/workflows/cpp-same-image-full-static-diagnostic.yml
+      - scripts/cpp_same_image_full_static_diagnostic.py
+      - scripts/cpp_full_static_prepare.py
+      - scripts/cpp_static_runner_scope.py
+      - scripts/cpp_private_diagnostic_inputs.py
+      - scripts/cpp_full_static_diagnostic_export.py
+      - scripts/verify_cpp_host_dependencies.py
+      - scripts/cpp_fetch_host_wheels.py
+      - scripts/cpp-static-diagnostic-inputs/**
+      - tests/test_cpp_full_static_prepare.py
+      - tests/test_cpp_supported_diagnostic_route.py
+      - tests/test_verify_cpp_host_dependencies.py
+      - tests/test_cpp_fetch_host_wheels.py
+      - tests/test_cpp_full_static_diagnostic_export.py
+      - tests/test_cpp_same_image_full_static_diagnostic.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cpp-same-image-full-static-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  same-image-full-static-diagnostic:
+    if: >-
+      github.repository == 'BoneManTGRM/NICO' &&
+      github.ref == 'refs/heads/diagnostic/v17-pinned-image-20261007' &&
+      github.run_attempt == 1 &&
+      contains(github.event.head_commit.message, '[diagnostic-static-v17]')
+    runs-on: ubuntu-24.04
+    # Existing authorized native-job cap. Stage/child limits stay in the API.
+    timeout-minutes: 155
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: operation-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f0919654edd719059ea03319981b13f46ba70a88
+          path: recipe-source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: bitcoin/bitcoin
+          ref: bb5296576e8f1a9fc11c19d9a25ba02ed4547e24
+          path: frozen-target-checkout
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Run the diagnostic controls in the actual host interpreter
+        run: |
+          python -I -B operation-source/tests/test_cpp_full_static_prepare.py
+          python -I -B operation-source/tests/test_cpp_supported_diagnostic_route.py
+          python -I -B operation-source/tests/test_verify_cpp_host_dependencies.py
+          python -I -B operation-source/tests/test_cpp_fetch_host_wheels.py
+          python -I -B operation-source/tests/test_cpp_full_static_diagnostic_export.py
+          python -I -B operation-source/tests/test_cpp_same_image_full_static_diagnostic.py
+      - name: Fetch exact reviewed public CP311 wheels
+        run: >-
+          python -I -B operation-source/scripts/cpp_fetch_host_wheels.py
+          --manifest operation-source/scripts/cpp-static-diagnostic-inputs/host-wheels.json
+          --manifest-sha256 2ab68d647ec57ec6e459f4ae7325dade7917d1336252552518019213be7b6d2d
+          --output "$RUNNER_TEMP/nico-static-wheels"
+      - name: Install the five hash-bound inputs in an isolated local venv
+        run: |
+          python -I -B -m venv "$RUNNER_TEMP/nico-static-venv"
+          "$RUNNER_TEMP/nico-static-venv/bin/python" -I -B -m pip install \
+            --no-index --no-cache-dir --disable-pip-version-check \
+            --find-links "$RUNNER_TEMP/nico-static-wheels" \
+            --require-hashes --no-deps --no-compile \
+            -r operation-source/scripts/cpp-static-diagnostic-inputs/requirements.lock
+      - name: Verify actual installed wheel bytes and import origins in a separate process
+        run: >-
+          "$RUNNER_TEMP/nico-static-venv/bin/python" -I -B
+          operation-source/scripts/verify_cpp_host_dependencies.py
+          --wheel-directory "$RUNNER_TEMP/nico-static-wheels"
+          --wheel-manifest operation-source/scripts/cpp-static-diagnostic-inputs/host-wheels.json
+          --wheel-manifest-sha256 2ab68d647ec57ec6e459f4ae7325dade7917d1336252552518019213be7b6d2d
+          --venv "$RUNNER_TEMP/nico-static-venv"
+          --output "$RUNNER_TEMP/nico-static-dependency-proof.json"
+      - name: Verify and privately prepare retained inputs through supported Actions transport
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          "$RUNNER_TEMP/nico-static-venv/bin/python" -I -B
+          operation-source/scripts/cpp_private_diagnostic_inputs.py
+          --operation-source operation-source --recipe-source recipe-source
+          --scratch "$RUNNER_TEMP/nico-static-private"
+          --load-store-reserve-bytes 4294967296
+      - name: Compare actual full static stages in fresh processes with the same image
+        run: |
+          proof_sha="$(sha256sum "$RUNNER_TEMP/nico-static-dependency-proof.json" | cut -d ' ' -f 1)"
+          proof_bytes="$(wc -c < "$RUNNER_TEMP/nico-static-dependency-proof.json")"
+          "$RUNNER_TEMP/nico-static-venv/bin/python" -I -B \
+            operation-source/scripts/cpp_same_image_full_static_diagnostic.py \
+            --operation-source operation-source --recipe-source recipe-source \
+            --target-checkout frozen-target-checkout \
+            --prepared-inputs "$RUNNER_TEMP/nico-static-private" \
+            --dependency-proof "$RUNNER_TEMP/nico-static-dependency-proof.json" \
+            --expected-proof-sha256 "$proof_sha" \
+            --expected-proof-bytes "$proof_bytes" \
+            --expected-caller-sha256 a9072a8f501b3092bf7e21ba8815c80b77c08f617bce6f188e73cc7e9e2e40a1 \
+            --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
+            --expected-prepare-sha256 130d5515b35cb04d745c2c2e45d05f8c0594fd0b621e4e091200d762dcd7c494 \
+            --expected-preparer-sha256 2bba4c741ce5ac33bd7613163cd8c9c19a475ef19e9e1832765b1d75f94dc632 \
+            --expected-exporter-sha256 c13239aef79fc999162d1ce5439ce3bd4566606a42eb2d5c3524d875d8ebd4e3 \
+            --expected-operation "${{ github.sha }}" \
+            --output "$RUNNER_TEMP/nico-static-private-output"
+      - name: Construct bounded evidence for this new pair only
+        if: always()
+        run: |
+          receipt_sha="$(sha256sum "$RUNNER_TEMP/nico-static-private-output/pair-receipt.json" | cut -d ' ' -f 1)"
+          python -I -B operation-source/scripts/cpp_full_static_diagnostic_export.py \
+            --caller-receipt "$RUNNER_TEMP/nico-static-private-output/pair-receipt.json" \
+            --expected-caller-receipt-sha256 "$receipt_sha" \
+            --expected-current-git-head "${{ github.sha }}" \
+            --expected-effective-fallback-baseline f0919654edd719059ea03319981b13f46ba70a88 \
+            --expected-compiler-overlay-path nico/assessment_cpp_project_compiler.py \
+            --expected-compiler-overlay-sha256 89b2cf72c00bdbde55fcdb42efeeaaeb11ad28ddae4e16cd99c59f6d3e5316e8 \
+            --expected-exporter-sha256 c13239aef79fc999162d1ce5439ce3bd4566606a42eb2d5c3524d875d8ebd4e3 \
+            --expected-caller-sha256 a9072a8f501b3092bf7e21ba8815c80b77c08f617bce6f188e73cc7e9e2e40a1 \
+            --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
+            --expected-image-config-digest sha256:2de94c121db7ae46df5415a40b33cd2d057fcc3b7bf9aa9d51756ecb4412447e \
+            --output full-static-diagnostic-public
+      - name: Retain the new pair receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-full-static-pair-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            full-static-diagnostic-public/static-summary.json
+            full-static-diagnostic-public/manifest.json
+          compression-level: 6
+          retention-days: 30
+          if-no-files-found: error
+      - name: Retain fresh baseline static evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-full-static-baseline-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: full-static-diagnostic-public/baseline/
+          compression-level: 6
+          retention-days: 30
+          if-no-files-found: error
+      - name: Retain fresh candidate static evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-full-static-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: full-static-diagnostic-public/candidate/
+          compression-level: 6
+          retention-days: 30
+          if-no-files-found: error
