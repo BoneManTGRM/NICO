@@ -346,6 +346,9 @@ def _with_publication_metadata(
 def _acquire_publication_slot(stop: threading.Event) -> bool:
     while not stop.is_set():
         if _PUBLICATION_SLOT.acquire(timeout=0.25):
+            if stop.is_set():
+                _PUBLICATION_SLOT.release()
+                return False
             return True
     return False
 

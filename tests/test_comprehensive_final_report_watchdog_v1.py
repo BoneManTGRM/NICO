@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from watchdog_startup_observation import observe_watchdog_startup
+
 import nico.comprehensive_final_report_background_v1 as background
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
 from nico.comprehensive_final_report_background_v1 import FinalReportPublicationCoordinator
