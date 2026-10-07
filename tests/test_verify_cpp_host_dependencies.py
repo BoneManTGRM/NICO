@@ -540,5 +540,270 @@ class BootstrapControls(unittest.TestCase):
         self.assertEqual(result['bootstrap_record_selection'], error.bootstrap_record_selection)
 
 
+CERTIFI_INIT = b'from .core import contents, where\n\n__all__ = ["contents", "where"]\n__version__ = "2026.07.22"\n'
+
+
+def owned_dependency_proof():
+    """Owned scalar fixture only: no claim of actual CPython3.11 or installation."""
+    rows = []
+    for name in sorted(SUBJECT.VERSIONS):
+        rows.append({'name': name, 'version': SUBJECT.VERSIONS[name],
+            'module_version': SUBJECT.expected_import_version(name),
+            'distribution_path': '/owned/private/site', 'import_path': '/owned/private/module.py',
+            'wheel': {**SUBJECT.WHEEL_PINS[name], 'metadata_version': SUBJECT.VERSIONS[name]},
+            'installed_record': {'path': '/owned/private/RECORD', 'bytes': 123, 'sha256': 'a' * 64,
+                'hashed_files_verified': 3, 'all_hashed_files_verified': True},
+            'loaded_module_count': 2, 'source_or_extension_origins_verified': True, 'no_cached_bytecode': True})
+    return {'schema': 'nico.diagnostic.cp311-installed-dependencies.v1',
+        'status': 'INSTALLED_DEPENDENCIES_VERIFIED', 'verifier_sha256': SUBJECT.sha(SOURCE.read_bytes()),
+        'wheel_manifest_sha256': 'b' * 64,
+        'python': {'implementation': 'CPython', 'version_info': [3, 11, 17],
+            'isolated': True, 'dont_write_bytecode': True, 'executable': '/owned/private/python',
+            'sys_prefix': '/owned/private/venv', 'sys_base_prefix': '/owned/private/base'},
+        'venv_root': '/owned/private/venv', 'site_packages': '/owned/private/site',
+        'packages': rows, 'site_population': {'all_site_files_record_owned': True, 'site_file_count': 27,
+            'optional_bootstrap': [{'name': 'setuptools', 'version': '84.0.0', 'record_sha256': 'c' * 64,
+                'hashed_files_verified': 13, 'pinned_wheel_dependency': False}]},
+        'pair_host_installation_binding_required': True, 'historical_environment_proof': False,
+        'HTTP_subprocess_or_target_execution': False, 'global_environment_changed': False,
+        'qualification_or_human_gate_credit': False}
+
+
+class ModuleVersionControls(unittest.TestCase):
+    def reject(self, code, function, *args):
+        with self.assertRaisesRegex(SUBJECT.VerificationRejected, '^' + code + '$'):
+            function(*args)
+
+    def certifi(self, directory, version='2026.07.22', body=CERTIFI_INIT):
+        path = Path(directory).resolve() / 'certifi/__init__.py'
+        path.parent.mkdir(parents=True)
+        path.write_bytes(body)
+        module = types.ModuleType('certifi')
+        module.__version__, module.__file__, module.__cached__ = version, str(path), None
+        bound = {str(path): SUBJECT.sha(body)}
+        return module, bound
+
+    def test_exact_certifi_initializer_data_and_metadata_versions_are_distinct(self):
+        self.assertEqual(len(CERTIFI_INIT), 94)
+        self.assertEqual(SUBJECT.sha(CERTIFI_INIT), SUBJECT.CERTIFI_INIT_SHA256)
+        self.assertEqual(SUBJECT.VERSIONS['certifi'], '2026.7.22')
+        self.assertEqual(SUBJECT.expected_import_version('certifi'), '2026.07.22')
+        tree = ast.parse(CERTIFI_INIT)
+        declaration = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == '__version__' for target in node.targets)]
+        self.assertEqual(declaration, ['2026.07.22'])
+        for name in set(SUBJECT.VERSIONS) - {'certifi'}:
+            self.assertEqual(SUBJECT.expected_import_version(name), SUBJECT.VERSIONS[name])
+
+    def test_exact_certifi_module_passes_existing_origin_and_namespace_guards(self):
+        with tempfile.TemporaryDirectory() as directory:
+            module, bound = self.certifi(directory)
+            with owned_modules({'certifi': module}):
+                row = SUBJECT.verify_loaded('certifi', module, bound, bound)
+            self.assertEqual(row['module_version'], '2026.07.22')
+            self.assertEqual(row['loaded_module_count'], 1)
+            self.assertTrue(row['source_or_extension_origins_verified'])
+            self.assertTrue(row['no_cached_bytecode'])
+
+    def test_metadata_spelling_other_padding_wrong_version_and_missing_are_rejected(self):
+        for value in ['2026.7.22', '2026.007.22', '2026.07.23', None, 20260722]:
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                module, bound = self.certifi(directory, value)
+                self.reject('actual_import_version', SUBJECT.verify_loaded, 'certifi', module, bound, bound)
+
+    def test_changed_certifi_wheel_pin_and_rebound_initializer_are_rejected(self):
+        changed = {**SUBJECT.WHEEL_PINS['certifi'], 'sha256': '0' * 64}
+        with patch.dict(SUBJECT.WHEEL_PINS, {'certifi': changed}):
+            self.reject('certifi_import_version_pin', SUBJECT.expected_import_version, 'certifi')
+        with tempfile.TemporaryDirectory() as directory:
+            module, bound = self.certifi(directory, body=CERTIFI_INIT + b'# altered inert bytes\n')
+            with owned_modules({'certifi': module}):
+                self.reject('certifi_import_declaration_binding', SUBJECT.verify_loaded, 'certifi', module, bound, bound)
+
+    def test_certifi_origin_alias_and_cached_bytecode_guards_remain(self):
+        for kind, code in [('origin', 'actual_import_binding'), ('alias', 'loaded_module_alias_identity'),
+                           ('cached', 'loaded_cached_bytecode')]:
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                module, bound = self.certifi(directory)
+                if kind == 'origin':
+                    bound = {}
+                elif kind == 'alias':
+                    module.__name__ = 'unknown'
+                else:
+                    cached = Path(directory).resolve() / 'owned.pyc'
+                    cached.write_bytes(b'inert cached marker');module.__cached__ = str(cached)
+                with owned_modules({'certifi': module}):
+                    self.reject(code, SUBJECT.verify_loaded, 'certifi', module, bound, bound)
+
+    def test_other_module_version_comparison_remains_exact(self):
+        module = types.ModuleType('requests')
+        module.__version__ = '2.034.2'
+        self.reject('actual_import_version', SUBJECT.verify_loaded, 'requests', module, {}, {})
+
+    def test_module_failure_projection_has_only_safe_typed_versions(self):
+        for value, kind, safe in [('2026.7.22', 'string', '2026.7.22'),
+                                 ('/owned/private?token=SECRET', 'string', None),
+                                 ('x' * 1000, 'string', None), (None, 'missing', None), (object(), 'other', None)]:
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                module, bound = self.certifi(directory, value)
+                try:
+                    SUBJECT.verify_loaded('certifi', module, bound, bound)
+                except SUBJECT.VerificationRejected as error:
+                    diagnostic = SUBJECT.import_version_failure_diagnostic(error)
+                else:
+                    self.fail('owned wrong module version accepted')
+                self.assertEqual(diagnostic, {'package': 'certifi', 'distribution_version': '2026.7.22',
+                    'expected_module_version': '2026.07.22', 'actual_module_version': safe, 'actual_value_kind': kind})
+                self.assertNotIn('SECRET', json.dumps(diagnostic))
+        error = SUBJECT.VerificationRejected('actual_import_version')
+        error.module_version_comparison = {**diagnostic, 'path': '/owned/private'}
+        self.assertIsNone(SUBJECT.import_version_failure_diagnostic(error))
+
+    def test_actual_failure_guard_keeps_exit2_and_safe_module_diagnostic(self):
+        error = SUBJECT.VerificationRejected('actual_import_version')
+        error.module_version_comparison = {'package': 'certifi', 'distribution_version': '2026.7.22',
+            'expected_module_version': '2026.07.22', 'actual_module_version': '2026.7.22', 'actual_value_kind': 'string'}
+        tree = ast.parse(SOURCE.read_bytes())
+        guards = [node for node in tree.body if isinstance(node, ast.If)
+                  and isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name)
+                  and node.test.left.id == '__name__']
+        self.assertEqual(len(guards), 1)
+        scope = dict(SUBJECT.__dict__);scope['__name__'] = '__main__'
+        scope['main'] = types.SimpleNamespace()
+        with patch.object(SUBJECT, 'main', side_effect=error) as main:
+            scope['main'] = main
+            capture = io.StringIO()
+            with contextlib.redirect_stdout(capture), self.assertRaises(SystemExit) as stopped:
+                exec(compile(ast.Module(body=guards, type_ignores=[]), '<actual-module-version-main-guard>', 'exec'), scope)
+        self.assertEqual(stopped.exception.code, 2)
+        result = json.loads(capture.getvalue())
+        self.assertEqual(set(result), {'status', 'error_code', 'historical_environment_proof', 'module_version_comparison'})
+        self.assertEqual(result['status'], 'UNPROVEN')
+        self.assertEqual(result['module_version_comparison'], error.module_version_comparison)
+
+
+class DependencyLogControls(unittest.TestCase):
+    def project(self, proof):
+        raw = SUBJECT.canonical(proof) + b'\n'
+        return SUBJECT.dependency_log_projection(proof, raw, 'b' * 64), raw
+
+    def reject(self, code, proof, raw=None):
+        if raw is None:
+            raw = SUBJECT.canonical(proof) + b'\n'
+        with self.assertRaisesRegex(SUBJECT.VerificationRejected, '^' + code + '$'):
+            SUBJECT.dependency_log_projection(proof, raw, 'b' * 64)
+
+    def test_current_closed_projection_binds_whole_proof_and_exact_package_facts(self):
+        proof = owned_dependency_proof()
+        summary, raw = self.project(proof)
+        self.assertEqual(summary['proof_sha256'], SUBJECT.sha(raw))
+        self.assertEqual(summary['proof_bytes'], len(raw))
+        self.assertEqual(summary['verifier_sha256'], SUBJECT.sha(SOURCE.read_bytes()))
+        self.assertEqual(summary['python'], {'implementation': 'CPython', 'version_info': [3, 11, 17],
+            'isolated': True, 'dont_write_bytecode': True})
+        self.assertEqual([row['name'] for row in summary['packages']], sorted(SUBJECT.VERSIONS))
+        certifi = next(row for row in summary['packages'] if row['name'] == 'certifi')
+        self.assertEqual((certifi['distribution_version'], certifi['module_version']), ('2026.7.22', '2026.07.22'))
+        self.assertFalse(summary['optional_bootstrap'][0]['pinned_wheel_dependency'])
+        self.assertFalse(summary['historical_environment_proof'])
+        self.assertFalse(summary['qualification_or_human_gate_credit'])
+
+    def test_private_extra_fields_and_paths_never_enter_log_projection(self):
+        proof = owned_dependency_proof()
+        marker = 'PRIVATE-CREDENTIAL-MARKER'
+        proof['unknown_private'] = {'token': marker, 'provider': marker}
+        proof['python']['executable'] = marker
+        proof['packages'][0]['installed_record']['path'] = marker
+        proof['packages'][0]['wheel']['url'] = marker
+        proof['site_population']['optional_bootstrap'][0]['unknown_private'] = marker
+        summary, raw = self.project(proof)
+        text = json.dumps(summary)
+        self.assertNotIn(marker, text)
+        self.assertNotIn('/owned/private', text)
+        self.assertNotIn('"url"', text)
+        self.assertEqual(set(summary), {'schema', 'status', 'verifier_sha256', 'wheel_manifest_sha256',
+            'proof_sha256', 'proof_bytes', 'python', 'packages', 'optional_bootstrap', 'site_population',
+            'pair_host_installation_binding_required', 'historical_environment_proof',
+            'HTTP_subprocess_or_target_execution', 'global_environment_changed', 'qualification_or_human_gate_credit'})
+
+    def test_proof_bytes_identity_runtime_and_historical_flags_reject_tampering(self):
+        proof = owned_dependency_proof()
+        self.reject('dependency_log_proof_bytes', proof, SUBJECT.canonical(proof))
+        self.reject('dependency_log_proof_bytes', proof, SUBJECT.canonical(proof) + b'\nchanged')
+        for key, value in [('verifier_sha256', '0' * 64), ('wheel_manifest_sha256', '0' * 64),
+                           ('historical_environment_proof', True), ('qualification_or_human_gate_credit', True)]:
+            with self.subTest(key=key):
+                changed = copy.deepcopy(proof);changed[key] = value
+                self.reject('dependency_log_proof_identity', changed)
+        for key, value in [('version_info', [3, 12, 14]), ('version_info', [3, 11, True]),
+                           ('isolated', False), ('dont_write_bytecode', False)]:
+            with self.subTest(key=key):
+                changed = copy.deepcopy(proof);changed['python'][key] = value
+                self.reject('dependency_log_runtime', changed)
+
+    def test_package_population_exact_versions_hashes_and_origin_cache_flags_reject(self):
+        proof = owned_dependency_proof()
+        changed = copy.deepcopy(proof);changed['packages'].pop()
+        self.reject('dependency_log_package_population', changed)
+        changed = copy.deepcopy(proof);changed['packages'][-1] = copy.deepcopy(changed['packages'][0])
+        self.reject('dependency_log_package_identity', changed)
+        for key, value in [('version', '0'), ('module_version', '2026.7.22'),
+                           ('source_or_extension_origins_verified', False), ('no_cached_bytecode', False),
+                           ('loaded_module_count', True)]:
+            with self.subTest(key=key):
+                changed = copy.deepcopy(proof);changed['packages'][0][key] = value
+                self.reject('dependency_log_package_facts', changed)
+        for container, key, value in [('wheel', 'sha256', '0' * 64), ('wheel', 'bytes', True),
+                ('installed_record', 'sha256', '/owned/private'), ('installed_record', 'bytes', 0),
+                ('installed_record', 'hashed_files_verified', 2049), ('installed_record', 'all_hashed_files_verified', False)]:
+            with self.subTest(container=container, key=key):
+                changed = copy.deepcopy(proof);changed['packages'][0][container][key] = value
+                self.reject('dependency_log_package_facts', changed)
+
+    def test_site_ownership_bootstrap_population_identity_and_bounds_reject(self):
+        proof = owned_dependency_proof()
+        for key, value in [('all_site_files_record_owned', False), ('site_file_count', True), ('site_file_count', 20001)]:
+            with self.subTest(key=key):
+                changed = copy.deepcopy(proof);changed['site_population'][key] = value
+                self.reject('dependency_log_site_population', changed)
+        for key, value in [('name', 'unknown'), ('version', '/owned/private'), ('record_sha256', 'INVALID'),
+                           ('hashed_files_verified', True), ('pinned_wheel_dependency', True)]:
+            with self.subTest(key=key):
+                changed = copy.deepcopy(proof);changed['site_population']['optional_bootstrap'][0][key] = value
+                self.reject('dependency_log_bootstrap', changed)
+        changed = copy.deepcopy(proof)
+        changed['site_population']['optional_bootstrap'].append(copy.deepcopy(changed['site_population']['optional_bootstrap'][0]))
+        self.reject('dependency_log_bootstrap', changed)
+
+    def test_actual_main_writes_private_proof_and_logs_only_bound_projection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory).resolve() / 'private-proof.json'
+            proof = owned_dependency_proof()
+            arguments = ['owned', '--wheel-directory', directory, '--wheel-manifest', directory + '/manifest.json',
+                '--wheel-manifest-sha256', 'b' * 64, '--venv', directory, '--output', str(output)]
+            capture = io.StringIO()
+            with patch.object(sys, 'argv', arguments), patch.object(SUBJECT, 'produce', return_value=proof), contextlib.redirect_stdout(capture):
+                SUBJECT.main()
+            raw = output.read_bytes()
+            self.assertEqual(raw, SUBJECT.canonical(proof) + b'\n')
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+            self.assertEqual(json.loads(capture.getvalue())['proof_sha256'], SUBJECT.sha(raw))
+            self.assertNotIn('/owned/private', capture.getvalue())
+
+    def test_invalid_log_projection_keeps_gate_failure_and_creates_no_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory).resolve() / 'private-proof.json'
+            proof = owned_dependency_proof();proof['packages'][0]['no_cached_bytecode'] = False
+            arguments = ['owned', '--wheel-directory', directory, '--wheel-manifest', directory + '/manifest.json',
+                '--wheel-manifest-sha256', 'b' * 64, '--venv', directory, '--output', str(output)]
+            capture = io.StringIO()
+            with patch.object(sys, 'argv', arguments), patch.object(SUBJECT, 'produce', return_value=proof), contextlib.redirect_stdout(capture):
+                with self.assertRaisesRegex(SUBJECT.VerificationRejected, '^dependency_log_package_facts$'):
+                    SUBJECT.main()
+            self.assertFalse(output.exists())
+            self.assertEqual(capture.getvalue(), '')
+
+
 if __name__ == '__main__':
     unittest.main()
+

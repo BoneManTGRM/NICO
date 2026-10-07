@@ -112,7 +112,7 @@ jobs:
             --dependency-proof "$RUNNER_TEMP/nico-static-dependency-proof.json" \
             --expected-proof-sha256 "$proof_sha" \
             --expected-proof-bytes "$proof_bytes" \
-            --expected-caller-sha256 66611726e69d0f0fec5d546e396d0dd78c37bce7ceadea5e2d403069816386df \
+            --expected-caller-sha256 d5820dab4b6bdec8dff0e0cf8f14ccad6ef1eb60984e31c1483023d504a5a548 \
             --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
             --expected-prepare-sha256 130d5515b35cb04d745c2c2e45d05f8c0594fd0b621e4e091200d762dcd7c494 \
             --expected-preparer-sha256 2bba4c741ce5ac33bd7613163cd8c9c19a475ef19e9e1832765b1d75f94dc632 \
@@ -131,7 +131,7 @@ jobs:
             --expected-compiler-overlay-path nico/assessment_cpp_project_compiler.py \
             --expected-compiler-overlay-sha256 89b2cf72c00bdbde55fcdb42efeeaaeb11ad28ddae4e16cd99c59f6d3e5316e8 \
             --expected-exporter-sha256 c13239aef79fc999162d1ce5439ce3bd4566606a42eb2d5c3524d875d8ebd4e3 \
-            --expected-caller-sha256 66611726e69d0f0fec5d546e396d0dd78c37bce7ceadea5e2d403069816386df \
+            --expected-caller-sha256 d5820dab4b6bdec8dff0e0cf8f14ccad6ef1eb60984e31c1483023d504a5a548 \
             --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
             --expected-image-config-digest sha256:2de94c121db7ae46df5415a40b33cd2d057fcc3b7bf9aa9d51756ecb4412447e \
             --output full-static-diagnostic-public

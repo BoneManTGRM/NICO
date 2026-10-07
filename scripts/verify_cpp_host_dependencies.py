@@ -50,6 +50,12 @@ WHEEL_PINS = {
         'url': 'https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl'}
 }
 
+# The exact pinned certifi wheel uses this spelling in its 94-byte initializer,
+# while its distribution METADATA uses 2026.7.22. This is no general version
+# normalization; every other module must still match its metadata exactly.
+CERTIFI_MODULE_VERSION = '2026.07.22'
+CERTIFI_INIT_SHA256 = '7a52e5f4205f9b3d12a31898ceaa7e3f6837d19cc230700bcae1a9d91d1486c1'
+
 
 class VerificationRejected(ValueError):
     pass
@@ -391,11 +397,51 @@ def verify_site_population(site, venv, installed, wheels):
             'optional_bootstrap': bootstrap}
 
 
+def expected_import_version(name):
+    require(name in VERSIONS, 'import_version_package')
+    if name == 'certifi':
+        require(VERSIONS[name] == '2026.7.22'
+                and WHEEL_PINS[name]['sha256'] ==
+                '62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775',
+                'certifi_import_version_pin')
+        return CERTIFI_MODULE_VERSION
+    return VERSIONS[name]
+
+
+def import_version_failure_diagnostic(error):
+    value = getattr(error, 'module_version_comparison', None)
+    if not isinstance(error, VerificationRejected) or str(error) != 'actual_import_version' or type(value) is not dict:
+        return None
+    keys = {'package', 'distribution_version', 'expected_module_version', 'actual_module_version', 'actual_value_kind'}
+    if set(value) != keys or type(value['package']) is not str or value['package'] not in VERSIONS:
+        return None
+    name = value['package']
+    if value['distribution_version'] != VERSIONS[name] or value['expected_module_version'] != expected_import_version(name):
+        return None
+    actual = value['actual_module_version']
+    if actual is not None and (type(actual) is not str or re.fullmatch(r'[0-9][A-Za-z0-9_.+!-]{0,79}', actual) is None):
+        return None
+    if type(value['actual_value_kind']) is not str or value['actual_value_kind'] not in {'string', 'missing', 'other'} or (actual is not None and value['actual_value_kind'] != 'string'):
+        return None
+    return {key: value[key] for key in sorted(keys)}
+
+
 def verify_loaded(name, module, bound, all_bound):
     prefix = MODULES[name]
-    require(getattr(module, '__version__', None) == VERSIONS[name], 'actual_import_version')
+    expected = expected_import_version(name)
+    actual = getattr(module, '__version__', None)
+    if type(actual) is not str or actual != expected:
+        error = VerificationRejected('actual_import_version')
+        error.module_version_comparison = {
+            'package': name, 'distribution_version': VERSIONS[name], 'expected_module_version': expected,
+            'actual_module_version': actual if type(actual) is str and re.fullmatch(r'[0-9][A-Za-z0-9_.+!-]{0,79}', actual) else None,
+            'actual_value_kind': 'string' if type(actual) is str else 'missing' if actual is None else 'other'}
+        raise error
     path = Path(module.__file__).absolute()
     require(str(path) in bound and sha(regular(path)) == bound[str(path)], 'actual_import_binding')
+    if name == 'certifi':
+        require(path.name == '__init__.py' and sha(regular(path)) == CERTIFI_INIT_SHA256,
+                'certifi_import_declaration_binding')
     count = 0
     for key, value in list(sys.modules.items()):
         if key == prefix or key.startswith(prefix + '.'):
@@ -413,7 +459,7 @@ def verify_loaded(name, module, bound, all_bound):
             require(cached is None or not Path(cached).exists(), 'loaded_cached_bytecode')
             count += 1
     require(count > 0, 'loaded_module_population')
-    return {'import_module': prefix, 'import_path': str(path), 'loaded_module_count': count,
+    return {'import_module': prefix, 'import_path': str(path), 'module_version': actual, 'loaded_module_count': count,
             'source_or_extension_origins_verified': True, 'no_cached_bytecode': True}
 
 
@@ -480,6 +526,7 @@ def validate_current_receipt(proof, expected_verifier_sha256, expected_manifest_
     for row in proof['packages']:
         name = normalized(row['name'])
         require(name in VERSIONS and name not in rows and row['version'] == VERSIONS[name]
+                and row.get('module_version') == expected_import_version(name)
                 and row['distribution_path'] == str(site)
                 and all(row['wheel'].get(k) == v for k, v in WHEEL_PINS[name].items()), 'current_package_identity')
         record_name, scripts, bounds[name] = current_record(site, venv, row['installed_record'])
@@ -550,6 +597,84 @@ def produce(wheel_dir, manifest_path, manifest_sha256, venv):
             'global_environment_changed': False, 'qualification_or_human_gate_credit': False}
 
 
+def dependency_log_projection(proof, raw, expected_manifest_sha256):
+    """Allowlist current installed-proof facts; paths and raw receipts stay private."""
+    require(type(raw) is bytes and 0 < len(raw) <= MAX_PROOF
+            and raw == canonical(proof) + b'\n', 'dependency_log_proof_bytes')
+    digest = lambda value: type(value) is str and re.fullmatch(r'[0-9a-f]{64}', value) is not None
+    count = lambda value, maximum: type(value) is int and 0 <= value <= maximum
+    require(proof.get('schema') == 'nico.diagnostic.cp311-installed-dependencies.v1'
+            and proof.get('status') == 'INSTALLED_DEPENDENCIES_VERIFIED'
+            and proof.get('verifier_sha256') == sha(regular(__file__))
+            and digest(expected_manifest_sha256)
+            and proof.get('wheel_manifest_sha256') == expected_manifest_sha256
+            and proof.get('historical_environment_proof') is False
+            and proof.get('pair_host_installation_binding_required') is True
+            and all(proof.get(key) is False for key in ('HTTP_subprocess_or_target_execution',
+                'global_environment_changed', 'qualification_or_human_gate_credit')),
+            'dependency_log_proof_identity')
+    python = proof.get('python')
+    require(type(python) is dict and python.get('implementation') == 'CPython'
+            and type(python.get('version_info')) is list and len(python['version_info']) == 3
+            and all(count(v, 100000) for v in python['version_info'])
+            and python['version_info'][:2] == [3, 11]
+            and python.get('isolated') is True and python.get('dont_write_bytecode') is True,
+            'dependency_log_runtime')
+    package_rows = proof.get('packages')
+    require(type(package_rows) is list and len(package_rows) == len(VERSIONS), 'dependency_log_package_population')
+    packages = {}
+    for row in package_rows:
+        require(type(row) is dict and type(row.get('name')) is str and row['name'] in VERSIONS
+                and row['name'] not in packages, 'dependency_log_package_identity')
+        name, wheel, record = row['name'], row.get('wheel'), row.get('installed_record')
+        require(row.get('version') == VERSIONS[name]
+                and row.get('module_version') == expected_import_version(name)
+                and row.get('source_or_extension_origins_verified') is True
+                and row.get('no_cached_bytecode') is True
+                and count(row.get('loaded_module_count'), MAX_ENTRIES) and row['loaded_module_count'] > 0
+                and type(wheel) is dict and wheel.get('sha256') == WHEEL_PINS[name]['sha256']
+                and type(wheel.get('bytes')) is int and wheel['bytes'] == WHEEL_PINS[name]['bytes']
+                and wheel.get('metadata_version') == VERSIONS[name]
+                and type(record) is dict and digest(record.get('sha256'))
+                and count(record.get('bytes'), MAX_PROOF) and record['bytes'] > 0
+                and count(record.get('hashed_files_verified'), MAX_ENTRIES)
+                and record['hashed_files_verified'] > 0 and record.get('all_hashed_files_verified') is True,
+                'dependency_log_package_facts')
+        packages[name] = {'name': name, 'distribution_version': VERSIONS[name],
+            'module_version': row['module_version'], 'wheel_sha256': wheel['sha256'], 'wheel_bytes': wheel['bytes'],
+            'installed_record_sha256': record['sha256'], 'installed_record_bytes': record['bytes'],
+            'installed_hashed_files_verified': record['hashed_files_verified'],
+            'loaded_module_count': row['loaded_module_count'], 'source_or_extension_origins_verified': True,
+            'cached_bytecode_present': False}
+    require(set(packages) == set(VERSIONS), 'dependency_log_package_population')
+    site = proof.get('site_population')
+    require(type(site) is dict and site.get('all_site_files_record_owned') is True
+            and count(site.get('site_file_count'), 20000) and site['site_file_count'] > 0
+            and type(site.get('optional_bootstrap')) is list and len(site['optional_bootstrap']) <= 2,
+            'dependency_log_site_population')
+    bootstrap = {}
+    for row in site['optional_bootstrap']:
+        require(type(row) is dict and type(row.get('name')) is str and row['name'] in {'pip', 'setuptools'}
+                and row['name'] not in bootstrap and type(row.get('version')) is str
+                and re.fullmatch(r'[0-9][A-Za-z0-9_.+!-]{0,79}', row['version']) is not None
+                and digest(row.get('record_sha256')) and count(row.get('hashed_files_verified'), MAX_ENTRIES)
+                and row.get('pinned_wheel_dependency') is False, 'dependency_log_bootstrap')
+        bootstrap[row['name']] = {'name': row['name'], 'version': row['version'],
+            'record_sha256': row['record_sha256'], 'hashed_files_verified': row['hashed_files_verified'],
+            'pinned_wheel_dependency': False}
+    return {'schema': 'nico.diagnostic.cp311-installed-dependencies-log.v1',
+        'status': 'INSTALLED_DEPENDENCIES_VERIFIED', 'verifier_sha256': proof['verifier_sha256'],
+        'wheel_manifest_sha256': expected_manifest_sha256, 'proof_sha256': sha(raw), 'proof_bytes': len(raw),
+        'python': {'implementation': 'CPython', 'version_info': list(python['version_info']),
+            'isolated': True, 'dont_write_bytecode': True},
+        'packages': [packages[name] for name in sorted(packages)],
+        'optional_bootstrap': [bootstrap[name] for name in sorted(bootstrap)],
+        'site_population': {'all_site_files_record_owned': True, 'site_file_count': site['site_file_count']},
+        'pair_host_installation_binding_required': True, 'historical_environment_proof': False,
+        'HTTP_subprocess_or_target_execution': False, 'global_environment_changed': False,
+        'qualification_or_human_gate_credit': False}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wheel-directory', required=True, type=Path)
@@ -561,12 +686,13 @@ def main():
     proof = produce(args.wheel_directory, args.wheel_manifest, args.wheel_manifest_sha256, args.venv)
     data = canonical(proof) + b'\n'
     require(len(data) <= MAX_PROOF, 'dependency_proof_bound')
+    summary = dependency_log_projection(proof, data, args.wheel_manifest_sha256)
     output = args.output.absolute()
     require(output.parent.resolve(strict=True) == output.parent and not output.exists(), 'new_private_output')
     with output.open('xb') as stream:
         os.chmod(output, 0o600)
         stream.write(data)
-    print('{"status":"INSTALLED_DEPENDENCIES_VERIFIED","historical_environment_proof":false}')
+    print(canonical(summary).decode())
 
 
 if __name__ == '__main__':
@@ -580,5 +706,8 @@ if __name__ == '__main__':
         selection = bootstrap_failure_diagnostic(error)
         if selection is not None:
             result['bootstrap_record_selection'] = selection
+        comparison = import_version_failure_diagnostic(error)
+        if comparison is not None:
+            result['module_version_comparison'] = comparison
         print(json.dumps(result))
         raise SystemExit(2) from None
