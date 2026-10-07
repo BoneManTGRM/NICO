@@ -294,6 +294,56 @@ def verify_installed(site, venv, name, wheel):
             'unhashed_paths': [wheel['record_name']], 'all_hashed_files_verified': True}, bound
 
 
+def bootstrap_record_name(site, name, dist):
+    """Select one own top-level RECORD; nested vendor records stay parent-owned."""
+    require(name in {'pip', 'setuptools'}, 'bootstrap_distribution_identity')
+    version = dist.version
+    files = [str(path) for path in (dist.files or [])]
+    suffixes = [path for path in files if path.endswith('.dist-info/RECORD')]
+    top_level = [path for path in suffixes if len(PurePosixPath(path).parts) == 2]
+    valid_version = type(version) is str and re.fullmatch(r'[A-Za-z0-9_.+!-]{1,80}', version) is not None
+    details = {'package': name, 'version': version if valid_version else None,
+               'total_suffix_count': len(suffixes), 'own_top_level_count': len(top_level),
+               'nested_count': len(suffixes) - len(top_level)}
+    try:
+        require(len(top_level) == 1, 'bootstrap_record_population')
+        require(valid_version and normalized(dist.metadata['Name']) == name
+                and dist.metadata.get('Version') == version, 'bootstrap_distribution_identity')
+        record_name = relative(top_level[0])
+        require(record_name == name + '-' + version + '.dist-info/RECORD', 'bootstrap_record_identity')
+        metadata_name = str(PurePosixPath(record_name).parent / 'METADATA')
+        require(metadata_name in files, 'bootstrap_metadata_missing')
+        metadata = email.parser.BytesParser().parsebytes(regular(site / metadata_name, MAX_PROOF))
+        names, versions = metadata.get_all('Name', []), metadata.get_all('Version', [])
+        require(len(names) == 1 and len(versions) == 1
+                and normalized(names[0]) == name and versions[0] == version, 'bootstrap_metadata_identity')
+        return record_name
+    except VerificationRejected as error:
+        # Only these current public bootstrap scalars may reach failure stdout.
+        # No candidate names, host paths, raw METADATA/RECORD or errors are copied.
+        error.bootstrap_record_selection = details
+        raise
+
+
+def bootstrap_failure_diagnostic(error):
+    value = getattr(error, 'bootstrap_record_selection', None)
+    if not isinstance(error, VerificationRejected) or not isinstance(value, dict):
+        return None
+    if set(value) != {'package', 'version', 'total_suffix_count', 'own_top_level_count', 'nested_count'}:
+        return None
+    if type(value['package']) is not str or value['package'] not in {'pip', 'setuptools'}:
+        return None
+    if value['version'] is not None and (type(value['version']) is not str
+            or re.fullmatch(r'[A-Za-z0-9_.+!-]{1,80}', value['version']) is None):
+        return None
+    counts = ('total_suffix_count', 'own_top_level_count', 'nested_count')
+    if any(type(value[key]) is not int or not 0 <= value[key] <= 20000 for key in counts):
+        return None
+    if value['total_suffix_count'] != value['own_top_level_count'] + value['nested_count']:
+        return None
+    return {key: value[key] for key in ('package', 'version', *counts)}
+
+
 def verify_site_population(site, venv, installed, wheels):
     """No unrecorded top-level modules, metadata or path injection files.
 
@@ -309,9 +359,7 @@ def verify_site_population(site, venv, installed, wheels):
             record_name = wheels[name]['record_name']
             scripts = wheels[name]['console_scripts']
         else:
-            candidates = [str(p) for p in (dist.files or []) if str(p).endswith('.dist-info/RECORD')]
-            require(len(candidates) == 1, 'bootstrap_record_population')
-            record_name = relative(candidates[0])
+            record_name = bootstrap_record_name(site, name, dist)
             scripts = {'pip', 'pip3', 'pip3.11'} if name == 'pip' else set()
         rows = record_rows(regular(site / record_name, MAX_PROOF))
         require(rows.get(record_name) == {'hash': '', 'bytes': None}, 'site_record_self')
@@ -528,5 +576,9 @@ if __name__ == '__main__':
         code = str(error) if isinstance(error, VerificationRejected) else 'dependency_verification_failed'
         if re.fullmatch(r'[a-z0-9_]+', code) is None:
             code = 'dependency_verification_failed'
-        print(json.dumps({'status': 'UNPROVEN', 'error_code': code, 'historical_environment_proof': False}))
+        result = {'status': 'UNPROVEN', 'error_code': code, 'historical_environment_proof': False}
+        selection = bootstrap_failure_diagnostic(error)
+        if selection is not None:
+            result['bootstrap_record_selection'] = selection
+        print(json.dumps(result))
         raise SystemExit(2) from None
