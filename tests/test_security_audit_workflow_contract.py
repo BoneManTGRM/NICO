@@ -45,9 +45,9 @@ def test_frontend_dependency_override_removes_vulnerable_image_optimizer_path() 
     config = CONFIG.read_text(encoding="utf-8")
     next_version = package["dependencies"]["next"]
     assert _semver_core(next_version) >= (16, 2, 11)
-    # Next.js 16.3.4 requires Sharp 0.35.4 for its updated native image path.
+    # GHSA-wq5f-xc86-pv6w affects Sharp <0.35.5, including the former pin.
     sharp_version = package["overrides"]["sharp"]
-    assert _semver_core(sharp_version) >= (0, 35, 4)
+    assert _semver_core(sharp_version) >= (0, 35, 5)
     lock = json.loads((PACKAGE.parent / "package-lock.json").read_text(encoding="utf-8"))
     assert lock["packages"]["node_modules/sharp"]["version"] == sharp_version
     assert "unoptimized: true" in config
