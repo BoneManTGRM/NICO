@@ -312,6 +312,51 @@ def target_member(path, row, scope):
     return raw
 
 
+def checked_target_checkout(source, helper, scope, inventory, *, expected_commit, expected_tree, expected_population):
+    """Verify exactly an already trusted target inventory, without a name alphabet.
+
+    Canonical safe paths and exact inventory membership admit the pinned target's
+    literal @ locale names. No new filename, blob, mode, or source population can
+    be authorized by this checker. Production passes the unchanged frozen pins;
+    explicit parameters permit owned tiny-Git controls only.
+    """
+    hexadecimal(expected_commit, 40, 'target_expected_commit')
+    hexadecimal(expected_tree, 40, 'target_expected_tree')
+    require(type(expected_population) is int and expected_population > 0
+            and type(inventory) is list and len(inventory) == expected_population, 'target_inventory_population')
+    expected = {}
+    for row in inventory:
+        name = scope.safe_path(row['path'])
+        require(name not in expected and row['git_mode'] in {'100644', '100755'}, 'target_inventory_member')
+        hexadecimal(row['git_blob'], 40, 'target_inventory_blob')
+        expected[name] = row
+    require(scope.git_tree(inventory) == expected_tree, 'target_inventory_tree')
+    require(helper.git_value(source, 'HEAD') == expected_commit, 'target_source_commit')
+    require(helper.git_value(source, 'HEAD^{tree}') == expected_tree, 'target_source_tree')
+    # Preserve the original clean-index/worktree guard, including nonzero failure.
+    subprocess.run(['git', '-C', str(source), 'diff-index', '--quiet', 'HEAD', '--'], check=True, timeout=30)
+    listing = helper.command(['git', '-C', str(source), 'ls-tree', '-rz', '--full-tree', 'HEAD'],
+                             maximum=2 * 1024 * 1024)
+    actual, rows = set(), []
+    for entry in listing.split(b'\0'):
+        if not entry:
+            continue
+        header, name_raw = entry.split(b'\t', 1)
+        mode, kind, blob = header.decode().split()
+        name = scope.safe_path(name_raw.decode())
+        require(name in expected and name not in actual and kind == 'blob', 'target_git_exact_member')
+        row = expected[name]
+        require(mode == row['git_mode'] and blob == row['git_blob'], 'target_git_original_blob_and_mode')
+        raw = target_member(Path(source) / name, row, scope)
+        actual.add(name)
+        rows.append({'path': name, 'git_blob': blob, 'git_mode': mode,
+                     'bytes': len(raw), 'sha256': sha(raw), 'git_normalization': None})
+    require(actual == set(expected) and len(rows) == expected_population, 'target_git_exact_population')
+    return {'commit': expected_commit, 'tree': expected_tree, 'tracked_files': len(rows),
+            'tracked_byte_blob_mode_inventory_sha256': sha(canonical(rows)),
+            'checkout_eol_differences': []}
+
+
 def copy_target(args, helper, scope):
     """Use checkout bytes; never Git archive export-subst or target execution."""
     pins = decode(regular(args.prepared_inputs / 'host/pins.json', MAX_META))
@@ -331,7 +376,8 @@ def copy_target(args, helper, scope):
             and sum(row['bytes'] for row in inventory) == original['source_bytes'] == 49729651
             and {row['path']: row['sha256'] for row in inventory} == original['targets']
             and scope.git_tree(inventory) == FROZEN_TREE, 'retained3031_inventory')
-    checkout = helper.checked_git_source(args.target_checkout, FROZEN_HEAD, FROZEN_TREE, 3031)
+    checkout = checked_target_checkout(args.target_checkout, helper, scope, inventory,
+        expected_commit=FROZEN_HEAD, expected_tree=FROZEN_TREE, expected_population=3031)
     target = args.output / 'context/target'
     require(not target.exists(), 'new_data_only_target_required')
     target.mkdir(mode=0o700)

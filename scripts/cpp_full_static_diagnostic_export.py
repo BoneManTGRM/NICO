@@ -43,6 +43,75 @@ FIXED_IMAGE = 'sha256:2de94c121db7ae46df5415a40b33cd2d057fcc3b7bf9aa9d51756ecb44
 BASELINE_COMPILER_SHA = 'be5b8be8386189af7f51e2ce47681b181a6c71a5e8384146da6deb8289e81276'
 
 
+# Exact fixed require literals from reviewed caller/helper/scope, not error text patterns.
+PARENT_VALIDATION_CODES = {
+    'CallerRejected': frozenset({
+        'actual_operation_authority', 'actual_operation_transport_proof', 'actual_scope_result_contract',
+        'actual_source_git_blob', 'canonical_path', 'connected_fresh_worker',
+        'data_only_exact_target_population', 'data_only_target_member', 'duplicate_json_key',
+        'executing_caller_actual_git_bytes', 'expected_whole_proof_length', 'file_changed',
+        'file_digest', 'file_length', 'fixed_image_identity',
+        'fresh_process_output_bound', 'fresh_runner_image_preexisting_or_daemon_unavailable', 'fresh_static_process_not_captured',
+        'fresh_variant_source_and_scope_contract', 'frozen_target_identity', 'host_load_store_reserve',
+        'independent_image_build_binding', 'independent_prior_retrieval_binding', 'isolated_cp311_required',
+        'loaded_complete_image_identity', 'loaded_image_changed_after_pair', 'new_data_only_target_required',
+        'new_output_required', 'nonfinite_json', 'operation_failed',
+        'operation_git_entry', 'operation_output_bound', 'original_git_bytes_and_modes',
+        'private_prepared_directory', 'private_receipt_bound', 'private_runner_temp_roots',
+        'private_scope_context', 'private_source_copy_binding', 'private_worker_context',
+        'private_worker_settings', 'receipt_temporary_exists', 'regular_file_bound',
+        'required_cli_argument', 'retained3031_inventory', 'separate_private_output',
+        'supported_private_preparation_scope', 'target_expected_commit', 'target_expected_tree',
+        'target_git_exact_member', 'target_git_exact_population', 'target_git_original_blob_and_mode',
+        'target_inventory_blob', 'target_inventory_member', 'target_inventory_population',
+        'target_inventory_tree', 'target_source_commit', 'target_source_tree',
+        'trusted_retained_inventory_anchor', 'whole_image_archive_binding', 'worker_actual_source_binding',
+        'worker_cli_is_exclusive',
+    }),
+    'Rejected': frozenset({
+        'diagnostic_artifact_bound_invalid', 'diagnostic_artifact_overwrite_rejected', 'diagnostic_receipt_bound_exceeded',
+        'duplicate_json_key', 'file_changed_or_oversized', 'file_digest_mismatch',
+        'file_size_mismatch', 'file_type_or_size_invalid', 'private_new_output_required',
+        'symlink_or_noncanonical_path', 'target_actual_git_tree_mismatch', 'target_executable_mode_mismatch',
+        'target_git_blob_mismatch', 'target_git_entry_invalid', 'target_inventory_binding_invalid',
+        'target_owner_executable_mode_mismatch', 'target_tree_duplicate', 'target_tree_path_collision',
+        'unexpected_stage_result', 'unsafe_relative_path',
+    }),
+    'ValueError': frozenset({
+        'archive_changed', 'archive_changed_during_layer_verification', 'archive_config_digest',
+        'archive_config_platform_rootfs', 'archive_duplicate_or_special_member', 'archive_inspected_diffids',
+        'archive_layer_missing', 'archive_layer_population', 'archive_manifest_fields',
+        'archive_manifest_population', 'archive_member_count', 'archive_member_size',
+        'archive_metadata_short_read', 'archive_metadata_size', 'archive_path',
+        'archive_size', 'base_config_descriptor', 'base_config_platform_rootfs',
+        'base_locator', 'base_manifest_digest', 'base_manifest_layers',
+        'base_manifest_schema', 'base_recipe_binding', 'base_repository',
+        'build_arguments', 'build_log_retention_limit', 'command_output_limit',
+        'compact_receipt_limit', 'config_id', 'cross_job_image_anchor',
+        'cross_job_receipt_anchor', 'diagnostic_image_configuration', 'duplicate_json_key',
+        'file_changed', 'file_size_or_type', 'fresh_runner_image_preexisting_or_daemon_unavailable',
+        'host_python_version', 'image_identity_platform_size', 'image_layers',
+        'image_population', 'layer_blob_locator_digest', 'layer_diffid_mismatch',
+        'layer_expanded_size', 'layers_total_expanded_size', 'loaded_complete_image_identity',
+        'manifest_missing', 'new_output_required', 'operation_authority_identity',
+        'operation_workflow_source_identity', 'pinned_base_layer_prefix', 'pinned_provision_or_build_failed',
+        'pins_source_identity', 'provision_block_scope', 'provision_lock_changed',
+        'provision_receipt_invalid', 'regular_path_required', 'retrieve_arguments',
+        'retrieved_archive_changed', 'retrieved_receipt_binding', 'retrieved_root_path',
+        'source_commit', 'source_tree', 'trusted_recipe_pin',
+        'trusted_source_blob', 'trusted_source_mode', 'trusted_source_population',
+        'trusted_source_type', 'unsafe_archive_path', 'unsafe_source_path',
+        'untracked_cppcheck_build_input', 'wheel_identity',
+    }),
+}
+SAFE_PARENT_EXCEPTION_TYPES = frozenset({
+    'CallerRejected', 'Rejected', 'ValueError', 'TypeError', 'KeyError',
+    'OverflowError', 'RecursionError', 'OSError', 'FileNotFoundError',
+    'PermissionError', 'RuntimeError', 'JSONDecodeError', 'CalledProcessError',
+    'TimeoutExpired',
+})
+
+
 class Rejected(ValueError):
     pass
 
@@ -122,6 +191,36 @@ def error_projection(value):
     if re.fullmatch(r'worker_[a-z0-9_]{1,160}', value):
         return {'code': value}
     return {'opaque_text_sha256': digest(value.encode())}
+
+
+def parent_error_projection(value):
+    """Retain diagnosis without copying a caller's arbitrary private error text.
+
+    A typed fixed-literal match identifies the observed message, not its actual
+    callsite or the cause of the failed target copy. The raw caller receipt SHA
+    remains the independent byte binding for both classified and opaque errors.
+    """
+    if value is None:
+        return None
+    result = {'opaque_error_canonical_sha256': digest(canonical(value)),
+        'classification': 'OPAQUE_PARENT_ERROR_SHAPE',
+        'exception_type': None, 'exception_type_sha256': None,
+        'message_sha256': None, 'validation_code': None,
+        'message_hash_encoding': 'UTF8_SURROGATEPASS',
+        'verified_failure_callsite_or_cause': False}
+    if (not isinstance(value, dict) or set(value) != {'type', 'message'}
+            or type(value['type']) is not str or type(value['message']) is not str):
+        return result
+    kind = value['type']; message = value['message']
+    result.update(classification='OPAQUE_PARENT_ERROR',
+        exception_type_sha256=digest(kind.encode('utf-8', errors='surrogatepass')),
+        message_sha256=digest(message.encode('utf-8', errors='surrogatepass')))
+    if kind in SAFE_PARENT_EXCEPTION_TYPES:
+        result['exception_type'] = kind
+    if message in PARENT_VALIDATION_CODES.get(kind, frozenset()):
+        result.update(classification='EXACT_TYPED_FIXED_VALIDATION_LITERAL_MATCH',
+                      validation_code=message)
+    return result
 
 
 def compact_population(value):
@@ -565,6 +664,7 @@ def export_pair(receipt_path, output, expected):
             'exporter_sha256': expected['exporter_sha256'],
             'fixed_failure_code': 'SOURCE_OR_IMAGE_PREFLIGHT_BINDING_ABSENT_UNPROVEN',
             'opaque_caller_failure_sha256': digest(canonical(outer.get('error'))),
+            'parent_error': parent_error_projection(outer.get('error')),
             'source_binding': None, 'image_binding': None, 'target_binding': None,
             'raw_artifact_bytes_credit': False, 'raw_artifact_count_exported': 0,
             'pair_complete': False, 'assessment_completed': False, 'full_native_qualified': False,
@@ -623,6 +723,7 @@ def export_pair(receipt_path, output, expected):
     public = {
         'schema': 'nico.full_static_pair_export_summary.v1',
         'caller_receipt_sha256': digest(raw),
+        'parent_error': parent_error_projection(outer.get('error')),
         'source_binding': {key: binding[key] for key in ('current_git_head', 'effective_fallback_baseline',
                          'exporter_sha256', 'caller_sha256', 'scope_sha256')},
         'one_compiler_overlay': {'path': overlay['path'], 'sha256': checked_hash(overlay['sha256'])},

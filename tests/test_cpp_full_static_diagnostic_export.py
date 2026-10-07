@@ -400,6 +400,112 @@ class ExportBoundaryControls(unittest.TestCase):
         raw = b'[' * 10000 + b'0' + b']' * 10000
         self.assert_malformed_fresh_artifact_retained_unproven(raw)
 
+    def test_parent_target_copy_failure_retains_typed_fixed_code_and_no_analysis_credit(self):
+        for index, error in enumerate((
+            {'type': 'CallerRejected', 'message': 'target_expected_commit'},
+            {'type': 'CallerRejected', 'message': 'target_git_original_blob_and_mode'},
+            {'type': 'CallerRejected', 'message': 'original_git_bytes_and_modes'},
+            {'type': 'ValueError', 'message': 'trusted_source_mode'},
+            {'type': 'Rejected', 'message': 'target_tree_duplicate'},
+        )):
+            with self.subTest(error=error):
+                self.output = self.base / ('parent-fixed-' + str(index))
+                self.outer.update(variants=[], status='UNPROVEN', target_binding=None,
+                    error=error, intervals=[{
+                        'phase': 'full3031_git_checkout_verification_and_data_only_copy',
+                        'wall_ms': 543, 'process_cpu_ms': 322,
+                        'clock_domain': 'this_process_perf_counter_and_process_time',
+                        'cpu_scope': 'This host process only; excludes analyzer/container and child-process CPU.'}])
+                self.write_outer(); receipt = self.run_export()
+                raw = (self.output / 'static-summary.json').read_bytes(); public = json.loads(raw)
+                projection = public['parent_error']
+                self.assertEqual(projection['classification'], 'EXACT_TYPED_FIXED_VALIDATION_LITERAL_MATCH')
+                self.assertEqual(projection['exception_type'], error['type'])
+                self.assertEqual(projection['validation_code'], error['message'])
+                self.assertEqual(projection['message_sha256'], exporter.digest(error['message'].encode()))
+                self.assertEqual(projection['opaque_error_canonical_sha256'], exporter.digest(exporter.canonical(error)))
+                self.assertFalse(projection['verified_failure_callsite_or_cause'])
+                self.assertEqual(public['caller_receipt_sha256'], self.expected['caller_receipt_sha256'])
+                self.assertEqual(public['parent_observation_intervals'][0]['wall_ms'], 543)
+                self.assertEqual(public['pair_budget_and_order']['declared_api_wall_seconds'], 1030)
+                self.assertIsNone(public['target_binding'])
+                self.assertEqual(public['executed_variant_rows_retained'], 0)
+                self.assertTrue(all(row['execution_state'] == 'NOT_RUN' and row['analysis'] is None
+                                    and row['actual_operations'] == [] for row in public['variants']))
+                self.assertEqual(receipt['file_count_with_manifest'], 2)
+                self.assertFalse(public['pair_complete'])
+                for gate in ('assessment_completed', 'full_native_qualified', 'production_qualified',
+                             'human_approval_created', 'cold_timing_credit'):
+                    self.assertFalse(public[gate])
+
+    def test_parent_unknown_or_wrongly_typed_message_never_copies_private_text_or_guesses_code(self):
+        cases = (
+            {'type': 'FileNotFoundError', 'message': '/workspace/private/target secret https://x.invalid/?X-Amz-Signature=secret'},
+            {'type': 'CallerRejected', 'message': 'original_git_bytes_and_modes /home/owner/private'},
+            {'type': 'TypeError', 'message': 'original_git_bytes_and_modes'},
+            {'type': '/workspace/private/Exception', 'message': 'original_git_bytes_and_modes'},
+        )
+        for index, error in enumerate(cases):
+            with self.subTest(index=index):
+                self.output = self.base / ('parent-opaque-' + str(index))
+                self.outer.update(variants=[], status='UNPROVEN', target_binding=None, error=error)
+                self.write_outer(); self.run_export()
+                raw = (self.output / 'static-summary.json').read_bytes(); public = json.loads(raw)
+                projection = public['parent_error']
+                self.assertEqual(projection['classification'], 'OPAQUE_PARENT_ERROR')
+                self.assertIsNone(projection['validation_code'])
+                self.assertEqual(projection['message_sha256'], exporter.digest(error['message'].encode()))
+                self.assertEqual(projection['exception_type_sha256'], exporter.digest(error['type'].encode()))
+                self.assertEqual(projection['exception_type'], error['type'] if index < 3 else None)
+                self.assertNotIn(error['message'].encode(), raw)
+                for marker in (b'/workspace/', b'/home/', b'X-Amz-Signature=', b'secret'):
+                    self.assertNotIn(marker, raw)
+                self.assertFalse(public['pair_complete'])
+                self.assertEqual(public['executed_variant_rows_retained'], 0)
+
+    def test_parent_preflight_failure_and_malformed_shape_remain_hash_bound_without_raw_credit(self):
+        cases = (
+            {'type': 'CallerRejected', 'message': 'actual_operation_transport_proof'},
+            {'type': 'RuntimeError', 'message': '/workspace/private no source proof'},
+            {'type': ['ValueError'], 'message': {'path': '/workspace/private'}},
+            {'type': 'CallerRejected', 'message': 'canonical_path', 'private': '/home/owner/private'},
+            None,
+        )
+        for index, error in enumerate(cases):
+            with self.subTest(index=index):
+                self.output = self.base / ('parent-preflight-' + str(index))
+                self.outer.update(source_binding=None, image_binding=None, variants=[],
+                                  status='UNPROVEN', target_binding=None, error=error)
+                self.write_outer(); self.run_export()
+                raw = (self.output / 'static-summary.json').read_bytes(); public = json.loads(raw)
+                self.assertEqual(public['caller_receipt_sha256'], self.expected['caller_receipt_sha256'])
+                self.assertEqual(public['opaque_caller_failure_sha256'], exporter.digest(exporter.canonical(error)))
+                projection = public['parent_error']
+                if index == 0:
+                    self.assertEqual(projection['validation_code'], error['message'])
+                elif index == 4:
+                    self.assertIsNone(projection)
+                else:
+                    self.assertIsNone(projection['validation_code'])
+                    self.assertEqual(projection['opaque_error_canonical_sha256'],
+                                     exporter.digest(exporter.canonical(error)))
+                if index in (2, 3):
+                    self.assertEqual(projection['classification'], 'OPAQUE_PARENT_ERROR_SHAPE')
+                    self.assertIsNone(projection['exception_type'])
+                    self.assertIsNone(projection['message_sha256'])
+                self.assertIsNone(public['source_binding']); self.assertIsNone(public['image_binding'])
+                self.assertFalse(public['raw_artifact_bytes_credit'])
+                self.assertEqual(public['raw_artifact_count_exported'], 0)
+                self.assertFalse(public['pair_complete'])
+                self.assertFalse(public['full_native_qualified']); self.assertFalse(public['production_qualified'])
+                self.assertNotIn(b'/workspace/', raw); self.assertNotIn(b'/home/', raw)
+
+    def test_parent_fixed_error_does_not_waive_existing_provenance_rejection(self):
+        self.outer.update(variants=[], status='UNPROVEN', target_binding=None,
+                          error={'type': 'CallerRejected', 'message': 'original_git_bytes_and_modes'})
+        self.outer['image_binding']['complete_archive_verified'] = False
+        self.write_outer(); self.reject('fixed_loaded_image_binding_mismatch')
+
 
 if __name__ == '__main__':
     unittest.main()
