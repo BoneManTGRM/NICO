@@ -74,7 +74,7 @@ class PresentSampleExportControls(unittest.TestCase):
         self.assertEqual(sha(CALLER_PATH.read_bytes()),
             '1fc90d58f8da1ccfeedceda3195e31c799c238d84b32c37cd8c80ad968ded9e7')
         self.assertEqual(sha(SAMPLE_PATH.read_bytes()),
-            '261a1ac33ba22625aa07218d8e5071d7fe55436b51191aae504f68bac7bd7ad0')
+            '6502680b08f124cfa417019647e7c42f873e7efa9017faa54efd52738cedfe1a')
         self.expected = {
             'current_git_head': 'a' * 40,
             'effective_fallback_baseline': 'f0919654edd719059ea03319981b13f46ba70a88',
