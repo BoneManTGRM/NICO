@@ -60,14 +60,14 @@ SOURCE_PINS = {
         '80e849d97fc2f804371683cf8ec4a33958fdc3c32a49da2e78fefc8c509adffd',
 }
 FUNCTION_PINS = {
-    'baseline': '043927250d3580d5e181c7822bae6888bb0b4cf9ae20812d5af2790b9accb2d8',
-    'candidate': '709c910c005d6cabcb09bf60755958b6953c7d9109e647693c64c2b1bed31d94',
-    'source_path': '43304e699a39170767c1022327f240df43384963238be86553fdb2e3e8387160',
-    'fixtures': 'c44c6837cca27b61b7f2b7b51bbbb1aa19acbe6ccb7945cb72d8362f9c593d0f',
+    'baseline': 'ac98c8befe38d88c3bfcdfa42ae3a431629eb6cda736f4630702eab5b03bfc89',
+    'candidate': '8f131a5839f4659b447bc6ba6e4f236e153e990ea363f2208ae151e5e8ee66de',
+    'source_path': 'ea169cef57a04a6d2767c45e53242227b3316d011845c66916590fd14bbf6847',
+    'fixtures': '713b754d533645426fe525652775392f66d0dcb265980bc9b5468a1275c78c10',
 }
 DECODER_FUNCTION_PINS = {
-    'inputs': '13ff822e2b46b90625ffd1000cb4b3074b348eef09f7247d5b473f6864d962db',
-    'regular': '480206e11f6f5dc118c977e009d8fb3666a721dd7c1886077fd1a55e3a482b2c',
+    'inputs': '9f87a76418756526d5a1561ef852f186634db8cb945b9975d215d9e42040e9ae',
+    'regular': '45bf871234eb23665c031c2780f460fe1fbb3e5b2eab33c3f49c2153a12068ae',
 }
 
 
@@ -395,6 +395,15 @@ def ast_digest(raw, name):
     tree = ast.parse(raw)
     rows = [row for row in tree.body if isinstance(row, ast.FunctionDef) and row.name == name]
     require(len(rows) == 1, 'function_population')
+    # CPython3.12 added an empty field to these definitions. Canonicalize only
+    # that absence/empty-list distinction; meaningful parameters are rejected.
+    # Whole-file source hashes remain independently required before this helper.
+    for row in ast.walk(rows[0]):
+        if isinstance(row, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            parameters = getattr(row, 'type_params', [])
+            require(type(parameters) is list and not parameters, 'unsupported_ast_type_parameters')
+            if 'type_params' in row._fields:
+                row._fields = tuple(field for field in row._fields if field != 'type_params')
     return sha(ast.dump(rows[0], include_attributes=False).encode())
 
 

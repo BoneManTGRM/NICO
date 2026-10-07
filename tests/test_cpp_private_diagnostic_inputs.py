@@ -1,4 +1,6 @@
 """Owned inert controls: no network, Docker, image, analyzer or target execution."""
+import ast
+from copy import deepcopy
 import hashlib
 import importlib.util
 import io
@@ -15,6 +17,40 @@ SOURCE = Path(__file__).resolve().parents[1] / 'scripts/cpp_private_diagnostic_i
 SPEC = importlib.util.spec_from_file_location('private_transport_under_review', SOURCE)
 SUBJECT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SUBJECT)
+PUBLIC_SOURCE_ROOT = Path(os.environ.get('NICO_AST_REPAIR_SOURCE_ROOT',
+                                        str(Path(__file__).resolve().parents[1]))).resolve()
+OWNED_NESTED = b'''def owned(value):
+    text = "type_params=[]"
+    def inner():
+        return text
+    async def inner_async():
+        return value
+    class Inner:
+        pass
+    return inner()
+'''
+
+
+def legacy_projection(tree):
+    """Owned shape projection only, not actual execution under older Python."""
+    tree = deepcopy(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            node._fields = tuple(field for field in node._fields if field != 'type_params')
+            if hasattr(node, 'type_params'):
+                del node.type_params
+    return tree
+
+
+def empty_field_projection(tree):
+    """Owned shape fixture representing only the additional empty AST field."""
+    tree = deepcopy(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if 'type_params' not in node._fields:
+                node._fields += ('type_params',)
+            node.type_params = []
+    return tree
 
 
 class Response(io.BytesIO):
@@ -255,6 +291,79 @@ class Controls(unittest.TestCase):
             root = Path(directory)
             self.reject(SUBJECT.preflight, root, SUBJECT.MAX_SCRATCH + 1, 1)
             self.reject(SUBJECT.preflight, root, 0, 0)
+
+    def test_owned_empty_field_projection_matches_nested_legacy_shape(self):
+        source_tree = ast.parse(OWNED_NESTED)
+        legacy = legacy_projection(source_tree)
+        with_empty = empty_field_projection(legacy)
+        expected = SUBJECT.sha(ast.dump(legacy.body[0], include_attributes=False).encode())
+        class_fields = {kind: kind._fields for kind in (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)}
+        self.assertNotEqual(ast.dump(legacy.body[0]), ast.dump(with_empty.body[0]))
+        for tree in (legacy, with_empty):
+            with self.subTest(shape='empty_field' if tree is with_empty else 'legacy_projection'):
+                with patch.object(SUBJECT.ast, 'parse', return_value=deepcopy(tree)):
+                    self.assertEqual(SUBJECT.ast_digest(OWNED_NESTED, 'owned'), expected)
+        self.assertEqual(class_fields, {kind: kind._fields for kind in class_fields})
+
+    def test_nonempty_type_parameters_rejected_at_each_definition_kind(self):
+        for kind in (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef):
+            with self.subTest(kind=kind.__name__):
+                tree = empty_field_projection(ast.parse(OWNED_NESTED))
+                node = next(node for node in ast.walk(tree) if isinstance(node, kind))
+                node.type_params = [ast.Name(id='OwnedParameter', ctx=ast.Load())]
+                with patch.object(SUBJECT.ast, 'parse', return_value=tree):
+                    with self.assertRaisesRegex(SUBJECT.PreparationError, '^unsupported_ast_type_parameters$'):
+                        SUBJECT.ast_digest(OWNED_NESTED, 'owned')
+        tree = empty_field_projection(ast.parse(OWNED_NESTED))
+        tree.body[0].type_params = ()
+        with patch.object(SUBJECT.ast, 'parse', return_value=tree):
+            with self.assertRaisesRegex(SUBJECT.PreparationError, '^unsupported_ast_type_parameters$'):
+                SUBJECT.ast_digest(OWNED_NESTED, 'owned')
+
+    def test_ordinary_body_and_signature_mutations_still_change_digest(self):
+        raw = b'def owned(value):\n    return value + 1\n'
+        baseline = SUBJECT.ast_digest(raw, 'owned')
+        for changed in (raw.replace(b'+ 1', b'+ 2'), raw.replace(b'(value)', b'(value, extra=None)')):
+            with self.subTest(changed=changed):
+                self.assertNotEqual(SUBJECT.ast_digest(changed, 'owned'), baseline)
+
+    def test_literal_type_parameter_text_is_preserved(self):
+        raw = b'def owned():\n    return "type_params=[]"\n'
+        projected = legacy_projection(ast.parse(raw))
+        dumped = ast.dump(projected.body[0], include_attributes=False)
+        self.assertIn("Constant(value='type_params=[]')", dumped)
+        with patch.object(SUBJECT.ast, 'parse', return_value=empty_field_projection(projected)):
+            self.assertEqual(SUBJECT.ast_digest(raw, 'owned'), SUBJECT.sha(dumped.encode()))
+
+    def test_all_six_actual_functions_and_full_source_pins_match(self):
+        bodies = SUBJECT.verified_source_bodies(PUBLIC_SOURCE_ROOT)
+        self.assertEqual(set(bodies), set(SUBJECT.SOURCE_PINS))
+        mapping = {'baseline': ('scripts/cpp-parser-diagnostic-inputs/baseline_compiler.py', '_dependency_populations'),
+                   'candidate': ('nico/assessment_cpp_project_compiler.py', '_dependency_populations'),
+                   'source_path': ('scripts/cpp-parser-diagnostic-inputs/source_path_evidence.py', '_source_path'),
+                   'fixtures': ('scripts/cpp-parser-diagnostic-inputs/owned_fixture_harness.py', 'fixtures')}
+        for key, (path, function) in mapping.items():
+            with self.subTest(function=key):
+                self.assertEqual(SUBJECT.ast_digest(bodies[path], function), SUBJECT.FUNCTION_PINS[key])
+        original = bodies['scripts/cpp_same_image_dependency_diagnostic.py']
+        for name, expected in SUBJECT.DECODER_FUNCTION_PINS.items():
+            with self.subTest(function=name):
+                self.assertEqual(SUBJECT.ast_digest(original, name), expected)
+
+    def test_whole_source_pin_rejects_changed_bytes_even_when_function_ast_identical(self):
+        bodies = SUBJECT.verified_source_bodies(PUBLIC_SOURCE_ROOT)
+        name = 'scripts/cpp-parser-diagnostic-inputs/baseline_compiler.py'
+        changed = bodies[name] + b'\n# owned unchanged-function-AST source mutation\n'
+        self.assertEqual(SUBJECT.ast_digest(changed, '_dependency_populations'), SUBJECT.FUNCTION_PINS['baseline'])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for path, raw in bodies.items():
+                destination = root / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+            (root / name).write_bytes(changed)
+            with self.assertRaisesRegex(SUBJECT.PreparationError, '^reviewed_public_source_digest$'):
+                SUBJECT.verified_source_bodies(root)
 
 
 if __name__ == '__main__':
