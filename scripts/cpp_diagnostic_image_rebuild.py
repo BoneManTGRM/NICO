@@ -266,6 +266,56 @@ def inspection(image):
     return observed
 
 
+def pinned_base_proof(pins, dockerfile):
+    """Verify recorded OCI metadata; complete archive verification binds layers."""
+    locator = pins['base_image']
+    require(re.fullmatch(r'gcc:14\.2\.0-bookworm@sha256:[0-9a-f]{64}', locator) is not None,
+            'base_locator')
+    froms = re.findall(r'^FROM\s+(\S+)', dockerfile.decode(), flags=re.MULTILINE)
+    require(len(froms) == 3 and all(value == locator for value in froms), 'base_recipe_binding')
+    proof = pins['base_manifest_config']
+    require(proof['repository_locator'] == 'docker.io/library/gcc', 'base_repository')
+    manifest_raw = proof['registry_manifest_json_utf8'].encode()
+    config_raw = proof['configuration_json_utf8'].encode()
+    require(0 < len(manifest_raw) <= MAX_META and 0 < len(config_raw) <= MAX_META
+            and 'sha256:' + sha(manifest_raw) == locator.split('@', 1)[1], 'base_manifest_digest')
+    manifest = decode(manifest_raw)
+    require(type(manifest.get('schemaVersion')) is int and manifest['schemaVersion'] == 2
+            and manifest.get('mediaType') == 'application/vnd.oci.image.manifest.v1+json',
+            'base_manifest_schema')
+    descriptor = manifest.get('config')
+    require(isinstance(descriptor, dict)
+            and descriptor.get('mediaType') == 'application/vnd.oci.image.config.v1+json'
+            and type(descriptor.get('size')) is int and descriptor['size'] == len(config_raw)
+            and descriptor.get('digest') == 'sha256:' + sha(config_raw), 'base_config_descriptor')
+    layers = manifest.get('layers')
+    require(isinstance(layers, list) and len(layers) == 8
+            and all(isinstance(item, dict)
+                    and item.get('mediaType') == 'application/vnd.oci.image.layer.v1.tar+gzip'
+                    and isinstance(item.get('digest'), str)
+                    and re.fullmatch(r'sha256:[0-9a-f]{64}', item['digest']) is not None
+                    and type(item.get('size')) is int and item['size'] > 0 for item in layers),
+            'base_manifest_layers')
+    config = decode(config_raw)
+    rootfs = config.get('rootfs')
+    require(config.get('architecture') == 'amd64' and config.get('os') == 'linux'
+            and isinstance(rootfs, dict) and rootfs.get('type') == 'layers'
+            and isinstance(rootfs.get('diff_ids'), list) and len(rootfs['diff_ids']) == 8
+            and all(isinstance(value, str) and re.fullmatch(r'sha256:[0-9a-f]{64}', value) is not None
+                    for value in rootfs['diff_ids']), 'base_config_platform_rootfs')
+    return {'repository_locator': proof['repository_locator'],
+            'registry_manifest_digest': locator.split('@', 1)[1],
+            'configuration_digest': descriptor['digest'], 'configuration_bytes': len(config_raw),
+            'base_uncompressed_diffids': rootfs['diff_ids'],
+            'base_compressed_layer_bytes_replayed': False,
+            'separate_base_daemon_image_required': False}
+
+
+def verify_base_prefix(observed, base):
+    require(observed['RootFS']['Layers'][:len(base['base_uncompressed_diffids'])]
+            == base['base_uncompressed_diffids'], 'pinned_base_layer_prefix')
+
+
 def identity(operation_source, expected_job):
     require(os.environ.get('GITHUB_REPOSITORY') == REPO
             and os.environ.get('GITHUB_REPOSITORY_ID') == '1282576027'
@@ -363,6 +413,7 @@ def build(args, result):
         require(len(body) == row['bytes'] and sha(body) == row['sha256']
                 and hashlib.sha1(b'blob ' + str(len(body)).encode() + b'\0' + body).hexdigest() == row['git_blob'],
                 'trusted_recipe_pin')
+    base = pinned_base_proof(pins, regular(recipe / 'docker/assessment-full-project-fuzz.Dockerfile'))
     cppcheck_path = recipe / 'toolchain/full-project/cppcheck'
     require(command(['git', '-C', str(cppcheck_path), 'ls-files', '--others', '-z'], maximum=MAX_META) == b'',
             'untracked_cppcheck_build_input')
@@ -370,20 +421,17 @@ def build(args, result):
                                  1052, pins['cppcheck_checkout_eol_paths'])
     script = provision_block(recipe)
     result.update(recipe_source=source_identity, cppcheck_source=cppcheck,
-                  input_pins_sha256=sha(pins_raw), provision_block_sha256=sha(script), phase='provision_build')
+                  input_pins_sha256=sha(pins_raw), pinned_base_metadata=base,
+                  provision_block_sha256=sha(script), phase='provision_build')
     write(args.output / 'receipt.json', result)
     result['build_log'] = run_logged_script(script, recipe, args.output / 'build.log')
     image = regular(recipe / 'full-project-image-id.txt', 1024).decode().strip()
     observed = inspection(image)
+    result.update(image_config_id=image, image_inspection=observed, phase='postbuild_identity_checks')
+    write(args.output / 'receipt.json', result)
     require(observed['Config'].get('User') == '1000:1000'
             and observed['Config'].get('Entrypoint') == ['sleep'], 'diagnostic_image_configuration')
-    base = decode(command(['docker', 'image', 'inspect', pins['base_image']]))
-    require(isinstance(base, list) and len(base) == 1 and base[0].get('Architecture') == 'amd64'
-            and base[0].get('Os') == 'linux'
-            and any(ref.endswith('@' + pins['base_image'].split('@', 1)[1]) for ref in base[0].get('RepoDigests', [])),
-            'pinned_base_image_identity')
-    require(observed['RootFS']['Layers'][:len(base[0]['RootFS']['Layers'])] == base[0]['RootFS']['Layers'],
-            'pinned_base_layer_prefix')
+    verify_base_prefix(observed, base)
     receipts = {}
     for name in ['cpp-runtime-toolchain.json', 'cppcheck-header-observer.json', 'clang-header-observer.json']:
         body = regular(recipe / name)
@@ -400,7 +448,7 @@ def build(args, result):
         provision_receipts[family] = acquired
     require(sha(regular(context / 'cmake.whl', 64 * 1024 * 1024)) == pins['cmake_sha256']
             and sha(regular(context / 'pycapnp.whl', 8 * 1024 * 1024)) == pins['pycapnp_sha256'], 'wheel_identity')
-    result.update(image_config_id=image, image_inspection=observed, base_inspection=base[0],
+    result.update(base_uncompressed_layer_prefix_verified=True,
                   trusted_tool_receipts=receipts, provision_receipts=provision_receipts, phase='save_image')
     write(args.output / 'receipt.json', result)
     archive = args.output / 'image.tar'
