@@ -166,12 +166,18 @@ def source_bindings(args, helper):
             require(kind == 'blob' and mode in {'100644', '100755'} and name.decode() not in blobs,
                     'operation_git_entry')
             blobs[name.decode()] = (mode, blob)
+    selected_paths = dict(SOURCE_PATHS)
+    sample_mode = getattr(args, 'fallback_capacity_sample', None) is True
+    if sample_mode:
+        selected_paths['sample'] = 'scripts/cpp_fallback_capacity_sample.py'
     expected = {'caller': args.expected_caller_sha256, 'scope': args.expected_scope_sha256,
                 'prepare': args.expected_prepare_sha256, 'preparer': args.expected_preparer_sha256,
                 'exporter': args.expected_exporter_sha256, 'verifier': VERIFIER_SHA,
                 'wheel_manifest': WHEEL_MANIFEST_SHA, 'image_helper': HELPER_SHA}
+    if sample_mode:
+        expected['sample'] = args.expected_sample_sha256
     rows, buffers = {}, {}
-    for key, name in SOURCE_PATHS.items():
+    for key, name in selected_paths.items():
         digest = hexadecimal(expected[key], 64, 'expected_source_sha')
         raw = regular(args.operation_source / name, digest=digest)
         require(name in blobs and hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
@@ -424,6 +430,8 @@ def entry_arguments():
                  'expected-proof-sha256'):
         parser.add_argument('--' + name)
     parser.add_argument('--expected-proof-bytes', type=int)
+    parser.add_argument('--fallback-capacity-sample', action='store_const', const=True, default=None)
+    parser.add_argument('--expected-sample-sha256')
     return parser.parse_args()
 
 
@@ -435,6 +443,10 @@ def normalize(args):
     for name in ('expected_caller_sha256', 'expected_scope_sha256', 'expected_prepare_sha256',
                  'expected_preparer_sha256', 'expected_exporter_sha256', 'expected_proof_sha256'):
         hexadecimal(getattr(args, name, None), 64, 'expected_digest_argument')
+    if getattr(args, 'fallback_capacity_sample', None) is True:
+        hexadecimal(getattr(args, 'expected_sample_sha256', None), 64, 'expected_sample_source_digest')
+    else:
+        require(getattr(args, 'expected_sample_sha256', None) is None, 'sample_source_without_sample_mode')
     require(type(args.expected_proof_bytes) is int and 0 < args.expected_proof_bytes <= MAX_PROOF,
             'expected_whole_proof_length')
     require(not args.output.is_relative_to(args.operation_source)
@@ -448,6 +460,8 @@ def worker(settings_path):
     settings_raw = regular(settings_path, MAX_META)
     require(settings_path.stat().st_mode & 0o077 == 0, 'private_worker_settings')
     settings = decode(settings_raw)
+    if settings.get('schema') == 'nico.private.fallback_capacity_sample_worker_settings.v1':
+        return sample_worker(settings_path, settings_raw, settings)
     require(settings.get('schema') == 'nico.private.full_static_worker_settings.v1'
             and settings.get('variant') in {'baseline', 'candidate'}
             and settings.get('parent_pid') == os.getppid(), 'connected_fresh_worker')
@@ -644,6 +658,480 @@ def pair(args):
                       'cache_state': 'UNKNOWN', 'full_native_qualified': False, 'production_qualified': False}))
 
 
+SAMPLE_INPUTS = {
+    'environment': {'file': 'environment.json', 'bytes': 23853193,
+        'sha256': '39c5e0dc127ae3d7b425fc1cc9d35f63d2e37b893bbc4a464134e194d995e27b'},
+    'primary': {'file': 'primary.json', 'bytes': 9512434,
+        'sha256': 'a6fb7909318c253014daec86a32f70455ae77c8a0208cfeaedf2d4ec30f57508'},
+    'fallback': {'file': 'fallback.json', 'bytes': 2513517,
+        'sha256': '0251cdd017b9c0c4257182651fcdcf2ae102dd931f8f39d8c62f164e5d80577f'},
+}
+SAMPLE_SOURCE_PATHS = (
+    'nico/assessment_cpp_clang_fallback.py',
+    'nico/assessment_cpp_project_compiler.py',
+    'nico/assessment_cpp_compiler_evidence.py',
+    'nico/assessment_cpp_generated_context.py',
+    'nico/assessment_cpp_clang_header_evidence.py',
+    'nico/assessment_cpp_project_snapshot.py',
+)
+SAMPLE_INDICES = [0, 58, 154, 186]
+SAMPLE_INPUT_RUN = {'run_id': 37659207160, 'attempt': 1,
+    'source': 'a5835f2dbb2b671443356de2d0808bdbc731dd6d', 'variant': 'candidate',
+    'input_semantics': 'Previously retained fresh environment/primary/fallback bytes; no new primary execution.'}
+
+
+def sample_inputs(args):
+    """Only the three already retained exact native artifacts, in private preparation."""
+    directory = args.prepared_inputs / 'host/capacity-sample'
+    require(directory.is_dir() and directory.resolve(strict=True) == directory
+            and directory.stat().st_mode & 0o077 == 0, 'private_sample_input_directory')
+    require({path.name for path in directory.iterdir()} == {row['file'] for row in SAMPLE_INPUTS.values()},
+            'sample_input_exact_population')
+    inputs, refs = {}, {}
+    for key, row in SAMPLE_INPUTS.items():
+        raw = regular(directory / row['file'], 48 * 1024 * 1024, row['sha256'], row['bytes'])
+        inputs[key] = raw
+        refs[key] = {'bytes': len(raw), 'sha256': sha(raw)}
+    return inputs, refs
+
+
+def reconstruct_sample_request(prepared, inputs, sample):
+    """Use the actual verified f091+89 constructors before any native dispatch."""
+    from nico.assessment_cpp_project_compiler import project_compiler_request
+    from nico.assessment_cpp_static_environment import environment_request, validate_environment
+    from nico.assessment_cpp_project_static import project_static_request, validate_project_static
+    from nico.assessment_cpp_clang_fallback import clang_fallback_request
+    compiler_request = project_compiler_request(prepared['database'], prepared['targets'], prepared['snapshot'],
+                                               extended_budget=True)
+    env_request = environment_request(compiler_request, prepared['compiler_raw'], FIXED_IMAGE,
+        collect_completed_compiler_failures=True, snapshot=prepared['snapshot'])
+    environment = validate_environment(inputs['environment'], env_request)
+    require(environment['image_config_digest'] == FIXED_IMAGE, 'sample_environment_fixed_image')
+    primary_request = project_static_request(prepared['database'], prepared['targets'], prepared['snapshot'],
+        prepared['compiler_raw'], extended_compiler_budget=True, environment=environment,
+        header_provenance=True, collect_completed_compiler_failures=True)
+    primary = validate_project_static(inputs['primary'], primary_request)
+    full_request = clang_fallback_request(primary_request, primary, extended_budget=True,
+                                         contention_aware=True, multi_file_diagnostics=True)
+    require(len(primary_request['contexts']) == 577 and len(full_request['contexts']) == 576
+            and len(primary_request['generated_files']) == 143
+            and full_request['limits'] == {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 2},
+            'sample_full_request_population_and_limits')
+    selected_request, binding = sample.select_sample(full_request, inputs['fallback'],
+        expected_fallback_sha256=SAMPLE_INPUTS['fallback']['sha256'], prepared_summary=prepared['summary'])
+    require(selected_request['contexts'] == [full_request['contexts'][index] for index in SAMPLE_INDICES]
+            and {key: value for key, value in selected_request.items() if key != 'contexts'} ==
+                {key: value for key, value in full_request.items() if key != 'contexts'},
+            'sample_selection_only_exact_contexts')
+    return primary_request, selected_request, binding, {
+        'compiler_request_sha256': sha(canonical(compiler_request)),
+        'environment_request_sha256': sha(canonical(env_request)),
+        'primary_request_sha256': sha(canonical(primary_request)),
+        'full_fallback_request_sha256': sha(canonical(full_request)),
+        'sample_request_sha256': sha(canonical(selected_request)),
+        'full_required_fallback_contexts': 576, 'selected_context_indices': list(SAMPLE_INDICES),
+        'selected_context_ids': [row['context_id'] for row in selected_request['contexts']],
+        'selected_original_indices': [row['index'] for row in selected_request['contexts']],
+        'full_request_bound_before_selection': True, 'no_primary_native_execution': True,
+        'full_header_source_population': len(selected_request['header_source_targets']),
+        'full_header_generated_population': len(selected_request['header_generated_files'])}
+
+
+def sample_source_buffers(args):
+    # The separately Git-bound module enforces six fixed whole-file pins and
+    # exact original PROGRAM definitions. No receipt chooses these source pins.
+    buffers = {}
+    for name in SAMPLE_SOURCE_PATHS:
+        root = args.operation_source if name == 'nico/assessment_cpp_project_compiler.py' else args.recipe_source
+        buffers[name] = regular(root / name)
+    return buffers
+
+
+def retain_sample_envelope(output, request, binding):
+    require(output.absolute() == output.resolve(strict=True) and output.is_dir()
+            and output.stat().st_mode & 0o077 == 0, 'private_sample_envelope_directory')
+    raw = canonical({'request': request, 'binding': binding})
+    require(0 < len(raw) <= MAX_META, 'sample_envelope_retention_bound')
+    path = output / 'sample-envelope.json'
+    with path.open('xb') as stream:
+        os.chmod(stream.fileno(), 0o600)
+        stream.write(raw)
+    reference = {'path': 'sample-envelope.json', 'bytes': len(raw), 'sha256': sha(raw)}
+    require(regular(path, MAX_META, reference['sha256'], reference['bytes']) == raw,
+            'sample_envelope_retention_readback')
+    return raw, reference
+
+
+def invoke_capacity_sample(args, prepared, target, output, sample):
+    """Same private static boundary, only the four-context collector is dispatched."""
+    import base64
+    from uuid import uuid4
+    from nico.assessment_cpp_full_project import MAX_SOURCE_BYTES, _json
+    from nico.assessment_cpp_full_project_execution import (_command, _inputs, ANALYSIS_USER,
+        ANALYSIS_SETUP_PROGRAM, BOUNDARY_PROGRAM, INPUT_PROGRAM, boundary_valid)
+    from nico.assessment_cpp_configuration_probe import SCRATCH_PROGRAM
+    from nico.assessment_cpp_project_snapshot import PROJECT_RESTORE_PROGRAM
+    from nico.assessment_cpp_project_static import STAGE_EXECUTION_SECONDS, STAGE_WALL_SECONDS
+    from nico.assessment_cpp_clang_fallback import PROGRAM, STREAM_LIMIT, validate_clang_fallback
+    from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, resources_for, docker_resource_args
+    require(output.absolute() == output.resolve() and output.is_relative_to(args.output / 'context/runs')
+            and not output.exists(), 'sample_new_private_output')
+    output.mkdir(mode=0o700, parents=True)
+    start = time.monotonic()
+    deadline = start + STAGE_EXECUTION_SECONDS
+    name = 'nico-project-static-' + uuid4().hex
+    profile = BASELINE_QUALIFICATION_PROFILE
+    resources = resources_for(profile)
+    created = False
+    intervals = []
+    result = {'schema': 'nico.private.fallback_capacity_sample_diagnostic.v1', 'status': 'UNPROVEN',
+        'phase': 'validate_inputs', 'operations': [], 'intervals': intervals, 'input_artifacts': None,
+        'input_operation': dict(SAMPLE_INPUT_RUN), 'request_binding': None, 'program_binding': None,
+        'sample_binding': None, 'sample_envelope': None, 'fallback_evidence': None, 'telemetry': None, 'sample_analysis': None,
+        'resource_profile': profile, 'limits': {'stage_execution_seconds': 1020, 'stage_wall_seconds': 1030,
+            'fallback_wall_seconds': 480, 'fallback_case_seconds': 120, 'fallback_parallel': 2,
+            'cpus': '4', 'memory_bytes': 12884901888, 'pids': '256', 'tmpfs_bytes': 9663676416},
+        'declared_api_wall_seconds': 1030, 'independent1030_hardwall_supervisor_present': False,
+        'primary_native_execution': False, 'compiled': False, 'tests_executed': False,
+        'full_native_qualified': False, 'production_qualified': False, 'assessment_completed': False,
+        'static_collection_complete': False, 'human_approval_created': False, 'cold_timing_credit': False,
+        'memory_peak_bytes': None, 'memory_oom_cause_inferred': False, 'cleanup_verified': False,
+        'boundary_verified': False, 'scratch_capacity_verified': False, 'error': None}
+
+    def save():
+        result['duration_ms'] = int((time.monotonic() - start) * 1000)
+        write_private(output / 'sample-diagnostic-result.json', result)
+
+    def checkpoint():
+        if time.monotonic() >= deadline:
+            raise CallerRejected('sample_shared_stage_deadline')
+
+    def observe(key, argv, *, data=None, maximum=65536, seconds=15, artifact=False, must_succeed=True):
+        checkpoint()
+        before = time.monotonic()
+        observed = _command(argv, checkpoint=lambda: None, input_bytes=data,
+            timeout=min(seconds, deadline - before), limit=maximum, native_exit=True)
+        raw = observed['output']
+        operation = {'id': key, 'invocation_sha256': sha(canonical(argv)),
+            'exit_code': observed['exit_code'], 'timed_out': observed['timed_out'],
+            'output_truncated': observed['output_truncated'],
+            'duration_ms': int((time.monotonic() - before) * 1000),
+            'output': None if artifact else base64.b64encode(raw).decode('ascii'),
+            'output_sha256': sha(raw), 'output_bytes': len(raw), 'output_artifact': None}
+        result['operations'].append(operation)
+        save()
+        if artifact:
+            require(type(raw) is bytes and len(raw) <= maximum, 'sample_artifact_bound')
+            digest = sha(raw)
+            path = output / ('artifacts/' + key + '-' + digest + '.json')
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            with path.open('xb') as stream:
+                os.chmod(stream.fileno(), 0o600)
+                stream.write(raw)
+            operation['output_artifact'] = {'path': path.relative_to(output).as_posix(),
+                                            'bytes': len(raw), 'sha256': digest}
+            save()
+        # Actual returned bytes are retained before late-deadline rejection.
+        checkpoint()
+        if must_succeed:
+            require(observed['exit_code'] == 0 and not observed['timed_out'] and not observed['output_truncated'],
+                    'sample_static_boundary_operation_failed')
+        return observed
+
+    save()
+    try:
+        checkpoint()
+        inputs, refs = span(intervals, 'exact_retained_a583_sample_inputs', lambda: sample_inputs(args))
+        result['input_artifacts'] = refs
+        primary_request, request, binding, request_binding = span(intervals, 'reconstruct_full576_before_selection',
+            lambda: reconstruct_sample_request(prepared, inputs, sample))
+        envelope_raw, envelope_reference = span(intervals, 'private_sample_envelope_retention',
+            lambda: retain_sample_envelope(output, request, binding))
+        result.update(request_binding=request_binding, sample_binding=binding, sample_envelope=envelope_reference)
+        save()
+        program, program_binding = span(intervals, 'fixed_whole_source_PROGRAM_telemetry_binding',
+            lambda: sample.build_worker_program(PROGRAM, sample_source_buffers(args),
+                expected_sample_sha256=args.expected_sample_sha256))
+        result['program_binding'] = program_binding
+        files = span(intervals, 'original_static_API_inputs', lambda: _inputs(
+            {'targets': prepared['targets'], 'configuration': {'source_byte_limit': MAX_SOURCE_BYTES}}, target, checkpoint))
+        checkpoint()
+        result['phase'] = 'sandbox'
+        metadata = _json(observe('static-image', ['docker', 'image', 'inspect', FIXED_IMAGE])['output'])
+        require(isinstance(metadata, list) and len(metadata) == 1 and metadata[0].get('Id') == FIXED_IMAGE,
+                'sample_stage_image_mismatch')
+        created = True
+        observe('static-create', ['docker', 'create', '--name', name, '--network=none', '--read-only',
+            '--user=1000:1000', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+            *docker_resource_args(profile, executable=False), '--log-driver=none',
+            '--env=HOME=/work', '--env=TMPDIR=/work', '--entrypoint=sleep', FIXED_IMAGE, str(STAGE_WALL_SECONDS + 5)])
+        observe('static-start', ['docker', 'start', name])
+        private = _json(observe('static-private', ['docker', 'exec', '--user=' + ANALYSIS_USER, name,
+            'python3', '-I', '-S', '-c', ANALYSIS_SETUP_PROGRAM])['output'])
+        require(private == {'uid': 1001, 'gid': 1001, 'private': True}, 'sample_stage_private_boundary')
+        boundary_before = _json(observe('static-boundary-before', ['docker', 'exec', name,
+            'python3', '-I', '-S', '-c', BOUNDARY_PROGRAM])['output'])
+        require(boundary_valid(boundary_before, source_required=False, profile=profile, executable=False),
+                'sample_stage_boundary_before')
+        payload = canonical(files)
+        transferred = _json(observe('static-source', ['docker', 'exec', '--user=0:0', '--interactive', name,
+            'python3', '-I', '-S', '-c', INPUT_PROGRAM, str(len(payload))], data=payload,
+            maximum=4 * 1024 * 1024, seconds=30)['output'])
+        require(transferred == prepared['targets'], 'sample_stage_full_source_transfer')
+        boundary = _json(observe('static-boundary', ['docker', 'exec', name,
+            'python3', '-I', '-S', '-c', BOUNDARY_PROGRAM])['output'])
+        require(boundary_valid(boundary, profile=profile, executable=False), 'sample_stage_boundary')
+        result['boundary_verified'] = True
+        storage = _json(observe('static-storage', ['docker', 'exec', name,
+            'python3', '-I', '-S', '-c', SCRATCH_PROGRAM])['output'])
+        require(type(storage.get('capacity_bytes')) is int and storage['capacity_bytes'] == resources['tmpfs_bytes']
+                and type(storage.get('available_bytes')) is int
+                and 64 * 1024 * 1024 <= storage['available_bytes'] <= storage['capacity_bytes'],
+                'sample_stage_scratch_capacity')
+        result['scratch_capacity_verified'] = True
+        result['scratch_capacity_bytes'] = storage['capacity_bytes']
+        restore = {'schema': 'nico.cpp-project-restore.v1', 'files': prepared['snapshot']['files'],
+                   'file_population_sha256': prepared['snapshot']['file_population_sha256']}
+        restored = _json(observe('static-restore', ['docker', 'exec', '--user=' + ANALYSIS_USER,
+            '--interactive', name, 'python3', '-I', '-S', '-c', PROJECT_RESTORE_PROGRAM],
+            data=canonical(restore), maximum=4 * 1024 * 1024, seconds=30)['output'])
+        require(restored == {'files': primary_request['generated_files'],
+                            'file_population_sha256': primary_request['snapshot_population_sha256']},
+                'sample_stage_full_generated_restore')
+        result['phase'] = 'four_context_fallback'
+        checkpoint()
+        allocation_ms = min(request['limits']['wall_seconds'] * 1000,
+            int((deadline - time.monotonic()) * 1000) - (STAGE_WALL_SECONDS - STAGE_EXECUTION_SECONDS) * 1000)
+        require(allocation_ms > 0, 'sample_shared_stage_deadline')
+        result['fallback_allocation_ms'] = allocation_ms
+        save()
+        observed = observe('fallback-capacity-sample', ['docker', 'exec', '--user=' + ANALYSIS_USER,
+            '--interactive', name, 'python3', '-I', '-S', '-c', program, str(allocation_ms)],
+            data=envelope_raw, maximum=STREAM_LIMIT,
+            seconds=request['limits']['wall_seconds'] + 10, artifact=True, must_succeed=False)
+        result['fallback_evidence'] = result['operations'][-1]['output_artifact']
+        # Retrieve a fixed private sidecar after returned collector bytes are
+        # retained, even if they contain a genuine failed/partial native result.
+        sidecar_program = ('import os,stat,sys\n'
+            'p="/work/analysis/capacity-sample-telemetry.json"\n'
+            'fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)\n'
+            's=os.fstat(fd)\n'
+            'assert stat.S_ISREG(s.st_mode) and s.st_uid==1001 and 0<s.st_size<=8388608\n'
+            'with os.fdopen(fd,"rb") as f: b=f.read(8388609)\n'
+            'assert len(b)==s.st_size<=8388608\n'
+            'sys.stdout.buffer.write(b)\n')
+        telemetry = observe('fallback-capacity-telemetry', ['docker', 'exec', '--user=' + ANALYSIS_USER,
+            name, 'python3', '-I', '-S', '-c', sidecar_program], maximum=MAX_META, seconds=10,
+            artifact=True, must_succeed=False)
+        result['telemetry'] = result['operations'][-1]['output_artifact']
+        require(observed['exit_code'] == 0 and not observed['timed_out'] and not observed['output_truncated'],
+                'sample_collector_native_output_incomplete')
+        proof = span(intervals, 'original_sample_native_validator', lambda: validate_clang_fallback(
+            observed['output'], request, primary_request, wall_budget_ms=allocation_ms))
+        result['sample_analysis'] = {'required_contexts': proof['required_contexts'],
+            'attempted_contexts': proof['attempted_contexts'], 'analyzed_contexts': proof['analyzed_contexts'],
+            'complete_for_four_context_sample': proof['complete'], 'findings': len(proof['findings']),
+            'limitations': proof['limitations'], 'native_evidence_sha256': proof['native_evidence_sha256'],
+            'whole576_acceptance_credit': False}
+        require(telemetry['exit_code'] == 0 and not telemetry['timed_out'] and not telemetry['output_truncated'],
+                'sample_telemetry_sidecar_unavailable')
+        telemetry_proof = span(intervals, 'closed_sample_telemetry_validator', lambda: sample.validate_sample_telemetry(
+            telemetry['output'], {'request': request, 'binding': binding}, observed['output'],
+            actual_wall_budget_ms=allocation_ms))
+        require(isinstance(telemetry_proof, dict), 'sample_telemetry_validation_shape')
+        result['telemetry_validation'] = telemetry_proof
+        result['status'] = 'FOUR_CONTEXT_DIAGNOSTIC_CAPTURED'
+        result['phase'] = 'sample_returned'
+        checkpoint()
+    except (Exception, KeyboardInterrupt) as error:
+        result['error'] = {'type': type(error).__name__, 'message': str(error)}
+    finally:
+        if created:
+            try:
+                peak = _command(['docker', 'exec', name, 'cat', '/sys/fs/cgroup/memory.peak'],
+                    checkpoint=lambda: None, timeout=2, limit=1024, native_exit=True)
+                if peak['exit_code'] == 0 and not peak['timed_out'] and not peak['output_truncated']:
+                    value = int(peak['output'].strip())
+                    if 0 <= value <= resources['memory_bytes']:
+                        result['memory_peak_bytes'] = value
+            except (Exception, KeyboardInterrupt):
+                pass
+            try:
+                removed = _command(['docker', 'rm', '--force', name], checkpoint=lambda: None,
+                                   timeout=5, limit=4096, native_exit=True)
+                result['cleanup_verified'] = removed['exit_code'] == 0 and not removed['timed_out'] and not removed['output_truncated']
+            except (Exception, KeyboardInterrupt):
+                pass
+        if created and not result['cleanup_verified']:
+            result['error'] = result['error'] or {'type': 'CallerRejected', 'message': 'sample_stage_cleanup_failed'}
+        if result['error']:
+            result['status'] = 'UNPROVEN'
+        save()
+    return result
+
+
+def sample_worker(settings_path, settings_raw, settings):
+    require(settings.get('variant') == 'candidate' and settings.get('parent_pid') == os.getppid(),
+            'connected_sample_worker')
+    args = normalize(argparse.Namespace(**settings['arguments']))
+    require(args.fallback_capacity_sample is True, 'sample_worker_mode')
+    args.variant = 'candidate'
+    context = args.output / 'context'
+    require(context.is_dir() and context.stat().st_mode & 0o077 == 0
+            and Path(__file__).parent == context, 'private_sample_worker_context')
+    output = context / 'runs/capacity-sample'
+    intervals = []
+    process_receipt = {'schema': 'nico.private.fallback_capacity_sample_process_receipt.v1',
+        'status': 'UNPROVEN', 'variant': 'candidate', 'source_rows': None, 'intervals': intervals,
+        'fresh_process_pid': os.getpid(), 'parent_pid': os.getppid(), 'sample_invocation_attempted': False,
+        'actual_python': {'version': sys.version, 'isolated': sys.flags.isolated == 1,
+                         'no_bytecode': sys.dont_write_bytecode is True},
+        'mock_injection_used': False, 'primary_native_execution': False, 'compiled': False,
+        'tests_executed': False, 'full_native_qualified': False, 'production_qualified': False,
+        'assessment_completed': False, 'error': None}
+    early = context / 'capacity-sample-process-receipt.json'
+    write_private(early, process_receipt)
+    try:
+        helper = module_buffer(args.operation_source / SOURCE_PATHS['image_helper'],
+            regular(args.operation_source / SOURCE_PATHS['image_helper'], digest=HELPER_SHA), 'exact_sample_image_helper')
+        authority(args, helper)
+        operation, rows, buffers = span(intervals, 'actual_source_binding', lambda: source_bindings(args, helper))
+        require(rows == settings['source_rows'] and operation == settings['operation'], 'sample_worker_source_binding')
+        require(regular(context / 'cpp_static_runner_scope.py') == buffers['scope'], 'sample_private_scope_binding')
+        process_receipt['source_rows'] = rows
+        scope = module_buffer(context / 'cpp_static_runner_scope.py', buffers['scope'], 'exact_sample_scope')
+        prepare = module_buffer(args.operation_source / SOURCE_PATHS['prepare'], buffers['prepare'], 'exact_sample_prepare')
+        verifier = module_buffer(args.operation_source / SOURCE_PATHS['verifier'], buffers['verifier'], 'exact_sample_verifier')
+        sample = module_buffer(args.operation_source / 'scripts/cpp_fallback_capacity_sample.py', buffers['sample'], 'exact_capacity_sample')
+        process_receipt['dependency_before_preparation'] = span(intervals, 'dependency_before_sample_preparation',
+            lambda: dependencies(args, verifier))
+        prepared = span(intervals, 'candidate_full_static_preparation', lambda: prepare.prepare(args, scope))
+        target = context / 'target'
+        process_receipt['target_verification'] = span(intervals, 'full3031_target_before_sample', lambda:
+            scope.verify_target_source(target, prepared['targets'], prepared['target_inventory'], FROZEN_TREE))
+        process_receipt['dependency_before_sample'] = span(intervals, 'dependency_before_sample_invocation',
+            lambda: dependencies(args, verifier))
+        process_receipt['sample_invocation_attempted'] = True
+        write_private(early, process_receipt)
+        diagnostic = span(intervals, 'actual_four_context_sample_and_retention', lambda:
+            invoke_capacity_sample(args, prepared, target, output, sample))
+        process_receipt['dependency_after_sample'] = span(intervals, 'dependency_after_sample_invocation',
+            lambda: dependencies(args, verifier))
+        process_receipt['target_verification_after_sample'] = span(intervals, 'full3031_target_after_sample', lambda:
+            scope.verify_target_source(target, prepared['targets'], prepared['target_inventory'], FROZEN_TREE))
+        require(diagnostic['full_native_qualified'] is False and diagnostic['production_qualified'] is False
+                and diagnostic['primary_native_execution'] is False and diagnostic['static_collection_complete'] is False,
+                'sample_no_full_acceptance_credit')
+        process_receipt.update(status='FRESH_SAMPLE_PROCESS_CAPTURED', sample_status=diagnostic['status'])
+    except BaseException as error:
+        process_receipt['error'] = {'type': type(error).__name__, 'message': str(error)}
+        raise
+    finally:
+        if not output.exists():
+            output.mkdir(mode=0o700, parents=True)
+        write_private(output / 'process-receipt.json', process_receipt)
+
+
+def sample_parent(args):
+    args = normalize(args)
+    require(args.fallback_capacity_sample is True and not args.output.exists(), 'new_sample_parent_output')
+    args.output.mkdir(mode=0o700)
+    intervals = []
+    receipt = {'schema': 'nico.private.fallback_capacity_sample_caller.v1', 'status': 'UNPROVEN',
+        'intervals': intervals, 'source_binding': None, 'image_binding': None, 'target_binding': None,
+        'sample': None, 'input_operation': dict(SAMPLE_INPUT_RUN), 'selected_context_indices': list(SAMPLE_INDICES),
+        'full_required_fallback_contexts': 576, 'cache_state': 'UNKNOWN', 'single_sample_only': True,
+        'job_outer_budget_minutes': 155, 'declared_api_wall_seconds': 1030, 'shared_execution_seconds': 1020,
+        'independent1030_hardwall_supervisor_present': False, 'primary_native_execution': False,
+        'parent_cpu_is_analyzer_cpu': False, 'overlapping_intervals_additive': False,
+        'full_native_qualified': False, 'production_qualified': False, 'assessment_completed': False,
+        'static_collection_complete': False, 'historical_image_recovered': False, 'error': None}
+    write_private(args.output / 'sample-caller-receipt.json', receipt)
+    try:
+        helper_path = args.operation_source / SOURCE_PATHS['image_helper']
+        helper = module_buffer(helper_path, regular(helper_path, digest=HELPER_SHA), 'exact_sample_parent_helper')
+        operation = authority(args, helper)
+        receipt['operation'] = operation
+        operation, rows, buffers = span(intervals, 'actual_source_binding', lambda: source_bindings(args, helper))
+        receipt['source_binding'] = {'current_git_head': args.expected_operation, 'actual_operation': operation,
+            'effective_fallback_baseline': RECIPE_HEAD, 'effective_recipe_tree': RECIPE_TREE,
+            'compiler_overlay': {'path': 'nico/assessment_cpp_project_compiler.py', 'sha256': CANDIDATE_COMPILER_SHA},
+            'effective_overlay_is_whole_candidate': False, 'caller_sha256': rows['caller']['sha256'],
+            'scope_sha256': rows['scope']['sha256'], 'sample_sha256': rows['sample']['sha256'],
+            'prepare_sha256': rows['prepare']['sha256'], 'preparer_sha256': rows['preparer']['sha256'],
+            'exporter_sha256': rows['exporter']['sha256'], 'all_selected_files_actual_git_blob_bound': True}
+        context = args.output / 'context'
+        context.mkdir(mode=0o700)
+        for key, name in (('caller', 'cpp_same_image_full_static_diagnostic.py'), ('scope', 'cpp_static_runner_scope.py')):
+            path = context / name
+            with path.open('xb') as stream:
+                stream.write(buffers[key])
+            path.chmod(0o400)
+            require(regular(path) == buffers[key], 'sample_private_source_copy_binding')
+        scope = module_buffer(context / 'cpp_static_runner_scope.py', buffers['scope'], 'exact_sample_parent_scope')
+        prepare = module_buffer(args.operation_source / SOURCE_PATHS['prepare'], buffers['prepare'], 'exact_sample_parent_prepare')
+        verifier = module_buffer(args.operation_source / SOURCE_PATHS['verifier'], buffers['verifier'], 'exact_sample_parent_verifier')
+        receipt['input_artifacts'] = span(intervals, 'sample_inputs_before_image_load', lambda: sample_inputs(args))[1]
+        receipt['dependency_before_setup'] = span(intervals, 'dependency_before_sample_setup', lambda: dependencies(args, verifier))
+        receipt['image_binding'] = image_binding(args, helper, prepare, intervals)
+        # Reused helper returns pair-specific metadata. A one-sample route must
+        # not suggest that two new variants ran or that cache equivalence holds.
+        receipt['image_binding'].pop('same_selected_image_for_both_variants', None)
+        receipt['image_binding']['single_verified_selected_image_for_sample'] = True
+        receipt['target_binding'] = span(intervals, 'full3031_git_checkout_verification_and_data_only_copy', lambda:
+            copy_target(args, helper, scope))
+        receipt['dependency_before_process'] = span(intervals, 'dependency_before_fresh_sample_process', lambda: dependencies(args, verifier))
+        arguments = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()
+                     if key != 'worker_settings'}
+        settings_path = context / 'capacity-sample-settings.json'
+        settings = write_private(settings_path, {'schema': 'nico.private.fallback_capacity_sample_worker_settings.v1',
+            'variant': 'candidate', 'parent_pid': os.getpid(), 'arguments': arguments,
+            'source_rows': rows, 'operation': operation})
+        write_private(args.output / 'sample-caller-receipt.json', receipt)
+        argv = [sys.executable, '-I', '-B', str(context / 'cpp_same_image_full_static_diagnostic.py'),
+                '--worker-settings', str(settings_path)]
+        process = span(intervals, 'fresh_candidate_sample_process', lambda:
+            subprocess.run(argv, capture_output=True, check=False, env=child_environment()))
+        directory = context / 'runs/capacity-sample'
+        row = {'id': 'capacity-sample', 'directory': str(directory), 'process_exit_code': process.returncode,
+            'settings': settings, 'diagnostic_result': None, 'process_receipt': None,
+            'fresh_cp311_isolated_process_requested': True}
+        for key, name in (('diagnostic_result', 'sample-diagnostic-result.json'), ('process_receipt', 'process-receipt.json')):
+            if (directory / name).exists():
+                raw = regular(directory / name, MAX_META)
+                row[key] = {'bytes': len(raw), 'sha256': sha(raw)}
+        for name, raw in (('stdout', process.stdout), ('stderr', process.stderr)):
+            require(len(raw) <= MAX_META, 'sample_process_output_bound')
+            with (context / ('capacity-sample-' + name + '.log')).open('xb') as stream:
+                os.chmod(stream.fileno(), 0o600)
+                stream.write(raw)
+            row[name] = {'bytes': len(raw), 'sha256': sha(raw)}
+        receipt['sample'] = row
+        write_private(args.output / 'sample-caller-receipt.json', receipt)
+        require(process.returncode == 0 and row['diagnostic_result'] is not None and row['process_receipt'] is not None,
+                'fresh_sample_process_not_captured')
+        detail = decode(regular(directory / 'sample-diagnostic-result.json', MAX_META,
+            row['diagnostic_result']['sha256'], row['diagnostic_result']['bytes']))
+        require(detail['schema'] == 'nico.private.fallback_capacity_sample_diagnostic.v1'
+                and detail['primary_native_execution'] is False and detail['full_native_qualified'] is False
+                and detail['production_qualified'] is False and detail['static_collection_complete'] is False,
+                'sample_diagnostic_closed_scope')
+        receipt['sample_status'] = detail['status']
+        receipt['dependency_after_sample'] = span(intervals, 'dependency_after_fresh_sample_process', lambda: dependencies(args, verifier))
+        image_after = span(intervals, 'loaded_image_config_rootfs_verification_after_sample', lambda: helper.inspection(FIXED_IMAGE))
+        require(sha(canonical({'Config': image_after['Config'], 'RootFS': image_after['RootFS']})) ==
+                receipt['image_binding']['config_and_rootfs_sha256'], 'loaded_image_changed_after_sample')
+        receipt['image_binding']['config_and_rootfs_verified_after_sample'] = True
+        receipt['status'] = 'SAMPLE_PROCESS_AND_RETAINED_RESULT_CAPTURED'
+    except BaseException as error:
+        receipt['error'] = {'type': type(error).__name__, 'message': str(error)}
+        raise
+    finally:
+        write_private(args.output / 'sample-caller-receipt.json', receipt)
+    print(json.dumps({'status': receipt['status'], 'sample_status': receipt['sample_status'],
+        'selected_context_indices': list(SAMPLE_INDICES), 'full_native_qualified': False, 'production_qualified': False}))
+
+
 def main():
     os.umask(0o077)
     for name in CREDENTIAL_NAMES:
@@ -653,6 +1141,8 @@ def main():
         require(all(value is None for key, value in vars(args).items() if key != 'worker_settings'),
                 'worker_cli_is_exclusive')
         worker(path_value(args.worker_settings))
+    elif args.fallback_capacity_sample is True:
+        sample_parent(args)
     else:
         pair(args)
 

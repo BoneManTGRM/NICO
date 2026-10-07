@@ -12,7 +12,7 @@ import unittest
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'scripts/cpp_private_diagnostic_inputs.py'
-EXPECTED_SOURCE_SHA = '2bba4c741ce5ac33bd7613163cd8c9c19a475ef19e9e1832765b1d75f94dc632'
+EXPECTED_SOURCE_SHA = '1fd194b24cbaa083d4f072e657470840020bc38862d5facdeee780c26148fff4'
 RAW = SOURCE.read_bytes()
 if hashlib.sha256(RAW).hexdigest() != EXPECTED_SOURCE_SHA:
     raise AssertionError('reviewed_preparer_source_digest')

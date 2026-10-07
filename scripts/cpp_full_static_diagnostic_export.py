@@ -12,6 +12,8 @@ import math
 import os
 import re
 import stat
+import ast
+import zlib
 
 MAX_ARTIFACT_BYTES = 48 * 1024 * 1024
 MAX_RECEIPT_BYTES = 8 * 1024 * 1024
@@ -760,11 +762,674 @@ def export_pair(receipt_path, output, expected):
     return write_export(public, files, output, paths, digest(raw))
 
 
+SAMPLE_MAX_NATIVE = 32 * 1024 * 1024
+SAMPLE_MAX_TELEMETRY = 128 * 1024
+SAMPLE_MAX_TOTAL = 64 * 1024 * 1024
+SAMPLE_INDEXES = [0, 58, 154, 186]
+SAMPLE_OPERATION_IDS = {'static-image', 'static-create', 'static-start', 'static-private',
+    'static-boundary-before', 'static-source', 'static-boundary', 'static-storage',
+    'static-restore', 'fallback-capacity-sample', 'fallback-capacity-telemetry'}
+SAMPLE_ARTIFACTS = {'fallback-capacity-sample': SAMPLE_MAX_NATIVE,
+                    'fallback-capacity-telemetry': SAMPLE_MAX_TELEMETRY}
+SAMPLE_LIMITS = {'stage_execution_seconds': 1020, 'stage_wall_seconds': 1030,
+    'fallback_wall_seconds': 480, 'fallback_case_seconds': 120, 'fallback_parallel': 2,
+    'cpus': '4', 'memory_bytes': 12884901888, 'pids': '256', 'tmpfs_bytes': 9663676416}
+SAMPLE_FULL_REQUEST = '2bfd399c965282b8dfe3c34b82861feb8377b5f9abe4ba8c0eb9755614d2a6ce'
+SAMPLE_TARGET_POPULATION = 'e82d2f98f2fae7a877ba9e81fac6cac5791cf3c54cf3cd5f13d810ad65659ba2'
+SAMPLE_GENERATED_POPULATION = '896428a6f2ac9fdbeaa13df999c63347ade97e92364973fbdd1e6c242756f880'
+SAMPLE_COMPILER = '89b2cf72c00bdbde55fcdb42efeeaaeb11ad28ddae4e16cd99c59f6d3e5316e8'
+SAMPLE_SOURCE_PATHS = {'caller': 'scripts/cpp_same_image_full_static_diagnostic.py',
+    'scope': 'scripts/cpp_static_runner_scope.py', 'sample': 'scripts/cpp_fallback_capacity_sample.py',
+    'exporter': 'scripts/cpp_full_static_diagnostic_export.py'}
+SAMPLE_FALSE_PARENT = ('primary_native_execution', 'full_native_qualified', 'production_qualified',
+                       'assessment_completed', 'static_collection_complete', 'historical_image_recovered')
+SAMPLE_FALSE_DIAGNOSTIC = ('primary_native_execution', 'compiled', 'tests_executed', 'full_native_qualified',
+    'production_qualified', 'assessment_completed', 'static_collection_complete', 'human_approval_created',
+    'cold_timing_credit', 'memory_oom_cause_inferred', 'independent1030_hardwall_supervisor_present')
+
+
+def sample_source_validation(caller_source, sample_source, expected):
+    """Execute only exact checked pure validator definitions, never a module entry."""
+    caller_raw = regular(caller_source, MAX_RECEIPT_BYTES,
+        {'bytes': Path(caller_source).stat().st_size, 'sha256': expected['caller_sha256']})
+    sample_raw = regular(sample_source, MAX_RECEIPT_BYTES,
+        {'bytes': Path(sample_source).stat().st_size, 'sha256': expected['sample_sha256']})
+    caller_tree = ast.parse(caller_raw)
+    route = {}
+    for node in caller_tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            name = node.targets[0].id
+            if name in {'REPOSITORY', 'BRANCH', 'WORKFLOW', 'JOB'}:
+                route[name] = ast.literal_eval(node.value)
+    require(route == {'REPOSITORY': 'BoneManTGRM/NICO',
+        'BRANCH': 'refs/heads/diagnostic/v17-pinned-image-20261007',
+        'WORKFLOW': '.github/workflows/cpp-same-image-full-static-diagnostic.yml',
+        'JOB': 'same-image-full-static-diagnostic'}, 'sample_checked_caller_fixed_route')
+    codes = set()
+    for node in ast.walk(caller_tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'require'
+                and len(node.args) >= 2 and isinstance(node.args[1], ast.Constant)
+                and type(node.args[1].value) is str):
+            codes.add(node.args[1].value)
+    tree = ast.parse(sample_raw)
+    names = ('require', 'canonical', 'sha', 'decode', 'finite_nonnegative', 'parse_cgroup',
+             'counter_deltas', 'check_envelope', 'validate_sample_telemetry')
+    nodes = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    require(all(name in nodes for name in names), 'sample_pure_validator_definition_missing')
+    constants = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            name = node.targets[0].id
+            if name in {'CGROUP_FILES', 'SOURCE_PINS', 'LIMITS'}:
+                constants[name] = ast.literal_eval(node.value)
+    require(constants.get('LIMITS') == {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 2}
+            and constants.get('CGROUP_FILES') == ('cpu.stat', 'memory.events', 'cpu.pressure',
+                'memory.pressure', 'io.pressure', 'memory.current', 'memory.peak')
+            and isinstance(constants.get('SOURCE_PINS'), dict) and len(constants['SOURCE_PINS']) == 6,
+            'sample_validator_fixed_data_scope')
+    namespace = {'json': json, 'hashlib': hashlib, 're': re, 'math': math, **constants,
+                 'MAX_TELEMETRY': SAMPLE_MAX_TELEMETRY, 'MAX_EVIDENCE': SAMPLE_MAX_NATIVE}
+    selected = ast.Module(body=[nodes[name] for name in names], type_ignores=[])
+    # Verified source bytes supply definitions only: no imports, module body,
+    # PROGRAM builder, native entry, resource snapshots or filesystem calls.
+    exec(compile(selected, str(sample_source), 'exec'), namespace)
+    return namespace, frozenset(codes), {'caller_source_sha256': digest(caller_raw),
+        'sample_source_sha256': digest(sample_raw), 'caller_fixed_literal_catalog_sha256': digest(canonical(sorted(codes))),
+        'checked_source_buffers_only': True, 'native_or_target_execution_by_exporter': False,
+        'checked_caller_declared_route': route}
+
+
+def sample_error_projection(value, codes):
+    result = parent_error_projection(value)
+    if (isinstance(value, dict) and set(value) == {'type', 'message'}
+            and value.get('type') == 'CallerRejected' and type(value.get('message')) is str
+            and value['message'] in codes):
+        result.update(classification='EXACT_TYPED_FIXED_VALIDATION_LITERAL_MATCH',
+                      validation_code=value['message'])
+    return result
+
+
+def sample_request_projection(envelope, diagnostic, validators):
+    request, binding = validators['check_envelope'](envelope)
+    require(binding['full_request_sha256'] == SAMPLE_FULL_REQUEST
+            and binding['header_source_targets_sha256'] == SAMPLE_TARGET_POPULATION
+            and binding['header_generated_files_sha256'] == SAMPLE_GENERATED_POPULATION,
+            'sample_frozen_request_or_population_digest_mismatch')
+    required = request['required_contexts']
+    require(all(type(value) is str and HASH.fullmatch(value) for value in required)
+            and len(set(required)) == 577, 'sample_required_context_id_population')
+    private = diagnostic.get('request_binding')
+    require(isinstance(private, dict) and private.get('full_request_bound_before_selection') is True
+            and private.get('no_primary_native_execution') is True
+            and private.get('full_required_fallback_contexts') == 576
+            and private.get('selected_context_indices') == private.get('selected_original_indices') == SAMPLE_INDEXES
+            and private.get('full_header_source_population') == 3031
+            and private.get('full_header_generated_population') == 143
+            and private.get('full_fallback_request_sha256') == binding['full_request_sha256']
+            and private.get('sample_request_sha256') == binding['sample_request_sha256']
+            and diagnostic.get('sample_binding') == binding,
+            'sample_diagnostic_request_binding_mismatch')
+    rows = []
+    for context, selected in zip(request['contexts'], binding['selected']):
+        require(type(selected.get('index')) is int and context['context_id'] in required and type(context['context_id']) is str
+                and HASH.fullmatch(context['context_id']) and context['context_id'] == selected['context_id'],
+                'sample_selected_context_identity')
+        source = context.get('analysis_file')
+        origin = 'original' if type(source) is str and source.startswith('/work/source/') else 'generated'
+        prefix = '/work/source/' if origin == 'original' else '/work/analysis/generated-baseline/'
+        require(type(source) is str and source.startswith(prefix), 'sample_selected_analysis_root')
+        path = safe_relative(source[len(prefix):])
+        member = request['header_source_targets'].get(path) if origin == 'original' else request['header_generated_files'].get(path)
+        source_sha = member if origin == 'original' else member.get('sha256') if isinstance(member, dict) else None
+        rows.append({'index': selected['index'], 'context_id': selected['context_id'],
+            'origin': origin, 'path': path, 'source_sha256': checked_hash(source_sha),
+            'invocation_sha256': checked_hash(selected['invocation_sha256']),
+            'dropped_arguments_sha256': digest(canonical(context['dropped_arguments'])),
+            'source_dependencies_sha256': checked_hash(selected['source_dependencies_sha256']),
+            'generated_dependencies_sha256': checked_hash(selected['generated_dependencies_sha256'])})
+    require(private.get('selected_context_ids') == [r['context_id'] for r in rows], 'sample_selected_ids_mismatch')
+    return request, binding, {'full_fallback_request_sha256': binding['full_request_sha256'],
+        'sample_request_sha256': binding['sample_request_sha256'],
+        'required_contexts_sha256': binding['required_contexts_sha256'],
+        'full_fallback_context_ids_sha256': binding['full_fallback_context_ids_sha256'],
+        'header_source_targets_sha256': binding['header_source_targets_sha256'],
+        'header_generated_files_sha256': binding['header_generated_files_sha256'],
+        'sample_contexts_sha256': binding['sample_contexts_sha256'], 'selected': rows,
+        'obligations': dict(binding['obligations']), 'full_request_source_bound_before_selection': True,
+        'sample_envelope_independently_checked': True, 'full576_request_bytes_exported': False,
+        'unsampled_status': 'UNMEASURED', 'cache_state': 'UNKNOWN'}
+
+
+def sample_native_projection(raw, request, allocated):
+    """Bind every returned selected record; preserve coded genuine native failure."""
+    try:
+        data = strict_json(raw)
+    except (ValueError, UnicodeError, TypeError, RecursionError) as error:
+        return {'parse_status': 'UNPARSEABLE_PRIVATE_STDOUT_UNPROVEN', 'raw_sha256': digest(raw),
+                'error_type': type(error).__name__, 'raw_exportable': False, 'analysis_or_population_credit': False}
+    if isinstance(data, dict) and data.get('schema') == 'nico.cpp-clang-fallback-failure.v1':
+        safe = set(data) == {'schema', 'error'} and type(data.get('error')) is str and re.fullmatch(r'worker_clang_fallback_[a-z_]+', data['error'])
+        return {'parse_status': 'CODED_NATIVE_FAILURE_UNPROVEN' if safe else 'OPAQUE_NATIVE_FAILURE_UNPROVEN',
+                'raw_sha256': digest(raw), 'raw_exportable': bool(safe),
+                'failure': error_projection(data['error']) if safe else {'opaque_failure_sha256': digest(canonical(data))},
+                'analysis_or_population_credit': False}
+    projection = retained_raw_projection('project-static-clang-fallback', raw, FIXED_IMAGE)
+    projection['raw_exportable'] = projection['parse_status'] == 'KEY_SCHEMA_AND_DATA_PROJECTION_VALID'
+    if not projection['raw_exportable']:
+        projection['analysis_or_population_credit'] = False
+        return projection
+    require(set(data) == {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms',
+        'wall_budget_ms', 'header_tool_receipt', 'header_tool_receipt_sha256'}
+        and type(data.get('analyst_uid')) is int and data['analyst_uid'] == 1001,
+        'sample_native_closed_top_level_fields')
+    receipt = base64.b64decode(data['header_tool_receipt'], validate=True)
+    require(len(receipt) <= 65536 and digest(receipt) == data['header_tool_receipt_sha256'],
+            'sample_native_header_tool_bytes')
+    tool = strict_json(receipt)
+    require(isinstance(tool, dict) and set(tool) == {'schema', 'manifest_sha256', 'source_sha256',
+        'sdk_lock_sha256', 'runtime_lock_sha256', 'clang_version', 'plugin_sha256', 'compiler_version',
+        'qualification_completed'} and tool.get('schema') == 'nico.clang-header-tool.v1'
+        and tool.get('qualification_completed') is False, 'sample_native_header_tool_closed_scope')
+    sample_execution_bytes(data['version'])
+    require(data.get('request_sha256') == digest(canonical(request))
+            and type(data.get('wall_budget_ms')) is int and data['wall_budget_ms'] == allocated
+            and len(data['records']) == 4, 'sample_native_request_allocation_or_population')
+    for expected_row, actual, projected in zip(request['contexts'], data['records'], projection['contexts']):
+        require(set(actual) == {'context_id', 'invocation', 'dropped_arguments', 'execution', 'plist',
+            'plist_sha256', 'error', 'header_trace', 'header_trace_sha256'}
+                and actual.get('context_id') == expected_row['context_id']
+                and actual.get('invocation') == expected_row['invocation']
+                and actual.get('dropped_arguments') == expected_row['dropped_arguments'],
+                'sample_native_selected_record_binding')
+        projected['record_position'] = projected.pop('index')
+        projected['original_context_index'] = expected_row['index']
+        error = actual.get('error')
+        require(error is None or type(error) is str and re.fullmatch(r'worker_clang_fallback_[a-z_]+', error),
+                'sample_native_error_code_scope')
+        if actual['execution'] is not None:
+            sample_execution_bytes(actual['execution'])
+        for key, maximum in (('plist', 4 * 1024 * 1024), ('header_trace', 1024 * 1024)):
+            sample_compressed_bytes(actual[key], actual[key + '_sha256'], maximum)
+        if actual['execution'] is None:
+            require(error is not None and not actual['plist'] and not actual['header_trace'],
+                    'sample_native_unstarted_payload')
+    projection['complete_four_record_population_bound'] = True
+    projection['whole576_analysis_or_population_credit'] = False
+    return projection
+
+
+def sample_execution_bytes(value):
+    require(isinstance(value, dict) and set(value) == {'exit_code', 'timed_out', 'output_truncated',
+        'duration_ms', 'output', 'output_sha256'}, 'sample_native_execution_fields')
+    execution_projection(value)
+    raw = base64.b64decode(value['output'], validate=True)
+    require(len(raw) <= 65536 and digest(raw) == value['output_sha256'], 'sample_native_execution_output_bytes')
+    return raw
+
+
+def sample_compressed_bytes(value, expected_hash, maximum):
+    require(type(value) is str, 'sample_native_binary_encoding')
+    stored = base64.b64decode(value, validate=True)
+    require(len(stored) <= 4 * 1024 * 1024, 'sample_native_binary_stored_bound')
+    if not stored:
+        require(expected_hash is None, 'sample_native_binary_empty_digest')
+        return b''
+    inflater = zlib.decompressobj()
+    try:
+        raw = inflater.decompress(stored, maximum + 1)
+    except zlib.error as error:
+        raise Rejected('sample_native_binary_zlib_invalid') from error
+    require(inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail
+            and len(raw) <= maximum and digest(raw) == expected_hash, 'sample_native_binary_bytes')
+    return raw
+
+
+def sample_retained_telemetry(raw, envelope, native_raw, allocated, validators):
+    """Closed structural/identity/counter retention; never relax host validation."""
+    request, binding = validators['check_envelope'](envelope)
+    require(0 < len(raw) <= SAMPLE_MAX_TELEMETRY, 'sample_retained_telemetry_bound')
+    value = strict_json(raw)
+    keys = {'schema', 'status', 'collector_error_type', 'selection', 'limits', 'collector_call_wall_ms',
+        'actual_wall_budget_ms', 'collector_wall_scope', 'children', 'cgroup', 'evidence_sha256',
+        'full_native_qualified', 'production_qualified', 'historical_replay_credit', 'cache_state', 'unsampled_status'}
+    require(isinstance(value, dict) and set(value) == keys
+            and value.get('schema') == 'nico.diagnostic.four-fallback-resources.v1'
+            and value.get('selection') == binding and value.get('limits') == {'wall_seconds': 480, 'case_seconds': 120, 'parallel': 2}
+            and type(value.get('actual_wall_budget_ms')) is int and value['actual_wall_budget_ms'] == allocated
+            and type(allocated) is int and 0 < allocated <= 480000
+            and validators['finite_nonnegative'](value.get('collector_call_wall_ms'))
+            and value.get('collector_wall_scope') == 'UNCHANGED_COLLECTOR_INCLUDING_HEADER_INPUT_CHECKS_VERSION_AND_SELECTED_ANALYZERS'
+            and all(value.get(key) is False for key in ('full_native_qualified', 'production_qualified', 'historical_replay_credit'))
+            and value.get('cache_state') == 'UNKNOWN' and value.get('unsampled_status') == 'UNMEASURED',
+            'sample_retained_telemetry_identity_scope')
+    status = value['status']
+    require(status == 'COLLECTOR_RETURNED' and value['collector_error_type'] is None
+            or status == 'UNPROVEN' and value['collector_error_type'] in {'ValueError', 'OSError', 'KeyError',
+                'TypeError', 'KeyboardInterrupt', 'SystemExit', 'OtherException'}, 'sample_retained_telemetry_fixed_error_type')
+    if value['evidence_sha256'] is None:
+        require(status == 'UNPROVEN', 'sample_retained_telemetry_missing_evidence_identity')
+    else:
+        require(value['evidence_sha256'] == digest(canonical(strict_json(native_raw))),
+                'sample_retained_telemetry_native_identity')
+    children = value['children']
+    require(isinstance(children, dict) and set(children) == {'scope', 'includes_version_probe', 'per_context_cpu_available',
+        'before', 'after', 'delta_status', 'delta'}
+        and children.get('scope') == 'ALL_REAPED_CHILDREN_OF_THIS_MEASUREMENT_WORKER'
+        and children.get('includes_version_probe') is True and children.get('per_context_cpu_available') is False,
+        'sample_retained_children_scope')
+    for snapshot in (children['before'], children['after']):
+        require(isinstance(snapshot, dict) and set(snapshot) == {'status', 'user_seconds', 'system_seconds', 'scope', 'observation_ms'}
+                and snapshot.get('scope') == children['scope'] and validators['finite_nonnegative'](snapshot['observation_ms'])
+                and (snapshot['status'] == 'OBSERVED' and validators['finite_nonnegative'](snapshot['user_seconds'])
+                    and validators['finite_nonnegative'](snapshot['system_seconds'])
+                    or snapshot['status'] == 'UNKNOWN' and snapshot['user_seconds'] is snapshot['system_seconds'] is None),
+                'sample_retained_children_snapshot')
+    expected = None
+    if children['before']['status'] == children['after']['status'] == 'OBSERVED':
+        user = children['after']['user_seconds'] - children['before']['user_seconds']
+        system = children['after']['system_seconds'] - children['before']['system_seconds']
+        if validators['finite_nonnegative'](user) and validators['finite_nonnegative'](system):
+            expected = {'user_seconds': user, 'system_seconds': system, 'total_seconds': user + system}
+    require(children['delta'] == expected and children['delta_status'] == ('OBSERVED' if expected is not None else 'UNKNOWN'),
+            'sample_retained_children_delta')
+    group = value['cgroup']
+    require(isinstance(group, dict) and set(group) == {'before', 'after', 'delta'}, 'sample_retained_cgroup_scope')
+    for snapshot in (group['before'], group['after']):
+        require(isinstance(snapshot, dict) and set(snapshot) == {'scope', 'files', 'observation_ms'}
+                and snapshot.get('scope') == 'SAME_ANALYST_CONTAINER_CGROUP_INCLUDING_MEASUREMENT_PARENT'
+                and validators['finite_nonnegative'](snapshot['observation_ms']) and isinstance(snapshot['files'], dict)
+                and set(snapshot['files']) == set(validators['CGROUP_FILES']), 'sample_retained_cgroup_snapshot')
+        for name, row in snapshot['files'].items():
+            require(isinstance(row, dict) and set(row) == {'status', 'values'}
+                    and row['status'] in {'OBSERVED', 'UNKNOWN'}, 'sample_retained_cgroup_status')
+            data = row['values']
+            if row['status'] == 'UNKNOWN':
+                require(data is None, 'sample_retained_unknown_counter')
+                continue
+            require(isinstance(data, dict), 'sample_retained_counter_map')
+            if name.endswith('.pressure'):
+                require('some' in data and set(data) <= {'some', 'full'}, 'sample_retained_pressure_scope')
+                for numbers in data.values():
+                    require(isinstance(numbers, dict) and set(numbers) == {'avg10', 'avg60', 'avg300', 'total'}
+                            and type(numbers['total']) is int and 0 <= numbers['total'] < 10 ** 20
+                            and all(validators['finite_nonnegative'](numbers[key]) and numbers[key] <= 100
+                                for key in ('avg10', 'avg60', 'avg300')), 'sample_retained_pressure_values')
+            else:
+                reconstructed = str(data.get('bytes', '')) + '\n' if name in {'memory.current', 'memory.peak'} else ''.join(
+                    str(key) + ' ' + str(number) + '\n' for key, number in data.items())
+                require(validators['parse_cgroup'](name, reconstructed.encode()) == data
+                        and all(type(number) is int for number in data.values()), 'sample_retained_counter_values')
+    require(group['delta'] == validators['counter_deltas'](group['before'], group['after']), 'sample_retained_cgroup_delta')
+    return value
+
+
+def write_sample_export(public, files, output, paths, caller_hash):
+    summary_raw = canonical(public)
+    require(len(summary_raw) <= MAX_RECEIPT_BYTES and not any(marker in summary_raw for marker in PRIVATE_MARKERS),
+            'sample_summary_bound_or_private_material')
+    files = {**files, 'sample-summary.json': summary_raw}
+    total = sum(map(len, files.values()))
+    require(total <= SAMPLE_MAX_TOTAL, 'sample_total_export_bound')
+    output = Path(output).absolute()
+    require(not output.exists() and output.parent == output.parent.resolve(strict=True)
+            and all(not output.is_relative_to(path) and not path.is_relative_to(output) for path in paths),
+            'sample_export_new_nonalias_output')
+    manifest = {'schema': 'nico.fallback_capacity_sample_export_manifest.v1',
+        'files': [{'path': key, 'bytes': len(raw), 'sha256': digest(raw)} for key, raw in sorted(files.items())],
+        'file_count': len(files), 'listed_bytes': total, 'caller_receipt_sha256': caller_hash,
+        'fresh_only': True, 'private_sample_envelope_exported': False,
+        'reused_input_or_opaque_receipt_bytes_exported': False, 'full_native_or_production_qualification': False}
+    manifest_raw = canonical(manifest)
+    require(total + len(manifest_raw) <= SAMPLE_MAX_TOTAL, 'sample_total_export_bound')
+    output.mkdir(mode=0o700)
+    for name, raw in {**files, 'manifest.json': manifest_raw}.items():
+        path = output / safe_relative(name)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as stream:
+            stream.write(raw)
+    for name, raw in {**files, 'manifest.json': manifest_raw}.items():
+        require(regular(output / name, max(SAMPLE_MAX_NATIVE, MAX_RECEIPT_BYTES)) == raw,
+                'sample_export_all_byte_readback')
+    return {'schema': 'nico.fallback_capacity_sample_export_receipt.v1', 'manifest_sha256': digest(manifest_raw),
+        'public_summary_sha256': digest(summary_raw), 'file_count_with_manifest': len(files) + 1,
+        'total_bytes_with_manifest': total + len(manifest_raw), 'closed_allowlist_all_bytes_readback_verified': True,
+        'full_native_or_production_qualification': False}
+
+
+def export_missing_sample(receipt_path, output, expected, *, caller_source, sample_source):
+    """Observed absent receipt; execution/cause remain unknown, never fabricated."""
+    require(expected.get('caller_receipt_sha256') is None, 'sample_missing_receipt_with_supplied_sha')
+    path = Path(receipt_path).absolute()
+    require(path == path.resolve() and not path.exists() and not path.is_symlink(),
+            'sample_missing_receipt_path_present_or_noncanonical')
+    require(digest(regular(Path(__file__).absolute(), MAX_RECEIPT_BYTES)) == expected['exporter_sha256'],
+            'sample_exporter_actual_source_hash')
+    validators, codes, source_checks = sample_source_validation(caller_source, sample_source, expected)
+    require(COMMIT.fullmatch(expected['current_git_head']) and
+            expected['effective_fallback_baseline'] == 'f0919654edd719059ea03319981b13f46ba70a88'
+            and expected['compiler_overlay_path'] == 'nico/assessment_cpp_project_compiler.py'
+            and expected['compiler_overlay_sha256'] == SAMPLE_COMPILER
+            and expected['image_config_digest'] == FIXED_IMAGE
+            and HASH.fullmatch(expected['scope_sha256']), 'sample_missing_expected_operation_binding')
+    public = {'schema': 'nico.fallback_capacity_sample_export_summary.v1',
+        'caller_receipt_sha256': None, 'caller_receipt_observed_absent': True,
+        'checked_sources': source_checks,
+        'expected_operation_binding': {key: expected[key] for key in ('current_git_head',
+            'effective_fallback_baseline', 'compiler_overlay_path', 'compiler_overlay_sha256',
+            'exporter_sha256', 'caller_sha256', 'scope_sha256', 'sample_sha256', 'image_config_digest')},
+        'expected_operation_binding_is_runtime_observation': False,
+        'source_binding': None, 'image_binding': None, 'target_binding': None,
+        'source_image_target_execution_observation_status': 'UNKNOWN',
+        'sample_observation': None, 'actual_operations': [], 'request_selection': None,
+        'native_projection': None, 'telemetry_projection': None,
+        'diagnostic_outcome': 'CALLER_RECEIPT_ABSENT_UNPROVEN',
+        'missing_receipt_cause': None, 'actual_cause_requires_terminal_job_log': True,
+        'cache_state': 'UNKNOWN', 'unsampled_status': 'UNMEASURED',
+        'assessment_completed': False, 'full_native_qualified': False, 'production_qualified': False,
+        'static_collection_complete': False, 'human_approval_created': False, 'cold_timing_credit': False,
+        'private_sample_envelope_exported': False, 'reused_input_or_opaque_receipt_bytes_exported': False,
+        'maximum_native_bytes': SAMPLE_MAX_NATIVE, 'maximum_telemetry_bytes': SAMPLE_MAX_TELEMETRY,
+        'maximum_total_exported_bytes': SAMPLE_MAX_TOTAL}
+    return write_sample_export(public, {}, output, [path.parent], None)
+
+
+def sample_program_projection(program, validators, expected):
+    require(isinstance(program, dict) and program.get('original_function_buffers_verified') is True
+            and program.get('producer_source_pins') == validators['SOURCE_PINS']
+            and program.get('sample_module_sha256') == expected['sample_sha256']
+            and HASH.fullmatch(expected['sample_sha256'])
+            and program.get('new_terminal_only') is True and program.get('full_native_qualified') is False,
+            'sample_program_fixed_source_bindings')
+    projected = {key: checked_hash(program.get(key)) for key in
+        ('original_program_sha256', 'sample_program_sha256', 'original_prefix_sha256')}
+    projected.update(original_function_buffers_verified=True,
+        producer_source_pins=dict(validators['SOURCE_PINS']), sample_module_sha256=expected['sample_sha256'])
+    return projected
+
+
+def export_sample(receipt_path, output, expected, *, caller_source, sample_source):
+    raw = regular(receipt_path, MAX_RECEIPT_BYTES,
+        {'bytes': Path(receipt_path).stat().st_size, 'sha256': expected['caller_receipt_sha256']})
+    outer = strict_json(raw)
+    require(isinstance(outer, dict) and outer.get('schema') == 'nico.private.fallback_capacity_sample_caller.v1',
+            'sample_caller_schema')
+    require(digest(regular(Path(__file__).absolute(), MAX_RECEIPT_BYTES)) == expected['exporter_sha256'],
+            'sample_exporter_actual_source_hash')
+    validators, codes, source_checks = sample_source_validation(caller_source, sample_source, expected)
+    require(all(outer.get(key) is False for key in SAMPLE_FALSE_PARENT), 'sample_parent_acceptance_flags')
+    public = {'schema': 'nico.fallback_capacity_sample_export_summary.v1', 'caller_receipt_sha256': digest(raw),
+        'checked_sources': source_checks, 'parent_error': sample_error_projection(outer.get('error'), codes),
+        'sample_capture_status': scalar(outer.get('status'), 'id'), 'source_binding': None, 'image_binding': None,
+        'target_binding': None, 'sample_observation': None, 'actual_operations': [], 'request_selection': None,
+        'native_projection': None, 'telemetry_projection': None, 'cache_state': 'UNKNOWN',
+        'unsampled_status': 'UNMEASURED', 'full_required_fallback_contexts': 576, 'sampled_contexts': 4,
+        'assessment_completed': False, 'full_native_qualified': False, 'production_qualified': False,
+        'static_collection_complete': False, 'human_approval_created': False, 'cold_timing_credit': False,
+        'private_sample_envelope_exported': False, 'reused_input_or_opaque_receipt_bytes_exported': False,
+        'maximum_native_bytes': SAMPLE_MAX_NATIVE, 'maximum_telemetry_bytes': SAMPLE_MAX_TELEMETRY,
+        'maximum_total_exported_bytes': SAMPLE_MAX_TOTAL}
+    files = {}
+    parent = Path(receipt_path).absolute().parent
+    paths = [parent]
+    source = outer.get('source_binding')
+    image = outer.get('image_binding')
+    if not isinstance(source, dict) or not isinstance(image, dict):
+        require(outer.get('status') == 'UNPROVEN' and outer.get('sample') is None,
+                'sample_unbound_preflight_scope')
+        public['diagnostic_outcome'] = 'SOURCE_OR_IMAGE_PREFLIGHT_ABSENT_UNPROVEN'
+        return write_sample_export(public, files, output, paths, digest(raw))
+    for key in ('current_git_head', 'effective_fallback_baseline'):
+        require(source.get(key) == expected[key] and COMMIT.fullmatch(source[key]), 'sample_source_commit_binding')
+    require(source['effective_fallback_baseline'] == 'f0919654edd719059ea03319981b13f46ba70a88'
+            and source.get('effective_recipe_tree') == 'b9e200f62b9b2db9c6488326826ad8ae393418d0'
+            and source.get('all_selected_files_actual_git_blob_bound') is True
+            and source.get('effective_overlay_is_whole_candidate') is False, 'sample_effective_source_scope')
+    for key in ('caller_sha256', 'scope_sha256', 'exporter_sha256', 'sample_sha256'):
+        require(source.get(key) == expected[key] and HASH.fullmatch(source[key]), 'sample_source_hash_binding')
+    overlay = source.get('compiler_overlay')
+    require(overlay == {'path': 'nico/assessment_cpp_project_compiler.py', 'sha256': SAMPLE_COMPILER}
+            and expected['compiler_overlay_path'] == overlay['path']
+            and expected['compiler_overlay_sha256'] == overlay['sha256'], 'sample_compiler_overlay')
+    require(expected['image_config_digest'] == FIXED_IMAGE
+            and image.get('selected_config_digest') == image.get('fixed_config_digest') == FIXED_IMAGE
+            and all(image.get(key) is True for key in ('loaded_image_inspection_verified', 'complete_archive_verified',
+                'config_and_ordered_rootfs_equal_independent_build_receipt', 'single_verified_selected_image_for_sample'))
+            and image.get('historical_image_recovered') is False
+            and image.get('matching_historical_live_toolchain_or_header_inputs_inferred') is False,
+            'sample_fixed_complete_image_binding')
+    require(outer.get('selected_context_indices') == SAMPLE_INDEXES and outer.get('full_required_fallback_contexts') == 576
+            and outer.get('single_sample_only') is True and outer.get('cache_state') == 'UNKNOWN'
+            and outer.get('job_outer_budget_minutes') == 155 and outer.get('declared_api_wall_seconds') == 1030
+            and outer.get('shared_execution_seconds') == 1020
+            and outer.get('independent1030_hardwall_supervisor_present') is False
+            and outer.get('parent_cpu_is_analyzer_cpu') is False and outer.get('overlapping_intervals_additive') is False,
+            'sample_parent_budget_order_scope')
+    public.update(source_binding={key: source[key] for key in ('current_git_head', 'effective_fallback_baseline',
+        'effective_recipe_tree', 'caller_sha256', 'scope_sha256', 'exporter_sha256', 'sample_sha256')},
+        compiler_overlay=dict(overlay), image_binding={'selected_config_digest': FIXED_IMAGE,
+            'complete_archive_verification_recorded': True, 'loaded_config_and_ordered_rootfs_verification_recorded': True,
+            'config_and_rootfs_sha256': checked_hash(image.get('config_and_rootfs_sha256')),
+            'config_and_rootfs_verified_after_sample': image.get('config_and_rootfs_verified_after_sample') is True,
+            'historical_image_recovered': False}, target_binding=target_projection(outer.get('target_binding'), outer=True),
+        parent_intervals=process_intervals(outer.get('intervals')), parent_dependency_checks={key: dependency_projection(outer.get(key))
+            for key in ('dependency_before_setup', 'dependency_before_process', 'dependency_after_sample')},
+        declared_limits=dict(SAMPLE_LIMITS), independent1030_hardwall_supervisor_present=False,
+        job_outer_budget_minutes=155, parent_cpu_is_analyzer_cpu=False, overlapping_intervals_additive=False)
+    row = outer.get('sample')
+    if row is None:
+        require(outer.get('status') == 'UNPROVEN', 'sample_absent_process_status')
+        public['diagnostic_outcome'] = 'SAMPLE_NOT_RUN_UNPROVEN'
+        return write_sample_export(public, files, output, paths, digest(raw))
+    require(isinstance(row, dict) and row.get('id') == 'capacity-sample', 'sample_process_row')
+    directory = Path(row.get('directory', ''))
+    require(directory.is_absolute() and directory == directory.resolve(strict=True)
+            and directory == parent / 'context/runs/capacity-sample', 'sample_directory_exact_host_route')
+    require(public['target_binding'] is not None, 'sample_process_without_frozen_target')
+    paths.append(directory)
+    entries = {path.name for path in directory.iterdir()}
+    require(entries <= {'sample-diagnostic-result.json', 'process-receipt.json', 'sample-envelope.json', 'artifacts'},
+            'sample_directory_closed_members')
+    public['sample_observation'] = {'process_exit_code': scalar(row.get('process_exit_code'), 'exit'),
+        'fresh_cp311_isolated_process_requested': row.get('fresh_cp311_isolated_process_requested') is True,
+        'diagnostic_present': row.get('diagnostic_result') is not None, 'process_receipt_present': row.get('process_receipt') is not None}
+    require(row.get('fresh_cp311_isolated_process_requested') is True, 'sample_process_fresh_isolated_request')
+    for name in ('stdout', 'stderr'):
+        reference = row.get(name)
+        if reference is not None:
+            log = regular(parent / ('context/capacity-sample-' + name + '.log'), MAX_RECEIPT_BYTES, reference)
+            public['sample_observation'][name] = {'bytes': len(log), 'sha256': digest(log), 'raw_exported': False}
+    process_ref = row.get('process_receipt')
+    require(('process-receipt.json' in entries) is (process_ref is not None), 'sample_process_receipt_presence')
+    if process_ref is not None:
+        process_raw = regular(directory / 'process-receipt.json', MAX_RECEIPT_BYTES, process_ref)
+        process = strict_json(process_raw)
+        require(isinstance(process, dict) and process.get('schema') == 'nico.private.fallback_capacity_sample_process_receipt.v1'
+                and process.get('variant') == 'candidate' and process.get('mock_injection_used') is False
+                and all(process.get(k) is False for k in ('primary_native_execution', 'compiled', 'tests_executed',
+                    'full_native_qualified', 'production_qualified', 'assessment_completed')), 'sample_process_scope')
+        python = process.get('actual_python')
+        require(isinstance(python, dict) and python.get('isolated') is True and python.get('no_bytecode') is True
+                and type(python.get('version')) is str and python['version'].startswith('3.11.'),
+                'sample_process_actual_python_scope')
+        rows = process.get('source_rows')
+        if rows is not None:
+            require(isinstance(rows, dict), 'sample_process_sources')
+            for key, path in SAMPLE_SOURCE_PATHS.items():
+                require(isinstance(rows.get(key), dict) and rows[key].get('path') == path
+                        and rows[key].get('sha256') == expected[key + '_sha256']
+                        and COMMIT.fullmatch(rows[key].get('git_blob', '')), 'sample_process_actual_source_binding')
+        public['sample_observation'].update(process_receipt_sha256=digest(process_raw),
+            process_error=sample_error_projection(process.get('error'), codes),
+            sample_invocation_attempted=scalar(process.get('sample_invocation_attempted'), 'bool'),
+            process_intervals=process_intervals(process.get('intervals')),
+            target_before=target_projection(process.get('target_verification')),
+            target_after=target_projection(process.get('target_verification_after_sample')),
+            dependency_checks={key: dependency_projection(process.get(key)) for key in
+                ('dependency_before_preparation', 'dependency_before_sample', 'dependency_after_sample')})
+    diagnostic_ref = row.get('diagnostic_result')
+    require(('sample-diagnostic-result.json' in entries) is (diagnostic_ref is not None), 'sample_diagnostic_presence')
+    if diagnostic_ref is None:
+        require(not (directory / 'artifacts').exists(), 'sample_artifacts_without_diagnostic')
+        public['diagnostic_outcome'] = 'SAMPLE_DIAGNOSTIC_ABSENT_UNPROVEN'
+        return write_sample_export(public, files, output, paths, digest(raw))
+    diagnostic_raw = regular(directory / 'sample-diagnostic-result.json', MAX_RECEIPT_BYTES, diagnostic_ref)
+    diagnostic = strict_json(diagnostic_raw)
+    require(isinstance(diagnostic, dict) and diagnostic.get('schema') == 'nico.private.fallback_capacity_sample_diagnostic.v1'
+            and all(diagnostic.get(key) is False for key in SAMPLE_FALSE_DIAGNOSTIC)
+            and diagnostic.get('limits') == SAMPLE_LIMITS and diagnostic.get('declared_api_wall_seconds') == 1030
+            and diagnostic.get('resource_profile') == 'cpp-baseline-qualification-v1', 'sample_diagnostic_scope_and_limits')
+    public.update(sample_diagnostic_sha256=digest(diagnostic_raw), phase=scalar(diagnostic.get('phase'), 'id'),
+        sample_diagnostic_status=scalar(diagnostic.get('status'), 'id'),
+        sample_error=sample_error_projection(diagnostic.get('error'), codes),
+        sample_duration_ms=scalar(diagnostic.get('duration_ms'), 'number'),
+        sample_intervals=process_intervals(diagnostic.get('intervals')),
+        boundary_and_cleanup={key: scalar(diagnostic.get(key), 'bool') for key in
+            ('boundary_verified', 'scratch_capacity_verified', 'cleanup_verified')})
+    for key in ('memory_peak_bytes', 'scratch_capacity_bytes'):
+        if diagnostic.get(key) is not None:
+            value = scalar(diagnostic[key], 'number')
+            require(type(value) is int and 0 <= value <= SAMPLE_LIMITS['memory_bytes'] if key == 'memory_peak_bytes'
+                    else type(value) is int and value == SAMPLE_LIMITS['tmpfs_bytes'], 'sample_resource_observation_bound')
+            public['boundary_and_cleanup'][key] = value
+        else:
+            public['boundary_and_cleanup'][key] = None
+    envelope = None
+    request = None
+    envelope_ref = diagnostic.get('sample_envelope')
+    require(('sample-envelope.json' in entries) is (envelope_ref is not None), 'sample_private_envelope_presence')
+    if envelope_ref is not None:
+        require(isinstance(envelope_ref, dict) and set(envelope_ref) == {'path', 'bytes', 'sha256'}
+                and envelope_ref['path'] == 'sample-envelope.json', 'sample_private_envelope_reference')
+        envelope_raw = regular(directory / 'sample-envelope.json', MAX_RECEIPT_BYTES,
+            {key: envelope_ref[key] for key in ('bytes', 'sha256')})
+        envelope = strict_json(envelope_raw)
+        request, binding, public['request_selection'] = sample_request_projection(envelope, diagnostic, validators)
+        public['private_envelope_verified_bytes'] = len(envelope_raw)
+        public['private_envelope_verified_sha256'] = digest(envelope_raw)
+        program = diagnostic.get('program_binding')
+        if program is not None:
+            public['program_binding'] = sample_program_projection(program, validators, expected)
+    operations = diagnostic.get('operations')
+    require(isinstance(operations, list) and len(operations) <= len(SAMPLE_OPERATION_IDS), 'sample_operations_population')
+    artifacts = {}
+    native_raw = None
+    telemetry_raw = None
+    fresh_image = False
+    ids = set()
+    for operation in operations:
+        require(isinstance(operation, dict) and operation.get('id') in SAMPLE_OPERATION_IDS
+                and operation['id'] not in ids, 'sample_operation_id_or_duplicate')
+        key = operation['id']
+        ids.add(key)
+        projected = {'id': key, **execution_projection(operation),
+            'invocation_sha256': checked_hash(operation.get('invocation_sha256')),
+            'output_sha256': checked_hash(operation.get('output_sha256')),
+            'output_bytes': scalar(operation.get('output_bytes'), 'number')}
+        reference = operation.get('output_artifact')
+        if key not in SAMPLE_ARTIFACTS:
+            require(reference is None, 'sample_nonartifact_reference')
+            encoded = operation.get('output')
+            require(type(encoded) is str, 'sample_boundary_output_encoding')
+            body = base64.b64decode(encoded, validate=True)
+            require(len(body) == operation['output_bytes'] and digest(body) == operation['output_sha256'],
+                    'sample_boundary_output_bytes')
+            if key == 'static-image' and operation['exit_code'] == 0 and not operation['timed_out'] and not operation['output_truncated']:
+                observed = strict_json(body)
+                require(isinstance(observed, list) and len(observed) == 1 and observed[0].get('Id') == FIXED_IMAGE,
+                        'sample_fresh_image_inspection')
+                fresh_image = True
+        elif reference is None:
+            projected.update(artifact_not_retained=True, raw_exported=False)
+        else:
+            require(isinstance(reference, dict) and set(reference) == {'path', 'bytes', 'sha256'}, 'sample_artifact_reference')
+            name = safe_relative(reference['path'])
+            require(name == 'artifacts/' + key + '-' + checked_hash(reference['sha256']) + '.json'
+                    and name not in artifacts and reference['sha256'] == operation['output_sha256']
+                    and type(operation['output_bytes']) is int and reference['bytes'] == operation['output_bytes'],
+                    'sample_artifact_name_operation_binding')
+            body = regular(directory / name, SAMPLE_ARTIFACTS[key], {k: reference[k] for k in ('bytes', 'sha256')})
+            artifacts[name] = body
+            projected['artifact'] = {'path': name, 'bytes': len(body), 'sha256': digest(body)}
+            require(operation.get('output') is None, 'sample_external_output_inline_rejected')
+            if key == 'fallback-capacity-sample':
+                native_raw = body
+            else:
+                telemetry_raw = body
+        public['actual_operations'].append(projected)
+    artifact_directory = directory / 'artifacts'
+    actual_artifacts = set()
+    if artifact_directory.exists():
+        require(artifact_directory.is_dir() and artifact_directory == artifact_directory.resolve(strict=True), 'sample_artifact_directory')
+        for path in artifact_directory.iterdir():
+            require(path.is_file() and not path.is_symlink(), 'sample_artifact_regular_only')
+            actual_artifacts.add('artifacts/' + path.name)
+    require(actual_artifacts == set(artifacts), 'sample_missing_or_unreferenced_artifact')
+    require(not ids.intersection(SAMPLE_ARTIFACTS) or fresh_image and request is not None,
+            'sample_native_without_fresh_image_or_envelope')
+    allocated = diagnostic.get('fallback_allocation_ms')
+    if ids.intersection(SAMPLE_ARTIFACTS):
+        require(type(allocated) is int and 0 < allocated <= 480000, 'sample_allocated_budget')
+    public['fresh_stage_image_inspection_verified'] = fresh_image
+    public['actual_fallback_allocation_ms'] = allocated
+    if native_raw is not None:
+        public['native_projection'] = sample_native_projection(native_raw, request, allocated)
+    telemetry_valid = False
+    telemetry_closed_retention = False
+    if telemetry_raw is not None and native_raw is not None:
+        try:
+            retained = sample_retained_telemetry(telemetry_raw, envelope, native_raw, allocated, validators)
+            public['telemetry_projection'] = {key: retained[key] for key in ('schema', 'status', 'collector_error_type',
+                'collector_call_wall_ms', 'actual_wall_budget_ms', 'collector_wall_scope', 'children', 'cgroup',
+                'evidence_sha256', 'cache_state', 'unsampled_status')}
+            public['telemetry_projection'].update(closed_identity_and_counter_retention_verified=True,
+                positive_host_telemetry_validation=False, observation_scope='RETAINED_DIAGNOSTIC_DATA_NO_QUALIFICATION')
+            telemetry_closed_retention = True
+        except (ValueError, KeyError, TypeError, OverflowError, RecursionError, UnicodeError) as error:
+            public['telemetry_projection'] = {'status': 'TELEMETRY_SCOPE_OR_DATA_UNPROVEN',
+                'raw_sha256': digest(telemetry_raw), 'error_type': type(error).__name__,
+                'actual_telemetry_validation_credit': False}
+        try:
+            proof = validators['validate_sample_telemetry'](telemetry_raw, envelope, native_raw, actual_wall_budget_ms=allocated)
+            require(telemetry_closed_retention, 'sample_positive_telemetry_without_closed_retention')
+            public['telemetry_projection']['positive_host_telemetry_validation'] = True
+            telemetry_valid = True
+        except (ValueError, KeyError, TypeError, OverflowError, RecursionError, UnicodeError) as error:
+            public['telemetry_projection']['positive_host_telemetry_validation'] = False
+            public['telemetry_projection']['positive_validation_failure_type'] = type(error).__name__
+    for name, body in artifacts.items():
+        native = name.startswith('artifacts/fallback-capacity-sample-')
+        safe = not any(marker in body for marker in PRIVATE_MARKERS)
+        safe &= bool(public['native_projection'].get('raw_exportable')) if native else telemetry_closed_retention
+        for operation in public['actual_operations']:
+            if operation.get('artifact', {}).get('path') == name:
+                operation['raw_exported'] = safe
+                operation['raw_retained_privately'] = True
+        if safe:
+            files[name] = body
+    public['diagnostic_outcome'] = ('FOUR_CONTEXT_DATA_AND_TELEMETRY_CAPTURED_NO_FULL_CREDIT'
+        if outer.get('status') == 'SAMPLE_PROCESS_AND_RETAINED_RESULT_CAPTURED' and outer.get('error') is None
+            and row.get('process_exit_code') == 0 and public['sample_observation'].get('process_error') is None
+            and diagnostic.get('status') == 'FOUR_CONTEXT_DIAGNOSTIC_CAPTURED' and diagnostic.get('error') is None
+            and telemetry_valid and public['native_projection'] is not None
+            and public['native_projection'].get('raw_exportable') is True
+            and diagnostic['cleanup_verified'] is True and diagnostic['boundary_verified'] is True
+            and diagnostic['scratch_capacity_verified'] is True
+            and image.get('config_and_rootfs_verified_after_sample') is True
+        else 'RETAINED_SAMPLE_FAILURE_OR_PARTIAL_DATA_UNPROVEN')
+    return write_sample_export(public, files, output, paths, digest(raw))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--caller-receipt', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
-    for name in ('caller-receipt-sha256', 'current-git-head', 'effective-fallback-baseline',
+    parser.add_argument('--sample-mode', action='store_true')
+    parser.add_argument('--missing-caller-receipt', action='store_true')
+    parser.add_argument('--expected-caller-receipt-sha256')
+    parser.add_argument('--caller-source', type=Path)
+    parser.add_argument('--sample-source', type=Path)
+    parser.add_argument('--expected-sample-sha256')
+    for name in ('current-git-head', 'effective-fallback-baseline',
                  'compiler-overlay-path', 'compiler-overlay-sha256', 'exporter-sha256', 'caller-sha256', 'scope-sha256', 'image-config-digest'):
         parser.add_argument('--expected-' + name, required=True)
     args = parser.parse_args()
@@ -772,7 +1437,23 @@ def main():
                 ('caller_receipt_sha256', 'current_git_head', 'effective_fallback_baseline',
                  'compiler_overlay_path', 'compiler_overlay_sha256', 'exporter_sha256', 'caller_sha256', 'scope_sha256', 'image_config_digest')}
     try:
-        receipt = export_pair(args.caller_receipt, args.output, expected)
+        if args.sample_mode:
+            require(args.caller_source is not None and args.sample_source is not None
+                    and args.expected_sample_sha256 is not None, 'sample_export_cli_source_bindings')
+            expected['sample_sha256'] = checked_hash(args.expected_sample_sha256)
+            if args.missing_caller_receipt:
+                require(args.expected_caller_receipt_sha256 is None, 'sample_missing_receipt_with_supplied_sha')
+                receipt = export_missing_sample(args.caller_receipt, args.output, expected,
+                    caller_source=args.caller_source, sample_source=args.sample_source)
+            else:
+                require(args.expected_caller_receipt_sha256 is not None, 'sample_present_receipt_requires_actual_sha')
+                receipt = export_sample(args.caller_receipt, args.output, expected,
+                    caller_source=args.caller_source, sample_source=args.sample_source)
+        else:
+            require(not args.missing_caller_receipt and args.expected_caller_receipt_sha256 is not None
+                    and args.caller_source is None and args.sample_source is None
+                    and args.expected_sample_sha256 is None, 'sample_arguments_without_sample_mode')
+            receipt = export_pair(args.caller_receipt, args.output, expected)
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(json.dumps({'status': 'EXPORT_VALIDATION_FAILED', 'failure_type': type(error).__name__,
                           'full_native_or_production_qualification': False}))

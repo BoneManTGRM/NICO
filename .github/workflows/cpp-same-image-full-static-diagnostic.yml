@@ -1,4 +1,4 @@
-name: Same Retrieved Image Full Static Diagnostic
+name: Same Retrieved Image Four-Context Fallback Diagnostic
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/cpp-same-image-full-static-diagnostic.yml
       - scripts/cpp_same_image_full_static_diagnostic.py
+      - scripts/cpp_fallback_capacity_sample.py
       - scripts/cpp_full_static_prepare.py
       - scripts/cpp_static_runner_scope.py
       - scripts/cpp_private_diagnostic_inputs.py
@@ -20,6 +21,11 @@ on:
       - tests/test_cpp_full_static_diagnostic_export.py
       - tests/test_cpp_same_image_full_static_diagnostic.py
       - tests/test_cpp_frozen_target_checkout_boundary.py
+      - tests/test_cpp_fallback_capacity_host_seam.py
+      - tests/test_cpp_fallback_capacity_sample.py
+      - tests/test_cpp_capacity_input_transport.py
+      - tests/test_cpp_fallback_capacity_sample_export.py
+      - tests/test_cpp_fallback_capacity_present_export.py
 
 permissions:
   contents: read
@@ -35,7 +41,7 @@ jobs:
       github.repository == 'BoneManTGRM/NICO' &&
       github.ref == 'refs/heads/diagnostic/v17-pinned-image-20261007' &&
       github.run_attempt == 1 &&
-      contains(github.event.head_commit.message, '[diagnostic-static-v17]')
+      contains(github.event.head_commit.message, '[diagnostic-fallback-sample-v17]')
     runs-on: ubuntu-24.04
     # Existing authorized native-job cap. Stage/child limits stay in the API.
     timeout-minutes: 155
@@ -70,6 +76,11 @@ jobs:
           python -I -B operation-source/tests/test_cpp_full_static_diagnostic_export.py
           python -I -B operation-source/tests/test_cpp_same_image_full_static_diagnostic.py
           python -I -B operation-source/tests/test_cpp_frozen_target_checkout_boundary.py
+          python -I -B operation-source/tests/test_cpp_fallback_capacity_host_seam.py
+          python -I -B operation-source/tests/test_cpp_fallback_capacity_sample.py
+          python -I -B operation-source/tests/test_cpp_capacity_input_transport.py
+          python -I -B operation-source/tests/test_cpp_fallback_capacity_sample_export.py
+          python -I -B operation-source/tests/test_cpp_fallback_capacity_present_export.py
       - name: Fetch exact reviewed public CP311 wheels
         run: >-
           python -I -B operation-source/scripts/cpp_fetch_host_wheels.py
@@ -102,67 +113,59 @@ jobs:
           --operation-source operation-source --recipe-source recipe-source
           --scratch "$RUNNER_TEMP/nico-static-private"
           --load-store-reserve-bytes 4294967296
-      - name: Compare actual full static stages in fresh processes with the same image
+          --fallback-capacity-sample
+      - name: Measure four original fallback contexts with the same image and limits
         run: |
           proof_sha="$(sha256sum "$RUNNER_TEMP/nico-static-dependency-proof.json" | cut -d ' ' -f 1)"
           proof_bytes="$(wc -c < "$RUNNER_TEMP/nico-static-dependency-proof.json")"
           "$RUNNER_TEMP/nico-static-venv/bin/python" -I -B \
             operation-source/scripts/cpp_same_image_full_static_diagnostic.py \
+            --fallback-capacity-sample \
+            --expected-sample-sha256 261a1ac33ba22625aa07218d8e5071d7fe55436b51191aae504f68bac7bd7ad0 \
             --operation-source operation-source --recipe-source recipe-source \
             --target-checkout frozen-target-checkout \
             --prepared-inputs "$RUNNER_TEMP/nico-static-private" \
             --dependency-proof "$RUNNER_TEMP/nico-static-dependency-proof.json" \
             --expected-proof-sha256 "$proof_sha" \
             --expected-proof-bytes "$proof_bytes" \
-            --expected-caller-sha256 84f540acdb24b23b5fc34c85d754bd06e892ec4cb75b39b0e3eddc306acb4b55 \
+            --expected-caller-sha256 1fc90d58f8da1ccfeedceda3195e31c799c238d84b32c37cd8c80ad968ded9e7 \
             --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
             --expected-prepare-sha256 130d5515b35cb04d745c2c2e45d05f8c0594fd0b621e4e091200d762dcd7c494 \
-            --expected-preparer-sha256 2bba4c741ce5ac33bd7613163cd8c9c19a475ef19e9e1832765b1d75f94dc632 \
-            --expected-exporter-sha256 8fbc5ed7c2ac637de38fffd89d11f85386903cd2d3e437bf4ad28803ce80d5c9 \
+            --expected-preparer-sha256 1fd194b24cbaa083d4f072e657470840020bc38862d5facdeee780c26148fff4 \
+            --expected-exporter-sha256 a20d4648eff93351d409ccdfbd4a7817f025b1d8c6e9bb311a6847b0d8b00466 \
             --expected-operation "${{ github.sha }}" \
             --output "$RUNNER_TEMP/nico-static-private-output"
-      - name: Construct bounded evidence for this new pair only
+      - name: Construct bounded evidence for this four-context sample only
         if: always()
         run: |
-          receipt_sha="$(sha256sum "$RUNNER_TEMP/nico-static-private-output/pair-receipt.json" | cut -d ' ' -f 1)"
+          receipt_path="$RUNNER_TEMP/nico-static-private-output/sample-caller-receipt.json"
+          receipt_arguments=(--missing-caller-receipt)
+          if [ -f "$receipt_path" ] && [ ! -L "$receipt_path" ]; then
+            receipt_sha="$(sha256sum "$receipt_path" | cut -d ' ' -f 1)"
+            receipt_arguments=(--expected-caller-receipt-sha256 "$receipt_sha")
+          fi
           python -I -B operation-source/scripts/cpp_full_static_diagnostic_export.py \
-            --caller-receipt "$RUNNER_TEMP/nico-static-private-output/pair-receipt.json" \
-            --expected-caller-receipt-sha256 "$receipt_sha" \
+            --sample-mode \
+            --caller-source operation-source/scripts/cpp_same_image_full_static_diagnostic.py \
+            --sample-source operation-source/scripts/cpp_fallback_capacity_sample.py \
+            --expected-sample-sha256 261a1ac33ba22625aa07218d8e5071d7fe55436b51191aae504f68bac7bd7ad0 \
+            --caller-receipt "$receipt_path" \
+            "${receipt_arguments[@]}" \
             --expected-current-git-head "${{ github.sha }}" \
             --expected-effective-fallback-baseline f0919654edd719059ea03319981b13f46ba70a88 \
             --expected-compiler-overlay-path nico/assessment_cpp_project_compiler.py \
             --expected-compiler-overlay-sha256 89b2cf72c00bdbde55fcdb42efeeaaeb11ad28ddae4e16cd99c59f6d3e5316e8 \
-            --expected-exporter-sha256 8fbc5ed7c2ac637de38fffd89d11f85386903cd2d3e437bf4ad28803ce80d5c9 \
-            --expected-caller-sha256 84f540acdb24b23b5fc34c85d754bd06e892ec4cb75b39b0e3eddc306acb4b55 \
+            --expected-exporter-sha256 a20d4648eff93351d409ccdfbd4a7817f025b1d8c6e9bb311a6847b0d8b00466 \
+            --expected-caller-sha256 1fc90d58f8da1ccfeedceda3195e31c799c238d84b32c37cd8c80ad968ded9e7 \
             --expected-scope-sha256 4bf6c5fc0fb1d2c576793fc283ed1c80a4f7f5026f23cb5e19affcd7e84c7ff0 \
             --expected-image-config-digest sha256:2de94c121db7ae46df5415a40b33cd2d057fcc3b7bf9aa9d51756ecb4412447e \
-            --output full-static-diagnostic-public
-      - name: Retain the new pair receipt
+            --output fallback-capacity-diagnostic-public
+      - name: Retain the fresh bounded four-context evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: cpp-full-static-pair-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            full-static-diagnostic-public/static-summary.json
-            full-static-diagnostic-public/manifest.json
-          compression-level: 6
-          retention-days: 30
-          if-no-files-found: error
-      - name: Retain fresh baseline static evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: cpp-full-static-baseline-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: full-static-diagnostic-public/baseline/
-          compression-level: 6
-          retention-days: 30
-          if-no-files-found: error
-      - name: Retain fresh candidate static evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: cpp-full-static-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: full-static-diagnostic-public/candidate/
+          name: cpp-fallback-capacity-sample-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: fallback-capacity-diagnostic-public/
           compression-level: 6
           retention-days: 30
           if-no-files-found: error

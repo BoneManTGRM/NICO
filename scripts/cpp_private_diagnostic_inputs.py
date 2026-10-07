@@ -1,7 +1,8 @@
 """Prepare private retained diagnostic inputs using normal read-only Actions transport.
 
-No artifact/run/image identifiers are embedded here.  Source identities below bind
-reviewed public code.  Historical selection and receipts remain in host scratch.
+Source identities below bind reviewed public code. Original image/baseline
+selection and receipts remain in host scratch. The explicit capacity mode pins
+only its separately retained a583 input run/artifact and whole-byte identities.
 This program does not load an image, create a container, or execute an analyzer.
 """
 from __future__ import annotations
@@ -720,12 +721,117 @@ def prepare(client, operation, recipe, scratch, load_store_reserve):
     return records
 
 
+CAPACITY_INPUT_RUN = 37659207160
+CAPACITY_INPUT_HEAD = 'a5835f2dbb2b671443356de2d0808bdbc731dd6d'
+CAPACITY_INPUT_WORKFLOW = '.github/workflows/cpp-same-image-full-static-diagnostic.yml'
+CAPACITY_INPUT_ARTIFACT = {
+    'id': 11501588664,
+    'name': 'cpp-full-static-candidate-a5835f2dbb2b671443356de2d0808bdbc731dd6d-37659207160-1',
+    'bytes': 12525552,
+    'sha256': '787121b582ec1709cadaa775345914e4e1a1543ef48810cf775818590b6cd011',
+}
+CAPACITY_INPUT_MEMBERS = {
+    'environment': {'path': 'artifacts/project-static-environment-39c5e0dc127ae3d7b425fc1cc9d35f63d2e37b893bbc4a464134e194d995e27b.json',
+        'bytes': 23853193, 'sha256': '39c5e0dc127ae3d7b425fc1cc9d35f63d2e37b893bbc4a464134e194d995e27b'},
+    'primary': {'path': 'artifacts/project-static-evidence-a6fb7909318c253014daec86a32f70455ae77c8a0208cfeaedf2d4ec30f57508.json',
+        'bytes': 9512434, 'sha256': 'a6fb7909318c253014daec86a32f70455ae77c8a0208cfeaedf2d4ec30f57508'},
+    'fallback': {'path': 'artifacts/project-static-clang-fallback-0251cdd017b9c0c4257182651fcdcf2ae102dd931f8f39d8c62f164e5d80577f.json',
+        'bytes': 2513517, 'sha256': '0251cdd017b9c0c4257182651fcdcf2ae102dd931f8f39d8c62f164e5d80577f'},
+}
+
+
+def prepare_capacity_inputs(client, scratch, records, load_store_reserve):
+    """Exact retained a583 bytes via the same GET-only verified transport.
+
+    This is a new runner's required input transfer, not a repeated historical
+    reconciliation or native operation. Old private inputs stay private.
+    """
+    host = scratch / 'host'
+    require(scratch.is_dir() and scratch.resolve(strict=True) == scratch
+            and host.is_dir() and host.resolve(strict=True) == host
+            and scratch.stat().st_mode & 0o077 == host.stat().st_mode & 0o077 == 0,
+            'capacity_private_scratch')
+    require(records.get('status') == 'PRIVATE_RETAINED_INPUTS_PREPARED'
+            and 'capacity_sample' not in records, 'capacity_existing_preparation_required')
+    preparation_path = host / 'preparation.json'
+    require(preparation_path.is_file() and not preparation_path.is_symlink()
+            and preparation_path.resolve(strict=True) == preparation_path
+            and preparation_path.stat().st_mode & 0o077 == 0
+            and 0 < preparation_path.stat().st_size <= MAX_META,
+            'capacity_original_private_preparation')
+    original_stat = preparation_path.stat()
+    require(preparation_path.read_bytes() == canonical(records) + b'\n',
+            'capacity_original_preparation_bytes')
+    repository_id = 1282576027
+    run = client.json('/repos/' + REPOSITORY + '/actions/runs/' + str(CAPACITY_INPUT_RUN) + '/attempts/1')
+    require(run_identity(run, CAPACITY_INPUT_WORKFLOW, IMAGE_BRANCH, 'push', 'success',
+                         repository_id, CAPACITY_INPUT_HEAD)
+            and run['id'] == CAPACITY_INPUT_RUN, 'capacity_exact_run_binding')
+    artifact = select_artifact(client, run, CAPACITY_INPUT_ARTIFACT['name'], repository_id, MAX_MEMBER)
+    require(artifact['id'] == CAPACITY_INPUT_ARTIFACT['id']
+            and artifact['size_in_bytes'] == CAPACITY_INPUT_ARTIFACT['bytes']
+            and artifact['digest'] == 'sha256:' + CAPACITY_INPUT_ARTIFACT['sha256'],
+            'capacity_exact_artifact_binding')
+    total = sum(row['bytes'] for row in CAPACITY_INPUT_MEMBERS.values())
+    allowance = artifact['size_in_bytes'] + total + MAX_META
+    disk_proof = preflight(scratch, allowance, load_store_reserve)
+    zip_path = host / 'capacity-sample.zip'
+    expanded = host / 'capacity-sample-decoded'
+    output = host / 'capacity-sample'
+    require(not zip_path.exists() and not expanded.exists() and not output.exists(),
+            'capacity_new_input_paths')
+    transport = client.download(artifact, zip_path, MAX_MEMBER)
+    require(zip_path.is_file() and not zip_path.is_symlink()
+            and zip_path.stat().st_size == CAPACITY_INPUT_ARTIFACT['bytes']
+            and sha(zip_path.read_bytes()) == CAPACITY_INPUT_ARTIFACT['sha256'],
+            'capacity_whole_archive_anchor')
+    expected = {row['path']: row for row in CAPACITY_INPUT_MEMBERS.values()}
+    rows = extract_verified_zip(zip_path, expanded, 3, MAX_MEMBER, total, set(expected),
+                                {name: row['bytes'] for name, row in expected.items()})
+    require({row['path']: row for row in rows} == expected, 'capacity_exact_decoded_members')
+    peak = scratch_bytes(scratch)
+    output.mkdir(mode=0o700)
+    refs = {}
+    for key, row in CAPACITY_INPUT_MEMBERS.items():
+        source = expanded / row['path']
+        require(source.is_file() and not source.is_symlink()
+                and source.resolve(strict=True) == source and source.stat().st_mode & 0o077 == 0,
+                'capacity_private_decoded_member')
+        source.rename(output / (key + '.json'))
+        refs[key] = {'file': key + '.json', 'bytes': row['bytes'], 'sha256': row['sha256']}
+    (expanded / 'artifacts').rmdir()
+    expanded.rmdir()
+    zip_path.unlink()
+    proof = {'schema': 'nico.private.a583-capacity-input-transfer.v1',
+             'run_id': CAPACITY_INPUT_RUN, 'run_attempt': 1, 'workflow_head': CAPACITY_INPUT_HEAD,
+             'workflow_head_is_executed_worker_source_claimed': False,
+             'artifact_id': artifact['id'], 'artifact_bytes': artifact['size_in_bytes'],
+             'artifact_sha256': CAPACITY_INPUT_ARTIFACT['sha256'], 'members': refs,
+             'whole_provider_and_pinned_archive_and_all_members_CRC_verified': True,
+             'transport': transport, 'preflight': disk_proof,
+             'observed_scratch_peak_bytes': peak,
+             'native_execution': False, 'historical_reconciliation_repeated': False,
+             'protected_report_request': False, 'new_storage_or_spend': False}
+    records['capacity_sample'] = proof
+    records['actual_observed_scratch_peak_bytes'] = max(records['actual_observed_scratch_peak_bytes'], peak)
+    temporary = host / 'capacity-preparation.json.tmp'
+    require(not temporary.exists() and not temporary.is_symlink(), 'capacity_new_preparation_temporary')
+    write_private(temporary, records)
+    current_stat = preparation_path.stat()
+    require((current_stat.st_dev, current_stat.st_ino, current_stat.st_size, current_stat.st_mtime_ns)
+            == (original_stat.st_dev, original_stat.st_ino, original_stat.st_size, original_stat.st_mtime_ns)
+            and not preparation_path.is_symlink(), 'capacity_preparation_changed')
+    temporary.replace(preparation_path)
+    return proof
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--operation-source', required=True, type=Path)
     parser.add_argument('--recipe-source', required=True, type=Path)
     parser.add_argument('--scratch', required=True, type=Path)
     parser.add_argument('--load-store-reserve-bytes', required=True, type=int)
+    parser.add_argument('--fallback-capacity-sample', action='store_true')
     args = parser.parse_args()
     for name in ('operation_source', 'recipe_source', 'scratch'):
         value = getattr(args, name).absolute()
@@ -736,7 +842,9 @@ def main():
     token = os.environ.pop('GITHUB_TOKEN', '')
     client = ActionsClient(token)
     try:
-        prepare(client, args.operation_source, args.recipe_source, args.scratch, args.load_store_reserve_bytes)
+        records = prepare(client, args.operation_source, args.recipe_source, args.scratch, args.load_store_reserve_bytes)
+        if args.fallback_capacity_sample:
+            prepare_capacity_inputs(client, args.scratch, records, args.load_store_reserve_bytes)
         # Aggregate status only. No paths, hashes, provider metadata or identifiers.
         print('{"status":"PRIVATE_RETAINED_INPUTS_PREPARED","native_execution":false}')
     finally:
