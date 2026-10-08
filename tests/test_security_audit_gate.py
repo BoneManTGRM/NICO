@@ -82,6 +82,31 @@ def test_missing_required_scanner_fails_closed(tmp_path: Path) -> None:
     assert any("required scanner semgrep" in item for item in manifest["security_gate"]["blockers"])
 
 
+def test_semgrep_parse_warning_preserves_findings_and_partial_capture(tmp_path: Path) -> None:
+    _clean_evidence(tmp_path)
+    _write(tmp_path, "semgrep.json", {
+        "results": [{"check_id": "review-rule", "path": "nico/store.py"}],
+        "errors": [{"level": "warn", "type": "PartialParsing", "message": "private diagnostic body"}],
+    })
+    manifest = build_manifest(tmp_path)
+    record = manifest["tools"]["semgrep"]
+    assert record["finding_count"] == 1
+    assert record["diagnostic_count"] == 1
+    assert record["capture_complete"] is False
+    assert manifest["partial_capture_tools"] == ["semgrep"]
+    assert manifest["security_gate"]["scope"] == "blocking_risk_policy"
+    assert manifest["security_gate"]["status"] == "passed"
+    assert any("partial capture" in item for item in manifest["security_gate"]["review_required"])
+    assert "private diagnostic body" not in json.dumps(manifest)
+
+
+def test_semgrep_empty_diagnostics_retains_complete_capture_control(tmp_path: Path) -> None:
+    _clean_evidence(tmp_path)
+    manifest = build_manifest(tmp_path)
+    assert manifest["tools"]["semgrep"]["capture_complete"] is True
+    assert manifest["partial_capture_tools"] == []
+
+
 def test_any_known_production_dependency_vulnerability_blocks(tmp_path: Path) -> None:
     _clean_evidence(tmp_path)
     _write(
