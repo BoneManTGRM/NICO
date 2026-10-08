@@ -35,6 +35,7 @@ def run_shared_stage(tmp_path, monkeypatch, *, expired=False, cancelled=False):
                     q['predefines'] = observed(base64.b64decode(q['predefines']['output']) + b'#define __cplusplus 202002L\n')
                 output = _canonical(data)
             elif static.PROGRAM in argv:
+                assert json.loads(kwargs['input_bytes']) == req
                 output = raw; clock[0] = 700.0
             elif clang.PROGRAM in argv:
                 dispatched[0] = True

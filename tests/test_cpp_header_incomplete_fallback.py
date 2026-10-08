@@ -17,7 +17,9 @@ from tests.test_cpp_static_environment import evidence as environment_evidence, 
 
 
 def owned_header_gap(tmp_path):
-    req, compiler, raw, _, inputs = fixture(tmp_path, failing=False, include_inputs=True)
+    # Installed header provenance stages require physical inputs, including
+    # when this owned source has no external header dependencies.
+    req, compiler, raw, _, inputs = fixture(tmp_path, failing=False, include_inputs=True, physical=True)
     data = json.loads(raw)
     row = data['records'][0]
     doc = ET.fromstring(static._decode_xml(row['header_trace'], row['header_trace_sha256'], row['header_trace_encoding']))
