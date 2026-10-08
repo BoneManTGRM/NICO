@@ -76,6 +76,7 @@ jobs:
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
           python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
           cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          cp scripts/repair_cppcheck_header_grammar.py toolchain/full-project/
           cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
           cp -R scripts/cppcheck-header-evidence toolchain/full-project/
           cp scripts/build_cpp_clang_header_observer.py toolchain/full-project/
@@ -87,11 +88,13 @@ jobs:
           trap 'docker rm --force "$toolchain_container" >/dev/null' EXIT
           docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
           docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-header-grammar.json" cppcheck-header-grammar.json
           docker cp "$toolchain_container:/opt/nico-clang-header-observer.json" clang-header-observer.json
           docker cp "$toolchain_container:/opt/nico-clang-header-startup" clang-header-startup
       - name: Verify container boundary and same-image owned runtime controls
         run: |
           python scripts/qualify_cpp_worker_container.py
+          python -m scripts.qualify_cpp_header_grammar --image "$(cat full-project-image-id.txt)" --output cpp-header-grammar-control
           python -m scripts.qualify_cppcheck_worker_control --image "$(cat full-project-image-id.txt)"
           python -m scripts.qualify_cpp_full_project_integration --generated-headers --bounded-fuzz --project-dependencies --project-compiler-options --image "$(cat full-project-image-id.txt)"
           python -m scripts.qualify_cpp_project_generated_context --project-static-analysis --extended-compiler-budget --compiler-environment --image "$(cat full-project-image-id.txt)"
@@ -141,6 +144,8 @@ jobs:
             full-project-image.json
             cpp-runtime-toolchain.json
             cppcheck-header-observer.json
+            cppcheck-header-grammar.json
+            cpp-header-grammar-control/
             clang-header-observer.json
             clang-header-startup/
             toolchain/full-project/clang-header-sdk/receipt.json

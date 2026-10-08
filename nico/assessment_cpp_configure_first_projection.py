@@ -168,7 +168,8 @@ def reconstruct_configure_first(identity, contract, receipt, store):
             raise ValueError('worker_configure_first_compiler_collection_mismatch')
     env_raw=_read_artifact(store,identity,refs["project-static-environment"],"project-static-environment")
     env_request=environment_request(compiler_request,compiler_raw,contract["image_digest"],
-        collect_completed_compiler_failures=collection_contract,snapshot=snapshot)
+        collect_completed_compiler_failures=collection_contract,snapshot=snapshot,
+        physical_header_inputs=_json(env_raw).get('physical_header_inputs') is True)
     environment=validate_environment(env_raw,env_request)
     static_raw=_read_artifact(store,identity,refs["project-static-evidence"],"project-static-evidence")
     static_request=project_static_request(database,targets,snapshot,compiler_raw,

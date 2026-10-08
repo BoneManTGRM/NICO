@@ -328,9 +328,11 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
              and _json(static_ops['static-image'][1])[0]['Id'] == image
              and _json(static_ops['static-source'][1]) == targets)
     validate_transport(stage, static_ops, targets, snapshot=snapshot)
+    env_raw = artifact(stage['compiler_environment']['artifact'])
     ereq = environment_request(creq, craw, image,
-        collect_completed_compiler_failures=collect_completed_compiler_failures,snapshot=snapshot)
-    env = validate_environment(artifact(stage['compiler_environment']['artifact']), ereq)
+        collect_completed_compiler_failures=collect_completed_compiler_failures,snapshot=snapshot,
+        physical_header_inputs=_json(env_raw).get('physical_header_inputs') is True)
+    env = validate_environment(env_raw, ereq)
     sreq = project_static_request(analysisdb, targets, snapshot, craw, extended_compiler_budget=True,
         environment=env, header_provenance=native_commands_required,
         collect_completed_compiler_failures=collect_completed_compiler_failures)

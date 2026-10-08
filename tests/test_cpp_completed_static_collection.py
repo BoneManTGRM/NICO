@@ -24,7 +24,7 @@ def digest(value):
     return hashlib.sha256(value).hexdigest()
 
 
-def fixture(tmp_path, failing=True, include_inputs=False, directive=None):
+def fixture(tmp_path, failing=True, include_inputs=False, directive=None, physical=False):
     if directive is None:
         directive = b'#error owned rejection' if failing else b'int value(){return VALUE;}'
     compiler, creq, snapshot = owned(tmp_path, failing=failing,
@@ -35,7 +35,7 @@ def fixture(tmp_path, failing=True, include_inputs=False, directive=None):
     assert digest(database) == creq['database_sha256']
     cproof = validate_project_compiler_collection(craw, creq, snapshot)
     ereq = env.environment_request(creq, craw, 'sha256:'+'a'*64,
-        collect_completed_compiler_failures=True, snapshot=snapshot)
+        collect_completed_compiler_failures=True, snapshot=snapshot, physical_header_inputs=physical)
     eraw = environment_evidence(ereq)
     eraw.update(schema='nico.cpp-static-environment.v2')
     for query in eraw['queries'].values():
@@ -230,7 +230,7 @@ def test_missing_corrupt_downgraded_or_false_success_collection_is_rejected(tmp_
 @pytest.mark.parametrize('fault',[None,'cleanup','corrupt-environment','missing-fallback-trace'])
 def test_installed_static_stage_preserves_failed_outcome_after_full_bounded_collection(tmp_path,fault):
     from tests.test_cpp_project_static_stage import StaticDocker
-    req,cp,raw,fraw,(database,targets,snapshot,craw) = fixture(tmp_path,include_inputs=True)
+    req,cp,raw,fraw,(database,targets,snapshot,craw) = fixture(tmp_path,include_inputs=True,physical=True)
     source=tmp_path/'source';source.mkdir();(source/'unit.cpp').write_bytes(b'int value(){return VALUE;}\n')
     class CurrentDocker(StaticDocker):
         def __call__(self,argv,**kwargs):

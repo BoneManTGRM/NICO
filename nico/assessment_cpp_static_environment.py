@@ -2,8 +2,9 @@
 
 The compiler is queried with an empty input, never a repository script or TU.
 Compiler-visited dependency bytes are retained before projection. Public C/C++
-and POSIX headers use pinned upstream models; their native missing-include
-messages remain explicit modeled-input disclosures, not blanket suppressions.
+and POSIX library models remain available as supplementary semantics. Physical
+header runs stage every retained compiler dependency; historical model-only
+receipts retain their original missing-input disclosures and never gain credit.
 """
 from __future__ import annotations
 
@@ -144,11 +145,11 @@ def search_arguments(predefines):
 
 
 def environment_request(compiler_request, compiler_raw, image, *,
-                        collect_completed_compiler_failures=False, snapshot=None):
+                        collect_completed_compiler_failures=False, snapshot=None, physical_header_inputs=False):
     from nico.assessment_cpp_project_compiler import validate_project_compiler
     if not isinstance(image, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', image) is None:
         raise ValueError('worker_static_environment_image_invalid')
-    if type(collect_completed_compiler_failures) is not bool:
+    if type(collect_completed_compiler_failures) is not bool or type(physical_header_inputs) is not bool:
         raise ValueError('worker_static_environment_compiler_collection_invalid')
     collection = None
     if collect_completed_compiler_failures:
@@ -168,18 +169,24 @@ def environment_request(compiler_request, compiler_raw, image, *,
     if collection is not None:
         result.update(schema='nico.cpp-static-environment-request.v2',
             compiler_collection_sha256=_digest(_canonical(collection)))
+    if physical_header_inputs:
+        result['physical_header_inputs'] = True
     _validate_request(result)
     return result
 
 
 def _validate_request(request):
     fields = {'schema', 'contexts', 'compiler_evidence_sha256', 'image_config_digest', 'models', 'limits'}
+    physical = isinstance(request, dict) and 'physical_header_inputs' in request
+    if physical:
+        fields.add('physical_header_inputs')
     current = isinstance(request, dict) and request.get('schema') == 'nico.cpp-static-environment-request.v2'
     if current:
         fields.add('compiler_collection_sha256')
     if (not isinstance(request, dict) or set(request) != fields
             or request['schema'] not in {'nico.cpp-static-environment-request.v1','nico.cpp-static-environment-request.v2'}
             or current and re.fullmatch(r'[0-9a-f]{64}', str(request.get('compiler_collection_sha256'))) is None
+            or physical and request['physical_header_inputs'] is not True
             or request['limits'] != ENV_LIMITS
             or any(type(v) is not int for v in request['limits'].values())
             or request['models'] != MODEL_HASHES
@@ -317,8 +324,11 @@ def validate_environment(raw, request):
     if not isinstance(raw, bytes) or not 0 < len(raw) <= ENV_STREAM_LIMIT:
         raise ValueError('worker_static_environment_output_limit')
     native = _env_json(raw)
-    if (not isinstance(native, dict) or set(native) != {'schema', 'request_sha256', 'image_config_digest',
+    physical = request.get('physical_header_inputs') is True
+    if (not isinstance(native, dict) or set(native) != ({'schema', 'request_sha256', 'image_config_digest',
             'analyst_uid', 'compiler_versions', 'queries', 'headers', 'models', 'duration_ms'}
+                | ({'physical_header_inputs'} if physical else set()))
+            or physical and native.get('physical_header_inputs') is not True
             or native['schema'] != ('nico.cpp-static-environment.v2'
                 if request['schema'].endswith('.v2') else 'nico.cpp-static-environment.v1')
             or native['request_sha256'] != _digest(_canonical(request))
@@ -362,7 +372,9 @@ def validate_environment(raw, request):
         if (len(body) != member['bytes'] or _digest(body) != member['sha256']
                 or total > ENV_LIMITS['total_header_bytes']):
             raise ValueError('worker_static_environment_header_digest_or_limit')
-        modeled = _model_header(path, sorted(roots))
+        # Library models cannot satisfy physical input/header obligations.
+        # Preserve the legacy projection only for historical/model-only receipts.
+        modeled = None if physical else _model_header(path, sorted(roots))
         headers[path] = {'sha256': member['sha256'], 'bytes': member['bytes'],
             'resolved_path': member['resolved_path'],
             'projection': None if modeled else ROOT + '/headers' + path,
@@ -377,12 +389,14 @@ def validate_environment(raw, request):
                        else 'nico.cpp-static-environment-model.v1'),
         **({'compiler_collection_sha256':request['compiler_collection_sha256']}
            if request['schema'].endswith('.v2') else {}),
+        **({'physical_header_inputs': True} if physical else {}),
         'request_sha256': native['request_sha256'], 'native_evidence_sha256': _digest(raw),
         'image_config_digest': native['image_config_digest'],
         'compiler_evidence_sha256': request['compiler_evidence_sha256'],
         'queries': proof_queries, 'headers': headers, 'contexts': contexts, 'models': dict(MODEL_HASHES),
         'header_population_sha256': _digest(_canonical(headers)), 'header_bytes': total,
-        'model_policy': 'gcc14-unix64-public-c-cpp20-posix-boost-native-version-v3'}
+        'model_policy': ('gcc14-physical-compiler-dependencies-v1' if physical
+                         else 'gcc14-unix64-public-c-cpp20-posix-boost-native-version-v3')}
 
 
 def _write_input(path, raw):
@@ -409,6 +423,8 @@ def collect_environment(request, retain=lambda value: None):
                          else 'nico.cpp-static-environment.v1'), 'request_sha256': _digest(_canonical(request)),
         'image_config_digest': request['image_config_digest'], 'analyst_uid': os.getuid(),
         'compiler_versions': {}, 'queries': {}, 'headers': {}, 'models': {}, 'duration_ms': 0}
+    if request.get('physical_header_inputs') is True:
+        result['physical_header_inputs'] = True
     retain(result)
     for name, expected in MODEL_HASHES.items():
         actual = _digest(_regular_bytes(MODEL_ROOT + '/' + name + '.cfg', 1024*1024))
@@ -541,6 +557,10 @@ def verify_environment_inputs(environment):
             raise ValueError('worker_project_static_standard_binding')
     for path, member in environment['headers'].items():
         if not _usr_path(path): raise ValueError('worker_project_static_dependency_path')
+        if environment.get('physical_header_inputs') is True and (
+                member['projection'] != ROOT+'/headers'+path or member['model'] is not None
+                or member['modeled_name'] is not None):
+            raise ValueError('worker_project_static_dependency_projection')
         if member['projection'] is not None:
             expected = ROOT + '/headers' + path
             if member['projection'] != expected:
@@ -622,7 +642,8 @@ def bind_environment(proof, compiler_request, compiler_raw, *,
     if not isinstance(proof, dict) or proof.get('models') != MODEL_HASHES:
         raise ValueError('worker_project_static_environment_invalid')
     requested = environment_request(compiler_request, compiler_raw, proof.get('image_config_digest'),
-        collect_completed_compiler_failures=collect_completed_compiler_failures, snapshot=snapshot)
+        collect_completed_compiler_failures=collect_completed_compiler_failures, snapshot=snapshot,
+        physical_header_inputs=proof.get('physical_header_inputs') is True)
     queries, paths = _validate_request(requested)
     if (proof.get('schema') != ('nico.cpp-static-environment-model.v2'
             if requested['schema'].endswith('.v2') else 'nico.cpp-static-environment-model.v1')
@@ -635,6 +656,12 @@ def bind_environment(proof, compiler_request, compiler_raw, *,
             or set(proof.get('contexts', {})) != {r['context_id'] for r in requested['contexts']}
             or re.fullmatch(r'[0-9a-f]{64}', str(proof.get('native_evidence_sha256'))) is None):
         raise ValueError('worker_project_static_environment_binding')
+    physical = requested.get('physical_header_inputs') is True
+    roots = sorted({root for query in proof['queries'].values() for root in query['roots']})
+    for path, member in proof['headers'].items():
+        expected = None if not physical and _model_header(path, roots) else ROOT+'/headers'+path
+        if member['projection'] != expected or physical and (member['model'] is not None or member['modeled_name'] is not None):
+            raise ValueError('worker_project_static_dependency_projection')
     for row in requested['contexts']:
         key = _digest(_canonical(predefine_arguments(row['invocation'], row['source'])))
         if (proof['contexts'][row['context_id']]['query'] != key

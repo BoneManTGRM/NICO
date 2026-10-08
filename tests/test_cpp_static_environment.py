@@ -45,7 +45,8 @@ def evidence(request):
         queries[key] = {'invocation': argv, 'predefines': observed(macros.encode()),
             'search_invocation': env.search_arguments(argv),
             'search': observed(b'#include <...> search starts here:\n /usr/local/include\n /usr/include\nEnd of search list.\n')}
-    return {'schema': 'nico.cpp-static-environment.v1',
+    return {**({'physical_header_inputs': True} if request.get('physical_header_inputs') is True else {}),
+            'schema': 'nico.cpp-static-environment.v1',
             'request_sha256': hashlib.sha256(_canonical(request)).hexdigest(),
             'image_config_digest': request['image_config_digest'], 'analyst_uid': 1001,
             'compiler_versions': {path: observed(b'14.2.0\n') for path in sorted({v['invocation'][0] for v in queries.values()})},
