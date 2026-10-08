@@ -126,10 +126,38 @@ def parse_static_findings(name: str, stdout: str) -> tuple[list[dict[str, Any]],
     payload = _load_json_payload(stdout)
     if payload is None:
         return [], "Static analyzer output could not be parsed as JSON."
+    if name in _STATIC_TOOLS and (
+        not isinstance(payload, dict) or not isinstance(payload.get("results"), list)
+    ):
+        return [], f"{name} findings have an invalid shape; capture is incomplete."
+    # A successful exit and parseable findings do not clear parser/coverage
+    # diagnostics. Keep findings while withholding complete-execution credit.
+    # Diagnostic bodies can contain source or credentials, so retain a count only.
+    diagnostics = _dict(payload).get("errors", [])
+    warning = None
+    if not isinstance(diagnostics, list):
+        warning = f"{name} analyzer diagnostics have an invalid shape; capture is incomplete."
+    elif diagnostics:
+        warning = f"{name} reported {len(diagnostics)} analyzer diagnostics; capture is incomplete."
+    if name in _STATIC_TOOLS:
+        valid = []
+        for item in payload["results"]:
+            rule_key, path_key = ("test_id", "filename") if name == "bandit" else ("check_id", "path")
+            if (
+                isinstance(item, dict)
+                and isinstance(item.get(rule_key), str) and item[rule_key].strip()
+                and isinstance(item.get(path_key), str) and item[path_key].strip()
+            ):
+                valid.append(item)
+        invalid_count = len(payload["results"]) - len(valid)
+        if invalid_count:
+            warning = " ".join(filter(None, [warning,
+                f"{name} reported {invalid_count} malformed findings; capture is incomplete."]))
+        payload = {**payload, "results": valid}
     if name == "bandit":
-        return _bandit_findings(payload), None
+        return _bandit_findings(payload), warning
     if name == "semgrep":
-        return _semgrep_findings(payload), None
+        return _semgrep_findings(payload), warning
     return [], f"No structured parser exists for {name}."
 
 

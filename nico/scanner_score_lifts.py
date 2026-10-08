@@ -175,6 +175,41 @@ def _triage_finding_count(triage: dict[str, Any]) -> int:
     return int(triage.get("finding_count") or triage.get("total_findings") or 0)
 
 
+def _static_verified_with_bandit_triage(tools: dict[str, dict[str, Any]], triage: dict[str, Any]) -> bool:
+    # Bandit dispositions cannot clear another analyzer or imply missing approval.
+    non_bandit_tools = tuple(name for name in STATIC_TOOLS if name != "bandit")
+    if not (_all_verified(tools, STATIC_TOOLS) and _all_clean(tools, non_bandit_tools)):
+        return False
+    bandit_count = _finding_count(tools.get("bandit", {}))
+    if bandit_count <= 0 or _triage_finding_count(triage) != bandit_count:
+        return False
+    if (
+        any(triage.get(key) is False for key in ("score_lift_allowed", "static_lift_allowed"))
+        or triage.get("human_review_required") is True
+        or triage.get("invalid_triage_records")
+        or triage.get("missing_triage_records")
+        or any(
+            type(triage.get(key, 0)) is not int or triage.get(key, 0) != 0
+            for key in (
+                "blocking_count", "review_required_count", "needs_review_count",
+                "unresolved_high_confidence_count", "blocker_count",
+            )
+        )
+        or triage.get("status") in {"blocking_findings", "needs_human_review"}
+    ):
+        return False
+    return (
+        triage.get("score_lift_allowed") is True
+        or triage.get("static_lift_allowed") is True
+        or (
+            triage.get("status") == "approved_no_blockers"
+            and int(triage.get("approved_count") or 0) == bandit_count
+            and triage.get("approval_artifact_attached") is True
+            and triage.get("human_review_required") is False
+        )
+    )
+
+
 def _set_section_score(section: dict[str, Any], score: int, summary: str, evidence: str) -> None:
     section["score"] = max(int(section.get("score") or 0), score)
     section["status"] = _status_from_score(int(section["score"]))
@@ -218,8 +253,7 @@ def _static_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> No
     bandit_triage = _bandit_triage(result, tools)
     clean = _all_clean(tools, STATIC_TOOLS)
     triaged_without_blockers = (
-        _all_verified(tools, STATIC_TOOLS)
-        and _triage_open_count(bandit_triage) == 0
+        _static_verified_with_bandit_triage(tools, bandit_triage)
         and _triage_finding_count(bandit_triage) > 0
     )
     if not clean and not triaged_without_blockers:
@@ -241,8 +275,7 @@ def _velocity_lift(result: dict[str, Any], tools: dict[str, dict[str, Any]]) -> 
     dependency_clean = _all_clean(tools, DEPENDENCY_TOOLS)
     bandit_triage = _bandit_triage(result, tools)
     static_verified = _all_clean(tools, STATIC_TOOLS) or (
-        _all_verified(tools, STATIC_TOOLS)
-        and _triage_open_count(bandit_triage) == 0
+        _static_verified_with_bandit_triage(tools, bandit_triage)
     )
     if not (dependency_clean and static_verified and profile):
         return
@@ -287,7 +320,7 @@ def _attach_final_evidence_score_bridge(result: dict[str, Any], tools: dict[str,
         "dependency_clean": _all_clean(tools, DEPENDENCY_TOOLS),
         "secret_clean_full_history": _all_clean(tools, SECRET_TOOLS) and _secret_history_verified(result),
         "static_clean": _all_clean(tools, STATIC_TOOLS),
-        "static_triaged_without_blockers": _all_verified(tools, STATIC_TOOLS) and _triage_open_count(_bandit_triage(result, tools)) == 0,
+        "static_triaged_without_blockers": _static_verified_with_bandit_triage(tools, _bandit_triage(result, tools)),
         "complexity_profile_attached": bool(_complexity_profile(result)),
         "lifts": lifts,
         "guardrail": "Final score bridge only reports score eligibility from current-run verified evidence summaries. It does not waive findings, unavailable scanners, or missing human review.",

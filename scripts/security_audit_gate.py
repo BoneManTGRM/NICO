@@ -156,6 +156,8 @@ def _semgrep(root: Path) -> dict[str, Any]:
         status,
         len(results),
         scanner_error_count=len(fatal_errors),
+        diagnostic_count=len(errors),
+        capture_complete=not errors,
         blocking=len(blocking_items),
         needs_review=len(review_items),
         blocking_items=blocking_items[:50],
@@ -669,6 +671,11 @@ def evaluate_gate(tools: dict[str, dict[str, Any]]) -> list[str]:
 
 def evaluate_review_required(tools: dict[str, dict[str, Any]]) -> list[str]:
     review: list[str] = []
+    semgrep = tools.get("semgrep") or {}
+    if semgrep.get("capture_complete") is False:
+        review.append(
+            f"semgrep retained {int(semgrep.get('diagnostic_count') or 0)} analyzer diagnostics; partial capture requires review"
+        )
     for name in ("bandit", "semgrep", "osv-scanner", "gitleaks", "trufflehog"):
         tool = tools.get(name) or {}
         count = int(tool.get("needs_review") or 0)
@@ -718,7 +725,11 @@ def build_manifest(root: Path, *, repository: str = "", run_id: str = "",
         "trufflehog_capture_contract": "sanitized_v1" if require_sanitized_trufflehog else "legacy_offline_compatible",
         "generated_at": generated_at,
         "tools": tools,
+        "partial_capture_tools": sorted(
+            name for name, record in tools.items() if record.get("capture_complete") is False
+        ),
         "security_gate": {
+            "scope": "blocking_risk_policy",
             "status": "blocked" if blockers else "passed",
             "blockers": blockers,
             "review_required": review_required,

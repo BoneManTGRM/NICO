@@ -98,6 +98,8 @@ jobs:
             --npm-audit remediation-evidence/npm-audit.json \
             --bandit remediation-evidence/bandit.json \
             --semgrep remediation-evidence/semgrep.json \
+            --bandit-exit "$(cat remediation-evidence/bandit.exit)" \
+            --semgrep-exit "$(cat remediation-evidence/semgrep.exit)" \
             --gitleaks remediation-evidence/gitleaks.json \
             --trufflehog remediation-evidence/trufflehog.jsonl \
             --typescript remediation-evidence/typescript.log \

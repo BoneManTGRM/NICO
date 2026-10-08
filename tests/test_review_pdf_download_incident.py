@@ -11,7 +11,7 @@ def test_retained_pdf_download_progress_integrity_and_recovery():
     if not shutil.which("node"):
         pytest.skip("Node runtime unavailable; frontend regression not verified")
     result = subprocess.run(
-        ["node", "--test", "tests/js/review-pdf-download.test.cjs",
+        ["node", "--test", "--test-reporter=tap", "tests/js/review-pdf-download.test.cjs",
          "tests/js/artifact-timeout-diagnostics.test.cjs",
          "tests/js/workspace-review-pdf-fallback.test.cjs"],
         cwd=Path(__file__).resolve().parents[1],

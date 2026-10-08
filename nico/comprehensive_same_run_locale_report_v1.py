@@ -1568,6 +1568,15 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
         def localized_report_pdf(run_id: str, report_language: str) -> Response:
             try:
                 with report_delivery_timing(run_id, report_language):
+                    controller = getattr(target.state, "comprehensive_api_controller", None)
+                    retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                    if callable(retained_reader):
+                        try:
+                            return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                        except KeyError as exc:
+                            raise HTTPException(status_code=404, detail={
+                                "status": "not_found", "reason": "comprehensive_run_not_found",
+                            }) from exc
                     status = _controller_status(target, run_id)
                     return build_same_run_locale_pdf_response(status, report_language)
             except ValueError as exc:
